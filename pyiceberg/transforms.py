@@ -16,6 +16,7 @@
 # under the License.
 
 import base64
+import datetime as py_datetime
 import struct
 from abc import ABC, abstractmethod
 from enum import IntEnum
@@ -72,7 +73,9 @@ from pyiceberg.types import (
     IntegerType,
     LongType,
     StringType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UUIDType,
@@ -84,6 +87,8 @@ from pyiceberg.utils.singleton import Singleton
 
 if TYPE_CHECKING:
     import pyarrow as pa
+
+    ArrayLike = TypeVar("ArrayLike", pa.Array, pa.ChunkedArray)
 
 S = TypeVar("S")
 T = TypeVar("T")
@@ -104,29 +109,6 @@ TRUNCATE_PARSER = ParseNumberFromBrackets(TRUNCATE)
 def _transform_literal(func: Callable[[L], L], lit: Literal[L]) -> Literal[L]:
     """Small helper to upwrap the value from the literal, and wrap it again."""
     return literal(func(lit.value))
-
-
-def parse_transform(v: Any) -> Any:
-    if isinstance(v, str):
-        if v == IDENTITY:
-            return IdentityTransform()
-        elif v == VOID:
-            return VoidTransform()
-        elif v.startswith(BUCKET):
-            return BucketTransform(num_buckets=BUCKET_PARSER.match(v))
-        elif v.startswith(TRUNCATE):
-            return TruncateTransform(width=TRUNCATE_PARSER.match(v))
-        elif v == YEAR:
-            return YearTransform()
-        elif v == MONTH:
-            return MonthTransform()
-        elif v == DAY:
-            return DayTransform()
-        elif v == HOUR:
-            return HourTransform()
-        else:
-            return UnknownTransform(transform=v)
-    return v
 
 
 class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
@@ -193,6 +175,50 @@ class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
     @abstractmethod
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]": ...
 
+    def _pyiceberg_transform_wrapper(
+        self, transform_func: Callable[["ArrayLike", Any], "ArrayLike"], *args: Any
+    ) -> Callable[["ArrayLike"], "ArrayLike"]:
+        try:
+            import pyarrow as pa
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For bucket/truncate transforms, PyArrow needs to be installed") from e
+
+        def _transform(array: "ArrayLike") -> "ArrayLike":
+            if isinstance(array, pa.Array):
+                return transform_func(array, *args)
+            elif isinstance(array, pa.ChunkedArray):
+                result_chunks = []
+                for arr in array.iterchunks():
+                    result_chunks.append(transform_func(arr, *args))
+                return pa.chunked_array(result_chunks)
+            else:
+                raise ValueError(f"PyArrow array can only be of type pa.Array or pa.ChunkedArray, but found {type(array)}")
+
+        return _transform
+
+
+def parse_transform(v: Any) -> Transform[Any, Any]:
+    if isinstance(v, str):
+        if v == IDENTITY:
+            return IdentityTransform()
+        elif v == VOID:
+            return VoidTransform()
+        elif v.startswith(BUCKET):
+            return BucketTransform(num_buckets=BUCKET_PARSER.match(v))
+        elif v.startswith(TRUNCATE):
+            return TruncateTransform(width=TRUNCATE_PARSER.match(v))
+        elif v == YEAR:
+            return YearTransform()
+        elif v == MONTH:
+            return MonthTransform()
+        elif v == DAY:
+            return DayTransform()
+        elif v == HOUR:
+            return HourTransform()
+        else:
+            return UnknownTransform(transform=v)
+    return v
+
 
 class BucketTransform(Transform[S, int]):
     """Base Transform class to transform a value into a bucket partition value.
@@ -208,8 +234,8 @@ class BucketTransform(Transform[S, int]):
     _num_buckets: PositiveInt = PrivateAttr()
 
     def __init__(self, num_buckets: int, **data: Any) -> None:
-        self._num_buckets = num_buckets
         super().__init__(f"bucket[{num_buckets}]", **data)
+        self._num_buckets = num_buckets
 
     @property
     def num_buckets(self) -> int:
@@ -266,6 +292,8 @@ class BucketTransform(Transform[S, int]):
                 TimeType,
                 TimestampType,
                 TimestamptzType,
+                TimestampNanoType,
+                TimestamptzNanoType,
                 DecimalType,
                 StringType,
                 FixedType,
@@ -275,7 +303,43 @@ class BucketTransform(Transform[S, int]):
         )
 
     def transform(self, source: IcebergType, bucket: bool = True) -> Callable[[Optional[Any]], Optional[int]]:
-        if isinstance(source, (IntegerType, LongType, DateType, TimeType, TimestampType, TimestamptzType)):
+        if isinstance(source, TimeType):
+
+            def hash_func(v: Any) -> int:
+                if isinstance(v, py_datetime.time):
+                    v = datetime.time_to_micros(v)
+
+                return mmh3.hash(struct.pack("<q", v))
+
+        elif isinstance(source, DateType):
+
+            def hash_func(v: Any) -> int:
+                if isinstance(v, py_datetime.date):
+                    v = datetime.date_to_days(v)
+
+                return mmh3.hash(struct.pack("<q", v))
+
+        elif isinstance(source, (TimestampType, TimestamptzType)):
+
+            def hash_func(v: Any) -> int:
+                if isinstance(v, py_datetime.datetime):
+                    v = datetime.datetime_to_micros(v)
+
+                return mmh3.hash(struct.pack("<q", v))
+
+        elif isinstance(source, (TimestampNanoType, TimestamptzNanoType)):
+
+            def hash_func(v: Any) -> int:
+                # In order to bucket TimestampNano the same as Timestamp
+                # convert to micros before hashing.
+                if isinstance(v, py_datetime.datetime):
+                    v = datetime.datetime_to_micros(v)
+                else:
+                    v = datetime.nanos_to_micros(v)
+
+                return mmh3.hash(struct.pack("<q", v))
+
+        elif isinstance(source, (IntegerType, LongType)):
 
             def hash_func(v: Any) -> int:
                 return mmh3.hash(struct.pack("<q", v))
@@ -309,7 +373,13 @@ class BucketTransform(Transform[S, int]):
         return f"BucketTransform(num_buckets={self._num_buckets})"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        raise NotImplementedError()
+        from pyiceberg_core import transform as pyiceberg_core_transform
+
+        return self._pyiceberg_transform_wrapper(pyiceberg_core_transform.bucket, self._num_buckets)
+
+    @property
+    def supports_pyarrow_transform(self) -> bool:
+        return True
 
 
 class TimeResolution(IntEnum):
@@ -390,12 +460,25 @@ class YearTransform(TimeTransform[S]):
         if isinstance(source, DateType):
 
             def year_func(v: Any) -> int:
+                if isinstance(v, py_datetime.date):
+                    v = datetime.date_to_days(v)
+
                 return datetime.days_to_years(v)
 
         elif isinstance(source, (TimestampType, TimestamptzType)):
 
             def year_func(v: Any) -> int:
+                if isinstance(v, py_datetime.datetime):
+                    v = datetime.datetime_to_micros(v)
+
                 return datetime.micros_to_years(v)
+
+        elif isinstance(source, (TimestampNanoType, TimestamptzNanoType)):
+
+            def year_func(v: Any) -> int:
+                # python datetime has no nanoseconds support.
+                # nanosecond datetimes will be expressed as int as a workaround
+                return datetime.nanos_to_years(v)
 
         else:
             raise ValueError(f"Cannot apply year transform for type: {source}")
@@ -403,7 +486,7 @@ class YearTransform(TimeTransform[S]):
         return lambda v: year_func(v) if v is not None else None
 
     def can_transform(self, source: IcebergType) -> bool:
-        return isinstance(source, (DateType, TimestampType, TimestamptzType))
+        return isinstance(source, (DateType, TimestampType, TimestamptzType, TimestampNanoType, TimestamptzNanoType))
 
     @property
     def granularity(self) -> TimeResolution:
@@ -421,15 +504,19 @@ class YearTransform(TimeTransform[S]):
         import pyarrow.compute as pc
 
         if isinstance(source, DateType):
-            epoch = datetime.EPOCH_DATE
+            epoch = pa.scalar(datetime.EPOCH_DATE)
         elif isinstance(source, TimestampType):
-            epoch = datetime.EPOCH_TIMESTAMP
+            epoch = pa.scalar(datetime.EPOCH_TIMESTAMP)
         elif isinstance(source, TimestamptzType):
-            epoch = datetime.EPOCH_TIMESTAMPTZ
+            epoch = pa.scalar(datetime.EPOCH_TIMESTAMPTZ)
+        elif isinstance(source, TimestampNanoType):
+            epoch = pa.scalar(datetime.EPOCH_TIMESTAMP).cast(pa.timestamp("ns"))
+        elif isinstance(source, TimestamptzNanoType):
+            epoch = pa.scalar(datetime.EPOCH_TIMESTAMPTZ).cast(pa.timestamp("ns"))
         else:
             raise ValueError(f"Cannot apply year transform for type: {source}")
 
-        return lambda v: pc.years_between(pa.scalar(epoch), v) if v is not None else None
+        return lambda v: pc.years_between(epoch, v) if v is not None else None
 
 
 class MonthTransform(TimeTransform[S]):
@@ -447,12 +534,25 @@ class MonthTransform(TimeTransform[S]):
         if isinstance(source, DateType):
 
             def month_func(v: Any) -> int:
+                if isinstance(v, py_datetime.date):
+                    v = datetime.date_to_days(v)
+
                 return datetime.days_to_months(v)
 
         elif isinstance(source, (TimestampType, TimestamptzType)):
 
             def month_func(v: Any) -> int:
+                if isinstance(v, py_datetime.datetime):
+                    v = datetime.datetime_to_micros(v)
+
                 return datetime.micros_to_months(v)
+
+        elif isinstance(source, (TimestampNanoType, TimestamptzNanoType)):
+
+            def month_func(v: Any) -> int:
+                # python datetime has no nanoseconds support.
+                # nanosecond datetimes will be expressed as int as a workaround
+                return datetime.nanos_to_months(v)
 
         else:
             raise ValueError(f"Cannot apply month transform for type: {source}")
@@ -460,7 +560,7 @@ class MonthTransform(TimeTransform[S]):
         return lambda v: month_func(v) if v is not None else None
 
     def can_transform(self, source: IcebergType) -> bool:
-        return isinstance(source, (DateType, TimestampType, TimestamptzType))
+        return isinstance(source, (DateType, TimestampType, TimestamptzType, TimestampNanoType, TimestamptzNanoType))
 
     @property
     def granularity(self) -> TimeResolution:
@@ -478,17 +578,21 @@ class MonthTransform(TimeTransform[S]):
         import pyarrow.compute as pc
 
         if isinstance(source, DateType):
-            epoch = datetime.EPOCH_DATE
+            epoch = pa.scalar(datetime.EPOCH_DATE)
         elif isinstance(source, TimestampType):
-            epoch = datetime.EPOCH_TIMESTAMP
+            epoch = pa.scalar(datetime.EPOCH_TIMESTAMP)
         elif isinstance(source, TimestamptzType):
-            epoch = datetime.EPOCH_TIMESTAMPTZ
+            epoch = pa.scalar(datetime.EPOCH_TIMESTAMPTZ)
+        elif isinstance(source, TimestampNanoType):
+            epoch = pa.scalar(datetime.EPOCH_TIMESTAMP).cast(pa.timestamp("ns"))
+        elif isinstance(source, TimestamptzNanoType):
+            epoch = pa.scalar(datetime.EPOCH_TIMESTAMPTZ).cast(pa.timestamp("ns"))
         else:
             raise ValueError(f"Cannot apply month transform for type: {source}")
 
         def month_func(v: pa.Array) -> pa.Array:
             return pc.add(
-                pc.multiply(pc.years_between(pa.scalar(epoch), v), pa.scalar(12)),
+                pc.multiply(pc.years_between(epoch, v), pa.scalar(12)),
                 pc.add(pc.month(v), pa.scalar(-1)),
             )
 
@@ -510,12 +614,25 @@ class DayTransform(TimeTransform[S]):
         if isinstance(source, DateType):
 
             def day_func(v: Any) -> int:
+                if isinstance(v, py_datetime.date):
+                    v = datetime.date_to_days(v)
+
                 return v
 
         elif isinstance(source, (TimestampType, TimestamptzType)):
 
             def day_func(v: Any) -> int:
+                if isinstance(v, py_datetime.datetime):
+                    v = datetime.datetime_to_micros(v)
+
                 return datetime.micros_to_days(v)
+
+        elif isinstance(source, (TimestampNanoType, TimestamptzNanoType)):
+
+            def day_func(v: Any) -> int:
+                # python datetime has no nanoseconds support.
+                # nanosecond datetimes will be expressed as int as a workaround
+                return datetime.nanos_to_days(v)
 
         else:
             raise ValueError(f"Cannot apply day transform for type: {source}")
@@ -523,7 +640,7 @@ class DayTransform(TimeTransform[S]):
         return lambda v: day_func(v) if v is not None else None
 
     def can_transform(self, source: IcebergType) -> bool:
-        return isinstance(source, (DateType, TimestampType, TimestamptzType))
+        return isinstance(source, (DateType, TimestampType, TimestamptzType, TimestampNanoType, TimestamptzNanoType))
 
     def result_type(self, source: IcebergType) -> IcebergType:
         """Return the result type of a day transform.
@@ -549,15 +666,19 @@ class DayTransform(TimeTransform[S]):
         import pyarrow.compute as pc
 
         if isinstance(source, DateType):
-            epoch = datetime.EPOCH_DATE
+            epoch = pa.scalar(datetime.EPOCH_DATE)
         elif isinstance(source, TimestampType):
-            epoch = datetime.EPOCH_TIMESTAMP
+            epoch = pa.scalar(datetime.EPOCH_TIMESTAMP)
         elif isinstance(source, TimestamptzType):
-            epoch = datetime.EPOCH_TIMESTAMPTZ
+            epoch = pa.scalar(datetime.EPOCH_TIMESTAMPTZ)
+        elif isinstance(source, TimestampNanoType):
+            epoch = pa.scalar(datetime.EPOCH_TIMESTAMP).cast(pa.timestamp("ns"))
+        elif isinstance(source, TimestamptzNanoType):
+            epoch = pa.scalar(datetime.EPOCH_TIMESTAMPTZ).cast(pa.timestamp("ns"))
         else:
             raise ValueError(f"Cannot apply day transform for type: {source}")
 
-        return lambda v: pc.days_between(pa.scalar(epoch), v) if v is not None else None
+        return lambda v: pc.days_between(epoch, v) if v is not None else None
 
 
 class HourTransform(TimeTransform[S]):
@@ -575,7 +696,17 @@ class HourTransform(TimeTransform[S]):
         if isinstance(source, (TimestampType, TimestamptzType)):
 
             def hour_func(v: Any) -> int:
+                if isinstance(v, py_datetime.datetime):
+                    v = datetime.datetime_to_micros(v)
+
                 return datetime.micros_to_hours(v)
+
+        elif isinstance(source, (TimestampNanoType, TimestamptzNanoType)):
+
+            def hour_func(v: Any) -> int:
+                # python datetime has no nanoseconds support.
+                # nanosecond datetimes will be expressed as int as a workaround
+                return datetime.nanos_to_hours(v)
 
         else:
             raise ValueError(f"Cannot apply hour transform for type: {source}")
@@ -583,7 +714,7 @@ class HourTransform(TimeTransform[S]):
         return lambda v: hour_func(v) if v is not None else None
 
     def can_transform(self, source: IcebergType) -> bool:
-        return isinstance(source, (TimestampType, TimestamptzType))
+        return isinstance(source, (TimestampType, TimestamptzType, TimestampNanoType, TimestamptzNanoType))
 
     @property
     def granularity(self) -> TimeResolution:
@@ -601,13 +732,17 @@ class HourTransform(TimeTransform[S]):
         import pyarrow.compute as pc
 
         if isinstance(source, TimestampType):
-            epoch = datetime.EPOCH_TIMESTAMP
+            epoch = pa.scalar(datetime.EPOCH_TIMESTAMP)
         elif isinstance(source, TimestamptzType):
-            epoch = datetime.EPOCH_TIMESTAMPTZ
+            epoch = pa.scalar(datetime.EPOCH_TIMESTAMPTZ)
+        elif isinstance(source, TimestampNanoType):
+            epoch = pa.scalar(datetime.EPOCH_TIMESTAMP).cast(pa.timestamp("ns"))
+        elif isinstance(source, TimestamptzNanoType):
+            epoch = pa.scalar(datetime.EPOCH_TIMESTAMPTZ).cast(pa.timestamp("ns"))
         else:
             raise ValueError(f"Cannot apply hour transform for type: {source}")
 
-        return lambda v: pc.hours_between(pa.scalar(epoch), v) if v is not None else None
+        return lambda v: pc.hours_between(epoch, v) if v is not None else None
 
 
 def _base64encode(buffer: bytes) -> str:
@@ -742,10 +877,11 @@ class TruncateTransform(Transform[S, S]):
         if isinstance(pred.term, BoundTransform):
             return _project_transform_predicate(self, name, pred)
 
+        if isinstance(pred, BoundUnaryPredicate):
+            return pred.as_unbound(Reference(name))
+
         if isinstance(field_type, (IntegerType, LongType, DecimalType)):
-            if isinstance(pred, BoundUnaryPredicate):
-                return pred.as_unbound(Reference(name))
-            elif isinstance(pred, BoundLiteralPredicate):
+            if isinstance(pred, BoundLiteralPredicate):
                 return _truncate_number_strict(name, pred, self.transform(field_type))
             elif isinstance(pred, BoundNotIn):
                 return _set_apply_transform(name, pred, self.transform(field_type))
@@ -827,7 +963,13 @@ class TruncateTransform(Transform[S, S]):
         return f"TruncateTransform(width={self._width})"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        raise NotImplementedError()
+        from pyiceberg_core import transform as pyiceberg_core_transform
+
+        return self._pyiceberg_transform_wrapper(pyiceberg_core_transform.truncate, self._width)
+
+    @property
+    def supports_pyarrow_transform(self) -> bool:
+        return True
 
 
 @singledispatch
@@ -985,7 +1127,7 @@ def _truncate_number_strict(
     elif isinstance(pred, BoundGreaterThanOrEqual):
         return GreaterThan(Reference(name), _transform_literal(transform, boundary.decrement()))  # type: ignore
     elif isinstance(pred, BoundNotEqualTo):
-        return EqualTo(Reference(name), _transform_literal(transform, boundary))
+        return NotEqualTo(Reference(name), _transform_literal(transform, boundary))
     elif isinstance(pred, BoundEqualTo):
         # there is no predicate that guarantees equality because adjacent longs transform to the
         # same value

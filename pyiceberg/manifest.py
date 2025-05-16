@@ -30,6 +30,7 @@ from typing import (
     Optional,
     Tuple,
     Type,
+    Union,
 )
 
 from cachetools import LRUCache, cached
@@ -96,6 +97,14 @@ class FileFormat(str, Enum):
     AVRO = "AVRO"
     PARQUET = "PARQUET"
     ORC = "ORC"
+    PUFFIN = "PUFFIN"
+
+    @classmethod
+    def _missing_(cls, value: object) -> Union[None, str]:
+        for member in cls:
+            if member.value == str(value).upper():
+                return member
+        return None
 
     def __repr__(self) -> str:
         """Return the string representation of the FileFormat class."""
@@ -284,67 +293,114 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
 
 
 def data_file_with_partition(partition_type: StructType, format_version: TableVersion) -> StructType:
-    data_file_partition_type = StructType(*[
-        NestedField(
-            field_id=field.field_id,
-            name=field.name,
-            field_type=field.field_type,
-            required=field.required,
-        )
-        for field in partition_type.fields
-    ])
+    data_file_partition_type = StructType(
+        *[
+            NestedField(
+                field_id=field.field_id,
+                name=field.name,
+                field_type=field.field_type,
+                required=field.required,
+            )
+            for field in partition_type.fields
+        ]
+    )
 
-    return StructType(*[
-        NestedField(
-            field_id=102,
-            name="partition",
-            field_type=data_file_partition_type,
-            required=True,
-            doc="Partition data tuple, schema based on the partition spec",
-        )
-        if field.field_id == 102
-        else field
-        for field in DATA_FILE_TYPE[format_version].fields
-    ])
+    return StructType(
+        *[
+            NestedField(
+                field_id=102,
+                name="partition",
+                field_type=data_file_partition_type,
+                required=True,
+                doc="Partition data tuple, schema based on the partition spec",
+            )
+            if field.field_id == 102
+            else field
+            for field in DATA_FILE_TYPE[format_version].fields
+        ]
+    )
 
 
 class DataFile(Record):
-    __slots__ = (
-        "content",
-        "file_path",
-        "file_format",
-        "partition",
-        "record_count",
-        "file_size_in_bytes",
-        "column_sizes",
-        "value_counts",
-        "null_value_counts",
-        "nan_value_counts",
-        "lower_bounds",
-        "upper_bounds",
-        "key_metadata",
-        "split_offsets",
-        "equality_ids",
-        "sort_order_id",
-        "spec_id",
-    )
-    content: DataFileContent
-    file_path: str
-    file_format: FileFormat
-    partition: Record
-    record_count: int
-    file_size_in_bytes: int
-    column_sizes: Dict[int, int]
-    value_counts: Dict[int, int]
-    null_value_counts: Dict[int, int]
-    nan_value_counts: Dict[int, int]
-    lower_bounds: Dict[int, bytes]
-    upper_bounds: Dict[int, bytes]
-    key_metadata: Optional[bytes]
-    split_offsets: Optional[List[int]]
-    equality_ids: Optional[List[int]]
-    sort_order_id: Optional[int]
-    spec_id: int
+    @classmethod
+    def from_args(cls, _table_format_version: TableVersion = DEFAULT_READ_VERSION, **arguments: Any) -> DataFile:
+        struct = DATA_FILE_TYPE[_table_format_version]
+        return super()._bind(struct, **arguments)
+
+    @property
+    def content(self) -> DataFileContent:
+        return self._data[0]
+
+    @property
+    def file_path(self) -> str:
+        return self._data[1]
+
+    @property
+    def file_format(self) -> FileFormat:
+        return self._data[2]
+
+    @property
+    def partition(self) -> Record:
+        return self._data[3]
+
+    @property
+    def record_count(self) -> int:
+        return self._data[4]
+
+    @property
+    def file_size_in_bytes(self) -> int:
+        return self._data[5]
+
+    @property
+    def column_sizes(self) -> Dict[int, int]:
+        return self._data[6]
+
+    @property
+    def value_counts(self) -> Dict[int, int]:
+        return self._data[7]
+
+    @property
+    def null_value_counts(self) -> Dict[int, int]:
+        return self._data[8]
+
+    @property
+    def nan_value_counts(self) -> Dict[int, int]:
+        return self._data[9]
+
+    @property
+    def lower_bounds(self) -> Dict[int, bytes]:
+        return self._data[10]
+
+    @property
+    def upper_bounds(self) -> Dict[int, bytes]:
+        return self._data[11]
+
+    @property
+    def key_metadata(self) -> Optional[bytes]:
+        return self._data[12]
+
+    @property
+    def split_offsets(self) -> Optional[List[int]]:
+        return self._data[13]
+
+    @property
+    def equality_ids(self) -> Optional[List[int]]:
+        return self._data[14]
+
+    @property
+    def sort_order_id(self) -> Optional[int]:
+        return self._data[15]
+
+    # Spec ID should not be stored in the file
+    _spec_id: int
+
+    @property
+    def spec_id(self) -> int:
+        return self._spec_id
+
+    @spec_id.setter
+    def spec_id(self, value: int) -> None:
+        self._spec_id = value
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Assign a key/value to a DataFile."""
@@ -352,12 +408,6 @@ class DataFile(Record):
         if name == "file_format":
             value = FileFormat[value]
         super().__setattr__(name, value)
-
-    def __init__(self, format_version: TableVersion = DEFAULT_READ_VERSION, *data: Any, **named_data: Any) -> None:
-        super().__init__(
-            *data,
-            **{"struct": DATA_FILE_TYPE[format_version], **named_data},
-        )
 
     def __hash__(self) -> int:
         """Return the hash of the file path."""
@@ -390,60 +440,58 @@ MANIFEST_ENTRY_SCHEMAS_STRUCT = {format_version: schema.as_struct() for format_v
 
 
 def manifest_entry_schema_with_data_file(format_version: TableVersion, data_file: StructType) -> Schema:
-    return Schema(*[
-        NestedField(2, "data_file", data_file, required=True) if field.field_id == 2 else field
-        for field in MANIFEST_ENTRY_SCHEMAS[format_version].fields
-    ])
+    return Schema(
+        *[
+            NestedField(2, "data_file", data_file, required=True) if field.field_id == 2 else field
+            for field in MANIFEST_ENTRY_SCHEMAS[format_version].fields
+        ]
+    )
 
 
 class ManifestEntry(Record):
-    __slots__ = ("status", "snapshot_id", "sequence_number", "file_sequence_number", "data_file")
-    status: ManifestEntryStatus
-    snapshot_id: Optional[int]
-    sequence_number: Optional[int]
-    file_sequence_number: Optional[int]
-    data_file: DataFile
+    @classmethod
+    def from_args(cls, _table_format_version: TableVersion = DEFAULT_READ_VERSION, **arguments: Any) -> ManifestEntry:
+        return super()._bind(**arguments, struct=MANIFEST_ENTRY_SCHEMAS_STRUCT[_table_format_version])
 
-    def __init__(self, *data: Any, **named_data: Any) -> None:
-        super().__init__(*data, **{"struct": MANIFEST_ENTRY_SCHEMAS_STRUCT[DEFAULT_READ_VERSION], **named_data})
+    @property
+    def status(self) -> ManifestEntryStatus:
+        return self._data[0]
 
-    def _wrap(
-        self,
-        new_status: ManifestEntryStatus,
-        new_snapshot_id: Optional[int],
-        new_sequence_number: Optional[int],
-        new_file_sequence_number: Optional[int],
-        new_file: DataFile,
-    ) -> ManifestEntry:
-        self.status = new_status
-        self.snapshot_id = new_snapshot_id
-        self.sequence_number = new_sequence_number
-        self.file_sequence_number = new_file_sequence_number
-        self.data_file = new_file
-        return self
+    @status.setter
+    def status(self, value: ManifestEntryStatus) -> None:
+        self._data[0] = value
 
-    def _wrap_append(
-        self, new_snapshot_id: Optional[int], new_sequence_number: Optional[int], new_file: DataFile
-    ) -> ManifestEntry:
-        return self._wrap(ManifestEntryStatus.ADDED, new_snapshot_id, new_sequence_number, None, new_file)
+    @property
+    def snapshot_id(self) -> Optional[int]:
+        return self._data[1]
 
-    def _wrap_delete(
-        self,
-        new_snapshot_id: Optional[int],
-        new_sequence_number: Optional[int],
-        new_file_sequence_number: Optional[int],
-        new_file: DataFile,
-    ) -> ManifestEntry:
-        return self._wrap(ManifestEntryStatus.DELETED, new_snapshot_id, new_sequence_number, new_file_sequence_number, new_file)
+    @snapshot_id.setter
+    def snapshot_id(self, value: int) -> None:
+        self._data[0] = value
 
-    def _wrap_existing(
-        self,
-        new_snapshot_id: Optional[int],
-        new_sequence_number: Optional[int],
-        new_file_sequence_number: Optional[int],
-        new_file: DataFile,
-    ) -> ManifestEntry:
-        return self._wrap(ManifestEntryStatus.EXISTING, new_snapshot_id, new_sequence_number, new_file_sequence_number, new_file)
+    @property
+    def sequence_number(self) -> Optional[int]:
+        return self._data[2]
+
+    @sequence_number.setter
+    def sequence_number(self, value: int) -> None:
+        self._data[2] = value
+
+    @property
+    def file_sequence_number(self) -> Optional[int]:
+        return self._data[3]
+
+    @file_sequence_number.setter
+    def file_sequence_number(self, value: int) -> None:
+        self._data[3] = value
+
+    @property
+    def data_file(self) -> DataFile:
+        return self._data[4]
+
+    @data_file.setter
+    def data_file(self, value: DataFile) -> None:
+        self._data[4] = value
 
 
 PARTITION_FIELD_SUMMARY_TYPE = StructType(
@@ -455,14 +503,25 @@ PARTITION_FIELD_SUMMARY_TYPE = StructType(
 
 
 class PartitionFieldSummary(Record):
-    __slots__ = ("contains_null", "contains_nan", "lower_bound", "upper_bound")
-    contains_null: bool
-    contains_nan: Optional[bool]
-    lower_bound: Optional[bytes]
-    upper_bound: Optional[bytes]
+    @classmethod
+    def from_args(cls, **arguments: Any) -> PartitionFieldSummary:
+        return super()._bind(**arguments, struct=PARTITION_FIELD_SUMMARY_TYPE)
 
-    def __init__(self, *data: Any, **named_data: Any) -> None:
-        super().__init__(*data, **{"struct": PARTITION_FIELD_SUMMARY_TYPE, **named_data})
+    @property
+    def contains_null(self) -> bool:
+        return self._data[0]
+
+    @property
+    def contains_nan(self) -> Optional[bool]:
+        return self._data[1]
+
+    @property
+    def lower_bound(self) -> Optional[bytes]:
+        return self._data[2]
+
+    @property
+    def upper_bound(self) -> Optional[bytes]:
+        return self._data[3]
 
 
 class PartitionFieldStats:
@@ -481,10 +540,10 @@ class PartitionFieldStats:
 
     def to_summary(self) -> PartitionFieldSummary:
         return PartitionFieldSummary(
-            contains_null=self._contains_null,
-            contains_nan=self._contains_nan,
-            lower_bound=to_bytes(self._type, self._min) if self._min is not None else None,
-            upper_bound=to_bytes(self._type, self._max) if self._max is not None else None,
+            self._contains_null,
+            self._contains_nan,
+            to_bytes(self._type, self._min) if self._min is not None else None,
+            to_bytes(self._type, self._max) if self._max is not None else None,
         )
 
     def update(self, value: Any) -> None:
@@ -556,41 +615,77 @@ POSITIONAL_DELETE_SCHEMA = Schema(
 
 
 class ManifestFile(Record):
-    __slots__ = (
-        "manifest_path",
-        "manifest_length",
-        "partition_spec_id",
-        "content",
-        "sequence_number",
-        "min_sequence_number",
-        "added_snapshot_id",
-        "added_files_count",
-        "existing_files_count",
-        "deleted_files_count",
-        "added_rows_count",
-        "existing_rows_count",
-        "deleted_rows_count",
-        "partitions",
-        "key_metadata",
-    )
-    manifest_path: str
-    manifest_length: int
-    partition_spec_id: int
-    content: ManifestContent
-    sequence_number: int
-    min_sequence_number: int
-    added_snapshot_id: int
-    added_files_count: Optional[int]
-    existing_files_count: Optional[int]
-    deleted_files_count: Optional[int]
-    added_rows_count: Optional[int]
-    existing_rows_count: Optional[int]
-    deleted_rows_count: Optional[int]
-    partitions: Optional[List[PartitionFieldSummary]]
-    key_metadata: Optional[bytes]
+    @classmethod
+    def from_args(cls, _table_format_version: TableVersion = DEFAULT_READ_VERSION, **arguments: Any) -> ManifestFile:
+        return super()._bind(**arguments, struct=MANIFEST_LIST_FILE_SCHEMAS[_table_format_version])
 
-    def __init__(self, *data: Any, **named_data: Any) -> None:
-        super().__init__(*data, **{"struct": MANIFEST_LIST_FILE_STRUCTS[DEFAULT_READ_VERSION], **named_data})
+    @property
+    def manifest_path(self) -> str:
+        return self._data[0]
+
+    @property
+    def manifest_length(self) -> int:
+        return self._data[1]
+
+    @property
+    def partition_spec_id(self) -> int:
+        return self._data[2]
+
+    @property
+    def content(self) -> ManifestContent:
+        return self._data[3]
+
+    @property
+    def sequence_number(self) -> int:
+        return self._data[4]
+
+    @sequence_number.setter
+    def sequence_number(self, value: int) -> None:
+        self._data[4] = value
+
+    @property
+    def min_sequence_number(self) -> int:
+        return self._data[5]
+
+    @min_sequence_number.setter
+    def min_sequence_number(self, value: int) -> None:
+        self._data[5] = value
+
+    @property
+    def added_snapshot_id(self) -> Optional[int]:
+        return self._data[6]
+
+    @property
+    def added_files_count(self) -> Optional[int]:
+        return self._data[7]
+
+    @property
+    def existing_files_count(self) -> Optional[int]:
+        return self._data[8]
+
+    @property
+    def deleted_files_count(self) -> Optional[int]:
+        return self._data[9]
+
+    @property
+    def added_rows_count(self) -> Optional[int]:
+        return self._data[10]
+
+    @property
+    def existing_rows_count(self) -> Optional[int]:
+        return self._data[11]
+
+    @property
+    def deleted_rows_count(self) -> Optional[int]:
+        return self._data[12]
+
+    @property
+    def partitions(self) -> Optional[List[PartitionFieldSummary]]:
+        return self._data[13]
+
+    @property
+    def key_metadata(self) -> Optional[bytes]:
+        return self._data[14]
 
     def has_added_files(self) -> bool:
         return self.added_files_count is None or self.added_files_count > 0
@@ -720,7 +815,6 @@ class ManifestWriter(ABC):
         self._deleted_rows = 0
         self._min_sequence_number = None
         self._partitions = []
-        self._reused_entry_wrapper = ManifestEntry()
 
     def __enter__(self) -> ManifestWriter:
         """Open the writer."""
@@ -781,7 +875,7 @@ class ManifestWriter(ABC):
         # once the manifest file is generated, no more entries can be added
         self.closed = True
         min_sequence_number = self._min_sequence_number or UNASSIGNED_SEQ
-        return ManifestFile(
+        return ManifestFile.from_args(
             manifest_path=self._output_file.location,
             manifest_length=len(self._writer.output_file),
             partition_spec_id=self._spec.spec_id,
@@ -828,23 +922,39 @@ class ManifestWriter(ABC):
 
     def add(self, entry: ManifestEntry) -> ManifestWriter:
         if entry.sequence_number is not None and entry.sequence_number >= 0:
-            self.add_entry(self._reused_entry_wrapper._wrap_append(self._snapshot_id, entry.sequence_number, entry.data_file))
+            self.add_entry(
+                ManifestEntry.from_args(
+                    snapshot_id=self._snapshot_id, sequence_number=entry.sequence_number, data_file=entry.data_file
+                )
+            )
         else:
-            self.add_entry(self._reused_entry_wrapper._wrap_append(self._snapshot_id, None, entry.data_file))
+            self.add_entry(
+                ManifestEntry.from_args(
+                    status=ManifestEntryStatus.ADDED, snapshot_id=self._snapshot_id, data_file=entry.data_file
+                )
+            )
         return self
 
     def delete(self, entry: ManifestEntry) -> ManifestWriter:
         self.add_entry(
-            self._reused_entry_wrapper._wrap_delete(
-                self._snapshot_id, entry.sequence_number, entry.file_sequence_number, entry.data_file
+            ManifestEntry.from_args(
+                status=ManifestEntryStatus.DELETED,
+                snapshot_id=self._snapshot_id,
+                sequence_number=entry.sequence_number,
+                file_sequence_number=entry.file_sequence_number,
+                data_file=entry.data_file,
             )
         )
         return self
 
     def existing(self, entry: ManifestEntry) -> ManifestWriter:
         self.add_entry(
-            self._reused_entry_wrapper._wrap_existing(
-                entry.snapshot_id, entry.sequence_number, entry.file_sequence_number, entry.data_file
+            ManifestEntry.from_args(
+                status=ManifestEntryStatus.EXISTING,
+                snapshot_id=entry.snapshot_id,
+                sequence_number=entry.sequence_number,
+                file_sequence_number=entry.file_sequence_number,
+                data_file=entry.data_file,
             )
         )
         return self
@@ -957,7 +1067,11 @@ class ManifestListWriterV1(ManifestListWriter):
         super().__init__(
             format_version=1,
             output_file=output_file,
-            meta={"snapshot-id": str(snapshot_id), "parent-snapshot-id": str(parent_snapshot_id), "format-version": "1"},
+            meta={
+                "snapshot-id": str(snapshot_id),
+                "parent-snapshot-id": str(parent_snapshot_id) if parent_snapshot_id is not None else "null",
+                "format-version": "1",
+            },
         )
 
     def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
@@ -976,7 +1090,7 @@ class ManifestListWriterV2(ManifestListWriter):
             output_file=output_file,
             meta={
                 "snapshot-id": str(snapshot_id),
-                "parent-snapshot-id": str(parent_snapshot_id),
+                "parent-snapshot-id": str(parent_snapshot_id) if parent_snapshot_id is not None else "null",
                 "sequence-number": str(sequence_number),
                 "format-version": "2",
             },

@@ -15,14 +15,21 @@
 #  specific language governing permissions and limitations
 #  under the License.
 # pylint: disable=protected-access,redefined-outer-name
+import base64
 import copy
+import struct
+import threading
 import uuid
+from collections.abc import Generator
 from copy import deepcopy
+from typing import Optional
 from unittest.mock import MagicMock, call, patch
 
 import pytest
+import thrift.transport.TSocket
 from hive_metastore.ttypes import (
     AlreadyExistsException,
+    EnvironmentContext,
     FieldSchema,
     InvalidOperationException,
     LockResponse,
@@ -38,11 +45,15 @@ from hive_metastore.ttypes import Table as HiveTable
 
 from pyiceberg.catalog import PropertiesUpdateSummary
 from pyiceberg.catalog.hive import (
+    DO_NOT_UPDATE_STATS,
+    DO_NOT_UPDATE_STATS_DEFAULT,
+    HIVE_KERBEROS_AUTH,
     LOCK_CHECK_MAX_WAIT_TIME,
     LOCK_CHECK_MIN_WAIT_TIME,
     LOCK_CHECK_RETRIES,
     HiveCatalog,
     _construct_hive_storage_descriptor,
+    _HiveClient,
 )
 from pyiceberg.exceptions import (
     NamespaceAlreadyExistsError,
@@ -181,6 +192,59 @@ def hive_database(tmp_path_factory: pytest.TempPathFactory) -> HiveDatabase:
         connector_name=None,
         remote_dbname=None,
     )
+
+
+class SaslServer(threading.Thread):
+    def __init__(self, socket: thrift.transport.TSocket.TServerSocket, response: bytes) -> None:
+        super().__init__()
+        self.daemon = True
+        self._socket = socket
+        self._response = response
+        self._port = None
+        self._port_bound = threading.Event()
+
+    def run(self) -> None:
+        self._socket.listen()
+
+        try:
+            address = self._socket.handle.getsockname()
+            # AF_INET addresses are 2-tuples (host, port) and AF_INET6 are
+            # 4-tuples (host, port, ...), i.e. port is always at index 1.
+            _host, self._port, *_ = address
+        finally:
+            self._port_bound.set()
+
+        # Accept connections and respond to each connection with the same message.
+        # The responsibility for closing the connection is on the client
+        while True:
+            try:
+                client = self._socket.accept()
+                if client:
+                    client.write(self._response)
+                    client.flush()
+            except Exception:
+                pass
+
+    @property
+    def port(self) -> Optional[int]:
+        self._port_bound.wait()
+        return self._port
+
+    def close(self) -> None:
+        self._socket.close()
+
+
+@pytest.fixture(scope="session")
+def kerberized_hive_metastore_fake_url() -> Generator[str, None, None]:
+    server = SaslServer(
+        # Port 0 means pick any available port.
+        socket=thrift.transport.TSocket.TServerSocket(port=0),
+        # Always return a message with status 5 (COMPLETE).
+        response=struct.pack(">BI", 5, 0),
+    )
+    server.start()
+    yield f"thrift://localhost:{server.port}"
+    server.close()
 
 
 def test_no_uri_supplied() -> None:
@@ -699,7 +763,7 @@ def test_load_table(hive_table: HiveTable) -> None:
         last_sequence_number=34,
     )
 
-    assert table.identifier == (HIVE_CATALOG_NAME, "default", "new_tabl2e")
+    assert table.name() == ("default", "new_tabl2e")
     assert expected == table.metadata
 
 
@@ -709,7 +773,7 @@ def test_load_table_from_self_identifier(hive_table: HiveTable) -> None:
     catalog._client = MagicMock()
     catalog._client.__enter__().get_table.return_value = hive_table
     intermediate = catalog.load_table(("default", "new_tabl2e"))
-    table = catalog.load_table(intermediate.identifier)
+    table = catalog.load_table(intermediate.name())
 
     catalog._client.__enter__().get_table.assert_called_with(dbname="default", tbl_name="new_tabl2e")
 
@@ -800,7 +864,7 @@ def test_load_table_from_self_identifier(hive_table: HiveTable) -> None:
         last_sequence_number=34,
     )
 
-    assert table.identifier == (HIVE_CATALOG_NAME, "default", "new_tabl2e")
+    assert table.name() == ("default", "new_tabl2e")
     assert expected == table.metadata
 
 
@@ -813,17 +877,22 @@ def test_rename_table(hive_table: HiveTable) -> None:
 
     catalog._client = MagicMock()
     catalog._client.__enter__().get_table.side_effect = [hive_table, renamed_table]
-    catalog._client.__enter__().alter_table.return_value = None
+    catalog._client.__enter__().alter_table_with_environment_context.return_value = None
 
     from_identifier = ("default", "new_tabl2e")
     to_identifier = ("default", "new_tabl3e")
     table = catalog.rename_table(from_identifier, to_identifier)
 
-    assert table.identifier == ("hive",) + to_identifier
+    assert table.name() == to_identifier
 
     calls = [call(dbname="default", tbl_name="new_tabl2e"), call(dbname="default", tbl_name="new_tabl3e")]
     catalog._client.__enter__().get_table.assert_has_calls(calls)
-    catalog._client.__enter__().alter_table.assert_called_with(dbname="default", tbl_name="new_tabl2e", new_tbl=renamed_table)
+    catalog._client.__enter__().alter_table_with_environment_context.assert_called_with(
+        dbname="default",
+        tbl_name="new_tabl2e",
+        new_tbl=renamed_table,
+        environment_context=EnvironmentContext(properties={DO_NOT_UPDATE_STATS: DO_NOT_UPDATE_STATS_DEFAULT}),
+    )
 
 
 def test_rename_table_from_self_identifier(hive_table: HiveTable) -> None:
@@ -841,22 +910,27 @@ def test_rename_table_from_self_identifier(hive_table: HiveTable) -> None:
     renamed_table.tableName = "new_tabl3e"
 
     catalog._client.__enter__().get_table.side_effect = [hive_table, renamed_table]
-    catalog._client.__enter__().alter_table.return_value = None
+    catalog._client.__enter__().alter_table_with_environment_context.return_value = None
     to_identifier = ("default", "new_tabl3e")
-    table = catalog.rename_table(from_table.identifier, to_identifier)
+    table = catalog.rename_table(from_table.name(), to_identifier)
 
-    assert table.identifier == ("hive",) + to_identifier
+    assert table.name() == to_identifier
 
     calls = [call(dbname="default", tbl_name="new_tabl2e"), call(dbname="default", tbl_name="new_tabl3e")]
     catalog._client.__enter__().get_table.assert_has_calls(calls)
-    catalog._client.__enter__().alter_table.assert_called_with(dbname="default", tbl_name="new_tabl2e", new_tbl=renamed_table)
+    catalog._client.__enter__().alter_table_with_environment_context.assert_called_with(
+        dbname="default",
+        tbl_name="new_tabl2e",
+        new_tbl=renamed_table,
+        environment_context=EnvironmentContext(properties={DO_NOT_UPDATE_STATS: DO_NOT_UPDATE_STATS_DEFAULT}),
+    )
 
 
 def test_rename_table_from_does_not_exists() -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
     catalog._client = MagicMock()
-    catalog._client.__enter__().alter_table.side_effect = NoSuchObjectException(
+    catalog._client.__enter__().alter_table_with_environment_context.side_effect = NoSuchObjectException(
         message="hive.default.does_not_exists table not found"
     )
 
@@ -870,7 +944,7 @@ def test_rename_table_to_namespace_does_not_exists() -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
     catalog._client = MagicMock()
-    catalog._client.__enter__().alter_table.side_effect = InvalidOperationException(
+    catalog._client.__enter__().alter_table_with_environment_context.side_effect = InvalidOperationException(
         message="Unable to change partition or table. Database default does not exist Check metastore logs for detailed stack.does_not_exists"
     )
 
@@ -919,16 +993,20 @@ def test_list_tables(hive_table: HiveTable) -> None:
     tbl3.tableName = "table3"
     tbl3.dbName = "database"
     tbl3.parameters["table_type"] = "non_iceberg"
+    tbl4 = deepcopy(hive_table)
+    tbl4.tableName = "table4"
+    tbl4.dbName = "database"
+    tbl4.parameters.pop("table_type")
 
     catalog._client = MagicMock()
-    catalog._client.__enter__().get_all_tables.return_value = ["table1", "table2", "table3"]
-    catalog._client.__enter__().get_table_objects_by_name.return_value = [tbl1, tbl2, tbl3]
+    catalog._client.__enter__().get_all_tables.return_value = ["table1", "table2", "table3", "table4"]
+    catalog._client.__enter__().get_table_objects_by_name.return_value = [tbl1, tbl2, tbl3, tbl4]
 
     got_tables = catalog.list_tables("database")
     assert got_tables == [("database", "table1"), ("database", "table2")]
     catalog._client.__enter__().get_all_tables.assert_called_with(db_name="database")
     catalog._client.__enter__().get_table_objects_by_name.assert_called_with(
-        dbname="database", tbl_names=["table1", "table2", "table3"]
+        dbname="database", tbl_names=["table1", "table2", "table3", "table4"]
     )
 
 
@@ -962,7 +1040,7 @@ def test_drop_table_from_self_identifier(hive_table: HiveTable) -> None:
     table = catalog.load_table(("default", "new_tabl2e"))
 
     catalog._client.__enter__().get_all_databases.return_value = ["namespace1", "namespace2"]
-    catalog.drop_table(table.identifier)
+    catalog.drop_table(table.name())
 
     catalog._client.__enter__().drop_table.assert_called_with(dbname="default", name="new_tabl2e", deleteData=False)
 
@@ -1210,7 +1288,7 @@ def test_create_hive_client_success() -> None:
 
     with patch("pyiceberg.catalog.hive._HiveClient", return_value=MagicMock()) as mock_hive_client:
         client = HiveCatalog._create_hive_client(properties)
-        mock_hive_client.assert_called_once_with("thrift://localhost:10000", "user")
+        mock_hive_client.assert_called_once_with("thrift://localhost:10000", "user", False)
         assert client is not None
 
 
@@ -1222,7 +1300,9 @@ def test_create_hive_client_multiple_uris() -> None:
 
         client = HiveCatalog._create_hive_client(properties)
         assert mock_hive_client.call_count == 2
-        mock_hive_client.assert_has_calls([call("thrift://localhost:10000", "user"), call("thrift://localhost:10001", "user")])
+        mock_hive_client.assert_has_calls(
+            [call("thrift://localhost:10000", "user", False), call("thrift://localhost:10001", "user", False)]
+        )
         assert client is not None
 
 
@@ -1233,3 +1313,45 @@ def test_create_hive_client_failure() -> None:
         with pytest.raises(Exception, match="Connection failed"):
             HiveCatalog._create_hive_client(properties)
         assert mock_hive_client.call_count == 2
+
+
+def test_create_hive_client_with_kerberos(
+    kerberized_hive_metastore_fake_url: str,
+) -> None:
+    properties = {
+        "uri": kerberized_hive_metastore_fake_url,
+        "ugi": "user",
+        HIVE_KERBEROS_AUTH: "true",
+    }
+    client = HiveCatalog._create_hive_client(properties)
+    assert client is not None
+
+
+def test_create_hive_client_with_kerberos_using_context_manager(
+    kerberized_hive_metastore_fake_url: str,
+) -> None:
+    client = _HiveClient(
+        uri=kerberized_hive_metastore_fake_url,
+        kerberos_auth=True,
+    )
+    with (
+        patch(
+            "puresasl.mechanisms.kerberos.authGSSClientStep",
+            return_value=None,
+        ),
+        patch(
+            "puresasl.mechanisms.kerberos.authGSSClientResponse",
+            return_value=base64.b64encode(b"Some Response"),
+        ),
+        patch(
+            "puresasl.mechanisms.GSSAPIMechanism.complete",
+            return_value=True,
+        ),
+    ):
+        with client as open_client:
+            assert open_client._iprot.trans.isOpen()
+
+        # Use the context manager a second time to see if
+        # closing and re-opening work as expected.
+        with client as open_client:
+            assert open_client._iprot.trans.isOpen()

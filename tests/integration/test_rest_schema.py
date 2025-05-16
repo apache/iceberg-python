@@ -15,6 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
+from datetime import date, datetime, time, timezone
+from decimal import Decimal
+from typing import Any
+from uuid import UUID
 
 import pytest
 
@@ -27,6 +31,7 @@ from pyiceberg.table.name_mapping import MappedField, NameMapping, create_mappin
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.table.update.schema import UpdateSchema
 from pyiceberg.transforms import IdentityTransform
+from pyiceberg.typedef import EMPTY_DICT, Properties
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -69,7 +74,7 @@ def simple_table(catalog: Catalog, table_schema_simple: Schema) -> Table:
     return _create_table_with_schema(catalog, table_schema_simple)
 
 
-def _create_table_with_schema(catalog: Catalog, schema: Schema) -> Table:
+def _create_table_with_schema(catalog: Catalog, schema: Schema, properties: Properties = EMPTY_DICT) -> Table:
     tbl_name = "default.test_schema_evolution"
     try:
         catalog.drop_table(tbl_name)
@@ -78,7 +83,7 @@ def _create_table_with_schema(catalog: Catalog, schema: Schema) -> Table:
     return catalog.create_table(
         identifier=tbl_name,
         schema=schema,
-        properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
+        properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json(), **properties},
     )
 
 
@@ -154,7 +159,7 @@ def test_schema_evolution_via_transaction(catalog: Catalog) -> None:
         NestedField(field_id=4, name="col_integer", field_type=IntegerType(), required=False),
     )
 
-    with pytest.raises(CommitFailedException) as exc_info:
+    with pytest.raises(CommitFailedException, match="Requirement failed: current schema id has changed: expected 2, found 3"):
         with tbl.transaction() as tx:
             # Start a new update
             schema_update = tx.update_schema()
@@ -164,8 +169,6 @@ def test_schema_evolution_via_transaction(catalog: Catalog) -> None:
 
             # stage another update in the transaction
             schema_update.add_column("col_double", DoubleType()).commit()
-
-    assert "Requirement failed: current schema changed: expected id 2 != 3" in str(exc_info.value)
 
     assert tbl.schema() == Schema(
         NestedField(field_id=1, name="col_uuid", field_type=UUIDType(), required=False),
@@ -685,11 +688,13 @@ def test_rename_simple(simple_table: Table) -> None:
     )
 
     # Check that the name mapping gets updated
-    assert simple_table.name_mapping() == NameMapping([
-        MappedField(field_id=1, names=["foo", "vo"]),
-        MappedField(field_id=2, names=["bar", "var"]),
-        MappedField(field_id=3, names=["baz"]),
-    ])
+    assert simple_table.name_mapping() == NameMapping(
+        [
+            MappedField(field_id=1, names=["foo", "vo"]),
+            MappedField(field_id=2, names=["bar", "var"]),
+            MappedField(field_id=3, names=["baz"]),
+        ]
+    )
 
 
 @pytest.mark.integration
@@ -719,9 +724,11 @@ def test_rename_simple_nested(catalog: Catalog) -> None:
     )
 
     # Check that the name mapping gets updated
-    assert tbl.name_mapping() == NameMapping([
-        MappedField(field_id=1, names=["foo"], fields=[MappedField(field_id=2, names=["bar", "vo"])]),
-    ])
+    assert tbl.name_mapping() == NameMapping(
+        [
+            MappedField(field_id=1, names=["foo"], fields=[MappedField(field_id=2, names=["bar", "vo"])]),
+        ]
+    )
 
 
 @pytest.mark.integration
@@ -1072,9 +1079,8 @@ def test_add_required_column(catalog: Catalog) -> None:
     schema_ = Schema(NestedField(field_id=1, name="a", field_type=BooleanType(), required=False))
     table = _create_table_with_schema(catalog, schema_)
     update = table.update_schema()
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises(ValueError, match="Incompatible change: cannot add required column: data"):
         update.add_column(path="data", field_type=IntegerType(), required=True)
-    assert "Incompatible change: cannot add required column: data" in str(exc_info.value)
 
     new_schema = (
         UpdateSchema(transaction=table.transaction(), allow_incompatible_changes=True)
@@ -1088,15 +1094,101 @@ def test_add_required_column(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize(
+    "iceberg_type, initial_default, write_default",
+    [
+        (BooleanType(), True, False),
+        (IntegerType(), 123, 456),
+        (LongType(), 123, 456),
+        (FloatType(), 19.25, 22.27),
+        (DoubleType(), 19.25, 22.27),
+        (DecimalType(10, 2), Decimal("19.25"), Decimal("22.27")),
+        (DecimalType(10, 2), Decimal("19.25"), Decimal("22.27")),
+        (StringType(), "abc", "def"),
+        (DateType(), date(1990, 3, 1), date(1991, 3, 1)),
+        (TimeType(), time(19, 25, 22), time(22, 25, 22)),
+        (TimestampType(), datetime(1990, 5, 1, 22, 1, 1), datetime(2000, 5, 1, 22, 1, 1)),
+        (
+            TimestamptzType(),
+            datetime(1990, 5, 1, 22, 1, 1, tzinfo=timezone.utc),
+            datetime(2000, 5, 1, 22, 1, 1, tzinfo=timezone.utc),
+        ),
+        (BinaryType(), b"123", b"456"),
+        (FixedType(4), b"1234", b"5678"),
+        (UUIDType(), UUID(int=0x12345678123456781234567812345678), UUID(int=0x32145678123456781234567812345678)),
+    ],
+)
+def test_initial_default_all_columns(
+    catalog: Catalog, iceberg_type: PrimitiveType, initial_default: Any, write_default: Any
+) -> None:
+    # Round trips all the types through the rest catalog to check the serialization
+    table = _create_table_with_schema(catalog, Schema(), properties={TableProperties.FORMAT_VERSION: 3})
+
+    tx = table.update_schema()
+    tx.add_column(path="data", field_type=iceberg_type, required=True, default_value=initial_default)
+    tx.add_column(path="nested", field_type=StructType(), required=False)
+    tx.commit()
+
+    tx = table.update_schema()
+    tx.add_column(path=("nested", "data"), field_type=iceberg_type, required=True, default_value=initial_default)
+    tx.commit()
+
+    for field_id in [1, 3]:
+        field = table.schema().find_field(field_id)
+        assert field.initial_default == initial_default
+        assert field.write_default == initial_default
+
+    with table.update_schema() as tx:
+        tx.set_default_value("data", write_default)
+        tx.set_default_value(("nested", "data"), write_default)
+
+    for field_id in [1, 3]:
+        field = table.schema().find_field(field_id)
+        assert field.initial_default == initial_default
+        assert field.write_default == write_default
+
+
+@pytest.mark.integration
+def test_add_required_column_initial_default(catalog: Catalog) -> None:
+    schema_ = Schema(NestedField(field_id=1, name="a", field_type=BooleanType(), required=False))
+    table = _create_table_with_schema(catalog, schema_, properties={TableProperties.FORMAT_VERSION: 3})
+
+    table.update_schema().add_column(path="data", field_type=IntegerType(), required=True, default_value=22).commit()
+
+    assert table.schema() == Schema(
+        NestedField(field_id=1, name="a", field_type=BooleanType(), required=False),
+        NestedField(field_id=2, name="data", field_type=IntegerType(), required=True, initial_default=22, write_default=22),
+        schema_id=1,
+    )
+
+    # Update
+    table.update_schema().update_column(path="data", field_type=LongType()).rename_column("a", "bool").commit()
+
+    assert table.schema() == Schema(
+        NestedField(field_id=1, name="bool", field_type=BooleanType(), required=False),
+        NestedField(field_id=2, name="data", field_type=LongType(), required=True, initial_default=22, write_default=22),
+        schema_id=1,
+    )
+
+
+@pytest.mark.integration
+def test_add_required_column_initial_default_invalid_value(catalog: Catalog) -> None:
+    schema_ = Schema(NestedField(field_id=1, name="a", field_type=BooleanType(), required=False))
+    table = _create_table_with_schema(catalog, schema_)
+    update = table.update_schema()
+    with pytest.raises(ValueError, match="Invalid default value: Could not convert abc into a int"):
+        update.add_column(path="data", field_type=IntegerType(), required=True, default_value="abc")
+
+
+@pytest.mark.integration
 def test_add_required_column_case_insensitive(catalog: Catalog) -> None:
     schema_ = Schema(NestedField(field_id=1, name="id", field_type=BooleanType(), required=False))
     table = _create_table_with_schema(catalog, schema_)
 
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises(ValueError, match="already exists: ID"):
         with table.transaction() as txn:
             with txn.update_schema(allow_incompatible_changes=True) as update:
                 update.case_sensitive(False).add_column(path="ID", field_type=IntegerType(), required=True)
-    assert "already exists: ID" in str(exc_info.value)
 
     new_schema = (
         UpdateSchema(transaction=table.transaction(), allow_incompatible_changes=True)

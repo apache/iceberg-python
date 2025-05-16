@@ -19,15 +19,22 @@
 help:  ## Display this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
-install-poetry:  ## Install poetry if the user has not done that yet.
-	 @if ! command -v poetry &> /dev/null; then \
-         echo "Poetry could not be found. Installing..."; \
-         pip install --user poetry==1.8.3; \
-     else \
-         echo "Poetry is already installed."; \
-     fi
+POETRY_VERSION = 2.1.1
+install-poetry:  ## Ensure Poetry is installed and the correct version is being used.
+	@if ! command -v poetry &> /dev/null; then \
+		echo "Poetry could not be found. Installing..."; \
+		pip install --user poetry==$(POETRY_VERSION); \
+	else \
+		INSTALLED_VERSION=$$(pip show poetry | grep Version | awk '{print $$2}'); \
+		if [ "$$INSTALLED_VERSION" != "$(POETRY_VERSION)" ]; then \
+			echo "Poetry version $$INSTALLED_VERSION does not match required version $(POETRY_VERSION). Updating..."; \
+			pip install --user --upgrade poetry==$(POETRY_VERSION); \
+		else \
+			echo "Poetry version $$INSTALLED_VERSION is already installed."; \
+		fi \
+	fi
 
-install-dependencies: ## Install dependencies including dev and all extras
+install-dependencies: ## Install dependencies including dev, docs, and all extras
 	poetry install --all-extras
 
 install: | install-poetry install-dependencies
@@ -45,13 +52,17 @@ test-s3: # Run tests marked with s3, can add arguments with PYTEST_ARGS="-vv"
 	sh ./dev/run-minio.sh
 	poetry run pytest tests/ -m s3 ${PYTEST_ARGS}
 
-test-integration: ## Run all integration tests, can add arguments with PYTEST_ARGS="-vv"
+test-integration: | test-integration-setup test-integration-exec ## Run all integration tests, can add arguments with PYTEST_ARGS="-vv"
+
+test-integration-setup: # Prepare the environment for integration
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml up -d
 	sleep 10
 	docker compose -f dev/docker-compose-integration.yml cp ./dev/provision.py spark-iceberg:/opt/spark/provision.py
 	docker compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
+
+test-integration-exec:  # Execute integration tests, can add arguments with PYTEST_ARGS="-vv"
 	poetry run pytest tests/ -v -m integration ${PYTEST_ARGS}
 
 test-integration-rebuild:
@@ -97,3 +108,12 @@ clean: ## Clean up the project Python working environment
 	@find . -name "*.pyd" -exec echo Deleting {} \; -delete
 	@find . -name "*.pyo" -exec echo Deleting {} \; -delete
 	@echo "Cleanup complete"
+
+docs-install:
+	poetry install --with docs
+
+docs-serve:
+	poetry run mkdocs serve -f mkdocs/mkdocs.yml
+
+docs-build:
+	poetry run mkdocs build -f mkdocs/mkdocs.yml --strict

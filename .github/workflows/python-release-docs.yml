@@ -17,30 +17,40 @@
 # under the License.
 #
 
-name: "Python Integration"
-
+name: "Release Docs"
 on:
-  push:
-    branches:
-    - 'main'
-  pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  integration-test:
+  docs:
     runs-on: ubuntu-22.04
 
     steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 2
-    - name: Install
-      run: make install
-    - name: Run integration tests
-      run: make test-integration
-    - name: Show debug logs
-      if: ${{ failure() }}
-      run: docker compose -f dev/docker-compose.yml logs
+      - uses: actions/checkout@v4
+      - name: Install poetry
+        run: make install-poetry
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install docs
+        run: make docs-install
+      - name: Build docs
+        run: make docs-build
+      - name: Copy
+        working-directory: ./mkdocs
+        run: mv ./site /tmp/site
+      - name: Push changes to gh-pages branch
+        run: |
+          git checkout --orphan gh-pages-tmp
+          git rm --quiet -rf .
+          cp -r /tmp/site/* .
+          git config --global user.name 'GitHub Actions'
+          git config --global user.email 'actions@github.com'
+          echo "py.iceberg.apache.org" > CNAME
+          git add --all
+          git commit -m 'Publish Python docs'
+          git push -f origin gh-pages-tmp:gh-pages || true

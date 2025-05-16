@@ -16,7 +16,7 @@
 # under the License.
 # pylint:disable=redefined-outer-name
 from datetime import datetime
-from typing import List
+from typing import Generator, List
 
 import pyarrow as pa
 import pytest
@@ -28,14 +28,33 @@ from pyiceberg.expressions import AlwaysTrue, EqualTo
 from pyiceberg.manifest import ManifestEntryStatus
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table import Table
 from pyiceberg.table.snapshots import Operation, Summary
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.types import FloatType, IntegerType, LongType, NestedField, TimestampType
+from pyiceberg.types import FloatType, IntegerType, LongType, NestedField, StringType, TimestampType
 
 
 def run_spark_commands(spark: SparkSession, sqls: List[str]) -> None:
     for sql in sqls:
         spark.sql(sql)
+
+
+@pytest.fixture()
+def test_table(session_catalog: RestCatalog) -> Generator[Table, None, None]:
+    identifier = "default.__test_table"
+    arrow_table = pa.Table.from_arrays([pa.array([1, 2, 3, 4, 5]), pa.array(["a", "b", "c", "d", "e"])], names=["idx", "value"])
+    test_table = session_catalog.create_table(
+        identifier,
+        schema=Schema(
+            NestedField(1, "idx", LongType()),
+            NestedField(2, "value", StringType()),
+        ),
+    )
+    test_table.append(arrow_table)
+
+    yield test_table
+
+    session_catalog.drop_table(identifier)
 
 
 @pytest.mark.integration
@@ -218,9 +237,7 @@ def test_delete_partitioned_table_positional_deletes(spark: SparkSession, sessio
     # Will rewrite a data file without the positional delete
     tbl.delete(EqualTo("number", 40))
 
-    # One positional delete has been added, but an OVERWRITE status is set
-    # https://github.com/apache/iceberg/issues/10122
-    assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()] == ["append", "overwrite", "overwrite"]
+    assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()] == ["append", "delete", "overwrite"]
     assert tbl.scan().to_arrow().to_pydict() == {"number_partitioned": [10], "number": [20]}
 
 
@@ -391,8 +408,6 @@ def test_overwrite_partitioned_table(spark: SparkSession, session_catalog: RestC
     # Will rewrite a data file without the positional delete
     tbl.overwrite(arrow_tbl, "number_partitioned == 10")
 
-    # One positional delete has been added, but an OVERWRITE status is set
-    # https://github.com/apache/iceberg/issues/10122
     assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()] == ["append", "delete", "append"]
     assert tbl.scan().to_arrow().to_pydict() == {"number_partitioned": [10, 10, 20], "number": [4, 5, 3]}
 
@@ -442,33 +457,29 @@ def test_partitioned_table_positional_deletes_sequence_number(spark: SparkSessio
     # Will rewrite a data file without a positional delete
     tbl.delete(EqualTo("number", 201))
 
-    # One positional delete has been added, but an OVERWRITE status is set
-    # https://github.com/apache/iceberg/issues/10122
     snapshots = tbl.snapshots()
     assert len(snapshots) == 3
 
     # Snapshots produced by Spark
-    assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()[0:2]] == ["append", "overwrite"]
+    assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()[0:2]] == ["append", "delete"]
 
     # Will rewrite one parquet file
     assert snapshots[2].summary == Summary(
         Operation.OVERWRITE,
         **{
-            "added-files-size": snapshots[2].summary["total-files-size"],
             "added-data-files": "1",
+            "added-files-size": snapshots[2].summary["added-files-size"],
             "added-records": "2",
             "changed-partition-count": "1",
-            "total-files-size": snapshots[2].summary["total-files-size"],
-            "total-delete-files": "0",
-            "total-data-files": "1",
-            "total-position-deletes": "0",
-            "total-records": "2",
-            "total-equality-deletes": "0",
-            "deleted-data-files": "2",
-            "removed-delete-files": "1",
-            "deleted-records": "5",
+            "deleted-data-files": "1",
+            "deleted-records": "3",
             "removed-files-size": snapshots[2].summary["removed-files-size"],
-            "removed-position-deletes": "1",
+            "total-data-files": "2",
+            "total-delete-files": "1",
+            "total-equality-deletes": "0",
+            "total-files-size": snapshots[2].summary["total-files-size"],
+            "total-position-deletes": "1",
+            "total-records": "4",
         },
     )
 
@@ -733,13 +744,15 @@ def test_delete_after_partition_evolution_from_partitioned(session_catalog: Rest
     arrow_table = pa.Table.from_arrays(
         [
             pa.array([2, 3, 4, 5, 6]),
-            pa.array([
-                datetime(2021, 5, 19),
-                datetime(2022, 7, 25),
-                datetime(2023, 3, 22),
-                datetime(2024, 7, 17),
-                datetime(2025, 2, 22),
-            ]),
+            pa.array(
+                [
+                    datetime(2021, 5, 19),
+                    datetime(2022, 7, 25),
+                    datetime(2023, 3, 22),
+                    datetime(2024, 7, 17),
+                    datetime(2025, 2, 22),
+                ]
+            ),
         ],
         names=["idx", "ts"],
     )
@@ -770,3 +783,114 @@ def test_delete_after_partition_evolution_from_partitioned(session_catalog: Rest
 
     # Expect 8 records: 10 records - 2
     assert len(tbl.scan().to_arrow()) == 8
+
+
+@pytest.mark.integration
+def test_delete_with_filter_case_sensitive_by_default(test_table: Table) -> None:
+    record_to_delete = {"idx": 2, "value": "b"}
+    assert record_to_delete in test_table.scan().to_arrow().to_pylist()
+
+    with pytest.raises(ValueError) as e:
+        test_table.delete(f"Idx == {record_to_delete['idx']}")
+    assert "Could not find field with name Idx" in str(e.value)
+    assert record_to_delete in test_table.scan().to_arrow().to_pylist()
+
+    test_table.delete(f"idx == {record_to_delete['idx']}")
+    assert record_to_delete not in test_table.scan().to_arrow().to_pylist()
+
+
+@pytest.mark.integration
+def test_delete_with_filter_case_sensitive(test_table: Table) -> None:
+    record_to_delete = {"idx": 2, "value": "b"}
+    assert record_to_delete in test_table.scan().to_arrow().to_pylist()
+
+    with pytest.raises(ValueError) as e:
+        test_table.delete(f"Idx == {record_to_delete['idx']}", case_sensitive=True)
+    assert "Could not find field with name Idx" in str(e.value)
+    assert record_to_delete in test_table.scan().to_arrow().to_pylist()
+
+    test_table.delete(f"idx == {record_to_delete['idx']}", case_sensitive=True)
+    assert record_to_delete not in test_table.scan().to_arrow().to_pylist()
+
+
+@pytest.mark.integration
+def test_delete_with_filter_case_insensitive(test_table: Table) -> None:
+    record_to_delete_1 = {"idx": 2, "value": "b"}
+    record_to_delete_2 = {"idx": 3, "value": "c"}
+    assert record_to_delete_1 in test_table.scan().to_arrow().to_pylist()
+    assert record_to_delete_2 in test_table.scan().to_arrow().to_pylist()
+
+    test_table.delete(f"Idx == {record_to_delete_1['idx']}", case_sensitive=False)
+    assert record_to_delete_1 not in test_table.scan().to_arrow().to_pylist()
+
+    test_table.delete(f"idx == {record_to_delete_2['idx']}", case_sensitive=False)
+    assert record_to_delete_2 not in test_table.scan().to_arrow().to_pylist()
+
+
+@pytest.mark.integration
+def test_overwrite_with_filter_case_sensitive_by_default(test_table: Table) -> None:
+    record_to_overwrite = {"idx": 2, "value": "b"}
+    assert record_to_overwrite in test_table.scan().to_arrow().to_pylist()
+
+    new_record_to_insert = {"idx": 10, "value": "x"}
+    new_table = pa.Table.from_arrays(
+        [
+            pa.array([new_record_to_insert["idx"]]),
+            pa.array([new_record_to_insert["value"]]),
+        ],
+        names=["idx", "value"],
+    )
+
+    with pytest.raises(ValueError) as e:
+        test_table.overwrite(df=new_table, overwrite_filter=f"Idx == {record_to_overwrite['idx']}")
+    assert "Could not find field with name Idx" in str(e.value)
+    assert record_to_overwrite in test_table.scan().to_arrow().to_pylist()
+    assert new_record_to_insert not in test_table.scan().to_arrow().to_pylist()
+
+    test_table.overwrite(df=new_table, overwrite_filter=f"idx == {record_to_overwrite['idx']}")
+    assert record_to_overwrite not in test_table.scan().to_arrow().to_pylist()
+    assert new_record_to_insert in test_table.scan().to_arrow().to_pylist()
+
+
+@pytest.mark.integration
+def test_overwrite_with_filter_case_sensitive(test_table: Table) -> None:
+    record_to_overwrite = {"idx": 2, "value": "b"}
+    assert record_to_overwrite in test_table.scan().to_arrow().to_pylist()
+
+    new_record_to_insert = {"idx": 10, "value": "x"}
+    new_table = pa.Table.from_arrays(
+        [
+            pa.array([new_record_to_insert["idx"]]),
+            pa.array([new_record_to_insert["value"]]),
+        ],
+        names=["idx", "value"],
+    )
+
+    with pytest.raises(ValueError) as e:
+        test_table.overwrite(df=new_table, overwrite_filter=f"Idx == {record_to_overwrite['idx']}", case_sensitive=True)
+    assert "Could not find field with name Idx" in str(e.value)
+    assert record_to_overwrite in test_table.scan().to_arrow().to_pylist()
+    assert new_record_to_insert not in test_table.scan().to_arrow().to_pylist()
+
+    test_table.overwrite(df=new_table, overwrite_filter=f"idx == {record_to_overwrite['idx']}", case_sensitive=True)
+    assert record_to_overwrite not in test_table.scan().to_arrow().to_pylist()
+    assert new_record_to_insert in test_table.scan().to_arrow().to_pylist()
+
+
+@pytest.mark.integration
+def test_overwrite_with_filter_case_insensitive(test_table: Table) -> None:
+    record_to_overwrite = {"idx": 2, "value": "b"}
+    assert record_to_overwrite in test_table.scan().to_arrow().to_pylist()
+
+    new_record_to_insert = {"idx": 10, "value": "x"}
+    new_table = pa.Table.from_arrays(
+        [
+            pa.array([new_record_to_insert["idx"]]),
+            pa.array([new_record_to_insert["value"]]),
+        ],
+        names=["idx", "value"],
+    )
+
+    test_table.overwrite(df=new_table, overwrite_filter=f"Idx == {record_to_overwrite['idx']}", case_sensitive=False)
+    assert record_to_overwrite not in test_table.scan().to_arrow().to_pylist()
+    assert new_record_to_insert in test_table.scan().to_arrow().to_pylist()

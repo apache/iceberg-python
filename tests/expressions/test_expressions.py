@@ -64,8 +64,6 @@ from pyiceberg.expressions.visitors import _from_byte_buffer
 from pyiceberg.schema import Accessor, Schema
 from pyiceberg.typedef import Record
 from pyiceberg.types import (
-    BinaryType,
-    BooleanType,
     DecimalType,
     DoubleType,
     FloatType,
@@ -75,7 +73,6 @@ from pyiceberg.types import (
     NestedField,
     StringType,
     StructType,
-    UUIDType,
 )
 from pyiceberg.utils.singleton import Singleton
 
@@ -166,6 +163,23 @@ def test_notnull_bind() -> None:
 def test_notnull_bind_required() -> None:
     schema = Schema(NestedField(2, "a", IntegerType(), required=True), schema_id=1)
     assert NotNull(Reference("a")).bind(schema) == AlwaysTrue()
+
+
+def test_notnull_bind_top_struct() -> None:
+    schema = Schema(
+        NestedField(
+            3,
+            "struct_col",
+            required=False,
+            field_type=StructType(
+                NestedField(1, "id", IntegerType(), required=True),
+                NestedField(2, "cost", DecimalType(38, 18), required=False),
+            ),
+        ),
+        schema_id=1,
+    )
+    bound = BoundNotNull(BoundReference(schema.find_field(3), schema.accessor_for_field(3)))
+    assert NotNull(Reference("struct_col")).bind(schema) == bound
 
 
 def test_isnan_inverse() -> None:
@@ -574,11 +588,11 @@ def test_negate(lhs: BooleanExpression, rhs: BooleanExpression) -> None:
     [
         (
             And(ExpressionA(), ExpressionB(), ExpressionA()),
-            And(And(ExpressionA(), ExpressionB()), ExpressionA()),
+            And(ExpressionA(), And(ExpressionB(), ExpressionA())),
         ),
         (
             Or(ExpressionA(), ExpressionB(), ExpressionA()),
-            Or(Or(ExpressionA(), ExpressionB()), ExpressionA()),
+            Or(ExpressionA(), Or(ExpressionB(), ExpressionA())),
         ),
         (Not(Not(ExpressionA())), ExpressionA()),
     ],
@@ -613,22 +627,7 @@ def test_invert_always() -> None:
 def test_accessor_base_class() -> None:
     """Test retrieving a value at a position of a container using an accessor"""
 
-    struct = Record(
-        struct=StructType(
-            NestedField(1, "a", StringType()),
-            NestedField(2, "b", StringType()),
-            NestedField(3, "c", StringType()),
-            NestedField(4, "d", IntegerType()),
-            NestedField(5, "e", IntegerType()),
-            NestedField(6, "f", IntegerType()),
-            NestedField(7, "g", FloatType()),
-            NestedField(8, "h", DecimalType(8, 4)),
-            NestedField(9, "i", UUIDType()),
-            NestedField(10, "j", BooleanType()),
-            NestedField(11, "k", BooleanType()),
-            NestedField(12, "l", BinaryType()),
-        )
-    )
+    struct = Record(*[None] * 12)
 
     uuid_value = uuid.uuid4()
 
@@ -698,20 +697,34 @@ def test_and() -> None:
     null = IsNull(Reference("a"))
     nan = IsNaN(Reference("b"))
     and_ = And(null, nan)
+
+    # Some syntactic sugar
+    assert and_ == null & nan
+
     assert str(and_) == f"And(left={str(null)}, right={str(nan)})"
     assert repr(and_) == f"And(left={repr(null)}, right={repr(nan)})"
     assert and_ == eval(repr(and_))
     assert and_ == pickle.loads(pickle.dumps(and_))
+
+    with pytest.raises(ValueError, match="Expected BooleanExpression, got: abc"):
+        null & "abc"  # type: ignore
 
 
 def test_or() -> None:
     null = IsNull(Reference("a"))
     nan = IsNaN(Reference("b"))
     or_ = Or(null, nan)
+
+    # Some syntactic sugar
+    assert or_ == null | nan
+
     assert str(or_) == f"Or(left={str(null)}, right={str(nan)})"
     assert repr(or_) == f"Or(left={repr(null)}, right={repr(nan)})"
     assert or_ == eval(repr(or_))
     assert or_ == pickle.loads(pickle.dumps(or_))
+
+    with pytest.raises(ValueError, match="Expected BooleanExpression, got: abc"):
+        null | "abc"  # type: ignore
 
 
 def test_not() -> None:
@@ -954,11 +967,7 @@ def test_less_than_or_equal() -> None:
 
 def test_bound_reference_eval(table_schema_simple: Schema) -> None:
     """Test creating a BoundReference and evaluating it on a StructProtocol"""
-    struct = Record(struct=table_schema_simple.as_struct())
-
-    struct[0] = "foovalue"
-    struct[1] = 123
-    struct[2] = True
+    struct = Record("foovalue", 123, True)
 
     position1_accessor = Accessor(position=0)
     position2_accessor = Accessor(position=1)
@@ -1158,6 +1167,34 @@ def test_eq_bound_expression(bound_reference_str: BoundReference[str]) -> None:
     assert BoundEqualTo(term=bound_reference_str, literal=literal("a")) == BoundEqualTo(
         term=bound_reference_str, literal=literal("a")
     )
+
+
+def test_nested_bind() -> None:
+    schema = Schema(NestedField(1, "foo", StructType(NestedField(2, "bar", StringType()))), schema_id=1)
+    bound = BoundIsNull(BoundReference(schema.find_field(2), schema.accessor_for_field(2)))
+    assert IsNull(Reference("foo.bar")).bind(schema) == bound
+
+
+def test_bind_dot_name() -> None:
+    schema = Schema(NestedField(1, "foo.bar", StringType()), schema_id=1)
+    bound = BoundIsNull(BoundReference(schema.find_field(1), schema.accessor_for_field(1)))
+    assert IsNull(Reference("foo.bar")).bind(schema) == bound
+
+
+def test_nested_bind_with_dot_name() -> None:
+    schema = Schema(NestedField(1, "foo.bar", StructType(NestedField(2, "baz", StringType()))), schema_id=1)
+    bound = BoundIsNull(BoundReference(schema.find_field(2), schema.accessor_for_field(2)))
+    assert IsNull(Reference("foo.bar.baz")).bind(schema) == bound
+
+
+def test_bind_ambiguous_name() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        Schema(
+            NestedField(1, "foo", StructType(NestedField(2, "bar", StringType()))),
+            NestedField(3, "foo.bar", StringType()),
+            schema_id=1,
+        )
+    assert "Invalid schema, multiple fields for name foo.bar: 2 and 3" in str(exc_info)
 
 
 #   __  __      ___

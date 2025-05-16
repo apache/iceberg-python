@@ -27,6 +27,7 @@ from datetime import (
     timedelta,
     timezone,
 )
+from decimal import Decimal
 from typing import (
     Any,
     Dict,
@@ -81,7 +82,9 @@ class TestStruct:
     y: Optional[float]
 
 
-def construct_test_table() -> Tuple[pq.FileMetaData, Union[TableMetadataV1, TableMetadataV2]]:
+def construct_test_table(
+    write_statistics: Union[bool, List[str]] = True,
+) -> Tuple[pq.FileMetaData, Union[TableMetadataV1, TableMetadataV2]]:
     table_metadata = {
         "format-version": 2,
         "location": "s3://bucket/test/location",
@@ -169,7 +172,9 @@ def construct_test_table() -> Tuple[pq.FileMetaData, Union[TableMetadataV1, Tabl
     metadata_collector: List[Any] = []
 
     with pa.BufferOutputStream() as f:
-        with pq.ParquetWriter(f, table.schema, metadata_collector=metadata_collector) as writer:
+        with pq.ParquetWriter(
+            f, table.schema, metadata_collector=metadata_collector, write_statistics=write_statistics
+        ) as writer:
             writer.write_table(table)
 
     return metadata_collector[0], table_metadata
@@ -190,7 +195,7 @@ def test_record_count() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
     assert datafile.record_count == 4
 
 
@@ -203,7 +208,7 @@ def test_value_counts() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 7
     assert datafile.value_counts[1] == 4
@@ -224,7 +229,7 @@ def test_column_sizes() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert len(datafile.column_sizes) == 7
     # these values are an artifact of how the write_table encodes the columns
@@ -244,7 +249,7 @@ def test_null_and_nan_counts() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert len(datafile.null_value_counts) == 7
     assert datafile.null_value_counts[1] == 1
@@ -271,7 +276,7 @@ def test_bounds() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert len(datafile.lower_bounds) == 2
     assert datafile.lower_bounds[1].decode() == "aaaaaaaaaaaaaaaa"
@@ -315,7 +320,7 @@ def test_metrics_mode_none() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 0
     assert len(datafile.null_value_counts) == 0
@@ -334,7 +339,7 @@ def test_metrics_mode_counts() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 7
     assert len(datafile.null_value_counts) == 7
@@ -353,7 +358,7 @@ def test_metrics_mode_full() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 7
     assert len(datafile.null_value_counts) == 7
@@ -378,7 +383,7 @@ def test_metrics_mode_non_default_trunc() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 7
     assert len(datafile.null_value_counts) == 7
@@ -404,7 +409,7 @@ def test_column_metrics_mode() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 6
     assert len(datafile.null_value_counts) == 6
@@ -442,6 +447,9 @@ def construct_test_table_primitive_types() -> Tuple[pq.FileMetaData, Union[Table
                     {"id": 10, "name": "strings", "required": False, "type": "string"},
                     {"id": 11, "name": "uuids", "required": False, "type": "uuid"},
                     {"id": 12, "name": "binaries", "required": False, "type": "binary"},
+                    {"id": 13, "name": "decimal8", "required": False, "type": "decimal(5, 2)"},
+                    {"id": 14, "name": "decimal16", "required": False, "type": "decimal(16, 6)"},
+                    {"id": 15, "name": "decimal32", "required": False, "type": "decimal(19, 6)"},
                 ],
             },
         ],
@@ -466,6 +474,9 @@ def construct_test_table_primitive_types() -> Tuple[pq.FileMetaData, Union[Table
     strings = ["hello", "world"]
     uuids = [uuid.uuid3(uuid.NAMESPACE_DNS, "foo").bytes, uuid.uuid3(uuid.NAMESPACE_DNS, "bar").bytes]
     binaries = [b"hello", b"world"]
+    decimal8 = pa.array([Decimal("123.45"), Decimal("678.91")], pa.decimal128(8, 2))
+    decimal16 = pa.array([Decimal("12345679.123456"), Decimal("67891234.678912")], pa.decimal128(16, 6))
+    decimal32 = pa.array([Decimal("1234567890123.123456"), Decimal("9876543210703.654321")], pa.decimal128(19, 6))
 
     table = pa.Table.from_pydict(
         {
@@ -481,6 +492,9 @@ def construct_test_table_primitive_types() -> Tuple[pq.FileMetaData, Union[Table
             "strings": strings,
             "uuids": uuids,
             "binaries": binaries,
+            "decimal8": decimal8,
+            "decimal16": decimal16,
+            "decimal32": decimal32,
         },
         schema=arrow_schema,
     )
@@ -488,7 +502,7 @@ def construct_test_table_primitive_types() -> Tuple[pq.FileMetaData, Union[Table
     metadata_collector: List[Any] = []
 
     with pa.BufferOutputStream() as f:
-        with pq.ParquetWriter(f, table.schema, metadata_collector=metadata_collector) as writer:
+        with pq.ParquetWriter(f, table.schema, metadata_collector=metadata_collector, store_decimal_as_integer=True) as writer:
             writer.write_table(table)
 
     return metadata_collector[0], table_metadata
@@ -504,15 +518,15 @@ def test_metrics_primitive_types() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
-    assert len(datafile.value_counts) == 12
-    assert len(datafile.null_value_counts) == 12
+    assert len(datafile.value_counts) == 15
+    assert len(datafile.null_value_counts) == 15
     assert len(datafile.nan_value_counts) == 0
 
     tz = timezone(timedelta(seconds=19800))
 
-    assert len(datafile.lower_bounds) == 12
+    assert len(datafile.lower_bounds) == 15
     assert datafile.lower_bounds[1] == STRUCT_BOOL.pack(False)
     assert datafile.lower_bounds[2] == STRUCT_INT32.pack(23)
     assert datafile.lower_bounds[3] == STRUCT_INT64.pack(2)
@@ -525,8 +539,11 @@ def test_metrics_primitive_types() -> None:
     assert datafile.lower_bounds[10] == b"he"
     assert datafile.lower_bounds[11] == uuid.uuid3(uuid.NAMESPACE_DNS, "foo").bytes
     assert datafile.lower_bounds[12] == b"he"
+    assert datafile.lower_bounds[13][::-1].ljust(4, b"\x00") == STRUCT_INT32.pack(12345)
+    assert datafile.lower_bounds[14][::-1].ljust(8, b"\x00") == STRUCT_INT64.pack(12345679123456)
+    assert str(int.from_bytes(datafile.lower_bounds[15], byteorder="big", signed=True)).encode("utf-8") == b"1234567890123123456"
 
-    assert len(datafile.upper_bounds) == 12
+    assert len(datafile.upper_bounds) == 15
     assert datafile.upper_bounds[1] == STRUCT_BOOL.pack(True)
     assert datafile.upper_bounds[2] == STRUCT_INT32.pack(89)
     assert datafile.upper_bounds[3] == STRUCT_INT64.pack(54)
@@ -539,6 +556,9 @@ def test_metrics_primitive_types() -> None:
     assert datafile.upper_bounds[10] == b"wp"
     assert datafile.upper_bounds[11] == uuid.uuid3(uuid.NAMESPACE_DNS, "bar").bytes
     assert datafile.upper_bounds[12] == b"wp"
+    assert datafile.upper_bounds[13][::-1].ljust(4, b"\x00") == STRUCT_INT32.pack(67891)
+    assert datafile.upper_bounds[14][::-1].ljust(8, b"\x00") == STRUCT_INT64.pack(67891234678912)
+    assert str(int.from_bytes(datafile.upper_bounds[15], byteorder="big", signed=True)).encode("utf-8") == b"9876543210703654321"
 
 
 def construct_test_table_invalid_upper_bound() -> Tuple[pq.FileMetaData, Union[TableMetadataV1, TableMetadataV2]]:
@@ -602,7 +622,7 @@ def test_metrics_invalid_upper_bound() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 4
     assert len(datafile.null_value_counts) == 4
@@ -628,7 +648,7 @@ def test_offsets() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert datafile.split_offsets is not None
     assert len(datafile.split_offsets) == 1
@@ -679,6 +699,41 @@ def test_stats_types(table_schema_nested: Schema) -> None:
         StringType(),
         IntegerType(),
     ]
+
+
+def test_read_missing_statistics() -> None:
+    # write statistics for only for "strings" column
+    metadata, table_metadata = construct_test_table(write_statistics=["strings"])
+
+    # expect only "strings" column to have statistics in metadata
+    # and all other columns to have no statistics
+    for r in range(metadata.num_row_groups):
+        for pos in range(metadata.num_columns):
+            if metadata.row_group(r).column(pos).path_in_schema == "strings":
+                assert metadata.row_group(r).column(pos).is_stats_set is True
+                assert metadata.row_group(r).column(pos).statistics is not None
+            else:
+                assert metadata.row_group(r).column(pos).is_stats_set is False
+                assert metadata.row_group(r).column(pos).statistics is None
+
+    schema = get_current_schema(table_metadata)
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=metadata,
+        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
+    )
+
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
+
+    # expect only "strings" column values to be reflected in the
+    # upper_bound, lower_bound and null_value_counts props of datafile
+    string_col_idx = 1
+    assert len(datafile.lower_bounds) == 1
+    assert datafile.lower_bounds[string_col_idx].decode() == "aaaaaaaaaaaaaaaa"
+    assert len(datafile.upper_bounds) == 1
+    assert datafile.upper_bounds[string_col_idx].decode() == "zzzzzzzzzzzzzzz{"
+    assert len(datafile.null_value_counts) == 1
+    assert datafile.null_value_counts[string_col_idx] == 1
 
 
 # This is commented out for now because write_to_dataset drops the partition

@@ -70,6 +70,7 @@ TABLE_SCHEMA = Schema(
     NestedField(field_id=12, name="fixed_field", field_type=FixedType(16), required=False),
     NestedField(field_id=13, name="decimal_field", field_type=DecimalType(5, 2), required=False),
     NestedField(field_id=14, name="uuid_field", field_type=UUIDType(), required=False),
+    NestedField(field_id=15, name="special#string+field", field_type=StringType(), required=False),
 )
 
 
@@ -79,11 +80,11 @@ identifier = "default.test_table"
 @pytest.mark.parametrize(
     "partition_fields, partition_values, expected_partition_record, expected_hive_partition_path_slice, spark_create_table_sql_for_justification, spark_data_insert_sql_for_justification",
     [
-        # # Identity Transform
+        # Identity Transform
         (
             [PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="boolean_field")],
             [False],
-            Record(boolean_field=False),
+            Record(False),
             "boolean_field=false",
             f"""CREATE TABLE {identifier} (
                 boolean_field boolean,
@@ -102,7 +103,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="string_field")],
             ["sample_string"],
-            Record(string_field="sample_string"),
+            Record("sample_string"),
             "string_field=sample_string",
             f"""CREATE TABLE {identifier} (
                 string_field string,
@@ -121,7 +122,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=4, field_id=1001, transform=IdentityTransform(), name="int_field")],
             [42],
-            Record(int_field=42),
+            Record(42),
             "int_field=42",
             f"""CREATE TABLE {identifier} (
                 int_field int,
@@ -140,7 +141,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=5, field_id=1001, transform=IdentityTransform(), name="long_field")],
             [1234567890123456789],
-            Record(long_field=1234567890123456789),
+            Record(1234567890123456789),
             "long_field=1234567890123456789",
             f"""CREATE TABLE {identifier} (
                 long_field bigint,
@@ -159,7 +160,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=6, field_id=1001, transform=IdentityTransform(), name="float_field")],
             [3.14],
-            Record(float_field=3.14),
+            Record(3.14),
             "float_field=3.14",
             # spark writes differently as pyiceberg, Record[float_field=3.140000104904175], path:float_field=3.14 (Record has difference)
             # so justification (compare expected value with spark behavior) would fail.
@@ -182,7 +183,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=7, field_id=1001, transform=IdentityTransform(), name="double_field")],
             [6.282],
-            Record(double_field=6.282),
+            Record(6.282),
             "double_field=6.282",
             # spark writes differently as pyiceberg, Record[double_field=6.2820000648498535] path:double_field=6.282 (Record has difference)
             # so justification (compare expected value with spark behavior) would fail.
@@ -205,7 +206,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=8, field_id=1001, transform=IdentityTransform(), name="timestamp_field")],
             [datetime(2023, 1, 1, 12, 0, 1, 999)],
-            Record(timestamp_field=1672574401000999),
+            Record(1672574401000999),
             "timestamp_field=2023-01-01T12%3A00%3A01.000999",
             f"""CREATE TABLE {identifier} (
                 timestamp_field timestamp_ntz,
@@ -224,7 +225,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=8, field_id=1001, transform=IdentityTransform(), name="timestamp_field")],
             [datetime(2023, 1, 1, 12, 0, 1)],
-            Record(timestamp_field=1672574401000000),
+            Record(1672574401000000),
             "timestamp_field=2023-01-01T12%3A00%3A01",
             f"""CREATE TABLE {identifier} (
                 timestamp_field timestamp_ntz,
@@ -243,7 +244,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=8, field_id=1001, transform=IdentityTransform(), name="timestamp_field")],
             [datetime(2023, 1, 1, 12, 0, 0)],
-            Record(timestamp_field=1672574400000000),
+            Record(1672574400000000),
             "timestamp_field=2023-01-01T12%3A00%3A00",
             # Spark writes differently as pyiceberg, so justification (compare expected value with spark behavior) would fail
             # AssertionError: assert 'timestamp_field=2023-01-01T12%3A00%3A00' in 's3://warehouse/default/test_table/data/timestamp_field=2023-01-01T12%3A00/00000-5-f9dca69a-9fb7-4830-9ef6-62d3d7afc09e-00001.parquet'
@@ -267,7 +268,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=9, field_id=1001, transform=IdentityTransform(), name="timestamptz_field")],
             [datetime(2023, 1, 1, 12, 0, 1, 999, tzinfo=timezone(timedelta(hours=3)))],
-            Record(timestamptz_field=1672563601000999),
+            Record(1672563601000999),
             "timestamptz_field=2023-01-01T09%3A00%3A01.000999%2B00%3A00",
             # Spark writes differently as pyiceberg, so justification (compare expected value with spark behavior) would fail
             # AssertionError: assert 'timestamptz_field=2023-01-01T09%3A00%3A01.000999%2B00%3A00' in 's3://warehouse/default/test_table/data/timestamptz_field=2023-01-01T09%3A00%3A01.000999Z/00000-5-b710fc4d-66b6-47f1-b8ae-6208f8aaa2d4-00001.parquet'
@@ -291,7 +292,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=10, field_id=1001, transform=IdentityTransform(), name="date_field")],
             [date(2023, 1, 1)],
-            Record(date_field=19358),
+            Record(19358),
             "date_field=2023-01-01",
             f"""CREATE TABLE {identifier} (
                 date_field date,
@@ -310,7 +311,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=14, field_id=1001, transform=IdentityTransform(), name="uuid_field")],
             [uuid.UUID("f47ac10b-58cc-4372-a567-0e02b2c3d479")],
-            Record(uuid_field="f47ac10b-58cc-4372-a567-0e02b2c3d479"),
+            Record("f47ac10b-58cc-4372-a567-0e02b2c3d479"),
             "uuid_field=f47ac10b-58cc-4372-a567-0e02b2c3d479",
             f"""CREATE TABLE {identifier} (
                 uuid_field string,
@@ -329,7 +330,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=11, field_id=1001, transform=IdentityTransform(), name="binary_field")],
             [b"example"],
-            Record(binary_field=b"example"),
+            Record(b"example"),
             "binary_field=ZXhhbXBsZQ%3D%3D",
             f"""CREATE TABLE {identifier} (
                 binary_field binary,
@@ -348,7 +349,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=13, field_id=1001, transform=IdentityTransform(), name="decimal_field")],
             [Decimal("123.45")],
-            Record(decimal_field=Decimal("123.45")),
+            Record(Decimal("123.45")),
             "decimal_field=123.45",
             f"""CREATE TABLE {identifier} (
                 decimal_field decimal(5,2),
@@ -369,7 +370,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=8, field_id=1001, transform=MonthTransform(), name="timestamp_field_month")],
             [datetime(2023, 1, 1, 11, 55, 59, 999999)],
-            Record(timestamp_field_month=((2023 - 1970) * 12)),
+            Record((2023 - 1970) * 12),
             "timestamp_field_month=2023-01",
             f"""CREATE TABLE {identifier} (
                 timestamp_field timestamp_ntz,
@@ -388,7 +389,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=9, field_id=1001, transform=MonthTransform(), name="timestamptz_field_month")],
             [datetime(2023, 1, 1, 12, 0, 1, 999, tzinfo=timezone(timedelta(hours=3)))],
-            Record(timestamptz_field_month=((2023 - 1970) * 12 + 1 - 1)),
+            Record((2023 - 1970) * 12 + 1 - 1),
             "timestamptz_field_month=2023-01",
             f"""CREATE TABLE {identifier} (
                 timestamptz_field timestamp,
@@ -407,7 +408,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=10, field_id=1001, transform=MonthTransform(), name="date_field_month")],
             [date(2023, 1, 1)],
-            Record(date_field_month=((2023 - 1970) * 12)),
+            Record((2023 - 1970) * 12),
             "date_field_month=2023-01",
             f"""CREATE TABLE {identifier} (
                 date_field date,
@@ -427,7 +428,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=8, field_id=1001, transform=YearTransform(), name="timestamp_field_year")],
             [datetime(2023, 1, 1, 11, 55, 59, 999999)],
-            Record(timestamp_field_year=(2023 - 1970)),
+            Record(2023 - 1970),
             "timestamp_field_year=2023",
             f"""CREATE TABLE {identifier}  (
                 timestamp_field timestamp,
@@ -446,7 +447,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=9, field_id=1001, transform=YearTransform(), name="timestamptz_field_year")],
             [datetime(2023, 1, 1, 12, 0, 1, 999, tzinfo=timezone(timedelta(hours=3)))],
-            Record(timestamptz_field_year=53),
+            Record(53),
             "timestamptz_field_year=2023",
             f"""CREATE TABLE {identifier} (
                 timestamptz_field timestamp,
@@ -465,7 +466,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=10, field_id=1001, transform=YearTransform(), name="date_field_year")],
             [date(2023, 1, 1)],
-            Record(date_field_year=(2023 - 1970)),
+            Record(2023 - 1970),
             "date_field_year=2023",
             f"""CREATE TABLE {identifier} (
                 date_field date,
@@ -485,7 +486,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=8, field_id=1001, transform=DayTransform(), name="timestamp_field_day")],
             [datetime(2023, 1, 1, 11, 55, 59, 999999)],
-            Record(timestamp_field_day=19358),
+            Record(19358),
             "timestamp_field_day=2023-01-01",
             f"""CREATE TABLE {identifier} (
                 timestamp_field timestamp,
@@ -504,7 +505,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=9, field_id=1001, transform=DayTransform(), name="timestamptz_field_day")],
             [datetime(2023, 1, 1, 12, 0, 1, 999, tzinfo=timezone(timedelta(hours=3)))],
-            Record(timestamptz_field_day=19358),
+            Record(19358),
             "timestamptz_field_day=2023-01-01",
             f"""CREATE TABLE {identifier} (
                 timestamptz_field timestamp,
@@ -523,7 +524,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=10, field_id=1001, transform=DayTransform(), name="date_field_day")],
             [date(2023, 1, 1)],
-            Record(date_field_day=19358),
+            Record(19358),
             "date_field_day=2023-01-01",
             f"""CREATE TABLE {identifier} (
                 date_field date,
@@ -543,7 +544,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=8, field_id=1001, transform=HourTransform(), name="timestamp_field_hour")],
             [datetime(2023, 1, 1, 11, 55, 59, 999999)],
-            Record(timestamp_field_hour=464603),
+            Record(464603),
             "timestamp_field_hour=2023-01-01-11",
             f"""CREATE TABLE {identifier} (
                 timestamp_field timestamp,
@@ -562,7 +563,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=9, field_id=1001, transform=HourTransform(), name="timestamptz_field_hour")],
             [datetime(2023, 1, 1, 12, 0, 1, 999, tzinfo=timezone(timedelta(hours=3)))],
-            Record(timestamptz_field_hour=464601),
+            Record(464601),
             "timestamptz_field_hour=2023-01-01-09",
             f"""CREATE TABLE {identifier} (
                 timestamptz_field timestamp,
@@ -582,7 +583,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=4, field_id=1001, transform=TruncateTransform(10), name="int_field_trunc")],
             [12345],
-            Record(int_field_trunc=12340),
+            Record(12340),
             "int_field_trunc=12340",
             f"""CREATE TABLE {identifier} (
                 int_field int,
@@ -601,7 +602,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=5, field_id=1001, transform=TruncateTransform(2), name="bigint_field_trunc")],
             [2**32 + 1],
-            Record(bigint_field_trunc=2**32),  # 4294967296
+            Record(2**32),  # 4294967296
             "bigint_field_trunc=4294967296",
             f"""CREATE TABLE {identifier} (
                 bigint_field bigint,
@@ -620,7 +621,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=2, field_id=1001, transform=TruncateTransform(3), name="string_field_trunc")],
             ["abcdefg"],
-            Record(string_field_trunc="abc"),
+            Record("abc"),
             "string_field_trunc=abc",
             f"""CREATE TABLE {identifier} (
                 string_field string,
@@ -639,7 +640,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=13, field_id=1001, transform=TruncateTransform(width=5), name="decimal_field_trunc")],
             [Decimal("678.93")],
-            Record(decimal_field_trunc=Decimal("678.90")),
+            Record(Decimal("678.90")),
             "decimal_field_trunc=678.90",  # Assuming truncation width of 1 leads to truncating to 670
             f"""CREATE TABLE {identifier} (
                 decimal_field decimal(5,2),
@@ -658,7 +659,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=11, field_id=1001, transform=TruncateTransform(10), name="binary_field_trunc")],
             [b"HELLOICEBERG"],
-            Record(binary_field_trunc=b"HELLOICEBE"),
+            Record(b"HELLOICEBE"),
             "binary_field_trunc=SEVMTE9JQ0VCRQ%3D%3D",
             f"""CREATE TABLE {identifier} (
                 binary_field binary,
@@ -678,7 +679,7 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=4, field_id=1001, transform=BucketTransform(2), name="int_field_bucket")],
             [10],
-            Record(int_field_bucket=0),
+            Record(0),
             "int_field_bucket=0",
             f"""CREATE TABLE {identifier} (
                 int_field int,
@@ -704,7 +705,7 @@ identifier = "default.test_table"
                 datetime(2023, 1, 1, 11, 55, 59, 999999),
                 date(2023, 1, 1),
             ],
-            Record(timestamp_field_year=53, date_field_day=19358),
+            Record(53, 19358),
             "timestamp_field_year=2023/date_field_day=2023-01-01",
             f"""CREATE TABLE {identifier} (
                 timestamp_field timestamp,
@@ -722,6 +723,25 @@ identifier = "default.test_table"
             (CAST('2023-01-01 11:55:59.999999' AS TIMESTAMP), CAST('2023-01-01' AS DATE), 'some data');
             """,
         ),
+        # Test that special characters are URL-encoded
+        (
+            [PartitionField(source_id=15, field_id=1001, transform=IdentityTransform(), name="special#string+field")],
+            ["special string"],
+            Record("special string"),
+            "special%23string%2Bfield=special+string",
+            f"""CREATE TABLE {identifier} (
+                `special#string+field` string
+            )
+            USING iceberg
+            PARTITIONED BY (
+                identity(`special#string+field`)
+            )
+            """,
+            f"""INSERT INTO {identifier}
+            VALUES
+            ('special string')
+            """,
+        ),
     ],
 )
 @pytest.mark.integration
@@ -735,11 +755,14 @@ def test_partition_key(
     spark_create_table_sql_for_justification: str,
     spark_data_insert_sql_for_justification: str,
 ) -> None:
-    partition_field_values = [PartitionFieldValue(field, value) for field, value in zip(partition_fields, partition_values)]
+    field_values = [
+        PartitionFieldValue(field, field.transform.transform(TABLE_SCHEMA.find_field(field.source_id).field_type)(value))
+        for field, value in zip(partition_fields, partition_values)
+    ]
     spec = PartitionSpec(*partition_fields)
 
     key = PartitionKey(
-        raw_partition_field_values=partition_field_values,
+        field_values=field_values,
         partition_spec=spec,
         schema=TABLE_SCHEMA,
     )
@@ -768,5 +791,6 @@ def test_partition_key(
         spark_path_for_justification = (
             snapshot.manifests(iceberg_table.io)[0].fetch_manifest_entry(iceberg_table.io)[0].data_file.file_path
         )
+        # Special characters in partition value are sanitized when written to the data file's partition field
         assert spark_partition_for_justification == expected_partition_record
         assert expected_hive_partition_path_slice in spark_path_for_justification

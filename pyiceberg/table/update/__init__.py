@@ -16,14 +16,14 @@
 # under the License.
 from __future__ import annotations
 
+import itertools
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
 from functools import singledispatch
-from typing import TYPE_CHECKING, Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar, Union
+from typing import TYPE_CHECKING, Annotated, Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar, Union, cast
 
-from pydantic import Field, field_validator
-from typing_extensions import Annotated
+from pydantic import Field, field_validator, model_validator
 
 from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec
@@ -36,6 +36,7 @@ from pyiceberg.table.snapshots import (
     SnapshotLogEntry,
 )
 from pyiceberg.table.sorting import SortOrder
+from pyiceberg.table.statistics import StatisticsFile, filter_statistics_by_snapshot_id
 from pyiceberg.typedef import (
     IcebergBaseModel,
     Properties,
@@ -88,13 +89,13 @@ class AddSchemaUpdate(IcebergBaseModel):
     action: Literal["add-schema"] = Field(default="add-schema")
     schema_: Schema = Field(alias="schema")
     # This field is required: https://github.com/apache/iceberg/pull/7445
-    last_column_id: int = Field(alias="last-column-id")
-
-    initial_change: bool = Field(
-        default=False,
-        exclude=True,
+    last_column_id: Optional[int] = Field(
+        alias="last-column-id",
+        default=None,
         deprecated=deprecation_notice(
-            deprecated_in="0.8.0", removed_in="0.9.0", help_message="CreateTableTransaction can work without this field"
+            deprecated_in="0.9.0",
+            removed_in="0.10.0",
+            help_message="last-field-id is handled internally, and should not be part of the update.",
         ),
     )
 
@@ -110,14 +111,6 @@ class AddPartitionSpecUpdate(IcebergBaseModel):
     action: Literal["add-spec"] = Field(default="add-spec")
     spec: PartitionSpec
 
-    initial_change: bool = Field(
-        default=False,
-        exclude=True,
-        deprecated=deprecation_notice(
-            deprecated_in="0.8.0", removed_in="0.9.0", help_message="CreateTableTransaction can work without this field"
-        ),
-    )
-
 
 class SetDefaultSpecUpdate(IcebergBaseModel):
     action: Literal["set-default-spec"] = Field(default="set-default-spec")
@@ -129,14 +122,6 @@ class SetDefaultSpecUpdate(IcebergBaseModel):
 class AddSortOrderUpdate(IcebergBaseModel):
     action: Literal["add-sort-order"] = Field(default="add-sort-order")
     sort_order: SortOrder = Field(alias="sort-order")
-
-    initial_change: bool = Field(
-        default=False,
-        exclude=True,
-        deprecated=deprecation_notice(
-            deprecated_in="0.8.0", removed_in="0.9.0", help_message="CreateTableTransaction can work without this field"
-        ),
-    )
 
 
 class SetDefaultSortOrderUpdate(IcebergBaseModel):
@@ -190,6 +175,29 @@ class RemovePropertiesUpdate(IcebergBaseModel):
     removals: List[str]
 
 
+class SetStatisticsUpdate(IcebergBaseModel):
+    action: Literal["set-statistics"] = Field(default="set-statistics")
+    statistics: StatisticsFile
+    snapshot_id: Optional[int] = Field(
+        None,
+        alias="snapshot-id",
+        description="snapshot-id is **DEPRECATED for REMOVAL** since it contains redundant information. Use `statistics.snapshot-id` field instead.",
+    )
+
+    @model_validator(mode="before")
+    def validate_snapshot_id(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+        stats = cast(StatisticsFile, data["statistics"])
+
+        data["snapshot_id"] = stats.snapshot_id
+
+        return data
+
+
+class RemoveStatisticsUpdate(IcebergBaseModel):
+    action: Literal["remove-statistics"] = Field(default="remove-statistics")
+    snapshot_id: int = Field(alias="snapshot-id")
+
+
 TableUpdate = Annotated[
     Union[
         AssignUUIDUpdate,
@@ -207,6 +215,8 @@ TableUpdate = Annotated[
         SetLocationUpdate,
         SetPropertiesUpdate,
         RemovePropertiesUpdate,
+        SetStatisticsUpdate,
+        RemoveStatisticsUpdate,
     ],
     Field(discriminator="action"),
 ]
@@ -318,11 +328,8 @@ def _(update: RemovePropertiesUpdate, base_metadata: TableMetadata, context: _Ta
 
 @_apply_table_update.register(AddSchemaUpdate)
 def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
-    if update.last_column_id < base_metadata.last_column_id:
-        raise ValueError(f"Invalid last column id {update.last_column_id}, must be >= {base_metadata.last_column_id}")
-
     metadata_updates: Dict[str, Any] = {
-        "last_column_id": update.last_column_id,
+        "last_column_id": max(base_metadata.last_column_id, update.schema_.highest_field_id),
         "schemas": base_metadata.schemas + [update.schema_],
     }
 
@@ -353,7 +360,8 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _Ta
 @_apply_table_update.register(AddPartitionSpecUpdate)
 def _(update: AddPartitionSpecUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     for spec in base_metadata.partition_specs:
-        if spec.spec_id == update.spec.spec_id:
+        # Only raise in case of a discrepancy
+        if spec.spec_id == update.spec.spec_id and spec != update.spec:
             raise ValueError(f"Partition spec with id {spec.spec_id} already exists: {spec}")
 
     metadata_updates: Dict[str, Any] = {
@@ -460,8 +468,69 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
     return base_metadata.model_copy(update=metadata_updates)
 
 
+@_apply_table_update.register(RemoveSnapshotsUpdate)
+def _(update: RemoveSnapshotsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    for remove_snapshot_id in update.snapshot_ids:
+        if not any(snapshot.snapshot_id == remove_snapshot_id for snapshot in base_metadata.snapshots):
+            raise ValueError(f"Snapshot with snapshot id {remove_snapshot_id} does not exist: {base_metadata.snapshots}")
+
+    snapshots = [
+        (
+            snapshot.model_copy(update={"parent_snapshot_id": None})
+            if snapshot.parent_snapshot_id in update.snapshot_ids
+            else snapshot
+        )
+        for snapshot in base_metadata.snapshots
+        if snapshot.snapshot_id not in update.snapshot_ids
+    ]
+    snapshot_log = [
+        snapshot_log_entry
+        for snapshot_log_entry in base_metadata.snapshot_log
+        if snapshot_log_entry.snapshot_id not in update.snapshot_ids
+    ]
+
+    remove_ref_updates = (
+        RemoveSnapshotRefUpdate(ref_name=ref_name)
+        for ref_name, ref in base_metadata.refs.items()
+        if ref.snapshot_id in update.snapshot_ids
+    )
+    remove_statistics_updates = (
+        RemoveStatisticsUpdate(statistics_file.snapshot_id)
+        for statistics_file in base_metadata.statistics
+        if statistics_file.snapshot_id in update.snapshot_ids
+    )
+    updates = itertools.chain(remove_ref_updates, remove_statistics_updates)
+    new_metadata = base_metadata
+    for upd in updates:
+        new_metadata = _apply_table_update(upd, new_metadata, context)
+
+    context.add_update(update)
+    return new_metadata.model_copy(update={"snapshots": snapshots, "snapshot_log": snapshot_log})
+
+
+@_apply_table_update.register(RemoveSnapshotRefUpdate)
+def _(update: RemoveSnapshotRefUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    if update.ref_name not in base_metadata.refs:
+        return base_metadata
+
+    existing_ref = base_metadata.refs[update.ref_name]
+    if base_metadata.snapshot_by_id(existing_ref.snapshot_id) is None:
+        raise ValueError(f"Cannot remove {update.ref_name} ref with unknown snapshot {existing_ref.snapshot_id}")
+
+    current_snapshot_id = None if update.ref_name == MAIN_BRANCH else base_metadata.current_snapshot_id
+
+    metadata_refs = {ref_name: ref for ref_name, ref in base_metadata.refs.items() if ref_name != update.ref_name}
+    context.add_update(update)
+    return base_metadata.model_copy(update={"refs": metadata_refs, "current_snapshot_id": current_snapshot_id})
+
+
 @_apply_table_update.register(AddSortOrderUpdate)
 def _(update: AddSortOrderUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    for sort in base_metadata.sort_orders:
+        # Only raise in case of a discrepancy
+        if sort.order_id == update.sort_order.order_id and sort != update.sort_order:
+            raise ValueError(f"Sort-order with id {sort.order_id} already exists: {sort}")
+
     context.add_update(update)
     return base_metadata.model_copy(
         update={
@@ -492,6 +561,25 @@ def _(
 
     context.add_update(update)
     return base_metadata.model_copy(update={"default_sort_order_id": new_sort_order_id})
+
+
+@_apply_table_update.register(SetStatisticsUpdate)
+def _(update: SetStatisticsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    statistics = filter_statistics_by_snapshot_id(base_metadata.statistics, update.statistics.snapshot_id)
+    context.add_update(update)
+
+    return base_metadata.model_copy(update={"statistics": statistics + [update.statistics]})
+
+
+@_apply_table_update.register(RemoveStatisticsUpdate)
+def _(update: RemoveStatisticsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    if not any(stat.snapshot_id == update.snapshot_id for stat in base_metadata.statistics):
+        raise ValueError(f"Statistics with snapshot id {update.snapshot_id} does not exist")
+
+    statistics = filter_statistics_by_snapshot_id(base_metadata.statistics, update.snapshot_id)
+    context.add_update(update)
+
+    return base_metadata.model_copy(update={"statistics": statistics})
 
 
 def update_table_metadata(
