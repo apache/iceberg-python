@@ -22,6 +22,7 @@ from copy import copy
 from enum import Enum
 from types import TracebackType
 from typing import (
+    TYPE_CHECKING,
     Any,
     Dict,
     Iterator,
@@ -56,6 +57,9 @@ from pyiceberg.types import (
     StringType,
     StructType,
 )
+
+if TYPE_CHECKING:
+    from pyiceberg.table.metadata import TableMetadata
 
 UNASSIGNED_SEQ = -1
 DEFAULT_BLOCK_SIZE = 67108864  # 64 * 1024 * 1024
@@ -704,25 +708,85 @@ class ManifestFile(Record):
         Returns:
             An Iterator of manifest entries.
         """
-        input_file = io.new_input(self.manifest_path)
-        with AvroFile[ManifestEntry](
-            input_file,
-            MANIFEST_ENTRY_SCHEMAS[DEFAULT_READ_VERSION],
-            read_types={-1: ManifestEntry, 2: DataFile},
-            read_enums={0: ManifestEntryStatus, 101: FileFormat, 134: DataFileContent},
-        ) as reader:
-            return [
-                _inherit_from_manifest(entry, self)
-                for entry in reader
-                if not discard_deleted or entry.status != ManifestEntryStatus.DELETED
-            ]
+        from pyiceberg_core import manifest
+
+        bs = io.new_input(self.manifest_path).open().read()
+        manifest = manifest.read_manifest_entries(bs)
+
+        # TODO: Don't convert the types
+        # but this is the easiest for now until we
+        # have the write part in there as well
+        def _convert_entry(entry: Any) -> ManifestEntry:
+            data_file = DataFile(
+                DataFileContent(entry.data_file.content),
+                entry.data_file.file_path,
+                # FileFormat(entry.data_file.file_format),
+                FileFormat.PARQUET,
+                entry.data_file.partition,
+                entry.data_file.record_count,
+                entry.data_file.file_size_in_bytes,
+                entry.data_file.column_sizes,
+                entry.data_file.value_counts,
+                entry.data_file.null_value_counts,
+                entry.data_file.nan_value_counts,
+                entry.data_file.lower_bounds,
+                entry.data_file.upper_bounds,
+                entry.data_file.key_metadata,
+                entry.data_file.split_offsets,
+                entry.data_file.equality_ids,
+                entry.data_file.sort_order_id,
+            )
+
+            return ManifestEntry(
+                ManifestEntryStatus(entry.status),
+                entry.snapshot_id,
+                entry.sequence_number,
+                entry.file_sequence_number,
+                data_file,
+            )
+
+        return [
+            _inherit_from_manifest(_convert_entry(entry), self)
+            for entry in manifest.entries()
+            if not discard_deleted or entry.status != ManifestEntryStatus.DELETED
+        ]
 
 
-@cached(cache=LRUCache(maxsize=128), key=lambda io, manifest_list: hashkey(manifest_list))
-def _manifests(io: FileIO, manifest_list: str) -> Tuple[ManifestFile, ...]:
+@cached(cache=LRUCache(maxsize=128), key=lambda io, manifest_list, table: hashkey(manifest_list))
+def _manifests(io: FileIO, manifest_list: str, table: "TableMetadata") -> Tuple[ManifestFile, ...]:
     """Read and cache manifests from the given manifest list, returning a tuple to prevent modification."""
-    file = io.new_input(manifest_list)
-    return tuple(read_manifest_list(file))
+    bs = io.new_input(manifest_list).open().read()
+    from pyiceberg_core import manifest
+
+    def partition_spec(spec_id: int) -> str:
+        spec = table.specs()[spec_id]
+        partition_type = spec.partition_type(table.schema())
+        struct = Schema(*partition_type.fields).as_struct()
+        payload = struct.model_dump_json()
+        return payload
+
+    cb = manifest.PartitionSpecProviderCallbackHolder(partition_spec)
+
+    return tuple(
+        ManifestFile(
+            manifest.manifest_path,
+            manifest.manifest_length,
+            manifest.partition_spec_id,
+            manifest.content,
+            manifest.sequence_number,
+            manifest.min_sequence_number,
+            manifest.added_snapshot_id,
+            manifest.added_files_count,
+            manifest.existing_files_count,
+            manifest.deleted_files_count,
+            manifest.added_rows_count,
+            manifest.existing_rows_count,
+            manifest.deleted_rows_count,
+            manifest.partitions,
+            manifest.key_metadata,
+        )
+        for manifest in manifest.read_manifest_list(bs, cb).entries()
+    )
 
 
 def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
@@ -1093,6 +1157,7 @@ class ManifestListWriterV2(ManifestListWriter):
                 "parent-snapshot-id": str(parent_snapshot_id) if parent_snapshot_id is not None else "null",
                 "sequence-number": str(sequence_number),
                 "format-version": "2",
+                "content": "data",
             },
         )
         self._commit_snapshot_id = snapshot_id
