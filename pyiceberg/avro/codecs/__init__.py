@@ -26,7 +26,9 @@ converting character sets (https://docs.python.org/3/library/codecs.html).
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Type
+from typing import Dict, Literal, Optional, Type
+
+from typing_extensions import TypeAlias
 
 from pyiceberg.avro.codecs.bzip2 import BZip2Codec
 from pyiceberg.avro.codecs.codec import Codec
@@ -34,10 +36,17 @@ from pyiceberg.avro.codecs.deflate import DeflateCodec
 from pyiceberg.avro.codecs.snappy_codec import SnappyCodec
 from pyiceberg.avro.codecs.zstandard_codec import ZStandardCodec
 
-KNOWN_CODECS: Dict[str, Optional[Type[Codec]]] = {
+AvroCompressionCodec: TypeAlias = Literal["null", "bzip2", "snappy", "zstandard", "deflate"]
+
+AVRO_CODEC_KEY = "avro.codec"
+
+KNOWN_CODECS: Dict[AvroCompressionCodec, Optional[Type[Codec]]] = {
     "null": None,
     "bzip2": BZip2Codec,
     "snappy": SnappyCodec,
     "zstandard": ZStandardCodec,
     "deflate": DeflateCodec,
 }
+
+# Map to convert the naming from Iceberg to Avro
+CODEC_MAPPING_ICEBERG_TO_AVRO: Dict[str, str] = {"gzip": "deflate", "zstd": "zstandard"}
