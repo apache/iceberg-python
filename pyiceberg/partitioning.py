@@ -467,11 +467,13 @@ def _(type: IcebergType, value: Optional[time]) -> Optional[int]:
 
 
 @_to_partition_representation.register(UUIDType)
-def _(type: IcebergType, value: Optional[Union[uuid.UUID, int]]) -> Optional[Union[str, int]]:
+def _(type: IcebergType, value: Optional[Union[uuid.UUID, int, bytes]]) -> Optional[Union[bytes, int]]:
     if value is None:
         return None
+    elif isinstance(value, bytes):
+        return value  # IdentityTransform
     elif isinstance(value, uuid.UUID):
-        return str(value)  # IdentityTransform
+        return value.bytes  # IdentityTransform
     elif isinstance(value, int):
         return value  # BucketTransform
     else:
