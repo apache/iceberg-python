@@ -59,6 +59,8 @@ from pyiceberg.io import (
     GCS_SESSION_KWARGS,
     GCS_TOKEN,
     GCS_VERSION_AWARE,
+    HF_ENDPOINT,
+    HF_TOKEN,
     S3_ACCESS_KEY_ID,
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
@@ -209,6 +211,15 @@ def _adls(properties: Properties) -> AbstractFileSystem:
     )
 
 
+def _hf(properties: Properties) -> AbstractFileSystem:
+    from huggingface_hub import HfFileSystem
+
+    return HfFileSystem(
+        endpoint=properties.get(HF_ENDPOINT),
+        token=properties.get(HF_TOKEN),
+    )
+
+
 SCHEME_TO_FS = {
     "": _file,
     "file": _file,
@@ -219,6 +230,7 @@ SCHEME_TO_FS = {
     "abfss": _adls,
     "gs": _gs,
     "gcs": _gs,
+    "hf": _hf,
 }
 
 

@@ -58,7 +58,7 @@ description = "Happy Eyeballs for asyncio"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""
+markers = "extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""
 files = [
     {file = "aiohappyeyeballs-2.6.1-py3-none-any.whl", hash = "sha256:f349ba8f4b75cb25c99c5c2d84e997e485204d2902a9597802b0371f09331fb8"},
     {file = "aiohappyeyeballs-2.6.1.tar.gz", hash = "sha256:c3f9d0113123803ccadfdf3f0faa505bc78e6a72d1cc4806cbd719826e943558"},
@@ -71,7 +71,7 @@ description = "Async http client/server framework (asyncio)"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""
+markers = "extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""
 files = [
     {file = "aiohttp-3.11.14-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:e2bc827c01f75803de77b134afdbf74fa74b62970eafdf190f3244931d7a5c0d"},
     {file = "aiohttp-3.11.14-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:e365034c5cf6cf74f57420b57682ea79e19eb29033399dd3f40de4d0171998fa"},
@@ -196,7 +196,7 @@ description = "aiosignal: a list of registered asynchronous callbacks"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "(extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\") and (extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\" or extra == \"ray\")"
+markers = "(extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\") and (extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"ray\")"
 files = [
     {file = "aiosignal-1.3.2-py2.py3-none-any.whl", hash = "sha256:45cde58e409a301715980c2b01d0c28bdde3770d8290b5eb2173759d9acb31a5"},
     {file = "aiosignal-1.3.2.tar.gz", hash = "sha256:a8c255c66fafb1e499c9351d0bf32ff2d8a0321595ebac3b93713656d2436f54"},
@@ -248,7 +248,7 @@ description = "Timeout context manager for asyncio programs"
 optional = true
 python-versions = ">=3.8"
 groups = ["main"]
-markers = "(extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\") and python_version <= \"3.10\""
+markers = "(extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\") and python_version <= \"3.10\""
 files = [
     {file = "async_timeout-5.0.1-py3-none-any.whl", hash = "sha256:39e3809566ff85354557ec2398b55e096c8364bacac9405a7a1fa429e77fe76c"},
     {file = "async_timeout-5.0.1.tar.gz", hash = "sha256:d9321a7a3d5a6a5e187e824d2fa0793ce379a202935782d555d6e9d2735677d3"},
@@ -265,7 +265,7 @@ files = [
     {file = "attrs-25.3.0-py3-none-any.whl", hash = "sha256:427318ce031701fea540783410126f03899a97ffc6f61596ad581ac2e40e3bc3"},
     {file = "attrs-25.3.0.tar.gz", hash = "sha256:75d7cefc7fb576747b2c81b4442d4d4a1ce0900973527c011d1030fd3bf4af1b"},
 ]
-markers = {main = "(extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\") and (extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\" or extra == \"ray\")"}
+markers = {main = "(extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\") and (extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"ray\")"}
 
 [package.extras]
 benchmark = ["cloudpickle ; platform_python_implementation == \"CPython\"", "hypothesis", "mypy (>=1.11.1) ; platform_python_implementation == \"CPython\" and python_version >= \"3.10\"", "pympler", "pytest (>=4.3.0)", "pytest-codspeed", "pytest-mypy-plugins ; platform_python_implementation == \"CPython\" and python_version >= \"3.10\"", "pytest-xdist[psutil]"]
@@ -467,7 +467,7 @@ files = [
     {file = "boto3-1.37.3-py3-none-any.whl", hash = "sha256:2063b40af99fd02f6228ff52397b552ff3353831edaf8d25cc04801827ab9794"},
     {file = "boto3-1.37.3.tar.gz", hash = "sha256:21f3ce0ef111297e63a6eb998a25197b8c10982970c320d4c6e8db08be2157be"},
 ]
-markers = {main = "extra == \"dynamodb\" or extra == \"glue\" or extra == \"rest-sigv4\""}
+markers = {main = "extra == \"glue\" or extra == \"dynamodb\" or extra == \"rest-sigv4\""}
 
 [package.dependencies]
 botocore = ">=1.37.3,<1.38.0"
@@ -488,7 +488,7 @@ files = [
     {file = "botocore-1.37.3-py3-none-any.whl", hash = "sha256:d01bd3bf4c80e61fa88d636ad9f5c9f60a551d71549b481386c6b4efe0bb2b2e"},
     {file = "botocore-1.37.3.tar.gz", hash = "sha256:fe8403eb55a88faf9b0f9da6615e5bee7be056d75e17af66c3c8f0a3b0648da4"},
 ]
-markers = {main = "extra == \"dynamodb\" or extra == \"glue\" or extra == \"rest-sigv4\" or extra == \"s3fs\""}
+markers = {main = "extra == \"glue\" or extra == \"dynamodb\" or extra == \"rest-sigv4\" or extra == \"s3fs\""}
 
 [package.dependencies]
 jmespath = ">=0.7.1,<2.0.0"
@@ -1387,7 +1387,7 @@ files = [
     {file = "filelock-3.18.0-py3-none-any.whl", hash = "sha256:c401f4f8377c4464e6db25fff06205fd89bdd83b65eb0488ed1b160f780e21de"},
     {file = "filelock-3.18.0.tar.gz", hash = "sha256:adbc88eabb99d2fec8c9c1b229b171f18afa655400173ddc653d5d01501fb9f2"},
 ]
-markers = {main = "extra == \"ray\""}
+markers = {main = "extra == \"ray\" or extra == \"hf\""}
 
 [package.extras]
 docs = ["furo (>=2024.8.6)", "sphinx (>=8.1.3)", "sphinx-autodoc-typehints (>=3)"]
@@ -1442,7 +1442,7 @@ description = "A list-like structure which implements collections.abc.MutableSeq
 optional = true
 python-versions = ">=3.8"
 groups = ["main"]
-markers = "(extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\") and (extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\" or extra == \"ray\")"
+markers = "(extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\") and (extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"ray\")"
 files = [
     {file = "frozenlist-1.5.0-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:5b6a66c18b5b9dd261ca98dffcb826a525334b2f29e7caa54e182255c5f6a65a"},
     {file = "frozenlist-1.5.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:d1b3eb7b05ea246510b43a7e53ed1653e55c2121019a97e60cad7efb881a97bb"},
@@ -1985,6 +1985,43 @@ files = [
 colorama = ">=0.4"
 
 [[package]]
+name = "huggingface-hub"
+version = "0.31.2"
+description = "Client library to download and publish models, datasets and other repos on the huggingface.co hub"
+optional = true
+python-versions = ">=3.8.0"
+groups = ["main"]
+markers = "extra == \"hf\""
+files = [
+    {file = "huggingface_hub-0.31.2-py3-none-any.whl", hash = "sha256:8138cd52aa2326b4429bb00a4a1ba8538346b7b8a808cdce30acb6f1f1bdaeec"},
+    {file = "huggingface_hub-0.31.2.tar.gz", hash = "sha256:7053561376ed7f6ffdaecf09cc54d70dc784ac6315fa4bb9b93e19662b029675"},
+]
+
+[package.dependencies]
+filelock = "*"
+fsspec = ">=2023.5.0"
+packaging = ">=20.9"
+pyyaml = ">=5.1"
+requests = "*"
+tqdm = ">=4.42.1"
+typing-extensions = ">=3.7.4.3"
+
+[package.extras]
+all = ["InquirerPy (==0.3.4)", "Jinja2", "Pillow", "aiohttp", "fastapi", "gradio (>=4.0.0)", "jedi", "libcst (==1.4.0)", "mypy (==1.5.1)", "numpy", "pytest (>=8.1.1,<8.2.2)", "pytest-asyncio", "pytest-cov", "pytest-env", "pytest-mock", "pytest-rerunfailures", "pytest-vcr", "pytest-xdist", "ruff (>=0.9.0)", "soundfile", "types-PyYAML", "types-requests", "types-simplejson", "types-toml", "types-tqdm", "types-urllib3", "typing-extensions (>=4.8.0)", "urllib3 (<2.0)"]
+cli = ["InquirerPy (==0.3.4)"]
+dev = ["InquirerPy (==0.3.4)", "Jinja2", "Pillow", "aiohttp", "fastapi", "gradio (>=4.0.0)", "jedi", "libcst (==1.4.0)", "mypy (==1.5.1)", "numpy", "pytest (>=8.1.1,<8.2.2)", "pytest-asyncio", "pytest-cov", "pytest-env", "pytest-mock", "pytest-rerunfailures", "pytest-vcr", "pytest-xdist", "ruff (>=0.9.0)", "soundfile", "types-PyYAML", "types-requests", "types-simplejson", "types-toml", "types-tqdm", "types-urllib3", "typing-extensions (>=4.8.0)", "urllib3 (<2.0)"]
+fastai = ["fastai (>=2.4)", "fastcore (>=1.3.27)", "toml"]
+hf-transfer = ["hf-transfer (>=0.1.4)"]
+hf-xet = ["hf-xet (>=1.1.1,<2.0.0)"]
+inference = ["aiohttp"]
+quality = ["libcst (==1.4.0)", "mypy (==1.5.1)", "ruff (>=0.9.0)"]
+tensorflow = ["graphviz", "pydot", "tensorflow"]
+tensorflow-testing = ["keras (<3.0)", "tensorflow"]
+testing = ["InquirerPy (==0.3.4)", "Jinja2", "Pillow", "aiohttp", "fastapi", "gradio (>=4.0.0)", "jedi", "numpy", "pytest (>=8.1.1,<8.2.2)", "pytest-asyncio", "pytest-cov", "pytest-env", "pytest-mock", "pytest-rerunfailures", "pytest-vcr", "pytest-xdist", "soundfile", "urllib3 (<2.0)"]
+torch = ["safetensors[torch]", "torch"]
+typing = ["types-PyYAML", "types-requests", "types-simplejson", "types-toml", "types-tqdm", "types-urllib3", "typing-extensions (>=4.8.0)"]
+
+[[package]]
 name = "identify"
 version = "2.6.9"
 description = "File identification library for Python"
@@ -2158,7 +2195,7 @@ files = [
     {file = "jmespath-1.0.1-py3-none-any.whl", hash = "sha256:02e2e4cc71b5bcab88332eebf907519190dd9e6e82107fa7f83b1003a6252980"},
     {file = "jmespath-1.0.1.tar.gz", hash = "sha256:90261b206d6defd58fdd5e85f478bf633a2901798906be2ad389150c5c60edbe"},
 ]
-markers = {main = "extra == \"dynamodb\" or extra == \"glue\" or extra == \"rest-sigv4\" or extra == \"s3fs\""}
+markers = {main = "extra == \"glue\" or extra == \"dynamodb\" or extra == \"rest-sigv4\" or extra == \"s3fs\""}
 
 [[package]]
 name = "joserfc"
@@ -2976,7 +3013,7 @@ description = "multidict implementation"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""
+markers = "extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""
 files = [
     {file = "multidict-6.2.0-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:b9f6392d98c0bd70676ae41474e2eecf4c7150cb419237a41f8f96043fcb81d1"},
     {file = "multidict-6.2.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:3501621d5e86f1a88521ea65d5cad0a0834c77b26f193747615b7c911e5422d2"},
@@ -3324,7 +3361,7 @@ files = [
     {file = "packaging-24.2-py3-none-any.whl", hash = "sha256:09abb1bccd265c01f4a3aa3f7a7db064b36514d2cba19a2f694fe6150451a759"},
     {file = "packaging-24.2.tar.gz", hash = "sha256:c228a6dc5e932d346bc5739379109d49e8853dd8223571c7c5b55260edc0b97f"},
 ]
-markers = {main = "extra == \"ray\""}
+markers = {main = "extra == \"ray\" or extra == \"hf\""}
 
 [[package]]
 name = "paginate"
@@ -3570,7 +3607,7 @@ description = "Accelerated property cache"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""
+markers = "extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""
 files = [
     {file = "propcache-0.3.1-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:f27785888d2fdd918bc36de8b8739f2d6c791399552333721b58193f68ea3e98"},
     {file = "propcache-0.3.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:d4e89cde74154c7b5957f87a355bb9c8ec929c167b59c83d90654ea36aeb6180"},
@@ -3897,7 +3934,7 @@ files = [
     {file = "pyarrow-20.0.0-cp39-cp39-win_amd64.whl", hash = "sha256:9965a050048ab02409fb7cbbefeedba04d3d67f2cc899eff505cc084345959ca"},
     {file = "pyarrow-20.0.0.tar.gz", hash = "sha256:febc4a913592573c8d5805091a6c2b5064c8bd6e002131f01061797d91c783c1"},
 ]
-markers = {main = "extra == \"daft\" or extra == \"duckdb\" or extra == \"pandas\" or extra == \"pyarrow\" or extra == \"ray\""}
+markers = {main = "extra == \"pyarrow\" or extra == \"pandas\" or extra == \"duckdb\" or extra == \"ray\" or extra == \"daft\""}
 
 [package.extras]
 test = ["cffi", "hypothesis", "pandas", "pytest", "pytz"]
@@ -4502,7 +4539,7 @@ files = [
     {file = "PyYAML-6.0.2-cp39-cp39-win_amd64.whl", hash = "sha256:39693e1f8320ae4f43943590b49779ffb98acb81f788220ea932a6b6c51004d8"},
     {file = "pyyaml-6.0.2.tar.gz", hash = "sha256:d584d9ec91ad65861cc08d42e834324ef890a082e591037abe114850ff7bbc3e"},
 ]
-markers = {main = "extra == \"ray\""}
+markers = {main = "extra == \"ray\" or extra == \"hf\""}
 
 [[package]]
 name = "pyyaml-env-tag"
@@ -5007,7 +5044,7 @@ files = [
     {file = "s3transfer-0.11.3-py3-none-any.whl", hash = "sha256:ca855bdeb885174b5ffa95b9913622459d4ad8e331fc98eb01e6d5eb6a30655d"},
     {file = "s3transfer-0.11.3.tar.gz", hash = "sha256:edae4977e3a122445660c7c114bba949f9d191bae3b34a096f18a1c8c354527a"},
 ]
-markers = {main = "extra == \"dynamodb\" or extra == \"glue\" or extra == \"rest-sigv4\""}
+markers = {main = "extra == \"glue\" or extra == \"dynamodb\" or extra == \"rest-sigv4\""}
 
 [package.dependencies]
 botocore = ">=1.36.0,<2.0a.0"
@@ -5443,7 +5480,7 @@ description = "Fast, Extensible Progress Meter"
 optional = true
 python-versions = ">=3.7"
 groups = ["main"]
-markers = "extra == \"daft\""
+markers = "extra == \"hf\" or extra == \"daft\""
 files = [
     {file = "tqdm-4.67.1-py3-none-any.whl", hash = "sha256:26445eca388f82e72884e0d580d5464cd801a3ea01e63e5601bdff9ba6a48de2"},
     {file = "tqdm-4.67.1.tar.gz", hash = "sha256:f8aef9c52c08c13a65f30ea34f4e5aac3fd1a34959879d7e59e63027286627f2"},
@@ -5743,7 +5780,7 @@ description = "Yet another URL library"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""
+markers = "extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""
 files = [
     {file = "yarl-1.18.3-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:7df647e8edd71f000a5208fe6ff8c382a1de8edfbccdbbfe649d263de07d8c34"},
     {file = "yarl-1.18.3-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:c69697d3adff5aa4f874b19c0e4ed65180ceed6318ec856ebc423aa5850d84f7"},
@@ -5976,6 +6013,7 @@ duckdb = ["duckdb", "pyarrow"]
 dynamodb = ["boto3"]
 gcsfs = ["gcsfs"]
 glue = ["boto3", "mypy-boto3-glue"]
+hf = ["huggingface-hub"]
 hive = ["thrift"]
 hive-kerberos = ["kerberos", "thrift", "thrift-sasl"]
 pandas = ["pandas", "pyarrow"]
@@ -5993,4 +6031,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9.2, !=3.9.7"
-content-hash = "f3d2267ce4f380399dc767a6483a1f198127856883e394d8befbd8a871bbeab9"
+content-hash = "c0afe28336cc5f75e725f3e79febe3058c1a453a61745647b9a81b49a2e2bf71"
