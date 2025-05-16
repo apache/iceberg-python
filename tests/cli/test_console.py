@@ -33,19 +33,34 @@ from pyiceberg.schema import Schema
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Properties
 from pyiceberg.types import LongType, NestedField
-from pyiceberg.utils.config import Config
+
+
+def test_no_catalog_error(mocker: MockFixture, empty_home_dir_path: str) -> None:
+    mocker.patch.dict(os.environ, values={"HOME": empty_home_dir_path, "PYICEBERG_HOME": empty_home_dir_path})
+    runner = CliRunner()
+    result = runner.invoke(run, ["list", "--catalog", "nocatalog"], catch_exceptions=False)
+    assert result.exit_code == 1
+    assert result.output == "nocatalog catalog not found, please provide a catalog type using --type\n"
 
 
 def test_missing_uri(mocker: MockFixture, empty_home_dir_path: str) -> None:
     # mock to prevent parsing ~/.pyiceberg.yaml or {PYICEBERG_HOME}/.pyiceberg.yaml
     mocker.patch.dict(os.environ, values={"HOME": empty_home_dir_path, "PYICEBERG_HOME": empty_home_dir_path})
-    mocker.patch("pyiceberg.catalog._ENV_CONFIG", return_value=Config())
+    mocker.patch(
+        "pyiceberg.catalog._ENV_CONFIG.get_catalog_config",
+        return_value={
+            "catalog": {"production": {}},
+            "home": empty_home_dir_path,
+        },
+    )
 
     runner = CliRunner()
-    result = runner.invoke(run, ["list"])
-
-    assert result.exit_code == 1
-    assert result.output == "Could not initialize catalog with the following properties: {}\n"
+    with pytest.raises(
+        ValueError,
+        match="URI missing, please provide using --uri, the config or environment variable PYICEBERG_CATALOG__PRODUCTION__URI",
+    ):
+        result = runner.invoke(run, ["list", "--catalog", "production"], catch_exceptions=False)
+        assert result.exit_code == 1
 
 
 @pytest.fixture(autouse=True)
@@ -114,6 +129,21 @@ def test_list_namespace(catalog: InMemoryCatalog) -> None:
 
     assert result.exit_code == 0
     assert result.output == "default.my_table\n"
+
+
+def test_list_with_catalog_option_wrong_order(catalog: InMemoryCatalog):
+    """Test that `pyiceberg list --catalog hive` raises an error due to wrong order."""
+    catalog.create_namespace(TEST_TABLE_NAMESPACE)
+    catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=TEST_TABLE_SCHEMA,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+        properties=TEST_TABLE_PROPERTIES,
+    )
+    runner = CliRunner()
+    result = runner.invoke(run, ["list", "--catalog", "hive"])
+    assert result.exit_code == 0
+    print("result.output", result.output)
 
 
 def test_describe_namespace(catalog: InMemoryCatalog, namespace_properties: Properties) -> None:
