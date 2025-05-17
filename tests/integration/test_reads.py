@@ -606,6 +606,9 @@ def test_scan_tag(catalog: Catalog, format_version: int) -> None:
     arrow_table = test_positional_mor_deletes.scan().use_ref("tag_12").to_arrow()
     assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
+    arrow_table = test_positional_mor_deletes.scan(ref_name="tag_12").to_arrow()
+    assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
@@ -613,6 +616,9 @@ def test_scan_tag(catalog: Catalog, format_version: int) -> None:
 def test_scan_branch(catalog: Catalog, format_version: int) -> None:
     test_positional_mor_deletes = catalog.load_table(f"default.test_positional_mor_deletes_v{format_version}")
     arrow_table = test_positional_mor_deletes.scan().use_ref("without_5").to_arrow()
+    assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12]
+
+    arrow_table = test_positional_mor_deletes.scan(ref_name="without_5").to_arrow()
     assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12]
 
 
