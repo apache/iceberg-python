@@ -82,19 +82,6 @@ def table_v2_appended_with_null(session_catalog: Catalog, arrow_table_with_null:
     assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
 
 
-@pytest.fixture(scope="session", autouse=True)
-def table_v1_v2_appended_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
-    identifier = "default.arrow_table_v1_v2_appended_with_null"
-    tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [arrow_table_with_null])
-    assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
-
-    with tbl.transaction() as tx:
-        tx.upgrade_table_version(format_version=2)
-
-    tbl.append(arrow_table_with_null)
-
-    assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
-
 
 @pytest.mark.integration
 def test_rewrite_v1_v2_manifests(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
