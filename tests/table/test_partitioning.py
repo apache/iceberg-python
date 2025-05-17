@@ -21,7 +21,7 @@ from uuid import UUID
 
 import pytest
 
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionFieldValue, PartitionKey, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import (
     BucketTransform,
@@ -29,6 +29,7 @@ from pyiceberg.transforms import (
     HourTransform,
     IdentityTransform,
     MonthTransform,
+    Transform,
     TruncateTransform,
     YearTransform,
 )
@@ -215,6 +216,41 @@ def test_transform_consistency_with_pyarrow_transform(source_type: PrimitiveType
                 if "FeatureUnsupported => Unsupported data type for truncate transform" in str(e):
                     continue
                 raise
+
+
+@pytest.mark.parametrize(
+    "source_type, _transform, input_value,expected_value",
+    [
+        (UUIDType(), BucketTransform(2), UUID("ec9b663b-062f-4200-a130-8de19c21b800").bytes, 0),
+        (
+            UUIDType(),
+            IdentityTransform(),
+            UUID("ec9b663b-062f-4200-a130-8de19c21b800"),
+            UUID("ec9b663b-062f-4200-a130-8de19c21b800"),
+        ),
+        (UUIDType(), TruncateTransform(1), UUID("ec9b663b-062f-4200-a130-8de19c21b800").bytes, None),
+    ],
+)
+def test_transform_uuid_partition_key(
+    source_type: PrimitiveType, _transform: Transform[Any, Any], input_value: UUID, expected_value: Any
+) -> None:
+    """
+    Tests that UUID values can be correctly transformed and used as partition keys with various transformation functions.
+    """
+    schema = Schema(NestedField(field_id=1, name="uuid", field_type=source_type, required=True))
+    partition_field = PartitionField(source_id=1, field_id=1001, transform=_transform, name="uuid_partition")
+    spec = PartitionSpec(partition_field)
+
+    if _transform.can_transform(source_type):
+        transformer = _transform.transform(source=source_type)
+
+        value = transformer(input_value)
+        assert value == expected_value
+
+        partition_field_value = PartitionFieldValue(field=partition_field, value=value)
+        partition_key = PartitionKey(field_values=[partition_field_value], partition_spec=spec, schema=schema)
+        assert partition_key.field_values[0].field == partition_field
+        assert partition_key.field_values[0].value == expected_value
 
 
 def test_deserialize_partition_field_v2() -> None:
