@@ -35,8 +35,10 @@ def test_expire_snapshot(table_v2: Table) -> None:
     table_v2.catalog = MagicMock()
     table_v2.catalog.commit_table.return_value = mock_response
 
-    # Print snapshot IDs for debugging
-    print(f"Snapshot IDs before expiration: {[snapshot.snapshot_id for snapshot in table_v2.metadata.snapshots]}")
+    # Remove any refs that protect the snapshot to be expired
+    table_v2.metadata.refs = {
+        k: v for k, v in table_v2.metadata.refs.items() if getattr(v, "snapshot_id", None) != EXPIRE_SNAPSHOT
+    }
 
     # Assert fixture data to validate test assumptions
     assert len(table_v2.metadata.snapshots) == 2
