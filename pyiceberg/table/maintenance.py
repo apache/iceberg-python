@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from pyiceberg.table import Table
 
 
-class OptimizeTable:
+class MaintenanceTable:
     tbl: Table
 
     def __init__(self, tbl: Table) -> None:

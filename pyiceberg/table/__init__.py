@@ -80,6 +80,7 @@ from pyiceberg.partitioning import (
 from pyiceberg.schema import Schema
 from pyiceberg.table.inspect import InspectTable
 from pyiceberg.table.locations import LocationProvider, load_location_provider
+from pyiceberg.table.maintenance import MaintenanceTable
 from pyiceberg.table.metadata import (
     INITIAL_SEQUENCE_NUMBER,
     TableMetadata,
@@ -87,7 +88,6 @@ from pyiceberg.table.metadata import (
 from pyiceberg.table.name_mapping import (
     NameMapping,
 )
-from pyiceberg.table.optimize import OptimizeTable
 from pyiceberg.table.refs import SnapshotRef
 from pyiceberg.table.snapshots import (
     Snapshot,
@@ -1025,13 +1025,13 @@ class Table:
         return InspectTable(self)
 
     @property
-    def optimize(self) -> OptimizeTable:
-        """Return the OptimizeTable object to optimize.
+    def maintenance(self) -> MaintenanceTable:
+        """Return the MaintenanceTable object for maintenance.
 
         Returns:
-            OptimizeTable object based on this Table.
+            MaintenanceTable object based on this Table.
         """
-        return OptimizeTable(self)
+        return MaintenanceTable(self)
 
     def refresh(self) -> Table:
         """Refresh the current table metadata.
