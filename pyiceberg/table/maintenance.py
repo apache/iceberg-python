@@ -42,7 +42,7 @@ class MaintenanceTable:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For metadata operations PyArrow needs to be installed") from e
 
-    def orphaned_files(self, location: str, older_than: timedelta = timedelta(days=3)) -> Set[str]:
+    def _orphaned_files(self, location: str, older_than: timedelta = timedelta(days=3)) -> Set[str]:
         """Get all files which are not referenced in any metadata files of an Iceberg table and can thus be considered "orphaned".
 
         Args:
@@ -86,7 +86,7 @@ class MaintenanceTable:
             dry_run: If True, only log the files that would be deleted. Defaults to False.
         """
         location = self.tbl.location()
-        orphaned_files = self.orphaned_files(location, older_than)
+        orphaned_files = self._orphaned_files(location, older_than)
         logger.info(f"Found {len(orphaned_files)} orphaned files at {location}!")
         deleted_files = set()
         failed_to_delete_files = set()
