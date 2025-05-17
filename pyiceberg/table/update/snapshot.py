@@ -553,6 +553,9 @@ class _RewriteManifests(_SnapshotProducer["_RewriteManifests"]):
 
         super().__init__(Operation.REPLACE, transaction, io, snapshot_properties=snapshot_properties)
 
+        self._table = table
+        self._spec_id = spec_id or table.spec().spec_id
+
         snapshot = self._table.current_snapshot()
         if self._spec_id and self._spec_id not in self._table.specs():
             raise ValueError(f"Cannot find spec with id: {self._spec_id}")
@@ -565,9 +568,6 @@ class _RewriteManifests(_SnapshotProducer["_RewriteManifests"]):
             TableProperties.MANIFEST_TARGET_SIZE_BYTES,
             TableProperties.MANIFEST_TARGET_SIZE_BYTES_DEFAULT,
         )  # type: ignore
-        self._table = table
-        self._spec_id = spec_id or table.spec().spec_id
-
         self._min_count_to_merge = property_as_int(
             self._transaction.table_metadata.properties,
             TableProperties.MANIFEST_MIN_MERGE_COUNT,
@@ -582,13 +582,13 @@ class _RewriteManifests(_SnapshotProducer["_RewriteManifests"]):
     def _summary(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> Summary:
         from pyiceberg.table import TableProperties
 
-        ssc = SnapshotSummaryCollector()
-        partition_summary_limit = int(
-            self._transaction.table_metadata.properties.get(
-                TableProperties.WRITE_PARTITION_SUMMARY_LIMIT, TableProperties.WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT
+        ssc = SnapshotSummaryCollector(
+            int(
+                self._transaction.table_metadata.properties.get(
+                    TableProperties.WRITE_PARTITION_SUMMARY_LIMIT, TableProperties.WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT
+                )
             )
         )
-        ssc.set_partition_summary_limit(partition_summary_limit)
 
         props = {
             "manifests-kept": "0",

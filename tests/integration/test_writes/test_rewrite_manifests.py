@@ -96,33 +96,57 @@ def table_v1_v2_appended_with_null(session_catalog: Catalog, arrow_table_with_nu
     assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
 
 
-# @pytest.mark.integration
-# def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
-#     identifier = "default.arrow_table_summaries"
-#     tbl = _create_table(session_catalog, identifier, {"format-version": "2"})
-#     tbl.append(arrow_table_with_null)
-#     tbl.append(arrow_table_with_null)
-#
-#     # tbl.rewrite_manifests()
-#
-#     # records1 = [ThreeColumnRecord(1, None, "AAAA")]
-#     # write_records(spark, table_location, records1)
-#     before_pandas = tbl.scan().to_pandas()
-#     before_count = before_pandas.shape[0]
-#     tbl.refresh()
-#     manifests = tbl.inspect.manifests().to_pylist()
-#     assert len(manifests) == 2, "Should have 2 manifests before rewrite"
-#
-#     tbl.rewrite_manifests()
-#     tbl.refresh()
-#
-#     after_pandas = tbl.scan().to_pandas()
-#     after_count = before_pandas.shape[0]
-#     manifests = tbl.inspect.manifests().to_pylist()
-#     assert len(manifests) == 1, "Should have 1 manifests before rewrite"
-#
-#     snaps = tbl.inspect.snapshots().to_pandas()
-#     print(snaps)
+@pytest.mark.integration
+def test_rewrite_v1_v2_manifests(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.test_rewrite_v1_v2_manifests"
+    # Create a v1 table and append data
+    tbl = _create_table(
+        session_catalog,
+        identifier,
+        {"format-version": "1"},
+        [arrow_table_with_null],
+    )
+    assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
+
+    # tbl.append(arrow_table_with_null)
+    # Upgrade to v2 and append more data
+    with tbl.transaction() as tx:
+        tx.upgrade_table_version(format_version=2)
+
+    tbl.append(arrow_table_with_null)
+    assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
+
+    with tbl.transaction() as tx:  # type: ignore[unreachable]
+        tx.set_properties({"commit.manifest-merge.enabled": "true", "commit.manifest.min-count-to-merge": "2"})
+
+    # Get initial manifest state
+    manifests = tbl.inspect.manifests()
+    assert len(manifests) == 2, "Should have 2 manifests before rewrite"
+
+    # Execute rewrite manifests
+    result = tbl.rewrite_manifests()
+
+    assert len(result.rewritten_manifests) == 2, "Action should rewrite 2 manifests"
+    assert len(result.added_manifests) == 1, "Action should add 1 manifest"
+
+    tbl.refresh()
+
+    # Verify final state
+    current_snapshot = tbl.current_snapshot()
+    if not current_snapshot:
+        raise AssertionError("Expected a current snapshot")
+
+    new_manifests = current_snapshot.manifests(tbl.io)
+    assert len(new_manifests) == 1, "Should have 1 manifest after rewrite"
+    assert new_manifests[0].existing_files_count == 2, "Should have 2 existing files in the new manifest"
+    assert new_manifests[0].added_files_count == 0, "Should have no added files in the new manifest"
+    assert new_manifests[0].deleted_files_count == 0, "Should have no deleted files in the new manifest"
+
+    # Validate the data is intact
+    expected_records_count = arrow_table_with_null.shape[0] * 2
+    result_df = tbl.scan().to_pandas()
+    actual_records_count = result_df.shape[0]
+    assert expected_records_count == actual_records_count, "Record count must match"
 
 
 @pytest.mark.integration
@@ -146,8 +170,11 @@ def test_rewrite_small_manifests_non_partitioned_table(session_catalog: Catalog,
     tbl = _create_table(session_catalog, identifier, {"format-version": "2"})
     tbl.append(arrow_table_with_null)
     tbl.append(arrow_table_with_null)
-    tbl.refresh()
 
+    tbl.transaction().set_properties(
+        {"commit.manifest-merge.enabled": "true", "commit.manifest.min-count-to-merge": "2"}
+    ).commit_transaction()
+    tbl = tbl.refresh()
     manifests = tbl.inspect.manifests()
     assert len(manifests) == 2, "Should have 2 manifests before rewrite"
 
@@ -212,15 +239,22 @@ def test_rewrite_small_manifests_partitioned_table(session_catalog: Catalog) -> 
     tbl.append(records4)
     tbl.refresh()
 
-    tbl.refresh()
+    tbl = tbl.refresh()
     manifests = tbl.current_snapshot().manifests(tbl.io)  # type: ignore
     assert len(manifests) == 4, "Should have 4 manifests before rewrite"
 
     # manifest_entry_size_bytes = compute_manifest_entry_size_bytes(manifests)
     target_manifest_size_bytes = 5200 * 2 + 100
+
     tbl = (
         tbl.transaction()
-        .set_properties({TableProperties.MANIFEST_TARGET_SIZE_BYTES: str(target_manifest_size_bytes)})
+        .set_properties(
+            {
+                TableProperties.MANIFEST_TARGET_SIZE_BYTES: str(target_manifest_size_bytes),
+                "commit.manifest-merge.enabled": "true",
+                "commit.manifest.min-count-to-merge": "2",
+            }
+        )
         .commit_transaction()
     )
 
@@ -233,11 +267,11 @@ def test_rewrite_small_manifests_partitioned_table(session_catalog: Catalog) -> 
     new_manifests = tbl.current_snapshot().manifests(tbl.io)  # type: ignore
     assert len(new_manifests) == 2, "Should have 2 manifests after rewrite"
 
-    assert new_manifests[0].existing_files_count == 4
+    assert new_manifests[0].existing_files_count == 2
     assert new_manifests[0].added_files_count == 0
     assert new_manifests[0].deleted_files_count == 0
 
-    assert new_manifests[1].existing_files_count == 4
+    assert new_manifests[1].existing_files_count == 2
     assert new_manifests[1].added_files_count == 0
     assert new_manifests[1].deleted_files_count == 0
 

@@ -1237,9 +1237,9 @@ class Table:
         """Return the table's field-id NameMapping."""
         return self.metadata.name_mapping()
 
-    def rewrite_manifests(self) -> None:
+    def rewrite_manifests(self) -> RewriteManifestsResult:
         with self.transaction() as tx:
-            tx.rewrite_manifests()
+            return tx.rewrite_manifests()
 
     def upsert(
         self,
