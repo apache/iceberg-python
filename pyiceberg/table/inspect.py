@@ -497,7 +497,10 @@ class InspectTable:
                             "file_path": record.path,
                             "pos": record.pos,
                             "row": record.row,
-                            "partition": entry.data_file.partition.__dict__,
+                            "partition": {
+                                field.name: entry.data_file.partition[pos]
+                                for pos, field in enumerate(self.tbl.metadata.specs()[manifest.partition_spec_id].fields)
+                            },
                             "spec_id": manifest.partition_spec_id,
                             "delete_file_path": entry.data_file.file_path,
                         }
