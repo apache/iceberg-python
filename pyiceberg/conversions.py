@@ -267,10 +267,13 @@ def _(_: StringType, value: str) -> bytes:
 
 
 @to_bytes.register(UUIDType)
-def _(_: UUIDType, value: Union[uuid.UUID, bytes]) -> bytes:
+def _(_: UUIDType, value: Union[uuid.UUID, bytes, str]) -> bytes:
     if isinstance(value, bytes):
-        return value
-    return value.bytes
+        return str(uuid.UUID(bytes=value)).encode(UTF8)
+    elif isinstance(value, uuid.UUID):
+        return str(value).encode(UTF8)
+    else:
+        return str(uuid.UUID(value)).encode(UTF8)
 
 
 @to_bytes.register(BinaryType)
@@ -355,9 +358,13 @@ def _(_: StringType, b: bytes) -> str:
 
 @from_bytes.register(BinaryType)
 @from_bytes.register(FixedType)
-@from_bytes.register(UUIDType)
 def _(_: PrimitiveType, b: bytes) -> bytes:
     return b
+
+
+@from_bytes.register(UUIDType)
+def _(_: UUIDType, b: bytes) -> uuid.UUID:
+    return uuid.UUID(b.decode(UTF8))
 
 
 @from_bytes.register(DecimalType)
