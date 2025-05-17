@@ -108,7 +108,6 @@ def test_rewrite_v1_v2_manifests(session_catalog: Catalog, arrow_table_with_null
     )
     assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
 
-    # tbl.append(arrow_table_with_null)
     # Upgrade to v2 and append more data
     with tbl.transaction() as tx:
         tx.upgrade_table_version(format_version=2)
@@ -117,7 +116,7 @@ def test_rewrite_v1_v2_manifests(session_catalog: Catalog, arrow_table_with_null
     assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
 
     with tbl.transaction() as tx:  # type: ignore[unreachable]
-        tx.set_properties({"commit.manifest-merge.enabled": "true", "commit.manifest.min-count-to-merge": "2"})
+        tx.set_properties({TableProperties.MANIFEST_MERGE_ENABLED: "true", TableProperties.MANIFEST_MIN_MERGE_COUNT: "2"})
 
     # Get initial manifest state
     manifests = tbl.inspect.manifests()
@@ -141,6 +140,7 @@ def test_rewrite_v1_v2_manifests(session_catalog: Catalog, arrow_table_with_null
     assert new_manifests[0].existing_files_count == 2, "Should have 2 existing files in the new manifest"
     assert new_manifests[0].added_files_count == 0, "Should have no added files in the new manifest"
     assert new_manifests[0].deleted_files_count == 0, "Should have no deleted files in the new manifest"
+    assert new_manifests[0].sequence_number is not None, "Should have a sequence number in the new manifest"
 
     # Validate the data is intact
     expected_records_count = arrow_table_with_null.shape[0] * 2
@@ -172,7 +172,7 @@ def test_rewrite_small_manifests_non_partitioned_table(session_catalog: Catalog,
     tbl.append(arrow_table_with_null)
 
     tbl.transaction().set_properties(
-        {"commit.manifest-merge.enabled": "true", "commit.manifest.min-count-to-merge": "2"}
+        {TableProperties.MANIFEST_MERGE_ENABLED: "true", TableProperties.MANIFEST_MIN_MERGE_COUNT: "2"}
     ).commit_transaction()
     tbl = tbl.refresh()
     manifests = tbl.inspect.manifests()
@@ -251,8 +251,8 @@ def test_rewrite_small_manifests_partitioned_table(session_catalog: Catalog) -> 
         .set_properties(
             {
                 TableProperties.MANIFEST_TARGET_SIZE_BYTES: str(target_manifest_size_bytes),
-                "commit.manifest-merge.enabled": "true",
-                "commit.manifest.min-count-to-merge": "2",
+                TableProperties.MANIFEST_MERGE_ENABLED: "true",
+                TableProperties.MANIFEST_MIN_MERGE_COUNT: "2",
             }
         )
         .commit_transaction()
