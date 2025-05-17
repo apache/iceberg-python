@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from functools import reduce
-from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Set, Tuple, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Set, Tuple, Union
 
 from pyiceberg.conversions import from_bytes
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile, PartitionFieldSummary
@@ -672,7 +672,11 @@ class InspectTable:
         # coerce into snapshot objects if users passes in snapshot ids
         if snapshots is not None:
             if isinstance(snapshots[0], int):
-                snapshots = cast(list[Snapshot], [self.tbl.metadata.snapshot_by_id(snapshot_id) for snapshot_id in snapshots])
+                snapshots = [
+                    snapshot
+                    for snapshot_id in snapshots
+                    if (snapshot := self.tbl.metadata.snapshot_by_id(snapshot_id)) is not None
+                ]
         else:
             snapshots = self.tbl.snapshots()
 
