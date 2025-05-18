@@ -17,46 +17,103 @@
 from unittest.mock import MagicMock
 from uuid import uuid4
 
+import pytest
+
 from pyiceberg.table import CommitTableResponse, Table
 
 
-def test_expire_snapshot(table_v2: Table) -> None:
+def test_cannot_expire_protected_head_snapshot(table_v2: Table) -> None:
+    """Test that a HEAD (branch) snapshot cannot be expired."""
+    HEAD_SNAPSHOT = 3051729675574597004
+    KEEP_SNAPSHOT = 3055729675574597004
+
+    # Mock the catalog's commit_table method
+    table_v2.catalog = MagicMock()
+    # Simulate refs protecting HEAD_SNAPSHOT as a branch
+    table_v2.metadata = table_v2.metadata.model_copy(
+        update={
+            "refs": {
+                "main": MagicMock(snapshot_id=HEAD_SNAPSHOT, snapshot_ref_type="branch"),
+                "tag1": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="tag"),
+            }
+        }
+    )
+    # Assert fixture data
+    assert any(ref.snapshot_id == HEAD_SNAPSHOT for ref in table_v2.metadata.refs.values())
+
+    # Attempt to expire the HEAD snapshot and expect a ValueError
+    with pytest.raises(ValueError, match=f"Snapshot with ID {HEAD_SNAPSHOT} is protected and cannot be expired."):
+        table_v2.expire_snapshots().expire_snapshot_by_id(HEAD_SNAPSHOT).commit()
+
+    table_v2.catalog.commit_table.assert_not_called()
+
+
+def test_cannot_expire_tagged_snapshot(table_v2: Table) -> None:
+    """Test that a tagged snapshot cannot be expired."""
+    TAGGED_SNAPSHOT = 3051729675574597004
+    KEEP_SNAPSHOT = 3055729675574597004
+
+    table_v2.catalog = MagicMock()
+    # Simulate refs protecting TAGGED_SNAPSHOT as a tag
+    table_v2.metadata = table_v2.metadata.model_copy(
+        update={
+            "refs": {
+                "tag1": MagicMock(snapshot_id=TAGGED_SNAPSHOT, snapshot_ref_type="tag"),
+                "main": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="branch"),
+            }
+        }
+    )
+    assert any(ref.snapshot_id == TAGGED_SNAPSHOT for ref in table_v2.metadata.refs.values())
+
+    with pytest.raises(ValueError, match=f"Snapshot with ID {TAGGED_SNAPSHOT} is protected and cannot be expired."):
+        table_v2.expire_snapshots().expire_snapshot_by_id(TAGGED_SNAPSHOT).commit()
+
+    table_v2.catalog.commit_table.assert_not_called()
+
+
+def test_expire_unprotected_snapshot(table_v2: Table) -> None:
+    """Test that an unprotected snapshot can be expired."""
     EXPIRE_SNAPSHOT = 3051729675574597004
     KEEP_SNAPSHOT = 3055729675574597004
-    # Mock the catalog's commit_table method
+
     mock_response = CommitTableResponse(
-        # Use the table's current metadata but keep only the snapshot not to be expired
         metadata=table_v2.metadata.model_copy(update={"snapshots": [KEEP_SNAPSHOT]}),
         metadata_location="mock://metadata/location",
         uuid=uuid4(),
     )
-
-    # Mock the catalog object and its commit_table method to return the mock response
     table_v2.catalog = MagicMock()
     table_v2.catalog.commit_table.return_value = mock_response
 
     # Remove any refs that protect the snapshot to be expired
-    table_v2.metadata.refs = {
-        k: v for k, v in table_v2.metadata.refs.items() if getattr(v, "snapshot_id", None) != EXPIRE_SNAPSHOT
-    }
+    table_v2.metadata = table_v2.metadata.model_copy(
+        update={
+            "refs": {
+                "main": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="branch"),
+                "tag1": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="tag"),
+            }
+        }
+    )
 
-    # Assert fixture data to validate test assumptions
-    assert len(table_v2.metadata.snapshots) == 2
-    assert len(table_v2.metadata.snapshot_log) == 2
-    assert len(table_v2.metadata.refs) == 2
+    # Assert fixture data
+    assert all(ref.snapshot_id != EXPIRE_SNAPSHOT for ref in table_v2.metadata.refs.values())
 
-    # Expire the snapshot directly without using a transaction
-    try:
-        table_v2.expire_snapshots().expire_snapshot_by_id(EXPIRE_SNAPSHOT).commit()
-    except Exception as e:
-        raise AssertionError(f"Commit failed with error: {e}") from e
+    # Expire the snapshot
+    table_v2.expire_snapshots().expire_snapshot_by_id(EXPIRE_SNAPSHOT).commit()
 
-    # Assert that commit_table was called once
     table_v2.catalog.commit_table.assert_called_once()
-
-    # Assert the expired snapshot ID is no longer present
     remaining_snapshots = table_v2.metadata.snapshots
     assert EXPIRE_SNAPSHOT not in remaining_snapshots
-
-    # Assert the length of snapshots after expiration
     assert len(table_v2.metadata.snapshots) == 1
+
+
+def test_expire_nonexistent_snapshot_raises(table_v2: Table) -> None:
+    """Test that trying to expire a non-existent snapshot raises an error."""
+    NONEXISTENT_SNAPSHOT = 9999999999999999999
+
+    table_v2.catalog = MagicMock()
+    table_v2.metadata = table_v2.metadata.model_copy(update={"refs": {}})
+
+    with pytest.raises(ValueError, match=f"Snapshot with ID {NONEXISTENT_SNAPSHOT} does not exist."):
+        table_v2.expire_snapshots().expire_snapshot_by_id(NONEXISTENT_SNAPSHOT).commit()
+
+    table_v2.catalog.commit_table.assert_not_called()
