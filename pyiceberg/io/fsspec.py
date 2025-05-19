@@ -39,9 +39,11 @@ from requests import HTTPError
 from pyiceberg.catalog import TOKEN
 from pyiceberg.exceptions import SignError
 from pyiceberg.io import (
+    ADLS_ACCOUNT_HOST,
     ADLS_ACCOUNT_KEY,
     ADLS_ACCOUNT_NAME,
     ADLS_CLIENT_ID,
+    ADLS_CLIENT_SECRET,
     ADLS_CONNECTION_STRING,
     ADLS_SAS_TOKEN,
     ADLS_TENANT_ID,
@@ -73,7 +75,6 @@ from pyiceberg.io import (
     S3_SIGNER_ENDPOINT,
     S3_SIGNER_ENDPOINT_DEFAULT,
     S3_SIGNER_URI,
-    ADLS_ClIENT_SECRET,
     FileIO,
     InputFile,
     InputStream,
@@ -207,7 +208,8 @@ def _adls(properties: Properties) -> AbstractFileSystem:
         sas_token=properties.get(ADLS_SAS_TOKEN),
         tenant_id=properties.get(ADLS_TENANT_ID),
         client_id=properties.get(ADLS_CLIENT_ID),
-        client_secret=properties.get(ADLS_ClIENT_SECRET),
+        client_secret=properties.get(ADLS_CLIENT_SECRET),
+        account_host=properties.get(ADLS_ACCOUNT_HOST),
     )
 
 
