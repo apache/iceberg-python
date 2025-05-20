@@ -870,9 +870,10 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
     file_schema: Schema
     case_sensitive: bool
 
-    def __init__(self, file_schema: Schema, case_sensitive: bool) -> None:
+    def __init__(self, file_schema: Schema, case_sensitive: bool, projected_missing_fields: dict[str, Any]) -> None:
         self.file_schema = file_schema
         self.case_sensitive = case_sensitive
+        self.projected_missing_fields = projected_missing_fields
 
     def visit_true(self) -> BooleanExpression:
         return AlwaysTrue()
@@ -894,11 +895,16 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
 
     def visit_bound_predicate(self, predicate: BoundPredicate[L]) -> BooleanExpression:
         file_column_name = self.file_schema.find_column_name(predicate.term.ref().field.field_id)
+        field_name = predicate.term.ref().field.name
 
         if file_column_name is None:
             # In the case of schema evolution, the column might not be present
             # in the file schema when reading older data
             if isinstance(predicate, BoundIsNull):
+                return AlwaysTrue()
+            # Projected fields are only available for identity partition fields
+            # Which mean that partition pruning excluded partition field which evaluates to false
+            elif field_name in self.projected_missing_fields:
                 return AlwaysTrue()
             else:
                 return AlwaysFalse()
@@ -913,8 +919,8 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
             raise ValueError(f"Unsupported predicate: {predicate}")
 
 
-def translate_column_names(expr: BooleanExpression, file_schema: Schema, case_sensitive: bool) -> BooleanExpression:
-    return visit(expr, _ColumnNameTranslator(file_schema, case_sensitive))
+def translate_column_names(expr: BooleanExpression, file_schema: Schema, case_sensitive: bool, projected_missing_fields: dict[str, Any]) -> BooleanExpression:
+    return visit(expr, _ColumnNameTranslator(file_schema, case_sensitive, projected_missing_fields))
 
 
 class _ExpressionFieldIDs(BooleanExpressionVisitor[Set[int]]):
