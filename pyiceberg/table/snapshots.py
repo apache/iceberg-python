@@ -440,7 +440,7 @@ def ancestors_of(current_snapshot: Optional[Snapshot], table_metadata: TableMeta
 def ancestors_between(
     from_snapshot: Optional[Snapshot], to_snapshot: Snapshot, table_metadata: TableMetadata
 ) -> Iterable[Snapshot]:
-    """Get the ancestors of and including the given snapshot between the to and from snapshots."""
+    """Get the ancestors of and including the given snapshot between the to and from snapshots, both inclusively."""
     if from_snapshot is not None:
         for snapshot in ancestors_of(to_snapshot, table_metadata):
             yield snapshot
@@ -450,8 +450,23 @@ def ancestors_between(
         yield from ancestors_of(to_snapshot, table_metadata)
 
 
+def ancestors_between_ids(
+    from_snapshot_id_exclusive: Optional[int], to_snapshot_id_inclusive: int, table_metadata: TableMetadata
+) -> Iterable[Snapshot]:
+    """Return the ancestors of and including the given "to" snapshot, up to but not including the "from" snapshot."""
+    # TODO: Test equal from and to snapshot IDs
+    if from_snapshot_id_exclusive is not None:
+        for snapshot in ancestors_of(table_metadata.snapshot_by_id(to_snapshot_id_inclusive), table_metadata):
+            if snapshot.snapshot_id == from_snapshot_id_exclusive:
+                break
+
+            yield snapshot
+    else:
+        yield from ancestors_of(table_metadata.snapshot_by_id(to_snapshot_id_inclusive), table_metadata)
+
+
 def is_ancestor_of(snapshot_id: int, ancestor_snapshot_id: int, table_metadata: TableMetadata) -> bool:
-    """Returns whether ancestor_snapshot_id is an ancestor of snapshot_id."""
+    """Return whether ancestor_snapshot_id is an ancestor of snapshot_id."""
     for snapshot in ancestors_of(table_metadata.snapshot_by_id(snapshot_id), table_metadata):
         if snapshot.snapshot_id == ancestor_snapshot_id:
             return True

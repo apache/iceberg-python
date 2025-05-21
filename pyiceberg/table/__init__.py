@@ -69,6 +69,7 @@ from pyiceberg.manifest import (
     DataFileContent,
     ManifestContent,
     ManifestEntry,
+    ManifestEntryStatus,
     ManifestFile,
 )
 from pyiceberg.partitioning import (
@@ -89,8 +90,10 @@ from pyiceberg.table.name_mapping import (
 )
 from pyiceberg.table.refs import SnapshotRef
 from pyiceberg.table.snapshots import (
+    Operation,
     Snapshot,
     SnapshotLogEntry,
+    ancestors_between_ids,
     is_ancestor_of,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
@@ -1850,79 +1853,6 @@ class DataScan(FileBasedScan, TableScan):
             matching rows.
     """
 
-    def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
-        project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id], self.case_sensitive)
-        return project(self.row_filter)
-
-    @cached_property
-    def partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
-        return KeyDefaultDict(self._build_partition_projection)
-
-    def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
-        spec = self.table_metadata.specs()[spec_id]
-        return manifest_evaluator(spec, self.table_metadata.schema(), self.partition_filters[spec_id], self.case_sensitive)
-
-    def _build_partition_evaluator(self, spec_id: int) -> Callable[[DataFile], bool]:
-        spec = self.table_metadata.specs()[spec_id]
-        partition_type = spec.partition_type(self.table_metadata.schema())
-        partition_schema = Schema(*partition_type.fields)
-        partition_expr = self.partition_filters[spec_id]
-
-        # The lambda created here is run in multiple threads.
-        # So we avoid creating _EvaluatorExpression methods bound to a single
-        # shared instance across multiple threads.
-        return lambda data_file: expression_evaluator(partition_schema, partition_expr, self.case_sensitive)(data_file.partition)
-
-    def _build_metrics_evaluator(self) -> Callable[[DataFile], bool]:
-        schema = self.table_metadata.schema()
-        include_empty_files = strtobool(self.options.get("include_empty_files", "false"))
-
-        # The lambda created here is run in multiple threads.
-        # So we avoid creating _InclusiveMetricsEvaluator methods bound to a single
-        # shared instance across multiple threads.
-        return lambda data_file: _InclusiveMetricsEvaluator(
-            schema,
-            self.row_filter,
-            self.case_sensitive,
-            include_empty_files,
-        ).eval(data_file)
-
-    def _build_residual_evaluator(self, spec_id: int) -> Callable[[DataFile], ResidualEvaluator]:
-        spec = self.table_metadata.specs()[spec_id]
-
-        # The lambda created here is run in multiple threads.
-        # So we avoid creating _EvaluatorExpression methods bound to a single
-        # shared instance across multiple threads.
-        # return lambda data_file: (partition_schema, partition_expr, self.case_sensitive)(data_file.partition)
-        from pyiceberg.expressions.visitors import residual_evaluator_of
-
-        # assert self.row_filter == False
-        return lambda datafile: (
-            residual_evaluator_of(
-                spec=spec,
-                expr=self.row_filter,
-                case_sensitive=self.case_sensitive,
-                schema=self.table_metadata.schema(),
-            )
-        )
-
-    @staticmethod
-    def _check_sequence_number(min_sequence_number: int, manifest: ManifestFile) -> bool:
-        """Ensure that no manifests are loaded that contain deletes that are older than the data.
-
-        Args:
-            min_sequence_number (int): The minimal sequence number.
-            manifest (ManifestFile): A ManifestFile that can be either data or deletes.
-
-        Returns:
-            Boolean indicating if it is either a data file, or a relevant delete file.
-        """
-        return manifest.content == ManifestContent.DATA or (
-            # Not interested in deletes that are older than the data
-            manifest.content == ManifestContent.DELETES
-            and (manifest.sequence_number or INITIAL_SEQUENCE_NUMBER) >= min_sequence_number
-        )
-
     def plan_files(self) -> Iterable[FileScanTask]:
         """Plans the relevant files by filtering on the PartitionSpecs.
 
@@ -1933,68 +1863,14 @@ class DataScan(FileBasedScan, TableScan):
         if not snapshot:
             return iter([])
 
-        # step 1: filter manifests using partition summaries
-        # the filter depends on the partition spec used to write the manifest file, so create a cache of filters for each spec id
-
-        manifest_evaluators: Dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
-
-        residual_evaluators: Dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
-
-        manifests = [
-            manifest_file
-            for manifest_file in snapshot.manifests(self.io)
-            if manifest_evaluators[manifest_file.partition_spec_id](manifest_file)
-        ]
-
-        # step 2: filter the data files in each manifest
-        # this filter depends on the partition spec used to write the manifest file
-
-        partition_evaluators: Dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._build_partition_evaluator)
-
-        min_sequence_number = _min_sequence_number(manifests)
-
-        data_entries: List[ManifestEntry] = []
-        positional_delete_entries = SortedList(key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER)
-
-        executor = ExecutorFactory.get_or_create()
-        for manifest_entry in chain(
-            *executor.map(
-                lambda args: _open_manifest(*args),
-                [
-                    (
-                        self.io,
-                        manifest,
-                        partition_evaluators[manifest.partition_spec_id],
-                        self._build_metrics_evaluator(),
-                    )
-                    for manifest in manifests
-                    if self._check_sequence_number(min_sequence_number, manifest)
-                ],
-            )
-        ):
-            data_file = manifest_entry.data_file
-            if data_file.content == DataFileContent.DATA:
-                data_entries.append(manifest_entry)
-            elif data_file.content == DataFileContent.POSITION_DELETES:
-                positional_delete_entries.add(manifest_entry)
-            elif data_file.content == DataFileContent.EQUALITY_DELETES:
-                raise ValueError("PyIceberg does not yet support equality deletes: https://github.com/apache/iceberg/issues/6568")
-            else:
-                raise ValueError(f"Unknown DataFileContent ({data_file.content}): {manifest_entry}")
-
-        return [
-            FileScanTask(
-                data_entry.data_file,
-                delete_files=_match_deletes_to_data_file(
-                    data_entry,
-                    positional_delete_entries,
-                ),
-                residual=residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(
-                    data_entry.data_file.partition
-                ),
-            )
-            for data_entry in data_entries
-        ]
+        return ManifestGroup(
+            manifests=snapshot.manifests(self.io),
+            io=self.io,
+            table_metadata=self.table_metadata,
+            parsed_row_filter=self.row_filter,
+            case_sensitive=self.case_sensitive,
+            options=self.options,
+        ).plan_files()
 
 
 A = TypeVar("A", bound="IncrementalAppendScan", covariant=True)
@@ -2013,8 +1889,8 @@ class IncrementalAppendScan(FileBasedScan, AbstractTableScan):
         case_sensitive:
             If True column matching is case sensitive
         from_snapshot_id:
-            Optional ID of the "from" snapshot, to start the incremental scan from, exclusively.
-            Omitting it will default to the eldest ancestor of the "to" snapshot, inclusively.
+            Optional ID of the "from" snapshot, to start the incremental scan from, exclusively. When the scan is
+            read, this must be specified.
         to_snapshot_id:
             Optional ID of the "to" snapshot, to end the incremental scan at, inclusively.
             Omitting it will default to the table's current snapshot.
@@ -2057,7 +1933,6 @@ class IncrementalAppendScan(FileBasedScan, AbstractTableScan):
         Returns:
             this for method chaining
         """
-
         return self.update(from_snapshot_id=from_snapshot_id)
 
     def with_to_snapshot(self: A, to_snapshot_id: Optional[int]) -> A:
@@ -2071,7 +1946,6 @@ class IncrementalAppendScan(FileBasedScan, AbstractTableScan):
         Returns:
             this for method chaining
         """
-
         return self.update(to_snapshot_id=to_snapshot_id)
 
     def projection(self) -> Schema:
@@ -2082,13 +1956,38 @@ class IncrementalAppendScan(FileBasedScan, AbstractTableScan):
 
         return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
 
-    def plan_files(self) -> Iterable[ScanTask]:
+    def plan_files(self) -> Iterable[FileScanTask]:
+        to_snapshot_id, from_snapshot_id = self._validate_and_resolve_snapshots()
+
+        append_snapshots: List[Snapshot] = self._appends_between(from_snapshot_id, to_snapshot_id, self.table_metadata)
+        if len(append_snapshots) == 0:
+            return iter([])
+        append_snapshot_ids: Set[int] = {snapshot.snapshot_id for snapshot in append_snapshots}
+
+        manifests = {
+            manifest_file
+            for snapshot in append_snapshots
+            for manifest_file in snapshot.manifests(self.io)
+            if manifest_file.content == ManifestContent.DATA and manifest_file.added_snapshot_id in append_snapshot_ids
+        }
+
+        return ManifestGroup(
+            manifests=list(manifests),
+            io=self.io,
+            table_metadata=self.table_metadata,
+            parsed_row_filter=self.row_filter,
+            case_sensitive=self.case_sensitive,
+            options=self.options,
+            manifest_entry_filter=lambda manifest_entry: manifest_entry.snapshot_id in append_snapshot_ids
+            and manifest_entry.status == ManifestEntryStatus.ADDED,
+        ).plan_files()
+
+    def _validate_and_resolve_snapshots(self) -> tuple[int, int]:
         current_snapshot = self.table_metadata.current_snapshot()
-        from_snapshot_id = self.from_snapshot_id
         to_snapshot_id = self.to_snapshot_id
 
-        if current_snapshot is None and from_snapshot_id is None and to_snapshot_id is None:
-            return iter([])
+        if self.from_snapshot_id is None:
+            raise ValueError("Start snapshot of append scan unspecified, please set from_snapshot_id")
 
         if to_snapshot_id is None:
             if current_snapshot is None:
@@ -2098,24 +1997,203 @@ class IncrementalAppendScan(FileBasedScan, AbstractTableScan):
         elif self._is_snapshot_missing(to_snapshot_id):
             raise ValueError(f"End snapshot of append scan not found on table metadata: {to_snapshot_id}")
 
-        if from_snapshot_id is not None:
-            if from_snapshot_id == to_snapshot_id:
-                return iter([])
+        if self._is_snapshot_missing(self.from_snapshot_id):
+            raise ValueError(f"Start snapshot of append scan not found on table metadata: {self.from_snapshot_id}")
 
-            if self._is_snapshot_missing(from_snapshot_id):
-                raise ValueError(f"Start snapshot of append scan not found on table metadata: {from_snapshot_id}")
+        if not is_ancestor_of(to_snapshot_id, self.from_snapshot_id, self.table_metadata):
+            raise ValueError(
+                f"Append scan's start snapshot {self.from_snapshot_id} is not an ancestor of end snapshot {to_snapshot_id}"
+            )
 
-            if not is_ancestor_of(to_snapshot_id, from_snapshot_id, self.table_metadata):
-                raise ValueError(
-                    f"Append scan's start snapshot {from_snapshot_id} is not an ancestor of end snapshot {to_snapshot_id}"
-                )
+        return self.from_snapshot_id, to_snapshot_id
 
-        return self._do_plan_files(from_snapshot_id, to_snapshot_id)  # type: ignore
-
-    # TODO: Note behaviour change that throws
+    # TODO: Note behaviour change from DataScan that we throw
     def _is_snapshot_missing(self, snapshot_id: int) -> bool:
-        """Returns whether the snapshot ID is missing in the table metadata."""
+        """Return whether the snapshot ID is missing in the table metadata."""
         return self.table_metadata.snapshot_by_id(snapshot_id) is not None
+
+    @staticmethod
+    def _appends_between(
+        from_snapshot_id_exclusive: int, to_snapshot_id_inclusive: int, table_metadata: TableMetadata
+    ) -> List[Snapshot]:
+        """Return the list of snapshots that are appends between two snapshot IDs."""
+        return [
+            snapshot
+            for snapshot in ancestors_between_ids(
+                from_snapshot_id_exclusive=from_snapshot_id_exclusive,
+                to_snapshot_id_inclusive=to_snapshot_id_inclusive,
+                table_metadata=table_metadata,
+            )
+            if snapshot.summary is not None and snapshot.summary.operation == Operation.APPEND
+        ]
+
+
+class ManifestGroup:
+    manifests: List[ManifestFile]
+    io: FileIO
+    table_metadata: TableMetadata
+    parsed_row_filter: BooleanExpression
+    case_sensitive: bool
+    options: Properties
+    manifest_entry_filter: Callable[[ManifestEntry], bool]
+
+    def __init__(
+        self,
+        manifests: List[ManifestFile],
+        io: FileIO,
+        table_metadata: TableMetadata,
+        parsed_row_filter: BooleanExpression,
+        case_sensitive: bool,
+        options: Properties,
+        manifest_entry_filter: Callable[[ManifestEntry], bool] = lambda _: True,
+    ):
+        self.manifests = manifests
+        self.io = io
+        self.table_metadata = table_metadata
+        self.parsed_row_filter = parsed_row_filter
+        self.case_sensitive = case_sensitive
+        self.options = options
+        self.manifest_entry_filter = manifest_entry_filter
+
+    def plan_files(self) -> Iterable[FileScanTask]:
+        # step 1: filter manifests using partition summaries
+        # the filter depends on the partition spec used to write the manifest file, so create a cache of filters for each spec id
+
+        manifest_evaluators: Dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
+        manifests = [
+            manifest_file
+            for manifest_file in self.manifests
+            if manifest_evaluators[manifest_file.partition_spec_id](manifest_file)
+        ]
+
+        residual_evaluators: Dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
+
+        # step 2: filter the data files in each manifest
+        # this filter depends on the partition spec used to write the manifest file
+
+        partition_evaluators: Dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._build_partition_evaluator)
+
+        min_sequence_number = _min_sequence_number(manifests)
+
+        data_entries: List[ManifestEntry] = []
+        positional_delete_entries = SortedList(key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER)
+
+        executor = ExecutorFactory.get_or_create()
+        for manifest_entry in chain(
+            *executor.map(
+                lambda args: _open_manifest(*args),
+                [
+                    (
+                        self.io,
+                        manifest,
+                        partition_evaluators[manifest.partition_spec_id],
+                        self._build_metrics_evaluator(),
+                    )
+                    for manifest in manifests
+                    if self._check_sequence_number(min_sequence_number, manifest)
+                ],
+            )
+        ):
+            if not self.manifest_entry_filter(manifest_entry):
+                continue
+
+            data_file = manifest_entry.data_file
+            if data_file.content == DataFileContent.DATA:
+                data_entries.append(manifest_entry)
+            elif data_file.content == DataFileContent.POSITION_DELETES:
+                positional_delete_entries.add(manifest_entry)
+            elif data_file.content == DataFileContent.EQUALITY_DELETES:
+                raise ValueError("PyIceberg does not yet support equality deletes: https://github.com/apache/iceberg/issues/6568")
+            else:
+                raise ValueError(f"Unknown DataFileContent ({data_file.content}): {manifest_entry}")
+
+        return [
+            FileScanTask(
+                data_entry.data_file,
+                delete_files=_match_deletes_to_data_file(
+                    data_entry,
+                    positional_delete_entries,
+                ),
+                residual=residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(
+                    data_entry.data_file.partition
+                ),
+            )
+            for data_entry in data_entries
+        ]
+
+    def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
+        project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id], self.case_sensitive)
+        return project(self.parsed_row_filter)
+
+    # TODO: Document that this method was removed
+    @cached_property
+    def _partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
+        return KeyDefaultDict(self._build_partition_projection)
+
+    def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
+        spec = self.table_metadata.specs()[spec_id]
+        return manifest_evaluator(spec, self.table_metadata.schema(), self._partition_filters[spec_id], self.case_sensitive)
+
+    def _build_partition_evaluator(self, spec_id: int) -> Callable[[DataFile], bool]:
+        spec = self.table_metadata.specs()[spec_id]
+        partition_type = spec.partition_type(self.table_metadata.schema())
+        partition_schema = Schema(*partition_type.fields)
+        partition_expr = self._partition_filters[spec_id]
+
+        # The lambda created here is run in multiple threads.
+        # So we avoid creating _EvaluatorExpression methods bound to a single
+        # shared instance across multiple threads.
+        return lambda data_file: expression_evaluator(partition_schema, partition_expr, self.case_sensitive)(data_file.partition)
+
+    def _build_metrics_evaluator(self) -> Callable[[DataFile], bool]:
+        schema = self.table_metadata.schema()
+        include_empty_files = strtobool(self.options.get("include_empty_files", "false"))
+
+        # The lambda created here is run in multiple threads.
+        # So we avoid creating _InclusiveMetricsEvaluator methods bound to a single
+        # shared instance across multiple threads.
+        return lambda data_file: _InclusiveMetricsEvaluator(
+            schema,
+            self.parsed_row_filter,
+            self.case_sensitive,
+            include_empty_files,
+        ).eval(data_file)
+
+    def _build_residual_evaluator(self, spec_id: int) -> Callable[[DataFile], ResidualEvaluator]:
+        spec = self.table_metadata.specs()[spec_id]
+
+        # The lambda created here is run in multiple threads.
+        # So we avoid creating _EvaluatorExpression methods bound to a single
+        # shared instance across multiple threads.
+        # return lambda data_file: (partition_schema, partition_expr, self.case_sensitive)(data_file.partition)
+        from pyiceberg.expressions.visitors import residual_evaluator_of
+
+        # assert self.row_filter == False
+        return lambda datafile: (
+            residual_evaluator_of(
+                spec=spec,
+                expr=self.parsed_row_filter,
+                case_sensitive=self.case_sensitive,
+                schema=self.table_metadata.schema(),
+            )
+        )
+
+    @staticmethod
+    def _check_sequence_number(min_sequence_number: int, manifest: ManifestFile) -> bool:
+        """Ensure that no manifests are loaded that contain deletes that are older than the data.
+
+        Args:
+            min_sequence_number (int): The minimal sequence number.
+            manifest (ManifestFile): A ManifestFile that can be either data or deletes.
+
+        Returns:
+            Boolean indicating if it is either a data file, or a relevant delete file.
+        """
+        return manifest.content == ManifestContent.DATA or (
+            # Not interested in deletes that are older than the data
+            manifest.content == ManifestContent.DELETES
+            and (manifest.sequence_number or INITIAL_SEQUENCE_NUMBER) >= min_sequence_number
+        )
 
 
 @dataclass(frozen=True)
