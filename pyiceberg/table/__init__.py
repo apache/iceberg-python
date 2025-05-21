@@ -1507,18 +1507,191 @@ def _parse_row_filter(expr: Union[str, BooleanExpression]) -> BooleanExpression:
     return parser.parse(expr) if isinstance(expr, str) else expr
 
 
-S = TypeVar("S", bound="TableScan", covariant=True)
+S = TypeVar("S", bound="AbstractTableScan", covariant=True)
 
 
-class TableScan(ABC):
+class AbstractTableScan(ABC):
+    """A base class for all table scans."""
+
     table_metadata: TableMetadata
     io: FileIO
     row_filter: BooleanExpression
     selected_fields: Tuple[str, ...]
     case_sensitive: bool
-    snapshot_id: Optional[int]
     options: Properties
     limit: Optional[int]
+
+    def __init__(
+        self,
+        table_metadata: TableMetadata,
+        io: FileIO,
+        row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
+        selected_fields: Tuple[str, ...] = ("*",),
+        case_sensitive: bool = True,
+        options: Properties = EMPTY_DICT,
+        limit: Optional[int] = None,
+    ):
+        self.table_metadata = table_metadata
+        self.io = io
+        self.row_filter = _parse_row_filter(row_filter)
+        self.selected_fields = selected_fields
+        self.case_sensitive = case_sensitive
+        self.options = options
+        self.limit = limit
+
+    @abstractmethod
+    def projection(self) -> Schema: ...
+
+    @abstractmethod
+    def plan_files(self) -> Iterable[ScanTask]: ...
+
+    @abstractmethod
+    def to_arrow(self) -> pa.Table: ...
+
+    @abstractmethod
+    def count(self) -> int: ...
+
+    def select(self: S, *field_names: str) -> S:
+        if "*" in self.selected_fields:
+            return self.update(selected_fields=field_names)
+        return self.update(selected_fields=tuple(set(self.selected_fields).intersection(set(field_names))))
+
+    def filter(self: S, expr: Union[str, BooleanExpression]) -> S:
+        return self.update(row_filter=And(self.row_filter, _parse_row_filter(expr)))
+
+    def with_case_sensitive(self: S, case_sensitive: bool = True) -> S:
+        return self.update(case_sensitive=case_sensitive)
+
+    def update(self: S, **overrides: Any) -> S:
+        """Create a copy of this table scan with updated fields."""
+        return type(self)(**{**self.__dict__, **overrides})
+
+    def to_pandas(self, **kwargs: Any) -> pd.DataFrame:
+        """Read a Pandas DataFrame eagerly from this Iceberg table scan.
+
+        Returns:
+            pd.DataFrame: Materialized Pandas Dataframe from the Iceberg table scan
+        """
+        return self.to_arrow().to_pandas(**kwargs)
+
+    def to_duckdb(self, table_name: str, connection: Optional[DuckDBPyConnection] = None) -> DuckDBPyConnection:
+        """Shorthand for loading this table scan in DuckDB.
+
+        Returns:
+            DuckDBPyConnection: In memory DuckDB connection with the Iceberg table scan.
+        """
+        import duckdb
+
+        con = connection or duckdb.connect(database=":memory:")
+        con.register(table_name, self.to_arrow())
+
+        return con
+
+    def to_ray(self) -> ray.data.dataset.Dataset:
+        """Read a Ray Dataset eagerly from this Iceberg table scan.
+
+        Returns:
+            ray.data.dataset.Dataset: Materialized Ray Dataset from the Iceberg table scan
+        """
+        import ray
+
+        return ray.data.from_arrow(self.to_arrow())
+
+    def to_polars(self) -> pl.DataFrame:
+        """Read a Polars DataFrame from this Iceberg table scan.
+
+        Returns:
+            pl.DataFrame: Materialized Polars Dataframe from the Iceberg table scan
+        """
+        import polars as pl
+
+        result = pl.from_arrow(self.to_arrow())
+        if isinstance(result, pl.Series):
+            result = result.to_frame()
+
+        return result
+
+
+class FileBasedTableScan(AbstractTableScan, ABC):
+    """A base class for table scans that plan FileScanTasks."""
+
+    @abstractmethod
+    def plan_files(self) -> Iterable[FileScanTask]: ...
+
+    def to_arrow(self) -> pa.Table:
+        """Read an Arrow table eagerly from this scan.
+
+        All rows will be loaded into memory at once.
+
+        Returns:
+            pa.Table: Materialized Arrow Table from the Iceberg table scan
+        """
+        from pyiceberg.io.pyarrow import ArrowScan
+
+        return ArrowScan(
+            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
+        ).to_table(self.plan_files())
+
+    def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
+        """Return an Arrow RecordBatchReader from this scan.
+
+        For large results, using a RecordBatchReader requires less memory than
+        loading an Arrow Table for the same DataScan, because a RecordBatch
+        is read one at a time.
+
+        Returns:
+            pa.RecordBatchReader: Arrow RecordBatchReader from the Iceberg table scan
+                which can be used to read a stream of record batches one by one.
+        """
+        import pyarrow as pa
+
+        from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
+
+        target_schema = schema_to_pyarrow(self.projection())
+        batches = ArrowScan(
+            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
+        ).to_record_batches(self.plan_files())
+
+        return pa.RecordBatchReader.from_batches(
+            target_schema,
+            batches,
+        ).cast(target_schema)
+
+    def count(self) -> int:
+        from pyiceberg.io.pyarrow import ArrowScan
+
+        # Usage: Calculates the total number of records in a Scan that haven't had positional deletes.
+        res = 0
+        # every task is a FileScanTask
+        tasks = self.plan_files()
+
+        for task in tasks:
+            # task.residual is a Boolean Expression if the filter condition is fully satisfied by the
+            # partition value and task.delete_files represents that positional delete haven't been merged yet
+            # hence those files have to read as a pyarrow table applying the filter and deletes
+            if task.residual == AlwaysTrue() and len(task.delete_files) == 0:
+                # Every File has a metadata stat that stores the file record count
+                res += task.file.record_count
+            else:
+                arrow_scan = ArrowScan(
+                    table_metadata=self.table_metadata,
+                    io=self.io,
+                    projected_schema=self.projection(),
+                    row_filter=self.row_filter,
+                    case_sensitive=self.case_sensitive,
+                )
+                tbl = arrow_scan.to_table([task])
+                res += len(tbl)
+        return res
+
+
+T = TypeVar("T", bound="TableScan", covariant=True)
+
+
+class TableScan(AbstractTableScan, ABC):
+    """A base class for non-incremental table scans that target a single snapshot."""
+
+    snapshot_id: Optional[int]
 
     def __init__(
         self,
@@ -1531,14 +1704,8 @@ class TableScan(ABC):
         options: Properties = EMPTY_DICT,
         limit: Optional[int] = None,
     ):
-        self.table_metadata = table_metadata
-        self.io = io
-        self.row_filter = _parse_row_filter(row_filter)
-        self.selected_fields = selected_fields
-        self.case_sensitive = case_sensitive
+        super().__init__(table_metadata, io, row_filter, selected_fields, case_sensitive, options, limit)
         self.snapshot_id = snapshot_id
-        self.options = options
-        self.limit = limit
 
     def snapshot(self) -> Optional[Snapshot]:
         if self.snapshot_id:
@@ -1565,43 +1732,13 @@ class TableScan(ABC):
 
         return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
 
-    @abstractmethod
-    def plan_files(self) -> Iterable[ScanTask]: ...
-
-    @abstractmethod
-    def to_arrow(self) -> pa.Table: ...
-
-    @abstractmethod
-    def to_pandas(self, **kwargs: Any) -> pd.DataFrame: ...
-
-    @abstractmethod
-    def to_polars(self) -> pl.DataFrame: ...
-
-    def update(self: S, **overrides: Any) -> S:
-        """Create a copy of this table scan with updated fields."""
-        return type(self)(**{**self.__dict__, **overrides})
-
-    def use_ref(self: S, name: str) -> S:
+    def use_ref(self: T, name: str) -> T:
         if self.snapshot_id:
             raise ValueError(f"Cannot override ref, already set snapshot id={self.snapshot_id}")
         if snapshot := self.table_metadata.snapshot_by_name(name):
             return self.update(snapshot_id=snapshot.snapshot_id)
 
         raise ValueError(f"Cannot scan unknown ref={name}")
-
-    def select(self: S, *field_names: str) -> S:
-        if "*" in self.selected_fields:
-            return self.update(selected_fields=field_names)
-        return self.update(selected_fields=tuple(set(self.selected_fields).intersection(set(field_names))))
-
-    def filter(self: S, expr: Union[str, BooleanExpression]) -> S:
-        return self.update(row_filter=And(self.row_filter, _parse_row_filter(expr)))
-
-    def with_case_sensitive(self: S, case_sensitive: bool = True) -> S:
-        return self.update(case_sensitive=case_sensitive)
-
-    @abstractmethod
-    def count(self) -> int: ...
 
 
 class ScanTask(ABC):
@@ -1688,7 +1825,30 @@ def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_ent
         return set()
 
 
-class DataScan(TableScan):
+class DataScan(FileBasedTableScan, TableScan):
+    """A scan of a table's data.
+
+    Args:
+        row_filter:
+            A string or BooleanExpression that describes the
+            desired rows
+        selected_fields:
+            A tuple of strings representing the column names
+            to return in the output dataframe.
+        case_sensitive:
+            If True column matching is case sensitive
+        snapshot_id:
+            Optional Snapshot ID to time travel to. If None,
+            scans the table as of the current snapshot ID.
+        options:
+            Additional Table properties as a dictionary of
+            string key value pairs to use for this scan.
+        limit:
+            An integer representing the number of rows to
+            return in the scan result. If None, fetches all
+            matching rows.
+    """
+
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
         project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id], self.case_sensitive)
         return project(self.row_filter)
@@ -1745,7 +1905,8 @@ class DataScan(TableScan):
             )
         )
 
-    def _check_sequence_number(self, min_sequence_number: int, manifest: ManifestFile) -> bool:
+    @staticmethod
+    def _check_sequence_number(min_sequence_number: int, manifest: ManifestFile) -> bool:
         """Ensure that no manifests are loaded that contain deletes that are older than the data.
 
         Args:
@@ -1833,117 +1994,6 @@ class DataScan(TableScan):
             )
             for data_entry in data_entries
         ]
-
-    def to_arrow(self) -> pa.Table:
-        """Read an Arrow table eagerly from this DataScan.
-
-        All rows will be loaded into memory at once.
-
-        Returns:
-            pa.Table: Materialized Arrow Table from the Iceberg table's DataScan
-        """
-        from pyiceberg.io.pyarrow import ArrowScan
-
-        return ArrowScan(
-            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
-        ).to_table(self.plan_files())
-
-    def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
-        """Return an Arrow RecordBatchReader from this DataScan.
-
-        For large results, using a RecordBatchReader requires less memory than
-        loading an Arrow Table for the same DataScan, because a RecordBatch
-        is read one at a time.
-
-        Returns:
-            pa.RecordBatchReader: Arrow RecordBatchReader from the Iceberg table's DataScan
-                which can be used to read a stream of record batches one by one.
-        """
-        import pyarrow as pa
-
-        from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
-
-        target_schema = schema_to_pyarrow(self.projection())
-        batches = ArrowScan(
-            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
-        ).to_record_batches(self.plan_files())
-
-        return pa.RecordBatchReader.from_batches(
-            target_schema,
-            batches,
-        ).cast(target_schema)
-
-    def to_pandas(self, **kwargs: Any) -> pd.DataFrame:
-        """Read a Pandas DataFrame eagerly from this Iceberg table.
-
-        Returns:
-            pd.DataFrame: Materialized Pandas Dataframe from the Iceberg table
-        """
-        return self.to_arrow().to_pandas(**kwargs)
-
-    def to_duckdb(self, table_name: str, connection: Optional[DuckDBPyConnection] = None) -> DuckDBPyConnection:
-        """Shorthand for loading the Iceberg Table in DuckDB.
-
-        Returns:
-            DuckDBPyConnection: In memory DuckDB connection with the Iceberg table.
-        """
-        import duckdb
-
-        con = connection or duckdb.connect(database=":memory:")
-        con.register(table_name, self.to_arrow())
-
-        return con
-
-    def to_ray(self) -> ray.data.dataset.Dataset:
-        """Read a Ray Dataset eagerly from this Iceberg table.
-
-        Returns:
-            ray.data.dataset.Dataset: Materialized Ray Dataset from the Iceberg table
-        """
-        import ray
-
-        return ray.data.from_arrow(self.to_arrow())
-
-    def to_polars(self) -> pl.DataFrame:
-        """Read a Polars DataFrame from this Iceberg table.
-
-        Returns:
-            pl.DataFrame: Materialized Polars Dataframe from the Iceberg table
-        """
-        import polars as pl
-
-        result = pl.from_arrow(self.to_arrow())
-        if isinstance(result, pl.Series):
-            result = result.to_frame()
-
-        return result
-
-    def count(self) -> int:
-        from pyiceberg.io.pyarrow import ArrowScan
-
-        # Usage: Calculates the total number of records in a Scan that haven't had positional deletes.
-        res = 0
-        # every task is a FileScanTask
-        tasks = self.plan_files()
-
-        for task in tasks:
-            # task.residual is a Boolean Expression if the filter condition is fully satisfied by the
-            # partition value and task.delete_files represents that positional delete haven't been merged yet
-            # hence those files have to read as a pyarrow table applying the filter and deletes
-            if task.residual == AlwaysTrue() and len(task.delete_files) == 0:
-                # Every File has a metadata stat that stores the file record count
-                res += task.file.record_count
-            else:
-                arrow_scan = ArrowScan(
-                    table_metadata=self.table_metadata,
-                    io=self.io,
-                    projected_schema=self.projection(),
-                    row_filter=self.row_filter,
-                    case_sensitive=self.case_sensitive,
-                )
-                tbl = arrow_scan.to_table([task])
-                res += len(tbl)
-        return res
 
 
 @dataclass(frozen=True)
