@@ -1047,6 +1047,67 @@ readable_metrics: [
 
 To show only data files or delete files in the current snapshot, use `table.inspect.data_files()` and `table.inspect.delete_files()` respectively.
 
+### Position deletes
+
+Inspect the positional delete files in the current snapshot of the table:
+
+```python
+table.inspect.position_deletes()
+```
+
+```python
+pyarrow.Table
+file_path: string not null
+pos: int64 not null
+row: struct<id: int32, data: large_string>
+  child 0, id: int32
+  child 1, data: large_string
+partition: struct<data: large_string> not null
+  child 0, data: large_string
+spec_id: int64
+delete_file_path: string not null
+----
+file_path: [[],[],[],["s3://warehouse/default/table_metadata_position_deletes/data/data=a/00000-1-acbf93b7-f760-4517-aa84-b9240902d3d2-0-00001.parquet"]]
+pos: [[],[],[],[0]]
+row: [
+  -- is_valid: all not null
+  -- child 0 type: int32
+[]
+  -- child 1 type: large_string
+[],
+  -- is_valid: all not null
+  -- child 0 type: int32
+[]
+  -- child 1 type: large_string
+[],
+  -- is_valid: all not null
+  -- child 0 type: int32
+[]
+  -- child 1 type: large_string
+[],
+  -- is_valid:  [false]
+  -- child 0 type: int32
+[0]
+  -- child 1 type: large_string
+[""]]
+partition: [
+  -- is_valid: all not null
+  -- child 0 type: large_string
+[],
+  -- is_valid: all not null
+  -- child 0 type: large_string
+[],
+  -- is_valid: all not null
+  -- child 0 type: large_string
+[],
+  -- is_valid: all not null
+  -- child 0 type: large_string
+["a"]]
+spec_id: [[],[],[],[0]]
+delete_file_path: [[],[],[],["s3://warehouse/default/table_metadata_position_deletes/data/data=a/00000-5-bc7a1d8a-fefe-4277-b4ac-8f1dd7badb7a-00001-deletes.parquet"]]
+
+```
+
 ## Add Files
 
 Expert Iceberg users may choose to commit existing parquet files to the Iceberg table as data files, without rewriting them.
