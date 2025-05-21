@@ -1096,6 +1096,61 @@ class Table:
             limit=limit,
         )
 
+    # TODO: Consider more concise name
+    def incremental_append_scan(
+        self,
+        row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
+        selected_fields: Tuple[str, ...] = ("*",),
+        case_sensitive: bool = True,
+        from_snapshot_id: Optional[int] = None,  # Exclusive
+        to_snapshot_id: Optional[int] = None,  # Inclusive
+        options: Properties = EMPTY_DICT,
+        limit: Optional[int] = None,
+    ) -> IncrementalAppendScan:
+        """Fetch an IncrementalAppendScan based on the table's current metadata.
+
+            The incremental append scan can be used to project the table's data
+            from append snapshots within a snapshot range and that matches the
+            provided row_filter onto the table's current schema
+
+        Args:
+            row_filter:
+                A string or BooleanExpression that describes the
+                desired rows
+            selected_fields:
+                A tuple of strings representing the column names
+                to return in the output dataframe.
+            case_sensitive:
+                If True column matching is case sensitive
+            from_snapshot_id:
+                Optional ID of the "from" snapshot, to start the incremental scan from, exclusively. This can be set
+                on the IncrementalAppendScan object returned, but ultimately must not be None.
+            to_snapshot_id:
+                Optional ID of the "to" snapshot, to end the incremental scan at, inclusively. This can be set on the
+                IncrementalAppendScan object returned. Ultimately, it will default to the table's current snapshot.
+            options:
+                Additional Table properties as a dictionary of
+                string key value pairs to use for this scan.
+            limit:
+                An integer representing the number of rows to
+                return in the scan result. If None, fetches all
+                matching rows.
+
+        Returns:
+            An IncrementalAppendScan based on the table's current metadata and provided parameters.
+        """
+        return IncrementalAppendScan(
+            table_metadata=self.metadata,
+            io=self.io,
+            row_filter=row_filter,
+            selected_fields=selected_fields,
+            case_sensitive=case_sensitive,
+            from_snapshot_id=from_snapshot_id,
+            to_snapshot_id=to_snapshot_id,
+            options=options,
+            limit=limit,
+        )
+
     @property
     def format_version(self) -> TableVersion:
         return self.metadata.format_version
@@ -1890,7 +1945,7 @@ class IncrementalAppendScan(FileBasedScan, AbstractTableScan):
             If True column matching is case sensitive
         from_snapshot_id:
             Optional ID of the "from" snapshot, to start the incremental scan from, exclusively. When the scan is
-            read, this must be specified.
+            ultimately planned, this must not be None.
         to_snapshot_id:
             Optional ID of the "to" snapshot, to end the incremental scan at, inclusively.
             Omitting it will default to the table's current snapshot.
@@ -1922,7 +1977,7 @@ class IncrementalAppendScan(FileBasedScan, AbstractTableScan):
         self.from_snapshot_id = from_snapshot_id
         self.to_snapshot_id = to_snapshot_id
 
-    def with_from_snapshot(self: A, from_snapshot_id: Optional[int]) -> A:
+    def from_snapshot(self: A, from_snapshot_id: Optional[int]) -> A:
         """Instructs this scan to look for changes starting from a particular snapshot (exclusive).
 
         If the start snapshot is not configured, it defaults to the eldest ancestor of the to_snapshot (inclusive).
@@ -1935,7 +1990,7 @@ class IncrementalAppendScan(FileBasedScan, AbstractTableScan):
         """
         return self.update(from_snapshot_id=from_snapshot_id)
 
-    def with_to_snapshot(self: A, to_snapshot_id: Optional[int]) -> A:
+    def to_snapshot(self: A, to_snapshot_id: Optional[int]) -> A:
         """Instructs this scan to look for changes up to a particular snapshot (inclusive).
 
         If the end snapshot is not configured, it defaults to the current table snapshot (inclusive).
@@ -1957,11 +2012,12 @@ class IncrementalAppendScan(FileBasedScan, AbstractTableScan):
         return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
 
     def plan_files(self) -> Iterable[FileScanTask]:
-        to_snapshot_id, from_snapshot_id = self._validate_and_resolve_snapshots()
+        from_snapshot_id, to_snapshot_id = self._validate_and_resolve_snapshots()
 
         append_snapshots: List[Snapshot] = self._appends_between(from_snapshot_id, to_snapshot_id, self.table_metadata)
         if len(append_snapshots) == 0:
             return iter([])
+
         append_snapshot_ids: Set[int] = {snapshot.snapshot_id for snapshot in append_snapshots}
 
         manifests = {
@@ -2010,7 +2066,7 @@ class IncrementalAppendScan(FileBasedScan, AbstractTableScan):
     # TODO: Note behaviour change from DataScan that we throw
     def _is_snapshot_missing(self, snapshot_id: int) -> bool:
         """Return whether the snapshot ID is missing in the table metadata."""
-        return self.table_metadata.snapshot_by_id(snapshot_id) is not None
+        return self.table_metadata.snapshot_by_id(snapshot_id) is None
 
     @staticmethod
     def _appends_between(
@@ -2178,6 +2234,7 @@ class ManifestGroup:
             )
         )
 
+    # TODO: Document that this method was removed from DataScan and it was made static
     @staticmethod
     def _check_sequence_number(min_sequence_number: int, manifest: ManifestFile) -> bool:
         """Ensure that no manifests are loaded that contain deletes that are older than the data.

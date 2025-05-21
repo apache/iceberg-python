@@ -413,3 +413,58 @@ for catalog_name, catalog in catalogs.items():
     )
     spark.sql(f"ALTER TABLE {catalog_name}.default.test_empty_scan_ordered_str WRITE ORDERED BY id")
     spark.sql(f"INSERT INTO {catalog_name}.default.test_empty_scan_ordered_str VALUES 'a', 'c'")
+
+    spark.sql(
+        f"""
+        CREATE OR REPLACE TABLE {catalog_name}.default.test_incremental_read (
+            dt     date,
+            number integer,
+            letter string
+        )
+        USING iceberg
+        TBLPROPERTIES (
+            'format-version'='2'
+        );
+        """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {catalog_name}.default.test_incremental_read
+        VALUES (CAST('2022-03-01' AS date), 1, 'a')
+        """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {catalog_name}.default.test_incremental_read
+        VALUES (CAST('2022-03-01' AS date), 2, 'b')
+        """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {catalog_name}.default.test_incremental_read
+        VALUES (CAST('2022-03-02' AS date), 3, 'c'), (CAST('2022-03-02' AS date), 4, 'b')
+        """
+    )
+
+    spark.sql(
+        f"""
+        DELETE FROM {catalog_name}.default.test_incremental_read
+        WHERE number = 2
+        """
+    )
+
+    # https://github.com/apache/iceberg/issues/1092#issuecomment-638432848 / https://github.com/apache/iceberg/issues/3747#issuecomment-1145419407
+    # REPLACE TABLE requires certain Hive server configuration
+    if catalog_name != "hive":
+        # Replace to break snapshot lineage:
+        spark.sql(
+            f"""
+            REPLACE TABLE {catalog_name}.default.test_incremental_read
+            USING iceberg
+            TBLPROPERTIES ('format-version'='2')
+            AS SELECT number, letter FROM {catalog_name}.default.test_incremental_read
+            """
+        )

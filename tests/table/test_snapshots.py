@@ -29,7 +29,9 @@ from pyiceberg.table.snapshots import (
     SnapshotSummaryCollector,
     Summary,
     ancestors_between,
+    ancestors_between_ids,
     ancestors_of,
+    is_ancestor_of,
     update_snapshot_summaries,
 )
 from pyiceberg.transforms import IdentityTransform
@@ -434,3 +436,44 @@ def test_ancestors_between(table_v2_with_extensive_snapshots: Table) -> None:
         )
         == 2000
     )
+
+
+def test_is_ancestor_of(table_v2: Table) -> None:
+    snapshot_id = 3055729675574597004
+    ancestor_snapshot_id = 3051729675574597004
+
+    assert is_ancestor_of(snapshot_id, ancestor_snapshot_id, table_v2.metadata)
+    assert not is_ancestor_of(ancestor_snapshot_id, snapshot_id, table_v2.metadata)
+
+
+def test_ancestors_between_ids(table_v2: Table) -> None:
+    snapshot_id = 3055729675574597004
+    ancestor_snapshot_id = 3051729675574597004
+
+    result = list(ancestors_between_ids(ancestor_snapshot_id, snapshot_id, table_v2.metadata))
+    ids = [ancestor.snapshot_id for ancestor in result]
+
+    # Exclusive-inclusive semantics mean just snapshot_id should be returned
+    assert ids == [snapshot_id]
+
+
+def test_ancestors_between_equal_ids(table_v2: Table) -> None:
+    snapshot_id = 3055729675574597004
+
+    result = list(ancestors_between_ids(snapshot_id, snapshot_id, table_v2.metadata))
+    assert result == []
+
+
+def test_ancestors_between_ids_missing_from_snapshot(table_v2: Table) -> None:
+    snapshot_id = 3055729675574597004
+    ancestor_snapshot_id = 3051729675574597004
+
+    result = list(
+        ancestors_between_ids(
+            from_snapshot_id_exclusive=None, to_snapshot_id_inclusive=snapshot_id, table_metadata=table_v2.metadata
+        )
+    )
+    ids = [ancestor.snapshot_id for ancestor in result]
+
+    # With a from snapshot missing, all ancestors should be returned
+    assert ids == [snapshot_id, ancestor_snapshot_id]

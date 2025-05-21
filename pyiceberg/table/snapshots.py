@@ -451,10 +451,15 @@ def ancestors_between(
 
 
 def ancestors_between_ids(
-    from_snapshot_id_exclusive: Optional[int], to_snapshot_id_inclusive: int, table_metadata: TableMetadata
+    from_snapshot_id_exclusive: Optional[int],
+    to_snapshot_id_inclusive: int,
+    table_metadata: TableMetadata,
 ) -> Iterable[Snapshot]:
-    """Return the ancestors of and including the given "to" snapshot, up to but not including the "from" snapshot."""
-    # TODO: Test equal from and to snapshot IDs
+    """Return the ancestors of and including the given "to" snapshot, up to but not including the "from" snapshot.
+
+    If from_snapshot_id_exclusive is None or no ancestors of the "to" snapshot match it, all ancestors of the "to"
+    snapshot are returned.
+    """
     if from_snapshot_id_exclusive is not None:
         for snapshot in ancestors_of(table_metadata.snapshot_by_id(to_snapshot_id_inclusive), table_metadata):
             if snapshot.snapshot_id == from_snapshot_id_exclusive:
