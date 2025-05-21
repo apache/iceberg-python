@@ -448,3 +448,12 @@ def ancestors_between(
                 break
     else:
         yield from ancestors_of(to_snapshot, table_metadata)
+
+
+def is_ancestor_of(snapshot_id: int, ancestor_snapshot_id: int, table_metadata: TableMetadata) -> bool:
+    """Returns whether ancestor_snapshot_id is an ancestor of snapshot_id."""
+    for snapshot in ancestors_of(table_metadata.snapshot_by_id(snapshot_id), table_metadata):
+        if snapshot.snapshot_id == ancestor_snapshot_id:
+            return True
+
+    return False

@@ -91,6 +91,7 @@ from pyiceberg.table.refs import SnapshotRef
 from pyiceberg.table.snapshots import (
     Snapshot,
     SnapshotLogEntry,
+    is_ancestor_of,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import (
@@ -1612,7 +1613,7 @@ class AbstractTableScan(ABC):
         return result
 
 
-class FileBasedTableScan(AbstractTableScan, ABC):
+class FileBasedScan(AbstractTableScan, ABC):
     """A base class for table scans that plan FileScanTasks."""
 
     @abstractmethod
@@ -1825,7 +1826,7 @@ def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_ent
         return set()
 
 
-class DataScan(FileBasedTableScan, TableScan):
+class DataScan(FileBasedScan, TableScan):
     """A scan of a table's data.
 
     Args:
@@ -1994,6 +1995,127 @@ class DataScan(FileBasedTableScan, TableScan):
             )
             for data_entry in data_entries
         ]
+
+
+A = TypeVar("A", bound="IncrementalAppendScan", covariant=True)
+
+
+class IncrementalAppendScan(FileBasedScan, AbstractTableScan):
+    """An incremental scan of a table's data that accumulates appended data between two snapshots.
+
+    Args:
+        row_filter:
+            A string or BooleanExpression that describes the
+            desired rows
+        selected_fields:
+            A tuple of strings representing the column names
+            to return in the output dataframe.
+        case_sensitive:
+            If True column matching is case sensitive
+        from_snapshot_id:
+            Optional ID of the "from" snapshot, to start the incremental scan from, exclusively.
+            Omitting it will default to the eldest ancestor of the "to" snapshot, inclusively.
+        to_snapshot_id:
+            Optional ID of the "to" snapshot, to end the incremental scan at, inclusively.
+            Omitting it will default to the table's current snapshot.
+        options:
+            Additional Table properties as a dictionary of
+            string key value pairs to use for this scan.
+        limit:
+            An integer representing the number of rows to
+            return in the scan result. If None, fetches all
+            matching rows.
+    """
+
+    from_snapshot_id: Optional[int]
+    to_snapshot_id: Optional[int]
+
+    def __init__(
+        self,
+        table_metadata: TableMetadata,
+        io: FileIO,
+        row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
+        selected_fields: Tuple[str, ...] = ("*",),
+        case_sensitive: bool = True,
+        from_snapshot_id: Optional[int] = None,  # Exclusive
+        to_snapshot_id: Optional[int] = None,  # Inclusive
+        options: Properties = EMPTY_DICT,
+        limit: Optional[int] = None,
+    ):
+        super().__init__(table_metadata, io, row_filter, selected_fields, case_sensitive, options, limit)
+        self.from_snapshot_id = from_snapshot_id
+        self.to_snapshot_id = to_snapshot_id
+
+    def with_from_snapshot(self: A, from_snapshot_id: Optional[int]) -> A:
+        """Instructs this scan to look for changes starting from a particular snapshot (exclusive).
+
+        If the start snapshot is not configured, it defaults to the eldest ancestor of the to_snapshot (inclusive).
+
+        Args:
+            from_snapshot_id: the start snapshot ID (exclusive)
+
+        Returns:
+            this for method chaining
+        """
+
+        return self.update(from_snapshot_id=from_snapshot_id)
+
+    def with_to_snapshot(self: A, to_snapshot_id: Optional[int]) -> A:
+        """Instructs this scan to look for changes up to a particular snapshot (inclusive).
+
+        If the end snapshot is not configured, it defaults to the current table snapshot (inclusive).
+
+        Args:
+            to_snapshot_id: the end snapshot ID (inclusive)
+
+        Returns:
+            this for method chaining
+        """
+
+        return self.update(to_snapshot_id=to_snapshot_id)
+
+    def projection(self) -> Schema:
+        current_schema = self.table_metadata.schema()
+
+        if "*" in self.selected_fields:
+            return current_schema
+
+        return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
+
+    def plan_files(self) -> Iterable[ScanTask]:
+        current_snapshot = self.table_metadata.current_snapshot()
+        from_snapshot_id = self.from_snapshot_id
+        to_snapshot_id = self.to_snapshot_id
+
+        if current_snapshot is None and from_snapshot_id is None and to_snapshot_id is None:
+            return iter([])
+
+        if to_snapshot_id is None:
+            if current_snapshot is None:
+                raise ValueError("End snapshot of append scan is not set and table has no current snapshot")
+
+            to_snapshot_id = current_snapshot.snapshot_id
+        elif self._is_snapshot_missing(to_snapshot_id):
+            raise ValueError(f"End snapshot of append scan not found on table metadata: {to_snapshot_id}")
+
+        if from_snapshot_id is not None:
+            if from_snapshot_id == to_snapshot_id:
+                return iter([])
+
+            if self._is_snapshot_missing(from_snapshot_id):
+                raise ValueError(f"Start snapshot of append scan not found on table metadata: {from_snapshot_id}")
+
+            if not is_ancestor_of(to_snapshot_id, from_snapshot_id, self.table_metadata):
+                raise ValueError(
+                    f"Append scan's start snapshot {from_snapshot_id} is not an ancestor of end snapshot {to_snapshot_id}"
+                )
+
+        return self._do_plan_files(from_snapshot_id, to_snapshot_id)  # type: ignore
+
+    # TODO: Note behaviour change that throws
+    def _is_snapshot_missing(self, snapshot_id: int) -> bool:
+        """Returns whether the snapshot ID is missing in the table metadata."""
+        return self.table_metadata.snapshot_by_id(snapshot_id) is not None
 
 
 @dataclass(frozen=True)
