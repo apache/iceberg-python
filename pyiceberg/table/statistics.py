@@ -29,13 +29,22 @@ class BlobMetadata(IcebergBaseModel):
     properties: Optional[Dict[str, str]] = None
 
 
-class StatisticsFile(IcebergBaseModel):
+class StatisticsCommonFields(IcebergBaseModel):
+    """Common fields between table and partition statistics structs found on metadata."""
+
     snapshot_id: int = Field(alias="snapshot-id")
     statistics_path: str = Field(alias="statistics-path")
     file_size_in_bytes: int = Field(alias="file-size-in-bytes")
+
+
+class StatisticsFile(StatisticsCommonFields, IcebergBaseModel):
     file_footer_size_in_bytes: int = Field(alias="file-footer-size-in-bytes")
     key_metadata: Optional[str] = Field(alias="key-metadata", default=None)
     blob_metadata: List[BlobMetadata] = Field(alias="blob-metadata")
+
+
+class PartitionStatisticsFile(IcebergBaseModel):
+    pass
 
 
 def filter_statistics_by_snapshot_id(
