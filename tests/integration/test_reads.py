@@ -1013,8 +1013,8 @@ def test_incremental_append_scan_append_only(catalog: Catalog) -> None:
     scan = (
         test_table.incremental_append_scan()
         # Only "append"-operation snapshots occurred in this range
-        .from_snapshot(test_table.snapshots()[0].snapshot_id)
-        .to_snapshot(test_table.snapshots()[2].snapshot_id)
+        .from_snapshot_exclusive(test_table.snapshots()[0].snapshot_id)
+        .to_snapshot_inclusive(test_table.snapshots()[2].snapshot_id)
     )
 
     assert len(list(scan.plan_files())) == 2
@@ -1032,9 +1032,9 @@ def test_incremental_append_scan_ignores_non_append_snapshots(catalog: Catalog) 
     test_table = catalog.load_table("default.test_incremental_read")
 
     scan = test_table.incremental_append_scan(
-        from_snapshot_id=test_table.snapshots()[0].snapshot_id,
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
         # This is a "delete"-operation snapshot, that should be ignored by the append scan
-        to_snapshot_id=test_table.snapshots()[3].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[3].snapshot_id,
     )
 
     assert len(list(scan.plan_files())) == 2
@@ -1048,8 +1048,8 @@ def test_incremental_append_scan_uses_current_schema(catalog: Catalog) -> None:
 
     scan = (
         test_table.incremental_append_scan()
-        .from_snapshot(test_table.snapshots()[0].snapshot_id)
-        .to_snapshot(test_table.snapshots()[2].snapshot_id)
+        .from_snapshot_exclusive(test_table.snapshots()[0].snapshot_id)
+        .to_snapshot_inclusive(test_table.snapshots()[2].snapshot_id)
     )
 
     # The schema within the snapshot range above included an extra date field, but the table was then replaced,
@@ -1072,8 +1072,8 @@ def test_incremental_append_scan_row_filter(catalog: Catalog) -> None:
 
     scan = (
         test_table.incremental_append_scan(row_filter=EqualTo("letter", "b"))
-        .from_snapshot(test_table.snapshots()[0].snapshot_id)
-        .to_snapshot(test_table.snapshots()[2].snapshot_id)
+        .from_snapshot_exclusive(test_table.snapshots()[0].snapshot_id)
+        .to_snapshot_inclusive(test_table.snapshots()[2].snapshot_id)
     )
 
     # This filter should match against the only row added in snapshots[1] and one of the two rows added in snapshots[2]
@@ -1088,8 +1088,8 @@ def test_incremental_append_scan_selected_fields(catalog: Catalog) -> None:
 
     scan = (
         test_table.incremental_append_scan(selected_fields=("number",))
-        .from_snapshot(test_table.snapshots()[0].snapshot_id)
-        .to_snapshot(test_table.snapshots()[2].snapshot_id)
+        .from_snapshot_exclusive(test_table.snapshots()[0].snapshot_id)
+        .to_snapshot_inclusive(test_table.snapshots()[2].snapshot_id)
     )
 
     expected_schema = pa.schema(
@@ -1108,7 +1108,9 @@ def test_incremental_append_scan_selected_fields(catalog: Catalog) -> None:
 def test_incremental_append_scan_to_snapshot_defaults_to_current(catalog: Catalog) -> None:
     test_table = catalog.load_table("default.test_incremental_read")
 
-    assert len(test_table.incremental_append_scan().from_snapshot(test_table.snapshots()[0].snapshot_id).to_arrow()) == 3
+    assert (
+        len(test_table.incremental_append_scan().from_snapshot_exclusive(test_table.snapshots()[0].snapshot_id).to_arrow()) == 3
+    )
 
 
 @pytest.mark.integration
@@ -1118,7 +1120,15 @@ def test_incremental_append_scan_equal_from_and_to_snapshots(catalog: Catalog) -
     snapshot_id = test_table.snapshots()[0].snapshot_id
 
     # Exclusive-inclusive semantics mean an empty table should be returned if equal from and to snapshots are specified
-    assert len(test_table.incremental_append_scan().from_snapshot(snapshot_id).to_snapshot(snapshot_id).to_arrow()) == 0
+    assert (
+        len(
+            test_table.incremental_append_scan()
+            .from_snapshot_exclusive(snapshot_id)
+            .to_snapshot_inclusive(snapshot_id)
+            .to_arrow()
+        )
+        == 0
+    )
 
 
 @pytest.mark.integration
@@ -1131,9 +1141,9 @@ def test_incremental_append_scan_throws_on_disconnected_snapshots(catalog: Catal
 
     with pytest.raises(ValueError) as e:
         test_table.incremental_append_scan(
-            from_snapshot_id=from_id,
+            from_snapshot_id_exclusive=from_id,
             # A table replace occurred just before this snapshot, breaking snapshot lineage / incremental-ity
-            to_snapshot_id=to_id,
+            to_snapshot_id_inclusive=to_id,
         ).plan_files()
 
     assert f"Append scan's start snapshot {from_id} is not an ancestor of end snapshot {to_id}" in str(e.value)
@@ -1147,22 +1157,22 @@ def test_incremental_append_scan_throws_on_missing_snapshot_ids(catalog: Catalog
     # from_snapshot_id not specified
     with pytest.raises(ValueError) as e:
         test_table.incremental_append_scan(
-            to_snapshot_id=test_table.snapshots()[0].snapshot_id,
+            to_snapshot_id_inclusive=test_table.snapshots()[0].snapshot_id,
         ).plan_files()
     assert "Start snapshot of append scan unspecified, please set from_snapshot_id" in str(e.value)
 
     # from_snapshot_id missing from metadata
     with pytest.raises(ValueError) as e:
         test_table.incremental_append_scan(
-            from_snapshot_id=42,
-            to_snapshot_id=test_table.snapshots()[0].snapshot_id,
+            from_snapshot_id_exclusive=42,
+            to_snapshot_id_inclusive=test_table.snapshots()[0].snapshot_id,
         ).plan_files()
     assert "Start snapshot of append scan not found on table metadata: 42" in str(e.value)
 
     # to_snapshot_id missing from metadata
     with pytest.raises(ValueError) as e:
         test_table.incremental_append_scan(
-            from_snapshot_id=test_table.snapshots()[0].snapshot_id,
-            to_snapshot_id=42,
+            from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+            to_snapshot_id_inclusive=42,
         ).plan_files()
     assert "End snapshot of append scan not found on table metadata: 42" in str(e.value)

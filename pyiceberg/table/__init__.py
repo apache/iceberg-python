@@ -1102,8 +1102,8 @@ class Table:
         row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
         selected_fields: Tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
-        from_snapshot_id: Optional[int] = None,  # Exclusive
-        to_snapshot_id: Optional[int] = None,  # Inclusive
+        from_snapshot_id_exclusive: Optional[int] = None,
+        to_snapshot_id_inclusive: Optional[int] = None,
         options: Properties = EMPTY_DICT,
         limit: Optional[int] = None,
     ) -> IncrementalAppendScan:
@@ -1122,10 +1122,10 @@ class Table:
                 to return in the output dataframe.
             case_sensitive:
                 If True column matching is case sensitive
-            from_snapshot_id:
+            from_snapshot_id_exclusive:
                 Optional ID of the "from" snapshot, to start the incremental scan from, exclusively. This can be set
                 on the IncrementalAppendScan object returned, but ultimately must not be None.
-            to_snapshot_id:
+            to_snapshot_id_inclusive:
                 Optional ID of the "to" snapshot, to end the incremental scan at, inclusively. This can be set on the
                 IncrementalAppendScan object returned. Ultimately, it will default to the table's current snapshot.
             options:
@@ -1145,8 +1145,8 @@ class Table:
             row_filter=row_filter,
             selected_fields=selected_fields,
             case_sensitive=case_sensitive,
-            from_snapshot_id=from_snapshot_id,
-            to_snapshot_id=to_snapshot_id,
+            from_snapshot_id_exclusive=from_snapshot_id_exclusive,
+            to_snapshot_id_inclusive=to_snapshot_id_inclusive,
             options=options,
             limit=limit,
         )
@@ -1928,10 +1928,63 @@ class DataScan(FileBasedScan, TableScan):
         ).plan_files()
 
 
-A = TypeVar("A", bound="IncrementalAppendScan", covariant=True)
+A = TypeVar("A", bound="IncrementalScan", covariant=True)
 
 
-class IncrementalAppendScan(FileBasedScan, AbstractTableScan):
+class IncrementalScan(AbstractTableScan, ABC):
+    """A base class for incremental scans."""
+
+    from_snapshot_id_exclusive: Optional[int]
+    to_snapshot_id_inclusive: Optional[int]
+
+    def __init__(
+        self,
+        table_metadata: TableMetadata,
+        io: FileIO,
+        row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
+        selected_fields: Tuple[str, ...] = ("*",),
+        case_sensitive: bool = True,
+        from_snapshot_id_exclusive: Optional[int] = None,
+        to_snapshot_id_inclusive: Optional[int] = None,
+        options: Properties = EMPTY_DICT,
+        limit: Optional[int] = None,
+    ):
+        super().__init__(table_metadata, io, row_filter, selected_fields, case_sensitive, options, limit)
+        self.from_snapshot_id_exclusive = from_snapshot_id_exclusive
+        self.to_snapshot_id_inclusive = to_snapshot_id_inclusive
+
+    def from_snapshot_exclusive(self: A, from_snapshot_id_exclusive: Optional[int]) -> A:
+        """Instructs this scan to look for changes starting from a particular snapshot (exclusive).
+
+        Args:
+            from_snapshot_id_exclusive: the start snapshot ID (exclusive)
+
+        Returns:
+            this for method chaining
+        """
+        return self.update(from_snapshot_id_exclusive=from_snapshot_id_exclusive)
+
+    def to_snapshot_inclusive(self: A, to_snapshot_id_inclusive: Optional[int]) -> A:
+        """Instructs this scan to look for changes up to a particular snapshot (inclusive).
+
+        Args:
+            to_snapshot_id_inclusive: the end snapshot ID (inclusive)
+
+        Returns:
+            this for method chaining
+        """
+        return self.update(to_snapshot_id_inclusive=to_snapshot_id_inclusive)
+
+    def projection(self) -> Schema:
+        current_schema = self.table_metadata.schema()
+
+        if "*" in self.selected_fields:
+            return current_schema
+
+        return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
+
+
+class IncrementalAppendScan(IncrementalScan, FileBasedScan):
     """An incremental scan of a table's data that accumulates appended data between two snapshots.
 
     Args:
@@ -1943,10 +1996,10 @@ class IncrementalAppendScan(FileBasedScan, AbstractTableScan):
             to return in the output dataframe.
         case_sensitive:
             If True column matching is case sensitive
-        from_snapshot_id:
+        from_snapshot_id_exclusive:
             Optional ID of the "from" snapshot, to start the incremental scan from, exclusively. When the scan is
             ultimately planned, this must not be None.
-        to_snapshot_id:
+        to_snapshot_id_inclusive:
             Optional ID of the "to" snapshot, to end the incremental scan at, inclusively.
             Omitting it will default to the table's current snapshot.
         options:
@@ -1958,8 +2011,8 @@ class IncrementalAppendScan(FileBasedScan, AbstractTableScan):
             matching rows.
     """
 
-    from_snapshot_id: Optional[int]
-    to_snapshot_id: Optional[int]
+    from_snapshot_id_exclusive: Optional[int]
+    to_snapshot_id_inclusive: Optional[int]
 
     def __init__(
         self,
@@ -1968,48 +2021,22 @@ class IncrementalAppendScan(FileBasedScan, AbstractTableScan):
         row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
         selected_fields: Tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
-        from_snapshot_id: Optional[int] = None,  # Exclusive
-        to_snapshot_id: Optional[int] = None,  # Inclusive
+        from_snapshot_id_exclusive: Optional[int] = None,
+        to_snapshot_id_inclusive: Optional[int] = None,
         options: Properties = EMPTY_DICT,
         limit: Optional[int] = None,
     ):
-        super().__init__(table_metadata, io, row_filter, selected_fields, case_sensitive, options, limit)
-        self.from_snapshot_id = from_snapshot_id
-        self.to_snapshot_id = to_snapshot_id
-
-    def from_snapshot(self: A, from_snapshot_id: Optional[int]) -> A:
-        """Instructs this scan to look for changes starting from a particular snapshot (exclusive).
-
-        If the start snapshot is not configured, it defaults to the eldest ancestor of the to_snapshot (inclusive).
-
-        Args:
-            from_snapshot_id: the start snapshot ID (exclusive)
-
-        Returns:
-            this for method chaining
-        """
-        return self.update(from_snapshot_id=from_snapshot_id)
-
-    def to_snapshot(self: A, to_snapshot_id: Optional[int]) -> A:
-        """Instructs this scan to look for changes up to a particular snapshot (inclusive).
-
-        If the end snapshot is not configured, it defaults to the current table snapshot (inclusive).
-
-        Args:
-            to_snapshot_id: the end snapshot ID (inclusive)
-
-        Returns:
-            this for method chaining
-        """
-        return self.update(to_snapshot_id=to_snapshot_id)
-
-    def projection(self) -> Schema:
-        current_schema = self.table_metadata.schema()
-
-        if "*" in self.selected_fields:
-            return current_schema
-
-        return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
+        super().__init__(
+            table_metadata,
+            io,
+            row_filter,
+            selected_fields,
+            case_sensitive,
+            from_snapshot_id_exclusive,
+            to_snapshot_id_inclusive,
+            options,
+            limit,
+        )
 
     def plan_files(self) -> Iterable[FileScanTask]:
         from_snapshot_id, to_snapshot_id = self._validate_and_resolve_snapshots()
@@ -2040,10 +2067,10 @@ class IncrementalAppendScan(FileBasedScan, AbstractTableScan):
 
     def _validate_and_resolve_snapshots(self) -> tuple[int, int]:
         current_snapshot = self.table_metadata.current_snapshot()
-        to_snapshot_id = self.to_snapshot_id
+        to_snapshot_id = self.to_snapshot_id_inclusive
 
-        if self.from_snapshot_id is None:
-            raise ValueError("Start snapshot of append scan unspecified, please set from_snapshot_id")
+        if self.from_snapshot_id_exclusive is None:
+            raise ValueError("Start snapshot of append scan unspecified, please set from_snapshot_id_exclusive")
 
         if to_snapshot_id is None:
             if current_snapshot is None:
@@ -2053,15 +2080,15 @@ class IncrementalAppendScan(FileBasedScan, AbstractTableScan):
         elif self._is_snapshot_missing(to_snapshot_id):
             raise ValueError(f"End snapshot of append scan not found on table metadata: {to_snapshot_id}")
 
-        if self._is_snapshot_missing(self.from_snapshot_id):
-            raise ValueError(f"Start snapshot of append scan not found on table metadata: {self.from_snapshot_id}")
+        if self._is_snapshot_missing(self.from_snapshot_id_exclusive):
+            raise ValueError(f"Start snapshot of append scan not found on table metadata: {self.from_snapshot_id_exclusive}")
 
-        if not is_ancestor_of(to_snapshot_id, self.from_snapshot_id, self.table_metadata):
+        if not is_ancestor_of(to_snapshot_id, self.from_snapshot_id_exclusive, self.table_metadata):
             raise ValueError(
-                f"Append scan's start snapshot {self.from_snapshot_id} is not an ancestor of end snapshot {to_snapshot_id}"
+                f"Append scan's start snapshot {self.from_snapshot_id_exclusive} is not an ancestor of end snapshot {to_snapshot_id}"
             )
 
-        return self.from_snapshot_id, to_snapshot_id
+        return self.from_snapshot_id_exclusive, to_snapshot_id
 
     # TODO: Note behaviour change from DataScan that we throw
     def _is_snapshot_missing(self, snapshot_id: int) -> bool:
@@ -2182,6 +2209,7 @@ class ManifestGroup:
         return project(self.parsed_row_filter)
 
     # TODO: Document that this method was removed
+    # TODO: Or probably: Don't move it and think. We should cache on the scan classes themselves, not here
     @cached_property
     def _partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
         return KeyDefaultDict(self._build_partition_projection)
