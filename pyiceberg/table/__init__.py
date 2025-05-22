@@ -2011,9 +2011,6 @@ class IncrementalAppendScan(IncrementalScan, FileBasedScan):
             matching rows.
     """
 
-    from_snapshot_id_exclusive: Optional[int]
-    to_snapshot_id_inclusive: Optional[int]
-
     def __init__(
         self,
         table_metadata: TableMetadata,
