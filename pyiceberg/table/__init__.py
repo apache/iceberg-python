@@ -1923,7 +1923,6 @@ class DataScan(FileBasedScan, TableScan):
 
         return self._manifest_group_planner.plan_files(manifests=snapshot.manifests(self.io))
 
-    # TODO: Document motivation and un-caching
     @property
     def partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
         return self._manifest_group_planner.partition_filters
@@ -2083,7 +2082,6 @@ class IncrementalAppendScan(IncrementalScan, FileBasedScan):
 
         return self.from_snapshot_id_exclusive, to_snapshot_id
 
-    # TODO: Note behaviour change from DataScan that we throw
     def _is_snapshot_missing(self, snapshot_id: int) -> bool:
         """Return whether the snapshot ID is missing in the table metadata."""
         return self.table_metadata.snapshot_by_id(snapshot_id) is None
