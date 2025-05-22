@@ -1674,6 +1674,10 @@ class AbstractTableScan(ABC):
 class FileBasedScan(AbstractTableScan, ABC):
     """A base class for table scans that plan FileScanTasks."""
 
+    @cached_property
+    def _manifest_group_planner(self) -> ManifestGroupPlanner:
+        return ManifestGroupPlanner(self)
+
     @abstractmethod
     def plan_files(self) -> Iterable[FileScanTask]: ...
 
@@ -1918,14 +1922,12 @@ class DataScan(FileBasedScan, TableScan):
         if not snapshot:
             return iter([])
 
-        return ManifestGroup(
-            manifests=snapshot.manifests(self.io),
-            io=self.io,
-            table_metadata=self.table_metadata,
-            parsed_row_filter=self.row_filter,
-            case_sensitive=self.case_sensitive,
-            options=self.options,
-        ).plan_files()
+        return self._manifest_group_planner.plan_files(manifests=snapshot.manifests(self.io))
+
+    # TODO: Document motivation and un-caching
+    @property
+    def partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
+        return self._manifest_group_planner.partition_filters
 
 
 A = TypeVar("A", bound="IncrementalScan", covariant=True)
@@ -2051,16 +2053,11 @@ class IncrementalAppendScan(IncrementalScan, FileBasedScan):
             if manifest_file.content == ManifestContent.DATA and manifest_file.added_snapshot_id in append_snapshot_ids
         }
 
-        return ManifestGroup(
+        return self._manifest_group_planner.plan_files(
             manifests=list(manifests),
-            io=self.io,
-            table_metadata=self.table_metadata,
-            parsed_row_filter=self.row_filter,
-            case_sensitive=self.case_sensitive,
-            options=self.options,
             manifest_entry_filter=lambda manifest_entry: manifest_entry.snapshot_id in append_snapshot_ids
             and manifest_entry.status == ManifestEntryStatus.ADDED,
-        ).plan_files()
+        )
 
     def _validate_and_resolve_snapshots(self) -> tuple[int, int]:
         current_snapshot = self.table_metadata.current_snapshot()
@@ -2108,42 +2105,31 @@ class IncrementalAppendScan(IncrementalScan, FileBasedScan):
         ]
 
 
-class ManifestGroup:
-    manifests: List[ManifestFile]
+class ManifestGroupPlanner:
     io: FileIO
     table_metadata: TableMetadata
-    parsed_row_filter: BooleanExpression
+    row_filter: BooleanExpression
     case_sensitive: bool
     options: Properties
-    manifest_entry_filter: Callable[[ManifestEntry], bool]
 
-    def __init__(
+    def __init__(self, scan: AbstractTableScan):
+        self.io = scan.io
+        self.table_metadata = scan.table_metadata
+        self.row_filter = scan.row_filter
+        self.case_sensitive = scan.case_sensitive
+        self.options = scan.options
+
+    def plan_files(
         self,
         manifests: List[ManifestFile],
-        io: FileIO,
-        table_metadata: TableMetadata,
-        parsed_row_filter: BooleanExpression,
-        case_sensitive: bool,
-        options: Properties,
         manifest_entry_filter: Callable[[ManifestEntry], bool] = lambda _: True,
-    ):
-        self.manifests = manifests
-        self.io = io
-        self.table_metadata = table_metadata
-        self.parsed_row_filter = parsed_row_filter
-        self.case_sensitive = case_sensitive
-        self.options = options
-        self.manifest_entry_filter = manifest_entry_filter
-
-    def plan_files(self) -> Iterable[FileScanTask]:
+    ) -> Iterable[FileScanTask]:
         # step 1: filter manifests using partition summaries
         # the filter depends on the partition spec used to write the manifest file, so create a cache of filters for each spec id
 
         manifest_evaluators: Dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
         manifests = [
-            manifest_file
-            for manifest_file in self.manifests
-            if manifest_evaluators[manifest_file.partition_spec_id](manifest_file)
+            manifest_file for manifest_file in manifests if manifest_evaluators[manifest_file.partition_spec_id](manifest_file)
         ]
 
         residual_evaluators: Dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
@@ -2174,7 +2160,7 @@ class ManifestGroup:
                 ],
             )
         ):
-            if not self.manifest_entry_filter(manifest_entry):
+            if not manifest_entry_filter(manifest_entry):
                 continue
 
             data_file = manifest_entry.data_file
@@ -2201,25 +2187,23 @@ class ManifestGroup:
             for data_entry in data_entries
         ]
 
+    @cached_property
+    def partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
+        return KeyDefaultDict(self._build_partition_projection)
+
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
         project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id], self.case_sensitive)
-        return project(self.parsed_row_filter)
-
-    # TODO: Document that this method was removed
-    # TODO: Or probably: Don't move it and think. We should cache on the scan classes themselves, not here
-    @cached_property
-    def _partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
-        return KeyDefaultDict(self._build_partition_projection)
+        return project(self.row_filter)
 
     def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
         spec = self.table_metadata.specs()[spec_id]
-        return manifest_evaluator(spec, self.table_metadata.schema(), self._partition_filters[spec_id], self.case_sensitive)
+        return manifest_evaluator(spec, self.table_metadata.schema(), self.partition_filters[spec_id], self.case_sensitive)
 
     def _build_partition_evaluator(self, spec_id: int) -> Callable[[DataFile], bool]:
         spec = self.table_metadata.specs()[spec_id]
         partition_type = spec.partition_type(self.table_metadata.schema())
         partition_schema = Schema(*partition_type.fields)
-        partition_expr = self._partition_filters[spec_id]
+        partition_expr = self.partition_filters[spec_id]
 
         # The lambda created here is run in multiple threads.
         # So we avoid creating _EvaluatorExpression methods bound to a single
@@ -2235,7 +2219,7 @@ class ManifestGroup:
         # shared instance across multiple threads.
         return lambda data_file: _InclusiveMetricsEvaluator(
             schema,
-            self.parsed_row_filter,
+            self.row_filter,
             self.case_sensitive,
             include_empty_files,
         ).eval(data_file)
@@ -2253,13 +2237,13 @@ class ManifestGroup:
         return lambda datafile: (
             residual_evaluator_of(
                 spec=spec,
-                expr=self.parsed_row_filter,
+                expr=self.row_filter,
                 case_sensitive=self.case_sensitive,
                 schema=self.table_metadata.schema(),
             )
         )
 
-    # TODO: Document that this method was removed from DataScan and it was made static
+    # TODO: Document that this method was was made static
     @staticmethod
     def _check_sequence_number(min_sequence_number: int, manifest: ManifestFile) -> bool:
         """Ensure that no manifests are loaded that contain deletes that are older than the data.
