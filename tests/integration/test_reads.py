@@ -1159,7 +1159,7 @@ def test_incremental_append_scan_throws_on_missing_snapshot_ids(catalog: Catalog
         test_table.incremental_append_scan(
             to_snapshot_id_inclusive=test_table.snapshots()[0].snapshot_id,
         ).plan_files()
-    assert "Start snapshot of append scan unspecified, please set from_snapshot_id" in str(e.value)
+    assert "Start snapshot of append scan unspecified, please set from_snapshot_id_exclusive" in str(e.value)
 
     # from_snapshot_id missing from metadata
     with pytest.raises(ValueError) as e:

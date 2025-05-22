@@ -439,21 +439,19 @@ def test_ancestors_between(table_v2_with_extensive_snapshots: Table) -> None:
 
 
 def test_is_ancestor_of(table_v2: Table) -> None:
-    snapshot_id = 3055729675574597004
-    ancestor_snapshot_id = 3051729675574597004
+    snapshot_id, ancestor_snapshot_id = 3055729675574597004, 3051729675574597004
 
     assert is_ancestor_of(snapshot_id, ancestor_snapshot_id, table_v2.metadata)
     assert not is_ancestor_of(ancestor_snapshot_id, snapshot_id, table_v2.metadata)
 
 
 def test_ancestors_between_ids(table_v2: Table) -> None:
-    snapshot_id = 3055729675574597004
-    ancestor_snapshot_id = 3051729675574597004
+    snapshot_id, ancestor_snapshot_id = 3055729675574597004, 3051729675574597004
 
     result = list(ancestors_between_ids(ancestor_snapshot_id, snapshot_id, table_v2.metadata))
     ids = [ancestor.snapshot_id for ancestor in result]
 
-    # Exclusive-inclusive semantics mean just snapshot_id should be returned
+    # Exclusive-inclusive semantics means just 'snapshot_id' should be returned
     assert ids == [snapshot_id]
 
 
@@ -461,12 +459,13 @@ def test_ancestors_between_equal_ids(table_v2: Table) -> None:
     snapshot_id = 3055729675574597004
 
     result = list(ancestors_between_ids(snapshot_id, snapshot_id, table_v2.metadata))
+
+    # Exclusive-inclusive semantics mean no ancestors should be returned
     assert result == []
 
 
 def test_ancestors_between_ids_missing_from_snapshot(table_v2: Table) -> None:
-    snapshot_id = 3055729675574597004
-    ancestor_snapshot_id = 3051729675574597004
+    snapshot_id, ancestor_snapshot_id = 3055729675574597004, 3051729675574597004
 
     result = list(
         ancestors_between_ids(

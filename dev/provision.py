@@ -457,7 +457,7 @@ for catalog_name, catalog in catalogs.items():
     )
 
     # https://github.com/apache/iceberg/issues/1092#issuecomment-638432848 / https://github.com/apache/iceberg/issues/3747#issuecomment-1145419407
-    # REPLACE TABLE requires certain Hive server configuration
+    # Don't do replace for Hive catalog as REPLACE TABLE requires certain Hive server configuration
     if catalog_name != "hive":
         # Replace to break snapshot lineage:
         spark.sql(
