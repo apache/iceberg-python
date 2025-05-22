@@ -2242,7 +2242,6 @@ class ManifestGroupPlanner:
             )
         )
 
-    # TODO: Document that this method was was made static
     @staticmethod
     def _check_sequence_number(min_sequence_number: int, manifest: ManifestFile) -> bool:
         """Ensure that no manifests are loaded that contain deletes that are older than the data.
