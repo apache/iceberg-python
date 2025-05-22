@@ -1096,7 +1096,6 @@ class Table:
             limit=limit,
         )
 
-    # TODO: Consider more concise name
     def incremental_append_scan(
         self,
         row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
