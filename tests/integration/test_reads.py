@@ -1104,6 +1104,21 @@ def test_incremental_append_scan_selected_fields(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_incremental_append_scan_limit(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    scan = (
+        test_table.incremental_append_scan(limit=2)
+        .from_snapshot_exclusive(test_table.snapshots()[0].snapshot_id)
+        .to_snapshot_inclusive(test_table.snapshots()[2].snapshot_id)
+    )
+
+    # Although three rows were added in the range, the limit of 2 should be applied
+    assert len(scan.to_arrow()) == 2
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive")])
 def test_incremental_append_scan_to_snapshot_defaults_to_current(catalog: Catalog) -> None:
     test_table = catalog.load_table("default.test_incremental_read")
