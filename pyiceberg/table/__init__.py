@@ -398,7 +398,7 @@ class Transaction:
             expr = Or(expr, match_partition_expression)
         return expr
 
-    def _append_snapshot_producer(self, snapshot_properties: Dict[str, str],branch:str) -> _FastAppendFiles:
+    def _append_snapshot_producer(self, snapshot_properties: Dict[str, str], branch: str) -> _FastAppendFiles:
         """Determine the append type based on table properties.
 
         Args:
@@ -411,7 +411,7 @@ class Transaction:
             TableProperties.MANIFEST_MERGE_ENABLED,
             TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
         )
-        update_snapshot = self.update_snapshot(snapshot_properties=snapshot_properties,branch=branch)
+        update_snapshot = self.update_snapshot(snapshot_properties=snapshot_properties, branch=branch)
         return update_snapshot.merge_append() if manifest_merge_enabled else update_snapshot.fast_append()
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
@@ -478,7 +478,7 @@ class Transaction:
             self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
         )
 
-        with self._append_snapshot_producer(snapshot_properties,branch=branch) as append_files:
+        with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
                 data_files = list(
@@ -489,7 +489,9 @@ class Transaction:
                 for data_file in data_files:
                     append_files.append_data_file(data_file)
 
-    def dynamic_partition_overwrite(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+    def dynamic_partition_overwrite(
+        self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str = MAIN_BRANCH
+    ) -> None:
         """
         Shorthand for overwriting existing partitions with a PyArrow table.
 
@@ -500,6 +502,7 @@ class Transaction:
         Args:
             df: The Arrow dataframe that will be used to overwrite the table
             snapshot_properties: Custom properties to be added to the snapshot summary
+            branch: Branch Reference to run the dynamic partition overwrite operation
         """
         try:
             import pyarrow as pa
@@ -540,7 +543,7 @@ class Transaction:
         delete_filter = self._build_partition_predicate(partition_records=partitions_to_overwrite)
         self.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties)
 
-        with self._append_snapshot_producer(snapshot_properties) as append_files:
+        with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
             append_files.commit_uuid = append_snapshot_commit_uuid
             for data_file in data_files:
                 append_files.append_data_file(data_file)
@@ -593,9 +596,14 @@ class Transaction:
 
         if overwrite_filter != AlwaysFalse():
             # Only delete when the filter is != AlwaysFalse
-            self.delete(delete_filter=overwrite_filter, case_sensitive=case_sensitive, snapshot_properties=snapshot_properties, branch=branch)
+            self.delete(
+                delete_filter=overwrite_filter,
+                case_sensitive=case_sensitive,
+                snapshot_properties=snapshot_properties,
+                branch=branch,
+            )
 
-        with self._append_snapshot_producer(snapshot_properties,branch=branch) as append_files:
+        with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
                 data_files = _dataframe_to_data_files(
@@ -640,7 +648,7 @@ class Transaction:
         if isinstance(delete_filter, str):
             delete_filter = _parse_row_filter(delete_filter)
 
-        with self.update_snapshot(snapshot_properties=snapshot_properties,branch=branch).delete() as delete_snapshot:
+        with self.update_snapshot(snapshot_properties=snapshot_properties, branch=branch).delete() as delete_snapshot:
             delete_snapshot.delete_by_predicate(delete_filter, case_sensitive)
 
         # Check if there are any files that require an actual rewrite of a data file
@@ -690,7 +698,9 @@ class Transaction:
                     )
 
             if len(replaced_files) > 0:
-                with self.update_snapshot(snapshot_properties=snapshot_properties,branch=branch).overwrite() as overwrite_snapshot:
+                with self.update_snapshot(
+                    snapshot_properties=snapshot_properties, branch=branch
+                ).overwrite() as overwrite_snapshot:
                     overwrite_snapshot.commit_uuid = commit_uuid
                     for original_data_file, replaced_data_files in replaced_files:
                         overwrite_snapshot.delete_data_file(original_data_file)
@@ -1301,16 +1311,19 @@ class Table:
         with self.transaction() as tx:
             tx.append(df=df, snapshot_properties=snapshot_properties, branch=branch)
 
-    def dynamic_partition_overwrite(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+    def dynamic_partition_overwrite(
+        self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str = MAIN_BRANCH
+    ) -> None:
         """Shorthand for dynamic overwriting the table with a PyArrow table.
 
         Old partitions are auto detected and replaced with data files created for input arrow table.
         Args:
             df: The Arrow dataframe that will be used to overwrite the table
             snapshot_properties: Custom properties to be added to the snapshot summary
+            branch: Branch Reference to run the dynamic partition overwrite operation
         """
         with self.transaction() as tx:
-            tx.dynamic_partition_overwrite(df=df, snapshot_properties=snapshot_properties)
+            tx.dynamic_partition_overwrite(df=df, snapshot_properties=snapshot_properties, branch=branch)
 
     def overwrite(
         self,
@@ -1339,7 +1352,11 @@ class Table:
         """
         with self.transaction() as tx:
             tx.overwrite(
-                df=df, overwrite_filter=overwrite_filter, case_sensitive=case_sensitive, snapshot_properties=snapshot_properties, branch=branch
+                df=df,
+                overwrite_filter=overwrite_filter,
+                case_sensitive=case_sensitive,
+                snapshot_properties=snapshot_properties,
+                branch=branch,
             )
 
     def delete(
@@ -1359,7 +1376,9 @@ class Table:
             branch: Branch Reference to run the delete operation
         """
         with self.transaction() as tx:
-            tx.delete(delete_filter=delete_filter, case_sensitive=case_sensitive, snapshot_properties=snapshot_properties, branch=branch)
+            tx.delete(
+                delete_filter=delete_filter, case_sensitive=case_sensitive, snapshot_properties=snapshot_properties, branch=branch
+            )
 
     def add_files(
         self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT, check_duplicate_files: bool = True

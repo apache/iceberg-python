@@ -1945,7 +1945,7 @@ def test_intertwined_branch_writes(session_catalog: Catalog, arrow_table_with_nu
 
 @pytest.mark.integration
 def test_branch_spark_write_py_read(session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table) -> None:
-    # Intialize table with branch
+    # Initialize table with branch
     identifier = "default.test_branch_spark_write_py_read"
     tbl = _create_table(session_catalog, identifier, {"format-version": "2"}, [arrow_table_with_null])
     branch = "existing_spark_branch"
@@ -1971,7 +1971,7 @@ def test_branch_spark_write_py_read(session_catalog: Catalog, spark: SparkSessio
 
 @pytest.mark.integration
 def test_branch_py_write_spark_read(session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table) -> None:
-    # Intialize table with branch
+    # Initialize table with branch
     identifier = "default.test_branch_py_write_spark_read"
     tbl = _create_table(session_catalog, identifier, {"format-version": "2"}, [arrow_table_with_null])
     branch = "existing_py_branch"
