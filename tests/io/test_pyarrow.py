@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
-
+import logging
 import os
 import tempfile
 import uuid
@@ -27,7 +27,7 @@ from uuid import uuid4
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
-from pyarrow.fs import FileType, LocalFileSystem
+from pyarrow.fs import FileType, LocalFileSystem, S3FileSystem
 
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import (
@@ -69,7 +69,10 @@ from pyiceberg.io.pyarrow import (
     _read_deletes,
     _to_requested_schema,
     bin_pack_arrow_table,
+    compute_statistics_plan,
+    data_file_statistics_from_parquet_metadata,
     expression_to_pyarrow,
+    parquet_path_to_id_mapping,
     schema_to_pyarrow,
 )
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
@@ -77,6 +80,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema, make_compatible_name, visit
 from pyiceberg.table import FileScanTask, TableProperties
 from pyiceberg.table.metadata import TableMetadataV2
+from pyiceberg.table.name_mapping import create_mapping_from_schema
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import UTF8, Properties, Record
 from pyiceberg.types import (
@@ -99,6 +103,7 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
 )
+from tests.catalog.test_base import InMemoryCatalog
 from tests.conftest import UNIFIED_AWS_SESSION_PROPERTIES
 
 
@@ -360,10 +365,12 @@ def test_pyarrow_s3_session_properties() -> None:
         **UNIFIED_AWS_SESSION_PROPERTIES,
     }
 
-    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs:
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs, patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
         s3_fileio = PyArrowFileIO(properties=session_properties)
         filename = str(uuid.uuid4())
 
+        # Mock `resolve_s3_region` to prevent from the location used resolving to a different s3 region
+        mock_s3_region_resolver.side_effect = OSError("S3 bucket is not found")
         s3_fileio.new_input(location=f"s3://warehouse/{filename}")
 
         mock_s3fs.assert_called_with(
@@ -381,10 +388,11 @@ def test_pyarrow_unified_session_properties() -> None:
         **UNIFIED_AWS_SESSION_PROPERTIES,
     }
 
-    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs:
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs, patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
         s3_fileio = PyArrowFileIO(properties=session_properties)
         filename = str(uuid.uuid4())
 
+        mock_s3_region_resolver.return_value = "client.region"
         s3_fileio.new_input(location=f"s3://warehouse/{filename}")
 
         mock_s3fs.assert_called_with(
@@ -547,11 +555,13 @@ def test_binary_type_to_pyarrow() -> None:
 
 
 def test_struct_type_to_pyarrow(table_schema_simple: Schema) -> None:
-    expected = pa.struct([
-        pa.field("foo", pa.large_string(), nullable=True, metadata={"field_id": "1"}),
-        pa.field("bar", pa.int32(), nullable=False, metadata={"field_id": "2"}),
-        pa.field("baz", pa.bool_(), nullable=True, metadata={"field_id": "3"}),
-    ])
+    expected = pa.struct(
+        [
+            pa.field("foo", pa.large_string(), nullable=True, metadata={"field_id": "1"}),
+            pa.field("bar", pa.int32(), nullable=False, metadata={"field_id": "2"}),
+            pa.field("baz", pa.bool_(), nullable=True, metadata={"field_id": "3"}),
+        ]
+    )
     assert visit(table_schema_simple.as_struct(), _ConvertToArrowSchema()) == expected
 
 
@@ -967,7 +977,7 @@ def project(
     ).to_table(
         tasks=[
             FileScanTask(
-                DataFile(
+                DataFile.from_args(
                     content=DataFileContent.DATA,
                     file_path=file,
                     file_format=FileFormat.PARQUET,
@@ -1055,10 +1065,10 @@ def test_read_map(schema_map: Schema, file_map: str) -> None:
 
     assert (
         repr(result_table.schema)
-        == """properties: map<large_string, large_string>
-  child 0, entries: struct<key: large_string not null, value: large_string not null> not null
-      child 0, key: large_string not null
-      child 1, value: large_string not null"""
+        == """properties: map<string, string>
+  child 0, entries: struct<key: string not null, value: string not null> not null
+      child 0, key: string not null
+      child 1, value: string not null"""
     )
 
 
@@ -1120,6 +1130,134 @@ def test_projection_concat_files(schema_int: Schema, file_int: str) -> None:
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 6
     assert repr(result_table.schema) == "id: int32"
+
+
+def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCatalog) -> None:
+    # Test by adding a non-partitioned data file to a partitioned table, verifying partition value projection from manifest metadata.
+    # TODO: Update to use a data file created by writing data to an unpartitioned table once add_files supports field IDs.
+    # (context: https://github.com/apache/iceberg-python/pull/1443#discussion_r1901374875)
+
+    schema = Schema(
+        NestedField(1, "other_field", StringType(), required=False), NestedField(2, "partition_id", IntegerType(), required=False)
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(2, 1000, IdentityTransform(), "partition_id"),
+    )
+
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test_projection_partition",
+        schema=schema,
+        partition_spec=partition_spec,
+        properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
+    )
+
+    file_data = pa.array(["foo", "bar", "baz"], type=pa.string())
+    file_loc = f"{tmp_path}/test.parquet"
+    pq.write_table(pa.table([file_data], names=["other_field"]), file_loc)
+
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=pq.read_metadata(file_loc),
+        stats_columns=compute_statistics_plan(table.schema(), table.metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
+    )
+
+    unpartitioned_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=file_loc,
+        file_format=FileFormat.PARQUET,
+        # projected value
+        partition=Record(1),
+        file_size_in_bytes=os.path.getsize(file_loc),
+        sort_order_id=None,
+        spec_id=table.metadata.default_spec_id,
+        equality_ids=None,
+        key_metadata=None,
+        **statistics.to_serialized_dict(),
+    )
+
+    with table.transaction() as transaction:
+        with transaction.update_snapshot().overwrite() as update:
+            update.append_data_file(unpartitioned_file)
+
+    schema = pa.schema([("other_field", pa.string()), ("partition_id", pa.int64())])
+    assert table.scan().to_arrow() == pa.table(
+        {
+            "other_field": ["foo", "bar", "baz"],
+            "partition_id": [1, 1, 1],
+        },
+        schema=schema,
+    )
+
+
+def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryCatalog) -> None:
+    # Test by adding a non-partitioned data file to a multi-partitioned table, verifying partition value projection from manifest metadata.
+    # TODO: Update to use a data file created by writing data to an unpartitioned table once add_files supports field IDs.
+    # (context: https://github.com/apache/iceberg-python/pull/1443#discussion_r1901374875)
+    schema = Schema(
+        NestedField(1, "field_1", StringType(), required=False),
+        NestedField(2, "field_2", IntegerType(), required=False),
+        NestedField(3, "field_3", IntegerType(), required=False),
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(2, 1000, IdentityTransform(), "field_2"),
+        PartitionField(3, 1001, IdentityTransform(), "field_3"),
+    )
+
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test_projection_partitions",
+        schema=schema,
+        partition_spec=partition_spec,
+        properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
+    )
+
+    file_data = pa.array(["foo"], type=pa.string())
+    file_loc = f"{tmp_path}/test.parquet"
+    pq.write_table(pa.table([file_data], names=["field_1"]), file_loc)
+
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=pq.read_metadata(file_loc),
+        stats_columns=compute_statistics_plan(table.schema(), table.metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
+    )
+
+    unpartitioned_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=file_loc,
+        file_format=FileFormat.PARQUET,
+        # projected value
+        partition=Record(2, 3),
+        file_size_in_bytes=os.path.getsize(file_loc),
+        sort_order_id=None,
+        spec_id=table.metadata.default_spec_id,
+        equality_ids=None,
+        key_metadata=None,
+        **statistics.to_serialized_dict(),
+    )
+
+    with table.transaction() as transaction:
+        with transaction.update_snapshot().overwrite() as update:
+            update.append_data_file(unpartitioned_file)
+
+    assert (
+        str(table.scan().to_arrow())
+        == """pyarrow.Table
+field_1: string
+field_2: int64
+field_3: int64
+----
+field_1: [["foo"]]
+field_2: [[2]]
+field_3: [[3]]"""
+    )
+
+
+@pytest.fixture
+def catalog() -> InMemoryCatalog:
+    return InMemoryCatalog("test.in_memory.catalog", **{"test.key": "test.value"})
 
 
 def test_projection_filter(schema_int: Schema, file_int: str) -> None:
@@ -1332,9 +1470,9 @@ def test_projection_maps_of_structs(schema_map_of_structs: Schema, file_map_of_s
         assert actual.as_py() == expected
     assert (
         repr(result_table.schema)
-        == """locations: map<large_string, struct<latitude: double not null, longitude: double not null, altitude: double>>
-  child 0, entries: struct<key: large_string not null, value: struct<latitude: double not null, longitude: double not null, altitude: double> not null> not null
-      child 0, key: large_string not null
+        == """locations: map<string, struct<latitude: double not null, longitude: double not null, altitude: double>>
+  child 0, entries: struct<key: string not null, value: struct<latitude: double not null, longitude: double not null, altitude: double> not null> not null
+      child 0, key: string not null
       child 1, value: struct<latitude: double not null, longitude: double not null, altitude: double> not null
           child 0, latitude: double not null
           child 1, longitude: double not null
@@ -1401,7 +1539,7 @@ def deletes_file(tmp_path: str, example_task: FileScanTask) -> str:
 
 
 def test_read_deletes(deletes_file: str, example_task: FileScanTask) -> None:
-    deletes = _read_deletes(LocalFileSystem(), DataFile(file_path=deletes_file, file_format=FileFormat.PARQUET))
+    deletes = _read_deletes(LocalFileSystem(), DataFile.from_args(file_path=deletes_file, file_format=FileFormat.PARQUET))
     assert set(deletes.keys()) == {example_task.file.file_path}
     assert list(deletes.values())[0] == pa.chunked_array([[1, 3, 5]])
 
@@ -1410,7 +1548,9 @@ def test_delete(deletes_file: str, example_task: FileScanTask, table_schema_simp
     metadata_location = "file://a/b/c.json"
     example_task_with_delete = FileScanTask(
         data_file=example_task.file,
-        delete_files={DataFile(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=FileFormat.PARQUET)},
+        delete_files={
+            DataFile.from_args(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=FileFormat.PARQUET)
+        },
     )
     with_deletes = ArrowScan(
         table_metadata=TableMetadataV2(
@@ -1444,8 +1584,8 @@ def test_delete_duplicates(deletes_file: str, example_task: FileScanTask, table_
     example_task_with_delete = FileScanTask(
         data_file=example_task.file,
         delete_files={
-            DataFile(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=FileFormat.PARQUET),
-            DataFile(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=FileFormat.PARQUET),
+            DataFile.from_args(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=FileFormat.PARQUET),
+            DataFile.from_args(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=FileFormat.PARQUET),
         },
     )
 
@@ -1771,11 +1911,13 @@ def test_bin_pack_arrow_table(arrow_table_with_null: pa.Table) -> None:
 
 
 def test_schema_mismatch_type(table_schema_simple: Schema) -> None:
-    other_schema = pa.schema((
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.decimal128(18, 6), nullable=False),
-        pa.field("baz", pa.bool_(), nullable=True),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.decimal128(18, 6), nullable=False),
+            pa.field("baz", pa.bool_(), nullable=True),
+        )
+    )
 
     expected = r"""Mismatch in fields:
 ┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
@@ -1792,11 +1934,13 @@ def test_schema_mismatch_type(table_schema_simple: Schema) -> None:
 
 
 def test_schema_mismatch_nullability(table_schema_simple: Schema) -> None:
-    other_schema = pa.schema((
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=True),
-        pa.field("baz", pa.bool_(), nullable=True),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=True),
+            pa.field("baz", pa.bool_(), nullable=True),
+        )
+    )
 
     expected = """Mismatch in fields:
 ┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┓
@@ -1813,11 +1957,13 @@ def test_schema_mismatch_nullability(table_schema_simple: Schema) -> None:
 
 
 def test_schema_compatible_nullability_diff(table_schema_simple: Schema) -> None:
-    other_schema = pa.schema((
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=False),
-        pa.field("baz", pa.bool_(), nullable=False),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=False),
+            pa.field("baz", pa.bool_(), nullable=False),
+        )
+    )
 
     try:
         _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
@@ -1826,10 +1972,12 @@ def test_schema_compatible_nullability_diff(table_schema_simple: Schema) -> None
 
 
 def test_schema_mismatch_missing_field(table_schema_simple: Schema) -> None:
-    other_schema = pa.schema((
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("baz", pa.bool_(), nullable=True),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("baz", pa.bool_(), nullable=True),
+        )
+    )
 
     expected = """Mismatch in fields:
 ┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┓
@@ -1851,9 +1999,11 @@ def test_schema_compatible_missing_nullable_field_nested(table_schema_nested: Sc
         6,
         pa.field(
             "person",
-            pa.struct([
-                pa.field("age", pa.int32(), nullable=False),
-            ]),
+            pa.struct(
+                [
+                    pa.field("age", pa.int32(), nullable=False),
+                ]
+            ),
             nullable=True,
         ),
     )
@@ -1869,9 +2019,11 @@ def test_schema_mismatch_missing_required_field_nested(table_schema_nested: Sche
         6,
         pa.field(
             "person",
-            pa.struct([
-                pa.field("name", pa.string(), nullable=True),
-            ]),
+            pa.struct(
+                [
+                    pa.field("name", pa.string(), nullable=True),
+                ]
+            ),
             nullable=True,
         ),
     )
@@ -1920,12 +2072,14 @@ def test_schema_compatible_nested(table_schema_nested: Schema) -> None:
 
 
 def test_schema_mismatch_additional_field(table_schema_simple: Schema) -> None:
-    other_schema = pa.schema((
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=False),
-        pa.field("baz", pa.bool_(), nullable=True),
-        pa.field("new_field", pa.date32(), nullable=True),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=False),
+            pa.field("baz", pa.bool_(), nullable=True),
+            pa.field("new_field", pa.date32(), nullable=True),
+        )
+    )
 
     with pytest.raises(
         ValueError, match=r"PyArrow table contains more columns: new_field. Update the schema first \(hint, use union_by_name\)."
@@ -1942,10 +2096,12 @@ def test_schema_compatible(table_schema_simple: Schema) -> None:
 
 def test_schema_projection(table_schema_simple: Schema) -> None:
     # remove optional `baz` field from `table_schema_simple`
-    other_schema = pa.schema((
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=False),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=False),
+        )
+    )
     try:
         _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
     except Exception:
@@ -1954,11 +2110,13 @@ def test_schema_projection(table_schema_simple: Schema) -> None:
 
 def test_schema_downcast(table_schema_simple: Schema) -> None:
     # large_string type is compatible with string type
-    other_schema = pa.schema((
-        pa.field("foo", pa.large_string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=False),
-        pa.field("baz", pa.bool_(), nullable=True),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.large_string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=False),
+            pa.field("baz", pa.bool_(), nullable=True),
+        )
+    )
 
     try:
         _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
@@ -1986,12 +2144,12 @@ def test_partition_for_demo() -> None:
     )
     result = _determine_partitions(partition_spec, test_schema, arrow_table)
     assert {table_partition.partition_key.partition for table_partition in result} == {
-        Record(n_legs_identity=2, year_identity=2020),
-        Record(n_legs_identity=100, year_identity=2021),
-        Record(n_legs_identity=4, year_identity=2021),
-        Record(n_legs_identity=4, year_identity=2022),
-        Record(n_legs_identity=2, year_identity=2022),
-        Record(n_legs_identity=5, year_identity=2019),
+        Record(2, 2020),
+        Record(100, 2021),
+        Record(4, 2021),
+        Record(4, 2022),
+        Record(2, 2022),
+        Record(5, 2019),
     }
     assert (
         pa.concat_tables([table_partition.arrow_table_partition for table_partition in result]).num_rows == arrow_table.num_rows
@@ -2015,7 +2173,7 @@ def test_identity_partition_on_multi_columns() -> None:
         (None, 4, "Kirin"),
         (2021, None, "Fish"),
     ] * 2
-    expected = {Record(n_legs_identity=test_rows[i][1], year_identity=test_rows[i][0]) for i in range(len(test_rows))}
+    expected = {Record(test_rows[i][1], test_rows[i][0]) for i in range(len(test_rows))}
     partition_spec = PartitionSpec(
         PartitionField(source_id=2, field_id=1002, transform=IdentityTransform(), name="n_legs_identity"),
         PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="year_identity"),
@@ -2037,11 +2195,13 @@ def test_identity_partition_on_multi_columns() -> None:
         assert {table_partition.partition_key.partition for table_partition in result} == expected
         concatenated_arrow_table = pa.concat_tables([table_partition.arrow_table_partition for table_partition in result])
         assert concatenated_arrow_table.num_rows == arrow_table.num_rows
-        assert concatenated_arrow_table.sort_by([
-            ("born_year", "ascending"),
-            ("n_legs", "ascending"),
-            ("animal", "ascending"),
-        ]) == arrow_table.sort_by([("born_year", "ascending"), ("n_legs", "ascending"), ("animal", "ascending")])
+        assert concatenated_arrow_table.sort_by(
+            [
+                ("born_year", "ascending"),
+                ("n_legs", "ascending"),
+                ("animal", "ascending"),
+            ]
+        ) == arrow_table.sort_by([("born_year", "ascending"), ("n_legs", "ascending"), ("animal", "ascending")])
 
 
 def test__to_requested_schema_timestamps(
@@ -2074,3 +2234,88 @@ def test__to_requested_schema_timestamps_without_downcast_raises_exception(
         _to_requested_schema(requested_schema, file_schema, batch, downcast_ns_timestamp_to_us=False, include_field_ids=False)
 
     assert "Unsupported schema projection from timestamp[ns] to timestamp[us]" in str(exc_info.value)
+
+
+def test_pyarrow_file_io_fs_by_scheme_cache() -> None:
+    # It's better to set up multi-region minio servers for an integration test once `endpoint_url` argument becomes available for `resolve_s3_region`
+    # Refer to: https://github.com/apache/arrow/issues/43713
+
+    pyarrow_file_io = PyArrowFileIO()
+    us_east_1_region = "us-east-1"
+    ap_southeast_2_region = "ap-southeast-2"
+
+    with patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
+        # Call with new argument resolves region automatically
+        mock_s3_region_resolver.return_value = us_east_1_region
+        filesystem_us = pyarrow_file_io.fs_by_scheme("s3", "us-east-1-bucket")
+        assert filesystem_us.region == us_east_1_region
+        assert pyarrow_file_io.fs_by_scheme.cache_info().misses == 1  # type: ignore
+        assert pyarrow_file_io.fs_by_scheme.cache_info().currsize == 1  # type: ignore
+
+        # Call with different argument also resolves region automatically
+        mock_s3_region_resolver.return_value = ap_southeast_2_region
+        filesystem_ap_southeast_2 = pyarrow_file_io.fs_by_scheme("s3", "ap-southeast-2-bucket")
+        assert filesystem_ap_southeast_2.region == ap_southeast_2_region
+        assert pyarrow_file_io.fs_by_scheme.cache_info().misses == 2  # type: ignore
+        assert pyarrow_file_io.fs_by_scheme.cache_info().currsize == 2  # type: ignore
+
+        # Call with same argument hits cache
+        filesystem_us_cached = pyarrow_file_io.fs_by_scheme("s3", "us-east-1-bucket")
+        assert filesystem_us_cached.region == us_east_1_region
+        assert pyarrow_file_io.fs_by_scheme.cache_info().hits == 1  # type: ignore
+
+        # Call with same argument hits cache
+        filesystem_ap_southeast_2_cached = pyarrow_file_io.fs_by_scheme("s3", "ap-southeast-2-bucket")
+        assert filesystem_ap_southeast_2_cached.region == ap_southeast_2_region
+        assert pyarrow_file_io.fs_by_scheme.cache_info().hits == 2  # type: ignore
+
+
+def test_pyarrow_io_new_input_multi_region(caplog: Any) -> None:
+    # It's better to set up multi-region minio servers for an integration test once `endpoint_url` argument becomes available for `resolve_s3_region`
+    # Refer to: https://github.com/apache/arrow/issues/43713
+    user_provided_region = "ap-southeast-1"
+    bucket_regions = [
+        ("us-east-2-bucket", "us-east-2"),
+        ("ap-southeast-2-bucket", "ap-southeast-2"),
+    ]
+
+    def _s3_region_map(bucket: str) -> str:
+        for bucket_region in bucket_regions:
+            if bucket_region[0] == bucket:
+                return bucket_region[1]
+        raise OSError("Unknown bucket")
+
+    # For a pyarrow io instance with configured default s3 region
+    pyarrow_file_io = PyArrowFileIO({"s3.region": user_provided_region, "s3.resolve-region": "true"})
+    with patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
+        mock_s3_region_resolver.side_effect = _s3_region_map
+
+        # The region is set to provided region if bucket region cannot be resolved
+        with caplog.at_level(logging.WARNING):
+            assert pyarrow_file_io.new_input("s3://non-exist-bucket/path/to/file")._filesystem.region == user_provided_region
+        assert "Unable to resolve region for bucket non-exist-bucket" in caplog.text
+
+        for bucket_region in bucket_regions:
+            # For s3 scheme, region is overwritten by resolved bucket region if different from user provided region
+            with caplog.at_level(logging.WARNING):
+                assert pyarrow_file_io.new_input(f"s3://{bucket_region[0]}/path/to/file")._filesystem.region == bucket_region[1]
+            assert (
+                f"PyArrow FileIO overriding S3 bucket region for bucket {bucket_region[0]}: "
+                f"provided region {user_provided_region}, actual region {bucket_region[1]}" in caplog.text
+            )
+
+            # For oss scheme, user provided region is used instead
+            assert pyarrow_file_io.new_input(f"oss://{bucket_region[0]}/path/to/file")._filesystem.region == user_provided_region
+
+
+def test_pyarrow_io_multi_fs() -> None:
+    pyarrow_file_io = PyArrowFileIO({"s3.region": "ap-southeast-1"})
+
+    with patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
+        mock_s3_region_resolver.return_value = None
+
+        # The PyArrowFileIO instance resolves s3 file input to S3FileSystem
+        assert isinstance(pyarrow_file_io.new_input("s3://bucket/path/to/file")._filesystem, S3FileSystem)
+
+        # Same PyArrowFileIO instance resolves local file input to LocalFileSystem
+        assert isinstance(pyarrow_file_io.new_input("file:///path/to/file")._filesystem, LocalFileSystem)

@@ -48,7 +48,6 @@ import boto3
 import pytest
 from moto import mock_aws
 
-from pyiceberg import schema
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.expressions import BoundReference
@@ -140,7 +139,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 @pytest.fixture(scope="session")
 def table_schema_simple() -> Schema:
-    return schema.Schema(
+    return Schema(
         NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
         NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
         NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
@@ -150,8 +149,37 @@ def table_schema_simple() -> Schema:
 
 
 @pytest.fixture(scope="session")
+def table_schema_with_full_nested_fields() -> Schema:
+    return Schema(
+        NestedField(
+            field_id=1,
+            name="foo",
+            field_type=StringType(),
+            required=False,
+            doc="foo doc",
+            initial_default="foo initial",
+            write_default="foo write",
+        ),
+        NestedField(
+            field_id=2, name="bar", field_type=IntegerType(), required=True, doc="bar doc", initial_default=42, write_default=43
+        ),
+        NestedField(
+            field_id=3,
+            name="baz",
+            field_type=BooleanType(),
+            required=False,
+            doc="baz doc",
+            initial_default=True,
+            write_default=False,
+        ),
+        schema_id=1,
+        identifier_field_ids=[2],
+    )
+
+
+@pytest.fixture(scope="session")
 def table_schema_nested() -> Schema:
-    return schema.Schema(
+    return Schema(
         NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
         NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
         NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
@@ -202,7 +230,7 @@ def table_schema_nested() -> Schema:
 
 @pytest.fixture(scope="session")
 def table_schema_nested_with_struct_key_map() -> Schema:
-    return schema.Schema(
+    return Schema(
         NestedField(field_id=1, name="foo", field_type=StringType(), required=True),
         NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
         NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
@@ -274,7 +302,7 @@ def table_schema_nested_with_struct_key_map() -> Schema:
 
 @pytest.fixture(scope="session")
 def table_schema_with_all_types() -> Schema:
-    return schema.Schema(
+    return Schema(
         NestedField(field_id=1, name="boolean", field_type=BooleanType(), required=True),
         NestedField(field_id=2, name="integer", field_type=IntegerType(), required=True),
         NestedField(field_id=3, name="long", field_type=LongType(), required=True),
@@ -324,49 +352,57 @@ def table_schema_with_all_types() -> Schema:
 def pyarrow_schema_simple_without_ids() -> "pa.Schema":
     import pyarrow as pa
 
-    return pa.schema([
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=False),
-        pa.field("baz", pa.bool_(), nullable=True),
-    ])
+    return pa.schema(
+        [
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=False),
+            pa.field("baz", pa.bool_(), nullable=True),
+        ]
+    )
 
 
 @pytest.fixture(scope="session")
 def pyarrow_schema_nested_without_ids() -> "pa.Schema":
     import pyarrow as pa
 
-    return pa.schema([
-        pa.field("foo", pa.string(), nullable=False),
-        pa.field("bar", pa.int32(), nullable=False),
-        pa.field("baz", pa.bool_(), nullable=True),
-        pa.field("qux", pa.list_(pa.string()), nullable=False),
-        pa.field(
-            "quux",
-            pa.map_(
-                pa.string(),
-                pa.map_(pa.string(), pa.int32()),
+    return pa.schema(
+        [
+            pa.field("foo", pa.string(), nullable=False),
+            pa.field("bar", pa.int32(), nullable=False),
+            pa.field("baz", pa.bool_(), nullable=True),
+            pa.field("qux", pa.list_(pa.string()), nullable=False),
+            pa.field(
+                "quux",
+                pa.map_(
+                    pa.string(),
+                    pa.map_(pa.string(), pa.int32()),
+                ),
+                nullable=False,
             ),
-            nullable=False,
-        ),
-        pa.field(
-            "location",
-            pa.list_(
-                pa.struct([
-                    pa.field("latitude", pa.float32(), nullable=False),
-                    pa.field("longitude", pa.float32(), nullable=False),
-                ]),
+            pa.field(
+                "location",
+                pa.list_(
+                    pa.struct(
+                        [
+                            pa.field("latitude", pa.float32(), nullable=False),
+                            pa.field("longitude", pa.float32(), nullable=False),
+                        ]
+                    ),
+                ),
+                nullable=False,
             ),
-            nullable=False,
-        ),
-        pa.field(
-            "person",
-            pa.struct([
-                pa.field("name", pa.string(), nullable=True),
-                pa.field("age", pa.int32(), nullable=False),
-            ]),
-            nullable=True,
-        ),
-    ])
+            pa.field(
+                "person",
+                pa.struct(
+                    [
+                        pa.field("name", pa.string(), nullable=True),
+                        pa.field("age", pa.int32(), nullable=False),
+                    ]
+                ),
+                nullable=True,
+            ),
+        ]
+    )
 
 
 @pytest.fixture(scope="session")
@@ -596,7 +632,7 @@ EXAMPLE_TABLE_METADATA_V1 = {
     "partition-spec": [{"name": "x", "transform": "identity", "source-id": 1, "field-id": 1000}],
     "properties": {},
     "current-snapshot-id": -1,
-    "snapshots": [{"snapshot-id": 1925, "timestamp-ms": 1602638573822}],
+    "snapshots": [{"snapshot-id": 1925, "timestamp-ms": 1602638573822, "manifest-list": "s3://bucket/test/manifest-list"}],
 }
 
 
@@ -865,6 +901,71 @@ EXAMPLE_TABLE_METADATA_V2 = {
     "refs": {"test": {"snapshot-id": 3051729675574597004, "type": "tag", "max-ref-age-ms": 10000000}},
 }
 
+EXAMPLE_TABLE_METADATA_V3 = {
+    "format-version": 3,
+    "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
+    "location": "s3://bucket/test/location",
+    "last-sequence-number": 34,
+    "last-updated-ms": 1602638573590,
+    "last-column-id": 3,
+    "current-schema-id": 1,
+    "schemas": [
+        {"type": "struct", "schema-id": 0, "fields": [{"id": 1, "name": "x", "required": True, "type": "long"}]},
+        {
+            "type": "struct",
+            "schema-id": 1,
+            "identifier-field-ids": [1, 2],
+            "fields": [
+                {"id": 1, "name": "x", "required": True, "type": "long"},
+                {"id": 2, "name": "y", "required": True, "type": "long", "doc": "comment"},
+                {"id": 3, "name": "z", "required": True, "type": "long"},
+                {"id": 4, "name": "u", "required": True, "type": "unknown"},
+                {"id": 5, "name": "ns", "required": True, "type": "timestamp_ns"},
+                {"id": 6, "name": "nstz", "required": True, "type": "timestamptz_ns"},
+            ],
+        },
+    ],
+    "default-spec-id": 0,
+    "partition-specs": [{"spec-id": 0, "fields": [{"name": "x", "transform": "identity", "source-ids": [1], "field-id": 1000}]}],
+    "last-partition-id": 1000,
+    "default-sort-order-id": 3,
+    "sort-orders": [
+        {
+            "order-id": 3,
+            "fields": [
+                {"transform": "identity", "source-ids": [2], "direction": "asc", "null-order": "nulls-first"},
+                {"transform": "bucket[4]", "source-ids": [3], "direction": "desc", "null-order": "nulls-last"},
+            ],
+        }
+    ],
+    "properties": {"read.split.target.size": "134217728"},
+    "current-snapshot-id": 3055729675574597004,
+    "snapshots": [
+        {
+            "snapshot-id": 3051729675574597004,
+            "timestamp-ms": 1515100955770,
+            "sequence-number": 0,
+            "summary": {"operation": "append"},
+            "manifest-list": "s3://a/b/1.avro",
+        },
+        {
+            "snapshot-id": 3055729675574597004,
+            "parent-snapshot-id": 3051729675574597004,
+            "timestamp-ms": 1555100955770,
+            "sequence-number": 1,
+            "summary": {"operation": "append"},
+            "manifest-list": "s3://a/b/2.avro",
+            "schema-id": 1,
+        },
+    ],
+    "snapshot-log": [
+        {"snapshot-id": 3051729675574597004, "timestamp-ms": 1515100955770},
+        {"snapshot-id": 3055729675574597004, "timestamp-ms": 1555100955770},
+    ],
+    "metadata-log": [{"metadata-file": "s3://bucket/.../v1.json", "timestamp-ms": 1515100}],
+    "refs": {"test": {"snapshot-id": 3051729675574597004, "type": "tag", "max-ref-age-ms": 10000000}},
+}
+
 TABLE_METADATA_V2_WITH_FIXED_AND_DECIMAL_TYPES = {
     "format-version": 2,
     "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
@@ -918,6 +1019,87 @@ TABLE_METADATA_V2_WITH_FIXED_AND_DECIMAL_TYPES = {
     "refs": {"test": {"snapshot-id": 3051729675574597004, "type": "tag", "max-ref-age-ms": 10000000}},
 }
 
+TABLE_METADATA_V2_WITH_STATISTICS = {
+    "format-version": 2,
+    "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
+    "location": "s3://bucket/test/location",
+    "last-sequence-number": 34,
+    "last-updated-ms": 1602638573590,
+    "last-column-id": 3,
+    "current-schema-id": 0,
+    "schemas": [
+        {
+            "type": "struct",
+            "schema-id": 0,
+            "fields": [
+                {
+                    "id": 1,
+                    "name": "x",
+                    "required": True,
+                    "type": "long",
+                }
+            ],
+        }
+    ],
+    "default-spec-id": 0,
+    "partition-specs": [{"spec-id": 0, "fields": []}],
+    "last-partition-id": 1000,
+    "default-sort-order-id": 0,
+    "sort-orders": [{"order-id": 0, "fields": []}],
+    "properties": {},
+    "current-snapshot-id": 3055729675574597004,
+    "snapshots": [
+        {
+            "snapshot-id": 3051729675574597004,
+            "timestamp-ms": 1515100955770,
+            "sequence-number": 0,
+            "summary": {"operation": "append"},
+            "manifest-list": "s3://a/b/1.avro",
+        },
+        {
+            "snapshot-id": 3055729675574597004,
+            "parent-snapshot-id": 3051729675574597004,
+            "timestamp-ms": 1555100955770,
+            "sequence-number": 1,
+            "summary": {"operation": "append"},
+            "manifest-list": "s3://a/b/2.avro",
+            "schema-id": 1,
+        },
+    ],
+    "statistics": [
+        {
+            "snapshot-id": 3051729675574597004,
+            "statistics-path": "s3://a/b/stats.puffin",
+            "file-size-in-bytes": 413,
+            "file-footer-size-in-bytes": 42,
+            "blob-metadata": [
+                {
+                    "type": "apache-datasketches-theta-v1",
+                    "snapshot-id": 3051729675574597004,
+                    "sequence-number": 1,
+                    "fields": [1],
+                }
+            ],
+        },
+        {
+            "snapshot-id": 3055729675574597004,
+            "statistics-path": "s3://a/b/stats.puffin",
+            "file-size-in-bytes": 413,
+            "file-footer-size-in-bytes": 42,
+            "blob-metadata": [
+                {
+                    "type": "deletion-vector-v1",
+                    "snapshot-id": 3055729675574597004,
+                    "sequence-number": 1,
+                    "fields": [1],
+                }
+            ],
+        },
+    ],
+    "snapshot-log": [],
+    "metadata-log": [],
+}
+
 
 @pytest.fixture
 def example_table_metadata_v2() -> Dict[str, Any]:
@@ -927,6 +1109,32 @@ def example_table_metadata_v2() -> Dict[str, Any]:
 @pytest.fixture
 def table_metadata_v2_with_fixed_and_decimal_types() -> Dict[str, Any]:
     return TABLE_METADATA_V2_WITH_FIXED_AND_DECIMAL_TYPES
+
+
+@pytest.fixture
+def table_metadata_v2_with_statistics() -> Dict[str, Any]:
+    return TABLE_METADATA_V2_WITH_STATISTICS
+
+
+@pytest.fixture
+def example_table_metadata_v3() -> Dict[str, Any]:
+    return EXAMPLE_TABLE_METADATA_V3
+
+
+@pytest.fixture(scope="session")
+def table_location(tmp_path_factory: pytest.TempPathFactory) -> str:
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
+    metadata_filename = f"{uuid.uuid4()}.metadata.json"
+    metadata_location = str(tmp_path_factory.getbasetemp() / "metadata" / metadata_filename)
+    version_hint_location = str(tmp_path_factory.getbasetemp() / "metadata" / "version-hint.text")
+    metadata = TableMetadataV2(**EXAMPLE_TABLE_METADATA_V2)
+    ToOutputFile.table_metadata(metadata, PyArrowFileIO().new_output(location=metadata_location), overwrite=True)
+
+    with PyArrowFileIO().new_output(location=version_hint_location).create(overwrite=True) as s:
+        s.write(metadata_filename.encode("utf-8"))
+
+    return str(tmp_path_factory.getbasetemp())
 
 
 @pytest.fixture(scope="session")
@@ -2101,7 +2309,7 @@ def data_file(table_schema_simple: Schema, tmp_path: str) -> str:
 @pytest.fixture
 def example_task(data_file: str) -> FileScanTask:
     return FileScanTask(
-        data_file=DataFile(file_path=data_file, file_format=FileFormat.PARQUET, file_size_in_bytes=1925),
+        data_file=DataFile.from_args(file_path=data_file, file_format=FileFormat.PARQUET, file_size_in_bytes=1925),
     )
 
 
@@ -2163,6 +2371,18 @@ def table_v2_with_extensive_snapshots(example_table_metadata_v2_with_extensive_s
 
 
 @pytest.fixture
+def table_v2_with_statistics(table_metadata_v2_with_statistics: Dict[str, Any]) -> Table:
+    table_metadata = TableMetadataV2(**table_metadata_v2_with_statistics)
+    return Table(
+        identifier=("database", "table"),
+        metadata=table_metadata,
+        metadata_location=f"{table_metadata.location}/uuid.metadata.json",
+        io=load_file_io(),
+        catalog=NoopCatalog("NoopCatalog"),
+    )
+
+
+@pytest.fixture
 def bound_reference_str() -> BoundReference[str]:
     return BoundReference(field=NestedField(1, "field", StringType(), required=False), accessor=Accessor(position=0, inner=None))
 
@@ -2211,9 +2431,10 @@ def spark() -> "SparkSession":
 
     from pyspark.sql import SparkSession
 
+    # Remember to also update `dev/Dockerfile`
     spark_version = ".".join(importlib.metadata.version("pyspark").split(".")[:2])
     scala_version = "2.12"
-    iceberg_version = "1.4.3"
+    iceberg_version = "1.9.0"
 
     os.environ["PYSPARK_SUBMIT_ARGS"] = (
         f"--packages org.apache.iceberg:iceberg-spark-runtime-{spark_version}_{scala_version}:{iceberg_version},"
@@ -2222,10 +2443,13 @@ def spark() -> "SparkSession":
     os.environ["AWS_REGION"] = "us-east-1"
     os.environ["AWS_ACCESS_KEY_ID"] = "admin"
     os.environ["AWS_SECRET_ACCESS_KEY"] = "password"
+    os.environ["SPARK_LOCAL_IP"] = "127.0.0.1"
 
     spark = (
         SparkSession.builder.appName("PyIceberg integration test")
         .config("spark.sql.session.timeZone", "UTC")
+        .config("spark.sql.shuffle.partitions", "1")
+        .config("spark.default.parallelism", "1")
         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
         .config("spark.sql.catalog.integration", "org.apache.iceberg.spark.SparkCatalog")
         .config("spark.sql.catalog.integration.catalog-impl", "org.apache.iceberg.rest.RESTCatalog")
@@ -2284,26 +2508,28 @@ TEST_DATA_WITH_NULL = {
 def pa_schema() -> "pa.Schema":
     import pyarrow as pa
 
-    return pa.schema([
-        ("bool", pa.bool_()),
-        ("string", pa.large_string()),
-        ("string_long", pa.large_string()),
-        ("int", pa.int32()),
-        ("long", pa.int64()),
-        ("float", pa.float32()),
-        ("double", pa.float64()),
-        # Not supported by Spark
-        # ("time", pa.time64('us')),
-        ("timestamp", pa.timestamp(unit="us")),
-        ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
-        ("date", pa.date32()),
-        # Not supported by Spark
-        # ("time", pa.time64("us")),
-        # Not natively supported by Arrow
-        # ("uuid", pa.fixed(16)),
-        ("binary", pa.large_binary()),
-        ("fixed", pa.binary(16)),
-    ])
+    return pa.schema(
+        [
+            ("bool", pa.bool_()),
+            ("string", pa.large_string()),
+            ("string_long", pa.large_string()),
+            ("int", pa.int32()),
+            ("long", pa.int64()),
+            ("float", pa.float32()),
+            ("double", pa.float64()),
+            # Not supported by Spark
+            # ("time", pa.time64('us')),
+            ("timestamp", pa.timestamp(unit="us")),
+            ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
+            ("date", pa.date32()),
+            # Not supported by Spark
+            # ("time", pa.time64("us")),
+            # Not natively supported by Arrow
+            # ("uuid", pa.fixed(16)),
+            ("binary", pa.large_binary()),
+            ("fixed", pa.binary(16)),
+        ]
+    )
 
 
 @pytest.fixture(scope="session")
@@ -2385,11 +2611,13 @@ def arrow_table_date_timestamps() -> "pa.Table":
                 None,
             ],
         },
-        schema=pa.schema([
-            ("date", pa.date32()),
-            ("timestamp", pa.timestamp(unit="us")),
-            ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
-        ]),
+        schema=pa.schema(
+            [
+                ("date", pa.date32()),
+                ("timestamp", pa.timestamp(unit="us")),
+                ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
+            ]
+        ),
     )
 
 
@@ -2408,19 +2636,21 @@ def arrow_table_schema_with_all_timestamp_precisions() -> "pa.Schema":
     """Pyarrow Schema with all supported timestamp types."""
     import pyarrow as pa
 
-    return pa.schema([
-        ("timestamp_s", pa.timestamp(unit="s")),
-        ("timestamptz_s", pa.timestamp(unit="s", tz="UTC")),
-        ("timestamp_ms", pa.timestamp(unit="ms")),
-        ("timestamptz_ms", pa.timestamp(unit="ms", tz="UTC")),
-        ("timestamp_us", pa.timestamp(unit="us")),
-        ("timestamptz_us", pa.timestamp(unit="us", tz="UTC")),
-        ("timestamp_ns", pa.timestamp(unit="ns")),
-        ("timestamptz_ns", pa.timestamp(unit="ns", tz="UTC")),
-        ("timestamptz_us_etc_utc", pa.timestamp(unit="us", tz="Etc/UTC")),
-        ("timestamptz_ns_z", pa.timestamp(unit="ns", tz="Z")),
-        ("timestamptz_s_0000", pa.timestamp(unit="s", tz="+00:00")),
-    ])
+    return pa.schema(
+        [
+            ("timestamp_s", pa.timestamp(unit="s")),
+            ("timestamptz_s", pa.timestamp(unit="s", tz="UTC")),
+            ("timestamp_ms", pa.timestamp(unit="ms")),
+            ("timestamptz_ms", pa.timestamp(unit="ms", tz="UTC")),
+            ("timestamp_us", pa.timestamp(unit="us")),
+            ("timestamptz_us", pa.timestamp(unit="us", tz="UTC")),
+            ("timestamp_ns", pa.timestamp(unit="ns")),
+            ("timestamptz_ns", pa.timestamp(unit="ns", tz="UTC")),
+            ("timestamptz_us_etc_utc", pa.timestamp(unit="us", tz="Etc/UTC")),
+            ("timestamptz_ns_z", pa.timestamp(unit="ns", tz="Z")),
+            ("timestamptz_s_0000", pa.timestamp(unit="s", tz="+00:00")),
+        ]
+    )
 
 
 @pytest.fixture(scope="session")
@@ -2429,51 +2659,53 @@ def arrow_table_with_all_timestamp_precisions(arrow_table_schema_with_all_timest
     import pandas as pd
     import pyarrow as pa
 
-    test_data = pd.DataFrame({
-        "timestamp_s": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
-        "timestamptz_s": [
-            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
-            None,
-            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
-        ],
-        "timestamp_ms": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
-        "timestamptz_ms": [
-            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
-            None,
-            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
-        ],
-        "timestamp_us": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
-        "timestamptz_us": [
-            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
-            None,
-            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
-        ],
-        "timestamp_ns": [
-            pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=6),
-            None,
-            pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=7),
-        ],
-        "timestamptz_ns": [
-            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
-            None,
-            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
-        ],
-        "timestamptz_us_etc_utc": [
-            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
-            None,
-            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
-        ],
-        "timestamptz_ns_z": [
-            pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=6, tz="UTC"),
-            None,
-            pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=7, tz="UTC"),
-        ],
-        "timestamptz_s_0000": [
-            datetime(2023, 1, 1, 19, 25, 1, tzinfo=timezone.utc),
-            None,
-            datetime(2023, 3, 1, 19, 25, 1, tzinfo=timezone.utc),
-        ],
-    })
+    test_data = pd.DataFrame(
+        {
+            "timestamp_s": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+            "timestamptz_s": [
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                None,
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+            ],
+            "timestamp_ms": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+            "timestamptz_ms": [
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                None,
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+            ],
+            "timestamp_us": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+            "timestamptz_us": [
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                None,
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+            ],
+            "timestamp_ns": [
+                pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=6),
+                None,
+                pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=7),
+            ],
+            "timestamptz_ns": [
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                None,
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+            ],
+            "timestamptz_us_etc_utc": [
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                None,
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+            ],
+            "timestamptz_ns_z": [
+                pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=6, tz="UTC"),
+                None,
+                pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=7, tz="UTC"),
+            ],
+            "timestamptz_s_0000": [
+                datetime(2023, 1, 1, 19, 25, 1, tzinfo=timezone.utc),
+                None,
+                datetime(2023, 3, 1, 19, 25, 1, tzinfo=timezone.utc),
+            ],
+        }
+    )
     return pa.Table.from_pandas(test_data, schema=arrow_table_schema_with_all_timestamp_precisions)
 
 
@@ -2482,19 +2714,21 @@ def arrow_table_schema_with_all_microseconds_timestamp_precisions() -> "pa.Schem
     """Pyarrow Schema with all microseconds timestamp."""
     import pyarrow as pa
 
-    return pa.schema([
-        ("timestamp_s", pa.timestamp(unit="us")),
-        ("timestamptz_s", pa.timestamp(unit="us", tz="UTC")),
-        ("timestamp_ms", pa.timestamp(unit="us")),
-        ("timestamptz_ms", pa.timestamp(unit="us", tz="UTC")),
-        ("timestamp_us", pa.timestamp(unit="us")),
-        ("timestamptz_us", pa.timestamp(unit="us", tz="UTC")),
-        ("timestamp_ns", pa.timestamp(unit="us")),
-        ("timestamptz_ns", pa.timestamp(unit="us", tz="UTC")),
-        ("timestamptz_us_etc_utc", pa.timestamp(unit="us", tz="UTC")),
-        ("timestamptz_ns_z", pa.timestamp(unit="us", tz="UTC")),
-        ("timestamptz_s_0000", pa.timestamp(unit="us", tz="UTC")),
-    ])
+    return pa.schema(
+        [
+            ("timestamp_s", pa.timestamp(unit="us")),
+            ("timestamptz_s", pa.timestamp(unit="us", tz="UTC")),
+            ("timestamp_ms", pa.timestamp(unit="us")),
+            ("timestamptz_ms", pa.timestamp(unit="us", tz="UTC")),
+            ("timestamp_us", pa.timestamp(unit="us")),
+            ("timestamptz_us", pa.timestamp(unit="us", tz="UTC")),
+            ("timestamp_ns", pa.timestamp(unit="us")),
+            ("timestamptz_ns", pa.timestamp(unit="us", tz="UTC")),
+            ("timestamptz_us_etc_utc", pa.timestamp(unit="us", tz="UTC")),
+            ("timestamptz_ns_z", pa.timestamp(unit="us", tz="UTC")),
+            ("timestamptz_s_0000", pa.timestamp(unit="us", tz="UTC")),
+        ]
+    )
 
 
 @pytest.fixture(scope="session")
@@ -2548,13 +2782,15 @@ def pyarrow_schema_with_promoted_types() -> "pa.Schema":
     """Pyarrow Schema with longs, doubles and uuid in simple and nested types."""
     import pyarrow as pa
 
-    return pa.schema((
-        pa.field("long", pa.int32(), nullable=True),  # can support upcasting integer to long
-        pa.field("list", pa.list_(pa.int32()), nullable=False),  # can support upcasting integer to long
-        pa.field("map", pa.map_(pa.string(), pa.int32()), nullable=False),  # can support upcasting integer to long
-        pa.field("double", pa.float32(), nullable=True),  # can support upcasting float to double
-        pa.field("uuid", pa.binary(length=16), nullable=True),  # can support upcasting float to double
-    ))
+    return pa.schema(
+        (
+            pa.field("long", pa.int32(), nullable=True),  # can support upcasting integer to long
+            pa.field("list", pa.list_(pa.int32()), nullable=False),  # can support upcasting integer to long
+            pa.field("map", pa.map_(pa.string(), pa.int32()), nullable=False),  # can support upcasting integer to long
+            pa.field("double", pa.float32(), nullable=True),  # can support upcasting float to double
+            pa.field("uuid", pa.binary(length=16), nullable=True),  # can support upcasting float to double
+        )
+    )
 
 
 @pytest.fixture(scope="session")

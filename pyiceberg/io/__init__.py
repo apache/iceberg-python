@@ -48,14 +48,6 @@ from pyiceberg.typedef import EMPTY_DICT, Properties
 
 logger = logging.getLogger(__name__)
 
-ADLFS_CONNECTION_STRING = "adlfs.connection-string"
-ADLFS_ACCOUNT_NAME = "adlfs.account-name"
-ADLFS_ACCOUNT_KEY = "adlfs.account-key"
-ADLFS_SAS_TOKEN = "adlfs.sas-token"
-ADLFS_TENANT_ID = "adlfs.tenant-id"
-ADLFS_CLIENT_ID = "adlfs.client-id"
-ADLFS_ClIENT_SECRET = "adlfs.client-secret"
-ADLFS_PREFIX = "adlfs"
 AWS_REGION = "client.region"
 AWS_ACCESS_KEY_ID = "client.access-key-id"
 AWS_SECRET_ACCESS_KEY = "client.secret-access-key"
@@ -67,13 +59,17 @@ S3_ACCESS_KEY_ID = "s3.access-key-id"
 S3_SECRET_ACCESS_KEY = "s3.secret-access-key"
 S3_SESSION_TOKEN = "s3.session-token"
 S3_REGION = "s3.region"
+S3_RESOLVE_REGION = "s3.resolve-region"
 S3_PROXY_URI = "s3.proxy-uri"
 S3_CONNECT_TIMEOUT = "s3.connect-timeout"
+S3_REQUEST_TIMEOUT = "s3.request-timeout"
+S3_SIGNER = "s3.signer"
 S3_SIGNER_URI = "s3.signer.uri"
 S3_SIGNER_ENDPOINT = "s3.signer.endpoint"
 S3_SIGNER_ENDPOINT_DEFAULT = "v1/aws/s3/sign"
 S3_ROLE_ARN = "s3.role-arn"
 S3_ROLE_SESSION_NAME = "s3.role-session-name"
+S3_FORCE_VIRTUAL_ADDRESSING = "s3.force-virtual-addressing"
 HDFS_HOST = "hdfs.host"
 HDFS_PORT = "hdfs.port"
 HDFS_USER = "hdfs.user"
@@ -84,7 +80,8 @@ ADLS_ACCOUNT_KEY = "adls.account-key"
 ADLS_SAS_TOKEN = "adls.sas-token"
 ADLS_TENANT_ID = "adls.tenant-id"
 ADLS_CLIENT_ID = "adls.client-id"
-ADLS_ClIENT_SECRET = "adls.client-secret"
+ADLS_CLIENT_SECRET = "adls.client-secret"
+ADLS_ACCOUNT_HOST = "adls.account-host"
 GCS_TOKEN = "gcs.oauth2.token"
 GCS_TOKEN_EXPIRES_AT_MS = "gcs.oauth2.token-expires-at"
 GCS_PROJECT_ID = "gcs.project-id"
@@ -93,10 +90,11 @@ GCS_CONSISTENCY = "gcs.consistency"
 GCS_CACHE_TIMEOUT = "gcs.cache-timeout"
 GCS_REQUESTER_PAYS = "gcs.requester-pays"
 GCS_SESSION_KWARGS = "gcs.session-kwargs"
-GCS_ENDPOINT = "gcs.endpoint"
 GCS_SERVICE_HOST = "gcs.service.host"
 GCS_DEFAULT_LOCATION = "gcs.default-bucket-location"
 GCS_VERSION_AWARE = "gcs.version-aware"
+HF_ENDPOINT = "hf.endpoint"
+HF_TOKEN = "hf.token"
 PYARROW_USE_LARGE_TYPES_ON_READ = "pyarrow.use-large-types-on-read"
 
 
@@ -304,12 +302,14 @@ SCHEMA_TO_FILE_IO: Dict[str, List[str]] = {
     "s3": [ARROW_FILE_IO, FSSPEC_FILE_IO],
     "s3a": [ARROW_FILE_IO, FSSPEC_FILE_IO],
     "s3n": [ARROW_FILE_IO, FSSPEC_FILE_IO],
+    "oss": [ARROW_FILE_IO],
     "gs": [ARROW_FILE_IO],
     "file": [ARROW_FILE_IO, FSSPEC_FILE_IO],
     "hdfs": [ARROW_FILE_IO],
     "viewfs": [ARROW_FILE_IO],
     "abfs": [FSSPEC_FILE_IO],
     "abfss": [FSSPEC_FILE_IO],
+    "hf": [FSSPEC_FILE_IO],
 }
 
 
@@ -322,8 +322,8 @@ def _import_file_io(io_impl: str, properties: Properties) -> Optional[FileIO]:
         module = importlib.import_module(module_name)
         class_ = getattr(module, class_name)
         return class_(properties)
-    except ModuleNotFoundError:
-        logger.warning("Could not initialize FileIO: %s", io_impl)
+    except ModuleNotFoundError as exc:
+        logger.warning(f"Could not initialize FileIO: {io_impl}", exc_info=exc)
         return None
 
 

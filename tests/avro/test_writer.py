@@ -18,9 +18,6 @@
 
 import io
 import struct
-from typing import Dict, List
-
-import pytest
 from _decimal import Decimal
 
 from pyiceberg.avro.encoder import BinaryEncoder
@@ -35,9 +32,12 @@ from pyiceberg.avro.writer import (
     FloatWriter,
     IntegerWriter,
     StringWriter,
+    TimestampNanoWriter,
+    TimestamptzNanoWriter,
     TimestamptzWriter,
     TimestampWriter,
     TimeWriter,
+    UnknownWriter,
     UUIDWriter,
 )
 from pyiceberg.typedef import Record
@@ -54,12 +54,14 @@ from pyiceberg.types import (
     LongType,
     MapType,
     NestedField,
-    PrimitiveType,
     StringType,
     StructType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 
@@ -114,8 +116,16 @@ def test_timestamp_writer() -> None:
     assert construct_writer(TimestampType()) == TimestampWriter()
 
 
+def test_timestamp_ns_writer() -> None:
+    assert construct_writer(TimestampNanoType()) == TimestampNanoWriter()
+
+
 def test_timestamptz_writer() -> None:
     assert construct_writer(TimestamptzType()) == TimestamptzWriter()
+
+
+def test_timestamptz_ns_writer() -> None:
+    assert construct_writer(TimestamptzNanoType()) == TimestamptzNanoWriter()
 
 
 def test_string_writer() -> None:
@@ -127,13 +137,7 @@ def test_binary_writer() -> None:
 
 
 def test_unknown_type() -> None:
-    class UnknownType(PrimitiveType):
-        root: str = "UnknownType"
-
-    with pytest.raises(ValueError) as exc_info:
-        construct_writer(UnknownType())
-
-    assert "Unknown type:" in str(exc_info.value)
+    assert construct_writer(UnknownType()) == UnknownWriter()
 
 
 def test_uuid_writer() -> None:
@@ -147,16 +151,11 @@ def test_write_simple_struct() -> None:
     schema = StructType(
         NestedField(1, "id", IntegerType(), required=True), NestedField(2, "property", StringType(), required=True)
     )
-
-    class MyStruct(Record):
-        id: int
-        property: str
-
-    my_struct = MyStruct(id=12, property="awesome")
+    struct = Record(12, "awesome")
 
     enc_str = b"awesome"
 
-    construct_writer(schema).write(encoder, my_struct)
+    construct_writer(schema).write(encoder, struct)
 
     assert output.getbuffer() == b"".join([b"\x18", zigzag_encode(len(enc_str)), enc_str])
 
@@ -170,23 +169,20 @@ def test_write_struct_with_dict() -> None:
         NestedField(2, "properties", MapType(3, IntegerType(), 4, IntegerType()), required=True),
     )
 
-    class MyStruct(Record):
-        id: int
-        properties: Dict[int, int]
+    struct = Record(12, {1: 2, 3: 4})
+    construct_writer(schema).write(encoder, struct)
 
-    my_struct = MyStruct(id=12, properties={1: 2, 3: 4})
-
-    construct_writer(schema).write(encoder, my_struct)
-
-    assert output.getbuffer() == b"".join([
-        b"\x18",
-        zigzag_encode(len(my_struct.properties)),
-        zigzag_encode(1),
-        zigzag_encode(2),
-        zigzag_encode(3),
-        zigzag_encode(4),
-        b"\x00",
-    ])
+    assert output.getbuffer() == b"".join(
+        [
+            b"\x18",
+            zigzag_encode(len(struct[1])),
+            zigzag_encode(1),
+            zigzag_encode(2),
+            zigzag_encode(3),
+            zigzag_encode(4),
+            b"\x00",
+        ]
+    )
 
 
 def test_write_struct_with_list() -> None:
@@ -198,23 +194,21 @@ def test_write_struct_with_list() -> None:
         NestedField(2, "properties", ListType(3, IntegerType()), required=True),
     )
 
-    class MyStruct(Record):
-        id: int
-        properties: List[int]
+    struct = Record(12, [1, 2, 3, 4])
 
-    my_struct = MyStruct(id=12, properties=[1, 2, 3, 4])
+    construct_writer(schema).write(encoder, struct)
 
-    construct_writer(schema).write(encoder, my_struct)
-
-    assert output.getbuffer() == b"".join([
-        b"\x18",
-        zigzag_encode(len(my_struct.properties)),
-        zigzag_encode(1),
-        zigzag_encode(2),
-        zigzag_encode(3),
-        zigzag_encode(4),
-        b"\x00",
-    ])
+    assert output.getbuffer() == b"".join(
+        [
+            b"\x18",
+            zigzag_encode(len(struct[1])),
+            zigzag_encode(1),
+            zigzag_encode(2),
+            zigzag_encode(3),
+            zigzag_encode(4),
+            b"\x00",
+        ]
+    )
 
 
 def test_write_decimal() -> None:

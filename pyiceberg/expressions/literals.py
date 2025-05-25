@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import struct
 from abc import ABC, abstractmethod
+from datetime import date, datetime, time
 from decimal import ROUND_HALF_UP, Decimal
 from functools import singledispatchmethod
 from math import isnan
@@ -49,8 +50,11 @@ from pyiceberg.types import (
 )
 from pyiceberg.utils.datetime import (
     date_str_to_days,
+    date_to_days,
+    datetime_to_micros,
     micros_to_days,
     time_str_to_micros,
+    time_to_micros,
     timestamp_to_micros,
     timestamptz_to_micros,
 )
@@ -145,6 +149,12 @@ def literal(value: L) -> Literal[L]:
         return BinaryLiteral(value)
     elif isinstance(value, Decimal):
         return DecimalLiteral(value)
+    elif isinstance(value, datetime):
+        return TimestampLiteral(datetime_to_micros(value))  # type: ignore
+    elif isinstance(value, date):
+        return DateLiteral(date_to_days(value))  # type: ignore
+    elif isinstance(value, time):
+        return TimeLiteral(time_to_micros(value))  # type: ignore
     else:
         raise TypeError(f"Invalid literal value: {repr(value)}")
 
@@ -309,6 +319,10 @@ class LongLiteral(Literal[int]):
 
     @to.register(TimestampType)
     def _(self, _: TimestampType) -> Literal[int]:
+        return TimestampLiteral(self.value)
+
+    @to.register(TimestamptzType)
+    def _(self, _: TimestamptzType) -> Literal[int]:
         return TimestampLiteral(self.value)
 
     @to.register(DecimalType)
@@ -591,6 +605,26 @@ class StringLiteral(Literal[str]):
             return BooleanLiteral(value_upper == "TRUE")
         else:
             raise ValueError(f"Could not convert {self.value} into a {type_var}")
+
+    @to.register(FloatType)
+    def _(self, type_var: FloatType) -> Literal[float]:
+        try:
+            number = float(self.value)
+            if FloatType.max < number:
+                return FloatAboveMax()
+            elif FloatType.min > number:
+                return FloatBelowMin()
+            return FloatLiteral(number)
+        except ValueError as e:
+            raise ValueError(f"Could not convert {self.value} into a {type_var}") from e
+
+    @to.register(DoubleType)
+    def _(self, type_var: DoubleType) -> Literal[float]:
+        try:
+            number = float(self.value)
+            return DoubleLiteral(number)
+        except ValueError as e:
+            raise ValueError(f"Could not convert {self.value} into a {type_var}") from e
 
     def __repr__(self) -> str:
         """Return the string representation of the StringLiteral class."""

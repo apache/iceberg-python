@@ -24,6 +24,19 @@ on:
     branches:
     - 'main'
   pull_request:
+    paths:
+    - '**'                              # Include all files and directories in the repository by default.
+    - '!.github/workflows/**'           # Exclude all workflow files
+    - '.github/workflows/python-ci.yml' # except the current file.
+    - '!.github/ISSUE_TEMPLATE/**'      # Exclude files and directories that don't impact tests or code like templates, metadata, and documentation.
+    - '!.gitignore'
+    - '!.asf.yml'
+    - '!mkdocs/**'
+    - '!.gitattributes'
+    - '!README.md'
+    - '!CONTRIBUTING.md'
+    - '!LICENSE'
+    - '!NOTICE'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -45,9 +58,29 @@ jobs:
         python-version: ${{ matrix.python }}
         cache: poetry
         cache-dependency-path: ./poetry.lock
+    - name: Install system dependencies
+      run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
     - name: Install
       run: make install-dependencies
     - name: Linters
       run: make lint
     - name: Tests
-      run: make test-coverage
+      run: make test-coverage-unit
+
+  integration-test:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        python: ['3.9', '3.10', '3.11', '3.12']
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install system dependencies
+      run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
+    - name: Install
+      run: make install
+    - name: Run integration tests
+      run: make test-coverage-integration
+    - name: Show debug logs
+      if: ${{ failure() }}
+      run: docker compose -f dev/docker-compose.yml logs

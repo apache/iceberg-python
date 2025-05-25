@@ -28,11 +28,11 @@ hide:
 
 There are three ways to pass in configuration:
 
-- Using the `~/.pyiceberg.yaml` configuration file
+- Using the `.pyiceberg.yaml` configuration file (Recommended)
 - Through environment variables
 - By passing in credentials through the CLI or the Python API
 
-The configuration file is recommended since that's the easiest way to manage the credentials.
+The configuration file can be stored in either the directory specified by the `PYICEBERG_HOME` environment variable, the home directory, or current working directory (in this order).
 
 To change the path searched for the `.pyiceberg.yaml`, you can overwrite the `PYICEBERG_HOME` environment variable.
 
@@ -54,15 +54,21 @@ Iceberg tables support table properties to configure table behavior.
 
 ### Write options
 
-| Key                                    | Options                           | Default | Description                                                                                 |
-| -------------------------------------- | --------------------------------- | ------- | ------------------------------------------------------------------------------------------- |
-| `write.parquet.compression-codec`      | `{uncompressed,zstd,gzip,snappy}` | zstd    | Sets the Parquet compression coddec.                                                        |
-| `write.parquet.compression-level`      | Integer                           | null    | Parquet compression level for the codec. If not set, it is up to PyIceberg                  |
-| `write.parquet.row-group-limit`        | Number of rows                    | 1048576 | The upper bound of the number of entries within a single row group                          |
-| `write.parquet.page-size-bytes`        | Size in bytes                     | 1MB     | Set a target threshold for the approximate encoded size of data pages within a column chunk |
-| `write.parquet.page-row-limit`         | Number of rows                    | 20000   | Set a target threshold for the maximum number of rows within a column chunk                 |
-| `write.parquet.dict-size-bytes`        | Size in bytes                     | 2MB     | Set the dictionary page size limit per row group                                            |
-| `write.metadata.previous-versions-max` | Integer                           | 100     | The max number of previous version metadata files to keep before deleting after commit.     |
+| Key                                      | Options                            | Default                    | Description                                                                                                                                          |
+|------------------------------------------|------------------------------------|----------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `write.parquet.compression-codec`        | `{uncompressed,zstd,gzip,snappy}`  | zstd                       | Sets the Parquet compression coddec.                                                                                                                 |
+| `write.parquet.compression-level`        | Integer                            | null                       | Parquet compression level for the codec. If not set, it is up to PyIceberg                                                                           |
+| `write.parquet.row-group-limit`          | Number of rows                     | 1048576                    | The upper bound of the number of entries within a single row group                                                                                   |
+| `write.parquet.page-size-bytes`          | Size in bytes                      | 1MB                        | Set a target threshold for the approximate encoded size of data pages within a column chunk                                                          |
+| `write.parquet.page-row-limit`           | Number of rows                     | 20000                      | Set a target threshold for the maximum number of rows within a column chunk                                                                          |
+| `write.parquet.dict-size-bytes`          | Size in bytes                      | 2MB                        | Set the dictionary page size limit per row group                                                                                                     |
+| `write.metadata.previous-versions-max`   | Integer                            | 100                        | The max number of previous version metadata files to keep before deleting after commit.                                                              |
+| `write.metadata.delete-after-commit.enabled` | Boolean                        | False                      | Whether to automatically delete old *tracked* metadata files after each table commit. It will retain a number of the most recent metadata files, which can be set using property `write.metadata.previous-versions-max`. |
+| `write.object-storage.enabled`           | Boolean                            | False                      | Enables the [`ObjectStoreLocationProvider`](configuration.md#object-store-location-provider) that adds a hash component to file paths. |
+| `write.object-storage.partitioned-paths` | Boolean                            | True                       | Controls whether [partition values are included in file paths](configuration.md#partition-exclusion) when object storage is enabled                  |
+| `write.py-location-provider.impl`        | String of form `module.ClassName`  | null                       | Optional, [custom `LocationProvider`](configuration.md#loading-a-custom-location-provider) implementation                                            |
+| `write.data.path`                        | String pointing to location        | `{metadata.location}/data` | Sets the location under which data is written.                                                                                                       |
+| `write.metadata.path`                    | String pointing to location        | `{metadata.location}/metadata` | Sets the location under which metadata is written.                                                                                                                                                                  |
 
 ### Table behavior options
 
@@ -88,6 +94,8 @@ Iceberg works with the concept of a FileIO which is a pluggable module for readi
 - **file**: `PyArrowFileIO`
 - **hdfs**: `PyArrowFileIO`
 - **abfs**, **abfss**: `FsspecFileIO`
+- **oss**: `PyArrowFileIO`
+- **hf**: `FsspecFileIO`
 
 You can also set the FileIO explicitly:
 
@@ -101,20 +109,23 @@ For the FileIO there are several configuration options available:
 
 <!-- markdown-link-check-disable -->
 
-| Key                  | Example                    | Description                                                                                                                                                                                                                                               |
-|----------------------|----------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| s3.endpoint          | <https://10.0.19.25/>      | Configure an alternative endpoint of the S3 service for the FileIO to access. This could be used to use S3FileIO with any s3-compatible object storage service that has a different endpoint, or access a private S3 endpoint in a virtual private cloud. |
-| s3.access-key-id     | admin                      | Configure the static access key id used to access the FileIO.                                                                                                                                                                                             |
-| s3.secret-access-key | password                   | Configure the static secret access key used to access the FileIO.                                                                                                                                                                                         |
-| s3.session-token     | AQoDYXdzEJr...             | Configure the static session token used to access the FileIO.                                                                                                                                                                                             |
-| s3.role-session-name      | session                    | An optional identifier for the assumed role session.                                                                                                                                                                                                      |
-| s3.role-arn          | arn:aws:...                | AWS Role ARN. If provided instead of access_key and secret_key, temporary credentials will be fetched by assuming this role.                                                                                                                              |
-| s3.signer            | bearer                     | Configure the signature version of the FileIO.                                                                                                                                                                                                            |
-| s3.signer.uri        | <http://my.signer:8080/s3> | Configure the remote signing uri if it differs from the catalog uri. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.signer.uri>/<s3.signer.endpoint>`.                                                          |
-| s3.signer.endpoint   | v1/main/s3-sign            | Configure the remote signing endpoint. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.signer.uri>/<s3.signer.endpoint>`. (default : v1/aws/s3/sign).                                                            |
-| s3.region            | us-west-2                  | Sets the region of the bucket                                                                                                                                                                                                                             |
-| s3.proxy-uri         | <http://my.proxy.com:8080> | Configure the proxy server to be used by the FileIO.                                                                                                                                                                                                      |
-| s3.connect-timeout   | 60.0                       | Configure socket connection timeout, in seconds.                                                                                                                                                                                                          |
+| Key                         | Example                    | Description                                                                                                                                                                                                                                                             |
+|-----------------------------|----------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| s3.endpoint                 | <https://10.0.19.25/>      | Configure an alternative endpoint of the S3 service for the FileIO to access. This could be used to use S3FileIO with any s3-compatible object storage service that has a different endpoint, or access a private S3 endpoint in a virtual private cloud.               |
+| s3.access-key-id            | admin                      | Configure the static access key id used to access the FileIO.                                                                                                                                                                                                           |
+| s3.secret-access-key        | password                   | Configure the static secret access key used to access the FileIO.                                                                                                                                                                                                       |
+| s3.session-token            | AQoDYXdzEJr...             | Configure the static session token used to access the FileIO.                                                                                                                                                                                                           |
+| s3.role-session-name        | session                    | An optional identifier for the assumed role session.                                                                                                                                                                                                                    |
+| s3.role-arn                 | arn:aws:...                | AWS Role ARN. If provided instead of access_key and secret_key, temporary credentials will be fetched by assuming this role.                                                                                                                                            |
+| s3.signer                   | bearer                     | Configure the signature version of the FileIO.                                                                                                                                                                                                                          |
+| s3.signer.uri               | <http://my.signer:8080/s3> | Configure the remote signing uri if it differs from the catalog uri. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.signer.uri>/<s3.signer.endpoint>`.                                                                        |
+| s3.signer.endpoint          | v1/main/s3-sign            | Configure the remote signing endpoint. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.signer.uri>/<s3.signer.endpoint>`. (default : v1/aws/s3/sign).                                                                          |
+| s3.region                   | us-west-2                  | Configure the default region used to initialize an `S3FileSystem`. `PyArrowFileIO` attempts to automatically tries to resolve the region if this isn't set (only supported for AWS S3 Buckets).                                                                         |
+| s3.resolve-region           | False                      | Only supported for `PyArrowFileIO`, when enabled, it will always try to resolve the location of the bucket (only supported for AWS S3 Buckets).                                                                                                                         |
+| s3.proxy-uri                | <http://my.proxy.com:8080> | Configure the proxy server to be used by the FileIO.                                                                                                                                                                                                                    |
+| s3.connect-timeout          | 60.0                       | Configure socket connection timeout, in seconds.                                                                                                                                                                                                                        |
+| s3.request-timeout          | 60.0                       | Configure socket read timeouts on Windows and macOS, in seconds.                                                                                                                                                                                                        |
+| s3.force-virtual-addressing | False                      | Whether to use virtual addressing of buckets. If true, then virtual addressing is always enabled. If false, then virtual addressing is only enabled if endpoint_override is empty. This can be used for non-AWS backends that only support virtual hosted-style access. |
 
 <!-- markdown-link-check-enable-->
 
@@ -144,6 +155,7 @@ For the FileIO there are several configuration options available:
 | adls.tenant-id         | ad667be4-b811-11ed-afa1-0242ac120002                                                      | The tenant-id                                                                                                                                                                                                                                                                          |
 | adls.client-id         | ad667be4-b811-11ed-afa1-0242ac120002                                                      | The client-id                                                                                                                                                                                                                                                                          |
 | adls.client-secret     | oCA3R6P\*ka#oa1Sms2J74z...                                                                | The client-secret                                                                                                                                                                                                                                                                      |
+| adls.account-host      | accountname1.blob.core.windows.net                                                        | The storage account host. See [AzureBlobFileSystem](https://github.com/fsspec/adlfs/blob/adb9c53b74a0d420625b86dd00fbe615b43201d2/adlfs/spec.py#L125) for reference                                                                                                                   |
 
 <!-- markdown-link-check-enable-->
 
@@ -167,6 +179,33 @@ For the FileIO there are several configuration options available:
 
 <!-- markdown-link-check-enable-->
 
+### Alibaba Cloud Object Storage Service (OSS)
+
+<!-- markdown-link-check-disable -->
+
+PyIceberg uses [S3FileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.S3FileSystem.html) class to connect to OSS bucket as the service is [compatible with S3 SDK](https://www.alibabacloud.com/help/en/oss/developer-reference/use-amazon-s3-sdks-to-access-oss) as long as the endpoint is addressed with virtual hosted style.
+
+| Key                  | Example             | Description                                      |
+| -------------------- | ------------------- | ------------------------------------------------ |
+| s3.endpoint          | <https://s3.oss-your-bucket-region.aliyuncs.com/>      | Configure an endpoint of the OSS service for the FileIO to access. Be sure to use S3 compatible endpoint as given in the example. |
+| s3.access-key-id     | admin                      | Configure the static access key id used to access the FileIO.                                                                                                                                                                                             |
+| s3.secret-access-key | password                   | Configure the static secret access key used to access the FileIO.                                                                                                                                                                                         |
+| s3.session-token     | AQoDYXdzEJr...             | Configure the static session token used to access the FileIO.                                                                                                                                                                                             |
+| s3.force-virtual-addressing   | True                       | Whether to use virtual addressing of buckets. This is set to `True` by default as OSS can only be accessed with virtual hosted style address.                                                                                                                                                                                                        |
+
+<!-- markdown-link-check-enable-->
+
+### Hugging Face
+
+<!-- markdown-link-check-disable -->
+
+| Key         | Example                  | Description                                               |
+| ----------- | ------------------------ | --------------------------------------------------------- |
+| hf.endpoint | <https://huggingface.co> | Configure the endpoint for Hugging Face                   |
+| hf.token    | hf_xxx                   | The Hugging Face token to access HF Datasets repositories |
+
+<!-- markdown-link-check-enable-->
+
 ### PyArrow
 
 <!-- markdown-link-check-disable -->
@@ -176,6 +215,93 @@ For the FileIO there are several configuration options available:
 | pyarrow.use-large-types-on-read | True    | Use large PyArrow types i.e. [large_string](https://arrow.apache.org/docs/python/generated/pyarrow.large_string.html), [large_binary](https://arrow.apache.org/docs/python/generated/pyarrow.large_binary.html) and [large_list](https://arrow.apache.org/docs/python/generated/pyarrow.large_list.html) field types on table scans. The default value is True. |
 
 <!-- markdown-link-check-enable-->
+
+## Location Providers
+
+Apache Iceberg uses the concept of a `LocationProvider` to manage file paths for a table's data files. In PyIceberg, the
+`LocationProvider` module is designed to be pluggable, allowing customization for specific use cases, and to additionally determine metadata file locations. The
+`LocationProvider` for a table can be specified through table properties.
+
+Both data file and metadata file locations can be customized by configuring the table properties [`write.data.path` and `write.metadata.path`](#write-options), respectively.
+
+For more granular control, you can override the `LocationProvider`'s `new_data_location` and `new_metadata_location` methods to define custom logic for generating file paths. See [`Loading a Custom Location Provider`](configuration.md#loading-a-custom-location-provider).
+
+PyIceberg defaults to the [`SimpleLocationProvider`](configuration.md#simple-location-provider) for managing file paths.
+
+### Simple Location Provider
+
+The `SimpleLocationProvider` provides paths prefixed by `{location}/data/`, where `location` comes from the [table metadata](https://iceberg.apache.org/spec/#table-metadata-fields). This can be overridden by setting [`write.data.path` table configuration](#write-options).
+
+For example, a non-partitioned table might have a data file with location:
+
+```txt
+s3://bucket/ns/table/data/0000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
+```
+
+When the table is partitioned, files under a given partition are grouped into a subdirectory, with that partition key
+and value as the directory name - this is known as the *Hive-style* partition path format. For example, a table
+partitioned over a string column `category` might have a data file with location:
+
+```txt
+s3://bucket/ns/table/data/category=orders/0000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
+```
+
+### Object Store Location Provider
+
+PyIceberg offers the `ObjectStoreLocationProvider`, and an optional [partition-exclusion](configuration.md#partition-exclusion)
+optimization, designed for tables stored in object storage. For additional context and motivation concerning these configurations,
+see their [documentation for Iceberg's Java implementation](https://iceberg.apache.org/docs/latest/aws/#object-store-file-layout).
+
+When several files are stored under the same prefix, cloud object stores such as S3 often [throttle requests on prefixes](https://repost.aws/knowledge-center/http-5xx-errors-s3),
+resulting in slowdowns. The `ObjectStoreLocationProvider` counteracts this by injecting deterministic hashes, in the form of binary directories,
+into file paths, to distribute files across a larger number of object store prefixes.
+
+Paths are prefixed by `{location}/data/`, where `location` comes from the [table metadata](https://iceberg.apache.org/spec/#table-metadata-fields), in a similar manner to the [`SimpleLocationProvider`](configuration.md#simple-location-provider). This can be overridden by setting [`write.data.path` table configuration](#write-options).
+
+For example, a table partitioned over a string column `category` might have a data file with location: (note the additional binary directories)
+
+```txt
+s3://bucket/ns/table/data/0101/0110/1001/10110010/category=orders/0000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
+```
+
+The `ObjectStoreLocationProvider` is enabled for a table by explicitly setting its `write.object-storage.enabled` table
+property to `True`.
+
+#### Partition Exclusion
+
+When the `ObjectStoreLocationProvider` is used, the table property `write.object-storage.partitioned-paths`, which
+defaults to `True`, can be set to `False` as an additional optimization for object stores. This omits partition keys and
+values from data file paths *entirely* to further reduce key size. With it disabled, the same data file above would
+instead be written to: (note the absence of `category=orders`)
+
+```txt
+s3://bucket/ns/table/data/1101/0100/1011/00111010-00000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
+```
+
+### Loading a Custom Location Provider
+
+Similar to FileIO, a custom `LocationProvider` may be provided for a table by concretely subclassing the abstract base
+class [`LocationProvider`](../reference/pyiceberg/table/locations/#pyiceberg.table.locations.LocationProvider).
+
+The table property `write.py-location-provider.impl` should be set to the fully-qualified name of the custom
+`LocationProvider` (i.e. `mymodule.MyLocationProvider`). Recall that a `LocationProvider` is configured per-table,
+permitting different location provision for different tables. Note also that Iceberg's Java implementation uses a
+different table property, `write.location-provider.impl`, for custom Java implementations.
+
+An example, custom `LocationProvider` implementation is shown below.
+
+```py
+import uuid
+
+class UUIDLocationProvider(LocationProvider):
+    def __init__(self, table_location: str, table_properties: Properties):
+        super().__init__(table_location, table_properties)
+
+    def new_data_location(self, data_file_name: str, partition_key: Optional[PartitionKey] = None) -> str:
+        # Can use any custom method to generate a file path given the partitioning information and file name
+        prefix = f"{self.table_location}/{uuid.uuid4()}"
+        return f"{prefix}/{partition_key.to_path()}/{data_file_name}" if partition_key else f"{prefix}/{data_file_name}"
+```
 
 ## Catalogs
 
@@ -219,6 +345,7 @@ catalog:
 | rest.signing-region | us-east-1                        | The region to use when SigV4 signing a request                                                     |
 | rest.signing-name   | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
 | oauth2-server-uri   | <https://auth-service/cc>          | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
+| snapshot-loading-mode | refs                             | The snapshots to return in the body of the metadata. Setting the value to `all` would return the full set of snapshots currently valid for the table. Setting the value to `refs` would load all snapshots referenced by branches or tags. |
 
 <!-- markdown-link-check-enable-->
 
@@ -234,6 +361,12 @@ catalog:
     credential: t-1234:secret
     header.content-type: application/vnd.api+json
 ```
+
+Specific headers defined by the RESTCatalog spec include:
+
+| Key                                  | Options                               | Default              | Description                                                                                                                                                                                        |
+| ------------------------------------ | ------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `header.X-Iceberg-Access-Delegation` | `{vended-credentials,remote-signing}` | `vended-credentials` | Signal to the server that the client supports delegated access via a comma-separated list of access mechanisms. The server may choose to supply access via any or none of the requested mechanisms |
 
 ### SQL Catalog
 
@@ -272,6 +405,23 @@ catalog:
 | echo          | true                                                         | false   | SQLAlchemy engine [echo param](https://docs.sqlalchemy.org/en/20/core/engines.html#sqlalchemy.create_engine.params.echo) to log all statements to the default log handler                      |
 | pool_pre_ping | true                                                         | false   | SQLAlchemy engine [pool_pre_ping param](https://docs.sqlalchemy.org/en/20/core/engines.html#sqlalchemy.create_engine.params.pool_pre_ping) to test connections for liveness upon each checkout |
 
+### In Memory Catalog
+
+The in-memory catalog is built on top of `SqlCatalog` and uses SQLite in-memory database for its backend.
+
+It is useful for test, demo, and playground but not in production as it does not support concurrent access.
+
+```yaml
+catalog:
+  default:
+    type: in-memory
+    warehouse: /tmp/pyiceberg/warehouse
+```
+
+| Key       | Example                  | Default                       | Description                                                          |
+| --------- |--------------------------|-------------------------------|----------------------------------------------------------------------|
+| warehouse | /tmp/pyiceberg/warehouse | file:///tmp/iceberg/warehouse | The directory where the in-memory catalog will store its data files. |
+
 ### Hive Catalog
 
 ```yaml
@@ -282,6 +432,11 @@ catalog:
     s3.access-key-id: admin
     s3.secret-access-key: password
 ```
+
+| Key                          | Example | Description                       |
+|------------------------------| ------- | --------------------------------- |
+| hive.hive2-compatible        | true    | Using Hive 2.x compatibility mode |
+| hive.kerberos-authentication | true    | Using authentication via Kerberos |
 
 When using Hive 2.x, make sure to set the compatibility flag:
 
@@ -331,16 +486,18 @@ catalog:
 
 <!-- markdown-link-check-disable -->
 
-| Key                    | Example                              | Description                                                                     |
-| ---------------------- | ------------------------------------ | ------------------------------------------------------------------------------- |
-| glue.id                | 111111111111                         | Configure the 12-digit ID of the Glue Catalog                                   |
-| glue.skip-archive      | true                                 | Configure whether to skip the archival of older table versions. Default to true |
+| Key                    | Example                                | Description                                                                     |
+|------------------------|----------------------------------------|---------------------------------------------------------------------------------|
+| glue.id                | 111111111111                           | Configure the 12-digit ID of the Glue Catalog                                   |
+| glue.skip-archive      | true                                   | Configure whether to skip the archival of older table versions. Default to true |
 | glue.endpoint          | <https://glue.us-east-1.amazonaws.com> | Configure an alternative endpoint of the Glue service for GlueCatalog to access |
-| glue.profile-name      | default                              | Configure the static profile used to access the Glue Catalog                    |
-| glue.region            | us-east-1                            | Set the region of the Glue Catalog                                              |
-| glue.access-key-id     | admin                                | Configure the static access key id used to access the Glue Catalog              |
-| glue.secret-access-key | password                             | Configure the static secret access key used to access the Glue Catalog          |
-| glue.session-token     | AQoDYXdzEJr...                       | Configure the static session token used to access the Glue Catalog              |
+| glue.profile-name      | default                                | Configure the static profile used to access the Glue Catalog                    |
+| glue.region            | us-east-1                              | Set the region of the Glue Catalog                                              |
+| glue.access-key-id     | admin                                  | Configure the static access key id used to access the Glue Catalog              |
+| glue.secret-access-key | password                               | Configure the static secret access key used to access the Glue Catalog          |
+| glue.session-token     | AQoDYXdzEJr...                         | Configure the static session token used to access the Glue Catalog              |
+| glue.max-retries       | 10                                     | Configure the maximum number of retries for the Glue service calls              |
+| glue.retry-mode        | standard                               | Configure the retry mode for the Glue service. Default to standard.             |
 
 <!-- markdown-link-check-enable-->
 

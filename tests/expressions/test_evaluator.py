@@ -42,6 +42,7 @@ from pyiceberg.expressions import (
 from pyiceberg.expressions.visitors import _InclusiveMetricsEvaluator, _StrictMetricsEvaluator
 from pyiceberg.manifest import DataFile, FileFormat
 from pyiceberg.schema import Schema
+from pyiceberg.typedef import Record
 from pyiceberg.types import (
     DoubleType,
     FloatType,
@@ -91,7 +92,7 @@ def schema_data_file() -> Schema:
 
 @pytest.fixture
 def data_file() -> DataFile:
-    return DataFile(
+    return DataFile.from_args(
         file_path="file_1.parquet",
         file_format=FileFormat.PARQUET,
         partition={},
@@ -133,7 +134,7 @@ def data_file() -> DataFile:
 
 @pytest.fixture
 def data_file_2() -> DataFile:
-    return DataFile(
+    return DataFile.from_args(
         file_path="file_2.parquet",
         file_format=FileFormat.PARQUET,
         partition={},
@@ -149,7 +150,7 @@ def data_file_2() -> DataFile:
 
 @pytest.fixture
 def data_file_3() -> DataFile:
-    return DataFile(
+    return DataFile.from_args(
         file_path="file_3.parquet",
         file_format=FileFormat.PARQUET,
         partition={},
@@ -165,7 +166,7 @@ def data_file_3() -> DataFile:
 
 @pytest.fixture
 def data_file_4() -> DataFile:
-    return DataFile(
+    return DataFile.from_args(
         file_path="file_4.parquet",
         file_format=FileFormat.PARQUET,
         partition={},
@@ -288,10 +289,10 @@ def test_missing_stats() -> None:
         NestedField(2, "no_stats", DoubleType(), required=False),
     )
 
-    no_stats_file = DataFile(
+    no_stats_file = DataFile.from_args(
         file_path="file_1.parquet",
         file_format=FileFormat.PARQUET,
-        partition={},
+        partition=Record(),
         record_count=50,
         value_counts=None,
         null_value_counts=None,
@@ -319,7 +320,9 @@ def test_missing_stats() -> None:
 
 
 def test_zero_record_file_stats(schema_data_file: Schema) -> None:
-    zero_record_data_file = DataFile(file_path="file_1.parquet", file_format=FileFormat.PARQUET, partition={}, record_count=0)
+    zero_record_data_file = DataFile.from_args(
+        file_path="file_1.parquet", file_format=FileFormat.PARQUET, partition=Record(), record_count=0
+    )
 
     expressions = [
         LessThan("no_stats", 5),
@@ -636,7 +639,7 @@ def schema_data_file_nan() -> Schema:
 
 @pytest.fixture
 def data_file_nan() -> DataFile:
-    return DataFile(
+    return DataFile.from_args(
         file_path="file.avro",
         file_format=FileFormat.PARQUET,
         partition={},
@@ -681,25 +684,25 @@ def data_file_nan() -> DataFile:
 
 def test_inclusive_metrics_evaluator_less_than_and_less_than_equal(schema_data_file_nan: Schema, data_file_nan: DataFile) -> None:
     for operator in [LessThan, LessThanOrEqual]:
-        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("all_nan", 1)).eval(data_file_nan)
+        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("all_nan", 1)).eval(data_file_nan)  # type: ignore[arg-type]
         assert not should_read, "Should not match: all nan column doesn't contain number"
 
-        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("max_nan", 1)).eval(data_file_nan)
+        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("max_nan", 1)).eval(data_file_nan)  # type: ignore[arg-type]
         assert not should_read, "Should not match: 1 is smaller than lower bound"
 
-        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("max_nan", 10)).eval(data_file_nan)
+        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("max_nan", 10)).eval(data_file_nan)  # type: ignore[arg-type]
         assert should_read, "Should match: 10 is larger than lower bound"
 
-        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("min_max_nan", 1)).eval(data_file_nan)
+        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("min_max_nan", 1)).eval(data_file_nan)  # type: ignore[arg-type]
         assert should_read, "Should match: no visibility"
 
-        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("all_nan_null_bounds", 1)).eval(data_file_nan)
+        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("all_nan_null_bounds", 1)).eval(data_file_nan)  # type: ignore[arg-type]
         assert not should_read, "Should not match: all nan column doesn't contain number"
 
-        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("some_nan_correct_bounds", 1)).eval(data_file_nan)
+        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("some_nan_correct_bounds", 1)).eval(data_file_nan)  # type: ignore[arg-type]
         assert not should_read, "Should not match: 1 is smaller than lower bound"
 
-        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("some_nan_correct_bounds", 10)).eval(
+        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("some_nan_correct_bounds", 10)).eval(  # type: ignore[arg-type]
             data_file_nan
         )
         assert should_read, "Should match: 10 larger than lower bound"
@@ -709,30 +712,30 @@ def test_inclusive_metrics_evaluator_greater_than_and_greater_than_equal(
     schema_data_file_nan: Schema, data_file_nan: DataFile
 ) -> None:
     for operator in [GreaterThan, GreaterThanOrEqual]:
-        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("all_nan", 1)).eval(data_file_nan)
+        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("all_nan", 1)).eval(data_file_nan)  # type: ignore[arg-type]
         assert not should_read, "Should not match: all nan column doesn't contain number"
 
-        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("max_nan", 1)).eval(data_file_nan)
+        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("max_nan", 1)).eval(data_file_nan)  # type: ignore[arg-type]
         assert should_read, "Should match: upper bound is larger than 1"
 
-        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("max_nan", 10)).eval(data_file_nan)
+        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("max_nan", 10)).eval(data_file_nan)  # type: ignore[arg-type]
         assert should_read, "Should match: upper bound is larger than 10"
 
-        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("min_max_nan", 1)).eval(data_file_nan)
+        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("min_max_nan", 1)).eval(data_file_nan)  # type: ignore[arg-type]
         assert should_read, "Should match: no visibility"
 
-        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("all_nan_null_bounds", 1)).eval(data_file_nan)
+        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("all_nan_null_bounds", 1)).eval(data_file_nan)  # type: ignore[arg-type]
         assert not should_read, "Should not match: all nan column doesn't contain number"
 
-        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("some_nan_correct_bounds", 1)).eval(data_file_nan)
+        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("some_nan_correct_bounds", 1)).eval(data_file_nan)  # type: ignore[arg-type]
         assert should_read, "Should match: 1 is smaller than upper bound"
 
-        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("some_nan_correct_bounds", 10)).eval(
+        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("some_nan_correct_bounds", 10)).eval(  # type: ignore[arg-type]
             data_file_nan
         )
         assert should_read, "Should match: 10 is smaller than upper bound"
 
-        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("all_nan", 30)).eval(data_file_nan)
+        should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("all_nan", 30)).eval(data_file_nan)  # type: ignore[arg-type]
         assert not should_read, "Should not match: 30 is greater than upper bound"
 
 
@@ -949,7 +952,7 @@ def strict_data_file_schema() -> Schema:
 
 @pytest.fixture
 def strict_data_file_1() -> DataFile:
-    return DataFile(
+    return DataFile.from_args(
         file_path="file_1.parquet",
         file_format=FileFormat.PARQUET,
         partition={},
@@ -990,7 +993,7 @@ def strict_data_file_1() -> DataFile:
 
 @pytest.fixture
 def strict_data_file_2() -> DataFile:
-    return DataFile(
+    return DataFile.from_args(
         file_path="file_2.parquet",
         file_format=FileFormat.PARQUET,
         partition={},
@@ -1015,7 +1018,7 @@ def strict_data_file_2() -> DataFile:
 
 @pytest.fixture
 def strict_data_file_3() -> DataFile:
-    return DataFile(
+    return DataFile.from_args(
         file_path="file_3.parquet",
         file_format=FileFormat.PARQUET,
         partition={},
@@ -1147,10 +1150,10 @@ def test_strict_missing_stats(strict_data_file_schema: Schema, strict_data_file_
         NestedField(2, "no_stats", DoubleType(), required=False),
     )
 
-    no_stats_file = DataFile(
+    no_stats_file = DataFile.from_args(
         file_path="file_1.parquet",
         file_format=FileFormat.PARQUET,
-        partition={},
+        partition=Record(),
         record_count=50,
         value_counts=None,
         null_value_counts=None,
@@ -1178,7 +1181,9 @@ def test_strict_missing_stats(strict_data_file_schema: Schema, strict_data_file_
 
 
 def test_strict_zero_record_file_stats(strict_data_file_schema: Schema) -> None:
-    zero_record_data_file = DataFile(file_path="file_1.parquet", file_format=FileFormat.PARQUET, partition={}, record_count=0)
+    zero_record_data_file = DataFile.from_args(
+        file_path="file_1.parquet", file_format=FileFormat.PARQUET, partition=Record(), record_count=0
+    )
 
     expressions = [
         LessThan("no_stats", 5),

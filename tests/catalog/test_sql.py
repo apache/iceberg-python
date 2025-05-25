@@ -17,7 +17,7 @@
 
 import os
 from pathlib import Path
-from typing import Any, Generator, List, cast
+from typing import Any, Generator, cast
 
 import pyarrow as pa
 import pytest
@@ -50,6 +50,7 @@ from pyiceberg.io import FSSPEC_FILE_IO, PY_IO_IMPL
 from pyiceberg.io.pyarrow import _dataframe_to_data_files, schema_to_pyarrow
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC
 from pyiceberg.schema import Schema
+from pyiceberg.table import TableProperties
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.sorting import (
     NullOrder,
@@ -75,30 +76,12 @@ def fixture_random_table_identifier(warehouse: Path, database_name: str, table_n
     return database_name, table_name
 
 
-@pytest.fixture(name="random_table_identifier_with_catalog")
-def fixture_random_table_identifier_with_catalog(
-    warehouse: Path, catalog_name: str, database_name: str, table_name: str
-) -> Identifier:
-    os.makedirs(f"{warehouse}/{database_name}.db/{table_name}/metadata/", exist_ok=True)
-    return catalog_name, database_name, table_name
-
-
 @pytest.fixture(name="another_random_table_identifier")
 def fixture_another_random_table_identifier(warehouse: Path, database_name: str, table_name: str) -> Identifier:
     database_name = database_name + "_new"
     table_name = table_name + "_new"
     os.makedirs(f"{warehouse}/{database_name}.db/{table_name}/metadata/", exist_ok=True)
     return database_name, table_name
-
-
-@pytest.fixture(name="another_random_table_identifier_with_catalog")
-def fixture_another_random_table_identifier_with_catalog(
-    warehouse: Path, catalog_name: str, database_name: str, table_name: str
-) -> Identifier:
-    database_name = database_name + "_new"
-    table_name = table_name + "_new"
-    os.makedirs(f"{warehouse}/{database_name}.db/{table_name}/metadata/", exist_ok=True)
-    return catalog_name, database_name, table_name
 
 
 @pytest.fixture(name="random_hierarchical_identifier")
@@ -332,12 +315,10 @@ def test_create_tables_idempotency(catalog: SqlCatalog) -> None:
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_create_table_default_sort_order(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested)
     assert table.sort_order().order_id == 0, "Order ID must match"
@@ -357,12 +338,10 @@ def test_create_table_default_sort_order(catalog: SqlCatalog, table_schema_neste
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_create_v1_table(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested, properties={"format-version": "1"})
     assert table.sort_order().order_id == 0, "Order ID must match"
@@ -384,7 +363,6 @@ def test_create_v1_table(catalog: SqlCatalog, table_schema_nested: Schema, table
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_create_table_with_pyarrow_schema(
@@ -393,8 +371,7 @@ def test_create_table_with_pyarrow_schema(
     iceberg_table_schema_simple: Schema,
     table_identifier: Identifier,
 ) -> None:
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, pyarrow_schema_simple_without_ids)
     assert table.schema() == iceberg_table_schema_simple
@@ -413,7 +390,6 @@ def test_create_table_with_pyarrow_schema(
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_write_pyarrow_schema(catalog: SqlCatalog, table_identifier: Identifier) -> None:
@@ -426,15 +402,16 @@ def test_write_pyarrow_schema(catalog: SqlCatalog, table_identifier: Identifier)
             pa.array([True, None, False, True]),  # 'baz' column
             pa.array([None, "A", "B", "C"]),  # 'large' column
         ],
-        schema=pa.schema([
-            pa.field("foo", pa.large_string(), nullable=True),
-            pa.field("bar", pa.int32(), nullable=False),
-            pa.field("baz", pa.bool_(), nullable=True),
-            pa.field("large", pa.large_string(), nullable=True),
-        ]),
+        schema=pa.schema(
+            [
+                pa.field("foo", pa.large_string(), nullable=True),
+                pa.field("bar", pa.int32(), nullable=False),
+                pa.field("baz", pa.bool_(), nullable=True),
+                pa.field("large", pa.large_string(), nullable=True),
+            ]
+        ),
     )
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, pyarrow_table.schema)
     table.append(pyarrow_table)
@@ -452,12 +429,10 @@ def test_write_pyarrow_schema(catalog: SqlCatalog, table_identifier: Identifier)
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_create_table_custom_sort_order(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     order = SortOrder(SortField(source_id=2, transform=IdentityTransform(), null_order=NullOrder.NULLS_FIRST))
     table = catalog.create_table(table_identifier, table_schema_nested, sort_order=order)
@@ -482,18 +457,17 @@ def test_create_table_custom_sort_order(catalog: SqlCatalog, table_schema_nested
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_create_table_with_default_warehouse_location(
     warehouse: Path, catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier
 ) -> None:
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    identifier_tuple = Catalog.identifier_to_tuple(table_identifier)
+    namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     catalog.create_table(table_identifier, table_schema_nested)
     table = catalog.load_table(table_identifier)
-    assert table.identifier == (catalog.name,) + table_identifier_nocatalog
+    assert table.name() == identifier_tuple
     assert table.metadata_location.startswith(f"file://{warehouse}")
     assert os.path.exists(table.metadata_location[len("file://") :])
     catalog.drop_table(table_identifier)
@@ -511,20 +485,19 @@ def test_create_table_with_default_warehouse_location(
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_create_table_with_given_location_removes_trailing_slash(
     warehouse: Path, catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier
 ) -> None:
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
-    table_name = Catalog.table_name_from(table_identifier_nocatalog)
+    identifier_tuple = Catalog.identifier_to_tuple(table_identifier)
+    namespace = Catalog.namespace_from(table_identifier)
+    table_name = Catalog.table_name_from(identifier_tuple)
     location = f"file://{warehouse}/{catalog.name}.db/{table_name}-given"
     catalog.create_namespace(namespace)
     catalog.create_table(table_identifier, table_schema_nested, location=f"{location}/")
     table = catalog.load_table(table_identifier)
-    assert table.identifier == (catalog.name,) + table_identifier_nocatalog
+    assert table.name() == identifier_tuple
     assert table.metadata_location.startswith(f"file://{warehouse}")
     assert os.path.exists(table.metadata_location[len("file://") :])
     assert table.location() == location
@@ -543,12 +516,10 @@ def test_create_table_with_given_location_removes_trailing_slash(
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_create_duplicated_table(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     catalog.create_table(table_identifier, table_schema_nested)
     with pytest.raises(TableAlreadyExistsError):
@@ -567,18 +538,16 @@ def test_create_duplicated_table(catalog: SqlCatalog, table_schema_nested: Schem
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_create_table_if_not_exists_duplicated_table(
     catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier
 ) -> None:
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     table1 = catalog.create_table(table_identifier, table_schema_nested)
     table2 = catalog.create_table_if_not_exists(table_identifier, table_schema_nested)
-    assert table1.identifier == table2.identifier
+    assert table1.name() == table2.name()
 
 
 @pytest.mark.parametrize(
@@ -618,15 +587,14 @@ def test_create_table_without_namespace(catalog: SqlCatalog, table_schema_nested
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_register_table(catalog: SqlCatalog, table_identifier: Identifier, metadata_location: str) -> None:
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    identifier_tuple = Catalog.identifier_to_tuple(table_identifier)
+    namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     table = catalog.register_table(table_identifier, metadata_location)
-    assert table.identifier == (catalog.name,) + table_identifier_nocatalog
+    assert table.name() == identifier_tuple
     assert table.metadata_location == metadata_location
     assert os.path.exists(metadata_location)
     catalog.drop_table(table_identifier)
@@ -644,12 +612,10 @@ def test_register_table(catalog: SqlCatalog, table_identifier: Identifier, metad
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_register_existing_table(catalog: SqlCatalog, table_identifier: Identifier, metadata_location: str) -> None:
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     catalog.register_table(table_identifier, metadata_location)
     with pytest.raises(TableAlreadyExistsError):
@@ -693,16 +659,14 @@ def test_register_table_without_namespace(catalog: SqlCatalog, metadata_location
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_load_table(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested)
     loaded_table = catalog.load_table(table_identifier)
-    assert table.identifier == loaded_table.identifier
+    assert table.name() == loaded_table.name()
     assert table.metadata_location == loaded_table.metadata_location
     assert table.metadata == loaded_table.metadata
 
@@ -719,18 +683,17 @@ def test_load_table(catalog: SqlCatalog, table_schema_nested: Schema, table_iden
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_load_table_from_self_identifier(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    identifier_tuple = Catalog.identifier_to_tuple(table_identifier)
+    namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested)
     intermediate = catalog.load_table(table_identifier)
-    assert intermediate.identifier == (catalog.name,) + table_identifier_nocatalog
-    loaded_table = catalog.load_table(intermediate.identifier)
-    assert table.identifier == loaded_table.identifier
+    assert intermediate.name() == identifier_tuple
+    loaded_table = catalog.load_table(intermediate.name())
+    assert table.name() == loaded_table.name()
     assert table.metadata_location == loaded_table.metadata_location
     assert table.metadata == loaded_table.metadata
 
@@ -748,15 +711,14 @@ def test_load_table_from_self_identifier(catalog: SqlCatalog, table_schema_neste
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_drop_table(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    identifier_tuple = Catalog.identifier_to_tuple(table_identifier)
+    namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested)
-    assert table.identifier == (catalog.name,) + table_identifier_nocatalog
+    assert table.name() == identifier_tuple
     catalog.drop_table(table_identifier)
     with pytest.raises(NoSuchTableError):
         catalog.load_table(table_identifier)
@@ -775,18 +737,17 @@ def test_drop_table(catalog: SqlCatalog, table_schema_nested: Schema, table_iden
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_drop_table_from_self_identifier(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    identifier_tuple = Catalog.identifier_to_tuple(table_identifier)
+    namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested)
-    assert table.identifier == (catalog.name,) + table_identifier_nocatalog
-    catalog.drop_table(table.identifier)
+    assert table.name() == identifier_tuple
+    catalog.drop_table(table.name())
     with pytest.raises(NoSuchTableError):
-        catalog.load_table(table.identifier)
+        catalog.load_table(table.name())
     with pytest.raises(NoSuchTableError):
         catalog.load_table(table_identifier)
 
@@ -804,7 +765,6 @@ def test_drop_table_from_self_identifier(catalog: SqlCatalog, table_schema_neste
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_drop_table_that_does_not_exist(catalog: SqlCatalog, table_identifier: Identifier) -> None:
@@ -825,7 +785,6 @@ def test_drop_table_that_does_not_exist(catalog: SqlCatalog, table_identifier: I
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 @pytest.mark.parametrize(
@@ -833,23 +792,20 @@ def test_drop_table_that_does_not_exist(catalog: SqlCatalog, table_identifier: I
     [
         lazy_fixture("another_random_table_identifier"),
         lazy_fixture("another_random_hierarchical_identifier"),
-        lazy_fixture("another_random_table_identifier_with_catalog"),
     ],
 )
 def test_rename_table(
     catalog: SqlCatalog, table_schema_nested: Schema, from_table_identifier: Identifier, to_table_identifier: Identifier
 ) -> None:
-    from_table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(from_table_identifier)
-    to_table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(to_table_identifier)
-    from_namespace = Catalog.namespace_from(from_table_identifier_nocatalog)
-    to_namespace = Catalog.namespace_from(to_table_identifier_nocatalog)
+    from_namespace = Catalog.namespace_from(from_table_identifier)
+    to_namespace = Catalog.namespace_from(to_table_identifier)
     catalog.create_namespace(from_namespace)
     catalog.create_namespace(to_namespace)
     table = catalog.create_table(from_table_identifier, table_schema_nested)
-    assert table.identifier == (catalog.name,) + from_table_identifier_nocatalog
+    assert table.name() == from_table_identifier
     catalog.rename_table(from_table_identifier, to_table_identifier)
     new_table = catalog.load_table(to_table_identifier)
-    assert new_table.identifier == (catalog.name,) + to_table_identifier_nocatalog
+    assert new_table.name() == to_table_identifier
     assert new_table.metadata_location == table.metadata_location
     with pytest.raises(NoSuchTableError):
         catalog.load_table(from_table_identifier)
@@ -868,7 +824,6 @@ def test_rename_table(
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 @pytest.mark.parametrize(
@@ -876,26 +831,23 @@ def test_rename_table(
     [
         lazy_fixture("another_random_table_identifier"),
         lazy_fixture("another_random_hierarchical_identifier"),
-        lazy_fixture("another_random_table_identifier_with_catalog"),
     ],
 )
 def test_rename_table_from_self_identifier(
     catalog: SqlCatalog, table_schema_nested: Schema, from_table_identifier: Identifier, to_table_identifier: Identifier
 ) -> None:
-    from_table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(from_table_identifier)
-    to_table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(to_table_identifier)
-    from_namespace = Catalog.namespace_from(from_table_identifier_nocatalog)
-    to_namespace = Catalog.namespace_from(to_table_identifier_nocatalog)
+    from_namespace = Catalog.namespace_from(from_table_identifier)
+    to_namespace = Catalog.namespace_from(to_table_identifier)
     catalog.create_namespace(from_namespace)
     catalog.create_namespace(to_namespace)
     table = catalog.create_table(from_table_identifier, table_schema_nested)
-    assert table.identifier == (catalog.name,) + from_table_identifier_nocatalog
-    catalog.rename_table(table.identifier, to_table_identifier)
+    assert table.name() == from_table_identifier
+    catalog.rename_table(table.name(), to_table_identifier)
     new_table = catalog.load_table(to_table_identifier)
-    assert new_table.identifier == (catalog.name,) + to_table_identifier_nocatalog
+    assert new_table.name() == to_table_identifier
     assert new_table.metadata_location == table.metadata_location
     with pytest.raises(NoSuchTableError):
-        catalog.load_table(table.identifier)
+        catalog.load_table(table.name())
     with pytest.raises(NoSuchTableError):
         catalog.load_table(from_table_identifier)
 
@@ -913,7 +865,6 @@ def test_rename_table_from_self_identifier(
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 @pytest.mark.parametrize(
@@ -921,22 +872,19 @@ def test_rename_table_from_self_identifier(
     [
         lazy_fixture("another_random_table_identifier"),
         lazy_fixture("another_random_hierarchical_identifier"),
-        lazy_fixture("another_random_table_identifier_with_catalog"),
     ],
 )
 def test_rename_table_to_existing_one(
     catalog: SqlCatalog, table_schema_nested: Schema, from_table_identifier: Identifier, to_table_identifier: Identifier
 ) -> None:
-    from_table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(from_table_identifier)
-    to_table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(to_table_identifier)
-    from_namespace = Catalog.namespace_from(from_table_identifier_nocatalog)
-    to_namespace = Catalog.namespace_from(to_table_identifier_nocatalog)
+    from_namespace = Catalog.namespace_from(from_table_identifier)
+    to_namespace = Catalog.namespace_from(to_table_identifier)
     catalog.create_namespace(from_namespace)
     catalog.create_namespace(to_namespace)
     table = catalog.create_table(from_table_identifier, table_schema_nested)
-    assert table.identifier == (catalog.name,) + from_table_identifier_nocatalog
+    assert table.name() == from_table_identifier
     new_table = catalog.create_table(to_table_identifier, table_schema_nested)
-    assert new_table.identifier == (catalog.name,) + to_table_identifier_nocatalog
+    assert new_table.name() == to_table_identifier
     with pytest.raises(TableAlreadyExistsError):
         catalog.rename_table(from_table_identifier, to_table_identifier)
 
@@ -954,7 +902,6 @@ def test_rename_table_to_existing_one(
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 @pytest.mark.parametrize(
@@ -962,12 +909,10 @@ def test_rename_table_to_existing_one(
     [
         lazy_fixture("another_random_table_identifier"),
         lazy_fixture("another_random_hierarchical_identifier"),
-        lazy_fixture("another_random_table_identifier_with_catalog"),
     ],
 )
 def test_rename_missing_table(catalog: SqlCatalog, from_table_identifier: Identifier, to_table_identifier: Identifier) -> None:
-    to_table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(to_table_identifier)
-    to_namespace = Catalog.namespace_from(to_table_identifier_nocatalog)
+    to_namespace = Catalog.namespace_from(to_table_identifier)
     catalog.create_namespace(to_namespace)
     with pytest.raises(NoSuchTableError):
         catalog.rename_table(from_table_identifier, to_table_identifier)
@@ -986,7 +931,6 @@ def test_rename_missing_table(catalog: SqlCatalog, from_table_identifier: Identi
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 @pytest.mark.parametrize(
@@ -994,17 +938,15 @@ def test_rename_missing_table(catalog: SqlCatalog, from_table_identifier: Identi
     [
         lazy_fixture("another_random_table_identifier"),
         lazy_fixture("another_random_hierarchical_identifier"),
-        lazy_fixture("another_random_table_identifier_with_catalog"),
     ],
 )
 def test_rename_table_to_missing_namespace(
     catalog: SqlCatalog, table_schema_nested: Schema, from_table_identifier: Identifier, to_table_identifier: Identifier
 ) -> None:
-    from_table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(from_table_identifier)
-    from_namespace = Catalog.namespace_from(from_table_identifier_nocatalog)
+    from_namespace = Catalog.namespace_from(from_table_identifier)
     catalog.create_namespace(from_namespace)
     table = catalog.create_table(from_table_identifier, table_schema_nested)
-    assert table.identifier == (catalog.name,) + from_table_identifier_nocatalog
+    assert table.name() == from_table_identifier
     with pytest.raises(NoSuchNamespaceError):
         catalog.rename_table(from_table_identifier, to_table_identifier)
 
@@ -1021,7 +963,6 @@ def test_rename_table_to_missing_namespace(
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 @pytest.mark.parametrize(
@@ -1029,27 +970,24 @@ def test_rename_table_to_missing_namespace(
     [
         lazy_fixture("another_random_table_identifier"),
         lazy_fixture("another_random_hierarchical_identifier"),
-        lazy_fixture("another_random_table_identifier_with_catalog"),
     ],
 )
 def test_list_tables(
     catalog: SqlCatalog, table_schema_nested: Schema, table_identifier_1: Identifier, table_identifier_2: Identifier
 ) -> None:
-    table_identifier_1_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier_1)
-    table_identifier_2_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier_2)
-    namespace_1 = Catalog.namespace_from(table_identifier_1_nocatalog)
-    namespace_2 = Catalog.namespace_from(table_identifier_2_nocatalog)
+    namespace_1 = Catalog.namespace_from(table_identifier_1)
+    namespace_2 = Catalog.namespace_from(table_identifier_2)
     catalog.create_namespace(namespace_1)
     catalog.create_namespace(namespace_2)
     catalog.create_table(table_identifier_1, table_schema_nested)
     catalog.create_table(table_identifier_2, table_schema_nested)
     identifier_list = catalog.list_tables(namespace_1)
     assert len(identifier_list) == 1
-    assert table_identifier_1_nocatalog in identifier_list
+    assert table_identifier_1 in identifier_list
 
     identifier_list = catalog.list_tables(namespace_2)
     assert len(identifier_list) == 1
-    assert table_identifier_2_nocatalog in identifier_list
+    assert table_identifier_2 in identifier_list
 
 
 @pytest.mark.parametrize(
@@ -1089,7 +1027,7 @@ def test_create_namespace_if_not_exists(catalog: SqlCatalog, database_name: str)
 @pytest.mark.parametrize("namespace", [lazy_fixture("database_name"), lazy_fixture("hierarchical_namespace_name")])
 def test_create_namespace(catalog: SqlCatalog, namespace: str) -> None:
     catalog.create_namespace(namespace)
-    assert (Catalog.identifier_to_tuple(namespace)) in catalog.list_namespaces()
+    assert (Catalog.identifier_to_tuple(namespace)[:1]) in catalog.list_namespaces()
 
 
 @pytest.mark.parametrize(
@@ -1136,7 +1074,7 @@ def test_create_namespace_with_comment_and_location(catalog: SqlCatalog, namespa
     }
     catalog.create_namespace(namespace=namespace, properties=test_properties)
     loaded_database_list = catalog.list_namespaces()
-    assert Catalog.identifier_to_tuple(namespace) in loaded_database_list
+    assert Catalog.identifier_to_tuple(namespace)[:1] in loaded_database_list
     properties = catalog.load_namespace_properties(namespace)
     assert properties["comment"] == "this is a test description"
     assert properties["location"] == test_location
@@ -1179,17 +1117,60 @@ def test_create_namespace_with_empty_identifier(catalog: SqlCatalog, empty_names
         lazy_fixture("catalog_sqlite"),
     ],
 )
-@pytest.mark.parametrize("namespace_list", [lazy_fixture("database_list"), lazy_fixture("hierarchical_namespace_list")])
-def test_list_namespaces(catalog: SqlCatalog, namespace_list: List[str]) -> None:
+def test_namespace_exists(catalog: SqlCatalog) -> None:
+    for ns in [("db1",), ("db1", "ns1"), ("db2", "ns1"), ("db3", "ns1", "ns2")]:
+        catalog.create_namespace(ns)
+        assert catalog._namespace_exists(ns)
+
+    assert catalog._namespace_exists("db2")  # `db2` exists because `db2.ns1` exists
+    assert catalog._namespace_exists("db3.ns1")  # `db3.ns1` exists because `db3.ns1.ns2` exists
+    assert not catalog._namespace_exists("db_")  # make sure '_' is escaped in the query
+    assert not catalog._namespace_exists("db%")  # make sure '%' is escaped in the query
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+    ],
+)
+def test_list_namespaces(catalog: SqlCatalog) -> None:
+    namespace_list = ["db", "db.ns1", "db.ns1.ns2", "db.ns2", "db2", "db2.ns1", "db%"]
     for namespace in namespace_list:
-        catalog.create_namespace(namespace)
-    # Test global list
+        if not catalog._namespace_exists(namespace):
+            catalog.create_namespace(namespace)
+
     ns_list = catalog.list_namespaces()
+    for ns in [("db",), ("db%",), ("db2",)]:
+        assert ns in ns_list
+
+    ns_list = catalog.list_namespaces("db")
+    assert sorted(ns_list) == [("db", "ns1"), ("db", "ns2")]
+
+    ns_list = catalog.list_namespaces("db.ns1")
+    assert sorted(ns_list) == [("db", "ns1", "ns2")]
+
+    ns_list = catalog.list_namespaces("db.ns1.ns2")
+    assert len(ns_list) == 0
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+    ],
+)
+def test_list_namespaces_fuzzy_match(catalog: SqlCatalog) -> None:
+    namespace_list = ["db.ns1", "db.ns1.ns2", "db.ns2", "db.ns1X.ns3", "db_.ns1.ns2", "db2.ns1.ns2"]
     for namespace in namespace_list:
-        assert Catalog.identifier_to_tuple(namespace) in ns_list
-        # Test individual namespace list
-        assert len(one_namespace := catalog.list_namespaces(namespace)) == 1
-        assert Catalog.identifier_to_tuple(namespace) == one_namespace[0]
+        if not catalog._namespace_exists(namespace):
+            catalog.create_namespace(namespace)
+
+    assert catalog.list_namespaces("db.ns1") == [("db", "ns1", "ns2")]
+
+    assert catalog.list_namespaces("db_.ns1") == [("db_", "ns1", "ns2")]
 
 
 @pytest.mark.parametrize(
@@ -1216,20 +1197,18 @@ def test_list_non_existing_namespaces(catalog: SqlCatalog) -> None:
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_drop_namespace(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
-    assert namespace in catalog.list_namespaces()
+    assert catalog._namespace_exists(namespace)
     catalog.create_table(table_identifier, table_schema_nested)
     with pytest.raises(NamespaceNotEmptyError):
         catalog.drop_namespace(namespace)
     catalog.drop_table(table_identifier)
     catalog.drop_namespace(namespace)
-    assert namespace not in catalog.list_namespaces()
+    assert not catalog._namespace_exists(namespace)
 
 
 @pytest.mark.parametrize(
@@ -1344,12 +1323,10 @@ def test_update_namespace_properties(catalog: SqlCatalog, namespace: str) -> Non
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_commit_table(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested)
     last_updated_ms = table.metadata.last_updated_ms
@@ -1394,12 +1371,10 @@ def test_commit_table(catalog: SqlCatalog, table_schema_nested: Schema, table_id
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_append_table(catalog: SqlCatalog, table_schema_simple: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_simple)
 
@@ -1444,12 +1419,10 @@ def test_append_table(catalog: SqlCatalog, table_schema_simple: Schema, table_id
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_concurrent_commit_table(catalog: SqlCatalog, table_schema_simple: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     table_a = catalog.create_table(table_identifier, table_schema_simple)
     table_b = catalog.load_table(table_identifier)
@@ -1499,10 +1472,12 @@ def test_write_and_evolve(catalog: SqlCatalog, format_version: int) -> None:
             "foo": ["a", None, "z"],
             "bar": [19, None, 25],
         },
-        schema=pa.schema([
-            pa.field("foo", pa.large_string(), nullable=True),
-            pa.field("bar", pa.int32(), nullable=True),
-        ]),
+        schema=pa.schema(
+            [
+                pa.field("foo", pa.large_string(), nullable=True),
+                pa.field("bar", pa.int32(), nullable=True),
+            ]
+        ),
     )
 
     with tbl.transaction() as txn:
@@ -1547,10 +1522,12 @@ def test_create_table_transaction(catalog: SqlCatalog, format_version: int) -> N
             "foo": ["a", None, "z"],
             "bar": [19, None, 25],
         },
-        schema=pa.schema([
-            pa.field("foo", pa.large_string(), nullable=True),
-            pa.field("bar", pa.int32(), nullable=True),
-        ]),
+        schema=pa.schema(
+            [
+                pa.field("foo", pa.large_string(), nullable=True),
+                pa.field("bar", pa.int32(), nullable=True),
+            ]
+        ),
     )
 
     with catalog.create_table_transaction(
@@ -1587,13 +1564,11 @@ def test_create_table_transaction(catalog: SqlCatalog, format_version: int) -> N
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_table_properties_int_value(catalog: SqlCatalog, table_schema_simple: Schema, table_identifier: Identifier) -> None:
     # table properties can be set to int, but still serialized to string
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     property_with_int = {"property_name": 42}
     table = catalog.create_table(table_identifier, table_schema_simple, properties=property_with_int)
@@ -1613,14 +1588,12 @@ def test_table_properties_int_value(catalog: SqlCatalog, table_schema_simple: Sc
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_table_properties_raise_for_none_value(
     catalog: SqlCatalog, table_schema_simple: Schema, table_identifier: Identifier
 ) -> None:
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     property_with_none = {"property_name": None}
     with pytest.raises(ValidationError) as exc_info:
@@ -1640,12 +1613,10 @@ def test_table_properties_raise_for_none_value(
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_table_exists(catalog: SqlCatalog, table_schema_simple: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     catalog.create_table(table_identifier, table_schema_simple, properties={"format-version": "2"})
     existing_table = table_identifier
@@ -1686,3 +1657,50 @@ def test_merge_manifests_local_file_system(catalog: SqlCatalog, arrow_table_with
         tbl.append(arrow_table_with_null)
 
     assert len(tbl.scan().to_arrow()) == 5 * len(arrow_table_with_null)
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+        lazy_fixture("catalog_sqlite_without_rowcount"),
+    ],
+)
+def test_delete_metadata_multiple(catalog: SqlCatalog, table_schema_nested: Schema, random_table_identifier: str) -> None:
+    namespace = Catalog.namespace_from(random_table_identifier)
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(random_table_identifier, table_schema_nested)
+
+    original_metadata_location = table.metadata_location
+
+    for i in range(5):
+        with table.transaction() as transaction:
+            with transaction.update_schema() as update:
+                update.add_column(path=f"new_column_{i}", field_type=IntegerType())
+
+    assert len(table.metadata.metadata_log) == 5
+    assert os.path.exists(original_metadata_location[len("file://") :])
+
+    # Set the max versions property to 2, and delete after commit
+    new_property = {
+        TableProperties.METADATA_PREVIOUS_VERSIONS_MAX: "2",
+        TableProperties.METADATA_DELETE_AFTER_COMMIT_ENABLED: "true",
+    }
+
+    with table.transaction() as transaction:
+        transaction.set_properties(properties=new_property)
+
+    # Verify that only the most recent metadata files are kept
+    assert len(table.metadata.metadata_log) == 2
+    updated_metadata_1, updated_metadata_2 = table.metadata.metadata_log
+
+    # new metadata log was added, so earlier metadata logs are removed.
+    with table.transaction() as transaction:
+        with transaction.update_schema() as update:
+            update.add_column(path="new_column_x", field_type=IntegerType())
+
+    assert len(table.metadata.metadata_log) == 2
+    assert not os.path.exists(original_metadata_location[len("file://") :])
+    assert not os.path.exists(updated_metadata_1.metadata_file[len("file://") :])
+    assert os.path.exists(updated_metadata_2.metadata_file[len("file://") :])

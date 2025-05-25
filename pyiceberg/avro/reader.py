@@ -51,7 +51,7 @@ from pyiceberg.utils.singleton import Singleton
 def _skip_map_array(decoder: BinaryDecoder, skip_entry: Callable[[], None]) -> None:
     """Skips over an array or map.
 
-    Both the array and map are encoded similar, and we can re-use
+    Both the array and map are encoded similar, and we can reuse
     the logic of skipping in an efficient way.
 
     From the Avro spec:
@@ -175,11 +175,29 @@ class TimestampReader(IntegerReader):
     """
 
 
+class TimestampNanoReader(IntegerReader):
+    """Reads a nanosecond granularity timestamp from the stream.
+
+    Long is decoded as python integer which represents
+    the number of nanoseconds from the unix epoch, 1 January 1970.
+    """
+
+
 class TimestamptzReader(IntegerReader):
     """Reads a microsecond granularity timestamptz from the stream.
 
     Long is decoded as python integer which represents
     the number of microseconds from the unix epoch, 1 January 1970.
+
+    Adjusted to UTC.
+    """
+
+
+class TimestamptzNanoReader(IntegerReader):
+    """Reads a microsecond granularity timestamptz from the stream.
+
+    Long is decoded as python integer which represents
+    the number of nanoseconds from the unix epoch, 1 January 1970.
 
     Adjusted to UTC.
     """
@@ -199,6 +217,14 @@ class UUIDReader(Reader):
 
     def skip(self, decoder: BinaryDecoder) -> None:
         decoder.skip(16)
+
+
+class UnknownReader(Reader):
+    def read(self, decoder: BinaryDecoder) -> None:
+        return None
+
+    def skip(self, decoder: BinaryDecoder) -> None:
+        pass
 
 
 @dataclass(frozen=True)
@@ -286,7 +312,14 @@ class OptionReader(Reader):
 
 
 class StructReader(Reader):
-    __slots__ = ("field_readers", "create_struct", "struct", "_create_with_keyword", "_field_reader_functions", "_hash")
+    __slots__ = (
+        "field_readers",
+        "create_struct",
+        "struct",
+        "_field_reader_functions",
+        "_hash",
+        "_max_pos",
+    )
     field_readers: Tuple[Tuple[Optional[int], Reader], ...]
     create_struct: Callable[..., StructProtocol]
     struct: StructType
@@ -300,34 +333,28 @@ class StructReader(Reader):
     ) -> None:
         self.field_readers = field_readers
         self.create_struct = create_struct
+        # TODO: Implement struct-reuse
         self.struct = struct
 
-        try:
-            # Try initializing the struct, first with the struct keyword argument
-            created_struct = self.create_struct(struct=self.struct)
-            self._create_with_keyword = True
-        except TypeError as e:
-            if "'struct' is an invalid keyword argument for" in str(e):
-                created_struct = self.create_struct()
-                self._create_with_keyword = False
-            else:
-                raise ValueError(f"Unable to initialize struct: {self.create_struct}") from e
-
-        if not isinstance(created_struct, StructProtocol):
+        if not isinstance(self.create_struct(), StructProtocol):
             raise ValueError(f"Incompatible with StructProtocol: {self.create_struct}")
 
         reading_callbacks: List[Tuple[Optional[int], Callable[[BinaryDecoder], Any]]] = []
+        max_pos = -1
         for pos, field in field_readers:
             if pos is not None:
                 reading_callbacks.append((pos, field.read))
+                max_pos = max(max_pos, pos)
             else:
                 reading_callbacks.append((None, field.skip))
 
         self._field_reader_functions = tuple(reading_callbacks)
         self._hash = hash(self._field_reader_functions)
+        self._max_pos = 1 + max_pos
 
     def read(self, decoder: BinaryDecoder) -> StructProtocol:
-        struct = self.create_struct(struct=self.struct) if self._create_with_keyword else self.create_struct()
+        # TODO: Implement struct-reuse
+        struct = self.create_struct(*[None] * self._max_pos)
         for pos, field_reader in self._field_reader_functions:
             if pos is not None:
                 struct[pos] = field_reader(decoder)  # later: pass reuse in here
