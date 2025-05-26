@@ -87,7 +87,7 @@ from pyiceberg.table.metadata import (
 from pyiceberg.table.name_mapping import (
     NameMapping,
 )
-from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
+from pyiceberg.table.refs import SnapshotRef
 from pyiceberg.table.snapshots import (
     Snapshot,
     SnapshotLogEntry,
@@ -398,7 +398,7 @@ class Transaction:
             expr = Or(expr, match_partition_expression)
         return expr
 
-    def _append_snapshot_producer(self, snapshot_properties: Dict[str, str], branch: str) -> _FastAppendFiles:
+    def _append_snapshot_producer(self, snapshot_properties: Dict[str, str], branch: Optional[str]) -> _FastAppendFiles:
         """Determine the append type based on table properties.
 
         Args:
@@ -431,7 +431,7 @@ class Transaction:
             name_mapping=self.table_metadata.name_mapping(),
         )
 
-    def update_snapshot(self, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str = MAIN_BRANCH) -> UpdateSnapshot:
+    def update_snapshot(self, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = None) -> UpdateSnapshot:
         """Create a new UpdateSnapshot to produce a new snapshot for the table.
 
         Returns:
@@ -448,7 +448,7 @@ class Transaction:
         """
         return UpdateStatistics(transaction=self)
 
-    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str = MAIN_BRANCH) -> None:
+    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = None) -> None:
         """
         Shorthand API for appending a PyArrow table to a table transaction.
 
@@ -490,7 +490,7 @@ class Transaction:
                     append_files.append_data_file(data_file)
 
     def dynamic_partition_overwrite(
-        self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str = MAIN_BRANCH
+        self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = None
     ) -> None:
         """
         Shorthand for overwriting existing partitions with a PyArrow table.
@@ -554,7 +554,7 @@ class Transaction:
         overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
-        branch: str = MAIN_BRANCH,
+        branch: Optional[str] = None,
     ) -> None:
         """
         Shorthand for adding a table overwrite with a PyArrow table to the transaction.
@@ -617,7 +617,7 @@ class Transaction:
         delete_filter: Union[str, BooleanExpression],
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
-        branch: str = MAIN_BRANCH,
+        branch: Optional[str] = None,
     ) -> None:
         """
         Shorthand for deleting record from a table.
@@ -656,7 +656,10 @@ class Transaction:
             bound_delete_filter = bind(self.table_metadata.schema(), delete_filter, case_sensitive)
             preserve_row_filter = _expression_to_complementary_pyarrow(bound_delete_filter)
 
-            files = self._scan(row_filter=delete_filter, case_sensitive=case_sensitive).use_ref(branch).plan_files()
+            if branch is None:
+                files = self._scan(row_filter=delete_filter, case_sensitive=case_sensitive).plan_files()
+            else:
+                files = self._scan(row_filter=delete_filter, case_sensitive=case_sensitive).use_ref(branch).plan_files()
 
             commit_uuid = uuid.uuid4()
             counter = itertools.count(0)
@@ -717,6 +720,7 @@ class Transaction:
         when_matched_update_all: bool = True,
         when_not_matched_insert_all: bool = True,
         case_sensitive: bool = True,
+        branch: Optional[str] = None,
     ) -> UpsertResult:
         """Shorthand API for performing an upsert to an iceberg table.
 
@@ -727,6 +731,7 @@ class Transaction:
             when_matched_update_all: Bool indicating to update rows that are matched but require an update due to a value in a non-key column changing
             when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any existing rows in the table
             case_sensitive: Bool indicating if the match should be case-sensitive
+            branch: Branch Reference to run the upsert operation
 
             To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
 
@@ -789,12 +794,24 @@ class Transaction:
         matched_predicate = upsert_util.create_match_filter(df, join_cols)
 
         # We must use Transaction.table_metadata for the scan. This includes all uncommitted - but relevant - changes.
-        matched_iceberg_table = DataScan(
-            table_metadata=self.table_metadata,
-            io=self._table.io,
-            row_filter=matched_predicate,
-            case_sensitive=case_sensitive,
-        ).to_arrow()
+        if branch is None:
+            matched_iceberg_table = DataScan(
+                table_metadata=self.table_metadata,
+                io=self._table.io,
+                row_filter=matched_predicate,
+                case_sensitive=case_sensitive,
+            ).to_arrow()
+        else:
+            matched_iceberg_table = (
+                DataScan(
+                    table_metadata=self.table_metadata,
+                    io=self._table.io,
+                    row_filter=matched_predicate,
+                    case_sensitive=case_sensitive,
+                )
+                .use_ref(branch)
+                .to_arrow()
+            )
 
         update_row_cnt = 0
         insert_row_cnt = 0
@@ -811,7 +828,7 @@ class Transaction:
                 # build the match predicate filter
                 overwrite_mask_predicate = upsert_util.create_match_filter(rows_to_update, join_cols)
 
-                self.overwrite(rows_to_update, overwrite_filter=overwrite_mask_predicate)
+                self.overwrite(rows_to_update, overwrite_filter=overwrite_mask_predicate, branch=branch)
 
         if when_not_matched_insert_all:
             expr_match = upsert_util.create_match_filter(matched_iceberg_table, join_cols)
@@ -822,7 +839,7 @@ class Transaction:
             insert_row_cnt = len(rows_to_insert)
 
             if insert_row_cnt > 0:
-                self.append(rows_to_insert)
+                self.append(rows_to_insert, branch=branch)
 
         return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 
@@ -1255,6 +1272,7 @@ class Table:
         when_matched_update_all: bool = True,
         when_not_matched_insert_all: bool = True,
         case_sensitive: bool = True,
+        branch: Optional[str] = None,
     ) -> UpsertResult:
         """Shorthand API for performing an upsert to an iceberg table.
 
@@ -1265,6 +1283,7 @@ class Table:
             when_matched_update_all: Bool indicating to update rows that are matched but require an update due to a value in a non-key column changing
             when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any existing rows in the table
             case_sensitive: Bool indicating if the match should be case-sensitive
+            branch: Branch Reference to run the upsert operation
 
             To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
 
@@ -1297,9 +1316,10 @@ class Table:
                 when_matched_update_all=when_matched_update_all,
                 when_not_matched_insert_all=when_not_matched_insert_all,
                 case_sensitive=case_sensitive,
+                branch=branch,
             )
 
-    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str = MAIN_BRANCH) -> None:
+    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = None) -> None:
         """
         Shorthand API for appending a PyArrow table to the table.
 
@@ -1312,7 +1332,7 @@ class Table:
             tx.append(df=df, snapshot_properties=snapshot_properties, branch=branch)
 
     def dynamic_partition_overwrite(
-        self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str = MAIN_BRANCH
+        self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = None
     ) -> None:
         """Shorthand for dynamic overwriting the table with a PyArrow table.
 
@@ -1331,7 +1351,7 @@ class Table:
         overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
-        branch: str = MAIN_BRANCH,
+        branch: Optional[str] = None,
     ) -> None:
         """
         Shorthand for overwriting the table with a PyArrow table.
@@ -1364,7 +1384,7 @@ class Table:
         delete_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
-        branch: str = MAIN_BRANCH,
+        branch: Optional[str] = None,
     ) -> None:
         """
         Shorthand for deleting rows from the table.

@@ -105,30 +105,39 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     _added_data_files: List[DataFile]
     _manifest_num_counter: itertools.count[int]
     _deleted_data_files: Set[DataFile]
-    _branch: str
 
     def __init__(
         self,
         operation: Operation,
         transaction: Transaction,
         io: FileIO,
-        branch: str,
         commit_uuid: Optional[uuid.UUID] = None,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        branch: str = MAIN_BRANCH,
     ) -> None:
         super().__init__(transaction)
         self.commit_uuid = commit_uuid or uuid.uuid4()
         self._io = io
         self._operation = operation
         self._snapshot_id = self._transaction.table_metadata.new_snapshot_id()
-        self._branch = branch
-        self._parent_snapshot_id = (
-            snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.snapshot_by_name(self._branch)) else None
-        )
         self._added_data_files = []
         self._deleted_data_files = set()
         self.snapshot_properties = snapshot_properties
         self._manifest_num_counter = itertools.count(0)
+        self._set_target_branch(branch=branch)
+        self._parent_snapshot_id = (
+            snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.snapshot_by_name(self._target_branch)) else None
+        )
+
+    def _set_target_branch(self, branch: str) -> None:
+        # Default is already set to MAIN_BRANCH. So branch name can't be None.
+        assert branch is not None, ValueError("Invalid branch name: null")
+        if branch in self._transaction.table_metadata.refs:
+            ref = self._transaction.table_metadata.refs[branch]
+            assert ref.snapshot_ref_type == SnapshotRefType.BRANCH, ValueError(
+                f"{branch} is a tag, not a branch. Tags cannot be targets for producing snapshots"
+            )
+        self._target_branch = branch
 
     def append_data_file(self, data_file: DataFile) -> _SnapshotProducer[U]:
         self._added_data_files.append(data_file)
@@ -276,16 +285,16 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                 SetSnapshotRefUpdate(
                     snapshot_id=self._snapshot_id,
                     parent_snapshot_id=self._parent_snapshot_id,
-                    ref_name=self._branch,
+                    ref_name=self._target_branch,
                     type=SnapshotRefType.BRANCH,
                 ),
             ),
             (
                 AssertRefSnapshotId(
-                    snapshot_id=self._transaction.table_metadata.refs[self._branch].snapshot_id
-                    if self._branch in self._transaction.table_metadata.refs
+                    snapshot_id=self._transaction.table_metadata.refs[self._target_branch].snapshot_id
+                    if self._target_branch in self._transaction.table_metadata.refs
                     else self._transaction.table_metadata.current_snapshot_id,
-                    ref=self._branch,
+                    ref=self._target_branch,
                 ),
             ),
         )
@@ -338,7 +347,7 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         commit_uuid: Optional[uuid.UUID] = None,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ):
-        super().__init__(operation, transaction, io, branch, commit_uuid, snapshot_properties)
+        super().__init__(operation, transaction, io, commit_uuid, snapshot_properties, branch)
         self._predicate = AlwaysFalse()
         self._case_sensitive = True
 
@@ -503,7 +512,7 @@ class _MergeAppendFiles(_FastAppendFiles):
     ) -> None:
         from pyiceberg.table import TableProperties
 
-        super().__init__(operation, transaction, io, branch, commit_uuid, snapshot_properties)
+        super().__init__(operation, transaction, io, commit_uuid, snapshot_properties, branch)
         self._target_size_bytes = property_as_int(
             self._transaction.table_metadata.properties,
             TableProperties.MANIFEST_TARGET_SIZE_BYTES,
@@ -549,7 +558,7 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
         """Determine if there are any existing manifest files."""
         existing_files = []
 
-        if snapshot := self._transaction.table_metadata.snapshot_by_name(name=self._branch):
+        if snapshot := self._transaction.table_metadata.snapshot_by_name(name=self._target_branch):
             for manifest_file in snapshot.manifests(io=self._io):
                 entries = manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True)
                 found_deleted_data_files = [entry.data_file for entry in entries if entry.data_file in self._deleted_data_files]
@@ -623,12 +632,16 @@ class UpdateSnapshot:
     _snapshot_properties: Dict[str, str]
 
     def __init__(
-        self, transaction: Transaction, io: FileIO, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str = MAIN_BRANCH
+        self,
+        transaction: Transaction,
+        io: FileIO,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        branch: Optional[str] = MAIN_BRANCH,
     ) -> None:
         self._transaction = transaction
         self._io = io
         self._snapshot_properties = snapshot_properties
-        self._branch = branch
+        self._branch = branch if branch is not None else MAIN_BRANCH
 
     def fast_append(self) -> _FastAppendFiles:
         return _FastAppendFiles(
