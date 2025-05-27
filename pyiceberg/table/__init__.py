@@ -541,7 +541,7 @@ class Transaction:
 
         partitions_to_overwrite = {data_file.partition for data_file in data_files}
         delete_filter = self._build_partition_predicate(partition_records=partitions_to_overwrite)
-        self.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties)
+        self.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties, branch=branch)
 
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
             append_files.commit_uuid = append_snapshot_commit_uuid

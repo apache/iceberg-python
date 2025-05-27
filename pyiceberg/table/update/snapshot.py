@@ -131,12 +131,12 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
 
     def _set_target_branch(self, branch: str) -> None:
         # Default is already set to MAIN_BRANCH. So branch name can't be None.
-        assert branch is not None, ValueError("Invalid branch name: null")
+        assert branch is not None, "Invalid branch name: null"
         if branch in self._transaction.table_metadata.refs:
             ref = self._transaction.table_metadata.refs[branch]
-            assert ref.snapshot_ref_type == SnapshotRefType.BRANCH, ValueError(
-                f"{branch} is a tag, not a branch. Tags cannot be targets for producing snapshots"
-            )
+            assert (
+                ref.snapshot_ref_type == SnapshotRefType.BRANCH
+            ), f"{branch} is a tag, not a branch. Tags cannot be targets for producing snapshots"
         self._target_branch = branch
 
     def append_data_file(self, data_file: DataFile) -> _SnapshotProducer[U]:
@@ -293,7 +293,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                 AssertRefSnapshotId(
                     snapshot_id=self._transaction.table_metadata.refs[self._target_branch].snapshot_id
                     if self._target_branch in self._transaction.table_metadata.refs
-                    else self._transaction.table_metadata.current_snapshot_id,
+                    else None,
                     ref=self._target_branch,
                 ),
             ),
@@ -407,46 +407,52 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         total_deleted_entries = []
         partial_rewrites_needed = False
         self._deleted_data_files = set()
-        if snapshot := self._transaction.table_metadata.current_snapshot():
-            for manifest_file in snapshot.manifests(io=self._io):
-                if manifest_file.content == ManifestContent.DATA:
-                    if not manifest_evaluators[manifest_file.partition_spec_id](manifest_file):
-                        # If the manifest isn't relevant, we can just keep it in the manifest-list
-                        existing_manifests.append(manifest_file)
-                    else:
-                        # It is relevant, let's check out the content
-                        deleted_entries = []
-                        existing_entries = []
-                        for entry in manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True):
-                            if strict_metrics_evaluator(entry.data_file) == ROWS_MUST_MATCH:
-                                # Based on the metadata, it can be dropped right away
-                                deleted_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.DELETED))
-                                self._deleted_data_files.add(entry.data_file)
-                            else:
-                                # Based on the metadata, we cannot determine if it can be deleted
-                                existing_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.EXISTING))
-                                if inclusive_metrics_evaluator(entry.data_file) != ROWS_MIGHT_NOT_MATCH:
-                                    partial_rewrites_needed = True
 
-                        if len(deleted_entries) > 0:
-                            total_deleted_entries += deleted_entries
-
-                            # Rewrite the manifest
-                            if len(existing_entries) > 0:
-                                with write_manifest(
-                                    format_version=self._transaction.table_metadata.format_version,
-                                    spec=self._transaction.table_metadata.specs()[manifest_file.partition_spec_id],
-                                    schema=self._transaction.table_metadata.schema(),
-                                    output_file=self.new_manifest_output(),
-                                    snapshot_id=self._snapshot_id,
-                                ) as writer:
-                                    for existing_entry in existing_entries:
-                                        writer.add_entry(existing_entry)
-                                existing_manifests.append(writer.to_manifest_file())
-                        else:
+        # Determine the snapshot to read manifests from for deletion
+        # Should be the current tip of the _target_branch
+        parent_snapshot_id_for_delete_source = self._parent_snapshot_id
+        if parent_snapshot_id_for_delete_source is not None:
+            snapshot = self._transaction.table_metadata.snapshot_by_id(parent_snapshot_id_for_delete_source)
+            if snapshot:  # Ensure snapshot is found
+                for manifest_file in snapshot.manifests(io=self._io):
+                    if manifest_file.content == ManifestContent.DATA:
+                        if not manifest_evaluators[manifest_file.partition_spec_id](manifest_file):
+                            # If the manifest isn't relevant, we can just keep it in the manifest-list
                             existing_manifests.append(manifest_file)
-                else:
-                    existing_manifests.append(manifest_file)
+                        else:
+                            # It is relevant, let's check out the content
+                            deleted_entries = []
+                            existing_entries = []
+                            for entry in manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True):
+                                if strict_metrics_evaluator(entry.data_file) == ROWS_MUST_MATCH:
+                                    # Based on the metadata, it can be dropped right away
+                                    deleted_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.DELETED))
+                                    self._deleted_data_files.add(entry.data_file)
+                                else:
+                                    # Based on the metadata, we cannot determine if it can be deleted
+                                    existing_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.EXISTING))
+                                    if inclusive_metrics_evaluator(entry.data_file) != ROWS_MIGHT_NOT_MATCH:
+                                        partial_rewrites_needed = True
+
+                            if len(deleted_entries) > 0:
+                                total_deleted_entries += deleted_entries
+
+                                # Rewrite the manifest
+                                if len(existing_entries) > 0:
+                                    with write_manifest(
+                                        format_version=self._transaction.table_metadata.format_version,
+                                        spec=self._transaction.table_metadata.specs()[manifest_file.partition_spec_id],
+                                        schema=self._transaction.table_metadata.schema(),
+                                        output_file=self.new_manifest_output(),
+                                        snapshot_id=self._snapshot_id,
+                                    ) as writer:
+                                        for existing_entry in existing_entries:
+                                            writer.add_entry(existing_entry)
+                                    existing_manifests.append(writer.to_manifest_file())
+                            else:
+                                existing_manifests.append(manifest_file)
+                    else:
+                        existing_manifests.append(manifest_file)
 
         return existing_manifests, total_deleted_entries, partial_rewrites_needed
 
@@ -575,19 +581,17 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
                             output_file=self.new_manifest_output(),
                             snapshot_id=self._snapshot_id,
                         ) as writer:
-                            [
-                                writer.add_entry(
-                                    ManifestEntry.from_args(
-                                        status=ManifestEntryStatus.EXISTING,
-                                        snapshot_id=entry.snapshot_id,
-                                        sequence_number=entry.sequence_number,
-                                        file_sequence_number=entry.file_sequence_number,
-                                        data_file=entry.data_file,
+                            for entry in entries:
+                                if entry.data_file not in found_deleted_data_files:
+                                    writer.add_entry(
+                                        ManifestEntry.from_args(
+                                            status=ManifestEntryStatus.EXISTING,
+                                            snapshot_id=entry.snapshot_id,
+                                            sequence_number=entry.sequence_number,
+                                            file_sequence_number=entry.file_sequence_number,
+                                            data_file=entry.data_file,
+                                        )
                                     )
-                                )
-                                for entry in entries
-                                if entry.data_file not in found_deleted_data_files
-                            ]
                         existing_files.append(writer.to_manifest_file())
         return existing_files
 
