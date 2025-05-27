@@ -14,7 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from typing import Iterator, Optional
+from typing import Iterator, Optional, Set
 
 from pyiceberg.exceptions import ValidationException
 from pyiceberg.expressions import BooleanExpression
@@ -24,7 +24,8 @@ from pyiceberg.table import Table
 from pyiceberg.table.snapshots import Operation, Snapshot, ancestors_between
 from pyiceberg.typedef import Record
 
-VALIDATE_DATA_FILES_EXIST_OPERATIONS = {Operation.OVERWRITE, Operation.REPLACE, Operation.DELETE}
+VALIDATE_DATA_FILES_EXIST_OPERATIONS: Set[Operation] = {Operation.OVERWRITE, Operation.REPLACE, Operation.DELETE}
+VALIDATE_ADDED_FILES_OPERATIONS: Set[Operation] = {Operation.APPEND, Operation.OVERWRITE}
 
 
 def validation_history(
@@ -150,3 +151,53 @@ def _validate_deleted_data_files(
     if any(conflicting_entries):
         conflicting_snapshots = {entry.snapshot_id for entry in conflicting_entries}
         raise ValidationException(f"Deleted data files were found matching the filter for snapshots {conflicting_snapshots}!")
+
+def _added_data_files(
+    table: Table,
+    starting_snapshot: Snapshot,
+    data_filter: Optional[BooleanExpression],
+    partition_set: Optional[dict[int, set[Record]]],
+    parent_snapshot: Optional[Snapshot],
+) -> Iterator[ManifestEntry]:
+    if parent_snapshot is None:
+        return
+
+    manifests, snapshot_ids = validation_history(
+        table,
+        parent_snapshot,
+        starting_snapshot,
+        VALIDATE_ADDED_FILES_OPERATIONS,
+        ManifestContent.DATA,
+    )
+
+    if data_filter is not None:
+        evaluator = _InclusiveMetricsEvaluator(table.schema(), data_filter)
+
+    for manifest in manifests:
+        for entry in manifest.fetch_manifest_entry(table.io):
+            if entry.snapshot_id not in snapshot_ids:
+                continue
+
+            if data_filter and evaluator.eval(entry.data_file) is ROWS_CANNOT_MATCH:
+                continue
+
+            if partition_set is not None:
+                partition = entry.data_file.partition
+                spec_id = entry.data_file.spec_id
+                if spec_id not in partition_set or partition not in partition_set[spec_id]:
+                    continue
+
+            yield entry
+
+
+def validate_added_data_files(
+    table: Table,
+    starting_snapshot: Snapshot,
+    data_filter: Optional[BooleanExpression],
+    parent_snapshot: Optional[Snapshot],
+) -> None:
+    conflicting_entries = _added_data_files(table, starting_snapshot, data_filter, None, parent_snapshot)
+
+    if any(conflicting_entries):
+        conflicting_snapshots = {entry.snapshot_id for entry in conflicting_entries if entry.snapshot_id is not None}
+        raise ValidationException(f"Added data files were found matching the filter for snapshots {conflicting_snapshots}!")
