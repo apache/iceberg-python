@@ -1609,19 +1609,19 @@ gcsfuse = ["fusepy"]
 
 [[package]]
 name = "getdaft"
-version = "0.4.15"
+version = "0.4.16"
 description = "Distributed Dataframes for Multimodal Data"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
 markers = "extra == \"daft\""
 files = [
-    {file = "getdaft-0.4.15-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:e77e7ca398cd87c60f2acb4a7b094859fe48dc3577b103bc86d7a69a79641cc8"},
-    {file = "getdaft-0.4.15-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:ef1e63ff3197fc677375eb538d8965900fe0dd78288e5c600503e8745f6149cc"},
-    {file = "getdaft-0.4.15-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:e4b24ef9bba477dcc86e0ae1c60c3b9a42ac769684b13bf5bddff33b55ba0bcb"},
-    {file = "getdaft-0.4.15-cp39-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:d61b565b669ba80d16fa234e8aade0ccb3d6a2a728a85c3d55e800137d2e7c74"},
-    {file = "getdaft-0.4.15-cp39-abi3-win_amd64.whl", hash = "sha256:972dcdf995d37650854d7ab31d03b9bc99492ce4c3d69199490ffe01a9766272"},
-    {file = "getdaft-0.4.15.tar.gz", hash = "sha256:2d6f6e8945a0c49ec65129ac3b7db2b070b575c55470f11322d0d01a5af668ab"},
+    {file = "getdaft-0.4.16-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:2ae85aa3f7ff95afa366e30b2645db05dc77fb1cf1b31aca4617062ed7bfd808"},
+    {file = "getdaft-0.4.16-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:410a3fa24404ce302fd7278184fcda901393095a03b3ff35e7fb2ac06207c383"},
+    {file = "getdaft-0.4.16-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:45f816ce0dc897c4a69a41f5b8bc241192dadfe63abcc6dd0d6a61c85bf0375f"},
+    {file = "getdaft-0.4.16-cp39-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:8ab96334e5447c60d07efe33f59b11f12377aaf5d44d686b76b6733ede28421c"},
+    {file = "getdaft-0.4.16-cp39-abi3-win_amd64.whl", hash = "sha256:9834eefabb5930729e8d0122e2c0af7c908d0f222e0ef2f5b091a40598da0e78"},
+    {file = "getdaft-0.4.16.tar.gz", hash = "sha256:3f407b710000f640e9c790b886615fe677a32b9dcbde3085fe026152f2233785"},
 ]
 
 [package.dependencies]
@@ -1632,7 +1632,7 @@ tqdm = "*"
 typing-extensions = {version = ">=4.0.0", markers = "python_full_version < \"3.10.0\""}
 
 [package.extras]
-all = ["daft[aws,azure,deltalake,gcp,iceberg,numpy,pandas,ray,sql,unity]"]
+all = ["daft[aws,azure,deltalake,gcp,iceberg,numpy,pandas,ray,spark,sql,unity]"]
 aws = ["boto3"]
 deltalake = ["deltalake", "packaging"]
 hudi = ["pyarrow (>=8.0.0)"]
@@ -1641,6 +1641,7 @@ lance = ["pylance"]
 numpy = ["numpy"]
 pandas = ["pandas"]
 ray = ["packaging", "ray[client,data] (>=2.0.0) ; platform_system != \"Windows\"", "ray[client,data] (>=2.10.0) ; platform_system == \"Windows\""]
+spark = ["googleapis-common-protos (==1.56.4)", "grpcio (>=1.48,<1.57)", "grpcio-status (>=1.48,<1.57)", "numpy (>=1.15)", "pandas (>=1.0.5)", "py4j (>=0.10.9.7)", "pyspark"]
 sql = ["connectorx", "sqlalchemy", "sqlglot"]
 unity = ["httpx (<=0.27.2)", "unitycatalog"]
 
