@@ -5427,18 +5427,15 @@ test = ["pytest", "tornado (>=4.5)", "typeguard"]
 
 [[package]]
 name = "thrift"
-version = "0.21.0"
+version = "0.22.0"
 description = "Python bindings for the Apache Thrift RPC system"
 optional = true
 python-versions = "*"
 groups = ["main"]
 markers = "extra == \"hive-kerberos\" or extra == \"hive\""
 files = [
-    {file = "thrift-0.21.0.tar.gz", hash = "sha256:5e6f7c50f936ebfa23e924229afc95eb219f8c8e5a83202dd4a391244803e402"},
+    {file = "thrift-0.22.0.tar.gz", hash = "sha256:42e8276afbd5f54fe1d364858b6877bc5e5a4a5ed69f6a005b94ca4918fe1466"},
 ]
-
-[package.dependencies]
-six = ">=1.7.2"
 
 [package.extras]
 all = ["tornado (>=4.0)", "twisted"]
