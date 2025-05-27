@@ -87,7 +87,7 @@ from pyiceberg.table.metadata import (
 from pyiceberg.table.name_mapping import (
     NameMapping,
 )
-from pyiceberg.table.refs import SnapshotRef
+from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
 from pyiceberg.table.snapshots import (
     Snapshot,
     SnapshotLogEntry,
@@ -437,6 +437,9 @@ class Transaction:
         Returns:
             A new UpdateSnapshot
         """
+        if branch is None:
+            branch = MAIN_BRANCH
+
         return UpdateSnapshot(self, io=self._table.io, branch=branch, snapshot_properties=snapshot_properties)
 
     def update_statistics(self) -> UpdateStatistics:

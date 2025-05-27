@@ -105,6 +105,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     _added_data_files: List[DataFile]
     _manifest_num_counter: itertools.count[int]
     _deleted_data_files: Set[DataFile]
+    _target_branch = MAIN_BRANCH
 
     def __init__(
         self,
@@ -124,20 +125,20 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._deleted_data_files = set()
         self.snapshot_properties = snapshot_properties
         self._manifest_num_counter = itertools.count(0)
-        self._set_target_branch(branch=branch)
+        self._target_branch = self._validate_target_branch(branch=branch)
         self._parent_snapshot_id = (
             snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.snapshot_by_name(self._target_branch)) else None
         )
 
-    def _set_target_branch(self, branch: str) -> None:
+    def _validate_target_branch(self, branch: str) -> str:
         # Default is already set to MAIN_BRANCH. So branch name can't be None.
-        assert branch is not None, "Invalid branch name: null"
+        if branch is None:
+            raise ValueError("Invalid branch name: null")
         if branch in self._transaction.table_metadata.refs:
             ref = self._transaction.table_metadata.refs[branch]
-            assert (
-                ref.snapshot_ref_type == SnapshotRefType.BRANCH
-            ), f"{branch} is a tag, not a branch. Tags cannot be targets for producing snapshots"
-        self._target_branch = branch
+            if ref.snapshot_ref_type != SnapshotRefType.BRANCH:
+                raise ValueError(f"{branch} is a tag, not a branch. Tags cannot be targets for producing snapshots")
+        return branch
 
     def append_data_file(self, data_file: DataFile) -> _SnapshotProducer[U]:
         self._added_data_files.append(data_file)
@@ -639,13 +640,13 @@ class UpdateSnapshot:
         self,
         transaction: Transaction,
         io: FileIO,
+        branch: str,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
-        branch: Optional[str] = MAIN_BRANCH,
     ) -> None:
         self._transaction = transaction
         self._io = io
         self._snapshot_properties = snapshot_properties
-        self._branch = branch if branch is not None else MAIN_BRANCH
+        self._branch = branch
 
     def fast_append(self) -> _FastAppendFiles:
         return _FastAppendFiles(
