@@ -117,6 +117,7 @@ class CatalogType(Enum):
     DYNAMODB = "dynamodb"
     SQL = "sql"
     IN_MEMORY = "in-memory"
+    BIGQUERY = "bigquery"
 
 
 def load_rest(name: str, conf: Properties) -> Catalog:
@@ -171,6 +172,15 @@ def load_in_memory(name: str, conf: Properties) -> Catalog:
     except ImportError as exc:
         raise NotInstalledError("SQLAlchemy support not installed: pip install 'pyiceberg[sql-sqlite]'") from exc
 
+def load_bigquery(name: str, conf: Properties) -> Catalog:
+    try:
+        from pyiceberg.catalog.bigquery_metastore import BigQueryMetastoreCatalog
+
+        return BigQueryMetastoreCatalog(name, **conf)
+    except ImportError as exc:
+        raise NotInstalledError("BigQuery support not installed: pip install 'pyiceberg[bigquery]'") from exc
+
+
 
 AVAILABLE_CATALOGS: dict[CatalogType, Callable[[str, Properties], Catalog]] = {
     CatalogType.REST: load_rest,
@@ -179,6 +189,7 @@ AVAILABLE_CATALOGS: dict[CatalogType, Callable[[str, Properties], Catalog]] = {
     CatalogType.DYNAMODB: load_dynamodb,
     CatalogType.SQL: load_sql,
     CatalogType.IN_MEMORY: load_in_memory,
+    CatalogType.BIGQUERY: load_bigquery,
 }
 
 
