@@ -72,6 +72,7 @@ ray = [
 python-snappy = { version = ">=0.6.0,<1.0.0", optional = true }
 thrift = { version = ">=0.13.0,<1.0.0", optional = true }
 boto3 = { version = ">=1.24.59", optional = true }
+google-cloud-bigquery = { version = "^3.33.0", optional = true }
 s3fs = { version = ">=2023.1.0", optional = true }
 adlfs = { version = ">=2023.1.0", optional = true }
 gcsfs = { version = ">=2023.1.0", optional = true }
@@ -307,6 +308,7 @@ s3fs = ["s3fs"]
 glue = ["boto3"]
 adlfs = ["adlfs"]
 dynamodb = ["boto3"]
+bigquery = ["google-cloud-bigquery"]
 zstandard = ["zstandard"]
 sql-postgres = ["sqlalchemy", "psycopg2-binary"]
 sql-sqlite = ["sqlalchemy"]
