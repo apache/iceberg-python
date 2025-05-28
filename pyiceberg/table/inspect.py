@@ -702,6 +702,10 @@ class InspectTable:
         _all_known_files["manifest_lists"] = {snapshot.manifest_list for snapshot in snapshots}
         _all_known_files["statistics"] = {statistic.statistics_path for statistic in self.tbl.metadata.statistics}
 
+        metadata_files = {entry.metadata_file for entry in self.tbl.metadata.metadata_log}
+        metadata_files.add(self.tbl.metadata_location)  # Include current metadata file
+        _all_known_files["metadata"] = metadata_files
+
         executor = ExecutorFactory.get_or_create()
         snapshot_ids = [snapshot.snapshot_id for snapshot in snapshots]
         files_by_snapshots: Iterator[Set[str]] = executor.map(
