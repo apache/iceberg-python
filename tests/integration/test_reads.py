@@ -48,7 +48,7 @@ from pyiceberg.io.pyarrow import (
     pyarrow_to_schema,
 )
 from pyiceberg.schema import Schema
-from pyiceberg.table import Table
+from pyiceberg.table import Table, update_table_metadata
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -59,6 +59,7 @@ from pyiceberg.types import (
     TimestampType,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
+from pyiceberg.table.update import SetPropertiesUpdate, RemovePropertiesUpdate
 
 DEFAULT_PROPERTIES = {"write.parquet.compression-codec": "zstd"}
 
@@ -110,6 +111,23 @@ def test_table_properties(catalog: Catalog) -> None:
     with pytest.raises(ValidationError) as exc_info:
         table.transaction().set_properties(property_name=None).commit_transaction()
     assert "None type is not a supported value in properties: property_name" in str(exc_info.value)
+
+    if isinstance(catalog, HiveCatalog):
+        table.transaction().set_properties({"abc": "def", "p1": "123"}).commit_transaction()
+
+        hive_client: _HiveClient = _HiveClient(catalog.properties["uri"])
+
+        with hive_client as open_client:
+            hive_table = open_client.get_table(*TABLE_NAME)
+            assert hive_table.parameters.get("abc") == "def"
+            assert hive_table.parameters.get("p1") == "123"
+            assert hive_table.parameters.get("not_exist_parameter") is None
+
+        table.transaction().remove_properties("abc").commit_transaction()
+
+        with hive_client as open_client:
+            hive_table = open_client.get_table(*TABLE_NAME)
+            assert hive_table.parameters.get("abc") is None
 
 
 @pytest.mark.integration
