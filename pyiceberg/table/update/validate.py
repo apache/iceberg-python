@@ -152,6 +152,7 @@ def _validate_deleted_data_files(
         conflicting_snapshots = {entry.snapshot_id for entry in conflicting_entries}
         raise ValidationException(f"Deleted data files were found matching the filter for snapshots {conflicting_snapshots}!")
 
+
 def _added_data_files(
     table: Table,
     starting_snapshot: Snapshot,
@@ -190,7 +191,7 @@ def _added_data_files(
             yield entry
 
 
-def validate_added_data_files(
+def _validate_added_data_files(
     table: Table,
     starting_snapshot: Snapshot,
     data_filter: Optional[BooleanExpression],
