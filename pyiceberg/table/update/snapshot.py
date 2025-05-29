@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Callable, Dict, Generic, List, Optional, Set, 
 
 from sortedcontainers import SortedList
 
+from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.expressions import (
     AlwaysFalse,
     BooleanExpression,
@@ -60,6 +61,7 @@ from pyiceberg.table.snapshots import (
     Snapshot,
     SnapshotSummaryCollector,
     Summary,
+    ancestors_of,
     update_snapshot_summaries,
 )
 from pyiceberg.table.update import (
@@ -249,6 +251,21 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         )
         location_provider = self._transaction._table.location_provider()
         manifest_list_file_path = location_provider.new_metadata_location(file_name)
+
+        # get current snapshot id and starting snapshot id, and validate that there are no conflicts
+        from pyiceberg.table import StagedTable
+
+        if not isinstance(self._transaction._table, StagedTable):
+            starting_snapshot = self._transaction.table_metadata.current_snapshot()
+            current_snapshot = self._transaction._table.refresh().metadata.current_snapshot()
+
+            if starting_snapshot is not None and current_snapshot is not None:
+                self._validate(starting_snapshot, current_snapshot)
+
+            # If the current snapshot is not the same as the parent snapshot, update the parent snapshot id
+            if current_snapshot is not None and current_snapshot.snapshot_id != self._parent_snapshot_id:
+                self._parent_snapshot_id = current_snapshot.snapshot_id
+
         with write_manifest_list(
             format_version=self._transaction.table_metadata.format_version,
             output_file=self._io.new_output(manifest_list_file_path),
@@ -276,6 +293,30 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             ),
             (AssertRefSnapshotId(snapshot_id=self._transaction.table_metadata.current_snapshot_id, ref="main"),),
         )
+
+    def _validate(self, starting_snapshot: Snapshot, current_snapshot: Snapshot) -> None:
+        # Define allowed operations for each type of operation
+        allowed_operations = {
+            Operation.APPEND: {Operation.APPEND, Operation.REPLACE, Operation.OVERWRITE, Operation.DELETE},
+            Operation.REPLACE: {},
+            Operation.OVERWRITE: set(),
+            Operation.DELETE: set(),
+        }
+
+        # get all the snapshots between the current snapshot id and the parent id
+        snapshots = ancestors_of(current_snapshot, self._transaction._table.metadata)
+
+        for snapshot in snapshots:
+            if snapshot.snapshot_id == starting_snapshot.snapshot_id:
+                break
+
+            snapshot_operation = snapshot.summary.operation if snapshot.summary is not None else None
+
+            if snapshot_operation not in allowed_operations[self._operation]:
+                raise CommitFailedException(
+                    f"Operation {snapshot_operation} is not allowed when performing {self._operation}. "
+                    "Check for overlaps or conflicts."
+                )
 
     @property
     def snapshot_id(self) -> int:
