@@ -1158,6 +1158,30 @@ def test_hive_catalog_storage_descriptor(
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_hive_catalog_storage_descriptor_has_changed(
+    session_catalog_hive: HiveCatalog,
+    pa_schema: pa.Schema,
+    arrow_table_with_null: pa.Table,
+    spark: SparkSession,
+    format_version: int,
+) -> None:
+    tbl = _create_table(
+        session_catalog_hive, "default.test_storage_descriptor", {"format-version": format_version}, [arrow_table_with_null]
+    )
+
+    with tbl.transaction() as tx:
+        with tx.update_schema() as schema:
+            schema.update_column("string_long", doc="this is string_long")
+            schema.update_column("binary", doc="this is binary")
+
+    with session_catalog_hive._client as open_client:
+        hive_table = session_catalog_hive._get_hive_table(open_client, "default", "test_storage_descriptor")
+        assert "this is string_long" in str(hive_table.sd)
+        assert "this is binary" in str(hive_table.sd)
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_sanitize_character_partitioned(catalog: Catalog) -> None:
     table_name = "default.test_table_partitioned_sanitized_character"
