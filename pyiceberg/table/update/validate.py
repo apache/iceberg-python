@@ -160,6 +160,18 @@ def _added_data_files(
     partition_set: Optional[dict[int, set[Record]]],
     parent_snapshot: Optional[Snapshot],
 ) -> Iterator[ManifestEntry]:
+    """Return manifest entries for data files added between the starting snapshot and parent snapshot.
+
+    Args:
+        table: Table to get the history from
+        starting_snapshot: Starting snapshot to get the history from
+        data_filter: Optional filter to match data files
+        partition_set: Optional set of partitions to match data files
+        parent_snapshot: Parent snapshot to get the history from
+
+    Returns:
+        Iterator of manifest entries for added data files matching the conditions
+    """
     if parent_snapshot is None:
         return
 
@@ -197,8 +209,16 @@ def _validate_added_data_files(
     data_filter: Optional[BooleanExpression],
     parent_snapshot: Optional[Snapshot],
 ) -> None:
-    conflicting_entries = _added_data_files(table, starting_snapshot, data_filter, None, parent_snapshot)
+    """Validate that no files matching a filter have been added to the table since a starting snapshot.
 
+    Args:
+        table: Table to validate
+        starting_snapshot: Snapshot current at the start of the operation
+        data_filter: Expression used to find added data files
+        parent_snapshot: Ending snapshot on the branch being validated
+
+    """
+    conflicting_entries = _added_data_files(table, starting_snapshot, data_filter, None, parent_snapshot)
     if any(conflicting_entries):
         conflicting_snapshots = {entry.snapshot_id for entry in conflicting_entries if entry.snapshot_id is not None}
         raise ValidationException(f"Added data files were found matching the filter for snapshots {conflicting_snapshots}!")
