@@ -20,6 +20,7 @@ from pyiceberg.exceptions import ValidationException
 from pyiceberg.expressions import BooleanExpression
 from pyiceberg.expressions.visitors import ROWS_CANNOT_MATCH, _InclusiveMetricsEvaluator
 from pyiceberg.manifest import ManifestContent, ManifestEntry, ManifestEntryStatus, ManifestFile
+from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.table.snapshots import Operation, Snapshot, ancestors_between
 from pyiceberg.typedef import Record
@@ -78,6 +79,47 @@ def validation_history(
     return manifests_files, snapshots
 
 
+def _filter_manifest_entries(
+    entry: ManifestEntry,
+    snapshot_ids: set[int],
+    data_filter: Optional[BooleanExpression],
+    partition_set: Optional[dict[int, set[Record]]],
+    entry_status: Optional[ManifestEntryStatus],
+    schema: Schema,
+) -> bool:
+    """Filter manifest entries based on data filter and partition set.
+
+    Args:
+        entry: Manifest entry to filter
+        snapshot_ids: set of snapshot ids to match data files
+        data_filter: Optional filter to match data files
+        partition_set: Optional set of partitions to match data files
+        status: Optional status to match data files
+        table: Table containing the schema for filtering
+
+    Returns:
+        True if the entry should be included, False otherwise
+    """
+    if entry.snapshot_id not in snapshot_ids:
+        return False
+
+    if entry_status is not None and entry.status != entry_status:
+        return False
+
+    if data_filter is not None:
+        evaluator = _InclusiveMetricsEvaluator(schema, data_filter)
+        if evaluator.eval(entry.data_file) is ROWS_CANNOT_MATCH:
+            return False
+
+    if partition_set is not None:
+        partition = entry.data_file.partition
+        spec_id = entry.data_file.spec_id
+        if spec_id not in partition_set or partition not in partition_set[spec_id]:
+            return False
+
+    return True
+
+
 def _deleted_data_files(
     table: Table,
     starting_snapshot: Snapshot,
@@ -109,27 +151,12 @@ def _deleted_data_files(
         ManifestContent.DATA,
     )
 
-    if data_filter is not None:
-        evaluator = _InclusiveMetricsEvaluator(table.schema(), data_filter).eval
-
     for manifest in manifests:
         for entry in manifest.fetch_manifest_entry(table.io, discard_deleted=False):
-            if entry.snapshot_id not in snapshot_ids:
-                continue
-
-            if entry.status != ManifestEntryStatus.DELETED:
-                continue
-
-            if data_filter is not None and evaluator(entry.data_file) is ROWS_CANNOT_MATCH:
-                continue
-
-            if partition_set is not None:
-                spec_id = entry.data_file.spec_id
-                partition = entry.data_file.partition
-                if spec_id not in partition_set or partition not in partition_set[spec_id]:
-                    continue
-
-            yield entry
+            if _filter_manifest_entries(
+                entry, snapshot_ids, data_filter, partition_set, ManifestEntryStatus.DELETED, table.schema()
+            ):
+                yield entry
 
 
 def _validate_deleted_data_files(
@@ -183,24 +210,10 @@ def _added_data_files(
         ManifestContent.DATA,
     )
 
-    if data_filter is not None:
-        evaluator = _InclusiveMetricsEvaluator(table.schema(), data_filter)
-
     for manifest in manifests:
         for entry in manifest.fetch_manifest_entry(table.io):
-            if entry.snapshot_id not in snapshot_ids:
-                continue
-
-            if data_filter and evaluator.eval(entry.data_file) is ROWS_CANNOT_MATCH:
-                continue
-
-            if partition_set is not None:
-                partition = entry.data_file.partition
-                spec_id = entry.data_file.spec_id
-                if spec_id not in partition_set or partition not in partition_set[spec_id]:
-                    continue
-
-            yield entry
+            if _filter_manifest_entries(entry, snapshot_ids, data_filter, partition_set, None, table.schema()):
+                yield entry
 
 
 def _validate_added_data_files(
