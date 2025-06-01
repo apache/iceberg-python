@@ -25,7 +25,7 @@ from pyiceberg.table.snapshots import Operation, Snapshot, ancestors_between
 from pyiceberg.typedef import Record
 
 VALIDATE_DATA_FILES_EXIST_OPERATIONS: Set[Operation] = {Operation.OVERWRITE, Operation.REPLACE, Operation.DELETE}
-VALIDATE_ADDED_FILES_OPERATIONS: Set[Operation] = {Operation.APPEND, Operation.OVERWRITE}
+VALIDATE_ADDED_DATA_FILES_OPERATIONS: Set[Operation] = {Operation.APPEND, Operation.OVERWRITE}
 
 
 def validation_history(
@@ -179,7 +179,7 @@ def _added_data_files(
         table,
         parent_snapshot,
         starting_snapshot,
-        VALIDATE_ADDED_FILES_OPERATIONS,
+        VALIDATE_ADDED_DATA_FILES_OPERATIONS,
         ManifestContent.DATA,
     )
 
