@@ -1864,7 +1864,7 @@ class DataScan(TableScan):
             self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
         ).to_table(self.plan_files())
 
-    def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
+    def to_arrow_batch_reader(self, concurrent_tasks: Optional[int] = None) -> pa.RecordBatchReader:
         """Return an Arrow RecordBatchReader from this DataScan.
 
         For large results, using a RecordBatchReader requires less memory than
@@ -1882,7 +1882,7 @@ class DataScan(TableScan):
         target_schema = schema_to_pyarrow(self.projection())
         batches = ArrowScan(
             self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
-        ).to_record_batches(self.plan_files())
+        ).to_record_batches(self.plan_files(), concurrent_tasks=concurrent_tasks)
 
         return pa.RecordBatchReader.from_batches(
             target_schema,

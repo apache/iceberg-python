@@ -1625,7 +1625,9 @@ class ArrowScan:
 
         return result
 
-    def to_record_batches(self, tasks: Iterable[FileScanTask]) -> Iterator[pa.RecordBatch]:
+    def to_record_batches(
+        self, tasks: Iterable[FileScanTask], concurrent_tasks: Optional[int] = None
+    ) -> Iterator[pa.RecordBatch]:
         """Scan the Iceberg table and return an Iterator[pa.RecordBatch].
 
         Returns an Iterator of pa.RecordBatch with data from the Iceberg table
@@ -1634,6 +1636,7 @@ class ArrowScan:
 
         Args:
             tasks: FileScanTasks representing the data files and delete files to read from.
+            concurrent_tasks: number of concurrent tasks
 
         Returns:
             An Iterator of PyArrow RecordBatches.
@@ -1643,8 +1646,20 @@ class ArrowScan:
             ResolveError: When a required field cannot be found in the file
             ValueError: When a field type in the file cannot be projected to the schema type
         """
+        from concurrent.futures import ThreadPoolExecutor
+
         deletes_per_file = _read_all_delete_files(self._io, tasks)
-        return self._record_batches_from_scan_tasks_and_deletes(tasks, deletes_per_file)
+
+        if concurrent_tasks is not None:
+            with ThreadPoolExecutor(max_workers=concurrent_tasks) as pool:
+                for batches in pool.map(
+                    lambda task: list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file)), tasks
+                ):
+                    for batch in batches:
+                        yield batch
+
+        else:
+            return self._record_batches_from_scan_tasks_and_deletes(tasks, deletes_per_file)
 
     def _record_batches_from_scan_tasks_and_deletes(
         self, tasks: Iterable[FileScanTask], deletes_per_file: Dict[str, List[ChunkedArray]]
