@@ -29,6 +29,7 @@ import pytest
 import thrift.transport.TSocket
 from hive_metastore.ttypes import (
     AlreadyExistsException,
+    EnvironmentContext,
     FieldSchema,
     InvalidOperationException,
     LockResponse,
@@ -44,6 +45,8 @@ from hive_metastore.ttypes import Table as HiveTable
 
 from pyiceberg.catalog import PropertiesUpdateSummary
 from pyiceberg.catalog.hive import (
+    DO_NOT_UPDATE_STATS,
+    DO_NOT_UPDATE_STATS_DEFAULT,
     HIVE_KERBEROS_AUTH,
     LOCK_CHECK_MAX_WAIT_TIME,
     LOCK_CHECK_MIN_WAIT_TIME,
@@ -874,7 +877,7 @@ def test_rename_table(hive_table: HiveTable) -> None:
 
     catalog._client = MagicMock()
     catalog._client.__enter__().get_table.side_effect = [hive_table, renamed_table]
-    catalog._client.__enter__().alter_table.return_value = None
+    catalog._client.__enter__().alter_table_with_environment_context.return_value = None
 
     from_identifier = ("default", "new_tabl2e")
     to_identifier = ("default", "new_tabl3e")
@@ -884,7 +887,12 @@ def test_rename_table(hive_table: HiveTable) -> None:
 
     calls = [call(dbname="default", tbl_name="new_tabl2e"), call(dbname="default", tbl_name="new_tabl3e")]
     catalog._client.__enter__().get_table.assert_has_calls(calls)
-    catalog._client.__enter__().alter_table.assert_called_with(dbname="default", tbl_name="new_tabl2e", new_tbl=renamed_table)
+    catalog._client.__enter__().alter_table_with_environment_context.assert_called_with(
+        dbname="default",
+        tbl_name="new_tabl2e",
+        new_tbl=renamed_table,
+        environment_context=EnvironmentContext(properties={DO_NOT_UPDATE_STATS: DO_NOT_UPDATE_STATS_DEFAULT}),
+    )
 
 
 def test_rename_table_from_self_identifier(hive_table: HiveTable) -> None:
@@ -902,7 +910,7 @@ def test_rename_table_from_self_identifier(hive_table: HiveTable) -> None:
     renamed_table.tableName = "new_tabl3e"
 
     catalog._client.__enter__().get_table.side_effect = [hive_table, renamed_table]
-    catalog._client.__enter__().alter_table.return_value = None
+    catalog._client.__enter__().alter_table_with_environment_context.return_value = None
     to_identifier = ("default", "new_tabl3e")
     table = catalog.rename_table(from_table.name(), to_identifier)
 
@@ -910,14 +918,19 @@ def test_rename_table_from_self_identifier(hive_table: HiveTable) -> None:
 
     calls = [call(dbname="default", tbl_name="new_tabl2e"), call(dbname="default", tbl_name="new_tabl3e")]
     catalog._client.__enter__().get_table.assert_has_calls(calls)
-    catalog._client.__enter__().alter_table.assert_called_with(dbname="default", tbl_name="new_tabl2e", new_tbl=renamed_table)
+    catalog._client.__enter__().alter_table_with_environment_context.assert_called_with(
+        dbname="default",
+        tbl_name="new_tabl2e",
+        new_tbl=renamed_table,
+        environment_context=EnvironmentContext(properties={DO_NOT_UPDATE_STATS: DO_NOT_UPDATE_STATS_DEFAULT}),
+    )
 
 
 def test_rename_table_from_does_not_exists() -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
     catalog._client = MagicMock()
-    catalog._client.__enter__().alter_table.side_effect = NoSuchObjectException(
+    catalog._client.__enter__().alter_table_with_environment_context.side_effect = NoSuchObjectException(
         message="hive.default.does_not_exists table not found"
     )
 
@@ -931,7 +944,7 @@ def test_rename_table_to_namespace_does_not_exists() -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
     catalog._client = MagicMock()
-    catalog._client.__enter__().alter_table.side_effect = InvalidOperationException(
+    catalog._client.__enter__().alter_table_with_environment_context.side_effect = InvalidOperationException(
         message="Unable to change partition or table. Database default does not exist Check metastore logs for detailed stack.does_not_exists"
     )
 

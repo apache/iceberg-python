@@ -80,7 +80,8 @@ ADLS_ACCOUNT_KEY = "adls.account-key"
 ADLS_SAS_TOKEN = "adls.sas-token"
 ADLS_TENANT_ID = "adls.tenant-id"
 ADLS_CLIENT_ID = "adls.client-id"
-ADLS_ClIENT_SECRET = "adls.client-secret"
+ADLS_CLIENT_SECRET = "adls.client-secret"
+ADLS_ACCOUNT_HOST = "adls.account-host"
 GCS_TOKEN = "gcs.oauth2.token"
 GCS_TOKEN_EXPIRES_AT_MS = "gcs.oauth2.token-expires-at"
 GCS_PROJECT_ID = "gcs.project-id"
@@ -92,6 +93,8 @@ GCS_SESSION_KWARGS = "gcs.session-kwargs"
 GCS_SERVICE_HOST = "gcs.service.host"
 GCS_DEFAULT_LOCATION = "gcs.default-bucket-location"
 GCS_VERSION_AWARE = "gcs.version-aware"
+HF_ENDPOINT = "hf.endpoint"
+HF_TOKEN = "hf.token"
 PYARROW_USE_LARGE_TYPES_ON_READ = "pyarrow.use-large-types-on-read"
 
 
@@ -306,6 +309,7 @@ SCHEMA_TO_FILE_IO: Dict[str, List[str]] = {
     "viewfs": [ARROW_FILE_IO],
     "abfs": [FSSPEC_FILE_IO],
     "abfss": [FSSPEC_FILE_IO],
+    "hf": [FSSPEC_FILE_IO],
 }
 
 

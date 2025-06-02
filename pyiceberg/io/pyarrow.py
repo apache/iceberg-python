@@ -636,6 +636,12 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.binary(len(fixed_type))
 
     def visit_decimal(self, decimal_type: DecimalType) -> pa.DataType:
+        # It looks like decimal{32,64} is not fully implemented:
+        # https://github.com/apache/arrow/issues/25483
+        # https://github.com/apache/arrow/issues/43956
+        # However, if we keep it as 128 in memory, and based on the
+        # precision/scale Arrow will map it to INT{32,64}
+        # https://github.com/apache/arrow/blob/598938711a8376cbfdceaf5c77ab0fd5057e6c02/cpp/src/parquet/arrow/schema.cc#L380-L392
         return pa.decimal128(decimal_type.precision, decimal_type.scale)
 
     def visit_boolean(self, _: BooleanType) -> pa.DataType:
@@ -2449,7 +2455,9 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         )
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
-            with pq.ParquetWriter(fos, schema=arrow_table.schema, **parquet_writer_kwargs) as writer:
+            with pq.ParquetWriter(
+                fos, schema=arrow_table.schema, store_decimal_as_integer=True, **parquet_writer_kwargs
+            ) as writer:
                 writer.write(arrow_table, row_group_size=row_group_size)
         statistics = data_file_statistics_from_parquet_metadata(
             parquet_metadata=writer.writer.metadata,
