@@ -418,7 +418,7 @@ This produces the following result with `tbl.scan().to_arrow()`:
 
 ```python
 pyarrow.Table
-city: large_string
+city: string
 lat: double
 long: double
 ----
@@ -476,7 +476,7 @@ This produces the following result with `tbl.scan().to_arrow()`:
 
 ```python
 pyarrow.Table
-city: large_string
+city: string
 lat: double
 long: double
 ----
@@ -957,14 +957,14 @@ split_offsets: list<item: int64>
 equality_ids: list<item: int32>
   child 0, item: int32
 sort_order_id: int32
-readable_metrics: struct<city: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: large_string, upper_bound: large_string> not null, lat: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null, long: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null>
+readable_metrics: struct<city: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: string, upper_bound: string> not null, lat: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null, long: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null>
   child 0, city: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: string, upper_bound: string> not null
       child 0, column_size: int64
       child 1, value_count: int64
       child 2, null_value_count: int64
       child 3, nan_value_count: int64
-      child 4, lower_bound: large_string
-      child 5, upper_bound: large_string
+      child 4, lower_bound: string
+      child 5, upper_bound: string
   child 1, lat: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null
       child 0, column_size: int64
       child 1, value_count: int64
@@ -998,7 +998,7 @@ equality_ids:[[[],[]]]
 sort_order_id:[[[],[]]]
 readable_metrics: [
   -- is_valid: all not null
-  -- child 0 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: large_string, upper_bound: large_string>
+  -- child 0 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: string, upper_bound: string>
     -- is_valid: all not null
     -- child 0 type: int64
 [140]
@@ -1008,9 +1008,9 @@ readable_metrics: [
 [0]
     -- child 3 type: int64
 [null]
-    -- child 4 type: large_string
+    -- child 4 type: string
 ["Amsterdam"]
-    -- child 5 type: large_string
+    -- child 5 type: string
 ["San Francisco"]
   -- child 1 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double>
     -- is_valid: all not null
