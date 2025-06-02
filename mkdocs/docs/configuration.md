@@ -95,6 +95,7 @@ Iceberg works with the concept of a FileIO which is a pluggable module for readi
 - **hdfs**: `PyArrowFileIO`
 - **abfs**, **abfss**: `FsspecFileIO`
 - **oss**: `PyArrowFileIO`
+- **hf**: `FsspecFileIO`
 
 You can also set the FileIO explicitly:
 
@@ -154,6 +155,7 @@ For the FileIO there are several configuration options available:
 | adls.tenant-id         | ad667be4-b811-11ed-afa1-0242ac120002                                                      | The tenant-id                                                                                                                                                                                                                                                                          |
 | adls.client-id         | ad667be4-b811-11ed-afa1-0242ac120002                                                      | The client-id                                                                                                                                                                                                                                                                          |
 | adls.client-secret     | oCA3R6P\*ka#oa1Sms2J74z...                                                                | The client-secret                                                                                                                                                                                                                                                                      |
+| adls.account-host      | accountname1.blob.core.windows.net                                                        | The storage account host. See [AzureBlobFileSystem](https://github.com/fsspec/adlfs/blob/adb9c53b74a0d420625b86dd00fbe615b43201d2/adlfs/spec.py#L125) for reference                                                                                                                   |
 
 <!-- markdown-link-check-enable-->
 
@@ -190,6 +192,17 @@ PyIceberg uses [S3FileSystem](https://arrow.apache.org/docs/python/generated/pya
 | s3.secret-access-key | password                   | Configure the static secret access key used to access the FileIO.                                                                                                                                                                                         |
 | s3.session-token     | AQoDYXdzEJr...             | Configure the static session token used to access the FileIO.                                                                                                                                                                                             |
 | s3.force-virtual-addressing   | True                       | Whether to use virtual addressing of buckets. This is set to `True` by default as OSS can only be accessed with virtual hosted style address.                                                                                                                                                                                                        |
+
+<!-- markdown-link-check-enable-->
+
+### Hugging Face
+
+<!-- markdown-link-check-disable -->
+
+| Key         | Example                  | Description                                               |
+| ----------- | ------------------------ | --------------------------------------------------------- |
+| hf.endpoint | <https://huggingface.co> | Configure the endpoint for Hugging Face                   |
+| hf.token    | hf_xxx                   | The Hugging Face token to access HF Datasets repositories |
 
 <!-- markdown-link-check-enable-->
 

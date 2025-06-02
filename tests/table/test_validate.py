@@ -22,10 +22,10 @@ import pytest
 
 from pyiceberg.exceptions import ValidationException
 from pyiceberg.io import FileIO
-from pyiceberg.manifest import ManifestContent, ManifestFile
+from pyiceberg.manifest import ManifestContent, ManifestEntry, ManifestEntryStatus, ManifestFile
 from pyiceberg.table import Table
-from pyiceberg.table.snapshots import Operation, Snapshot
-from pyiceberg.table.update.validate import validation_history
+from pyiceberg.table.snapshots import Operation, Snapshot, Summary
+from pyiceberg.table.update.validate import _deleted_data_files, _validate_deleted_data_files, _validation_history
 
 
 @pytest.fixture
@@ -69,7 +69,7 @@ def test_validation_history(table_v2_with_extensive_snapshots_and_manifests: tup
         return []
 
     with patch("pyiceberg.table.snapshots.Snapshot.manifests", new=mock_read_manifest_side_effect):
-        manifests, snapshots = validation_history(
+        manifests, snapshots = _validation_history(
             table,
             oldest_snapshot,
             newest_snapshot,
@@ -99,7 +99,7 @@ def test_validation_history_fails_on_snapshot_with_no_summary(
     )
     with patch("pyiceberg.table.update.validate.ancestors_between", return_value=[snapshot_with_no_summary]):
         with pytest.raises(ValidationException):
-            validation_history(
+            _validation_history(
                 table,
                 oldest_snapshot,
                 newest_snapshot,
@@ -129,10 +129,91 @@ def test_validation_history_fails_on_from_snapshot_not_matching_last_snapshot(
     with patch("pyiceberg.table.snapshots.Snapshot.manifests", new=mock_read_manifest_side_effect):
         with patch("pyiceberg.table.update.validate.ancestors_between", return_value=missing_oldest_snapshot):
             with pytest.raises(ValidationException):
-                validation_history(
+                _validation_history(
                     table,
                     oldest_snapshot,
                     newest_snapshot,
                     {Operation.APPEND},
                     ManifestContent.DATA,
                 )
+
+
+def test_deleted_data_files(
+    table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]],
+) -> None:
+    table, mock_manifests = table_v2_with_extensive_snapshots_and_manifests
+
+    oldest_snapshot = table.snapshots()[0]
+    newest_snapshot = cast(Snapshot, table.current_snapshot())
+
+    def mock_read_manifest_side_effect(self: Snapshot, io: FileIO) -> list[ManifestFile]:
+        """Mock the manifests method to use the snapshot_id for lookup."""
+        snapshot_id = self.snapshot_id
+        if snapshot_id in mock_manifests:
+            return mock_manifests[snapshot_id]
+        return []
+
+    # every snapshot is an append, so we should get nothing!
+    with patch("pyiceberg.table.snapshots.Snapshot.manifests", new=mock_read_manifest_side_effect):
+        result = list(
+            _deleted_data_files(
+                table=table,
+                starting_snapshot=newest_snapshot,
+                data_filter=None,
+                parent_snapshot=oldest_snapshot,
+                partition_set=None,
+            )
+        )
+
+        assert result == []
+
+    # modify second to last snapshot to be a delete
+    snapshots = table.snapshots()
+    altered_snapshot = snapshots[-2]
+    altered_snapshot = altered_snapshot.model_copy(update={"summary": Summary(operation=Operation.DELETE)})
+    snapshots[-2] = altered_snapshot
+
+    table.metadata = table.metadata.model_copy(
+        update={"snapshots": snapshots},
+    )
+
+    my_entry = ManifestEntry.from_args(
+        status=ManifestEntryStatus.DELETED,
+        snapshot_id=altered_snapshot.snapshot_id,
+    )
+
+    with (
+        patch("pyiceberg.table.snapshots.Snapshot.manifests", new=mock_read_manifest_side_effect),
+        patch("pyiceberg.manifest.ManifestFile.fetch_manifest_entry", return_value=[my_entry]),
+    ):
+        result = list(
+            _deleted_data_files(
+                table=table,
+                starting_snapshot=newest_snapshot,
+                data_filter=None,
+                parent_snapshot=oldest_snapshot,
+                partition_set=None,
+            )
+        )
+
+        assert result == [my_entry]
+
+
+def test_validate_deleted_data_files_raises_on_conflict(
+    table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]],
+) -> None:
+    table, _ = table_v2_with_extensive_snapshots_and_manifests
+    oldest_snapshot = table.snapshots()[0]
+    newest_snapshot = cast(Snapshot, table.current_snapshot())
+
+    class DummyEntry:
+        snapshot_id = 123
+
+    with patch("pyiceberg.table.update.validate._deleted_data_files", return_value=[DummyEntry()]):
+        with pytest.raises(ValidationException):
+            _validate_deleted_data_files(
+                table=table,
+                starting_snapshot=newest_snapshot,
+                data_filter=None,
+                parent_snapshot=oldest_snapshot,
+            )
