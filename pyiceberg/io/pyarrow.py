@@ -123,6 +123,7 @@ from pyiceberg.manifest import (
     DataFile,
     DataFileContent,
     FileFormat,
+    PositionDelete,
 )
 from pyiceberg.partitioning import PartitionField, PartitionFieldValue, PartitionKey, PartitionSpec, partition_record_value
 from pyiceberg.schema import (
@@ -921,18 +922,31 @@ def _construct_fragment(fs: FileSystem, data_file: DataFile, file_format_kwargs:
     return _get_file_format(data_file.file_format, **file_format_kwargs).make_fragment(path, fs)
 
 
+def _read_delete_file(fs: FileSystem, data_file: DataFile) -> Iterator[PositionDelete]:
+    delete_fragment = _construct_fragment(fs, data_file, file_format_kwargs={"pre_buffer": True, "buffer_size": ONE_MEGABYTE})
+    table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
+    for batch in table.to_batches():
+        for i in range(len(batch)):
+            row = batch.column("row")[i].as_py() if "row" in batch.schema.names else None
+            yield PositionDelete(
+                file_path=batch.column("file_path")[i].as_py(),
+                pos=batch.column("pos")[i].as_py(),
+                row=row,  # Setting row as None since it's optional and not needed for position deletes
+            )
+
+
 def _read_deletes(fs: FileSystem, data_file: DataFile) -> Dict[str, pa.ChunkedArray]:
     if data_file.file_format == FileFormat.PARQUET:
-        delete_fragment = _construct_fragment(
-            fs,
-            data_file,
-            file_format_kwargs={"dictionary_columns": ("file_path",), "pre_buffer": True, "buffer_size": ONE_MEGABYTE},
-        )
-        table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
-        table = table.unify_dictionaries()
+        deletes_by_file: Dict[str, List[int]] = {}
+        for delete in _read_delete_file(fs, data_file):
+            if delete.path not in deletes_by_file:
+                deletes_by_file[delete.path] = []
+            deletes_by_file[delete.path].append(delete.pos)
+
+        # Convert lists of positions to ChunkedArrays
         return {
-            file.as_py(): table.filter(pc.field("file_path") == file).column("pos")
-            for file in table.column("file_path").chunks[0].dictionary
+            file_path: pa.chunked_array([pa.array(positions, type=pa.int64())])
+            for file_path, positions in deletes_by_file.items()
         }
     elif data_file.file_format == FileFormat.PUFFIN:
         _, _, path = PyArrowFileIO.parse_location(data_file.file_path)
