@@ -215,6 +215,17 @@ static_table = StaticTable.from_metadata(
 
 The static-table is considered read-only.
 
+Alternatively, if your table metadata directory contains a `version-hint.text` file, you can just specify
+the table root path, and the latest metadata file will be picked automatically.
+
+```python
+from pyiceberg.table import StaticTable
+
+static_table = StaticTable.from_metadata(
+    "s3://warehouse/wh/nyc.db/taxis
+)
+```
+
 ## Check if a table exists
 
 To check whether the `bids` table exists:

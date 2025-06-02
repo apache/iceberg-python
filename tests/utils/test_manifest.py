@@ -61,7 +61,7 @@ def _verify_metadata_with_fastavro(avro_file: str, expected_metadata: Dict[str, 
 
 
 def test_read_manifest_entry(generated_manifest_entry_file: str) -> None:
-    manifest = ManifestFile(
+    manifest = ManifestFile.from_args(
         manifest_path=generated_manifest_entry_file,
         manifest_length=0,
         partition_spec_id=0,
@@ -79,13 +79,13 @@ def test_read_manifest_entry(generated_manifest_entry_file: str) -> None:
 
     data_file = manifest_entry.data_file
 
-    assert data_file.content is DataFileContent.DATA
+    assert data_file.content == DataFileContent.DATA
     assert (
         data_file.file_path
         == "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet"
     )
     assert data_file.file_format == FileFormat.PARQUET
-    assert repr(data_file.partition) == "Record[VendorID=1, tpep_pickup_datetime=1925]"
+    assert repr(data_file.partition) == "Record[1, 1925]"
     assert data_file.record_count == 19513
     assert data_file.file_size_in_bytes == 388872
     assert data_file.column_sizes == {
@@ -416,13 +416,13 @@ def test_write_manifest(
 
         data_file = manifest_entry.data_file
 
-        assert data_file.content is DataFileContent.DATA
+        assert data_file.content == DataFileContent.DATA
         assert (
             data_file.file_path
             == "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet"
         )
         assert data_file.file_format == FileFormat.PARQUET
-        assert data_file.partition == Record(VendorID=1, tpep_pickup_datetime=1925)
+        assert data_file.partition == Record(1, 1925)
         assert data_file.record_count == 19513
         assert data_file.file_size_in_bytes == 388872
         assert data_file.column_sizes == {

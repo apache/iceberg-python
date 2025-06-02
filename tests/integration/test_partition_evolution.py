@@ -142,6 +142,14 @@ def test_add_hour(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_add_hour_string_transform(catalog: Catalog) -> None:
+    table = _table(catalog)
+    table.update_spec().add_field("event_ts", "hour", "str_hour_transform").commit()
+    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 1000, HourTransform(), "str_hour_transform"))
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_add_hour_generates_default_name(catalog: Catalog) -> None:
     table = _table(catalog)
     table.update_spec().add_field("event_ts", HourTransform()).commit()

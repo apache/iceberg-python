@@ -19,7 +19,6 @@
 import io
 import struct
 from _decimal import Decimal
-from typing import Dict, List
 
 from pyiceberg.avro.encoder import BinaryEncoder
 from pyiceberg.avro.resolver import construct_writer
@@ -152,16 +151,11 @@ def test_write_simple_struct() -> None:
     schema = StructType(
         NestedField(1, "id", IntegerType(), required=True), NestedField(2, "property", StringType(), required=True)
     )
-
-    class MyStruct(Record):
-        id: int
-        property: str
-
-    my_struct = MyStruct(id=12, property="awesome")
+    struct = Record(12, "awesome")
 
     enc_str = b"awesome"
 
-    construct_writer(schema).write(encoder, my_struct)
+    construct_writer(schema).write(encoder, struct)
 
     assert output.getbuffer() == b"".join([b"\x18", zigzag_encode(len(enc_str)), enc_str])
 
@@ -175,18 +169,13 @@ def test_write_struct_with_dict() -> None:
         NestedField(2, "properties", MapType(3, IntegerType(), 4, IntegerType()), required=True),
     )
 
-    class MyStruct(Record):
-        id: int
-        properties: Dict[int, int]
-
-    my_struct = MyStruct(id=12, properties={1: 2, 3: 4})
-
-    construct_writer(schema).write(encoder, my_struct)
+    struct = Record(12, {1: 2, 3: 4})
+    construct_writer(schema).write(encoder, struct)
 
     assert output.getbuffer() == b"".join(
         [
             b"\x18",
-            zigzag_encode(len(my_struct.properties)),
+            zigzag_encode(len(struct[1])),
             zigzag_encode(1),
             zigzag_encode(2),
             zigzag_encode(3),
@@ -205,18 +194,14 @@ def test_write_struct_with_list() -> None:
         NestedField(2, "properties", ListType(3, IntegerType()), required=True),
     )
 
-    class MyStruct(Record):
-        id: int
-        properties: List[int]
+    struct = Record(12, [1, 2, 3, 4])
 
-    my_struct = MyStruct(id=12, properties=[1, 2, 3, 4])
-
-    construct_writer(schema).write(encoder, my_struct)
+    construct_writer(schema).write(encoder, struct)
 
     assert output.getbuffer() == b"".join(
         [
             b"\x18",
-            zigzag_encode(len(my_struct.properties)),
+            zigzag_encode(len(struct[1])),
             zigzag_encode(1),
             zigzag_encode(2),
             zigzag_encode(3),

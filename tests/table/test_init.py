@@ -57,7 +57,6 @@ from pyiceberg.table.snapshots import (
     Snapshot,
     SnapshotLogEntry,
     Summary,
-    ancestors_of,
 )
 from pyiceberg.table.sorting import (
     NullOrder,
@@ -225,44 +224,6 @@ def test_snapshot_by_timestamp(table_v2: Table) -> None:
     assert table_v2.snapshot_as_of_timestamp(1515100955770, inclusive=False) is None
 
 
-def test_ancestors_of(table_v2: Table) -> None:
-    assert list(ancestors_of(table_v2.current_snapshot(), table_v2.metadata)) == [
-        Snapshot(
-            snapshot_id=3055729675574597004,
-            parent_snapshot_id=3051729675574597004,
-            sequence_number=1,
-            timestamp_ms=1555100955770,
-            manifest_list="s3://a/b/2.avro",
-            summary=Summary(Operation.APPEND),
-            schema_id=1,
-        ),
-        Snapshot(
-            snapshot_id=3051729675574597004,
-            parent_snapshot_id=None,
-            sequence_number=0,
-            timestamp_ms=1515100955770,
-            manifest_list="s3://a/b/1.avro",
-            summary=Summary(Operation.APPEND),
-            schema_id=None,
-        ),
-    ]
-
-
-def test_ancestors_of_recursive_error(table_v2_with_extensive_snapshots: Table) -> None:
-    # Test RecursionError: maximum recursion depth exceeded
-    assert (
-        len(
-            list(
-                ancestors_of(
-                    table_v2_with_extensive_snapshots.current_snapshot(),
-                    table_v2_with_extensive_snapshots.metadata,
-                )
-            )
-        )
-        == 2000
-    )
-
-
 def test_snapshot_by_id_does_not_exist(table_v2: Table) -> None:
     assert table_v2.snapshot_by_id(-1) is None
 
@@ -383,16 +344,22 @@ def test_static_table_gz_same_as_table(table_v2: Table, metadata_location_gz: st
     assert static_table.metadata == table_v2.metadata
 
 
+def test_static_table_version_hint_same_as_table(table_v2: Table, table_location: str) -> None:
+    static_table = StaticTable.from_metadata(table_location)
+    assert isinstance(static_table, Table)
+    assert static_table.metadata == table_v2.metadata
+
+
 def test_static_table_io_does_not_exist(metadata_location: str) -> None:
     with pytest.raises(ValueError):
         StaticTable.from_metadata(metadata_location, {PY_IO_IMPL: "pyiceberg.does.not.exist.FileIO"})
 
 
 def test_match_deletes_to_datafile() -> None:
-    data_entry = ManifestEntry(
+    data_entry = ManifestEntry.from_args(
         status=ManifestEntryStatus.ADDED,
         sequence_number=1,
-        data_file=DataFile(
+        data_file=DataFile.from_args(
             content=DataFileContent.DATA,
             file_path="s3://bucket/0000.parquet",
             file_format=FileFormat.PARQUET,
@@ -401,10 +368,10 @@ def test_match_deletes_to_datafile() -> None:
             file_size_in_bytes=3,
         ),
     )
-    delete_entry_1 = ManifestEntry(
+    delete_entry_1 = ManifestEntry.from_args(
         status=ManifestEntryStatus.ADDED,
         sequence_number=0,  # Older than the data
-        data_file=DataFile(
+        data_file=DataFile.from_args(
             content=DataFileContent.POSITION_DELETES,
             file_path="s3://bucket/0001-delete.parquet",
             file_format=FileFormat.PARQUET,
@@ -413,10 +380,10 @@ def test_match_deletes_to_datafile() -> None:
             file_size_in_bytes=3,
         ),
     )
-    delete_entry_2 = ManifestEntry(
+    delete_entry_2 = ManifestEntry.from_args(
         status=ManifestEntryStatus.ADDED,
         sequence_number=3,
-        data_file=DataFile(
+        data_file=DataFile.from_args(
             content=DataFileContent.POSITION_DELETES,
             file_path="s3://bucket/0002-delete.parquet",
             file_format=FileFormat.PARQUET,
@@ -440,10 +407,10 @@ def test_match_deletes_to_datafile() -> None:
 
 
 def test_match_deletes_to_datafile_duplicate_number() -> None:
-    data_entry = ManifestEntry(
+    data_entry = ManifestEntry.from_args(
         status=ManifestEntryStatus.ADDED,
         sequence_number=1,
-        data_file=DataFile(
+        data_file=DataFile.from_args(
             content=DataFileContent.DATA,
             file_path="s3://bucket/0000.parquet",
             file_format=FileFormat.PARQUET,
@@ -452,10 +419,10 @@ def test_match_deletes_to_datafile_duplicate_number() -> None:
             file_size_in_bytes=3,
         ),
     )
-    delete_entry_1 = ManifestEntry(
+    delete_entry_1 = ManifestEntry.from_args(
         status=ManifestEntryStatus.ADDED,
         sequence_number=3,
-        data_file=DataFile(
+        data_file=DataFile.from_args(
             content=DataFileContent.POSITION_DELETES,
             file_path="s3://bucket/0001-delete.parquet",
             file_format=FileFormat.PARQUET,
@@ -470,10 +437,10 @@ def test_match_deletes_to_datafile_duplicate_number() -> None:
             upper_bounds={},
         ),
     )
-    delete_entry_2 = ManifestEntry(
+    delete_entry_2 = ManifestEntry.from_args(
         status=ManifestEntryStatus.ADDED,
         sequence_number=3,
-        data_file=DataFile(
+        data_file=DataFile.from_args(
             content=DataFileContent.POSITION_DELETES,
             file_path="s3://bucket/0002-delete.parquet",
             file_format=FileFormat.PARQUET,

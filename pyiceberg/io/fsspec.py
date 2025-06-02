@@ -39,9 +39,11 @@ from requests import HTTPError
 from pyiceberg.catalog import TOKEN
 from pyiceberg.exceptions import SignError
 from pyiceberg.io import (
+    ADLS_ACCOUNT_HOST,
     ADLS_ACCOUNT_KEY,
     ADLS_ACCOUNT_NAME,
     ADLS_CLIENT_ID,
+    ADLS_CLIENT_SECRET,
     ADLS_CONNECTION_STRING,
     ADLS_SAS_TOKEN,
     ADLS_TENANT_ID,
@@ -59,6 +61,8 @@ from pyiceberg.io import (
     GCS_SESSION_KWARGS,
     GCS_TOKEN,
     GCS_VERSION_AWARE,
+    HF_ENDPOINT,
+    HF_TOKEN,
     S3_ACCESS_KEY_ID,
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
@@ -67,10 +71,10 @@ from pyiceberg.io import (
     S3_REQUEST_TIMEOUT,
     S3_SECRET_ACCESS_KEY,
     S3_SESSION_TOKEN,
+    S3_SIGNER,
     S3_SIGNER_ENDPOINT,
     S3_SIGNER_ENDPOINT_DEFAULT,
     S3_SIGNER_URI,
-    ADLS_ClIENT_SECRET,
     FileIO,
     InputFile,
     InputStream,
@@ -137,7 +141,7 @@ def _s3(properties: Properties) -> AbstractFileSystem:
     config_kwargs = {}
     register_events: Dict[str, Callable[[Properties], None]] = {}
 
-    if signer := properties.get("s3.signer"):
+    if signer := properties.get(S3_SIGNER):
         logger.info("Loading signer %s", signer)
         if signer_func := SIGNERS.get(signer):
             signer_func_with_properties = partial(signer_func, properties)
@@ -162,6 +166,7 @@ def _s3(properties: Properties) -> AbstractFileSystem:
     fs = S3FileSystem(client_kwargs=client_kwargs, config_kwargs=config_kwargs)
 
     for event_name, event_function in register_events.items():
+        fs.s3.meta.events.unregister(event_name, unique_id=1925)
         fs.s3.meta.events.register_last(event_name, event_function, unique_id=1925)
 
     return fs
@@ -203,7 +208,17 @@ def _adls(properties: Properties) -> AbstractFileSystem:
         sas_token=properties.get(ADLS_SAS_TOKEN),
         tenant_id=properties.get(ADLS_TENANT_ID),
         client_id=properties.get(ADLS_CLIENT_ID),
-        client_secret=properties.get(ADLS_ClIENT_SECRET),
+        client_secret=properties.get(ADLS_CLIENT_SECRET),
+        account_host=properties.get(ADLS_ACCOUNT_HOST),
+    )
+
+
+def _hf(properties: Properties) -> AbstractFileSystem:
+    from huggingface_hub import HfFileSystem
+
+    return HfFileSystem(
+        endpoint=properties.get(HF_ENDPOINT),
+        token=properties.get(HF_TOKEN),
     )
 
 
@@ -217,6 +232,7 @@ SCHEME_TO_FS = {
     "abfss": _adls,
     "gs": _gs,
     "gcs": _gs,
+    "hf": _hf,
 }
 
 

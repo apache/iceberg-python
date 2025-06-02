@@ -549,13 +549,6 @@ class TableMetadataV3(TableMetadataCommonFields, IcebergBaseModel):
     """The table’s highest assigned sequence number, a monotonically
     increasing long that tracks the order of snapshots in a table."""
 
-    row_lineage: bool = Field(alias="row-lineage", default=False)
-    """Indicates that row-lineage is enabled on the table
-
-    For more information:
-    https://iceberg.apache.org/spec/?column-projection#row-lineage
-    """
-
     next_row_id: Optional[int] = Field(alias="next-row-id", default=None)
     """A long higher than all assigned row IDs; the next snapshot's `first-row-id`."""
 

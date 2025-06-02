@@ -22,8 +22,10 @@ from pyparsing import (
     DelimitedList,
     Group,
     MatchFirst,
+    ParseException,
     ParserElement,
     ParseResults,
+    QuotedString,
     Suppress,
     Word,
     alphanums,
@@ -79,7 +81,16 @@ NAN = CaselessKeyword("nan")
 LIKE = CaselessKeyword("like")
 
 unquoted_identifier = Word(alphas + "_", alphanums + "_$")
-quoted_identifier = Suppress('"') + unquoted_identifier + Suppress('"')
+quoted_identifier = QuotedString('"', escChar="\\", unquoteResults=True)
+
+
+@quoted_identifier.set_parse_action
+def validate_quoted_identifier(result: ParseResults) -> str:
+    if "." in result[0]:
+        raise ParseException("Expected '\"', found '.'")
+    return result[0]
+
+
 identifier = MatchFirst([unquoted_identifier, quoted_identifier]).set_results_name("identifier")
 column = DelimitedList(identifier, delim=".", combine=False).set_results_name("column")
 

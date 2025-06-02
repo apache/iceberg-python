@@ -932,3 +932,11 @@ def test_glue_endpoint_override(_bucket_initialize: None, moto_endpoint_url: str
         catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}", "glue.endpoint": test_endpoint}
     )
     assert test_catalog.glue.meta.endpoint_url == test_endpoint
+
+
+@mock_aws
+def test_glue_client_override() -> None:
+    catalog_name = "glue"
+    test_client = boto3.client("glue", region_name="us-west-2")
+    test_catalog = GlueCatalog(catalog_name, test_client)
+    assert test_catalog.glue is test_client
