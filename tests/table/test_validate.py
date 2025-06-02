@@ -30,7 +30,7 @@ from pyiceberg.table.update.validate import (
     _deleted_data_files,
     _validate_added_data_files,
     _validate_deleted_data_files,
-    validation_history,
+    _validation_history,
 )
 
 
@@ -75,7 +75,7 @@ def test_validation_history(table_v2_with_extensive_snapshots_and_manifests: tup
         return []
 
     with patch("pyiceberg.table.snapshots.Snapshot.manifests", new=mock_read_manifest_side_effect):
-        manifests, snapshots = validation_history(
+        manifests, snapshots = _validation_history(
             table,
             oldest_snapshot,
             newest_snapshot,
@@ -105,7 +105,7 @@ def test_validation_history_fails_on_snapshot_with_no_summary(
     )
     with patch("pyiceberg.table.update.validate.ancestors_between", return_value=[snapshot_with_no_summary]):
         with pytest.raises(ValidationException):
-            validation_history(
+            _validation_history(
                 table,
                 oldest_snapshot,
                 newest_snapshot,
@@ -135,7 +135,7 @@ def test_validation_history_fails_on_from_snapshot_not_matching_last_snapshot(
     with patch("pyiceberg.table.snapshots.Snapshot.manifests", new=mock_read_manifest_side_effect):
         with patch("pyiceberg.table.update.validate.ancestors_between", return_value=missing_oldest_snapshot):
             with pytest.raises(ValidationException):
-                validation_history(
+                _validation_history(
                     table,
                     oldest_snapshot,
                     newest_snapshot,

@@ -29,7 +29,7 @@ VALIDATE_DATA_FILES_EXIST_OPERATIONS: Set[Operation] = {Operation.OVERWRITE, Ope
 VALIDATE_ADDED_DATA_FILES_OPERATIONS: Set[Operation] = {Operation.APPEND, Operation.OVERWRITE}
 
 
-def validation_history(
+def _validation_history(
     table: Table,
     from_snapshot: Snapshot,
     to_snapshot: Snapshot,
@@ -143,7 +143,7 @@ def _deleted_data_files(
     if parent_snapshot is None:
         return
 
-    manifests, snapshot_ids = validation_history(
+    manifests, snapshot_ids = _validation_history(
         table,
         parent_snapshot,
         starting_snapshot,
