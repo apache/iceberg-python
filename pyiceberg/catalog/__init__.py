@@ -930,7 +930,7 @@ class MetastoreCatalog(Catalog, ABC):
 
         if warehouse_path := self.properties.get(WAREHOUSE_LOCATION):
             warehouse_path = warehouse_path.rstrip("/")
-            return f"{warehouse_path}/{database_name}.db/{table_name}"
+            return f"{warehouse_path}/{database_name}/{table_name}"
 
         raise ValueError("No default path is set, please specify a location when creating a table")
 

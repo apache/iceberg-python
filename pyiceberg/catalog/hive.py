@@ -63,6 +63,7 @@ from pyiceberg.catalog import (
     LOCATION,
     METADATA_LOCATION,
     TABLE_TYPE,
+    WAREHOUSE_LOCATION,
     MetastoreCatalog,
     PropertiesUpdateSummary,
 )
@@ -790,3 +791,16 @@ class HiveCatalog(MetastoreCatalog):
 
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError
+
+    def _get_default_warehouse_location(self, database_name: str, table_name: str) -> str:
+        """Return the default warehouse location following the Hive convention of `warehousePath/databaseName.db/tableName`."""
+        database_properties = self.load_namespace_properties(database_name)
+        if database_location := database_properties.get(LOCATION):
+            database_location = database_location.rstrip("/")
+            return f"{database_location}/{table_name}"
+
+        if warehouse_path := self.properties.get(WAREHOUSE_LOCATION):
+            warehouse_path = warehouse_path.rstrip("/")
+            return f"{warehouse_path}/{database_name}.db/{table_name}"
+
+        raise ValueError("No default path is set, please specify a location when creating a table")
