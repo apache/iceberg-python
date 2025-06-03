@@ -1646,12 +1646,10 @@ class ArrowScan:
             ResolveError: When a required field cannot be found in the file
             ValueError: When a field type in the file cannot be projected to the schema type
         """
-        from concurrent.futures import ThreadPoolExecutor
-
         deletes_per_file = _read_all_delete_files(self._io, tasks)
 
         if concurrent_tasks is not None:
-            with ThreadPoolExecutor(max_workers=concurrent_tasks) as pool:
+            with ExecutorFactory.create(max_workers=concurrent_tasks) as pool:
                 for batches in pool.map(
                     lambda task: list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file)), tasks
                 ):
