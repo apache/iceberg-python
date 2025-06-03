@@ -31,7 +31,7 @@ from pyspark.sql import SparkSession
 from pytest_mock.plugin import MockerFixture
 
 from pyiceberg.catalog import Catalog
-from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.exceptions import CommitFailedException, NoSuchTableError
 from pyiceberg.io import FileIO
 from pyiceberg.io.pyarrow import UnsupportedPyArrowTypeException, schema_to_pyarrow
 from pyiceberg.manifest import DataFile
@@ -899,6 +899,81 @@ def test_add_files_that_referenced_by_current_snapshot_with_check_duplicate_file
     with pytest.raises(ValueError) as exc_info:
         tbl.add_files(file_paths=[existing_files_in_table], check_duplicate_files=True)
     assert f"Cannot add files that are already referenced by table, files: {existing_files_in_table}" in str(exc_info.value)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_conflict_delete_delete(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = "default.test_conflict"
+    tbl1 = _create_table(session_catalog, identifier, format_version, schema=arrow_table_with_null.schema)
+    tbl1.append(arrow_table_with_null)
+    tbl2 = session_catalog.load_table(identifier)
+
+    tbl1.delete("string == 'z'")
+
+    with pytest.raises(
+        CommitFailedException, match="Operation .* is not allowed when performing .*. Check for overlaps or conflicts."
+    ):
+        # tbl2 isn't aware of the commit by tbl1
+        tbl2.delete("string == 'z'")
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_conflict_delete_append(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = "default.test_conflict"
+    tbl1 = _create_table(session_catalog, identifier, format_version, schema=arrow_table_with_null.schema)
+    tbl1.append(arrow_table_with_null)
+    tbl2 = session_catalog.load_table(identifier)
+
+    # This is allowed
+    tbl1.delete("string == 'z'")
+    tbl2.append(arrow_table_with_null)
+
+    # verify against expected table
+    arrow_table_expected = arrow_table_with_null[:2]
+    assert tbl1.scan().to_arrow() == arrow_table_expected
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_conflict_append_delete(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = "default.test_conflict"
+    tbl1 = _create_table(session_catalog, identifier, format_version, schema=arrow_table_with_null.schema)
+    tbl1.append(arrow_table_with_null)
+    tbl2 = session_catalog.load_table(identifier)
+
+    tbl1.append(arrow_table_with_null)
+
+    with pytest.raises(
+        CommitFailedException, match="Operation .* is not allowed when performing .*. Check for overlaps or conflicts."
+    ):
+        # tbl2 isn't aware of the commit by tbl1
+        tbl2.delete("string == 'z'")
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [2])
+def test_conflict_append_append(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = "default.test_conflict"
+    tbl1 = _create_table(session_catalog, identifier, format_version, schema=arrow_table_with_null.schema)
+    tbl1.append(arrow_table_with_null)
+    tbl2 = session_catalog.load_table(identifier)
+
+    tbl1.append(arrow_table_with_null)
+    tbl2.append(arrow_table_with_null)
+
+    # verify against expected table
+    arrow_table_expected = pa.concat_tables([arrow_table_with_null, arrow_table_with_null, arrow_table_with_null])
+    assert tbl1.scan().to_arrow() == arrow_table_expected
 
 
 @pytest.mark.integration
