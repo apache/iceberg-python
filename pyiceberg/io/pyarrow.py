@@ -25,7 +25,6 @@ with the pyarrow library.
 
 from __future__ import annotations
 
-import concurrent.futures
 import fnmatch
 import functools
 import itertools
@@ -36,7 +35,6 @@ import re
 import uuid
 import warnings
 from abc import ABC, abstractmethod
-from concurrent.futures import Future
 from copy import copy
 from dataclasses import dataclass
 from enum import Enum
@@ -71,7 +69,6 @@ from pyarrow.fs import (
     FileType,
     FSSpecHandler,
 )
-from sortedcontainers import SortedList
 
 from pyiceberg.conversions import to_bytes
 from pyiceberg.exceptions import ResolveError
@@ -1570,7 +1567,6 @@ class ArrowScan:
             ResolveError: When a required field cannot be found in the file
             ValueError: When a field type in the file cannot be projected to the schema type
         """
-
         arrow_schema = schema_to_pyarrow(self._projected_schema, include_field_ids=False)
 
         batches = self.to_record_batches(tasks)
@@ -1592,9 +1588,7 @@ class ArrowScan:
 
         return result
 
-    def to_record_batches(
-        self, tasks: Iterable[FileScanTask]
-    ) -> Iterator[pa.RecordBatch]:
+    def to_record_batches(self, tasks: Iterable[FileScanTask]) -> Iterator[pa.RecordBatch]:
         """Scan the Iceberg table and return an Iterator[pa.RecordBatch].
 
         Returns an Iterator of pa.RecordBatch with data from the Iceberg table
@@ -1617,26 +1611,25 @@ class ArrowScan:
         total_row_count = 0
         executor = ExecutorFactory.get_or_create()
 
-        with executor as pool:
-            should_stop = False
-            for batches in pool.map(
-                lambda task: list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file)), tasks
-            ):
-                for batch in batches:
-                    current_batch_size = len(batch)
-                    if self._limit is not None:
-                        if total_row_count + current_batch_size >= self._limit:
-                            yield batch.slice(0, self._limit - total_row_count)
+        limit_reached = False
+        for batches in executor.map(
+            lambda task: list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file)), tasks
+        ):
+            for batch in batches:
+                current_batch_size = len(batch)
+                if self._limit is not None:
+                    if total_row_count + current_batch_size >= self._limit:
+                        yield batch.slice(0, self._limit - total_row_count)
 
-                            # This break will also cancel all tasks in the Pool
-                            should_stop = True
-                            break
+                        # This break will also cancel all tasks in the Pool
+                        limit_reached = True
+                        break
 
-                    yield batch
-                    total_row_count += current_batch_size
+                yield batch
+                total_row_count += current_batch_size
 
-                if should_stop:
-                    break
+            if limit_reached:
+                break
 
     def _record_batches_from_scan_tasks_and_deletes(
         self, tasks: Iterable[FileScanTask], deletes_per_file: Dict[str, List[ChunkedArray]]
