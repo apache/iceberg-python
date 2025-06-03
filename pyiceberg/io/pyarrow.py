@@ -1617,13 +1617,12 @@ class ArrowScan:
         ):
             for batch in batches:
                 current_batch_size = len(batch)
-                if self._limit is not None:
-                    if total_row_count + current_batch_size >= self._limit:
-                        yield batch.slice(0, self._limit - total_row_count)
+                if self._limit is not None and total_row_count + current_batch_size >= self._limit:
+                    yield batch.slice(0, self._limit - total_row_count)
 
-                        # This break will also cancel all tasks in the Pool
-                        limit_reached = True
-                        break
+                    # This break will also cancel all running tasks
+                    limit_reached = True
+                    break
 
                 yield batch
                 total_row_count += current_batch_size
