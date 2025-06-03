@@ -38,7 +38,3 @@ class ExecutorFactory:
     def max_workers() -> Optional[int]:
         """Return the max number of workers configured."""
         return Config().get_int("max-workers")
-
-    @staticmethod
-    def create(max_workers: int) -> Executor:
-        return ThreadPoolExecutor(max_workers=max_workers)

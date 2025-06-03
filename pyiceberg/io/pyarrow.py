@@ -1570,47 +1570,17 @@ class ArrowScan:
             ResolveError: When a required field cannot be found in the file
             ValueError: When a field type in the file cannot be projected to the schema type
         """
-        deletes_per_file = _read_all_delete_files(self._io, tasks)
-        executor = ExecutorFactory.get_or_create()
-
-        def _table_from_scan_task(task: FileScanTask) -> pa.Table:
-            batches = list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file))
-            if len(batches) > 0:
-                return pa.Table.from_batches(batches)
-            else:
-                return None
-
-        futures = [
-            executor.submit(
-                _table_from_scan_task,
-                task,
-            )
-            for task in tasks
-        ]
-        total_row_count = 0
-        # for consistent ordering, we need to maintain future order
-        futures_index = {f: i for i, f in enumerate(futures)}
-        completed_futures: SortedList[Future[pa.Table]] = SortedList(iterable=[], key=lambda f: futures_index[f])
-        for future in concurrent.futures.as_completed(futures):
-            completed_futures.add(future)
-            if table_result := future.result():
-                total_row_count += len(table_result)
-            # stop early if limit is satisfied
-            if self._limit is not None and total_row_count >= self._limit:
-                break
-
-        # by now, we've either completed all tasks or satisfied the limit
-        if self._limit is not None:
-            _ = [f.cancel() for f in futures if not f.done()]
-
-        tables = [f.result() for f in completed_futures if f.result()]
 
         arrow_schema = schema_to_pyarrow(self._projected_schema, include_field_ids=False)
 
-        if len(tables) < 1:
+        batches = self.to_record_batches(tasks)
+        try:
+            first_batch = next(batches)
+        except StopIteration:
+            # Empty
             return pa.Table.from_batches([], schema=arrow_schema)
 
-        result = pa.concat_tables(tables, promote_options="permissive")
+        result = pa.Table.from_batches(itertools.chain([first_batch], batches))
 
         if property_as_bool(self._io.properties, PYARROW_USE_LARGE_TYPES_ON_READ, False):
             deprecation_message(
@@ -1620,13 +1590,10 @@ class ArrowScan:
             )
             result = result.cast(arrow_schema)
 
-        if self._limit is not None:
-            return result.slice(0, self._limit)
-
         return result
 
     def to_record_batches(
-        self, tasks: Iterable[FileScanTask], concurrent_tasks: Optional[int] = None
+        self, tasks: Iterable[FileScanTask]
     ) -> Iterator[pa.RecordBatch]:
         """Scan the Iceberg table and return an Iterator[pa.RecordBatch].
 
@@ -1636,7 +1603,6 @@ class ArrowScan:
 
         Args:
             tasks: FileScanTasks representing the data files and delete files to read from.
-            concurrent_tasks: number of concurrent tasks
 
         Returns:
             An Iterator of PyArrow RecordBatches.
@@ -1648,16 +1614,29 @@ class ArrowScan:
         """
         deletes_per_file = _read_all_delete_files(self._io, tasks)
 
-        if concurrent_tasks is not None:
-            with ExecutorFactory.create(max_workers=concurrent_tasks) as pool:
-                for batches in pool.map(
-                    lambda task: list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file)), tasks
-                ):
-                    for batch in batches:
-                        yield batch
+        total_row_count = 0
+        executor = ExecutorFactory.get_or_create()
 
-        else:
-            return self._record_batches_from_scan_tasks_and_deletes(tasks, deletes_per_file)
+        with executor as pool:
+            should_stop = False
+            for batches in pool.map(
+                lambda task: list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file)), tasks
+            ):
+                for batch in batches:
+                    current_batch_size = len(batch)
+                    if self._limit is not None:
+                        if total_row_count + current_batch_size >= self._limit:
+                            yield batch.slice(0, self._limit - total_row_count)
+
+                            # This break will also cancel all tasks in the Pool
+                            should_stop = True
+                            break
+
+                    yield batch
+                    total_row_count += current_batch_size
+
+                if should_stop:
+                    break
 
     def _record_batches_from_scan_tasks_and_deletes(
         self, tasks: Iterable[FileScanTask], deletes_per_file: Dict[str, List[ChunkedArray]]
