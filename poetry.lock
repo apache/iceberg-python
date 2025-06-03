@@ -1122,18 +1122,18 @@ files = [
 
 [[package]]
 name = "datafusion"
-version = "46.0.0"
+version = "47.0.0"
 description = "Build and run queries against data"
 optional = false
 python-versions = ">=3.9"
 groups = ["dev"]
 files = [
-    {file = "datafusion-46.0.0-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:4517b6d2d35fb7d9044519a9ef3388ed504d82cbbaaba4bf3fef1da673c8357a"},
-    {file = "datafusion-46.0.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:2770a1606a9d0f1f9d64648e3777413bbcff0bee7b9a1ccb067f989e3a1c7b96"},
-    {file = "datafusion-46.0.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:bc115441c17036ddd730bb6281ecc88269973691ec51279be173bd3cc3e5d219"},
-    {file = "datafusion-46.0.0-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:f40d9eeaa0ac4776bf0cea943228c945ec5bae8032263ad7871c8d82e8a2725a"},
-    {file = "datafusion-46.0.0-cp39-abi3-win_amd64.whl", hash = "sha256:2b783b3fd8ee91bedfcdb353a3e700d65b61552a84e072940f78e0cde461bb98"},
-    {file = "datafusion-46.0.0.tar.gz", hash = "sha256:e8adb6b987068585bc12f63ea51776919b09376833b2412da6cc8ff77d85c553"},
+    {file = "datafusion-47.0.0-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:ccd83a8e49fb39be06ddfa87023200a9ddc93d181247654ac951fa5720219d08"},
+    {file = "datafusion-47.0.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:43677e6284b165727031aec14d4beaa97296e991960293c61dcb66a3a9ce59b8"},
+    {file = "datafusion-47.0.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:d244ed32a2fae7c4dd292a6bfe092cc94b3b86c600eddb7d633609043d406bae"},
+    {file = "datafusion-47.0.0-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:b3304ec63fb89f27e4280226807fd033ed7f0ea36d2d69fecf68f257d975c24d"},
+    {file = "datafusion-47.0.0-cp39-abi3-win_amd64.whl", hash = "sha256:73c5d056908185c77eedcaea43a5a8ab5e1c2e747a3e34d36d3625e09a3dc2af"},
+    {file = "datafusion-47.0.0.tar.gz", hash = "sha256:19a6976731aa96a6f6e264c390c64b9e32051e866366bd69450bc77e67bc91b1"},
 ]
 
 [package.dependencies]
@@ -5977,4 +5977,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9.2, !=3.9.7"
-content-hash = "9d4fe56235c1988928b6dc5eebc9374ed92e7d6cb52e5356b21c543196f31bda"
+content-hash = "fb4fa1f20093b96c06b07ab1704e10534e365a46c590d7038a971e1bfe7b0438"
