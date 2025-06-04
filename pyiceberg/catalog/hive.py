@@ -542,6 +542,12 @@ class HiveCatalog(MetastoreCatalog):
                         metadata_location=updated_staged_table.metadata_location,
                         previous_metadata_location=current_table.metadata_location,
                     )
+                    # Update hive's schema and properties
+                    hive_table.sd = _construct_hive_storage_descriptor(
+                        updated_staged_table.schema(),
+                        updated_staged_table.location(),
+                        property_as_bool(updated_staged_table.properties, HIVE2_COMPATIBLE, HIVE2_COMPATIBLE_DEFAULT),
+                    )
                     open_client.alter_table_with_environment_context(
                         dbname=database_name,
                         tbl_name=table_name,
