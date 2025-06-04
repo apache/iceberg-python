@@ -252,9 +252,9 @@ class Snapshot(IcebergBaseModel):
         result_str = f"{operation}id={self.snapshot_id}{parent_id}{schema_id}"
         return result_str
 
-    def manifests(self, io: FileIO, table: TableMetadata) -> List[ManifestFile]:
+    def manifests(self, io: FileIO) -> List[ManifestFile]:
         """Return the manifests for the given snapshot."""
-        return list(_manifests(io, self.manifest_list, table))
+        return list(_manifests(io, self.manifest_list))
 
 
 class MetadataLogEntry(IcebergBaseModel):
