@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import urlparse
 
+import fastavro
 import pandas as pd
 import pandas.testing
 import pyarrow as pa
@@ -1841,3 +1842,22 @@ def test_read_write_decimals(session_catalog: Catalog) -> None:
     tbl.append(arrow_table)
 
     assert tbl.scan().to_arrow() == arrow_table
+
+
+@pytest.mark.integration
+def test_avro_compression_codecs(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.test_avro_compression_codecs"
+    tbl = _create_table(session_catalog, identifier, schema=arrow_table_with_null.schema, data=[arrow_table_with_null])
+
+    with tbl.io.new_input(tbl.current_snapshot().manifest_list).open() as f:
+        reader = fastavro.reader(f)
+        assert reader.codec == "deflate"
+
+    with tbl.transaction() as tx:
+        tx.set_properties(**{TableProperties.WRITE_AVRO_COMPRESSION: "null"})
+
+    tbl.append(arrow_table_with_null)
+
+    with tbl.io.new_input(tbl.current_snapshot().manifest_list).open() as f:
+        reader = fastavro.reader(f)
+        assert reader.codec == "null"
