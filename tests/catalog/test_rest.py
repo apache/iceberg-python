@@ -24,7 +24,7 @@ from requests_mock import Mocker
 
 import pyiceberg
 from pyiceberg.catalog import PropertiesUpdateSummary, load_catalog
-from pyiceberg.catalog.rest import OAUTH2_SERVER_URI, RestCatalog
+from pyiceberg.catalog.rest import OAUTH2_SERVER_URI, SNAPSHOT_LOADING_MODE, RestCatalog
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
     NamespaceAlreadyExistsError,
@@ -555,6 +555,24 @@ def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
     ]
 
 
+def test_list_namespace_with_parent_404(rest_mock: Mocker) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces?parent=some_namespace",
+        json={
+            "error": {
+                "message": "Namespace provided in the `parent` query parameter is not found",
+                "type": "NoSuchNamespaceException",
+                "code": 404,
+            }
+        },
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(NoSuchNamespaceError):
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces(("some_namespace",))
+
+
 @pytest.mark.filterwarnings(
     "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
@@ -602,6 +620,10 @@ def test_list_namespaces_token_expired_success_on_retries(rest_mock: Mocker, sta
         status_code=200,
     )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, credential=TEST_CREDENTIALS)
+    # LegacyOAuth2AuthManager is created twice through `_create_session()`
+    # which results in the token being refreshed twice when the RestCatalog is initialized.
+    assert tokens.call_count == 2
+
     assert catalog.list_namespaces() == [
         ("default",),
         ("examples",),
@@ -609,7 +631,7 @@ def test_list_namespaces_token_expired_success_on_retries(rest_mock: Mocker, sta
         ("system",),
     ]
     assert namespaces.call_count == 2
-    assert tokens.call_count == 1
+    assert tokens.call_count == 3
 
     assert catalog.list_namespaces() == [
         ("default",),
@@ -618,7 +640,7 @@ def test_list_namespaces_token_expired_success_on_retries(rest_mock: Mocker, sta
         ("system",),
     ]
     assert namespaces.call_count == 3
-    assert tokens.call_count == 1
+    assert tokens.call_count == 3
 
 
 def test_create_namespace_200(rest_mock: Mocker) -> None:
@@ -822,6 +844,29 @@ def test_load_table_200(rest_mock: Mocker, example_table_metadata_with_snapshot_
         request_headers=TEST_HEADERS,
     )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    actual = catalog.load_table(("fokko", "table"))
+    expected = Table(
+        identifier=("fokko", "table"),
+        metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
+        metadata=TableMetadataV1(**example_table_metadata_with_snapshot_v1_rest_json["metadata"]),
+        io=load_file_io(),
+        catalog=catalog,
+    )
+    # First compare the dicts
+    assert actual.metadata.model_dump() == expected.metadata.model_dump()
+    assert actual == expected
+
+
+def test_load_table_200_loading_mode(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]
+) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table?snapshots=refs",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{SNAPSHOT_LOADING_MODE: "refs"})
     actual = catalog.load_table(("fokko", "table"))
     expected = Table(
         identifier=("fokko", "table"),

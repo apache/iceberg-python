@@ -175,6 +175,7 @@ from pyiceberg.types import (
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
+from pyiceberg.utils.decimal import unscaled_to_decimal
 from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int
 from pyiceberg.utils.singleton import Singleton
@@ -408,6 +409,7 @@ class PyArrowFileIO(FileIO):
             "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
             "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
             "region": get_first_property_value(self.properties, S3_REGION, AWS_REGION),
+            "force_virtual_addressing": property_as_bool(self.properties, S3_FORCE_VIRTUAL_ADDRESSING, True),
         }
 
         if proxy_uri := self.properties.get(S3_PROXY_URI):
@@ -424,9 +426,6 @@ class PyArrowFileIO(FileIO):
 
         if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
             client_kwargs["session_name"] = session_name
-
-        if force_virtual_addressing := self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING):
-            client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, force_virtual_addressing, False)
 
         return S3FileSystem(**client_kwargs)
 
@@ -471,8 +470,8 @@ class PyArrowFileIO(FileIO):
         if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
             client_kwargs["session_name"] = session_name
 
-        if force_virtual_addressing := self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING):
-            client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, force_virtual_addressing, False)
+        if self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING) is not None:
+            client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, S3_FORCE_VIRTUAL_ADDRESSING, False)
 
         return S3FileSystem(**client_kwargs)
 
@@ -637,6 +636,12 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.binary(len(fixed_type))
 
     def visit_decimal(self, decimal_type: DecimalType) -> pa.DataType:
+        # It looks like decimal{32,64} is not fully implemented:
+        # https://github.com/apache/arrow/issues/25483
+        # https://github.com/apache/arrow/issues/43956
+        # However, if we keep it as 128 in memory, and based on the
+        # precision/scale Arrow will map it to INT{32,64}
+        # https://github.com/apache/arrow/blob/598938711a8376cbfdceaf5c77ab0fd5057e6c02/cpp/src/parquet/arrow/schema.cc#L380-L392
         return pa.decimal128(decimal_type.precision, decimal_type.scale)
 
     def visit_boolean(self, _: BooleanType) -> pa.DataType:
@@ -1440,10 +1445,14 @@ def _task_to_record_batches(
 
             # Apply the user filter
             if pyarrow_filter is not None:
-                current_batch = current_batch.filter(pyarrow_filter)
+                # Temporary fix until PyArrow 21 is released ( https://github.com/apache/arrow/pull/46057 )
+                table = pa.Table.from_batches([current_batch])
+                table = table.filter(pyarrow_filter)
                 # skip empty batches
-                if current_batch.num_rows == 0:
+                if table.num_rows == 0:
                     continue
+
+                current_batch = table.combine_chunks().to_batches()[0]
 
             result_batch = _to_requested_schema(
                 projected_schema,
@@ -1776,7 +1785,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                 field_arrays.append(array)
                 fields.append(self._construct_field(field, array.type))
             elif field.optional:
-                arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=False)
+                arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)
                 field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))
                 fields.append(self._construct_field(field, arrow_type))
             else:
@@ -1888,7 +1897,7 @@ class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
         return "FIXED_LEN_BYTE_ARRAY"
 
     def visit_decimal(self, decimal_type: DecimalType) -> str:
-        return "FIXED_LEN_BYTE_ARRAY"
+        return "INT32" if decimal_type.precision <= 9 else "INT64" if decimal_type.precision <= 18 else "FIXED_LEN_BYTE_ARRAY"
 
     def visit_boolean(self, boolean_type: BooleanType) -> str:
         return "BOOLEAN"
@@ -2236,32 +2245,39 @@ class DataFileStatistics:
         if partition_field.source_id not in self.column_aggregates:
             return None
 
-        if not partition_field.transform.preserves_order:
+        source_field = schema.find_field(partition_field.source_id)
+        iceberg_transform = partition_field.transform
+
+        if not iceberg_transform.preserves_order:
             raise ValueError(
                 f"Cannot infer partition value from parquet metadata for a non-linear Partition Field: {partition_field.name} with transform {partition_field.transform}"
             )
 
-        lower_value = partition_record_value(
-            partition_field=partition_field,
-            value=self.column_aggregates[partition_field.source_id].current_min,
-            schema=schema,
+        transform_func = iceberg_transform.transform(source_field.field_type)
+
+        lower_value = transform_func(
+            partition_record_value(
+                partition_field=partition_field,
+                value=self.column_aggregates[partition_field.source_id].current_min,
+                schema=schema,
+            )
         )
-        upper_value = partition_record_value(
-            partition_field=partition_field,
-            value=self.column_aggregates[partition_field.source_id].current_max,
-            schema=schema,
+        upper_value = transform_func(
+            partition_record_value(
+                partition_field=partition_field,
+                value=self.column_aggregates[partition_field.source_id].current_max,
+                schema=schema,
+            )
         )
         if lower_value != upper_value:
             raise ValueError(
                 f"Cannot infer partition value from parquet metadata as there are more than one partition values for Partition Field: {partition_field.name}. {lower_value=}, {upper_value=}"
             )
 
-        source_field = schema.find_field(partition_field.source_id)
-        transform = partition_field.transform.transform(source_field.field_type)
-        return transform(lower_value)
+        return lower_value
 
     def partition(self, partition_spec: PartitionSpec, schema: Schema) -> Record:
-        return Record(**{field.name: self._partition_value(field, schema) for field in partition_spec.fields})
+        return Record(*[self._partition_value(field, schema) for field in partition_spec.fields])
 
     def to_serialized_dict(self) -> Dict[str, Any]:
         lower_bounds = {}
@@ -2362,8 +2378,13 @@ def data_file_statistics_from_parquet_metadata(
                             stats_col.iceberg_type, statistics.physical_type, stats_col.mode.length
                         )
 
-                    col_aggs[field_id].update_min(statistics.min)
-                    col_aggs[field_id].update_max(statistics.max)
+                    if isinstance(stats_col.iceberg_type, DecimalType) and statistics.physical_type != "FIXED_LEN_BYTE_ARRAY":
+                        scale = stats_col.iceberg_type.scale
+                        col_aggs[field_id].update_min(unscaled_to_decimal(statistics.min_raw, scale))
+                        col_aggs[field_id].update_max(unscaled_to_decimal(statistics.max_raw, scale))
+                    else:
+                        col_aggs[field_id].update_min(statistics.min)
+                        col_aggs[field_id].update_max(statistics.max)
 
                 except pyarrow.lib.ArrowNotImplementedError as e:
                     invalidate_col.add(field_id)
@@ -2427,14 +2448,16 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         )
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
-            with pq.ParquetWriter(fos, schema=arrow_table.schema, **parquet_writer_kwargs) as writer:
+            with pq.ParquetWriter(
+                fos, schema=arrow_table.schema, store_decimal_as_integer=True, **parquet_writer_kwargs
+            ) as writer:
                 writer.write(arrow_table, row_group_size=row_group_size)
         statistics = data_file_statistics_from_parquet_metadata(
             parquet_metadata=writer.writer.metadata,
             stats_columns=compute_statistics_plan(file_schema, table_metadata.properties),
             parquet_column_mapping=parquet_path_to_id_mapping(file_schema),
         )
-        data_file = DataFile(
+        data_file = DataFile.from_args(
             content=DataFileContent.DATA,
             file_path=file_path,
             file_format=FileFormat.PARQUET,
@@ -2525,7 +2548,7 @@ def parquet_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_pa
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    data_file = DataFile(
+    data_file = DataFile.from_args(
         content=DataFileContent.DATA,
         file_path=file_path,
         file_format=FileFormat.PARQUET,

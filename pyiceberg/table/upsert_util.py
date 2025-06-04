@@ -26,6 +26,7 @@ from pyiceberg.expressions import (
     BooleanExpression,
     EqualTo,
     In,
+    Or,
 )
 
 
@@ -39,7 +40,12 @@ def create_match_filter(df: pyarrow_table, join_cols: list[str]) -> BooleanExpre
             functools.reduce(operator.and_, [EqualTo(col, row[col]) for col in join_cols]) for row in unique_keys.to_pylist()
         ]
 
-        return AlwaysFalse() if len(filters) == 0 else functools.reduce(operator.or_, filters)
+        if len(filters) == 0:
+            return AlwaysFalse()
+        elif len(filters) == 1:
+            return filters[0]
+        else:
+            return Or(*filters)
 
 
 def has_duplicate_rows(df: pyarrow_table, join_cols: list[str]) -> bool:
@@ -56,7 +62,8 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     """
     all_columns = set(source_table.column_names)
     join_cols_set = set(join_cols)
-    non_key_cols = all_columns - join_cols_set
+
+    non_key_cols = list(all_columns - join_cols_set)
 
     if has_duplicate_rows(target_table, join_cols):
         raise ValueError("Target table has duplicate rows, aborting upsert")
@@ -65,16 +72,51 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
         # When the target table is empty, there is nothing to update :)
         return source_table.schema.empty_table()
 
-    diff_expr = functools.reduce(operator.or_, [pc.field(f"{col}-lhs") != pc.field(f"{col}-rhs") for col in non_key_cols])
+    # We need to compare non_key_cols in Python as PyArrow
+    # 1. Cannot do a join when non-join columns have complex types
+    # 2. Cannot compare columns with complex types
+    # See: https://github.com/apache/arrow/issues/35785
+    SOURCE_INDEX_COLUMN_NAME = "__source_index"
+    TARGET_INDEX_COLUMN_NAME = "__target_index"
 
-    return (
-        source_table
-        # We already know that the schema is compatible, this is to fix large_ types
-        .cast(target_table.schema)
-        .join(target_table, keys=list(join_cols_set), join_type="inner", left_suffix="-lhs", right_suffix="-rhs")
-        .filter(diff_expr)
-        .drop_columns([f"{col}-rhs" for col in non_key_cols])
-        .rename_columns({f"{col}-lhs" if col not in join_cols else col: col for col in source_table.column_names})
-        # Finally cast to the original schema since it doesn't carry nullability:
-        # https://github.com/apache/arrow/issues/45557
-    ).cast(target_table.schema)
+    if SOURCE_INDEX_COLUMN_NAME in join_cols or TARGET_INDEX_COLUMN_NAME in join_cols:
+        raise ValueError(
+            f"{SOURCE_INDEX_COLUMN_NAME} and {TARGET_INDEX_COLUMN_NAME} are reserved for joining "
+            f"DataFrames, and cannot be used as column names"
+        ) from None
+
+    # Step 1: Prepare source index with join keys and a marker index
+    # Cast to target table schema, so we can do the join
+    # See: https://github.com/apache/arrow/issues/37542
+    source_index = (
+        source_table.cast(target_table.schema)
+        .select(join_cols_set)
+        .append_column(SOURCE_INDEX_COLUMN_NAME, pa.array(range(len(source_table))))
+    )
+
+    # Step 2: Prepare target index with join keys and a marker
+    target_index = target_table.select(join_cols_set).append_column(TARGET_INDEX_COLUMN_NAME, pa.array(range(len(target_table))))
+
+    # Step 3: Perform an inner join to find which rows from source exist in target
+    matching_indices = source_index.join(target_index, keys=list(join_cols_set), join_type="inner")
+
+    # Step 4: Compare all rows using Python
+    to_update_indices = []
+    for source_idx, target_idx in zip(
+        matching_indices[SOURCE_INDEX_COLUMN_NAME].to_pylist(), matching_indices[TARGET_INDEX_COLUMN_NAME].to_pylist()
+    ):
+        source_row = source_table.slice(source_idx, 1)
+        target_row = target_table.slice(target_idx, 1)
+
+        for key in non_key_cols:
+            source_val = source_row.column(key)[0].as_py()
+            target_val = target_row.column(key)[0].as_py()
+            if source_val != target_val:
+                to_update_indices.append(source_idx)
+                break
+
+    # Step 5: Take rows from source table using the indices and cast to target schema
+    if to_update_indices:
+        return source_table.take(to_update_indices)
+    else:
+        return source_table.schema.empty_table()

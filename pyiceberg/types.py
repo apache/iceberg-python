@@ -35,6 +35,7 @@ from __future__ import annotations
 import re
 from functools import cached_property
 from typing import (
+    Annotated,
     Any,
     ClassVar,
     Dict,
@@ -44,13 +45,15 @@ from typing import (
 )
 
 from pydantic import (
+    BeforeValidator,
     Field,
     PrivateAttr,
     SerializeAsAny,
+    field_validator,
     model_serializer,
     model_validator,
 )
-from pydantic_core.core_schema import ValidatorFunctionWrapHandler
+from pydantic_core.core_schema import ValidationInfo, ValidatorFunctionWrapHandler
 
 from pyiceberg.exceptions import ValidationError
 from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel, L, TableVersion
@@ -289,6 +292,18 @@ class DecimalType(PrimitiveType):
         return self.root == other.root if isinstance(other, DecimalType) else False
 
 
+def _deserialize_default_value(v: Any, context: ValidationInfo) -> Any:
+    if v is not None:
+        from pyiceberg.conversions import from_json
+
+        return from_json(context.data.get("field_type"), v)
+    else:
+        return None
+
+
+DefaultValue = Annotated[L, BeforeValidator(_deserialize_default_value)]
+
+
 class NestedField(IcebergType):
     """Represents a field of a struct, a map key, a map value, or a list element.
 
@@ -310,6 +325,14 @@ class NestedField(IcebergType):
         ...     doc="Just a long"
         ... ))
         '2: bar: required long (Just a long)'
+        >>> str(NestedField(
+        ...     field_id=3,
+        ...     name='baz',
+        ...     field_type="string",
+        ...     required=True,
+        ...     doc="A string field"
+        ... ))
+        '3: baz: required string (A string field)'
     """
 
     field_id: int = Field(alias="id")
@@ -317,14 +340,24 @@ class NestedField(IcebergType):
     field_type: SerializeAsAny[IcebergType] = Field(alias="type")
     required: bool = Field(default=False)
     doc: Optional[str] = Field(default=None, repr=False)
-    initial_default: Optional[Any] = Field(alias="initial-default", default=None, repr=False)
-    write_default: Optional[L] = Field(alias="write-default", default=None, repr=False)  # type: ignore
+    initial_default: Optional[DefaultValue] = Field(alias="initial-default", default=None, repr=False)  # type: ignore
+    write_default: Optional[DefaultValue] = Field(alias="write-default", default=None, repr=False)  # type: ignore
+
+    @field_validator("field_type", mode="before")
+    def convert_field_type(cls, v: Any) -> IcebergType:
+        """Convert string values into IcebergType instances."""
+        if isinstance(v, str):
+            try:
+                return IcebergType.handle_primitive_type(v, None)
+            except ValueError as e:
+                raise ValueError(f"Unsupported field type: '{v}'") from e
+        return v
 
     def __init__(
         self,
         field_id: Optional[int] = None,
         name: Optional[str] = None,
-        field_type: Optional[IcebergType] = None,
+        field_type: Optional[IcebergType | str] = None,
         required: bool = False,
         doc: Optional[str] = None,
         initial_default: Optional[Any] = None,
@@ -341,6 +374,26 @@ class NestedField(IcebergType):
         data["initial-default"] = data["initial-default"] if "initial-default" in data else initial_default
         data["write-default"] = data["write-default"] if "write-default" in data else write_default
         super().__init__(**data)
+
+    @model_serializer()
+    def serialize_model(self) -> Dict[str, Any]:
+        from pyiceberg.conversions import to_json
+
+        fields = {
+            "id": self.field_id,
+            "name": self.name,
+            "type": self.field_type,
+            "required": self.required,
+        }
+
+        if self.doc is not None:
+            fields["doc"] = self.doc
+        if self.initial_default is not None:
+            fields["initial-default"] = to_json(self.field_type, self.initial_default)
+        if self.write_default is not None:
+            fields["write-default"] = to_json(self.field_type, self.write_default)
+
+        return fields
 
     def __str__(self) -> str:
         """Return the string representation of the NestedField class."""

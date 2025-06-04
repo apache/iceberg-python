@@ -18,11 +18,13 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from functools import cached_property, reduce
+from functools import cached_property
 from typing import (
     Any,
+    Callable,
     Generic,
     Iterable,
+    Sequence,
     Set,
     Tuple,
     Type,
@@ -77,6 +79,45 @@ class BooleanExpression(ABC):
             raise ValueError(f"Expected BooleanExpression, got: {other}")
 
         return Or(self, other)
+
+
+def _build_balanced_tree(
+    operator_: Callable[[BooleanExpression, BooleanExpression], BooleanExpression], items: Sequence[BooleanExpression]
+) -> BooleanExpression:
+    """
+    Recursively constructs a balanced binary tree of BooleanExpressions using the provided binary operator.
+
+    This function is a safer and more scalable alternative to:
+        reduce(operator_, items)
+
+    Using `reduce` creates a deeply nested, unbalanced tree (e.g., operator_(a, operator_(b, operator_(c, ...)))),
+    which grows linearly with the number of items. This can lead to RecursionError exceptions in Python
+    when the number of expressions is large (e.g., >1000).
+
+    In contrast, this function builds a balanced binary tree with logarithmic depth (O(log n)),
+    helping avoid recursion issues and ensuring that expression trees remain stable, predictable,
+    and safe to traverse — especially in tools like PyIceberg that operate on large logical trees.
+
+    Parameters:
+        operator_ (Callable): A binary operator function (e.g., pyiceberg.expressions.Or, And) that takes two
+            BooleanExpressions and returns a combined BooleanExpression.
+        items (Sequence[BooleanExpression]): A sequence of BooleanExpression objects to combine.
+
+    Returns:
+        BooleanExpression: The balanced combination of all input BooleanExpressions.
+
+    Raises:
+        ValueError: If the input sequence is empty.
+    """
+    if not items:
+        raise ValueError("No expressions to combine")
+    if len(items) == 1:
+        return items[0]
+    mid = len(items) // 2
+
+    left = _build_balanced_tree(operator_, items[:mid])
+    right = _build_balanced_tree(operator_, items[mid:])
+    return operator_(left, right)
 
 
 class Term(Generic[L], ABC):
@@ -214,7 +255,7 @@ class And(BooleanExpression):
 
     def __new__(cls, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> BooleanExpression:  # type: ignore
         if rest:
-            return reduce(And, (left, right, *rest))
+            return _build_balanced_tree(And, (left, right, *rest))
         if left is AlwaysFalse() or right is AlwaysFalse():
             return AlwaysFalse()
         elif left is AlwaysTrue():
@@ -257,7 +298,7 @@ class Or(BooleanExpression):
 
     def __new__(cls, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> BooleanExpression:  # type: ignore
         if rest:
-            return reduce(Or, (left, right, *rest))
+            return _build_balanced_tree(Or, (left, right, *rest))
         if left is AlwaysTrue() or right is AlwaysTrue():
             return AlwaysTrue()
         elif left is AlwaysFalse():

@@ -229,6 +229,29 @@ class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]": ...
 
 
+def parse_transform(v: Any) -> Transform[Any, Any]:
+    if isinstance(v, str):
+        if v == IDENTITY:
+            return IdentityTransform()
+        elif v == VOID:
+            return VoidTransform()
+        elif v.startswith(BUCKET):
+            return BucketTransform(num_buckets=BUCKET_PARSER.match(v))
+        elif v.startswith(TRUNCATE):
+            return TruncateTransform(width=TRUNCATE_PARSER.match(v))
+        elif v == YEAR:
+            return YearTransform()
+        elif v == MONTH:
+            return MonthTransform()
+        elif v == DAY:
+            return DayTransform()
+        elif v == HOUR:
+            return HourTransform()
+        else:
+            return UnknownTransform(transform=v)
+    return v
+
+
 class BucketTransform(Transform[S, int]):
     """Base Transform class to transform a value into a bucket partition value.
 
@@ -243,8 +266,8 @@ class BucketTransform(Transform[S, int]):
     _num_buckets: PositiveInt = PrivateAttr()
 
     def __init__(self, num_buckets: int, **data: Any) -> None:
-        self._num_buckets = num_buckets
         super().__init__(f"bucket[{num_buckets}]", **data)
+        self._num_buckets = num_buckets
 
     @property
     def num_buckets(self) -> int:
@@ -667,7 +690,7 @@ class HourTransform(TimeTransform[S]):
 
         elif isinstance(source, (TimestampNanoType, TimestamptzNanoType)):
 
-            def day_func(v: Any) -> int:
+            def hour_func(v: Any) -> int:
                 # python datetime has no nanoseconds support.
                 # nanosecond datetimes will be expressed as int as a workaround
                 return datetime.nanos_to_hours(v)
