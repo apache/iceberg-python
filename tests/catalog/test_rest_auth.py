@@ -21,9 +21,10 @@ import pytest
 import requests
 from requests_mock import Mocker
 
-from pyiceberg.catalog.rest.auth import AuthManagerAdapter, BasicAuthManager, NoopAuthManager
+from pyiceberg.catalog.rest.auth import AuthManagerAdapter, BasicAuthManager, GoogleAuthManager, NoopAuthManager
 
 TEST_URI = "https://iceberg-test-catalog/"
+GOOGLE_CREDS_URI = "https://oauth2.googleapis.com/token"
 
 
 @pytest.fixture
@@ -35,6 +36,17 @@ def rest_mock(requests_mock: Mocker) -> Mocker:
     )
     return requests_mock
 
+@pytest.fixture
+def google_mock(requests_mock: Mocker) -> Mocker:
+    requests_mock.post(GOOGLE_CREDS_URI,
+                       json={"access_token": "aaaabbb"},
+                       status_code=200)
+    requests_mock.get(
+        TEST_URI,
+        json={},
+        status_code=200,
+    )
+    return requests_mock
 
 def test_noop_auth_header(rest_mock: Mocker) -> None:
     auth_manager = NoopAuthManager()
@@ -62,4 +74,18 @@ def test_basic_auth_header(rest_mock: Mocker) -> None:
     history = rest_mock.request_history
     assert len(history) == 1
     actual_headers = history[0].headers
+    assert actual_headers["Authorization"] == expected_header
+
+def test_google_auth_header(google_mock: Mocker) -> None:
+    expected_token = "aaaabbb"
+    expected_header = f"Bearer {expected_token}"
+
+    auth_manager = GoogleAuthManager()
+    session = requests.Session()
+    session.auth = AuthManagerAdapter(auth_manager)
+
+    session.get(TEST_URI)
+    history = google_mock.request_history
+    assert len(history) == 2
+    actual_headers = history[1].headers
     assert actual_headers["Authorization"] == expected_header
