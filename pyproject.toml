@@ -117,14 +117,6 @@ mkdocs-material = "9.6.14"
 mkdocs-material-extensions = "1.3.1"
 mkdocs-section-index = "0.3.10"
 
-[[tool.poetry.source]]
-name = "pypi"
-priority = "primary"
-
-[[tool.poetry.source]]
-name = "testpypi"
-url = "https://test.pypi.org/simple/"
-
 [[tool.mypy.overrides]]
 module = "pytest_mock.*"
 ignore_missing_imports = true
