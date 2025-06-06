@@ -16,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=eval-used,protected-access,redefined-outer-name
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 from typing import Annotated, Any, Callable, Optional, Union
 from uuid import UUID
@@ -24,7 +24,6 @@ from uuid import UUID
 import mmh3 as mmh3
 import pyarrow as pa
 import pytest
-import pytz
 from pydantic import (
     BeforeValidator,
     PlainSerializer,

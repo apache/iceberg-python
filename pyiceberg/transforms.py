@@ -111,29 +111,6 @@ def _transform_literal(func: Callable[[L], L], lit: Literal[L]) -> Literal[L]:
     return literal(func(lit.value))
 
 
-def parse_transform(v: Any) -> Any:
-    if isinstance(v, str):
-        if v == IDENTITY:
-            return IdentityTransform()
-        elif v == VOID:
-            return VoidTransform()
-        elif v.startswith(BUCKET):
-            return BucketTransform(num_buckets=BUCKET_PARSER.match(v))
-        elif v.startswith(TRUNCATE):
-            return TruncateTransform(width=TRUNCATE_PARSER.match(v))
-        elif v == YEAR:
-            return YearTransform()
-        elif v == MONTH:
-            return MonthTransform()
-        elif v == DAY:
-            return DayTransform()
-        elif v == HOUR:
-            return HourTransform()
-        else:
-            return UnknownTransform(transform=v)
-    return v
-
-
 def _pyiceberg_transform_wrapper(
     transform_func: Callable[["ArrayLike", Any], "ArrayLike"],
     *args: Any,
