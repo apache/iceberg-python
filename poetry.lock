@@ -4085,7 +4085,7 @@ description = ""
 optional = true
 python-versions = "~=3.9"
 groups = ["main"]
-markers = "extra == \"pyiceberg-core\""
+markers = "extra == \"pyarrow\" or extra == \"pyiceberg-core\""
 files = [
     {file = "pyiceberg_core-0.5.1-cp39-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:f5bffe70f036d4409ab5f8a2a52353635dfa9afa665e84eb5fb0415d12171aaa"},
     {file = "pyiceberg_core-0.5.1-cp39-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:aa5d0d00efeb7c03ad48b17577452f42398f398b41034d2695a294c872365fcd"},
@@ -5964,7 +5964,7 @@ hive = ["thrift"]
 hive-kerberos = ["kerberos", "thrift", "thrift-sasl"]
 pandas = ["pandas", "pyarrow"]
 polars = ["polars"]
-pyarrow = ["pyarrow"]
+pyarrow = ["pyarrow", "pyiceberg-core"]
 pyiceberg-core = ["pyiceberg-core"]
 ray = ["pandas", "pyarrow", "ray", "ray"]
 rest-sigv4 = ["boto3"]
@@ -5977,4 +5977,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9.2, !=3.9.7"
-content-hash = "325426e3f8cd9f9e415189b6b63509b3f9061a9a0e19f4496182ce86491e9c3d"
+content-hash = "93eda79de3991bea0b9520f69372d146f7fd3d128cd982ea5afb78e8ec5d94f2"

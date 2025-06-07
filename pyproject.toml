@@ -289,7 +289,7 @@ generate-setup-file = false
 script = "build-module.py"
 
 [tool.poetry.extras]
-pyarrow = ["pyarrow"]
+pyarrow = ["pyarrow", "pyiceberg-core"]
 pandas = ["pandas", "pyarrow"]
 duckdb = ["duckdb", "pyarrow"]
 ray = ["ray", "pyarrow", "pandas"]
