@@ -119,7 +119,7 @@ def _pyiceberg_transform_wrapper(
     try:
         import pyarrow as pa
     except ModuleNotFoundError as e:
-        raise ModuleNotFoundError("For bucket/truncate transforms, PyArrow needs to be installed") from e
+        raise ModuleNotFoundError("For partition transforms, PyArrow needs to be installed") from e
 
     def _transform(array: "ArrayLike") -> "ArrayLike":
         def _cast_if_needed(arr: "ArrayLike") -> "ArrayLike":
