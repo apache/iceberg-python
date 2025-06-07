@@ -717,6 +717,14 @@ class ManifestFile(Record):
                 if not discard_deleted or entry.status != ManifestEntryStatus.DELETED
             ]
 
+    def __eq__(self, other: Any) -> bool:
+        """Return the equality of two instances of the ManifestFile class."""
+        return self.manifest_path == other.manifest_path if isinstance(other, ManifestFile) else False
+
+    def __hash__(self) -> int:
+        """Return the hash of manifest_path."""
+        return hash(self.manifest_path)
+
 
 @cached(cache=LRUCache(maxsize=128), key=lambda io, manifest_list: hashkey(manifest_list))
 def _manifests(io: FileIO, manifest_list: str) -> Tuple[ManifestFile, ...]:
