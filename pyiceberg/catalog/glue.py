@@ -317,7 +317,7 @@ class GlueCatalog(MetastoreCatalog):
         """
         super().__init__(name, **properties)
 
-        if client:
+        if client is not None:
             self.glue = client
         else:
             retry_mode_prop_value = get_first_property_value(properties, GLUE_RETRY_MODE)
