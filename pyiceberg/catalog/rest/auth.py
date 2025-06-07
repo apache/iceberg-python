@@ -18,7 +18,8 @@
 import base64
 import importlib
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Type
+import logging
+from typing import Any, Dict, List, Optional, Type
 
 from requests import HTTPError, PreparedRequest, Session
 from requests.auth import AuthBase
@@ -109,6 +110,38 @@ class LegacyOAuth2AuthManager(AuthManager):
         return f"Bearer {self._token}"
 
 
+class GoogleAuthManager(AuthManager):
+    """
+    An auth manager that is responsible for handling Google credentials.
+    """
+
+    def __init__(self, credentials_path: Optional[str] = None, scopes: Optional[List[str]] = None):
+        """
+        Initialize GoogleAuthManager.
+
+        Args:
+            credentials_path: Optional path to Google credentials JSON file.
+            scopes: Optional list of OAuth2 scopes.
+        """
+        try:
+            import google.auth
+            import google.auth.transport.requests
+        except ImportError as e:
+            raise ImportError(
+                "Google Auth libraries not found. Please install 'google-auth'."
+            ) from e
+
+        if credentials_path:
+            self.credentials, _ = google.auth.load_credentials_from_file(credentials_path, scopes=scopes)
+        else:
+            logging.info("Using Google Default Application Credentials")
+            self.credentials, _ = google.auth.default(scopes=scopes)
+        self._auth_request = google.auth.transport.requests.Request()
+
+    def auth_header(self) -> Optional[str]:
+        self.credentials.refresh(self._auth_request)
+        return f"Bearer {self.credentials.token}"
+
 class AuthManagerAdapter(AuthBase):
     """A `requests.auth.AuthBase` adapter that integrates an `AuthManager` into a `requests.Session` to automatically attach the appropriate Authorization header to every request.
 
@@ -187,3 +220,4 @@ class AuthManagerFactory:
 AuthManagerFactory.register("noop", NoopAuthManager)
 AuthManagerFactory.register("basic", BasicAuthManager)
 AuthManagerFactory.register("legacyoauth2", LegacyOAuth2AuthManager)
+AuthManagerFactory.register("google", GoogleAuthManager)
