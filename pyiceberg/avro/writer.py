@@ -32,6 +32,7 @@ from typing import (
     List,
     Optional,
     Tuple,
+    Union,
 )
 from uuid import UUID
 
@@ -121,8 +122,22 @@ class StringWriter(Writer):
 
 @dataclass(frozen=True)
 class UUIDWriter(Writer):
-    def write(self, encoder: BinaryEncoder, val: UUID) -> None:
-        encoder.write(val.bytes)
+    def write(self, encoder: BinaryEncoder, val: Union[UUID, str, bytes]) -> None:
+        if isinstance(val, UUID):
+            encoder.write(val.bytes)
+        elif isinstance(val, bytes):
+            encoder.write(val)
+        elif isinstance(val, str):
+            if val.startswith("b'") and val.endswith("'"):
+                # Handle string representation of bytes
+                # Convert the escaped string to actual bytes
+                byte_string = val[2:-1].encode("utf-8").decode("unicode_escape").encode("latin1")
+                encoder.write(UUID(bytes=byte_string).bytes)
+            else:
+                # Regular UUID string
+                encoder.write(UUID(val).bytes)
+        else:
+            raise TypeError(f"Expected UUID, bytes, or string, got {type(val)}")
 
 
 @dataclass(frozen=True)
