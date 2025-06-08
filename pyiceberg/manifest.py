@@ -763,7 +763,7 @@ def _inherit_from_manifest(entry: ManifestEntry, manifest: ManifestFile) -> Mani
     """
     # Inherit sequence numbers.
     # The snapshot_id is required in V1, inherit with V2 when null
-    if entry.snapshot_id is None:
+    if entry.snapshot_id is None and manifest.added_snapshot_id is not None:
         entry.snapshot_id = manifest.added_snapshot_id
 
     # in v1 tables, the sequence number is not persisted and can be safely defaulted to 0
