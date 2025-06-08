@@ -1849,15 +1849,21 @@ def test_avro_compression_codecs(session_catalog: Catalog, arrow_table_with_null
     identifier = "default.test_avro_compression_codecs"
     tbl = _create_table(session_catalog, identifier, schema=arrow_table_with_null.schema, data=[arrow_table_with_null])
 
-    with tbl.io.new_input(tbl.current_snapshot().manifest_list).open() as f:
+    current_snapshot = tbl.current_snapshot()
+    assert current_snapshot is not None
+
+    with tbl.io.new_input(current_snapshot.manifest_list).open() as f:
         reader = fastavro.reader(f)
         assert reader.codec == "deflate"
 
     with tbl.transaction() as tx:
-        tx.set_properties(**{TableProperties.WRITE_AVRO_COMPRESSION: "null"})
+        tx.set_properties(**{TableProperties.WRITE_AVRO_COMPRESSION: "null"})  #  type: ignore
 
     tbl.append(arrow_table_with_null)
 
-    with tbl.io.new_input(tbl.current_snapshot().manifest_list).open() as f:
+    current_snapshot = tbl.current_snapshot()
+    assert current_snapshot is not None
+
+    with tbl.io.new_input(current_snapshot.manifest_list).open() as f:
         reader = fastavro.reader(f)
         assert reader.codec == "null"
