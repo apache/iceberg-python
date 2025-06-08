@@ -186,8 +186,8 @@ def test_partition_type(table_schema_simple: Schema) -> None:
         (DecimalType(5, 9), Decimal(19.25)),
         (DateType(), datetime.date(1925, 5, 22)),
         (TimeType(), datetime.time(19, 25, 00)),
-        (TimestampType(), datetime.datetime(19, 5, 1, 22, 1, 1)),
-        (TimestamptzType(), datetime.datetime(19, 5, 1, 22, 1, 1, tzinfo=datetime.timezone.utc)),
+        (TimestampType(), datetime.datetime(2022, 5, 1, 22, 1, 1)),
+        (TimestamptzType(), datetime.datetime(2022, 5, 1, 22, 1, 1, tzinfo=datetime.timezone.utc)),
         (StringType(), "abc"),
         (UUIDType(), UUID("12345678-1234-5678-1234-567812345678").bytes),
         (FixedType(5), 'b"\x8e\xd1\x87\x01"'),
@@ -208,13 +208,7 @@ def test_transform_consistency_with_pyarrow_transform(source_type: PrimitiveType
     ]
     for t in all_transforms:
         if t.can_transform(source_type):
-            try:
-                assert t.transform(source_type)(value) == t.pyarrow_transform(source_type)(pa.array([value])).to_pylist()[0]
-            except ValueError as e:
-                # Skipping unsupported feature
-                if "FeatureUnsupported => Unsupported data type for truncate transform" in str(e):
-                    continue
-                raise
+            assert t.transform(source_type)(value) == t.pyarrow_transform(source_type)(pa.array([value])).to_pylist()[0]
 
 
 def test_deserialize_partition_field_v2() -> None:
