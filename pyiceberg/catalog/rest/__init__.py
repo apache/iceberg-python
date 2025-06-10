@@ -397,7 +397,7 @@ class RestCatalog(Catalog):
                     botocore_session=self._properties.get(BOTOCORE_SESSION),
                     aws_access_key_id=get_first_property_value(self._properties, AWS_ACCESS_KEY_ID),
                     aws_secret_access_key=get_first_property_value(self._properties, AWS_SECRET_ACCESS_KEY),
-                    aws_session_toxken=get_first_property_value(self._properties, AWS_SESSION_TOKEN),
+                    aws_session_token=get_first_property_value(self._properties, AWS_SESSION_TOKEN),
                 )
 
             def add_headers(self, request: PreparedRequest, **kwargs: Any) -> None:  # pylint: disable=W0613
