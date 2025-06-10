@@ -80,7 +80,7 @@ huggingface-hub = { version = ">=0.24.0", optional = true }
 psycopg2-binary = { version = ">=2.9.6", optional = true }
 sqlalchemy = { version = "^2.0.18", optional = true }
 getdaft = { version = ">=0.2.12", optional = true }
-cachetools = "^5.5.0,<7.0"
+cachetools = ">=5.5,<7.0"
 pyiceberg-core = { file = "/Users/fokko.driesprong/work/iceberg-rust/bindings/python/dist/pyiceberg_core-0.5.1-cp39-abi3-macosx_11_0_arm64.whl" }
 polars = { version = "^1.21.0", optional = true }
 thrift-sasl = { version = ">=0.4.3", optional = true }
@@ -98,7 +98,7 @@ moto = { version = "^5.0.2", extras = ["server"] }
 typing-extensions = "4.13.2"
 pytest-mock = "3.14.1"
 pyspark = "3.5.6"
-cython = "3.1.1"
+cython = "3.1.2"
 deptry = ">=0.14,<0.24"
 datafusion = ">=44,<48"
 docutils = "!=0.21.post1"   # https://github.com/python-poetry/poetry/issues/9248#issuecomment-2026240520
@@ -109,7 +109,7 @@ mkdocs = "1.6.1"
 griffe = "1.7.3"
 jinja2 = "3.1.6"
 mkdocstrings = "0.29.1"
-mkdocstrings-python = "1.16.11"
+mkdocstrings-python = "1.16.12"
 mkdocs-literate-nav = "0.6.2"
 mkdocs-autorefs = "1.4.2"
 mkdocs-gen-files = "0.5.0"
@@ -289,7 +289,7 @@ generate-setup-file = false
 script = "build-module.py"
 
 [tool.poetry.extras]
-pyarrow = ["pyarrow"]
+pyarrow = ["pyarrow", "pyiceberg-core"]
 pandas = ["pandas", "pyarrow"]
 duckdb = ["duckdb", "pyarrow"]
 ray = ["ray", "pyarrow", "pandas"]
