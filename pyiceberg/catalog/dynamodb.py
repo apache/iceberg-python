@@ -116,8 +116,9 @@ class DynamoDbCatalog(MetastoreCatalog):
                 aws_session_token=get_first_property_value(properties, DYNAMODB_SESSION_TOKEN, AWS_SESSION_TOKEN),
             )
             self.dynamodb = session.client(DYNAMODB_CLIENT)
-            self.dynamodb_table_name = self.properties.get(DYNAMODB_TABLE_NAME, DYNAMODB_TABLE_NAME_DEFAULT)
-            self._ensure_catalog_table_exists_or_create()
+
+        self.dynamodb_table_name = self.properties.get(DYNAMODB_TABLE_NAME, DYNAMODB_TABLE_NAME_DEFAULT)
+        self._ensure_catalog_table_exists_or_create()
 
     def _ensure_catalog_table_exists_or_create(self) -> None:
         if self._dynamodb_table_exists():
