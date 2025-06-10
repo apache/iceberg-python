@@ -96,7 +96,7 @@ DYNAMODB_SESSION_TOKEN = "dynamodb.session-token"
 
 
 class DynamoDbCatalog(MetastoreCatalog):
-    def __init__(self, name: str, client: Optional[DynamoDBClient] = None, **properties: str):
+    def __init__(self, name: str, client: Optional["DynamoDBClient"] = None, **properties: str):
         """Dynamodb catalog.
 
         Args:
