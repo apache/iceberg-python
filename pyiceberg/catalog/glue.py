@@ -303,7 +303,7 @@ def _register_glue_catalog_id_with_glue_client(glue: "GlueClient", glue_catalog_
 
 
 class GlueCatalog(MetastoreCatalog):
-    glue: GlueClient
+    glue: "GlueClient"
 
     def __init__(self, name: str, client: Optional["GlueClient"] = None, **properties: Any):
         """Glue Catalog.
