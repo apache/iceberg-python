@@ -252,7 +252,9 @@ def _construct_table_input(
 def _construct_rename_table_input(to_table_name: str, glue_table: TableTypeDef) -> TableInputTypeDef:
     rename_table_input: TableInputTypeDef = {"Name": to_table_name}
     # use the same Glue info to create the new table, pointing to the old metadata
-    assert glue_table["TableType"]
+    if not glue_table["TableType"]:
+        raise ValueError("Glue table type is missing, cannot rename table")
+
     rename_table_input["TableType"] = glue_table["TableType"]
     if "Owner" in glue_table:
         rename_table_input["Owner"] = glue_table["Owner"]
@@ -347,9 +349,14 @@ class GlueCatalog(MetastoreCatalog):
     def _convert_glue_to_iceberg(self, glue_table: TableTypeDef) -> Table:
         properties: Properties = glue_table["Parameters"]
 
-        assert glue_table["DatabaseName"]
-        assert glue_table["Parameters"]
-        database_name = glue_table["DatabaseName"]
+        database_name = glue_table.get("DatabaseName", None)
+        if database_name is None:
+            raise ValueError("Glue table is missing DatabaseName property")
+
+        parameters = glue_table.get("Parameters", None)
+        if parameters is None:
+            raise ValueError("Glue table is missing Parameters property")
+
         table_name = glue_table["Name"]
 
         if TABLE_TYPE not in properties:

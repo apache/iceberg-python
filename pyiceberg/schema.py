@@ -1362,8 +1362,8 @@ def make_compatible_name(name: str) -> str:
 
 
 def _valid_avro_name(name: str) -> bool:
-    length = len(name)
-    assert length > 0, ValueError("Can not validate empty avro name")
+    if not len(name):
+        raise ValueError("Can not validate empty avro name")
     first = name[0]
     if not (first.isalpha() or first == "_"):
         return False
