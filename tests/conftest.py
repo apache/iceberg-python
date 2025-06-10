@@ -61,10 +61,12 @@ from pyiceberg.io import (
 )
 from pyiceberg.io.fsspec import FsspecFileIO
 from pyiceberg.manifest import DataFile, FileFormat
+from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
 from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2
+from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -1847,7 +1849,22 @@ def simple_map() -> MapType:
 
 
 @pytest.fixture(scope="session")
-def generated_manifest_entry_file(avro_schema_manifest_entry: Dict[str, Any]) -> Generator[str, None, None]:
+def test_schema() -> Schema:
+    return Schema(NestedField(1, "VendorID", IntegerType(), False), NestedField(2, "tpep_pickup_datetime", IntegerType(), False))
+
+
+@pytest.fixture(scope="session")
+def test_partition_spec() -> Schema:
+    return PartitionSpec(
+        PartitionField(1, 1000, IdentityTransform(), "VendorID"),
+        PartitionField(2, 1001, IdentityTransform(), "tpep_pickup_datetime"),
+    )
+
+
+@pytest.fixture(scope="session")
+def generated_manifest_entry_file(
+    avro_schema_manifest_entry: Dict[str, Any], test_schema: Schema, test_partition_spec: PartitionSpec
+) -> Generator[str, None, None]:
     from fastavro import parse_schema, writer
 
     parsed_schema = parse_schema(avro_schema_manifest_entry)
@@ -1855,7 +1872,15 @@ def generated_manifest_entry_file(avro_schema_manifest_entry: Dict[str, Any]) ->
     with TemporaryDirectory() as tmpdir:
         tmp_avro_file = tmpdir + "/manifest.avro"
         with open(tmp_avro_file, "wb") as out:
-            writer(out, parsed_schema, manifest_entry_records)
+            writer(
+                out,
+                parsed_schema,
+                manifest_entry_records,
+                metadata={
+                    "schema": test_schema.model_dump_json(),
+                    "partition-spec": test_partition_spec.fields,
+                },
+            )
         yield tmp_avro_file
 
 
