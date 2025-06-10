@@ -28,7 +28,6 @@ from typing import (
 )
 
 import boto3
-from mypy_boto3_dynamodb.client import DynamoDBClient
 
 from pyiceberg.catalog import (
     BOTOCORE_SESSION,
@@ -67,6 +66,8 @@ from pyiceberg.utils.properties import get_first_property_value
 
 if TYPE_CHECKING:
     import pyarrow as pa
+    from mypy_boto3_dynamodb.client import DynamoDBClient
+
 
 DYNAMODB_CLIENT = "dynamodb"
 

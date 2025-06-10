@@ -3173,7 +3173,7 @@ typing-extensions = {version = ">=4.1.0", markers = "python_version < \"3.11\""}
 name = "mypy-boto3-dynamodb"
 version = "1.38.4"
 description = "Type annotations for boto3 DynamoDB 1.38.4 service generated with mypy-boto3-builder 8.10.1"
-optional = true
+optional = false
 python-versions = ">=3.8"
 groups = ["dev"]
 files = [
@@ -3188,7 +3188,7 @@ typing-extensions = {version = "*", markers = "python_version < \"3.12\""}
 name = "mypy-boto3-glue"
 version = "1.38.22"
 description = "Type annotations for boto3 Glue 1.38.22 service generated with mypy-boto3-builder 8.11.0"
-optional = true
+optional = false
 python-versions = ">=3.8"
 groups = ["dev"]
 files = [
@@ -6308,4 +6308,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9.2, !=3.9.7"
-content-hash = "a3ef9949a4fa0461076f893ff9921fd1391e66da45995d2008702cc2d59a6fc2"
+content-hash = "78c8700fef9e327c5fff525efeb036e4272c8894fabc0e7a69111ed95bd209ca"

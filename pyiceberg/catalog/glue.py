@@ -30,15 +30,6 @@ from typing import (
 
 import boto3
 from botocore.config import Config
-from mypy_boto3_glue.client import GlueClient
-from mypy_boto3_glue.type_defs import (
-    ColumnTypeDef,
-    DatabaseInputTypeDef,
-    DatabaseTypeDef,
-    StorageDescriptorTypeDef,
-    TableInputTypeDef,
-    TableTypeDef,
-)
 
 from pyiceberg.catalog import (
     BOTOCORE_SESSION,
@@ -101,6 +92,15 @@ from pyiceberg.utils.properties import get_first_property_value, property_as_boo
 
 if TYPE_CHECKING:
     import pyarrow as pa
+    from mypy_boto3_glue.client import GlueClient
+    from mypy_boto3_glue.type_defs import (
+        ColumnTypeDef,
+        DatabaseInputTypeDef,
+        DatabaseTypeDef,
+        StorageDescriptorTypeDef,
+        TableInputTypeDef,
+        TableTypeDef,
+    )
 
 
 # There is a unique Glue metastore in each AWS account and each AWS region. By default, GlueCatalog chooses the Glue
