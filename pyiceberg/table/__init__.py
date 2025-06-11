@@ -1632,6 +1632,10 @@ class FileScanTask(ScanTask):
         self.length = length or data_file.file_size_in_bytes
         self.residual = residual
 
+    def _set_residual(self, expr: BooleanExpression) -> "FileScanTask":
+        self.residual = expr
+        return self
+
 
 def _open_manifest(
     io: FileIO,
@@ -1827,8 +1831,12 @@ class DataScan(TableScan):
                     data_entry,
                     positional_delete_entries,
                 ),
-                residual=residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(
-                    data_entry.data_file.partition
+                residual=bind(
+                    self.table_metadata.schema(),
+                    residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(
+                        data_entry.data_file.partition
+                    ),
+                    case_sensitive=self.case_sensitive,
                 ),
             )
             for data_entry in data_entries
@@ -1845,7 +1853,7 @@ class DataScan(TableScan):
         from pyiceberg.io.pyarrow import ArrowScan
 
         return ArrowScan(
-            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
+            self.table_metadata, self.io, self.projection(), case_sensitive=self.case_sensitive, limit=self.limit
         ).to_table(self.plan_files())
 
     def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
@@ -1938,7 +1946,6 @@ class DataScan(TableScan):
                     table_metadata=self.table_metadata,
                     io=self.io,
                     projected_schema=self.projection(),
-                    row_filter=self.row_filter,
                     case_sensitive=self.case_sensitive,
                 )
                 tbl = arrow_scan.to_table([task])
