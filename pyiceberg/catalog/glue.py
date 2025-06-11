@@ -30,15 +30,6 @@ from typing import (
 
 import boto3
 from botocore.config import Config
-from mypy_boto3_glue.client import GlueClient
-from mypy_boto3_glue.type_defs import (
-    ColumnTypeDef,
-    DatabaseInputTypeDef,
-    DatabaseTypeDef,
-    StorageDescriptorTypeDef,
-    TableInputTypeDef,
-    TableTypeDef,
-)
 
 from pyiceberg.catalog import (
     BOTOCORE_SESSION,
@@ -101,6 +92,15 @@ from pyiceberg.utils.properties import get_first_property_value, property_as_boo
 
 if TYPE_CHECKING:
     import pyarrow as pa
+    from mypy_boto3_glue.client import GlueClient
+    from mypy_boto3_glue.type_defs import (
+        ColumnTypeDef,
+        DatabaseInputTypeDef,
+        DatabaseTypeDef,
+        StorageDescriptorTypeDef,
+        TableInputTypeDef,
+        TableTypeDef,
+    )
 
 
 # There is a unique Glue metastore in each AWS account and each AWS region. By default, GlueCatalog chooses the Glue
@@ -140,7 +140,7 @@ EXISTING_RETRY_MODES = [STANDARD_RETRY_MODE, ADAPTIVE_RETRY_MODE, LEGACY_RETRY_M
 
 
 def _construct_parameters(
-    metadata_location: str, glue_table: Optional[TableTypeDef] = None, prev_metadata_location: Optional[str] = None
+    metadata_location: str, glue_table: Optional["TableTypeDef"] = None, prev_metadata_location: Optional[str] = None
 ) -> Properties:
     new_parameters = glue_table.get("Parameters", {}) if glue_table else {}
     new_parameters.update({TABLE_TYPE: ICEBERG.upper(), METADATA_LOCATION: metadata_location})
@@ -190,15 +190,15 @@ class _IcebergSchemaToGlueType(SchemaVisitor[str]):
         return GLUE_PRIMITIVE_TYPES[primitive_type]
 
 
-def _to_columns(metadata: TableMetadata) -> List[ColumnTypeDef]:
-    results: Dict[str, ColumnTypeDef] = {}
+def _to_columns(metadata: TableMetadata) -> List["ColumnTypeDef"]:
+    results: Dict[str, "ColumnTypeDef"] = {}
 
     def _append_to_results(field: NestedField, is_current: bool) -> None:
         if field.name in results:
             return
 
         results[field.name] = cast(
-            ColumnTypeDef,
+            "ColumnTypeDef",
             {
                 "Name": field.name,
                 "Type": visit(field.field_type, _IcebergSchemaToGlueType()),
@@ -230,10 +230,10 @@ def _construct_table_input(
     metadata_location: str,
     properties: Properties,
     metadata: TableMetadata,
-    glue_table: Optional[TableTypeDef] = None,
+    glue_table: Optional["TableTypeDef"] = None,
     prev_metadata_location: Optional[str] = None,
-) -> TableInputTypeDef:
-    table_input: TableInputTypeDef = {
+) -> "TableInputTypeDef":
+    table_input: "TableInputTypeDef" = {
         "Name": table_name,
         "TableType": EXTERNAL_TABLE,
         "Parameters": _construct_parameters(metadata_location, glue_table, prev_metadata_location),
@@ -249,8 +249,8 @@ def _construct_table_input(
     return table_input
 
 
-def _construct_rename_table_input(to_table_name: str, glue_table: TableTypeDef) -> TableInputTypeDef:
-    rename_table_input: TableInputTypeDef = {"Name": to_table_name}
+def _construct_rename_table_input(to_table_name: str, glue_table: "TableTypeDef") -> "TableInputTypeDef":
+    rename_table_input: "TableInputTypeDef" = {"Name": to_table_name}
     # use the same Glue info to create the new table, pointing to the old metadata
     assert glue_table["TableType"]
     rename_table_input["TableType"] = glue_table["TableType"]
@@ -264,7 +264,7 @@ def _construct_rename_table_input(to_table_name: str, glue_table: TableTypeDef) 
         # It turns out the output of StorageDescriptor is not the same as the input type
         # because the Column can have a different type, but for now it seems to work, so
         # silence the type error.
-        rename_table_input["StorageDescriptor"] = cast(StorageDescriptorTypeDef, glue_table["StorageDescriptor"])
+        rename_table_input["StorageDescriptor"] = cast("StorageDescriptorTypeDef", glue_table["StorageDescriptor"])
 
     if "Description" in glue_table:
         rename_table_input["Description"] = glue_table["Description"]
@@ -272,8 +272,8 @@ def _construct_rename_table_input(to_table_name: str, glue_table: TableTypeDef) 
     return rename_table_input
 
 
-def _construct_database_input(database_name: str, properties: Properties) -> DatabaseInputTypeDef:
-    database_input: DatabaseInputTypeDef = {"Name": database_name}
+def _construct_database_input(database_name: str, properties: Properties) -> "DatabaseInputTypeDef":
+    database_input: "DatabaseInputTypeDef" = {"Name": database_name}
     parameters = {}
     for k, v in properties.items():
         if k == "Description":
@@ -286,7 +286,7 @@ def _construct_database_input(database_name: str, properties: Properties) -> Dat
     return database_input
 
 
-def _register_glue_catalog_id_with_glue_client(glue: GlueClient, glue_catalog_id: str) -> None:
+def _register_glue_catalog_id_with_glue_client(glue: "GlueClient", glue_catalog_id: str) -> None:
     """
     Register the Glue Catalog ID (AWS Account ID) as a parameter on all Glue client methods.
 
@@ -303,9 +303,9 @@ def _register_glue_catalog_id_with_glue_client(glue: GlueClient, glue_catalog_id
 
 
 class GlueCatalog(MetastoreCatalog):
-    glue: GlueClient
+    glue: "GlueClient"
 
-    def __init__(self, name: str, client: Optional[GlueClient] = None, **properties: Any):
+    def __init__(self, name: str, client: Optional["GlueClient"] = None, **properties: Any):
         """Glue Catalog.
 
         You either need to provide a boto3 glue client, or one will be constructed from the properties.
@@ -317,7 +317,7 @@ class GlueCatalog(MetastoreCatalog):
         """
         super().__init__(name, **properties)
 
-        if client:
+        if client is not None:
             self.glue = client
         else:
             retry_mode_prop_value = get_first_property_value(properties, GLUE_RETRY_MODE)
@@ -344,7 +344,7 @@ class GlueCatalog(MetastoreCatalog):
             if glue_catalog_id := properties.get(GLUE_ID):
                 _register_glue_catalog_id_with_glue_client(self.glue, glue_catalog_id)
 
-    def _convert_glue_to_iceberg(self, glue_table: TableTypeDef) -> Table:
+    def _convert_glue_to_iceberg(self, glue_table: "TableTypeDef") -> Table:
         properties: Properties = glue_table["Parameters"]
 
         assert glue_table["DatabaseName"]
@@ -380,7 +380,7 @@ class GlueCatalog(MetastoreCatalog):
             catalog=self,
         )
 
-    def _create_glue_table(self, database_name: str, table_name: str, table_input: TableInputTypeDef) -> None:
+    def _create_glue_table(self, database_name: str, table_name: str, table_input: "TableInputTypeDef") -> None:
         try:
             self.glue.create_table(DatabaseName=database_name, TableInput=table_input)
         except self.glue.exceptions.AlreadyExistsException as e:
@@ -388,7 +388,7 @@ class GlueCatalog(MetastoreCatalog):
         except self.glue.exceptions.EntityNotFoundException as e:
             raise NoSuchNamespaceError(f"Database {database_name} does not exist") from e
 
-    def _update_glue_table(self, database_name: str, table_name: str, table_input: TableInputTypeDef, version_id: str) -> None:
+    def _update_glue_table(self, database_name: str, table_name: str, table_input: "TableInputTypeDef", version_id: str) -> None:
         try:
             self.glue.update_table(
                 DatabaseName=database_name,
@@ -403,7 +403,7 @@ class GlueCatalog(MetastoreCatalog):
                 f"Cannot commit {database_name}.{table_name} because Glue detected concurrent update to table version {version_id}"
             ) from e
 
-    def _get_glue_table(self, database_name: str, table_name: str) -> TableTypeDef:
+    def _get_glue_table(self, database_name: str, table_name: str) -> "TableTypeDef":
         try:
             load_table_response = self.glue.get_table(DatabaseName=database_name, Name=table_name)
             return load_table_response["Table"]
@@ -496,7 +496,7 @@ class GlueCatalog(MetastoreCatalog):
         table_identifier = table.name()
         database_name, table_name = self.identifier_to_database_and_table(table_identifier, NoSuchTableError)
 
-        current_glue_table: Optional[TableTypeDef]
+        current_glue_table: Optional["TableTypeDef"]
         glue_table_version_id: Optional[str]
         current_table: Optional[Table]
         try:
@@ -702,7 +702,7 @@ class GlueCatalog(MetastoreCatalog):
             NoSuchNamespaceError: If a namespace with the given name does not exist, or the identifier is invalid.
         """
         database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
-        table_list: List[TableTypeDef] = []
+        table_list: List["TableTypeDef"] = []
         next_token: Optional[str] = None
         try:
             while True:
@@ -730,7 +730,7 @@ class GlueCatalog(MetastoreCatalog):
         if namespace:
             return []
 
-        database_list: List[DatabaseTypeDef] = []
+        database_list: List["DatabaseTypeDef"] = []
         next_token: Optional[str] = None
 
         while True:
@@ -806,5 +806,5 @@ class GlueCatalog(MetastoreCatalog):
         raise NotImplementedError
 
     @staticmethod
-    def __is_iceberg_table(table: TableTypeDef) -> bool:
+    def __is_iceberg_table(table: "TableTypeDef") -> bool:
         return table.get("Parameters", {}).get(TABLE_TYPE, "").lower() == ICEBERG

@@ -626,3 +626,11 @@ def test_table_exists(
     assert test_catalog.table_exists(identifier) is True
     # Act and Assert for an non-existing  table
     assert test_catalog.table_exists(("non", "exist")) is False
+
+
+@mock_aws
+def test_dynamodb_client_override() -> None:
+    catalog_name = "glue"
+    test_client = boto3.client("dynamodb", region_name="us-west-2")
+    test_catalog = DynamoDbCatalog(catalog_name, test_client)
+    assert test_catalog.dynamodb is test_client
