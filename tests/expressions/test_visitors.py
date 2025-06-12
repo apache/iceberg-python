@@ -68,10 +68,12 @@ from pyiceberg.expressions.visitors import (
     BooleanExpressionVisitor,
     BoundBooleanExpressionVisitor,
     _ManifestEvalVisitor,
+    bind,
     expression_evaluator,
     expression_to_plain_format,
     rewrite_not,
     rewrite_to_dnf,
+    translate_column_names,
     visit,
     visit_bound_predicate,
 )
@@ -1623,3 +1625,40 @@ def test_expression_evaluator_null() -> None:
     assert expression_evaluator(schema, LessThan("a", 1), case_sensitive=True)(struct) is False
     assert expression_evaluator(schema, StartsWith("a", 1), case_sensitive=True)(struct) is False
     assert expression_evaluator(schema, NotStartsWith("a", 1), case_sensitive=True)(struct) is True
+
+
+@pytest.mark.parametrize(
+    "before_expression,after_expression",
+    [
+        (In("id", {1, 2, 3}), AlwaysTrue()),
+        (EqualTo("id", 3), AlwaysFalse()),
+        (
+            And(EqualTo("id", 1), EqualTo("all_same_value_or_null", "string")),
+            And(AlwaysTrue(), EqualTo("all_same_value_or_null", "string")),
+        ),
+        (
+            And(EqualTo("all_same_value_or_null", "string"), GreaterThan("id", 2)),
+            And(EqualTo("all_same_value_or_null", "string"), AlwaysFalse()),
+        ),
+        (
+            Or(
+                And(EqualTo("id", 1), EqualTo("all_same_value_or_null", "string")),
+                And(EqualTo("all_same_value_or_null", "string"), GreaterThan("id", 2)),
+            ),
+            Or(
+                And(AlwaysTrue(), EqualTo("all_same_value_or_null", "string")),
+                And(EqualTo("all_same_value_or_null", "string"), AlwaysFalse()),
+            ),
+        ),
+    ],
+)
+def test_translate_column_names_eval_projected_fields(
+    schema: Schema, before_expression: BooleanExpression, after_expression: BooleanExpression
+) -> None:
+    # exclude id from file_schema pretending that it's part of partition values
+    file_schema = Schema(*[field for field in schema.columns if field.name != "id"])
+    projected_missing_fields = {"id": 1}
+    assert (
+        translate_column_names(bind(schema, before_expression, True), file_schema, schema, True, projected_missing_fields)
+        == after_expression
+    )
