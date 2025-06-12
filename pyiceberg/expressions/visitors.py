@@ -906,6 +906,24 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
             # in the file schema when reading older data
             if isinstance(predicate, BoundIsNull):
                 return AlwaysTrue()
+            # Evaluate projected field by value extracted from partition
+            elif (field_name := predicate.term.ref().field.name) in self.projected_missing_fields:
+                unbound_predicate: BooleanExpression
+                if isinstance(predicate, BoundUnaryPredicate):
+                    unbound_predicate = predicate.as_unbound(field_name)
+                elif isinstance(predicate, BoundLiteralPredicate):
+                    unbound_predicate = predicate.as_unbound(field_name, predicate.literal)
+                elif isinstance(predicate, BoundSetPredicate):
+                    unbound_predicate = predicate.as_unbound(field_name, predicate.literals)
+                else:
+                    raise ValueError(f"Unsupported predicate: {predicate}")
+                field = self.projected_schema.find_field(field_name)
+                schema = Schema(field)
+                evaluator = expression_evaluator(schema, unbound_predicate, self.case_sensitive)
+                if evaluator(Record(self.projected_missing_fields[field_name])):
+                    return AlwaysTrue()
+                else:
+                    return AlwaysFalse()
             else:
                 return AlwaysFalse()
 
