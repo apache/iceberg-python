@@ -125,6 +125,8 @@ def _get_endpoint_params(endpoint: str, **kwargs: Any) -> dict[str, Any] | None:
     _params = {}
     for camel, snake in snake_case_query_params.items():
         if snake in kwargs:
+            if kwargs[snake] is None:
+                continue
             _params[camel] = kwargs[snake]
 
     return _params
