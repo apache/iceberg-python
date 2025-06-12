@@ -14,6 +14,7 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+import re
 from enum import Enum
 from typing import (
     TYPE_CHECKING,
@@ -82,6 +83,9 @@ if TYPE_CHECKING:
 ICEBERG_REST_SPEC_VERSION = "0.14.1"
 
 
+CAMEL_TO_SNAKE_CASE_PATTERN = re.compile(r"(?<!^)(?=[A-Z])")
+
+
 class Endpoints:
     get_config: str = "config"
     list_namespaces: str = "namespaces"
@@ -102,6 +106,28 @@ class Endpoints:
     list_views: str = "namespaces/{namespace}/views"
     drop_view: str = "namespaces/{namespace}/views/{view}"
     view_exists: str = "namespaces/{namespace}/views/{view}"
+
+
+ENDPOINT_PARAMS_MAP: dict[str, tuple[str]] = {
+    Endpoints.drop_table: ("purgeRequested",),
+}
+
+
+def _get_endpoint_params(endpoint: str, **kwargs: Any) -> dict[str, Any] | None:
+    """Get the query parameters for the endpoint."""
+    if not kwargs or endpoint not in ENDPOINT_PARAMS_MAP:
+        return None
+
+    snake_case_query_params = {
+        param: CAMEL_TO_SNAKE_CASE_PATTERN.sub("_", param).lower() for param in ENDPOINT_PARAMS_MAP[endpoint]
+    }
+
+    _params = {}
+    for camel, snake in snake_case_query_params.items():
+        if snake in kwargs:
+            _params[camel] = kwargs[snake]
+
+    return _params
 
 
 class IdentifierKind(Enum):
@@ -584,7 +610,9 @@ class RestCatalog(Catalog):
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
     @retry(**_RETRY_ARGS)
-    def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def list_tables(
+        self, namespace: Union[str, Identifier], page_token: str | None = None, page_size: int | None = None
+    ) -> List[Identifier]:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
         response = self._session.get(self.url(Endpoints.list_tables, namespace=namespace_concat))
@@ -616,8 +644,9 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def drop_table(self, identifier: Union[str, Identifier], purge_requested: bool = False) -> None:
+        params = _get_endpoint_params(Endpoints.drop_table, purge_requested=purge_requested)
         response = self._session.delete(
-            self.url(Endpoints.drop_table, prefixed=True, purge=purge_requested, **self._split_identifier_for_path(identifier)),
+            self.url(Endpoints.drop_table, prefixed=True, **self._split_identifier_for_path(identifier)), params=params
         )
         try:
             response.raise_for_status()
