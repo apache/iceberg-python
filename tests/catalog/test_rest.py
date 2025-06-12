@@ -1628,3 +1628,8 @@ def test_get_endpoint_params() -> None:
     assert params == {
         "purgeRequested": True,
     }
+
+
+def test_get_endpoint_with_no_params() -> None:
+    params = _get_endpoint_params(Endpoints.namespace_exists, purge_requested=True)
+    assert params is None
