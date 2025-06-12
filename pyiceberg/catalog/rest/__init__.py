@@ -613,8 +613,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def list_tables(
-        self, namespace: Union[str, Identifier], page_token: str | None = None, page_size: int | None = None
-    ) -> List[Identifier]:
+        self, namespace: Union[str, Identifier]) -> List[Identifier]:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
         response = self._session.get(self.url(Endpoints.list_tables, namespace=namespace_concat))
