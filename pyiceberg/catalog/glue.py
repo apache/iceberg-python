@@ -687,13 +687,19 @@ class GlueCatalog(MetastoreCatalog):
         """
         database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
         try:
-            table_list = self.list_tables(namespace=database_name)
-        except NoSuchNamespaceError as e:
+            table_list_response = self.glue.get_tables(DatabaseName=database_name)
+            table_list = table_list_response["TableList"]
+        except self.glue.exceptions.EntityNotFoundException as e:
             raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
 
         if len(table_list) > 0:
-            raise NamespaceNotEmptyError(f"Database {database_name} is not empty")
-
+            first_table = table_list[0]
+            if self.__is_iceberg_table(first_table):
+                raise NamespaceNotEmptyError(f"Cannot drop namespace {database_name} because it still contains Iceberg tables")
+            else:
+                raise NamespaceNotEmptyError(
+                    f"Cannot drop namespace {database_name} because it still contains non-Iceberg tables"
+                )
         self.glue.delete_database(Name=database_name)
 
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
