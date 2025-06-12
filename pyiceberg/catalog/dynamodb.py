@@ -836,7 +836,9 @@ def _convert_dynamo_item_to_regular_dict(dynamo_json: Dict[str, Any]) -> Dict[st
             raise ValueError("Only S and N data types are supported.")
 
         values = list(val_dict.values())
-        assert len(values) == 1
+        if len(values) != 1:
+            raise ValueError(f"Expecting only 1 value: {values}")
+
         column_value = values[0]
         regular_json[column_name] = column_value
 
