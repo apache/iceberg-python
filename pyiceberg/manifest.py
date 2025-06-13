@@ -445,6 +445,34 @@ def data_file_with_partition(partition_type: StructType, format_version: TableVe
     )
 
 
+class PositionDelete(Record):
+    __slots__ = ("file_path", "pos", "row")
+    path: str
+    pos: int
+    row: Optional[Record]
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Assign a key/value to a PositionDelete."""
+        super().__setattr__(name, value)
+
+    def __init__(self, file_path: str, pos: int, row: Optional[Record], *data: Any, **named_data: Any) -> None:
+        super().__init__(*data, **named_data)
+        self.path = file_path
+        self.pos = pos
+        self.row = row
+
+    def __hash__(self) -> int:
+        """Return the hash of the file path."""
+        return hash(self.path)
+
+    def __eq__(self, other: Any) -> bool:
+        """Compare the PositionDelete with another object.
+
+        If it is a PositionDelete, it will compare based on the file_path.
+        """
+        return self.path == other.path if isinstance(other, PositionDelete) else False
+
+
 class DataFile(Record):
     @classmethod
     def from_args(cls, _table_format_version: TableVersion = DEFAULT_READ_VERSION, **arguments: Any) -> DataFile:

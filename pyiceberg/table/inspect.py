@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Set, Tupl
 from pyiceberg.conversions import from_bytes
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile, PartitionFieldSummary
 from pyiceberg.partitioning import PartitionSpec
+from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Snapshot, ancestors_of
 from pyiceberg.types import PrimitiveType
 from pyiceberg.utils.concurrent import ExecutorFactory
@@ -384,6 +385,28 @@ class InspectTable:
         all_manifests_schema = all_manifests_schema.append(pa.field("reference_snapshot_id", pa.int64(), nullable=False))
         return all_manifests_schema
 
+    def _get_positional_deletes_schema(self, schema: Optional[Schema] = None, spec_id: Optional[int] = None) -> "pa.Schema":
+        import pyarrow as pa
+
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+        schema = schema or self.tbl.metadata.schema()
+
+        partition_struct = self.tbl.metadata.spec_struct(spec_id=spec_id)
+        pa_partition_struct = schema_to_pyarrow(partition_struct)
+        pa_row_struct = schema_to_pyarrow(schema.as_struct())
+        positional_delete_schema = pa.schema(
+            [
+                pa.field("file_path", pa.string(), nullable=False),
+                pa.field("pos", pa.int64(), nullable=False),
+                pa.field("row", pa_row_struct, nullable=True),
+                pa.field("partition", pa_partition_struct, nullable=False),
+                pa.field("spec_id", pa.int64(), nullable=True),
+                pa.field("delete_file_path", pa.string(), nullable=False),
+            ]
+        )
+        return positional_delete_schema
+
     def _generate_manifests_table(self, snapshot: Optional[Snapshot], is_all_manifests_table: bool = False) -> "pa.Table":
         import pyarrow as pa
 
@@ -452,6 +475,42 @@ class InspectTable:
             manifests,
             schema=self._get_all_manifests_schema() if is_all_manifests_table else self._get_manifests_schema(),
         )
+
+    def _generate_positional_delete_table(self, manifest: ManifestFile, schema: Schema) -> "pa.Table":
+        import pyarrow as pa
+
+        positional_deletes: List["pa.Table"] = []
+
+        position_deletes_schema = self._get_positional_deletes_schema(schema=schema, spec_id=manifest.partition_spec_id)
+
+        if manifest.content == ManifestContent.DELETES:
+            for entry in manifest.fetch_manifest_entry(self.tbl.io):
+                if entry.data_file.content == DataFileContent.POSITION_DELETES:
+                    from pyiceberg.io.pyarrow import _fs_from_file_path, _read_delete_file
+
+                    positional_delete_file = _read_delete_file(
+                        _fs_from_file_path(self.tbl.io, entry.data_file.file_path), entry.data_file
+                    )
+                    positional_deletes_records = []
+                    for record in positional_delete_file:
+                        row = {
+                            "file_path": record.path,
+                            "pos": record.pos,
+                            "row": record.row,
+                            "partition": {
+                                field.name: entry.data_file.partition[pos]
+                                for pos, field in enumerate(self.tbl.metadata.specs()[manifest.partition_spec_id].fields)
+                            },
+                            "spec_id": manifest.partition_spec_id,
+                            "delete_file_path": entry.data_file.file_path,
+                        }
+                        positional_deletes_records.append(row)
+
+                    positional_deletes.append(pa.Table.from_pylist(positional_deletes_records, position_deletes_schema))
+
+        if not positional_deletes:
+            return pa.Table.from_pylist([], position_deletes_schema)
+        return pa.concat_tables(positional_deletes)
 
     def manifests(self) -> "pa.Table":
         return self._generate_manifests_table(self.tbl.current_snapshot())
@@ -704,3 +763,26 @@ class InspectTable:
 
     def all_delete_files(self) -> "pa.Table":
         return self._all_files({DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES})
+
+    def position_deletes(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+        import pyarrow as pa
+
+        snapshot = self._get_snapshot(snapshot_id) if snapshot_id else self.tbl.current_snapshot()
+        if not snapshot:
+            schema = self._get_positional_deletes_schema()
+            return pa.Table.from_pylist([], schema=schema)
+
+        if snapshot.schema_id is None:
+            raise ValueError(f"Snapshot {snapshot.snapshot_id} does not have a schema id")
+
+        schemas = self.tbl.schemas()
+        schema = schemas.get(snapshot.schema_id, None)
+        if not schema:
+            raise ValueError(f"Cannot find schema with id: {snapshot.schema_id}")
+
+        executor = ExecutorFactory.get_or_create()
+        positional_deletes: Iterator["pa.Table"] = executor.map(
+            lambda manifest: self._generate_positional_delete_table(manifest, schema=schema),
+            snapshot.manifests(self.tbl.io),
+        )
+        return pa.concat_tables(positional_deletes)

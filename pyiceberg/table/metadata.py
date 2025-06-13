@@ -279,6 +279,37 @@ class TableMetadataCommonFields(IcebergBaseModel):
 
         return StructType(*nested_fields)
 
+    def spec_struct(self, spec_id: Optional[int] = None) -> StructType:
+        """Produce for a spec_id a struct of PartitionSpecs.
+
+        The partition fields should be optional: Partition fields may be added later,
+        in which case not all files would have the result field, and it may be null.
+
+        :return: A StructType that represents a PartitionSpec of the table for a specific spec_id or latest.
+        """
+        if spec_id is None:
+            spec = self.spec()
+        else:
+            specs = self.specs()
+            filtered_spec = list(filter(lambda spec: spec.spec_id == spec_id, specs.values()))
+            if not filtered_spec:
+                raise ValidationError(f"Spec with spec_id {spec_id} not found")
+            spec = filtered_spec[0]
+        # Collect all the fields
+        struct_fields = {field.field_id: field for field in spec.fields}
+
+        schema = self.schema()
+
+        nested_fields = []
+        # Sort them by field_id in order to get a deterministic output
+        for field_id in sorted(struct_fields):
+            field = struct_fields[field_id]
+            source_type = schema.find_type(field.source_id)
+            result_type = field.transform.result_type(source_type)
+            nested_fields.append(NestedField(field_id=field.field_id, name=field.name, type=result_type, required=False))
+
+        return StructType(*nested_fields)
+
     def new_snapshot_id(self) -> int:
         """Generate a new snapshot-id that's not in use."""
         snapshot_id = _generate_snapshot_id()

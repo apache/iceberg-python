@@ -1101,3 +1101,56 @@ def test_inspect_files_partitioned(spark: SparkSession, session_catalog: Catalog
         .reset_index()
     )
     assert_frame_equal(lhs, rhs, check_dtype=False)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_inspect_positional_deletes(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    from pandas.testing import assert_frame_equal
+
+    identifier = "default.table_metadata_position_deletes"
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    spark.sql(
+        f"""
+        CREATE TABLE {identifier} (
+            id int,
+            data string
+        )
+        PARTITIONED BY (data)
+        TBLPROPERTIES ('write.update.mode'='merge-on-read',
+                       'write.delete.mode'='merge-on-read')
+    """
+    )
+    tbl = session_catalog.load_table(identifier)
+
+    spark.sql(f"INSERT INTO {identifier} VALUES (1, 'a')")
+
+    spark.sql(f"INSERT INTO {identifier} VALUES (2, 'b')")
+
+    spark.sql(f"UPDATE {identifier} SET data = 'c' WHERE id = 1")
+
+    spark.sql(f"DELETE FROM {identifier} WHERE id = 2")
+
+    tbl.refresh()
+    df = tbl.inspect.position_deletes()
+
+    assert df.column_names == ["file_path", "pos", "row", "partition", "spec_id", "delete_file_path"]
+
+    int_cols = ["pos"]
+    string_cols = ["file_path", "delete_file_path"]
+
+    for column in int_cols:
+        for value in df[column]:
+            assert isinstance(value.as_py(), int)
+
+    for column in string_cols:
+        for value in df[column]:
+            assert isinstance(value.as_py(), str)
+
+    lhs = spark.table(f"{identifier}.position_deletes").toPandas()
+    rhs = df.to_pandas()
+    assert_frame_equal(lhs, rhs, check_dtype=False)
