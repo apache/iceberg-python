@@ -66,6 +66,7 @@ from pyiceberg.table.metadata import (
     TableMetadataV1,
     TableMetadataV2,
 )
+from pyiceberg.typedef import UTF8
 from pyiceberg.types import (
     BooleanType,
     FloatType,
@@ -537,7 +538,7 @@ def test_metrics_primitive_types() -> None:
     assert datafile.lower_bounds[8] == STRUCT_INT64.pack(datetime_to_micros(datetime(2022, 1, 2, 17, 30, 34, 399)))
     assert datafile.lower_bounds[9] == STRUCT_INT64.pack(datetime_to_micros(datetime(2022, 1, 2, 17, 30, 34, 399, tz)))
     assert datafile.lower_bounds[10] == b"he"
-    assert datafile.lower_bounds[11] == uuid.uuid3(uuid.NAMESPACE_DNS, "foo").bytes
+    assert datafile.lower_bounds[11] == str(uuid.uuid3(uuid.NAMESPACE_DNS, "foo")).encode(UTF8)
     assert datafile.lower_bounds[12] == b"he"
     assert datafile.lower_bounds[13][::-1].ljust(4, b"\x00") == STRUCT_INT32.pack(12345)
     assert datafile.lower_bounds[14][::-1].ljust(8, b"\x00") == STRUCT_INT64.pack(12345679123456)
@@ -554,7 +555,7 @@ def test_metrics_primitive_types() -> None:
     assert datafile.upper_bounds[8] == STRUCT_INT64.pack(datetime_to_micros(datetime(2023, 2, 4, 13, 21, 4, 354)))
     assert datafile.upper_bounds[9] == STRUCT_INT64.pack(datetime_to_micros(datetime(2023, 2, 4, 13, 21, 4, 354, tz)))
     assert datafile.upper_bounds[10] == b"wp"
-    assert datafile.upper_bounds[11] == uuid.uuid3(uuid.NAMESPACE_DNS, "bar").bytes
+    assert datafile.upper_bounds[11] == str(uuid.uuid3(uuid.NAMESPACE_DNS, "bar")).encode(UTF8)
     assert datafile.upper_bounds[12] == b"wp"
     assert datafile.upper_bounds[13][::-1].ljust(4, b"\x00") == STRUCT_INT32.pack(67891)
     assert datafile.upper_bounds[14][::-1].ljust(8, b"\x00") == STRUCT_INT64.pack(67891234678912)
