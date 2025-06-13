@@ -289,6 +289,129 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
             doc="ID representing sort order for this file",
         ),
     ),
+    3: StructType(
+        NestedField(
+            field_id=134,
+            name="content",
+            field_type=IntegerType(),
+            required=True,
+            doc="File format name: avro, orc, or parquet",
+            initial_default=DataFileContent.DATA,
+        ),
+        NestedField(field_id=100, name="file_path", field_type=StringType(), required=True, doc="Location URI with FS scheme"),
+        NestedField(
+            field_id=101,
+            name="file_format",
+            field_type=StringType(),
+            required=True,
+            doc="File format name: avro, orc, or parquet",
+        ),
+        NestedField(
+            field_id=102,
+            name="partition",
+            field_type=StructType(),
+            required=True,
+            doc="Partition data tuple, schema based on the partition spec",
+        ),
+        NestedField(field_id=103, name="record_count", field_type=LongType(), required=True, doc="Number of records in the file"),
+        NestedField(
+            field_id=104, name="file_size_in_bytes", field_type=LongType(), required=True, doc="Total file size in bytes"
+        ),
+        NestedField(
+            field_id=108,
+            name="column_sizes",
+            field_type=MapType(key_id=117, key_type=IntegerType(), value_id=118, value_type=LongType()),
+            required=False,
+            doc="Map of column id to total size on disk",
+        ),
+        NestedField(
+            field_id=109,
+            name="value_counts",
+            field_type=MapType(key_id=119, key_type=IntegerType(), value_id=120, value_type=LongType()),
+            required=False,
+            doc="Map of column id to total count, including null and NaN",
+        ),
+        NestedField(
+            field_id=110,
+            name="null_value_counts",
+            field_type=MapType(key_id=121, key_type=IntegerType(), value_id=122, value_type=LongType()),
+            required=False,
+            doc="Map of column id to null value count",
+        ),
+        NestedField(
+            field_id=137,
+            name="nan_value_counts",
+            field_type=MapType(key_id=138, key_type=IntegerType(), value_id=139, value_type=LongType()),
+            required=False,
+            doc="Map of column id to number of NaN values in the column",
+        ),
+        NestedField(
+            field_id=125,
+            name="lower_bounds",
+            field_type=MapType(key_id=126, key_type=IntegerType(), value_id=127, value_type=BinaryType()),
+            required=False,
+            doc="Map of column id to lower bound",
+        ),
+        NestedField(
+            field_id=128,
+            name="upper_bounds",
+            field_type=MapType(key_id=129, key_type=IntegerType(), value_id=130, value_type=BinaryType()),
+            required=False,
+            doc="Map of column id to upper bound",
+        ),
+        NestedField(
+            field_id=131, name="key_metadata", field_type=BinaryType(), required=False, doc="Encryption key metadata blob"
+        ),
+        NestedField(
+            field_id=132,
+            name="split_offsets",
+            field_type=ListType(element_id=133, element_type=LongType(), element_required=True),
+            required=False,
+            doc="Splittable offsets",
+        ),
+        NestedField(
+            field_id=135,
+            name="equality_ids",
+            field_type=ListType(element_id=136, element_type=LongType(), element_required=True),
+            required=False,
+            doc="Field ids used to determine row equality in equality delete files.",
+        ),
+        NestedField(
+            field_id=140,
+            name="sort_order_id",
+            field_type=IntegerType(),
+            required=False,
+            doc="ID representing sort order for this file",
+        ),
+        NestedField(
+            field_id=142,
+            name="first_row_id",
+            field_type=LongType(),
+            required=False,
+            doc="The _row_id for the first row in the data file.",
+        ),
+        NestedField(
+            field_id=143,
+            name="referenced_data_file",
+            field_type=StringType(),
+            required=False,
+            doc="Fully qualified location (URI with FS scheme) of a data file that all deletes reference",
+        ),
+        NestedField(
+            field_id=144,
+            name="content_offset",
+            field_type=LongType(),
+            required=False,
+            doc="The offset in the file where the content starts.",
+        ),
+        NestedField(
+            field_id=145,
+            name="content_size_in_bytes",
+            field_type=LongType(),
+            required=False,
+            doc="The length of a referenced content stored in the file; required if content_offset is present",
+        ),
+    ),
 }
 
 
@@ -433,6 +556,13 @@ MANIFEST_ENTRY_SCHEMAS = {
         NestedField(3, "sequence_number", LongType(), required=False),
         NestedField(4, "file_sequence_number", LongType(), required=False),
         NestedField(2, "data_file", DATA_FILE_TYPE[2], required=True),
+    ),
+    3: Schema(
+        NestedField(0, "status", IntegerType(), required=True),
+        NestedField(1, "snapshot_id", LongType(), required=False),
+        NestedField(3, "sequence_number", LongType(), required=False),
+        NestedField(4, "file_sequence_number", LongType(), required=False),
+        NestedField(2, "data_file", DATA_FILE_TYPE[3], required=True),
     ),
 }
 
@@ -603,6 +733,24 @@ MANIFEST_LIST_FILE_SCHEMAS: Dict[int, Schema] = {
         NestedField(514, "deleted_rows_count", LongType(), required=True),
         NestedField(507, "partitions", ListType(508, PARTITION_FIELD_SUMMARY_TYPE, element_required=True), required=False),
         NestedField(519, "key_metadata", BinaryType(), required=False),
+    ),
+    3: Schema(
+        NestedField(500, "manifest_path", StringType(), required=True, doc="Location URI with FS scheme"),
+        NestedField(501, "manifest_length", LongType(), required=True),
+        NestedField(502, "partition_spec_id", IntegerType(), required=True),
+        NestedField(517, "content", IntegerType(), required=True, initial_default=ManifestContent.DATA),
+        NestedField(515, "sequence_number", LongType(), required=True, initial_default=0),
+        NestedField(516, "min_sequence_number", LongType(), required=True, initial_default=0),
+        NestedField(503, "added_snapshot_id", LongType(), required=True),
+        NestedField(504, "added_files_count", IntegerType(), required=True),
+        NestedField(505, "existing_files_count", IntegerType(), required=True),
+        NestedField(506, "deleted_files_count", IntegerType(), required=True),
+        NestedField(512, "added_rows_count", LongType(), required=True),
+        NestedField(513, "existing_rows_count", LongType(), required=True),
+        NestedField(514, "deleted_rows_count", LongType(), required=True),
+        NestedField(507, "partitions", ListType(508, PARTITION_FIELD_SUMMARY_TYPE, element_required=True), required=False),
+        NestedField(519, "key_metadata", BinaryType(), required=False),
+        NestedField(520, "first_row_id", LongType(), required=False),
     ),
 }
 
