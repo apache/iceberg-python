@@ -48,7 +48,7 @@ from pyiceberg.io.pyarrow import (
     pyarrow_to_schema,
 )
 from pyiceberg.schema import Schema
-from pyiceberg.table import Table, update_table_metadata
+from pyiceberg.table import Table
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -59,7 +59,6 @@ from pyiceberg.types import (
     TimestampType,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
-from pyiceberg.table.update import SetPropertiesUpdate, RemovePropertiesUpdate
 
 DEFAULT_PROPERTIES = {"write.parquet.compression-codec": "zstd"}
 
