@@ -99,37 +99,13 @@ class Endpoints:
     register_table = "namespaces/{namespace}/register"
     load_table: str = "namespaces/{namespace}/tables/{table}"
     update_table: str = "namespaces/{namespace}/tables/{table}"
-    drop_table: str = "namespaces/{namespace}/tables/{table}?purgeRequested={purge}"
+    drop_table: str = "namespaces/{namespace}/tables/{table}"
     table_exists: str = "namespaces/{namespace}/tables/{table}"
     get_token: str = "oauth/tokens"
     rename_table: str = "tables/rename"
     list_views: str = "namespaces/{namespace}/views"
     drop_view: str = "namespaces/{namespace}/views/{view}"
     view_exists: str = "namespaces/{namespace}/views/{view}"
-
-
-ENDPOINT_PARAMS_MAP: dict[str, tuple[str]] = {
-    Endpoints.drop_table: ("purgeRequested",),
-}
-
-
-def _get_endpoint_params(endpoint: str, **kwargs: Any) -> dict[str, Any] | None:
-    """Get the query parameters for the endpoint."""
-    if not kwargs or endpoint not in ENDPOINT_PARAMS_MAP:
-        return None
-
-    snake_case_query_params = {
-        param: CAMEL_TO_SNAKE_CASE_PATTERN.sub("_", param).lower() for param in ENDPOINT_PARAMS_MAP[endpoint]
-    }
-
-    _params = {}
-    for camel, snake in snake_case_query_params.items():
-        if snake in kwargs:
-            if kwargs[snake] is None:
-                continue
-            _params[camel] = kwargs[snake]
-
-    return _params
 
 
 class IdentifierKind(Enum):
@@ -644,9 +620,9 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def drop_table(self, identifier: Union[str, Identifier], purge_requested: bool = False) -> None:
-        params = _get_endpoint_params(Endpoints.drop_table, purge_requested=purge_requested)
         response = self._session.delete(
-            self.url(Endpoints.drop_table, prefixed=True, **self._split_identifier_for_path(identifier)), params=params
+            self.url(Endpoints.drop_table, prefixed=True, **self._split_identifier_for_path(identifier)),
+            params={"purgeRequested": purge_requested},
         )
         try:
             response.raise_for_status()
