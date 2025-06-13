@@ -66,6 +66,8 @@ from pyiceberg.utils.properties import get_first_property_value
 
 if TYPE_CHECKING:
     import pyarrow as pa
+    from mypy_boto3_dynamodb.client import DynamoDBClient
+
 
 DYNAMODB_CLIENT = "dynamodb"
 
@@ -94,18 +96,28 @@ DYNAMODB_SESSION_TOKEN = "dynamodb.session-token"
 
 
 class DynamoDbCatalog(MetastoreCatalog):
-    def __init__(self, name: str, **properties: str):
-        super().__init__(name, **properties)
+    def __init__(self, name: str, client: Optional["DynamoDBClient"] = None, **properties: str):
+        """Dynamodb catalog.
 
-        session = boto3.Session(
-            profile_name=properties.get(DYNAMODB_PROFILE_NAME),
-            region_name=get_first_property_value(properties, DYNAMODB_REGION, AWS_REGION),
-            botocore_session=properties.get(BOTOCORE_SESSION),
-            aws_access_key_id=get_first_property_value(properties, DYNAMODB_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
-            aws_secret_access_key=get_first_property_value(properties, DYNAMODB_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
-            aws_session_token=get_first_property_value(properties, DYNAMODB_SESSION_TOKEN, AWS_SESSION_TOKEN),
-        )
-        self.dynamodb = session.client(DYNAMODB_CLIENT)
+        Args:
+            name: Name to identify the catalog.
+            client: An optional boto3 dynamodb client.
+            properties: Properties for dynamodb client construction and configuration.
+        """
+        super().__init__(name, **properties)
+        if client is not None:
+            self.dynamodb = client
+        else:
+            session = boto3.Session(
+                profile_name=properties.get(DYNAMODB_PROFILE_NAME),
+                region_name=get_first_property_value(properties, DYNAMODB_REGION, AWS_REGION),
+                botocore_session=properties.get(BOTOCORE_SESSION),
+                aws_access_key_id=get_first_property_value(properties, DYNAMODB_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+                aws_secret_access_key=get_first_property_value(properties, DYNAMODB_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+                aws_session_token=get_first_property_value(properties, DYNAMODB_SESSION_TOKEN, AWS_SESSION_TOKEN),
+            )
+            self.dynamodb = session.client(DYNAMODB_CLIENT)
+
         self.dynamodb_table_name = self.properties.get(DYNAMODB_TABLE_NAME, DYNAMODB_TABLE_NAME_DEFAULT)
         self._ensure_catalog_table_exists_or_create()
 
@@ -824,7 +836,9 @@ def _convert_dynamo_item_to_regular_dict(dynamo_json: Dict[str, Any]) -> Dict[st
             raise ValueError("Only S and N data types are supported.")
 
         values = list(val_dict.values())
-        assert len(values) == 1
+        if len(values) != 1:
+            raise ValueError(f"Expecting only 1 value: {values}")
+
         column_value = values[0]
         regular_json[column_name] = column_value
 

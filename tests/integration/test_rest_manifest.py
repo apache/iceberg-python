@@ -25,6 +25,7 @@ from typing import Any, List
 import pytest
 from fastavro import reader
 
+from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import DataFile, write_manifest
@@ -77,7 +78,8 @@ def table_test_all_types(catalog: Catalog) -> Table:
 
 
 @pytest.mark.integration
-def test_write_sample_manifest(table_test_all_types: Table) -> None:
+@pytest.mark.parametrize("compression", ["null", "deflate"])
+def test_write_sample_manifest(table_test_all_types: Table, compression: AvroCompressionCodec) -> None:
     test_snapshot = table_test_all_types.current_snapshot()
     if test_snapshot is None:
         raise ValueError("Table has no current snapshot, check the docker environment")
@@ -120,6 +122,7 @@ def test_write_sample_manifest(table_test_all_types: Table) -> None:
             schema=test_schema,
             output_file=output,
             snapshot_id=test_snapshot.snapshot_id,
+            avro_compression=compression,
         ) as manifest_writer:
             # For simplicity, try one entry first
             manifest_writer.add_entry(test_manifest_entries[0])
