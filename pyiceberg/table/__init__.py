@@ -188,6 +188,9 @@ class TableProperties:
     WRITE_TARGET_FILE_SIZE_BYTES = "write.target-file-size-bytes"
     WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT = 512 * 1024 * 1024  # 512 MB
 
+    WRITE_AVRO_COMPRESSION = "write.avro.compression-codec"
+    WRITE_AVRO_COMPRESSION_DEFAULT = "gzip"
+
     DEFAULT_WRITE_METRICS_MODE = "write.metadata.metrics.default"
     DEFAULT_WRITE_METRICS_MODE_DEFAULT = "truncate(16)"
 

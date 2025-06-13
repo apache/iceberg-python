@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Generic, List, Optional, 
 
 from sortedcontainers import SortedList
 
+from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.expressions import (
     AlwaysFalse,
     BooleanExpression,
@@ -105,6 +106,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     _added_data_files: List[DataFile]
     _manifest_num_counter: itertools.count[int]
     _deleted_data_files: Set[DataFile]
+    _compression: AvroCompressionCodec
 
     def __init__(
         self,
@@ -127,6 +129,11 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._deleted_data_files = set()
         self.snapshot_properties = snapshot_properties
         self._manifest_num_counter = itertools.count(0)
+        from pyiceberg.table import TableProperties
+
+        self._compression = self._transaction.table_metadata.properties.get(  # type: ignore
+            TableProperties.WRITE_AVRO_COMPRESSION, TableProperties.WRITE_AVRO_COMPRESSION_DEFAULT
+        )
 
     def append_data_file(self, data_file: DataFile) -> _SnapshotProducer[U]:
         self._added_data_files.append(data_file)
@@ -155,6 +162,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                     schema=self._transaction.table_metadata.schema(),
                     output_file=self.new_manifest_output(),
                     snapshot_id=self._snapshot_id,
+                    avro_compression=self._compression,
                 ) as writer:
                     for data_file in self._added_data_files:
                         writer.add(
@@ -185,6 +193,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                         schema=self._transaction.table_metadata.schema(),
                         output_file=self.new_manifest_output(),
                         snapshot_id=self._snapshot_id,
+                        avro_compression=self._compression,
                     ) as writer:
                         for entry in entries:
                             writer.add_entry(entry)
@@ -250,12 +259,14 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         )
         location_provider = self._transaction._table.location_provider()
         manifest_list_file_path = location_provider.new_metadata_location(file_name)
+
         with write_manifest_list(
             format_version=self._transaction.table_metadata.format_version,
             output_file=self._io.new_output(manifest_list_file_path),
             snapshot_id=self._snapshot_id,
             parent_snapshot_id=self._parent_snapshot_id,
             sequence_number=next_sequence_number,
+            avro_compression=self._compression,
         ) as writer:
             writer.add_manifests(new_manifests)
 
@@ -292,6 +303,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             schema=self._transaction.table_metadata.schema(),
             output_file=self.new_manifest_output(),
             snapshot_id=self._snapshot_id,
+            avro_compression=self._compression,
         )
 
     def new_manifest_output(self) -> OutputFile:
@@ -417,6 +429,7 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
                                     schema=self._transaction.table_metadata.schema(),
                                     output_file=self.new_manifest_output(),
                                     snapshot_id=self._snapshot_id,
+                                    avro_compression=self._compression,
                                 ) as writer:
                                     for existing_entry in existing_entries:
                                         writer.add_entry(existing_entry)
@@ -704,6 +717,7 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
                             schema=self._transaction.table_metadata.schema(),
                             output_file=self.new_manifest_output(),
                             snapshot_id=self._snapshot_id,
+                            avro_compression=self._compression,
                         ) as writer:
                             [
                                 writer.add_entry(
