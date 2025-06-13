@@ -50,7 +50,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
 from pyiceberg.table.sorting import SortDirection, SortField, SortOrder
-from pyiceberg.transforms import DayTransform, HourTransform, IdentityTransform, BucketTransform, Transform
+from pyiceberg.transforms import BucketTransform, DayTransform, HourTransform, IdentityTransform, Transform
 from pyiceberg.types import (
     DateType,
     DecimalType,
@@ -1848,7 +1848,7 @@ def test_read_write_decimals(session_catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("transform", [IdentityTransform(), BucketTransform(32)])
-def test_uuid_partitioning(session_catalog: Catalog, spark: SparkSession, transform: Transform) -> None:
+def test_uuid_partitioning(session_catalog: Catalog, spark: SparkSession, transform: Transform) -> None:  # type: ignore
     identifier = f"default.test_uuid_partitioning_{str(transform).replace('[32]', '')}"
 
     schema = Schema(NestedField(field_id=1, name="uuid", field_type=UUIDType(), required=True))
@@ -1858,9 +1858,7 @@ def test_uuid_partitioning(session_catalog: Catalog, spark: SparkSession, transf
     except NoSuchTableError:
         pass
 
-    partition_spec = PartitionSpec(
-        PartitionField(source_id=1, field_id=1000, transform=transform, name="uuid_identity")
-    )
+    partition_spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=transform, name="uuid_identity"))
 
     import pyarrow as pa
 
@@ -1891,6 +1889,7 @@ def test_uuid_partitioning(session_catalog: Catalog, spark: SparkSession, transf
     lhs = [r[0] for r in spark.table(identifier).collect()]
     rhs = [str(u.as_py()) for u in tbl.scan().to_arrow()["uuid"].combine_chunks()]
     assert lhs == rhs
+
 
 @pytest.mark.integration
 def test_avro_compression_codecs(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
