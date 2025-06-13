@@ -14,7 +14,6 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
-import re
 from enum import Enum
 from typing import (
     TYPE_CHECKING,
@@ -81,9 +80,6 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
 ICEBERG_REST_SPEC_VERSION = "0.14.1"
-
-
-CAMEL_TO_SNAKE_CASE_PATTERN = re.compile(r"(?<!^)(?=[A-Z])")
 
 
 class Endpoints:
