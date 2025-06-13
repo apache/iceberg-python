@@ -549,6 +549,18 @@ def test_drop_non_empty_namespace(
 
 
 @mock_aws
+def test_drop_namespace_that_contains_non_iceberg_tables(
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
+    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
+    test_catalog.create_namespace(namespace=database_name)
+    test_catalog.glue.create_table(DatabaseName=database_name, TableInput={"Name": "hive_table"})
+
+    with pytest.raises(NamespaceNotEmptyError):
+        test_catalog.drop_namespace(database_name)
+
+
+@mock_aws
 def test_drop_non_exist_namespace(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
     with pytest.raises(NoSuchNamespaceError):
