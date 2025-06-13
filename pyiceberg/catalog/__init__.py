@@ -262,6 +262,10 @@ def load_catalog(name: Optional[str] = None, **properties: Optional[str]) -> Cat
     raise ValueError(f"Could not initialize catalog with the following properties: {properties}")
 
 
+def list_catalogs() -> List[str]:
+    return _ENV_CONFIG.get_known_catalogs()
+
+
 def delete_files(io: FileIO, files_to_delete: Set[str], file_type: str) -> None:
     """Delete files.
 
