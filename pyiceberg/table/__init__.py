@@ -115,11 +115,7 @@ from pyiceberg.table.update import (
     update_table_metadata,
 )
 from pyiceberg.table.update.schema import UpdateSchema
-from pyiceberg.table.update.snapshot import (
-    ManageSnapshots,
-    UpdateSnapshot,
-    _FastAppendFiles,
-)
+from pyiceberg.table.update.snapshot import ManageSnapshots, RewriteManifestsResult, UpdateSnapshot, _FastAppendFiles
 from pyiceberg.table.update.spec import UpdateSpec
 from pyiceberg.table.update.statistics import UpdateStatistics
 from pyiceberg.transforms import IdentityTransform
@@ -441,6 +437,14 @@ class Transaction:
             A new UpdateSnapshot
         """
         return UpdateSnapshot(self, io=self._table.io, snapshot_properties=snapshot_properties)
+
+    def rewrite_manifests(self) -> RewriteManifestsResult:
+        if self._table.current_snapshot() is None:
+            return RewriteManifestsResult(rewritten_manifests=[], added_manifests=[])
+
+        with self.update_snapshot().rewrite() as rewrite:
+            rewritten = rewrite.rewrite_manifests()
+            return rewritten
 
     def update_statistics(self) -> UpdateStatistics:
         """
@@ -1235,6 +1239,10 @@ class Table:
     def name_mapping(self) -> Optional[NameMapping]:
         """Return the table's field-id NameMapping."""
         return self.metadata.name_mapping()
+
+    def rewrite_manifests(self) -> RewriteManifestsResult:
+        with self.transaction() as tx:
+            return tx.rewrite_manifests()
 
     def upsert(
         self,
