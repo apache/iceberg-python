@@ -40,7 +40,7 @@ WORKDIR ${SPARK_HOME}
 ENV SPARK_VERSION=3.5.4
 ENV ICEBERG_SPARK_RUNTIME_VERSION=3.5_2.12
 ENV ICEBERG_VERSION=1.9.1
-ENV PYICEBERG_VERSION=0.9.0
+ENV PYICEBERG_VERSION=0.9.1
 
 RUN curl --retry 5 -s -C - https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz -o spark-${SPARK_VERSION}-bin-hadoop3.tgz \
  && tar xzf spark-${SPARK_VERSION}-bin-hadoop3.tgz --directory /opt/spark --strip-components 1 \
