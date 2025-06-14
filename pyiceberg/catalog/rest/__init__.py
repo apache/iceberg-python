@@ -18,6 +18,7 @@ from enum import Enum
 from typing import (
     TYPE_CHECKING,
     Any,
+    Callable,
     Dict,
     Iterator,
     List,
@@ -28,7 +29,7 @@ from typing import (
 )
 
 from pydantic import Field, field_validator
-from requests import HTTPError, Session
+from requests import HTTPError, Response, Session
 from tenacity import RetryCallState, retry, retry_if_exception_type, stop_after_attempt
 
 from pyiceberg import __version__
@@ -474,6 +475,26 @@ class RestCatalog(Catalog):
         session.headers["User-Agent"] = f"PyIceberg/{__version__}"
         session.headers.setdefault("X-Iceberg-Access-Delegation", ACCESS_DELEGATION_DEFAULT)
 
+    @retry(**_RETRY_ARGS)
+    def _request_with_retries(
+        self,
+        method: Callable[..., Response],
+        url: str,
+        headers: Optional[Dict[str, Any]] = None,
+        json: Any = None,
+        params: Optional[Dict[str, Any]] = None,
+        data: Any = None,
+        non_200_response_mapping: Optional[dict[int, type[Exception]]] = None,
+    ) -> Response:
+        response = method(url, headers=headers, json=json, params=params, data=data)
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            if non_200_response_mapping is not None:
+                _handle_non_200_response(exc, non_200_response_mapping)
+
+        return response
+
     def _create_table(
         self,
         identifier: Union[str, Identifier],
@@ -502,17 +523,14 @@ class RestCatalog(Catalog):
             properties=properties,
         )
         serialized_json = request.model_dump_json().encode(UTF8)
-        response = self._session.post(
+        response = self._request_with_retries(
+            self._session.post,
             self.url(Endpoints.create_table, namespace=namespace_and_table["namespace"]),
             data=serialized_json,
+            non_200_response_mapping={409: TableAlreadyExistsError},
         )
-        try:
-            response.raise_for_status()
-        except HTTPError as exc:
-            _handle_non_200_response(exc, {409: TableAlreadyExistsError})
         return TableResponse.model_validate_json(response.text)
 
-    @retry(**_RETRY_ARGS)
     def create_table(
         self,
         identifier: Union[str, Identifier],
@@ -533,7 +551,6 @@ class RestCatalog(Catalog):
         )
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
-    @retry(**_RETRY_ARGS)
     def create_table_transaction(
         self,
         identifier: Union[str, Identifier],
@@ -555,7 +572,6 @@ class RestCatalog(Catalog):
         staged_table = self._response_to_staged_table(self.identifier_to_tuple(identifier), table_response)
         return CreateTableTransaction(staged_table)
 
-    @retry(**_RETRY_ARGS)
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
         """Register a new table using existing metadata.
 
@@ -575,14 +591,12 @@ class RestCatalog(Catalog):
             metadata_location=metadata_location,
         )
         serialized_json = request.model_dump_json().encode(UTF8)
-        response = self._session.post(
+        response = self._request_with_retries(
+            self._session.post,
             self.url(Endpoints.register_table, namespace=namespace_and_table["namespace"]),
             data=serialized_json,
+            non_200_response_mapping={409: TableAlreadyExistsError},
         )
-        try:
-            response.raise_for_status()
-        except HTTPError as exc:
-            _handle_non_200_response(exc, {409: TableAlreadyExistsError})
 
         table_response = TableResponse.model_validate_json(response.text)
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
@@ -590,7 +604,6 @@ class RestCatalog(Catalog):
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         return list(self.list_tables_lazy(namespace))
 
-    @retry(**_RETRY_ARGS)
     def list_tables_lazy(self, namespace: Union[str, Identifier]) -> Iterator[Identifier]:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
@@ -602,11 +615,12 @@ class RestCatalog(Catalog):
             if next_page_token is not None:
                 params["pageToken"] = next_page_token
 
-            response = self._session.get(self.url(Endpoints.list_tables, namespace=namespace_concat), params=params)
-            try:
-                response.raise_for_status()
-            except HTTPError as exc:
-                _handle_non_200_response(exc, {404: NoSuchNamespaceError})
+            response = self._request_with_retries(
+                self._session.get,
+                self.url(Endpoints.list_tables, namespace=namespace_concat),
+                params=params,
+                non_200_response_mapping={404: NoSuchNamespaceError},
+            )
             parsed = ListTablesResponse.model_validate_json(response.text)
             for table in parsed.identifiers:
                 yield (*table.namespace, table.name)
@@ -615,7 +629,6 @@ class RestCatalog(Catalog):
             if next_page_token is None:
                 break
 
-    @retry(**_RETRY_ARGS)
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
         params = {}
         if mode := self.properties.get(SNAPSHOT_LOADING_MODE):
@@ -624,43 +637,38 @@ class RestCatalog(Catalog):
             else:
                 raise ValueError("Invalid snapshot-loading-mode: {}")
 
-        response = self._session.get(
-            self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier)), params=params
+        response = self._request_with_retries(
+            self._session.get,
+            self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier)),
+            params=params,
+            non_200_response_mapping={404: NoSuchTableError},
         )
-        try:
-            response.raise_for_status()
-        except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchTableError})
 
         table_response = TableResponse.model_validate_json(response.text)
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
-    @retry(**_RETRY_ARGS)
     def drop_table(self, identifier: Union[str, Identifier], purge_requested: bool = False) -> None:
-        response = self._session.delete(
+        self._request_with_retries(
+            self._session.delete,
             self.url(Endpoints.drop_table, prefixed=True, **self._split_identifier_for_path(identifier)),
             params={"purgeRequested": purge_requested},
+            non_200_response_mapping={404: NoSuchTableError},
         )
-        try:
-            response.raise_for_status()
-        except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchTableError})
 
-    @retry(**_RETRY_ARGS)
     def purge_table(self, identifier: Union[str, Identifier]) -> None:
         self.drop_table(identifier=identifier, purge_requested=True)
 
-    @retry(**_RETRY_ARGS)
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
         payload = {
             "source": self._split_identifier_for_json(from_identifier),
             "destination": self._split_identifier_for_json(to_identifier),
         }
-        response = self._session.post(self.url(Endpoints.rename_table), json=payload)
-        try:
-            response.raise_for_status()
-        except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchTableError, 409: TableAlreadyExistsError})
+        self._request_with_retries(
+            self._session.post,
+            self.url(Endpoints.rename_table),
+            json=payload,
+            non_200_response_mapping={404: NoSuchTableError, 409: TableAlreadyExistsError},
+        )
 
         return self.load_table(to_identifier)
 
@@ -678,7 +686,6 @@ class RestCatalog(Catalog):
     def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         return list(self.list_views_lazy(namespace))
 
-    @retry(**_RETRY_ARGS)
     def list_views_lazy(self, namespace: Union[str, Identifier]) -> Iterator[Identifier]:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
@@ -690,11 +697,12 @@ class RestCatalog(Catalog):
             if next_page_token is not None:
                 params["pageToken"] = next_page_token
 
-            response = self._session.get(self.url(Endpoints.list_views, namespace=namespace_concat), params=params)
-            try:
-                response.raise_for_status()
-            except HTTPError as exc:
-                _handle_non_200_response(exc, {404: NoSuchNamespaceError})
+            response = self._request_with_retries(
+                self._session.get,
+                self.url(Endpoints.list_views, namespace=namespace_concat),
+                params=params,
+                non_200_response_mapping={404: NoSuchNamespaceError},
+            )
 
             parsed = ListViewsResponse.model_validate_json(response.text)
             for view in parsed.identifiers:
@@ -704,7 +712,6 @@ class RestCatalog(Catalog):
             if next_page_token is None:
                 break
 
-    @retry(**_RETRY_ARGS)
     def commit_table(
         self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
@@ -731,49 +738,42 @@ class RestCatalog(Catalog):
         if table_token := table.config.get(TOKEN):
             headers[AUTHORIZATION_HEADER] = f"{BEARER_PREFIX} {table_token}"
 
-        response = self._session.post(
+        response = self._request_with_retries(
+            self._session.post,
             self.url(Endpoints.update_table, prefixed=True, **self._split_identifier_for_path(table_request.identifier)),
             data=table_request.model_dump_json().encode(UTF8),
             headers=headers,
+            non_200_response_mapping={
+                409: CommitFailedException,
+                500: CommitStateUnknownException,
+                502: CommitStateUnknownException,
+                504: CommitStateUnknownException,
+            },
         )
-        try:
-            response.raise_for_status()
-        except HTTPError as exc:
-            _handle_non_200_response(
-                exc,
-                {
-                    409: CommitFailedException,
-                    500: CommitStateUnknownException,
-                    502: CommitStateUnknownException,
-                    504: CommitStateUnknownException,
-                },
-            )
         return CommitTableResponse.model_validate_json(response.text)
 
-    @retry(**_RETRY_ARGS)
     def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         payload = {"namespace": namespace_tuple, "properties": properties}
-        response = self._session.post(self.url(Endpoints.create_namespace), json=payload)
-        try:
-            response.raise_for_status()
-        except HTTPError as exc:
-            _handle_non_200_response(exc, {409: NamespaceAlreadyExistsError})
+        self._request_with_retries(
+            self._session.post,
+            self.url(Endpoints.create_namespace),
+            json=payload,
+            non_200_response_mapping={409: NamespaceAlreadyExistsError},
+        )
 
-    @retry(**_RETRY_ARGS)
     def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
-        response = self._session.delete(self.url(Endpoints.drop_namespace, namespace=namespace))
-        try:
-            response.raise_for_status()
-        except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchNamespaceError, 409: NamespaceNotEmptyError})
+        self._request_with_retries(
+            self._session.delete,
+            self.url(Endpoints.drop_namespace, namespace=namespace),
+            non_200_response_mapping={404: NoSuchNamespaceError, 409: NamespaceNotEmptyError},
+        )
 
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
         return list(self.list_namespaces_lazy(namespace))
 
-    @retry(**_RETRY_ARGS)
     def list_namespaces_lazy(self, namespace: Union[str, Identifier] = ()) -> Iterator[Identifier]:
         namespace_tuple = self.identifier_to_tuple(namespace)
 
@@ -784,18 +784,16 @@ class RestCatalog(Catalog):
             if next_page_token is not None:
                 params["pageToken"] = next_page_token
 
-            response = self._session.get(
+            response = self._request_with_retries(
+                self._session.get,
                 self.url(
                     f"{Endpoints.list_namespaces}?parent={NAMESPACE_SEPARATOR.join(namespace_tuple)}"
                     if namespace_tuple
                     else Endpoints.list_namespaces
                 ),
                 params=params,
+                non_200_response_mapping={404: NoSuchNamespaceError},
             )
-            try:
-                response.raise_for_status()
-            except HTTPError as exc:
-                _handle_non_200_response(exc, {404: NoSuchNamespaceError})
 
             parsed = ListNamespaceResponse.model_validate_json(response.text)
             yield from parsed.namespaces
@@ -804,30 +802,30 @@ class RestCatalog(Catalog):
             if next_page_token is None:
                 break
 
-    @retry(**_RETRY_ARGS)
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
-        response = self._session.get(self.url(Endpoints.load_namespace_metadata, namespace=namespace))
-        try:
-            response.raise_for_status()
-        except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchNamespaceError})
+        response = self._request_with_retries(
+            self._session.get,
+            self.url(Endpoints.load_namespace_metadata, namespace=namespace),
+            non_200_response_mapping={404: NoSuchNamespaceError},
+        )
 
         return NamespaceResponse.model_validate_json(response.text).properties
 
-    @retry(**_RETRY_ARGS)
     def update_namespace_properties(
         self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
         payload = {"removals": list(removals or []), "updates": updates}
-        response = self._session.post(self.url(Endpoints.update_namespace_properties, namespace=namespace), json=payload)
-        try:
-            response.raise_for_status()
-        except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchNamespaceError})
+        response = self._request_with_retries(
+            self._session.post,
+            self.url(Endpoints.update_namespace_properties, namespace=namespace),
+            json=payload,
+            non_200_response_mapping={404: NoSuchNamespaceError},
+        )
+
         parsed_response = UpdateNamespacePropertiesResponse.model_validate_json(response.text)
         return PropertiesUpdateSummary(
             removed=parsed_response.removed,
@@ -835,11 +833,10 @@ class RestCatalog(Catalog):
             missing=parsed_response.missing,
         )
 
-    @retry(**_RETRY_ARGS)
     def namespace_exists(self, namespace: Union[str, Identifier]) -> bool:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
-        response = self._session.head(self.url(Endpoints.namespace_exists, namespace=namespace))
+        response = self._request_with_retries(self._session.head, self.url(Endpoints.namespace_exists, namespace=namespace))
 
         if response.status_code == 404:
             return False
@@ -853,7 +850,6 @@ class RestCatalog(Catalog):
 
         return False
 
-    @retry(**_RETRY_ARGS)
     def table_exists(self, identifier: Union[str, Identifier]) -> bool:
         """Check if a table exists.
 
@@ -879,7 +875,6 @@ class RestCatalog(Catalog):
 
         return False
 
-    @retry(**_RETRY_ARGS)
     def view_exists(self, identifier: Union[str, Identifier]) -> bool:
         """Check if a view exists.
 
@@ -889,7 +884,8 @@ class RestCatalog(Catalog):
         Returns:
             bool: True if the view exists, False otherwise.
         """
-        response = self._session.head(
+        response = self._request_with_retries(
+            self._session.head,
             self.url(Endpoints.view_exists, prefixed=True, **self._split_identifier_for_path(identifier, IdentifierKind.VIEW)),
         )
         if response.status_code == 404:
@@ -897,19 +893,15 @@ class RestCatalog(Catalog):
         elif response.status_code in [200, 204]:
             return True
 
-        try:
-            response.raise_for_status()
-        except HTTPError as exc:
-            _handle_non_200_response(exc, {})
-
         return False
 
-    @retry(**_RETRY_ARGS)
-    def drop_view(self, identifier: Union[str]) -> None:
-        response = self._session.delete(
-            self.url(Endpoints.drop_view, prefixed=True, **self._split_identifier_for_path(identifier, IdentifierKind.VIEW)),
+    def drop_view(self, identifier: Union[str, Identifier]) -> None:
+        self._request_with_retries(
+            self._session.delete,
+            self.url(
+                Endpoints.drop_view,
+                prefixed=True,
+                **self._split_identifier_for_path(identifier, IdentifierKind.VIEW),
+            ),
+            non_200_response_mapping={404: NoSuchViewError},
         )
-        try:
-            response.raise_for_status()
-        except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchViewError})
