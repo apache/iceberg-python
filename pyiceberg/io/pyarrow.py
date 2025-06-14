@@ -1576,7 +1576,11 @@ class ArrowScan:
             # Empty
             return pa.Table.from_batches([], schema=arrow_schema)
 
-        result = pa.Table.from_batches(itertools.chain([first_batch], batches))
+        # Note: cannot use pa.Table.from_batches(itertools.chain([first_batch], batches)))
+        #       as different batches can use different schema's (due to large_ types)
+        result = pa.concat_tables(
+            (pa.Table.from_batches([batch]) for batch in itertools.chain([first_batch], batches)), promote_options="permissive"
+        )
 
         if property_as_bool(self._io.properties, PYARROW_USE_LARGE_TYPES_ON_READ, False):
             deprecation_message(
