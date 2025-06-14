@@ -37,7 +37,7 @@ RUN mkdir -p ${HADOOP_HOME} && mkdir -p ${SPARK_HOME} && mkdir -p /home/iceberg/
 WORKDIR ${SPARK_HOME}
 
 # Remember to also update `tests/conftest`'s spark setting
-ENV SPARK_VERSION=3.5.4
+ENV SPARK_VERSION=3.5.6
 ENV ICEBERG_SPARK_RUNTIME_VERSION=3.5_2.12
 ENV ICEBERG_VERSION=1.9.0
 ENV PYICEBERG_VERSION=0.9.0
