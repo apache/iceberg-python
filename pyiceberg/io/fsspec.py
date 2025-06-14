@@ -91,7 +91,7 @@ if TYPE_CHECKING:
 
 
 def s3v4_rest_signer(properties: Properties, request: "AWSRequest", **_: Any) -> "AWSRequest":
-    signer_url = properties.get(S3_SIGNER_URI, properties["uri"]).rstrip("/")
+    signer_url = properties.get(S3_SIGNER_URI, properties["uri"]).rstrip("/")  # type: ignore
     signer_endpoint = properties.get(S3_SIGNER_ENDPOINT, S3_SIGNER_ENDPOINT_DEFAULT)
 
     signer_headers = {}
