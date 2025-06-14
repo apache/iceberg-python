@@ -19,6 +19,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Dict,
+    Iterator,
     List,
     Optional,
     Set,
@@ -184,6 +185,7 @@ class ConfigResponse(IcebergBaseModel):
 
 class ListNamespaceResponse(IcebergBaseModel):
     namespaces: List[Identifier] = Field()
+    next_page_token: Optional[str] = Field(alias="next-page-token", default=None)
 
 
 class NamespaceResponse(IcebergBaseModel):
@@ -209,10 +211,12 @@ class ListViewResponseEntry(IcebergBaseModel):
 
 class ListTablesResponse(IcebergBaseModel):
     identifiers: List[ListTableResponseEntry] = Field()
+    next_page_token: Optional[str] = Field(alias="next-page-token", default=None)
 
 
 class ListViewsResponse(IcebergBaseModel):
     identifiers: List[ListViewResponseEntry] = Field()
+    next_page_token: Optional[str] = Field(alias="next-page-token", default=None)
 
 
 class RestCatalog(Catalog):
@@ -583,16 +587,33 @@ class RestCatalog(Catalog):
         table_response = TableResponse.model_validate_json(response.text)
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
-    @retry(**_RETRY_ARGS)
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+        return list(self.list_tables_lazy(namespace))
+
+    @retry(**_RETRY_ARGS)
+    def list_tables_lazy(self, namespace: Union[str, Identifier]) -> Iterator[Identifier]:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
-        response = self._session.get(self.url(Endpoints.list_tables, namespace=namespace_concat))
-        try:
-            response.raise_for_status()
-        except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchNamespaceError})
-        return [(*table.namespace, table.name) for table in ListTablesResponse.model_validate_json(response.text).identifiers]
+
+        next_page_token: Optional[str] = None
+
+        while True:
+            params: Dict[str, Any] = {}
+            if next_page_token is not None:
+                params["pageToken"] = next_page_token
+
+            response = self._session.get(self.url(Endpoints.list_tables, namespace=namespace_concat), params=params)
+            try:
+                response.raise_for_status()
+            except HTTPError as exc:
+                _handle_non_200_response(exc, {404: NoSuchNamespaceError})
+            parsed = ListTablesResponse.model_validate_json(response.text)
+            for table in parsed.identifiers:
+                yield (*table.namespace, table.name)
+
+            next_page_token = parsed.next_page_token
+            if next_page_token is None:
+                break
 
     @retry(**_RETRY_ARGS)
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
@@ -654,16 +675,34 @@ class RestCatalog(Catalog):
             )
         return table_request
 
-    @retry(**_RETRY_ARGS)
     def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+        return list(self.list_views_lazy(namespace))
+
+    @retry(**_RETRY_ARGS)
+    def list_views_lazy(self, namespace: Union[str, Identifier]) -> Iterator[Identifier]:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
-        response = self._session.get(self.url(Endpoints.list_views, namespace=namespace_concat))
-        try:
-            response.raise_for_status()
-        except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchNamespaceError})
-        return [(*view.namespace, view.name) for view in ListViewsResponse.model_validate_json(response.text).identifiers]
+
+        next_page_token: Optional[str] = None
+
+        while True:
+            params: Dict[str, Any] = {}
+            if next_page_token is not None:
+                params["pageToken"] = next_page_token
+
+            response = self._session.get(self.url(Endpoints.list_views, namespace=namespace_concat), params=params)
+            try:
+                response.raise_for_status()
+            except HTTPError as exc:
+                _handle_non_200_response(exc, {404: NoSuchNamespaceError})
+
+            parsed = ListViewsResponse.model_validate_json(response.text)
+            for view in parsed.identifiers:
+                yield (*view.namespace, view.name)
+
+            next_page_token = parsed.next_page_token
+            if next_page_token is None:
+                break
 
     @retry(**_RETRY_ARGS)
     def commit_table(
@@ -731,22 +770,39 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             _handle_non_200_response(exc, {404: NoSuchNamespaceError, 409: NamespaceNotEmptyError})
 
-    @retry(**_RETRY_ARGS)
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
-        namespace_tuple = self.identifier_to_tuple(namespace)
-        response = self._session.get(
-            self.url(
-                f"{Endpoints.list_namespaces}?parent={NAMESPACE_SEPARATOR.join(namespace_tuple)}"
-                if namespace_tuple
-                else Endpoints.list_namespaces
-            ),
-        )
-        try:
-            response.raise_for_status()
-        except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchNamespaceError})
+        return list(self.list_namespaces_lazy(namespace))
 
-        return ListNamespaceResponse.model_validate_json(response.text).namespaces
+    @retry(**_RETRY_ARGS)
+    def list_namespaces_lazy(self, namespace: Union[str, Identifier] = ()) -> Iterator[Identifier]:
+        namespace_tuple = self.identifier_to_tuple(namespace)
+
+        next_page_token: Optional[str] = None
+
+        while True:
+            params: Dict[str, Any] = {}
+            if next_page_token is not None:
+                params["pageToken"] = next_page_token
+
+            response = self._session.get(
+                self.url(
+                    f"{Endpoints.list_namespaces}?parent={NAMESPACE_SEPARATOR.join(namespace_tuple)}"
+                    if namespace_tuple
+                    else Endpoints.list_namespaces
+                ),
+                params=params,
+            )
+            try:
+                response.raise_for_status()
+            except HTTPError as exc:
+                _handle_non_200_response(exc, {404: NoSuchNamespaceError})
+
+            parsed = ListNamespaceResponse.model_validate_json(response.text)
+            yield from parsed.namespaces
+
+            next_page_token = parsed.next_page_token
+            if next_page_token is None:
+                break
 
     @retry(**_RETRY_ARGS)
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
