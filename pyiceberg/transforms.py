@@ -1049,11 +1049,11 @@ def _truncate_number(
         raise ValueError(f"Expected a numeric literal, got: {type(boundary)}")
 
     if isinstance(pred, BoundLessThan):
-        return LessThanOrEqual(Reference(name), _transform_literal(transform, boundary.decrement()))  # type: ignore
+        return LessThanOrEqual(Reference(name), _transform_literal(transform, boundary.decrement()))
     elif isinstance(pred, BoundLessThanOrEqual):
         return LessThanOrEqual(Reference(name), _transform_literal(transform, boundary))
     elif isinstance(pred, BoundGreaterThan):
-        return GreaterThanOrEqual(Reference(name), _transform_literal(transform, boundary.increment()))  # type: ignore
+        return GreaterThanOrEqual(Reference(name), _transform_literal(transform, boundary.increment()))
     elif isinstance(pred, BoundGreaterThanOrEqual):
         return GreaterThanOrEqual(Reference(name), _transform_literal(transform, boundary))
     elif isinstance(pred, BoundEqualTo):
@@ -1073,11 +1073,11 @@ def _truncate_number_strict(
     if isinstance(pred, BoundLessThan):
         return LessThan(Reference(name), _transform_literal(transform, boundary))
     elif isinstance(pred, BoundLessThanOrEqual):
-        return LessThan(Reference(name), _transform_literal(transform, boundary.increment()))  # type: ignore
+        return LessThan(Reference(name), _transform_literal(transform, boundary.increment()))
     elif isinstance(pred, BoundGreaterThan):
         return GreaterThan(Reference(name), _transform_literal(transform, boundary))
     elif isinstance(pred, BoundGreaterThanOrEqual):
-        return GreaterThan(Reference(name), _transform_literal(transform, boundary.decrement()))  # type: ignore
+        return GreaterThan(Reference(name), _transform_literal(transform, boundary.decrement()))
     elif isinstance(pred, BoundNotEqualTo):
         return NotEqualTo(Reference(name), _transform_literal(transform, boundary))
     elif isinstance(pred, BoundEqualTo):

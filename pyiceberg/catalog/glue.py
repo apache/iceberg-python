@@ -821,3 +821,7 @@ class GlueCatalog(MetastoreCatalog):
     @staticmethod
     def __is_iceberg_table(table: "TableTypeDef") -> bool:
         return table.get("Parameters", {}).get(TABLE_TYPE, "").lower() == ICEBERG
+
+    def _get_default_warehouse_location(self, database_name: str, table_name: str) -> str:
+        """Override the default warehouse location to follow Hive-style conventions."""
+        return self._get_hive_style_warehouse_location(database_name, table_name)
