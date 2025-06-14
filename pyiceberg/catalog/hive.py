@@ -211,10 +211,17 @@ PROP_PREVIOUS_METADATA_LOCATION = "previous_metadata_location"
 DEFAULT_PROPERTIES = {TableProperties.PARQUET_COMPRESSION: TableProperties.PARQUET_COMPRESSION_DEFAULT}
 
 
-def _construct_parameters(metadata_location: str, previous_metadata_location: Optional[str] = None) -> Dict[str, Any]:
+def _construct_parameters(
+    metadata_location: str, previous_metadata_location: Optional[str] = None, metadata_properties: Optional[Properties] = None
+) -> Dict[str, Any]:
     properties = {PROP_EXTERNAL: "TRUE", PROP_TABLE_TYPE: "ICEBERG", PROP_METADATA_LOCATION: metadata_location}
     if previous_metadata_location:
         properties[PROP_PREVIOUS_METADATA_LOCATION] = previous_metadata_location
+
+    if metadata_properties:
+        for key, value in metadata_properties.items():
+            if key not in properties:
+                properties[key] = str(value)
 
     return properties
 
@@ -360,7 +367,7 @@ class HiveCatalog(MetastoreCatalog):
                 property_as_bool(self.properties, HIVE2_COMPATIBLE, HIVE2_COMPATIBLE_DEFAULT),
             ),
             tableType=EXTERNAL_TABLE,
-            parameters=_construct_parameters(table.metadata_location),
+            parameters=_construct_parameters(metadata_location=table.metadata_location, metadata_properties=table.properties),
         )
 
     def _create_hive_table(self, open_client: Client, hive_table: HiveTable) -> None:
@@ -541,6 +548,7 @@ class HiveCatalog(MetastoreCatalog):
                     hive_table.parameters = _construct_parameters(
                         metadata_location=updated_staged_table.metadata_location,
                         previous_metadata_location=current_table.metadata_location,
+                        metadata_properties=updated_staged_table.properties,
                     )
                     open_client.alter_table_with_environment_context(
                         dbname=database_name,
@@ -790,3 +798,7 @@ class HiveCatalog(MetastoreCatalog):
 
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError
+
+    def _get_default_warehouse_location(self, database_name: str, table_name: str) -> str:
+        """Override the default warehouse location to follow Hive-style conventions."""
+        return self._get_hive_style_warehouse_location(database_name, table_name)

@@ -664,6 +664,10 @@ class DynamoDbCatalog(MetastoreCatalog):
             catalog=self,
         )
 
+    def _get_default_warehouse_location(self, database_name: str, table_name: str) -> str:
+        """Override the default warehouse location to follow Hive-style conventions."""
+        return self._get_hive_style_warehouse_location(database_name, table_name)
+
 
 def _get_create_table_item(database_name: str, table_name: str, properties: Properties, metadata_location: str) -> Dict[str, Any]:
     current_timestamp_ms = str(round(time() * 1000))
