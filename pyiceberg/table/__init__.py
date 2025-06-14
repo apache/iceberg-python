@@ -1079,8 +1079,6 @@ class Table:
         """
         Shorthand to run expire snapshots by id or by a timestamp.
 
-        Use table.expire_snapshots().<operation>().commit() to run a specific operation.
-        Use table.expire_snapshots().<operation-one>().<operation-two>().commit() to run multiple operations.
         """
         return ExpireSnapshots(transaction=Transaction(self, autocommit=True))
 
