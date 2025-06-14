@@ -80,6 +80,7 @@ from pyiceberg.partitioning import (
 from pyiceberg.schema import Schema
 from pyiceberg.table.inspect import InspectTable
 from pyiceberg.table.locations import LocationProvider, load_location_provider
+from pyiceberg.table.maintenance import MaintenanceTable
 from pyiceberg.table.metadata import (
     INITIAL_SEQUENCE_NUMBER,
     TableMetadata,
@@ -1025,6 +1026,15 @@ class Table:
             InspectTable object based on this Table.
         """
         return InspectTable(self)
+
+    @property
+    def maintenance(self) -> MaintenanceTable:
+        """Return the MaintenanceTable object for maintenance.
+
+        Returns:
+            MaintenanceTable object based on this Table.
+        """
+        return MaintenanceTable(self)
 
     def refresh(self) -> Table:
         """Refresh the current table metadata.
