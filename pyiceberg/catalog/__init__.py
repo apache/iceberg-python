@@ -195,7 +195,7 @@ def infer_catalog_type(name: str, catalog_properties: RecursiveDict) -> Optional
     Raises:
         ValueError: Raises a ValueError in case properties are missing, or the wrong type.
     """
-    if uri := catalog_properties.get("uri"):
+    if uri := catalog_properties.get(URI):
         if isinstance(uri, str):
             if uri.startswith("http"):
                 return CatalogType.REST
