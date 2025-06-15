@@ -17,8 +17,8 @@
 
 import base64
 import importlib
-from abc import ABC, abstractmethod
 import logging
+from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Type
 
 from requests import HTTPError, PreparedRequest, Session
@@ -121,9 +121,7 @@ class LegacyOAuth2AuthManager(AuthManager):
 
 
 class GoogleAuthManager(AuthManager):
-    """
-    An auth manager that is responsible for handling Google credentials.
-    """
+    """An auth manager that is responsible for handling Google credentials."""
 
     def __init__(self, credentials_path: Optional[str] = None, scopes: Optional[List[str]] = None):
         """
@@ -137,9 +135,7 @@ class GoogleAuthManager(AuthManager):
             import google.auth
             import google.auth.transport.requests
         except ImportError as e:
-            raise ImportError(
-                "Google Auth libraries not found. Please install 'google-auth'."
-            ) from e
+            raise ImportError("Google Auth libraries not found. Please install 'google-auth'.") from e
 
         if credentials_path:
             self.credentials, _ = google.auth.load_credentials_from_file(credentials_path, scopes=scopes)
@@ -151,6 +147,7 @@ class GoogleAuthManager(AuthManager):
     def auth_header(self) -> Optional[str]:
         self.credentials.refresh(self._auth_request)
         return f"Bearer {self.credentials.token}"
+
 
 class AuthManagerAdapter(AuthBase):
     """A `requests.auth.AuthBase` adapter that integrates an `AuthManager` into a `requests.Session` to automatically attach the appropriate Authorization header to every request.
