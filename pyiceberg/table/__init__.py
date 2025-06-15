@@ -1076,10 +1076,7 @@ class Table:
         return ManageSnapshots(transaction=Transaction(self, autocommit=True))
 
     def expire_snapshots(self) -> ExpireSnapshots:
-        """
-        Shorthand to run expire snapshots by id or by a timestamp.
-
-        """
+        """Shorthand to run expire snapshots by id or by a timestamp."""
         return ExpireSnapshots(transaction=Transaction(self, autocommit=True))
 
     def update_statistics(self) -> UpdateStatistics:
