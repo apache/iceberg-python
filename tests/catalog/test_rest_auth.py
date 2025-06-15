@@ -21,6 +21,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 from requests_mock import Mocker
+
 from pyiceberg.catalog.rest.auth import AuthManagerAdapter, BasicAuthManager, GoogleAuthManager, NoopAuthManager
 
 TEST_URI = "https://iceberg-test-catalog/"
@@ -36,17 +37,17 @@ def rest_mock(requests_mock: Mocker) -> Mocker:
     )
     return requests_mock
 
+
 @pytest.fixture
 def google_mock(requests_mock: Mocker) -> Mocker:
-    requests_mock.post(GOOGLE_CREDS_URI,
-                       json={"access_token": "aaaabbb"},
-                       status_code=200)
+    requests_mock.post(GOOGLE_CREDS_URI, json={"access_token": "aaaabbb"}, status_code=200)
     requests_mock.get(
         TEST_URI,
         json={},
         status_code=200,
     )
     return requests_mock
+
 
 def test_noop_auth_header(rest_mock: Mocker) -> None:
     auth_manager = NoopAuthManager()
@@ -77,9 +78,11 @@ def test_basic_auth_header(rest_mock: Mocker) -> None:
     assert actual_headers["Authorization"] == expected_header
 
 
-@patch('google.auth.transport.requests.Request')
-@patch('google.auth.default')
-def test_google_auth_manager_default_credentials(mock_google_auth_default: MagicMock, mock_google_request: MagicMock, rest_mock: Mocker) -> None:
+@patch("google.auth.transport.requests.Request")
+@patch("google.auth.default")
+def test_google_auth_manager_default_credentials(
+    mock_google_auth_default: MagicMock, mock_google_request: MagicMock, rest_mock: Mocker
+) -> None:
     """Test GoogleAuthManager with default application credentials."""
     mock_credentials = MagicMock()
     mock_credentials.token = "test_token"
@@ -98,9 +101,11 @@ def test_google_auth_manager_default_credentials(mock_google_auth_default: Magic
     assert actual_headers["Authorization"] == "Bearer test_token"
 
 
-@patch('google.auth.transport.requests.Request')
-@patch('google.auth.load_credentials_from_file')
-def test_google_auth_manager_with_credentials_file(mock_load_creds: MagicMock, mock_google_request: MagicMock, rest_mock: Mocker) -> None:
+@patch("google.auth.transport.requests.Request")
+@patch("google.auth.load_credentials_from_file")
+def test_google_auth_manager_with_credentials_file(
+    mock_load_creds: MagicMock, mock_google_request: MagicMock, rest_mock: Mocker
+) -> None:
     """Test GoogleAuthManager with a credentials file path."""
     mock_credentials = MagicMock()
     mock_credentials.token = "file_token"
@@ -119,9 +124,11 @@ def test_google_auth_manager_with_credentials_file(mock_load_creds: MagicMock, m
     assert actual_headers["Authorization"] == "Bearer file_token"
 
 
-@patch('google.auth.transport.requests.Request')
-@patch('google.auth.load_credentials_from_file')
-def test_google_auth_manager_with_credentials_file_and_scopes(mock_load_creds: MagicMock, mock_google_request: MagicMock, rest_mock: Mocker) -> None:
+@patch("google.auth.transport.requests.Request")
+@patch("google.auth.load_credentials_from_file")
+def test_google_auth_manager_with_credentials_file_and_scopes(
+    mock_load_creds: MagicMock, mock_google_request: MagicMock, rest_mock: Mocker
+) -> None:
     """Test GoogleAuthManager with a credentials file path and scopes."""
     mock_credentials = MagicMock()
     mock_credentials.token = "scoped_token"
@@ -143,6 +150,6 @@ def test_google_auth_manager_with_credentials_file_and_scopes(mock_load_creds: M
 
 def test_google_auth_manager_import_error() -> None:
     """Test GoogleAuthManager raises ImportError if google-auth is not installed."""
-    with patch.dict('sys.modules', {'google.auth': None, 'google.auth.transport.requests': None}):
+    with patch.dict("sys.modules", {"google.auth": None, "google.auth.transport.requests": None}):
         with pytest.raises(ImportError, match="Google Auth libraries not found. Please install 'google-auth'."):
             GoogleAuthManager()

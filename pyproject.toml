@@ -63,6 +63,7 @@ zstandard = ">=0.13.0,<1.0.0"
 tenacity = ">=8.2.3,<10.0.0"
 pyroaring = ">=1.0.0,<2.0.0"
 pyarrow = { version = ">=17.0.0", optional = true }
+google-auth = { version = ">=2.4.0", optional = true }
 pandas = { version = ">=1.0.0,<3.0.0", optional = true }
 duckdb = { version = ">=0.5.0,<2.0.0", optional = true }
 ray = [
@@ -125,6 +126,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "pyarrow.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "google.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -317,6 +322,7 @@ rest-sigv4 = ["boto3"]
 hf = ["huggingface-hub"]
 pyiceberg-core = ["pyiceberg-core"]
 datafusion = ["datafusion"]
+gcp-auth=["google-auth"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
