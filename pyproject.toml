@@ -283,6 +283,10 @@ ignore_missing_imports = true
 module = "pyiceberg_core.*"
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = "google.*"
+ignore_missing_imports = true
+
 [tool.poetry.scripts]
 pyiceberg = "pyiceberg.cli.console:run"
 
