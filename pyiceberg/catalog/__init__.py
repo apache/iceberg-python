@@ -172,6 +172,7 @@ def load_in_memory(name: str, conf: Properties) -> Catalog:
     except ImportError as exc:
         raise NotInstalledError("SQLAlchemy support not installed: pip install 'pyiceberg[sql-sqlite]'") from exc
 
+
 def load_bigquery(name: str, conf: Properties) -> Catalog:
     try:
         from pyiceberg.catalog.bigquery_metastore import BigQueryMetastoreCatalog
@@ -179,7 +180,6 @@ def load_bigquery(name: str, conf: Properties) -> Catalog:
         return BigQueryMetastoreCatalog(name, **conf)
     except ImportError as exc:
         raise NotInstalledError("BigQuery support not installed: pip install 'pyiceberg[bigquery]'") from exc
-
 
 
 AVAILABLE_CATALOGS: dict[CatalogType, Callable[[str, Properties], Catalog]] = {

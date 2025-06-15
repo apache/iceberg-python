@@ -2249,6 +2249,7 @@ def database_name() -> str:
     random_tag = "".join(choice(string.ascii_letters) for _ in range(RANDOM_LENGTH))
     return (prefix + random_tag).lower()
 
+
 @pytest.fixture()
 def gcp_dataset_name() -> str:
     prefix = "my_iceberg_database_"
@@ -2309,6 +2310,7 @@ def get_bucket_name() -> str:
         raise ValueError("Please specify a bucket to run the test by setting environment variable AWS_TEST_BUCKET")
     return bucket_name
 
+
 def get_gcs_bucket_name() -> str:
     bucket_name = os.getenv("GCS_TEST_BUCKET")
     if bucket_name is None:
@@ -2329,6 +2331,7 @@ def get_s3_path(bucket_name: str, database_name: Optional[str] = None, table_nam
     if table_name is not None:
         result_path += f"/{table_name}"
     return result_path
+
 
 def get_gcs_path(bucket_name: str, database_name: Optional[str] = None, table_name: Optional[str] = None) -> str:
     result_path = f"gcs://{bucket_name}"
