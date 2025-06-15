@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import json
-from typing import Any, List, Optional, Set, Tuple, Union
+from typing import TYPE_CHECKING, Any, List, Optional, Set, Tuple, Union
 
 from google.api_core.exceptions import NotFound
 from google.cloud.bigquery import Client, Dataset, DatasetReference, TableReference
@@ -40,6 +40,9 @@ from pyiceberg.table.update import TableRequirement, TableUpdate
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.utils.config import Config
 
+if TYPE_CHECKING:
+    import pyarrow as pa
+
 GCP_PROJECT_ID = "gcp.project-id"
 GCP_LOCATION = "gcp.location"
 GCP_CREDENTIALS_LOCATION = "gcp.credentials-location"
@@ -53,6 +56,7 @@ ICEBERG_TABLE_TYPE_VALUE = "ICEBERG"
 HIVE_SERIALIZATION_LIBRARY = "org.apache.iceberg.mr.hive.HiveIcebergSerDe"
 HIVE_FILE_INPUT_FORMAT = "org.apache.iceberg.mr.hive.HiveIcebergInputFormat"
 HIVE_FILE_OUTPUT_FORMAT = "org.apache.iceberg.mr.hive.HiveIcebergOutputFormat"
+
 
 class BigQueryMetastoreCatalog(MetastoreCatalog):
     def __init__(self, name: str, **properties: str):
@@ -138,7 +142,9 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         dataset_ref = DatasetReference(project=self.project_id, dataset_id=dataset_name)
 
         try:
-            table = self._make_new_table(metadata, metadata_location, TableReference(dataset_ref=dataset_ref, table_id=table_name))
+            table = self._make_new_table(
+                metadata, metadata_location, TableReference(dataset_ref=dataset_ref, table_id=table_name)
+            )
             self.client.create_table(table)
         except Conflict as e:
             raise TableAlreadyExistsError(f"Table {table_name} already exists") from e
@@ -161,11 +167,12 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         try:
             dataset_ref = DatasetReference(project=self.project_id, dataset_id=database_name)
             dataset = Dataset(dataset_ref=dataset_ref)
-            dataset.external_catalog_dataset_options = self._create_external_catalog_dataset_options(self._get_default_warehouse_location_for_dataset(database_name), properties, dataset_ref)
+            dataset.external_catalog_dataset_options = self._create_external_catalog_dataset_options(
+                self._get_default_warehouse_location_for_dataset(database_name), properties, dataset_ref
+            )
             self.client.create_dataset(dataset)
         except Conflict as e:
             raise NamespaceAlreadyExistsError("Namespace {database_name} already exists") from e
-
 
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
         """
@@ -196,7 +203,6 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         except NotFound as e:
             raise NoSuchTableError(f"Table does not exist: {dataset_name}.{table_name}") from e
 
-
     def drop_table(self, identifier: Union[str, Identifier]) -> None:
         """Drop a table.
 
@@ -222,11 +228,9 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
     ) -> CommitTableResponse:
         raise NotImplementedError
 
-    
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
         raise NotImplementedError
 
-    
     def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
         database_name = self.identifier_to_database(namespace)
 
@@ -283,7 +287,9 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         metadata = FromInputFile.table_metadata(file)
 
         try:
-            table = self._make_new_table(metadata, metadata_location, TableReference(dataset_ref=dataset_ref, table_id=table_name))
+            table = self._make_new_table(
+                metadata, metadata_location, TableReference(dataset_ref=dataset_ref, table_id=table_name)
+            )
             self.client.create_table(table)
         except Conflict as e:
             raise TableAlreadyExistsError(f"Table {table_name} already exists") from e
@@ -316,13 +322,8 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
     ) -> PropertiesUpdateSummary:
         raise NotImplementedError
 
-
     def _make_new_table(self, metadata: TableMetadata, metadata_file_location: str, table_ref: TableReference) -> BQTable:
-        """
-        To make the table queryable from Hive, the user would likely be setting the HIVE_ENGINE_ENABLED
-        parameter.
-
-        """
+        """To make the table queryable from Hive, the user would likely be setting the HIVE_ENGINE_ENABLED parameter."""
         table = BQTable(table_ref)
 
         # In Python, you typically set the external data configuration directly.
@@ -330,7 +331,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         # constructing the external_data_configuration for the Table object.
         external_config_options = self._create_external_catalog_table_options(
             metadata.location,
-            self._create_table_parameters(metadata_file_location=metadata_file_location, table_metadata=metadata)
+            self._create_table_parameters(metadata_file_location=metadata_file_location, table_metadata=metadata),
         )
 
         # Apply the external configuration to the Table object.
@@ -340,22 +341,27 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
 
         return table
 
-    def _create_external_catalog_table_options(self, location: str, parameters: dict) -> ExternalCatalogTableOptions:
+    def _create_external_catalog_table_options(self, location: str, parameters: dict[str, Any]) -> ExternalCatalogTableOptions:
         # This structure directly maps to what BigQuery's ExternalConfig expects for Hive.
         return ExternalCatalogTableOptions(
             storage_descriptor=StorageDescriptor(
                 location_uri=location,
                 input_format=HIVE_FILE_INPUT_FORMAT,
                 output_format=HIVE_FILE_OUTPUT_FORMAT,
-                serde_info=SerDeInfo(serialization_library=HIVE_SERIALIZATION_LIBRARY)
+                serde_info=SerDeInfo(serialization_library=HIVE_SERIALIZATION_LIBRARY),
             ),
-            parameters=parameters
+            parameters=parameters,
         )
 
-    def _create_external_catalog_dataset_options(self, default_storage_location: str, metadataParameters: dict, dataset_ref: DatasetReference) -> ExternalCatalogDatasetOptions:
-        return ExternalCatalogDatasetOptions(default_storage_location_uri=self._get_default_warehouse_location_for_dataset(dataset_ref.dataset_id), parameters=metadataParameters)
+    def _create_external_catalog_dataset_options(
+        self, default_storage_location: str, metadataParameters: dict[str, Any], dataset_ref: DatasetReference
+    ) -> ExternalCatalogDatasetOptions:
+        return ExternalCatalogDatasetOptions(
+            default_storage_location_uri=self._get_default_warehouse_location_for_dataset(dataset_ref.dataset_id),
+            parameters=metadataParameters,
+        )
 
-    def _convert_bigquery_table_to_iceberg_table(self, identifier: str, table: BQTable) -> Table:
+    def _convert_bigquery_table_to_iceberg_table(self, identifier: Union[str, Identifier], table: BQTable) -> Table:
         dataset_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
         metadata_location = ""
         if table.external_catalog_table_options and table.external_catalog_table_options.parameters:
@@ -381,25 +387,29 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         parameters["EXTERNAL"] = True
 
         # Add Hive-style basic statistics from snapshot metadata if it exists.
-        if table_metadata.current_snapshot():
+        snapshot = table_metadata.current_snapshot()
+        if snapshot:
+            summary = snapshot.summary
+            if summary:
+                if summary.get(TOTAL_DATA_FILES):
+                    parameters["numFiles"] = summary.get(TOTAL_DATA_FILES)
 
-            if table_metadata.current_snapshot().summary.get(TOTAL_DATA_FILES):
-                parameters["numFiles"] = table_metadata.current_snapshot.summary.get(TOTAL_DATA_FILES)
+                if summary.get(TOTAL_RECORDS):
+                    parameters["numRows"] = summary.get(TOTAL_RECORDS)
 
-            if table_metadata.current_snapshot().summary.get(TOTAL_RECORDS):
-                parameters["numRows"] = table_metadata.current_snapshot.summary.get(TOTAL_RECORDS)
-
-            if table_metadata.current_snapshot().summary.get(TOTAL_FILE_SIZE):
-                parameters["totalSize"] = table_metadata.current_snapshot.summary.get(TOTAL_FILE_SIZE)
+                if summary.get(TOTAL_FILE_SIZE):
+                    parameters["totalSize"] = summary.get(TOTAL_FILE_SIZE)
 
         return parameters
 
-    def _default_storage_location(self, location: Optional[str], dataset_ref: DatasetReference) -> str | None:
+    def _default_storage_location(self, location: Optional[str], dataset_ref: DatasetReference) -> Union[str, None]:
         if location:
             return location
         dataset = self.client.get_dataset(dataset_ref)
         if dataset and dataset.external_catalog_dataset_options:
             return dataset.external_catalog_dataset_options.default_storage_location_uri
+
+        raise ValueError("Could not find default storage location")
 
     def _get_default_warehouse_location_for_dataset(self, database_name: str) -> str:
         if warehouse_path := self.properties.get(WAREHOUSE_LOCATION):

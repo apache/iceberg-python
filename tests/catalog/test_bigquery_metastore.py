@@ -45,6 +45,7 @@ def table_mock() -> Table:
     )
     return t
 
+
 def test_create_table_with_database_location(
     mocker: MockFixture, _bucket_initialize: None, table_schema_nested: Schema, gcp_dataset_name: str, table_name: str
 ) -> None:
@@ -56,16 +57,19 @@ def test_create_table_with_database_location(
     # Setup mocks for GCS.
     file_mock = MagicMock()
 
-    mocker.patch('pyiceberg.catalog.bigquery_metastore.Client', return_value=client_mock)
-    mocker.patch('pyiceberg.catalog.bigquery_metastore.FromInputFile.table_metadata', return_value=file_mock)
+    mocker.patch("pyiceberg.catalog.bigquery_metastore.Client", return_value=client_mock)
+    mocker.patch("pyiceberg.catalog.bigquery_metastore.FromInputFile.table_metadata", return_value=file_mock)
     mocker.patch.dict(os.environ, values={"PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID": "True"})
 
     catalog_name = "test_ddb_catalog"
     identifier = (gcp_dataset_name, table_name)
-    test_catalog = BigQueryMetastoreCatalog(catalog_name, **{"gcp.project-id": "alexstephen-test-1", "warehouse": "gs://alexstephen-test-bq-bucket/"})
+    test_catalog = BigQueryMetastoreCatalog(
+        catalog_name, **{"gcp.project-id": "alexstephen-test-1", "warehouse": "gs://alexstephen-test-bq-bucket/"}
+    )
     test_catalog.create_namespace(namespace=gcp_dataset_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert table.name() == identifier
+
 
 def test_drop_table_with_database_location(
     mocker: MockFixture, _bucket_initialize: None, table_schema_nested: Schema, gcp_dataset_name: str, table_name: str
@@ -78,31 +82,33 @@ def test_drop_table_with_database_location(
     # Setup mocks for GCS.
     file_mock = MagicMock()
 
-    mocker.patch('pyiceberg.catalog.bigquery_metastore.Client', return_value=client_mock)
-    mocker.patch('pyiceberg.catalog.bigquery_metastore.FromInputFile.table_metadata', return_value=file_mock)
+    mocker.patch("pyiceberg.catalog.bigquery_metastore.Client", return_value=client_mock)
+    mocker.patch("pyiceberg.catalog.bigquery_metastore.FromInputFile.table_metadata", return_value=file_mock)
     mocker.patch.dict(os.environ, values={"PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID": "True"})
 
     catalog_name = "test_ddb_catalog"
     identifier = (gcp_dataset_name, table_name)
-    test_catalog = BigQueryMetastoreCatalog(catalog_name, **{"gcp.project-id": "alexstephen-test-1", "warehouse": "gs://alexstephen-test-bq-bucket/"})
+    test_catalog = BigQueryMetastoreCatalog(
+        catalog_name, **{"gcp.project-id": "alexstephen-test-1", "warehouse": "gs://alexstephen-test-bq-bucket/"}
+    )
     test_catalog.create_namespace(namespace=gcp_dataset_name)
-    table = test_catalog.create_table(identifier, table_schema_nested)
+    test_catalog.create_table(identifier, table_schema_nested)
     test_catalog.drop_table(identifier)
 
     client_mock.get_table.side_effect = NotFound("Table Not Found")
-    mocker.patch('pyiceberg.catalog.bigquery_metastore.Client', return_value=client_mock)
+    mocker.patch("pyiceberg.catalog.bigquery_metastore.Client", return_value=client_mock)
 
     # Expect that the table no longer exists.
     try:
         test_catalog.load_table(identifier)
         raise AssertionError()
-    except NoSuchTableError as e: 
+    except NoSuchTableError:
         assert True
 
 
 def test_drop_namespace(mocker: MockFixture, gcp_dataset_name: str) -> None:
     client_mock = MagicMock()
-    mocker.patch('pyiceberg.catalog.bigquery_metastore.Client', return_value=client_mock)
+    mocker.patch("pyiceberg.catalog.bigquery_metastore.Client", return_value=client_mock)
     mocker.patch.dict(os.environ, values={"PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID": "True"})
 
     catalog_name = "test_catalog"
@@ -137,7 +143,7 @@ def test_list_tables(mocker: MockFixture, gcp_dataset_name: str) -> None:
     # The table_mock() function already creates a table with the necessary Iceberg properties.
     client_mock.get_table.return_value = table_mock()
 
-    mocker.patch('pyiceberg.catalog.bigquery_metastore.Client', return_value=client_mock)
+    mocker.patch("pyiceberg.catalog.bigquery_metastore.Client", return_value=client_mock)
     mocker.patch.dict(os.environ, values={"PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID": "True"})
 
     catalog_name = "test_catalog"
@@ -152,13 +158,14 @@ def test_list_tables(mocker: MockFixture, gcp_dataset_name: str) -> None:
 
     client_mock.list_tables.assert_called_once_with(dataset=DatasetReference(project="my-project", dataset_id=gcp_dataset_name))
 
+
 def test_list_namespaces(mocker: MockFixture) -> None:
     client_mock = MagicMock()
     dataset_item_1 = Dataset(DatasetReference(project="my-project", dataset_id="dataset1"))
     dataset_item_2 = Dataset(DatasetReference(project="my-project", dataset_id="dataset2"))
     client_mock.list_datasets.return_value = iter([dataset_item_1, dataset_item_2])
 
-    mocker.patch('pyiceberg.catalog.bigquery_metastore.Client', return_value=client_mock)
+    mocker.patch("pyiceberg.catalog.bigquery_metastore.Client", return_value=client_mock)
     mocker.patch.dict(os.environ, values={"PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID": "True"})
 
     catalog_name = "test_catalog"

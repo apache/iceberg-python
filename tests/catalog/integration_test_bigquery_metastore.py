@@ -15,18 +15,20 @@
 #  specific language governing permissions and limitations
 #  under the License.
 import os
+
 import pytest
 from pytest_mock import MockFixture
 
 from pyiceberg.catalog.bigquery_metastore import BigQueryMetastoreCatalog
-from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchNamespaceError, NoSuchTableError
+from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER
-from tests.conftest import BQ_TABLE_METADATA_LOCATION_REGEX, BUCKET_NAME, TABLE_METADATA_LOCATION_REGEX
+from tests.conftest import BQ_TABLE_METADATA_LOCATION_REGEX
+
 
 def test_create_table_with_database_location(
     mocker: MockFixture, _bucket_initialize: None, table_schema_nested: Schema, gcp_dataset_name: str, table_name: str
@@ -35,7 +37,9 @@ def test_create_table_with_database_location(
 
     catalog_name = "test_ddb_catalog"
     identifier = (gcp_dataset_name, table_name)
-    test_catalog = BigQueryMetastoreCatalog(catalog_name, **{"gcp.project-id": "alexstephen-test-1", "warehouse": "gs://alexstephen-test-bq-bucket/"})
+    test_catalog = BigQueryMetastoreCatalog(
+        catalog_name, **{"gcp.project-id": "alexstephen-test-1", "warehouse": "gs://alexstephen-test-bq-bucket/"}
+    )
     test_catalog.create_namespace(namespace=gcp_dataset_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert table.name() == identifier
@@ -44,6 +48,7 @@ def test_create_table_with_database_location(
     tables_in_namespace = test_catalog.list_tables(namespace=gcp_dataset_name)
     assert identifier in tables_in_namespace
 
+
 def test_drop_table_with_database_location(
     mocker: MockFixture, _bucket_initialize: None, table_schema_nested: Schema, gcp_dataset_name: str, table_name: str
 ) -> None:
@@ -51,9 +56,11 @@ def test_drop_table_with_database_location(
 
     catalog_name = "test_ddb_catalog"
     identifier = (gcp_dataset_name, table_name)
-    test_catalog = BigQueryMetastoreCatalog(catalog_name, **{"gcp.project-id": "alexstephen-test-1", "warehouse": "gs://alexstephen-test-bq-bucket/"})
+    test_catalog = BigQueryMetastoreCatalog(
+        catalog_name, **{"gcp.project-id": "alexstephen-test-1", "warehouse": "gs://alexstephen-test-bq-bucket/"}
+    )
     test_catalog.create_namespace(namespace=gcp_dataset_name)
-    table = test_catalog.create_table(identifier, table_schema_nested)
+    test_catalog.create_table(identifier, table_schema_nested)
     test_catalog.drop_table(identifier)
 
     tables_in_namespace_after_drop = test_catalog.list_tables(namespace=gcp_dataset_name)
@@ -63,8 +70,9 @@ def test_drop_table_with_database_location(
     try:
         test_catalog.load_table(identifier)
         raise AssertionError()
-    except NoSuchTableError as e: 
+    except NoSuchTableError:
         assert True
+
 
 def test_create_and_drop_namespace(
     mocker: MockFixture, _bucket_initialize: None, table_schema_nested: Schema, gcp_dataset_name: str, table_name: str
@@ -73,8 +81,9 @@ def test_create_and_drop_namespace(
 
     # Create namespace.
     catalog_name = "test_ddb_catalog"
-    identifier = (gcp_dataset_name, table_name)
-    test_catalog = BigQueryMetastoreCatalog(catalog_name, **{"gcp.project-id": "alexstephen-test-1", "warehouse": "gs://alexstephen-test-bq-bucket/"})
+    test_catalog = BigQueryMetastoreCatalog(
+        catalog_name, **{"gcp.project-id": "alexstephen-test-1", "warehouse": "gs://alexstephen-test-bq-bucket/"}
+    )
     test_catalog.create_namespace(namespace=gcp_dataset_name)
 
     # Ensure that the namespace exists.
@@ -90,6 +99,7 @@ def test_create_and_drop_namespace(
     with pytest.raises(NoSuchNamespaceError):
         test_catalog.load_namespace_properties(gcp_dataset_name)
 
+
 def test_register_table(
     mocker: MockFixture, _bucket_initialize: None, table_schema_nested: Schema, gcp_dataset_name: str, table_name: str
 ) -> None:
@@ -97,7 +107,7 @@ def test_register_table(
 
     catalog_name = "test_bq_register_catalog"
     identifier = (gcp_dataset_name, table_name)
-    warehouse_path = "gs://alexstephen-test-bq-bucket/" # Matches conftest BUCKET_NAME for GCS interaction
+    warehouse_path = "gs://alexstephen-test-bq-bucket/"  # Matches conftest BUCKET_NAME for GCS interaction
     gcp_project_id = "alexstephen-test-1"
 
     test_catalog = BigQueryMetastoreCatalog(catalog_name, **{"gcp.project-id": gcp_project_id, "warehouse": warehouse_path})
@@ -110,7 +120,13 @@ def test_register_table(
     metadata_file_name = "00000-aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa.metadata.json"
     metadata_gcs_path = f"{table_gcs_location}/metadata/{metadata_file_name}"
 
-    metadata = new_table_metadata(location=table_gcs_location, schema=table_schema_nested, properties={}, partition_spec=UNPARTITIONED_PARTITION_SPEC, sort_order=UNSORTED_SORT_ORDER)
+    metadata = new_table_metadata(
+        location=table_gcs_location,
+        schema=table_schema_nested,
+        properties={},
+        partition_spec=UNPARTITIONED_PARTITION_SPEC,
+        sort_order=UNSORTED_SORT_ORDER,
+    )
     io = load_file_io(properties=test_catalog.properties, location=metadata_gcs_path)
     test_catalog._write_metadata(metadata, io, metadata_gcs_path)
     ToOutputFile.table_metadata(metadata, io.new_output(metadata_gcs_path), overwrite=True)
