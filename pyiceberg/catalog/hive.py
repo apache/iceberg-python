@@ -63,6 +63,7 @@ from pyiceberg.catalog import (
     LOCATION,
     METADATA_LOCATION,
     TABLE_TYPE,
+    URI,
     MetastoreCatalog,
     PropertiesUpdateSummary,
 )
@@ -300,7 +301,7 @@ class HiveCatalog(MetastoreCatalog):
     @staticmethod
     def _create_hive_client(properties: Dict[str, str]) -> _HiveClient:
         last_exception = None
-        for uri in properties["uri"].split(","):
+        for uri in properties[URI].split(","):
             try:
                 return _HiveClient(
                     uri,
@@ -312,7 +313,7 @@ class HiveCatalog(MetastoreCatalog):
         if last_exception is not None:
             raise last_exception
         else:
-            raise ValueError(f"Unable to connect to hive using uri: {properties['uri']}")
+            raise ValueError(f"Unable to connect to hive using uri: {properties[URI]}")
 
     def _convert_hive_into_iceberg(self, table: HiveTable) -> Table:
         properties: Dict[str, str] = table.parameters
