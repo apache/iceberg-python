@@ -25,7 +25,13 @@ from pyiceberg.io import FileIO
 from pyiceberg.manifest import ManifestContent, ManifestEntry, ManifestEntryStatus, ManifestFile
 from pyiceberg.table import Table
 from pyiceberg.table.snapshots import Operation, Snapshot, Summary
-from pyiceberg.table.update.validate import _deleted_data_files, _validate_deleted_data_files, _validation_history
+from pyiceberg.table.update.validate import (
+    _added_data_files,
+    _deleted_data_files,
+    _validate_added_data_files,
+    _validate_deleted_data_files,
+    _validation_history,
+)
 
 
 @pytest.fixture
@@ -212,6 +218,133 @@ def test_validate_deleted_data_files_raises_on_conflict(
     with patch("pyiceberg.table.update.validate._deleted_data_files", return_value=[DummyEntry()]):
         with pytest.raises(ValidationException):
             _validate_deleted_data_files(
+                table=table,
+                starting_snapshot=newest_snapshot,
+                data_filter=None,
+                parent_snapshot=oldest_snapshot,
+            )
+
+
+@pytest.mark.parametrize("operation", [Operation.APPEND, Operation.OVERWRITE])
+def test_validate_added_data_files_conflicting_count(
+    table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]],
+    operation: Operation,
+) -> None:
+    table, mock_manifests = table_v2_with_extensive_snapshots_and_manifests
+
+    snapshot_history = 100
+    snapshots = table.snapshots()
+    for i in range(1, snapshot_history + 1):
+        altered_snapshot = snapshots[-i]
+        altered_snapshot = altered_snapshot.model_copy(update={"summary": Summary(operation=operation)})
+        snapshots[-i] = altered_snapshot
+
+    table.metadata = table.metadata.model_copy(
+        update={"snapshots": snapshots},
+    )
+
+    oldest_snapshot = table.snapshots()[-snapshot_history]
+    newest_snapshot = cast(Snapshot, table.current_snapshot())
+
+    def mock_read_manifest_side_effect(self: Snapshot, io: FileIO) -> list[ManifestFile]:
+        """Mock the manifests method to use the snapshot_id for lookup."""
+        snapshot_id = self.snapshot_id
+        if snapshot_id in mock_manifests:
+            return mock_manifests[snapshot_id]
+        return []
+
+    def mock_fetch_manifest_entry(self: ManifestFile, io: FileIO, discard_deleted: bool = True) -> list[ManifestEntry]:
+        return [
+            ManifestEntry.from_args(
+                status=ManifestEntryStatus.ADDED,
+                snapshot_id=self.added_snapshot_id,
+            )
+        ]
+
+    with (
+        patch("pyiceberg.table.snapshots.Snapshot.manifests", new=mock_read_manifest_side_effect),
+        patch("pyiceberg.manifest.ManifestFile.fetch_manifest_entry", new=mock_fetch_manifest_entry),
+    ):
+        result = list(
+            _added_data_files(
+                table=table,
+                starting_snapshot=newest_snapshot,
+                data_filter=None,
+                parent_snapshot=oldest_snapshot,
+                partition_set=None,
+            )
+        )
+
+        # since we only look at the ManifestContent.Data files
+        assert len(result) == snapshot_history / 2
+
+
+@pytest.mark.parametrize("operation", [Operation.DELETE, Operation.REPLACE])
+def test_validate_added_data_files_non_conflicting_count(
+    table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]],
+    operation: Operation,
+) -> None:
+    table, mock_manifests = table_v2_with_extensive_snapshots_and_manifests
+
+    snapshot_history = 100
+    snapshots = table.snapshots()
+    for i in range(1, snapshot_history + 1):
+        altered_snapshot = snapshots[-i]
+        altered_snapshot = altered_snapshot.model_copy(update={"summary": Summary(operation=operation)})
+        snapshots[-i] = altered_snapshot
+
+    table.metadata = table.metadata.model_copy(
+        update={"snapshots": snapshots},
+    )
+
+    oldest_snapshot = table.snapshots()[-snapshot_history]
+    newest_snapshot = cast(Snapshot, table.current_snapshot())
+
+    def mock_read_manifest_side_effect(self: Snapshot, io: FileIO) -> list[ManifestFile]:
+        """Mock the manifests method to use the snapshot_id for lookup."""
+        snapshot_id = self.snapshot_id
+        if snapshot_id in mock_manifests:
+            return mock_manifests[snapshot_id]
+        return []
+
+    def mock_fetch_manifest_entry(self: ManifestFile, io: FileIO, discard_deleted: bool = True) -> list[ManifestEntry]:
+        return [
+            ManifestEntry.from_args(
+                status=ManifestEntryStatus.ADDED,
+                snapshot_id=self.added_snapshot_id,
+            )
+        ]
+
+    with (
+        patch("pyiceberg.table.snapshots.Snapshot.manifests", new=mock_read_manifest_side_effect),
+        patch("pyiceberg.manifest.ManifestFile.fetch_manifest_entry", new=mock_fetch_manifest_entry),
+    ):
+        result = list(
+            _added_data_files(
+                table=table,
+                starting_snapshot=newest_snapshot,
+                data_filter=None,
+                parent_snapshot=oldest_snapshot,
+                partition_set=None,
+            )
+        )
+
+        assert len(result) == 0
+
+
+def test_validate_added_data_files_raises_on_conflict(
+    table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]],
+) -> None:
+    table, _ = table_v2_with_extensive_snapshots_and_manifests
+    oldest_snapshot = table.snapshots()[0]
+    newest_snapshot = cast(Snapshot, table.current_snapshot())
+
+    class DummyEntry:
+        snapshot_id = 123
+
+    with patch("pyiceberg.table.update.validate._added_data_files", return_value=[DummyEntry()]):
+        with pytest.raises(ValidationException):
+            _validate_added_data_files(
                 table=table,
                 starting_snapshot=newest_snapshot,
                 data_filter=None,
