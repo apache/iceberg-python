@@ -29,7 +29,7 @@ import click
 from click import Context
 
 from pyiceberg import __version__
-from pyiceberg.catalog import Catalog, load_catalog
+from pyiceberg.catalog import URI, Catalog, load_catalog
 from pyiceberg.cli.output import ConsoleOutput, JsonOutput, Output
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchPropertyException, NoSuchTableError
 from pyiceberg.table import TableProperties
@@ -75,7 +75,7 @@ def run(
     if ugi:
         properties["ugi"] = ugi
     if uri:
-        properties["uri"] = uri
+        properties[URI] = uri
     if credential:
         properties["credential"] = credential
 
