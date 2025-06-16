@@ -59,6 +59,7 @@ from pyiceberg.types import (
     UUIDType,
 )
 from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, time_to_micros
+from pyiceberg.utils.deprecated import deprecation_message
 
 INITIAL_PARTITION_SPEC_ID = 0
 PARTITION_FIELD_ID_START: int = 1000
@@ -100,6 +101,13 @@ class PartitionField(IcebergBaseModel):
             data["transform"] = transform
         if name is not None:
             data["name"] = name
+
+        if data["source-id"]:
+            deprecation_message(
+                deprecated_in="0.10.0",
+                removed_in="0.11.0",
+                help_message="source-id is not allowed for Iceberg v3. Please use source-ids instead.",
+            )
 
         super().__init__(**data)
 
