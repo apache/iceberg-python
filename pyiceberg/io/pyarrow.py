@@ -85,6 +85,13 @@ from pyiceberg.expressions.visitors import (
 )
 from pyiceberg.expressions.visitors import visit as boolean_expression_visit
 from pyiceberg.io import (
+    ADLS_ACCOUNT_NAME,
+    ADLS_ACCOUNT_KEY,
+    ADLS_BLOB_STORAGE_AUTHORITY,
+    ADLS_DFS_STORAGE_AUTHORITY,
+    ADLS_BLOB_STORAGE_SCHEME,
+    ADLS_DFS_STORAGE_SCHEME,
+    ADLS_SAS_TOKEN,
     AWS_ACCESS_KEY_ID,
     AWS_REGION,
     AWS_ROLE_ARN,
@@ -394,6 +401,9 @@ class PyArrowFileIO(FileIO):
         elif scheme in {"gs", "gcs"}:
             return self._initialize_gcs_fs()
 
+        elif scheme in {"abfs", "abfss", "wasb", "wasbs"}:
+            return self._initialize_azure_fs()
+
         elif scheme in {"file"}:
             return self._initialize_local_fs()
 
@@ -474,6 +484,34 @@ class PyArrowFileIO(FileIO):
             client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, S3_FORCE_VIRTUAL_ADDRESSING, False)
 
         return S3FileSystem(**client_kwargs)
+
+    def _initialize_azure_fs(self) -> FileSystem:
+        from pyarrow.fs import AzureFileSystem
+
+        client_kwargs: Dict[str, str] = {}
+
+        if account_name := self.properties.get(ADLS_ACCOUNT_NAME):
+            client_kwargs["account_name"] = account_name
+
+        if account_key := self.properties.get(ADLS_ACCOUNT_KEY):
+            client_kwargs["account_key"] = account_key
+
+        if blob_storage_authority := self.properties.get(ADLS_BLOB_STORAGE_AUTHORITY):
+            client_kwargs["blob_storage_authority"] = blob_storage_authority
+
+        if dfs_storage_authority := self.properties.get(ADLS_DFS_STORAGE_AUTHORITY):
+            client_kwargs["dfs_storage_authority"] = dfs_storage_authority
+
+        if blob_storage_scheme := self.properties.get(ADLS_BLOB_STORAGE_SCHEME):
+            client_kwargs["blob_storage_scheme"] = blob_storage_scheme
+
+        if dfs_storage_scheme := self.properties.get(ADLS_DFS_STORAGE_SCHEME):
+            client_kwargs["dfs_storage_scheme"] = dfs_storage_scheme
+
+        if sas_token := self.properties.get(ADLS_SAS_TOKEN):
+            client_kwargs["sas_token"] = sas_token
+
+        return AzureFileSystem(**client_kwargs)
 
     def _initialize_hdfs_fs(self, scheme: str, netloc: Optional[str]) -> FileSystem:
         from pyarrow.fs import HadoopFileSystem

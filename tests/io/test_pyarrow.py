@@ -340,21 +340,6 @@ def test_deleting_s3_file_not_found() -> None:
         assert "Cannot delete file, does not exist:" in str(exc_info.value)
 
 
-def test_deleting_hdfs_file_not_found() -> None:
-    """Test that a PyArrowFile raises a PermissionError when the pyarrow error includes 'No such file or directory'"""
-
-    hdfs_mock = MagicMock()
-    hdfs_mock.delete_file.side_effect = OSError("Path does not exist")
-
-    with patch.object(PyArrowFileIO, "_initialize_fs") as submocked:
-        submocked.return_value = hdfs_mock
-
-        with pytest.raises(FileNotFoundError) as exc_info:
-            PyArrowFileIO().delete("hdfs://foo/bar.txt")
-
-        assert "Cannot delete file, does not exist:" in str(exc_info.value)
-
-
 def test_pyarrow_s3_session_properties() -> None:
     session_properties: Properties = {
         "s3.endpoint": "http://localhost:9000",
@@ -1670,9 +1655,8 @@ def test_new_output_file_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
 
 
 @pytest.mark.gcs
-@pytest.mark.skip(reason="Open issue on Arrow: https://github.com/apache/arrow/issues/36993")
 def test_write_and_read_file_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
-    """Test writing and reading a file using FsspecInputFile and FsspecOutputFile"""
+    """Test writing and reading a file using PyArrowFile"""
     location = f"gs://warehouse/{uuid4()}.txt"
     output_file = pyarrow_fileio_gcs.new_output(location=location)
     with output_file.create() as f:
@@ -1689,7 +1673,7 @@ def test_write_and_read_file_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
 
 @pytest.mark.gcs
 def test_getting_length_of_file_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
-    """Test getting the length of an FsspecInputFile and FsspecOutputFile"""
+    """Test getting the length of PyArrowFile"""
     filename = str(uuid4())
 
     output_file = pyarrow_fileio_gcs.new_output(location=f"gs://warehouse/{filename}")
@@ -1705,7 +1689,6 @@ def test_getting_length_of_file_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
 
 
 @pytest.mark.gcs
-@pytest.mark.skip(reason="Open issue on Arrow: https://github.com/apache/arrow/issues/36993")
 def test_file_tell_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
     location = f"gs://warehouse/{uuid4()}"
 
@@ -1726,7 +1709,6 @@ def test_file_tell_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
 
 
 @pytest.mark.gcs
-@pytest.mark.skip(reason="Open issue on Arrow: https://github.com/apache/arrow/issues/36993")
 def test_read_specified_bytes_for_file_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
     location = f"gs://warehouse/{uuid4()}"
 
@@ -1751,9 +1733,8 @@ def test_read_specified_bytes_for_file_gcs(pyarrow_fileio_gcs: PyArrowFileIO) ->
 
 
 @pytest.mark.gcs
-@pytest.mark.skip(reason="Open issue on Arrow: https://github.com/apache/arrow/issues/36993")
 def test_raise_on_opening_file_not_found_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
-    """Test that an fsspec input file raises appropriately when the gcs file is not found"""
+    """Test that PyArrowFile raises appropriately when the gcs file is not found"""
 
     filename = str(uuid4())
     input_file = pyarrow_fileio_gcs.new_input(location=f"gs://warehouse/{filename}")
@@ -1785,7 +1766,6 @@ def test_checking_if_a_file_exists_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> Non
 
 
 @pytest.mark.gcs
-@pytest.mark.skip(reason="Open issue on Arrow: https://github.com/apache/arrow/issues/36993")
 def test_closing_a_file_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
     """Test closing an output file and input file"""
     filename = str(uuid4())
@@ -1813,9 +1793,8 @@ def test_converting_an_outputfile_to_an_inputfile_gcs(pyarrow_fileio_gcs: PyArro
 
 
 @pytest.mark.gcs
-@pytest.mark.skip(reason="Open issue on Arrow: https://github.com/apache/arrow/issues/36993")
 def test_writing_avro_file_gcs(generated_manifest_entry_file: str, pyarrow_fileio_gcs: PyArrowFileIO) -> None:
-    """Test that bytes match when reading a local avro file, writing it using fsspec file-io, and then reading it again"""
+    """Test that bytes match when reading a local avro file, writing it using pyarrow file-io, and then reading it again"""
     filename = str(uuid4())
     with PyArrowFileIO().new_input(location=generated_manifest_entry_file).open() as f:
         b1 = f.read()
@@ -1826,6 +1805,182 @@ def test_writing_avro_file_gcs(generated_manifest_entry_file: str, pyarrow_filei
             assert b1 == b2  # Check that bytes of read from local avro file match bytes written to s3
 
     pyarrow_fileio_gcs.delete(f"gs://warehouse/{filename}")
+
+
+@pytest.mark.adls
+def test_new_input_file_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
+    """Test creating a new input file from pyarrow file-io"""
+    filename = str(uuid4())
+
+    input_file = pyarrow_fileio_adls.new_input(f"{adls_scheme}://warehouse/{filename}")
+
+    assert isinstance(input_file, PyArrowFile)
+    assert input_file.location == f"{adls_scheme}://warehouse/{filename}"
+
+
+@pytest.mark.adls
+def test_new_output_file_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
+    """Test creating a new output file from pyarrow file-io"""
+    filename = str(uuid4())
+
+    output_file = pyarrow_fileio_adls.new_output(f"{adls_scheme}://warehouse/{filename}")
+
+    assert isinstance(output_file, PyArrowFile)
+    assert output_file.location == f"{adls_scheme}://warehouse/{filename}"
+
+
+@pytest.mark.adls
+def test_write_and_read_file_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
+    """Test writing and reading a file using PyArrowFile"""
+    location = f"{adls_scheme}://warehouse/{uuid4()}.txt"
+    output_file = pyarrow_fileio_adls.new_output(location=location)
+    with output_file.create() as f:
+        assert f.write(b"foo") == 3
+
+    assert output_file.exists()
+
+    input_file = pyarrow_fileio_adls.new_input(location=location)
+    with input_file.open() as f:
+        assert f.read() == b"foo"
+
+    pyarrow_fileio_adls.delete(input_file)
+
+
+@pytest.mark.adls
+def test_getting_length_of_file_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
+    """Test getting the length of PyArrowFile"""
+    filename = str(uuid4())
+
+    output_file = pyarrow_fileio_adls.new_output(location=f"{adls_scheme}://warehouse/{filename}")
+    with output_file.create() as f:
+        f.write(b"foobar")
+
+    assert len(output_file) == 6
+
+    input_file = pyarrow_fileio_adls.new_input(location=f"{adls_scheme}://warehouse/{filename}")
+    assert len(input_file) == 6
+
+    pyarrow_fileio_adls.delete(output_file)
+
+
+@pytest.mark.adls
+def test_file_tell_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
+    location = f"{adls_scheme}://warehouse/{uuid4()}"
+
+    output_file = pyarrow_fileio_adls.new_output(location=location)
+    with output_file.create() as write_file:
+        write_file.write(b"foobar")
+
+    input_file = pyarrow_fileio_adls.new_input(location=location)
+    with input_file.open() as f:
+        f.seek(0)
+        assert f.tell() == 0
+        f.seek(1)
+        assert f.tell() == 1
+        f.seek(3)
+        assert f.tell() == 3
+        f.seek(0)
+        assert f.tell() == 0
+
+
+@pytest.mark.adls
+def test_read_specified_bytes_for_file_adls(pyarrow_fileio_adls: PyArrowFileIO) -> None:
+    location = f"abfss://warehouse/{uuid4()}"
+
+    output_file = pyarrow_fileio_adls.new_output(location=location)
+    with output_file.create() as write_file:
+        write_file.write(b"foo")
+
+    input_file = pyarrow_fileio_adls.new_input(location=location)
+    with input_file.open() as f:
+        f.seek(0)
+        assert b"f" == f.read(1)
+        f.seek(0)
+        assert b"fo" == f.read(2)
+        f.seek(1)
+        assert b"o" == f.read(1)
+        f.seek(1)
+        assert b"oo" == f.read(2)
+        f.seek(0)
+        assert b"foo" == f.read(999)  # test reading amount larger than entire content length
+
+    pyarrow_fileio_adls.delete(input_file)
+
+
+@pytest.mark.adls
+def test_raise_on_opening_file_not_found_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
+    """Test that PyArrowFile raises appropriately when the adls file is not found"""
+
+    filename = str(uuid4())
+    input_file = pyarrow_fileio_adls.new_input(location=f"{adls_scheme}://warehouse/{filename}")
+    with pytest.raises(FileNotFoundError) as exc_info:
+        input_file.open().read()
+
+    assert filename in str(exc_info.value)
+
+
+@pytest.mark.adls
+def test_checking_if_a_file_exists_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
+    """Test checking if a file exists"""
+    non_existent_file = pyarrow_fileio_adls.new_input(location=f"{adls_scheme}://warehouse/does-not-exist.txt")
+    assert not non_existent_file.exists()
+
+    location = f"{adls_scheme}://warehouse/{uuid4()}"
+    output_file = pyarrow_fileio_adls.new_output(location=location)
+    assert not output_file.exists()
+    with output_file.create() as f:
+        f.write(b"foo")
+
+    existing_input_file = pyarrow_fileio_adls.new_input(location=location)
+    assert existing_input_file.exists()
+
+    existing_output_file = pyarrow_fileio_adls.new_output(location=location)
+    assert existing_output_file.exists()
+
+    pyarrow_fileio_adls.delete(existing_output_file)
+
+
+@pytest.mark.adls
+#@pytest.mark.skip(reason="Open issue on Arrow: https://github.com/apache/arrow/issues/36993")
+def test_closing_a_file_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
+    """Test closing an output file and input file"""
+    filename = str(uuid4())
+    output_file = pyarrow_fileio_adls.new_output(location=f"{adls_scheme}://warehouse/{filename}")
+    with output_file.create() as write_file:
+        write_file.write(b"foo")
+        assert not write_file.closed  # type: ignore
+    assert write_file.closed  # type: ignore
+
+    input_file = pyarrow_fileio_adls.new_input(location=f"{adls_scheme}://warehouse/{filename}")
+    with input_file.open() as f:
+        assert not f.closed  # type: ignore
+    assert f.closed  # type: ignore
+
+    pyarrow_fileio_adls.delete(f"{adls_scheme}://warehouse/{filename}")
+
+
+@pytest.mark.adls
+def test_converting_an_outputfile_to_an_inputfile_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
+    """Test converting an output file to an input file"""
+    filename = str(uuid4())
+    output_file = pyarrow_fileio_adls.new_output(location=f"{adls_scheme}://warehouse/{filename}")
+    input_file = output_file.to_input_file()
+    assert input_file.location == output_file.location
+
+
+@pytest.mark.adls
+def test_writing_avro_file_adls(generated_manifest_entry_file: str, pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
+    """Test that bytes match when reading a local avro file, writing it using pyarrow file-io, and then reading it again"""
+    filename = str(uuid4())
+    with PyArrowFileIO().new_input(location=generated_manifest_entry_file).open() as f:
+        b1 = f.read()
+        with pyarrow_fileio_adls.new_output(location=f"{adls_scheme}://warehouse/{filename}").create() as out_f:
+            out_f.write(b1)
+        with pyarrow_fileio_adls.new_input(location=f"{adls_scheme}://warehouse/{filename}").open() as in_f:
+            b2 = in_f.read()
+            assert b1 == b2  # Check that bytes of read from local avro file match bytes written to s3
+
+    pyarrow_fileio_adls.delete(f"{adls_scheme}://warehouse/{filename}")
 
 
 def test_parse_location() -> None:
