@@ -50,7 +50,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
 from pyiceberg.table.sorting import SortDirection, SortField, SortOrder
-from pyiceberg.transforms import BucketTransform, DayTransform, HourTransform, IdentityTransform, Transform
+from pyiceberg.transforms import DayTransform, HourTransform, IdentityTransform, Transform
 from pyiceberg.types import (
     DateType,
     DecimalType,
@@ -1274,7 +1274,7 @@ def test_table_write_schema_with_valid_upcast(
                 pa.field("list", pa.list_(pa.int64()), nullable=False),
                 pa.field("map", pa.map_(pa.string(), pa.int64()), nullable=False),
                 pa.field("double", pa.float64(), nullable=True),  # can support upcasting float to double
-                pa.field("uuid", pa.binary(length=16), nullable=True),  # can UUID is read as fixed length binary of length 16
+                pa.field("uuid", pa.uuid(), nullable=True),
             )
         )
     )
@@ -1847,7 +1847,15 @@ def test_read_write_decimals(session_catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("transform", [IdentityTransform(), BucketTransform(32)])
+@pytest.mark.parametrize(
+    "transform",
+    [
+        IdentityTransform(),
+        # Bucket is disabled because of an issue in Iceberg Java:
+        # https://github.com/apache/iceberg/pull/13324
+        # BucketTransform(32)
+    ],
+)
 def test_uuid_partitioning(session_catalog: Catalog, spark: SparkSession, transform: Transform) -> None:  # type: ignore
     identifier = f"default.test_uuid_partitioning_{str(transform).replace('[32]', '')}"
 
