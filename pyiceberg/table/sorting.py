@@ -30,6 +30,7 @@ from pyiceberg.schema import Schema
 from pyiceberg.transforms import IdentityTransform, Transform, parse_transform
 from pyiceberg.typedef import IcebergBaseModel
 from pyiceberg.types import IcebergType
+from pyiceberg.utils.deprecated import deprecation_message
 
 
 class SortDirection(Enum):
@@ -85,6 +86,14 @@ class SortField(IcebergBaseModel):
             data["direction"] = direction
         if null_order is not None:
             data["null-order"] = null_order
+
+        if data["source-id"]:
+            deprecation_message(
+                deprecated_in="0.10.0",
+                removed_in="0.11.0",
+                help_message="source-id is not allowed for Iceberg v3. Please use source-ids instead.",
+            )
+
         super().__init__(**data)
 
     @model_validator(mode="before")
