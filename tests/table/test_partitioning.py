@@ -53,7 +53,7 @@ from pyiceberg.types import (
 
 def test_partition_field_init() -> None:
     bucket_transform = BucketTransform(100)  # type: ignore
-    partition_field = PartitionField(3, 1000, bucket_transform, "id")
+    partition_field = PartitionField(2, 3, 1000, bucket_transform, "id")
 
     assert partition_field.source_id == 3
     assert partition_field.field_id == 1000
@@ -74,7 +74,7 @@ def test_unpartitioned_partition_spec_repr() -> None:
 def test_partition_spec_init() -> None:
     bucket_transform: BucketTransform = BucketTransform(4)  # type: ignore
 
-    id_field1 = PartitionField(3, 1001, bucket_transform, "id")
+    id_field1 = PartitionField(2, 3, 1001, bucket_transform, "id")
     partition_spec1 = PartitionSpec(id_field1)
 
     assert partition_spec1.spec_id == 0
@@ -83,7 +83,7 @@ def test_partition_spec_init() -> None:
     assert str(partition_spec1) == f"[\n  {str(id_field1)}\n]"
     assert not partition_spec1.is_unpartitioned()
     # only differ by PartitionField field_id
-    id_field2 = PartitionField(3, 1002, bucket_transform, "id")
+    id_field2 = PartitionField(2, 3, 1002, bucket_transform, "id")
     partition_spec2 = PartitionSpec(id_field2)
     assert partition_spec1 != partition_spec2
     assert partition_spec1.compatible_with(partition_spec2)
@@ -94,8 +94,8 @@ def test_partition_spec_init() -> None:
 
 def test_partition_compatible_with() -> None:
     bucket_transform: BucketTransform = BucketTransform(4)  # type: ignore
-    field1 = PartitionField(3, 100, bucket_transform, "id")
-    field2 = PartitionField(3, 102, bucket_transform, "id")
+    field1 = PartitionField(2, 3, 100, bucket_transform, "id")
+    field2 = PartitionField(2, 3, 102, bucket_transform, "id")
     lhs = PartitionSpec(
         field1,
     )
@@ -115,8 +115,10 @@ def test_serialize_unpartitioned_spec() -> None:
 
 def test_serialize_partition_spec() -> None:
     partitioned = PartitionSpec(
-        PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate"),
-        PartitionField(source_id=2, field_id=1001, transform=BucketTransform(num_buckets=25), name="int_bucket"),
+        PartitionField(format_version=2, source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate"),
+        PartitionField(
+            format_version=2, source_id=2, field_id=1001, transform=BucketTransform(num_buckets=25), name="int_bucket"
+        ),
         spec_id=3,
     )
     assert (
@@ -212,20 +214,31 @@ def test_transform_consistency_with_pyarrow_transform(source_type: PrimitiveType
 
 
 def test_deserialize_partition_field_v2() -> None:
-    json_partition_spec = """{"format-version": 2, "source-id": 1, "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}"""
+    json_partition_spec = (
+        """{"format-version": 2, "source-id": 1, "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}"""
+    )
 
     field = PartitionField.model_validate_json(json_partition_spec)
-    assert field == PartitionField(format_version=2, source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate")
+    assert field == PartitionField(
+        format_version=2, source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate"
+    )
 
 
 def test_deserialize_partition_field_v3() -> None:
-    json_partition_spec = """{"format-version": 3, "source-ids": [1], "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}"""
+    json_partition_spec = (
+        """{"format-version": 3, "source-ids": [1], "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}"""
+    )
 
     field = PartitionField.model_validate_json(json_partition_spec)
-    assert field == PartitionField(format_version=3, source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate")
+    assert field == PartitionField(
+        format_version=3, source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate"
+    )
+
 
 def test_v3_does_not_allow_source_id() -> None:
-    json_partition_spec = """{"format-version": 2, "source-ids": [1], "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}"""
+    json_partition_spec = (
+        """{"format-version": 2, "source-ids": [1], "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}"""
+    )
 
     with pytest.raises(ValueError, match=r"source-ids is not allowed"):
         PartitionField.model_validate_json(json_partition_spec)

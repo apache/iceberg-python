@@ -68,8 +68,9 @@ def test_sorting_schema(example_table_metadata_v2: Dict[str, Any]) -> None:
 
     assert table_metadata.sort_orders == [
         SortOrder(
-            SortField(2, IdentityTransform(), SortDirection.ASC, null_order=NullOrder.NULLS_FIRST),
+            SortField(2, 2, IdentityTransform(), SortDirection.ASC, null_order=NullOrder.NULLS_FIRST),
             SortField(
+                2,
                 3,
                 BucketTransform(4),
                 direction=SortDirection.DESC,
@@ -114,6 +115,7 @@ def test_serialize_sort_field_v3() -> None:
     expected = SortField(source_id=19, transform=IdentityTransform(), null_order=NullOrder.NULLS_FIRST)
     payload = '{"source-ids":[19],"transform":"identity","direction":"asc","null-order":"nulls-first"}'
     assert SortField.model_validate_json(payload) == expected
+
 
 def test_v2_does_not_support_source_ids() -> None:
     payload = '{"format-version": 2, "source-ids":[19],"transform":"identity","direction":"asc","null-order":"nulls-first"}'

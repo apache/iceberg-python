@@ -30,7 +30,6 @@ from pyiceberg.schema import Schema
 from pyiceberg.transforms import IdentityTransform, Transform, parse_transform
 from pyiceberg.typedef import IcebergBaseModel, TableVersion
 from pyiceberg.types import IcebergType
-from pyiceberg.utils.deprecated import deprecation_message
 
 
 class SortDirection(Enum):
@@ -102,9 +101,8 @@ class SortField(IcebergBaseModel):
     @model_validator(mode="before")
     @classmethod
     def check_source_ids_against_version(cls, data: Any) -> Any:
-        if "format-version" in data and data["format-version"] in [1,2] and "source-ids" in data:
+        if "format-version" in data and data["format-version"] in [1, 2] and "source-ids" in data:
             raise ValueError("source-ids is not allowed on Iceberg v1 and v2")
-
 
     @model_validator(mode="before")
     @classmethod
@@ -186,7 +184,11 @@ UNSORTED_SORT_ORDER = SortOrder(order_id=UNSORTED_SORT_ORDER_ID)
 
 
 def assign_fresh_sort_order_ids(
-    format_version: TableVersion, sort_order: SortOrder, old_schema: Schema, fresh_schema: Schema, sort_order_id: int = INITIAL_SORT_ORDER_ID
+    format_version: TableVersion,
+    sort_order: SortOrder,
+    old_schema: Schema,
+    fresh_schema: Schema,
+    sort_order_id: int = INITIAL_SORT_ORDER_ID,
 ) -> SortOrder:
     if sort_order.is_unsorted:
         return UNSORTED_SORT_ORDER

@@ -47,7 +47,7 @@ from pyiceberg.types import DoubleType, FloatType, IntegerType, NestedField, Tim
 def test_identity_transform_residual() -> None:
     schema = Schema(NestedField(50, "dateint", IntegerType()), NestedField(51, "hour", IntegerType()))
 
-    spec = PartitionSpec(PartitionField(50, 1050, IdentityTransform(), "dateint_part"))
+    spec = PartitionSpec(PartitionField(2, 50, 1050, IdentityTransform(), "dateint_part"))
 
     predicate = Or(
         Or(
@@ -91,7 +91,7 @@ def test_identity_transform_residual() -> None:
 def test_case_insensitive_identity_transform_residuals() -> None:
     schema = Schema(NestedField(50, "dateint", IntegerType()), NestedField(51, "hour", IntegerType()))
 
-    spec = PartitionSpec(PartitionField(50, 1050, IdentityTransform(), "dateint_part"))
+    spec = PartitionSpec(PartitionField(2, 50, 1050, IdentityTransform(), "dateint_part"))
 
     predicate = Or(
         Or(
@@ -136,7 +136,7 @@ def test_unpartitioned_residuals() -> None:
 def test_in() -> None:
     schema = Schema(NestedField(50, "dateint", IntegerType()), NestedField(51, "hour", IntegerType()))
 
-    spec = PartitionSpec(PartitionField(50, 1050, IdentityTransform(), "dateint_part"))
+    spec = PartitionSpec(PartitionField(2, 50, 1050, IdentityTransform(), "dateint_part"))
 
     predicate = In("dateint", [20170815, 20170816, 20170817])
 
@@ -150,7 +150,7 @@ def test_in() -> None:
 def test_in_timestamp() -> None:
     schema = Schema(NestedField(50, "ts", TimestampType()), NestedField(51, "hour", IntegerType()))
 
-    spec = PartitionSpec(PartitionField(50, 1000, DayTransform(), "ts_part"))
+    spec = PartitionSpec(PartitionField(2, 50, 1000, DayTransform(), "ts_part"))
 
     date_20191201 = literal("2019-12-01T00:00:00").to(TimestampType()).value
     date_20191202 = literal("2019-12-02T00:00:00").to(TimestampType()).value
@@ -172,7 +172,7 @@ def test_in_timestamp() -> None:
 def test_not_in() -> None:
     schema = Schema(NestedField(50, "dateint", IntegerType()), NestedField(51, "hour", IntegerType()))
 
-    spec = PartitionSpec(PartitionField(50, 1050, IdentityTransform(), "dateint_part"))
+    spec = PartitionSpec(PartitionField(2, 50, 1050, IdentityTransform(), "dateint_part"))
 
     predicate = NotIn("dateint", [20170815, 20170816, 20170817])
 
@@ -188,7 +188,7 @@ def test_not_in() -> None:
 def test_is_nan() -> None:
     schema = Schema(NestedField(50, "double", DoubleType()), NestedField(51, "hour", IntegerType()))
 
-    spec = PartitionSpec(PartitionField(50, 1050, IdentityTransform(), "double_part"))
+    spec = PartitionSpec(PartitionField(2, 50, 1050, IdentityTransform(), "double_part"))
 
     predicate = IsNaN("double")
 
@@ -204,7 +204,7 @@ def test_is_nan() -> None:
 def test_is_not_nan() -> None:
     schema = Schema(NestedField(50, "double", DoubleType()), NestedField(51, "float", FloatType()))
 
-    spec = PartitionSpec(PartitionField(50, 1050, IdentityTransform(), "double_part"))
+    spec = PartitionSpec(PartitionField(2, 50, 1050, IdentityTransform(), "double_part"))
 
     predicate = NotNaN("double")
 
@@ -216,7 +216,7 @@ def test_is_not_nan() -> None:
     residual = res_eval.residual_for(Record(2))
     assert residual == AlwaysTrue()
 
-    spec = PartitionSpec(PartitionField(51, 1051, IdentityTransform(), "float_part"))
+    spec = PartitionSpec(PartitionField(2, 51, 1051, IdentityTransform(), "float_part"))
 
     predicate = NotNaN("float")
 
@@ -232,7 +232,7 @@ def test_is_not_nan() -> None:
 def test_not_in_timestamp() -> None:
     schema = Schema(NestedField(50, "ts", TimestampType()), NestedField(51, "dateint", IntegerType()))
 
-    spec = PartitionSpec(PartitionField(50, 1000, DayTransform(), "ts_part"))
+    spec = PartitionSpec(PartitionField(2, 50, 1000, DayTransform(), "ts_part"))
 
     date_20191201 = literal("2019-12-01T00:00:00").to(TimestampType()).value
     date_20191202 = literal("2019-12-02T00:00:00").to(TimestampType()).value

@@ -192,7 +192,13 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
             partition_names.add(name)
 
         def _add_new_field(
-            schema: Schema, source_id: int, field_id: int, name: str, transform: Transform[Any, Any], partition_names: Set[str], format_version: TableVersion
+            schema: Schema,
+            source_id: int,
+            field_id: int,
+            name: str,
+            transform: Transform[Any, Any],
+            partition_names: Set[str],
+            format_version: TableVersion,
         ) -> PartitionField:
             _check_and_add_partition_name(schema, name, source_id, partition_names)
             return PartitionField(format_version, source_id, field_id, transform, name)

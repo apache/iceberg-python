@@ -42,6 +42,7 @@ from pyiceberg.typedef import (
     IcebergBaseModel,
     IcebergRootModel,
     Properties,
+    TableVersion,
 )
 from pyiceberg.types import NestedField, StructType, transform_dict_value_to_str
 from pyiceberg.utils.config import Config
@@ -572,7 +573,7 @@ def new_table_metadata(
     from pyiceberg.table import TableProperties
 
     # Remove format-version so it does not get persisted
-    format_version = int(properties.pop(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION))
+    format_version: TableVersion = properties.pop(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION)
 
     schema.check_format_version_compatibility(format_version)
 

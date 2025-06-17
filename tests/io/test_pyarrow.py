@@ -1142,7 +1142,7 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
     )
 
     partition_spec = PartitionSpec(
-        PartitionField(2, 1000, IdentityTransform(), "partition_id"),
+        PartitionField(2, 2, 1000, IdentityTransform(), "partition_id"),
     )
 
     catalog.create_namespace("default")
@@ -1202,8 +1202,8 @@ def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryC
     )
 
     partition_spec = PartitionSpec(
-        PartitionField(2, 1000, IdentityTransform(), "field_2"),
-        PartitionField(3, 1001, IdentityTransform(), "field_3"),
+        PartitionField(2, 2, 1000, IdentityTransform(), "field_2"),
+        PartitionField(2, 3, 1001, IdentityTransform(), "field_3"),
     )
 
     catalog.create_namespace("default")

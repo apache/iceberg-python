@@ -59,7 +59,6 @@ from pyiceberg.types import (
     UUIDType,
 )
 from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, time_to_micros
-from pyiceberg.utils.deprecated import deprecation_message
 
 INITIAL_PARTITION_SPEC_ID = 0
 PARTITION_FIELD_ID_START: int = 1000
@@ -123,7 +122,7 @@ class PartitionField(IcebergBaseModel):
     @model_validator(mode="before")
     @classmethod
     def check_source_ids_against_version(cls, data: Any) -> Any:
-        if "format-version" in data and data["format-version"] in [1,2] and "source-ids" in data:
+        if "format-version" in data and data["format-version"] in [1, 2] and "source-ids" in data:
             raise ValueError("source-ids is not allowed on Iceberg v1 and v2")
 
         return data
