@@ -87,6 +87,7 @@ class PartitionField(IcebergBaseModel):
 
     def __init__(
         self,
+        format_version: int,
         source_id: Optional[int] = None,
         field_id: Optional[int] = None,
         transform: Optional[Transform[Any, Any]] = None,
@@ -102,12 +103,12 @@ class PartitionField(IcebergBaseModel):
         if name is not None:
             data["name"] = name
 
-        if data["source-id"]:
-            deprecation_message(
-                deprecated_in="0.10.0",
-                removed_in="0.11.0",
-                help_message="source-id is not allowed for Iceberg v3. Please use source-ids instead.",
-            )
+        if format_version == 3 and data["source-id"]:
+            raise ValueError("source-id is not allowed on Iceberg v3")
+
+        if format_version in [1,2] and data["source-ids"]:
+            raise ValueError("source-ids is not allowed on Iceberg v1 and v2")
+
 
         super().__init__(**data)
 
