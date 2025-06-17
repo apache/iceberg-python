@@ -171,11 +171,11 @@ class AvroSchemaConversion:
         # This means that null has to come first:
         # https://avro.apache.org/docs/current/spec.html
         # type of the default value must match the first element of the union.
-        if "null" != avro_types[0]:
-            raise TypeError("Only null-unions are supported")
+        if avro_types[0] != "null" and avro_types[0] != {'type': 'null'}:
+            raise TypeError(f"Only null-unions are supported, not: {avro_types[0]}")
 
         # Filter the null value and return the type
-        return list(filter(lambda t: t != "null", avro_types))[0], False
+        return list(filter(lambda t: t != "null" and t != {'type': 'null'}, avro_types))[0], False
 
     def _convert_schema(self, avro_type: Union[str, Dict[str, Any]]) -> IcebergType:
         """
