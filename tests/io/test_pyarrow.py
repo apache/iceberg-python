@@ -19,6 +19,7 @@ import logging
 import os
 import tempfile
 import uuid
+import warnings
 from datetime import date
 from typing import Any, List, Optional
 from unittest.mock import MagicMock, patch
@@ -27,6 +28,7 @@ from uuid import uuid4
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from pyarrow._s3fs import AwsDefaultS3RetryStrategy
 from pyarrow.fs import FileType, LocalFileSystem, S3FileSystem
 
 from pyiceberg.exceptions import ResolveError
@@ -55,7 +57,7 @@ from pyiceberg.expressions import (
     Or,
 )
 from pyiceberg.expressions.literals import literal
-from pyiceberg.io import InputStream, OutputStream, load_file_io
+from pyiceberg.io import S3_RETRY_STRATEGY_IMPL, InputStream, OutputStream, load_file_io
 from pyiceberg.io.pyarrow import (
     ICEBERG_SCHEMA,
     ArrowScan,
@@ -2319,3 +2321,21 @@ def test_pyarrow_io_multi_fs() -> None:
 
         # Same PyArrowFileIO instance resolves local file input to LocalFileSystem
         assert isinstance(pyarrow_file_io.new_input("file:///path/to/file")._filesystem, LocalFileSystem)
+
+
+class SomeRetryStrategy(AwsDefaultS3RetryStrategy):
+    def __init__(self) -> None:
+        super().__init__()
+        warnings.warn("Initialized SomeRetryStrategy 👍")
+
+
+def test_retry_strategy() -> None:
+    io = PyArrowFileIO(properties={S3_RETRY_STRATEGY_IMPL: "tests.io.test_pyarrow.SomeRetryStrategy"})
+    with pytest.warns(UserWarning, match="Initialized SomeRetryStrategy.*"):
+        io.new_input("s3://bucket/path/to/file")
+
+
+def test_retry_strategy_not_found() -> None:
+    io = PyArrowFileIO(properties={S3_RETRY_STRATEGY_IMPL: "pyiceberg.DoesNotExist"})
+    with pytest.warns(UserWarning, match="Could not initialize S3 retry strategy: pyiceberg.DoesNotExist"):
+        io.new_input("s3://bucket/path/to/file")
