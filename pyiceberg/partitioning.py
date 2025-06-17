@@ -87,7 +87,7 @@ class PartitionField(IcebergBaseModel):
 
     def __init__(
         self,
-        format_version: int,
+        format_version: int = 2,
         source_id: Optional[int] = None,
         field_id: Optional[int] = None,
         transform: Optional[Transform[Any, Any]] = None,
@@ -103,12 +103,7 @@ class PartitionField(IcebergBaseModel):
         if name is not None:
             data["name"] = name
 
-        if format_version == 3 and data["source-id"]:
-            raise ValueError("source-id is not allowed on Iceberg v3")
-
-        if format_version in [1,2] and data["source-ids"]:
-            raise ValueError("source-ids is not allowed on Iceberg v1 and v2")
-
+        data["format-version"] = format_version
 
         super().__init__(**data)
 
@@ -124,6 +119,12 @@ class PartitionField(IcebergBaseModel):
                         raise ValueError("Multi argument transforms are not yet supported")
                     data["source-id"] = source_ids[0]
         return data
+
+    @model_validator(mode="after")
+    @classmethod
+    def check_source_ids_against_version(cls, data: Any) -> Any:
+        if data["format-version"] in [1,2] and data["source-ids"]:
+            raise ValueError("source-ids is not allowed on Iceberg v1 and v2")
 
     def __str__(self) -> str:
         """Return the string representation of the PartitionField class."""

@@ -88,11 +88,7 @@ class SortField(IcebergBaseModel):
         if null_order is not None:
             data["null-order"] = null_order
 
-        if format_version == 3 and data["source-id"]:
-            raise ValueError("source-id is not allowed on Iceberg v3")
-
-        if format_version in [1,2] and data["source-ids"]:
-            raise ValueError("source-ids is not allowed on Iceberg v1 and v2")
+        data["format-version"] = format_version
 
         super().__init__(**data)
 
@@ -102,6 +98,13 @@ class SortField(IcebergBaseModel):
         if not values.get("null-order"):
             values["null-order"] = NullOrder.NULLS_FIRST if values["direction"] == SortDirection.ASC else NullOrder.NULLS_LAST
         return values
+
+    @model_validator(mode="after")
+    @classmethod
+    def check_source_ids_against_version(cls, data: Any) -> Any:
+        if data["format-version"] in [1,2] and data["source-ids"]:
+            raise ValueError("source-ids is not allowed on Iceberg v1 and v2")
+
 
     @model_validator(mode="before")
     @classmethod
