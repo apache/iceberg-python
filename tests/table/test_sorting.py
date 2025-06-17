@@ -114,3 +114,8 @@ def test_serialize_sort_field_v3() -> None:
     expected = SortField(source_id=19, transform=IdentityTransform(), null_order=NullOrder.NULLS_FIRST)
     payload = '{"source-ids":[19],"transform":"identity","direction":"asc","null-order":"nulls-first"}'
     assert SortField.model_validate_json(payload) == expected
+
+def test_v2_does_not_support_source_ids() -> None:
+    payload = '{"format-version": 2, "source-ids":[19],"transform":"identity","direction":"asc","null-order":"nulls-first"}'
+    with pytest.raises(ValueError, match=r"source-ids is not allowed"):
+        SortField.model_validate_json(payload)

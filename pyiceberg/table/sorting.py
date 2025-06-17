@@ -28,7 +28,7 @@ from pydantic import (
 
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import IdentityTransform, Transform, parse_transform
-from pyiceberg.typedef import IcebergBaseModel
+from pyiceberg.typedef import IcebergBaseModel, TableVersion
 from pyiceberg.types import IcebergType
 from pyiceberg.utils.deprecated import deprecation_message
 
@@ -72,7 +72,7 @@ class SortField(IcebergBaseModel):
 
     def __init__(
         self,
-        format_version: int,
+        format_version: Optional[int] = None,
         source_id: Optional[int] = None,
         transform: Optional[Union[Transform[Any, Any], Callable[[IcebergType], Transform[Any, Any]]]] = None,
         direction: Optional[SortDirection] = None,
@@ -87,8 +87,8 @@ class SortField(IcebergBaseModel):
             data["direction"] = direction
         if null_order is not None:
             data["null-order"] = null_order
-
-        data["format-version"] = format_version
+        if format_version is not None:
+            data["format-version"] = format_version
 
         super().__init__(**data)
 
@@ -99,10 +99,10 @@ class SortField(IcebergBaseModel):
             values["null-order"] = NullOrder.NULLS_FIRST if values["direction"] == SortDirection.ASC else NullOrder.NULLS_LAST
         return values
 
-    @model_validator(mode="after")
+    @model_validator(mode="before")
     @classmethod
     def check_source_ids_against_version(cls, data: Any) -> Any:
-        if data["format-version"] in [1,2] and data["source-ids"]:
+        if "format-version" in data and data["format-version"] in [1,2] and "source-ids" in data:
             raise ValueError("source-ids is not allowed on Iceberg v1 and v2")
 
 
@@ -186,7 +186,7 @@ UNSORTED_SORT_ORDER = SortOrder(order_id=UNSORTED_SORT_ORDER_ID)
 
 
 def assign_fresh_sort_order_ids(
-    sort_order: SortOrder, old_schema: Schema, fresh_schema: Schema, sort_order_id: int = INITIAL_SORT_ORDER_ID
+    format_version: TableVersion, sort_order: SortOrder, old_schema: Schema, fresh_schema: Schema, sort_order_id: int = INITIAL_SORT_ORDER_ID
 ) -> SortOrder:
     if sort_order.is_unsorted:
         return UNSORTED_SORT_ORDER
@@ -201,6 +201,7 @@ def assign_fresh_sort_order_ids(
             raise ValueError(f"Could not find field in fresh schema: {original_field}")
         fresh_fields.append(
             SortField(
+                format_version=format_version,
                 source_id=fresh_field.field_id,
                 transform=field.transform,
                 direction=field.direction,

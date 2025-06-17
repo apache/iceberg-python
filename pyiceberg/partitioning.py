@@ -87,7 +87,7 @@ class PartitionField(IcebergBaseModel):
 
     def __init__(
         self,
-        format_version: int = 2,
+        format_version: Optional[int] = None,
         source_id: Optional[int] = None,
         field_id: Optional[int] = None,
         transform: Optional[Transform[Any, Any]] = None,
@@ -102,8 +102,8 @@ class PartitionField(IcebergBaseModel):
             data["transform"] = transform
         if name is not None:
             data["name"] = name
-
-        data["format-version"] = format_version
+        if format_version is not None:
+            data["format-version"] = format_version
 
         super().__init__(**data)
 
@@ -120,11 +120,13 @@ class PartitionField(IcebergBaseModel):
                     data["source-id"] = source_ids[0]
         return data
 
-    @model_validator(mode="after")
+    @model_validator(mode="before")
     @classmethod
     def check_source_ids_against_version(cls, data: Any) -> Any:
-        if data["format-version"] in [1,2] and data["source-ids"]:
+        if "format-version" in data and data["format-version"] in [1,2] and "source-ids" in data:
             raise ValueError("source-ids is not allowed on Iceberg v1 and v2")
+
+        return data
 
     def __str__(self) -> str:
         """Return the string representation of the PartitionField class."""

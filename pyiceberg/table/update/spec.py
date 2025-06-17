@@ -40,6 +40,7 @@ from pyiceberg.table.update import (
     UpdateTableMetadata,
 )
 from pyiceberg.transforms import IdentityTransform, TimeTransform, Transform, VoidTransform, parse_transform
+from pyiceberg.typedef import TableVersion
 
 if TYPE_CHECKING:
     from pyiceberg.table import Transaction
@@ -191,13 +192,14 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
             partition_names.add(name)
 
         def _add_new_field(
-            schema: Schema, source_id: int, field_id: int, name: str, transform: Transform[Any, Any], partition_names: Set[str]
+            schema: Schema, source_id: int, field_id: int, name: str, transform: Transform[Any, Any], partition_names: Set[str], format_version: TableVersion
         ) -> PartitionField:
             _check_and_add_partition_name(schema, name, source_id, partition_names)
-            return PartitionField(source_id, field_id, transform, name)
+            return PartitionField(format_version, source_id, field_id, transform, name)
 
         partition_fields = []
         partition_names: Set[str] = set()
+        format_version = self._transaction.table_metadata.format_version
         for field in self._transaction.table_metadata.spec().fields:
             if field.field_id not in self._deletes:
                 renamed = self._renames.get(field.name)
@@ -209,6 +211,7 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
                         renamed,
                         field.transform,
                         partition_names,
+                        format_version,
                     )
                 else:
                     new_field = _add_new_field(
@@ -218,6 +221,7 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
                         field.name,
                         field.transform,
                         partition_names,
+                        format_version,
                     )
                 partition_fields.append(new_field)
             elif self._transaction.table_metadata.format_version == 1:
@@ -230,6 +234,7 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
                         renamed,
                         VoidTransform(),
                         partition_names,
+                        format_version,
                     )
                 else:
                     new_field = _add_new_field(
@@ -239,6 +244,7 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
                         field.name,
                         VoidTransform(),
                         partition_names,
+                        format_version,
                     )
 
                 partition_fields.append(new_field)
@@ -249,6 +255,7 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
                 field_id=added_field.field_id,
                 transform=added_field.transform,
                 name=added_field.name,
+                format_version=format_version,
             )
             partition_fields.append(new_field)
 
@@ -264,7 +271,8 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
         return PartitionSpec(*partition_fields, spec_id=new_spec_id)
 
     def _partition_field(self, transform_key: Tuple[int, Transform[Any, Any]], name: Optional[str]) -> PartitionField:
-        if self._transaction.table_metadata.format_version == 2:
+        format_version = self._transaction.table_metadata.format_version
+        if format_version == 2:
             source_id, transform = transform_key
             historical_fields = []
             for spec in self._transaction.table_metadata.specs().values():
@@ -274,13 +282,13 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
             for field in historical_fields:
                 if field.source_id == source_id and repr(field.transform) == repr(transform):
                     if name is None or field.name == name:
-                        return PartitionField(source_id, field.field_id, transform, field.name)
+                        return PartitionField(format_version, source_id, field.field_id, transform, field.name)
 
         new_field_id = self._new_field_id()
         if name is None:
-            tmp_field = PartitionField(transform_key[0], new_field_id, transform_key[1], "unassigned_field_name")
+            tmp_field = PartitionField(format_version, transform_key[0], new_field_id, transform_key[1], "unassigned_field_name")
             name = _visit_partition_field(self._transaction.table_metadata.schema(), tmp_field, _PartitionNameGenerator())
-        return PartitionField(transform_key[0], new_field_id, transform_key[1], name)
+        return PartitionField(format_version, transform_key[0], new_field_id, transform_key[1], name)
 
     def _new_field_id(self) -> int:
         self._last_assigned_partition_id += 1

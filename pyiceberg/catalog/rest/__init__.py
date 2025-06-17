@@ -480,10 +480,11 @@ class RestCatalog(Catalog):
         properties: Properties = EMPTY_DICT,
         stage_create: bool = False,
     ) -> TableResponse:
+        format_version = self.properties.get(ICEBERG_REST_SPEC_VERSION)
         iceberg_schema = self._convert_schema_if_needed(schema)
         fresh_schema = assign_fresh_schema_ids(iceberg_schema)
         fresh_partition_spec = assign_fresh_partition_spec_ids(partition_spec, iceberg_schema, fresh_schema)
-        fresh_sort_order = assign_fresh_sort_order_ids(sort_order, iceberg_schema, fresh_schema)
+        fresh_sort_order = assign_fresh_sort_order_ids(format_version, sort_order, iceberg_schema, fresh_schema)
 
         namespace_and_table = self._split_identifier_for_path(identifier)
         if location:

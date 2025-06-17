@@ -212,20 +212,20 @@ def test_transform_consistency_with_pyarrow_transform(source_type: PrimitiveType
 
 
 def test_deserialize_partition_field_v2() -> None:
-    json_partition_spec = """{"source-id": 1, "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}"""
+    json_partition_spec = """{"format-version": 2, "source-id": 1, "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}"""
 
     field = PartitionField.model_validate_json(json_partition_spec)
     assert field == PartitionField(format_version=2, source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate")
 
 
 def test_deserialize_partition_field_v3() -> None:
-    json_partition_spec = """{"source-ids": [1], "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}"""
+    json_partition_spec = """{"format-version": 3, "source-ids": [1], "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}"""
 
     field = PartitionField.model_validate_json(json_partition_spec)
     assert field == PartitionField(format_version=3, source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate")
 
 def test_v3_does_not_allow_source_id() -> None:
-    json_partition_spec = """{"format-version": 3, "source-id": [1], "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}"""
+    json_partition_spec = """{"format-version": 2, "source-ids": [1], "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}"""
 
-    with pytest.raises(ValueError, match=r"source-id is not allowed"):
+    with pytest.raises(ValueError, match=r"source-ids is not allowed"):
         PartitionField.model_validate_json(json_partition_spec)
