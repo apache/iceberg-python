@@ -864,12 +864,15 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         """
         Commit the staged updates and requirements.
 
-        This will remove the snapshots with the given IDs.
+        This will remove the snapshots with the given IDs, but will always skip protected snapshots (branch/tag heads).
 
         Returns:
             Tuple of updates and requirements to be committed,
             as required by the calling parent apply functions.
         """
+        # Remove any protected snapshot IDs from the set to expire, just in case
+        protected_ids = self._get_protected_snapshot_ids()
+        self._snapshot_ids_to_expire -= protected_ids
         update = RemoveSnapshotsUpdate(snapshot_ids=self._snapshot_ids_to_expire)
         self._updates += (update,)
         return self._updates, self._requirements
@@ -910,4 +913,35 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
 
         self._snapshot_ids_to_expire.add(snapshot_id)
 
+        return self
+
+    def expire_snapshots_by_ids(self, snapshot_ids: List[int]) -> "ExpireSnapshots":
+        """
+        Expire multiple snapshots by their IDs.
+
+        This will mark the snapshots for expiration.
+
+        Args:
+            snapshot_ids (List[int]): List of snapshot IDs to expire.
+        Returns:
+            This for method chaining.
+        """
+        for snapshot_id in snapshot_ids:
+            self.expire_snapshot_by_id(snapshot_id)
+        return self
+
+    def expire_snapshots_older_than(self, timestamp_ms: int) -> "ExpireSnapshots":
+        """
+        Expire all unprotected snapshots with a timestamp older than a given value.
+
+        Args:
+            timestamp_ms (int): Only snapshots with timestamp_ms < this value will be expired.
+
+        Returns:
+            This for method chaining.
+        """
+        protected_ids = self._get_protected_snapshot_ids()
+        for snapshot in self._transaction.table_metadata.snapshots:
+            if snapshot.timestamp_ms < timestamp_ms and snapshot.snapshot_id not in protected_ids:
+                self._snapshot_ids_to_expire.add(snapshot.snapshot_id)
         return self
