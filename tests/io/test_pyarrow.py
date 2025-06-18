@@ -24,9 +24,11 @@ from typing import Any, List, Optional
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import pyarrow
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from packaging import version
 from pyarrow.fs import FileType, LocalFileSystem, S3FileSystem
 
 from pyiceberg.exceptions import ResolveError
@@ -58,6 +60,7 @@ from pyiceberg.expressions.literals import literal
 from pyiceberg.io import InputStream, OutputStream, load_file_io
 from pyiceberg.io.pyarrow import (
     ICEBERG_SCHEMA,
+    MIN_PYARROW_VERSION_SUPPORTING_AZURE_FS,
     ArrowScan,
     PyArrowFile,
     PyArrowFileIO,
@@ -105,6 +108,11 @@ from pyiceberg.types import (
 )
 from tests.catalog.test_base import InMemoryCatalog
 from tests.conftest import UNIFIED_AWS_SESSION_PROPERTIES
+
+skip_if_pyarrow_too_old = pytest.mark.skipif(
+    version.parse(pyarrow.__version__) < version.parse(MIN_PYARROW_VERSION_SUPPORTING_AZURE_FS),
+    reason=f"Requires pyarrow version >= {MIN_PYARROW_VERSION_SUPPORTING_AZURE_FS}",
+)
 
 
 def test_pyarrow_infer_local_fs_from_path() -> None:
@@ -1823,6 +1831,7 @@ def test_writing_avro_file_gcs(generated_manifest_entry_file: str, pyarrow_filei
 
 
 @pytest.mark.adls
+@skip_if_pyarrow_too_old
 def test_new_input_file_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
     """Test creating a new input file from pyarrow file-io"""
     filename = str(uuid4())
@@ -1834,6 +1843,7 @@ def test_new_input_file_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: st
 
 
 @pytest.mark.adls
+@skip_if_pyarrow_too_old
 def test_new_output_file_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
     """Test creating a new output file from pyarrow file-io"""
     filename = str(uuid4())
@@ -1845,6 +1855,7 @@ def test_new_output_file_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: s
 
 
 @pytest.mark.adls
+@skip_if_pyarrow_too_old
 def test_write_and_read_file_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
     """Test writing and reading a file using PyArrowFile"""
     location = f"{adls_scheme}://warehouse/{uuid4()}.txt"
@@ -1862,6 +1873,7 @@ def test_write_and_read_file_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_schem
 
 
 @pytest.mark.adls
+@skip_if_pyarrow_too_old
 def test_getting_length_of_file_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
     """Test getting the length of PyArrowFile"""
     filename = str(uuid4())
@@ -1879,6 +1891,7 @@ def test_getting_length_of_file_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_sc
 
 
 @pytest.mark.adls
+@skip_if_pyarrow_too_old
 def test_file_tell_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
     location = f"{adls_scheme}://warehouse/{uuid4()}"
 
@@ -1899,6 +1912,7 @@ def test_file_tell_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) ->
 
 
 @pytest.mark.adls
+@skip_if_pyarrow_too_old
 def test_read_specified_bytes_for_file_adls(pyarrow_fileio_adls: PyArrowFileIO) -> None:
     location = f"abfss://warehouse/{uuid4()}"
 
@@ -1923,6 +1937,7 @@ def test_read_specified_bytes_for_file_adls(pyarrow_fileio_adls: PyArrowFileIO) 
 
 
 @pytest.mark.adls
+@skip_if_pyarrow_too_old
 def test_raise_on_opening_file_not_found_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
     """Test that PyArrowFile raises appropriately when the adls file is not found"""
 
@@ -1935,6 +1950,7 @@ def test_raise_on_opening_file_not_found_adls(pyarrow_fileio_adls: PyArrowFileIO
 
 
 @pytest.mark.adls
+@skip_if_pyarrow_too_old
 def test_checking_if_a_file_exists_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
     """Test checking if a file exists"""
     non_existent_file = pyarrow_fileio_adls.new_input(location=f"{adls_scheme}://warehouse/does-not-exist.txt")
@@ -1956,7 +1972,7 @@ def test_checking_if_a_file_exists_adls(pyarrow_fileio_adls: PyArrowFileIO, adls
 
 
 @pytest.mark.adls
-# @pytest.mark.skip(reason="Open issue on Arrow: https://github.com/apache/arrow/issues/36993")
+@skip_if_pyarrow_too_old
 def test_closing_a_file_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
     """Test closing an output file and input file"""
     filename = str(uuid4())
@@ -1975,6 +1991,7 @@ def test_closing_a_file_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: st
 
 
 @pytest.mark.adls
+@skip_if_pyarrow_too_old
 def test_converting_an_outputfile_to_an_inputfile_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
     """Test converting an output file to an input file"""
     filename = str(uuid4())
@@ -1984,6 +2001,7 @@ def test_converting_an_outputfile_to_an_inputfile_adls(pyarrow_fileio_adls: PyAr
 
 
 @pytest.mark.adls
+@skip_if_pyarrow_too_old
 def test_writing_avro_file_adls(generated_manifest_entry_file: str, pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
     """Test that bytes match when reading a local avro file, writing it using pyarrow file-io, and then reading it again"""
     filename = str(uuid4())

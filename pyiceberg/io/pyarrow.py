@@ -204,6 +204,7 @@ MAP_KEY_NAME = "key"
 MAP_VALUE_NAME = "value"
 DOC = "doc"
 UTC_ALIASES = {"UTC", "+00:00", "Etc/UTC", "Z"}
+MIN_PYARROW_VERSION_SUPPORTING_AZURE_FS = "20.0.0"
 
 T = TypeVar("T")
 
@@ -486,6 +487,14 @@ class PyArrowFileIO(FileIO):
         return S3FileSystem(**client_kwargs)
 
     def _initialize_azure_fs(self) -> FileSystem:
+        from packaging import version
+
+        if version.parse(pyarrow.__version__) < version.parse(MIN_PYARROW_VERSION_SUPPORTING_AZURE_FS):
+            raise ImportError(
+                f"pyarrow version >= {MIN_PYARROW_VERSION_SUPPORTING_AZURE_FS} required for AzureFileSystem support, "
+                f"but found version {pyarrow.__version__}."
+            )
+
         from pyarrow.fs import AzureFileSystem
 
         client_kwargs: Dict[str, str] = {}
