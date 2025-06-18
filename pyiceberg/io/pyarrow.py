@@ -929,11 +929,16 @@ def _read_deletes(fs: FileSystem, data_file: DataFile) -> Dict[str, pa.ChunkedAr
             file_format_kwargs={"dictionary_columns": ("file_path",), "pre_buffer": True, "buffer_size": ONE_MEGABYTE},
         )
         table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
-        table = table.unify_dictionaries()
-        return {
-            file.as_py(): table.filter(pc.field("file_path") == file).column("pos")
-            for file in table.column("file_path").chunks[0].dictionary
-        }
+        if data_file.content == DataFileContent.POSITION_DELETES:
+            table = table.unify_dictionaries()
+            return {
+                file.as_py(): table.filter(pc.field("file_path") == file).column("pos")
+                for file in table.column("file_path").chunks[0].dictionary
+            }
+        elif data_file.content == DataFileContent.EQUALITY_DELETES:
+            return {"equality_deletes": table}
+        else:
+            raise ValueError(f"Unsupported delete file content: {data_file.content}")
     elif data_file.file_format == FileFormat.PUFFIN:
         _, _, path = PyArrowFileIO.parse_location(data_file.file_path)
         with fs.open_input_file(path) as fi:
@@ -1388,7 +1393,7 @@ def _task_to_record_batches(
     bound_row_filter: BooleanExpression,
     projected_schema: Schema,
     projected_field_ids: Set[int],
-    positional_deletes: Optional[List[ChunkedArray]],
+    deletes: Optional[List[Union[pa.ChunkedArray, pa.Table]]],
     case_sensitive: bool,
     name_mapping: Optional[NameMapping] = None,
     partition_spec: Optional[PartitionSpec] = None,
@@ -1423,9 +1428,8 @@ def _task_to_record_batches(
             schema=physical_schema,
             # This will push down the query to Arrow.
             # But in case there are positional deletes, we have to apply them first
-            filter=pyarrow_filter if not positional_deletes else None,
-            columns=[col.name for col in file_project_schema.columns],
-        )
+            filter=pyarrow_filter if not deletes else None,
+            columns=[col.name for col in file_project_schema.columns],)
 
         next_index = 0
         batches = fragment_scanner.to_batches()
@@ -1434,10 +1438,22 @@ def _task_to_record_batches(
             current_index = next_index - len(batch)
             current_batch = batch
 
-            if positional_deletes:
-                # Create the mask of indices that we're interested in
-                indices = _combine_positional_deletes(positional_deletes, current_index, current_index + len(batch))
-                current_batch = current_batch.take(indices)
+            if deletes:
+                positional_deletes = [d for d in deletes if isinstance(d, pa.ChunkedArray)]
+                if positional_deletes:
+                    indices =  _combine_positional_deletes(positional_deletes, current_index, current_index + len(batch))
+                    current_batch = current_batch.take(indices)
+                equality_deletes = [d for d in deletes if isinstance(d, pa.Table)]
+                if equality_deletes:
+                    table = pa.Table.from_batches([current_batch])
+                    for delete_file in task.delete_files:
+                        if delete_file.content == DataFileContent.EQUALITY_DELETES and delete_file.equality_ids:
+                            if contains_equality_deletes(task.file, delete_file, delete_file.equality_ids):
+                                table = _apply_equality_deletes(table, equality_deletes[0], delete_file.equality_ids)
+                    if table.num_rows > 0:
+                        current_batch = table.combine_chunks().to_batches()[0]
+                    else:
+                        continue
 
             # skip empty batches
             if current_batch.num_rows == 0:
@@ -1474,20 +1490,20 @@ def _task_to_record_batches(
 
 def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
     deletes_per_file: Dict[str, List[ChunkedArray]] = {}
-    unique_deletes = set(itertools.chain.from_iterable([task.delete_files for task in tasks]))
-    if len(unique_deletes) > 0:
-        executor = ExecutorFactory.get_or_create()
-        deletes_per_files: Iterator[Dict[str, ChunkedArray]] = executor.map(
-            lambda args: _read_deletes(*args),
-            [(_fs_from_file_path(io, delete_file.file_path), delete_file) for delete_file in unique_deletes],
-        )
-        for delete in deletes_per_files:
-            for file, arr in delete.items():
-                if file in deletes_per_file:
-                    deletes_per_file[file].append(arr)
-                else:
-                    deletes_per_file[file] = [arr]
-
+    for task in tasks:
+        if task.delete_files:
+            fs = _fs_from_file_path(io, task.file.file_path)
+            for delete_file in task.delete_files:
+                deletes = _read_deletes(fs, delete_file)
+                if delete_file.content == DataFileContent.POSITION_DELETES:
+                    if task.file.file_path in deletes:
+                        if task.file.file_path not in deletes_per_file:
+                            deletes_per_file[task.file.file_path] = []
+                        deletes_per_file[task.file.file_path].append(deletes[task.file.file_path])
+                elif delete_file.content == DataFileContent.EQUALITY_DELETES:
+                    if task.file.file_path not in deletes_per_file:
+                        deletes_per_file[task.file.file_path] = []
+                    deletes_per_file[task.file.file_path].append(deletes["equality_deletes"])
     return deletes_per_file
 
 
@@ -2729,3 +2745,56 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
         )
 
     return table_partitions
+
+def _apply_equality_deletes(data_table: pa.Table, delete_table: pa.Table, equality_ids: List[int]) -> pa.Table:
+    if len(delete_table) == 0:
+        return data_table
+
+    data_schema = pyarrow_to_schema(data_table.schema)
+    equality_columns = [data_schema.find_field(fid).name for fid in equality_ids]
+
+    delete_type_matched = delete_table
+    for col in equality_columns:
+        data_type = data_table.schema.field(col).type
+        if delete_table[col].type != data_type:
+            delete_type_matched = delete_type_matched.set_column( delete_type_matched.schema.get_field_index(col), col, delete_table[col].cast(data_type) )
+
+    delete_keys = set()
+    for row in delete_type_matched.to_pylist():
+        key = tuple(row[col] for col in equality_columns)
+        delete_keys.add(key)
+
+
+    mask = []
+    for i in range(len(data_table)):
+        row_values = []
+        for col in equality_columns:
+            value = data_table[col][i].as_py()
+            row_values.append(value)
+
+        row_tuple = tuple(row_values)
+        mask.append(row_tuple not in delete_keys)
+
+    result = data_table.filter(pa.array(mask))
+    return result
+
+
+def contains_equality_deletes(data_file: DataFile, delete_file: DataFile, equality_ids: List[int]) -> bool:
+
+    if not data_file.lower_bounds or not data_file.upper_bounds or not delete_file.lower_bounds or not delete_file.upper_bounds:
+        return True
+    for field_id in equality_ids:
+        if (field_id not in data_file.lower_bounds or field_id not in data_file.upper_bounds or
+                field_id not in delete_file.lower_bounds or field_id not in delete_file.upper_bounds):
+            continue
+
+        if data_file.upper_bounds.get(field_id) < delete_file.lower_bounds.get(field_id) or data_file.lower_bounds.get(field_id) > delete_file.upper_bounds.get(field_id):
+            return False
+
+        data_null_count = data_file.null_value_counts.get(field_id, 0)
+        delete_null_count = delete_file.null_value_counts.get(field_id, 0)
+
+        if delete_null_count > 0 and data_null_count == 0:
+            return False
+
+    return True

@@ -1687,6 +1687,16 @@ def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_ent
     else:
         return set()
 
+def _match_equality_deletes_to_data_file(data_entry: ManifestEntry, equality_delete_entries: List[ManifestEntry]) -> Set[DataFile]:
+    relevant_entries = []
+    for entry in equality_delete_entries:
+        if entry.data_file.file_path == data_entry.data_file.file_path:
+            if (entry.sequence_number or INITIAL_SEQUENCE_NUMBER) < (data_entry.sequence_number or INITIAL_SEQUENCE_NUMBER):
+                if (entry.data_file.partition == data_entry.data_file.partition and entry.data_file.spec_id == data_entry.data_file.spec_id) or (entry.data_file.spec_id == UNPARTITIONED_PARTITION_SPEC.spec_id):
+                    if entry.data_file.equality_ids is not None and data_entry.data_file.equality_ids is not None and set(entry.data_file.equality_ids) == set(data_entry.data_file.equality_ids):
+                        relevant_entries.append(entry)
+
+    return {entry.data_file for entry in relevant_entries}
 
 class DataScan(TableScan):
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
@@ -1793,6 +1803,7 @@ class DataScan(TableScan):
 
         data_entries: List[ManifestEntry] = []
         positional_delete_entries = SortedList(key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER)
+        equality_delete_entries: List[ManifestEntry] = []
 
         executor = ExecutorFactory.get_or_create()
         for manifest_entry in chain(
@@ -1816,7 +1827,7 @@ class DataScan(TableScan):
             elif data_file.content == DataFileContent.POSITION_DELETES:
                 positional_delete_entries.add(manifest_entry)
             elif data_file.content == DataFileContent.EQUALITY_DELETES:
-                raise ValueError("PyIceberg does not yet support equality deletes: https://github.com/apache/iceberg/issues/6568")
+                equality_delete_entries.append(manifest_entry)
             else:
                 raise ValueError(f"Unknown DataFileContent ({data_file.content}): {manifest_entry}")
 
@@ -1826,7 +1837,10 @@ class DataScan(TableScan):
                 delete_files=_match_deletes_to_data_file(
                     data_entry,
                     positional_delete_entries,
-                ),
+                ).union(_match_equality_deletes_to_data_file(
+                    data_entry,
+                    equality_delete_entries,
+                )),
                 residual=residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(
                     data_entry.data_file.partition
                 ),

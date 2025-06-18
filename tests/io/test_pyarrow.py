@@ -1539,7 +1539,7 @@ def deletes_file(tmp_path: str, example_task: FileScanTask) -> str:
 
 
 def test_read_deletes(deletes_file: str, example_task: FileScanTask) -> None:
-    deletes = _read_deletes(LocalFileSystem(), DataFile.from_args(file_path=deletes_file, file_format=FileFormat.PARQUET))
+    deletes = _read_deletes(LocalFileSystem(), DataFile.from_args( file_path=deletes_file, file_format=FileFormat.PARQUET, content=DataFileContent.POSITION_DELETES) )
     assert set(deletes.keys()) == {example_task.file.file_path}
     assert list(deletes.values())[0] == pa.chunked_array([[1, 3, 5]])
 
@@ -2319,3 +2319,64 @@ def test_pyarrow_io_multi_fs() -> None:
 
         # Same PyArrowFileIO instance resolves local file input to LocalFileSystem
         assert isinstance(pyarrow_file_io.new_input("file:///path/to/file")._filesystem, LocalFileSystem)
+
+@pytest.fixture
+def equality_deletes_file(tmp_path: str, example_task: FileScanTask) -> str:
+    deletes_file = os.path.join(tmp_path, "equality-deletes.parquet")
+    table = pa.table(
+        {
+            "foo": ["a", "b"],
+            "bar": [1, 2],
+        }
+    )
+    pq.write_table(table, deletes_file)
+    return deletes_file
+
+def test_read_equality_deletes(equality_deletes_file: str, equality_delete_task: FileScanTask) -> None:
+    deletes = _read_deletes(
+        LocalFileSystem(),
+        DataFile.from_args(
+            file_path=equality_deletes_file,
+            file_format=FileFormat.PARQUET,
+            content=DataFileContent.EQUALITY_DELETES,
+            equality_ids=[1, 2] )  )
+    assert deletes["equality_deletes"].num_rows == 2
+    assert deletes["equality_deletes"]["foo"].to_pylist() == ["a", "b"]
+    assert deletes["equality_deletes"]["bar"].to_pylist() == [1, 2]
+
+
+def test_equality_delete(equality_deletes_file: str, equality_delete_task: FileScanTask, table_schema_simple: Schema) -> None:
+    import pyarrow.parquet as pq
+    print("Data table:")
+    print(pq.read_table(equality_delete_task.file.file_path))
+    print("Delete table:")
+    print(pq.read_table(equality_deletes_file))
+    metadata_location = "file://a/b/c.json"
+    example_task_with_delete = FileScanTask(
+        data_file=equality_delete_task.file,
+        delete_files={
+            DataFile.from_args(
+                content=DataFileContent.EQUALITY_DELETES,
+                file_path=equality_deletes_file,
+                file_format=FileFormat.PARQUET,
+                equality_ids=[1,2]
+            )
+        },
+    )
+    with_deletes = ArrowScan(
+        table_metadata=TableMetadataV2(
+            location=metadata_location,
+            last_column_id=1,
+            format_version=2,
+            current_schema_id=1,
+            schemas=[table_schema_simple],
+            partition_specs=[PartitionSpec()],
+        ),
+        io=load_file_io(),
+        projected_schema=table_schema_simple,
+        row_filter=AlwaysTrue(),
+    ).to_table(tasks=[example_task_with_delete])
+
+    assert len(with_deletes) == 2
+    assert with_deletes["foo"].to_pylist() == ["c", "d"]
+    assert with_deletes["bar"].to_pylist() == [3.0, 4.0]

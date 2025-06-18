@@ -61,6 +61,7 @@ from pyiceberg.io import (
 )
 from pyiceberg.io.fsspec import FsspecFileIO
 from pyiceberg.manifest import DataFile, FileFormat
+from pyiceberg.manifest import DataFileContent
 from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
@@ -2309,9 +2310,44 @@ def data_file(table_schema_simple: Schema, tmp_path: str) -> str:
 @pytest.fixture
 def example_task(data_file: str) -> FileScanTask:
     return FileScanTask(
-        data_file=DataFile.from_args(file_path=data_file, file_format=FileFormat.PARQUET, file_size_in_bytes=1925),
+        data_file=DataFile.from_args(
+            file_path=data_file,
+            file_format=FileFormat.PARQUET,
+            file_size_in_bytes=1925,
+            content=DataFileContent.POSITION_DELETES
+        ),
     )
+@pytest.fixture
+def equality_delete_task(table_schema_simple: Schema, tmp_path: str) -> FileScanTask:
+    import pyarrow as pa
+    from pyarrow import parquet as pq
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
 
+    table = pa.table(
+        {
+            "foo": ["a", "b", "c", "d"],
+            "bar": [1, 2, 3, 4],
+            "baz": [True, False, None, True]
+        },
+        schema=schema_to_pyarrow(table_schema_simple),
+    )
+    file_path = f"{tmp_path}/equality-data.parquet"
+    pq.write_table(table=table, where=file_path)
+
+    return FileScanTask(
+        data_file=DataFile.from_args(
+            file_path=file_path,
+            file_format=FileFormat.PARQUET,
+            record_count=4,
+            column_sizes={1: 10, 2: 10},
+            value_counts={1: 4, 2: 4},
+            null_value_counts={1: 0, 2: 0},
+            nan_value_counts={},
+            lower_bounds={1: b'a', 2: b'\x01\x00\x00\x00'},
+            upper_bounds={1: b'd', 2: b'\x04\x00\x00\x00'},
+            key_metadata=None,
+        ),
+    )
 
 @pytest.fixture(scope="session")
 def warehouse(tmp_path_factory: pytest.TempPathFactory) -> Path:
