@@ -604,7 +604,7 @@ class RestCatalog(Catalog):
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         return list(self.list_tables_lazy(namespace))
 
-    def list_tables_lazy(self, namespace: Union[str, Identifier]) -> Iterator[Identifier]:
+    def list_tables_lazy(self, namespace: Union[str, Identifier], page_size: Optional[int] = 100) -> Iterator[Identifier]:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
 
@@ -614,6 +614,8 @@ class RestCatalog(Catalog):
             params: Dict[str, Any] = {}
             if next_page_token is not None:
                 params["pageToken"] = next_page_token
+            if page_size is not None:
+                params["pageSize"] = page_size
 
             response = self._request_with_retries(
                 self._session.get,
@@ -686,7 +688,7 @@ class RestCatalog(Catalog):
     def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         return list(self.list_views_lazy(namespace))
 
-    def list_views_lazy(self, namespace: Union[str, Identifier]) -> Iterator[Identifier]:
+    def list_views_lazy(self, namespace: Union[str, Identifier], page_size: Optional[int] = 100) -> Iterator[Identifier]:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
 
@@ -696,6 +698,8 @@ class RestCatalog(Catalog):
             params: Dict[str, Any] = {}
             if next_page_token is not None:
                 params["pageToken"] = next_page_token
+            if page_size is not None:
+                params["pageSize"] = page_size
 
             response = self._request_with_retries(
                 self._session.get,
@@ -774,7 +778,9 @@ class RestCatalog(Catalog):
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
         return list(self.list_namespaces_lazy(namespace))
 
-    def list_namespaces_lazy(self, namespace: Union[str, Identifier] = ()) -> Iterator[Identifier]:
+    def list_namespaces_lazy(
+        self, namespace: Union[str, Identifier] = (), page_size: Optional[int] = 100
+    ) -> Iterator[Identifier]:
         namespace_tuple = self.identifier_to_tuple(namespace)
 
         next_page_token: Optional[str] = None
@@ -783,6 +789,8 @@ class RestCatalog(Catalog):
             params: Dict[str, Any] = {}
             if next_page_token is not None:
                 params["pageToken"] = next_page_token
+            if page_size is not None:
+                params["pageSize"] = page_size
 
             response = self._request_with_retries(
                 self._session.get,
