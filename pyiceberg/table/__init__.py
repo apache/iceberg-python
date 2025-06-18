@@ -1691,7 +1691,7 @@ def _match_equality_deletes_to_data_file(data_entry: ManifestEntry, equality_del
     relevant_entries = []
     for entry in equality_delete_entries:
         if entry.data_file.file_path == data_entry.data_file.file_path:
-            if (entry.sequence_number - 1 or INITIAL_SEQUENCE_NUMBER) >= (data_entry.sequence_number or INITIAL_SEQUENCE_NUMBER):
+            if (entry.sequence_number or INITIAL_SEQUENCE_NUMBER) - 1 >= (data_entry.sequence_number or INITIAL_SEQUENCE_NUMBER):
                 if (entry.data_file.partition == data_entry.data_file.partition and entry.data_file.spec_id == data_entry.data_file.spec_id) or (entry.data_file.spec_id == UNPARTITIONED_PARTITION_SPEC.spec_id):
                     if entry.data_file.equality_ids is not None and data_entry.data_file.equality_ids is not None and set(entry.data_file.equality_ids) == set(data_entry.data_file.equality_ids):
                         relevant_entries.append(entry)
