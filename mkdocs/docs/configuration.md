@@ -75,7 +75,7 @@ Iceberg tables support table properties to configure table behavior.
 | Key                                  | Options             | Default       | Description                                                 |
 | ------------------------------------ | ------------------- | ------------- | ----------------------------------------------------------- |
 | `commit.manifest.target-size-bytes`  | Size in bytes       | 8388608 (8MB) | Target size when merging manifest files                     |
-| `commit.manifest.min-count-to-merge` | Number of manifests | 100           | Target size when merging manifest files                     |
+| `commit.manifest.min-count-to-merge` | Number of manifests | 100           | Minimum number of manifests to accumulate before merging    |
 | `commit.manifest-merge.enabled`      | Boolean             | False         | Controls whether to automatically merge manifests on writes |
 
 <!-- prettier-ignore-start -->
