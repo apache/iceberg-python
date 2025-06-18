@@ -90,13 +90,16 @@ class UpgradeFormatVersionUpdate(IcebergBaseModel):
     action: Literal["upgrade-format-version"] = Field(default="upgrade-format-version")
     format_version: int = Field(alias="format-version")
 
+
 class AddEncryptedKeyUpdate(IcebergBaseModel):
     action: Literal["add-encryption-key"] = Field(default="add-encryption-key")
     key: EncryptedKey = Field(alias="key")
 
+
 class RemoveEncryptedKeyUpdate(IcebergBaseModel):
     action: Literal["remove-encryption-key"] = Field(default="remove-encryption-key")
     key_id: str = Field(alias="key-id")
+
 
 class AddSchemaUpdate(IcebergBaseModel):
     action: Literal["add-schema"] = Field(default="add-schema")
@@ -603,6 +606,7 @@ def _(update: RemoveStatisticsUpdate, base_metadata: TableMetadata, context: _Ta
     context.add_update(update)
 
     return base_metadata.model_copy(update={"statistics": statistics})
+
 
 @_apply_table_update.register(AddEncryptedKeyUpdate)
 def _(update: AddEncryptedKeyUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:

@@ -2467,6 +2467,7 @@ def table_v2(example_table_metadata_v2: Dict[str, Any]) -> Table:
         catalog=NoopCatalog("NoopCatalog"),
     )
 
+
 @pytest.fixture
 def table_v3(example_table_metadata_v3: Dict[str, Any]) -> Table:
     table_metadata = TableMetadataV3(**example_table_metadata_v3)
