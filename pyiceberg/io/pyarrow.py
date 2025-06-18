@@ -2757,23 +2757,20 @@ def _apply_equality_deletes(data_table: pa.Table, delete_table: pa.Table, equali
     for col in equality_columns:
         data_type = data_table.schema.field(col).type
         if delete_table[col].type != data_type:
-            delete_type_matched = delete_type_matched.set_column( delete_type_matched.schema.get_field_index(col), col, delete_table[col].cast(data_type) )
+            delete_type_matched = delete_type_matched.set_column(
+                delete_type_matched.schema.get_field_index(col),
+                col,
+                delete_table[col].cast(data_type)
+            )
 
     delete_keys = set()
     for row in delete_type_matched.to_pylist():
         key = tuple(row[col] for col in equality_columns)
         delete_keys.add(key)
 
+    column_arrays = [data_table[col] for col in equality_columns]
 
-    mask = []
-    for i in range(len(data_table)):
-        row_values = []
-        for col in equality_columns:
-            value = data_table[col][i].as_py()
-            row_values.append(value)
-
-        row_tuple = tuple(row_values)
-        mask.append(row_tuple not in delete_keys)
+    mask = [(tuple(arr[i].as_py() for arr in column_arrays) not in delete_keys) for i in range(len(data_table))]
 
     result = data_table.filter(pa.array(mask))
     return result
