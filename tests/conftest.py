@@ -52,16 +52,16 @@ from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.expressions import BoundReference
 from pyiceberg.io import (
+    ADLS_ACCOUNT_KEY,
+    ADLS_ACCOUNT_NAME,
+    ADLS_BLOB_STORAGE_AUTHORITY,
+    ADLS_BLOB_STORAGE_SCHEME,
+    ADLS_DFS_STORAGE_AUTHORITY,
+    ADLS_DFS_STORAGE_SCHEME,
     GCS_PROJECT_ID,
     GCS_SERVICE_HOST,
     GCS_TOKEN,
     GCS_TOKEN_EXPIRES_AT_MS,
-    ADLS_ACCOUNT_NAME,
-    ADLS_ACCOUNT_KEY,
-    ADLS_BLOB_STORAGE_AUTHORITY,
-    ADLS_DFS_STORAGE_SCHEME,
-    ADLS_BLOB_STORAGE_SCHEME,
-    ADLS_DFS_STORAGE_AUTHORITY,
     fsspec,
     load_file_io,
 )
@@ -355,7 +355,7 @@ def table_schema_with_all_types() -> Schema:
 
 
 @pytest.fixture(params=["abfss", "wasbs"])
-def adls_scheme(request):
+def adls_scheme(request: pytest.FixtureRequest) -> str:
     return request.param
 
 
@@ -2120,7 +2120,7 @@ def adls_fsspec_fileio(request: pytest.FixtureRequest) -> Generator[FsspecFileIO
 
 
 @pytest.fixture
-def pyarrow_fileio_gcs(request: pytest.FixtureRequest) -> 'PyArrowFileIO':
+def pyarrow_fileio_gcs(request: pytest.FixtureRequest) -> "PyArrowFileIO":
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
     properties = {
@@ -2135,10 +2135,11 @@ def pyarrow_fileio_gcs(request: pytest.FixtureRequest) -> 'PyArrowFileIO':
 @pytest.fixture
 def pyarrow_fileio_adls(request: pytest.FixtureRequest) -> Generator[Any, None, None]:
     from azure.storage.blob import BlobServiceClient
+
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
     azurite_url = request.config.getoption("--adls.endpoint")
-    azurite_scheme, azurite_authority = azurite_url.split('://', 1)
+    azurite_scheme, azurite_authority = azurite_url.split("://", 1)
 
     azurite_account_name = request.config.getoption("--adls.account-name")
     azurite_account_key = request.config.getoption("--adls.account-key")

@@ -1956,7 +1956,7 @@ def test_checking_if_a_file_exists_adls(pyarrow_fileio_adls: PyArrowFileIO, adls
 
 
 @pytest.mark.adls
-#@pytest.mark.skip(reason="Open issue on Arrow: https://github.com/apache/arrow/issues/36993")
+# @pytest.mark.skip(reason="Open issue on Arrow: https://github.com/apache/arrow/issues/36993")
 def test_closing_a_file_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
     """Test closing an output file and input file"""
     filename = str(uuid4())

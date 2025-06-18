@@ -85,11 +85,11 @@ from pyiceberg.expressions.visitors import (
 )
 from pyiceberg.expressions.visitors import visit as boolean_expression_visit
 from pyiceberg.io import (
-    ADLS_ACCOUNT_NAME,
     ADLS_ACCOUNT_KEY,
+    ADLS_ACCOUNT_NAME,
     ADLS_BLOB_STORAGE_AUTHORITY,
-    ADLS_DFS_STORAGE_AUTHORITY,
     ADLS_BLOB_STORAGE_SCHEME,
+    ADLS_DFS_STORAGE_AUTHORITY,
     ADLS_DFS_STORAGE_SCHEME,
     ADLS_SAS_TOKEN,
     AWS_ACCESS_KEY_ID,
