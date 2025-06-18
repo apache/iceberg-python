@@ -16,12 +16,22 @@
 # under the License.
 
 from typing import Optional
+
 from pydantic import Field
+
 from pyiceberg.typedef import IcebergBaseModel
 
 
 class EncryptedKey(IcebergBaseModel):
     key_id: str = Field(alias="key-id", description="ID of the encryption key")
-    encrypted_key_metadata: bytes = Field(alias="encrypted-key-metadata", description="Encrypted key and metadata, base64 encoded")
-    encrypted_by_id: Optional[str] = Field(alias="encrypted-by-id", description="Optional ID of the key used to encrypt or wrap `key-metadata`", default=None)
-    properties: Optional[dict[str, str]] = Field(alias="properties", description="A string to string map of additional metadata used by the table's encryption scheme", default=None)
+    encrypted_key_metadata: bytes = Field(
+        alias="encrypted-key-metadata", description="Encrypted key and metadata, base64 encoded"
+    )
+    encrypted_by_id: Optional[str] = Field(
+        alias="encrypted-by-id", description="Optional ID of the key used to encrypt or wrap `key-metadata`", default=None
+    )
+    properties: Optional[dict[str, str]] = Field(
+        alias="properties",
+        description="A string to string map of additional metadata used by the table's encryption scheme",
+        default=None,
+    )
