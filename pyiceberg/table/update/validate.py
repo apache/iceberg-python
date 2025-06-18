@@ -202,7 +202,7 @@ def _added_data_files(
     if parent_snapshot is None:
         return
 
-    manifests, snapshot_ids = validation_history(
+    manifests, snapshot_ids = _validation_history(
         table,
         parent_snapshot,
         starting_snapshot,
