@@ -1756,6 +1756,7 @@ def test_read_specified_bytes_for_file_gcs(pyarrow_fileio_gcs: PyArrowFileIO) ->
 
 
 @pytest.mark.gcs
+@pytest.mark.skip(reason="Open issue on Arrow: https://github.com/apache/arrow/issues/36993")
 def test_raise_on_opening_file_not_found_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
     """Test that PyArrowFile raises appropriately when the gcs file is not found"""
 
