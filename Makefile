@@ -48,10 +48,6 @@ lint: ## lint
 test: ## Run all unit tests, can add arguments with PYTEST_ARGS="-vv"
 	poetry run pytest tests/ -m "(unmarked or parametrize) and not integration" ${PYTEST_ARGS}
 
-test-s3: # Run tests marked with s3, can add arguments with PYTEST_ARGS="-vv"
-	sh ./dev/run-minio.sh
-	poetry run pytest tests/ -m s3 ${PYTEST_ARGS}
-
 test-integration: | test-integration-setup test-integration-exec ## Run all integration tests, can add arguments with PYTEST_ARGS="-vv"
 
 test-integration-setup: # Prepare the environment for integration
@@ -69,6 +65,10 @@ test-integration-rebuild:
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml build --no-cache
+
+test-s3: # Run tests marked with s3, can add arguments with PYTEST_ARGS="-vv"
+	sh ./dev/run-minio.sh
+	poetry run pytest tests/ -m s3 ${PYTEST_ARGS}
 
 test-adls: ## Run tests marked with adls, can add arguments with PYTEST_ARGS="-vv"
 	sh ./dev/run-azurite.sh
