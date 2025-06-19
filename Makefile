@@ -37,7 +37,7 @@ install-poetry: # Ensure Poetry is installed and the correct version is being us
 install-dependencies: # Install dependencies including dev, docs, and all extras
 	poetry install --all-extras
 
-install: | install-poetry install-dependencies
+install: | install-poetry install-dependencies # Install poetry and all dependencies
 
 check-license: # Check license headers
 	./dev/check-license
@@ -66,6 +66,8 @@ test-integration-rebuild:
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml build --no-cache
 
+test-object-store-integration: test-s3 test-adls test-gcs # Run object stores integration tests, can add arguments with PYTEST_ARGS="-vv"
+
 test-s3: # Run tests marked with s3, can add arguments with PYTEST_ARGS="-vv"
 	sh ./dev/run-minio.sh
 	poetry run pytest tests/ -m s3 ${PYTEST_ARGS}
@@ -81,16 +83,25 @@ test-gcs: # Run tests marked with gcs, can add arguments with PYTEST_ARGS="-vv"
 test-coverage-unit: # Run test with coverage for unit tests, can add arguments with PYTEST_ARGS="-vv"
 	poetry run coverage run --source=pyiceberg/ --data-file=.coverage.unit -m pytest tests/ -v -m "(unmarked or parametrize) and not integration" ${PYTEST_ARGS}
 
-test-coverage-integration: test-integration-setup # Run test with coverage for integration tests, can add arguments with PYTEST_ARGS="-vv"
+test-coverage-integration: test-integration-setup test-object-store-integration # Run test with coverage for integration tests, can add arguments with PYTEST_ARGS="-vv"
 	docker compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
 	poetry run coverage run --source=pyiceberg/ --data-file=.coverage.integration -m pytest tests/ -v -m integration ${PYTEST_ARGS}
 
-test-coverage: | test-coverage-unit test-coverage-integration test-s3 test-adls test-gcs # Run all tests with coverage including unit and integration tests
+test-coverage-object-store-integration: # Run test with coverage for object stores integration tests, can add arguments with PYTEST_ARGS="-vv"
+	sh ./dev/run-minio.sh
+	poetry run coverage run --source=pyiceberg/ --data-file=.coverage.integration -m pytest tests/ -m s3 ${PYTEST_ARGS}
+
+	sh ./dev/run-azurite.sh
+	poetry run coverage run --source=pyiceberg/ --data-file=.coverage.integration -m pytest tests/ -m adls ${PYTEST_ARGS}
+
+	sh ./dev/run-gcs-server.sh
+	poetry run coverage run --source=pyiceberg/ --data-file=.coverage.integration -m pytest tests/ -m gcs ${PYTEST_ARGS}
+
+test-coverage: | test-coverage-unit test-coverage-integration test-coverage-object-store-integration # Run all tests with coverage including unit and integration tests
 	poetry run coverage combine .coverage.unit .coverage.integration
 	poetry run coverage report -m --fail-under=90
 	poetry run coverage html
 	poetry run coverage xml
-
 
 clean: # Clean up the project Python working environment
 	@echo "Cleaning up Cython and Python cached files"
