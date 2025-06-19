@@ -354,7 +354,7 @@ def table_schema_with_all_types() -> Schema:
     )
 
 
-@pytest.fixture(params=["abfss", "wasbs"])
+@pytest.fixture(params=["abfs", "abfss", "wasb", "wasbs"])
 def adls_scheme(request: pytest.FixtureRequest) -> str:
     return request.param
 
