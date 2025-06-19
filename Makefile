@@ -84,7 +84,6 @@ test-coverage-unit: # Run test with coverage for unit tests, can add arguments w
 	poetry run coverage run --source=pyiceberg/ --data-file=.coverage.unit -m pytest tests/ -v -m "(unmarked or parametrize) and not integration" ${PYTEST_ARGS}
 
 test-coverage-integration: test-integration-setup test-object-store-integration # Run test with coverage for integration tests, can add arguments with PYTEST_ARGS="-vv"
-	docker compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
 	poetry run coverage run --source=pyiceberg/ --data-file=.coverage.integration -m pytest tests/ -v -m integration ${PYTEST_ARGS}
 
 test-coverage-object-store-integration: # Run test with coverage for object stores integration tests, can add arguments with PYTEST_ARGS="-vv"
