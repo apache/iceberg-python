@@ -76,7 +76,7 @@ test-adls: ## Run tests marked with adls, can add arguments with PYTEST_ARGS="-v
 
 test-gcs: ## Run tests marked with gcs, can add arguments with PYTEST_ARGS="-vv"
 	sh ./dev/run-gcs-server.sh
-	poetry run  pytest tests/ -m gcs ${PYTEST_ARGS}
+	poetry run pytest tests/ -m gcs ${PYTEST_ARGS}
 
 test-coverage-unit: # Run test with coverage for unit tests, can add arguments with PYTEST_ARGS="-vv"
 	poetry run coverage run --source=pyiceberg/ --data-file=.coverage.unit -m pytest tests/ -v -m "(unmarked or parametrize) and not integration" ${PYTEST_ARGS}
@@ -85,14 +85,12 @@ test-coverage-integration: # Run test with coverage for integration tests, can a
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml up -d
-	sh ./dev/run-azurite.sh
-	sh ./dev/run-gcs-server.sh
 	sleep 10
 	docker compose -f dev/docker-compose-integration.yml cp ./dev/provision.py spark-iceberg:/opt/spark/provision.py
 	docker compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
 	poetry run coverage run --source=pyiceberg/ --data-file=.coverage.integration -m pytest tests/ -v -m integration ${PYTEST_ARGS}
 
-test-coverage: | test-coverage-unit test-coverage-integration ## Run all tests with coverage including unit and integration tests
+test-coverage: | test-coverage-unit test-coverage-integration test-s3 test-adls test-gcs ## Run all tests with coverage including unit and integration tests
 	poetry run coverage combine .coverage.unit .coverage.integration
 	poetry run coverage report -m --fail-under=90
 	poetry run coverage html
