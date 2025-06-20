@@ -437,13 +437,17 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
             f"Cannot add snapshot with sequence number {update.snapshot.sequence_number} "
             f"older than last sequence number {base_metadata.last_sequence_number}"
         )
-    elif (base_metadata.format_version >= 3 and update.snapshot.first_row_id is None):
+    elif base_metadata.format_version >= 3 and update.snapshot.first_row_id is None:
         raise ValueError("Cannot add snapshot without first row id")
-    elif (base_metadata.format_version >= 3 and update.snapshot.first_row_id is not None and update.snapshot.first_row_id < base_metadata.next_row_id):
-        raise ValueError(f"Cannot add a snapshot with first row id smaller than the table's next-row-id {update.snapshot.first_row_id} < {base_metadata.next_row_id}")
-
-    
-
+    elif (
+        base_metadata.format_version >= 3
+        and update.snapshot.first_row_id is not None
+        and base_metadata.next_row_id is not None
+        and update.snapshot.first_row_id < base_metadata.next_row_id
+    ):
+        raise ValueError(
+            f"Cannot add a snapshot with first row id smaller than the table's next-row-id {update.snapshot.first_row_id} < {base_metadata.next_row_id}"
+        )
 
     context.add_update(update)
     return base_metadata.model_copy(
@@ -451,7 +455,9 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
             "last_updated_ms": update.snapshot.timestamp_ms,
             "last_sequence_number": update.snapshot.sequence_number,
             "snapshots": base_metadata.snapshots + [update.snapshot],
-            "next-row-id": base_metadata.next_row_id + update.snapshot.added_rows
+            "next_row_id": base_metadata.next_row_id + update.snapshot.added_rows
+            if base_metadata.next_row_id is not None and update.snapshot.added_rows is not None
+            else None,
         }
     )
 
