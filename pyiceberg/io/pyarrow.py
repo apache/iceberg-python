@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import fnmatch
 import functools
+import importlib
 import itertools
 import logging
 import operator
@@ -63,6 +64,7 @@ import pyarrow.dataset as ds
 import pyarrow.lib
 import pyarrow.parquet as pq
 from pyarrow import ChunkedArray
+from pyarrow._s3fs import S3RetryStrategy
 from pyarrow.fs import (
     FileInfo,
     FileSystem,
@@ -111,6 +113,7 @@ from pyiceberg.io import (
     S3_REGION,
     S3_REQUEST_TIMEOUT,
     S3_RESOLVE_REGION,
+    S3_RETRY_STRATEGY_IMPL,
     S3_ROLE_ARN,
     S3_ROLE_SESSION_NAME,
     S3_SECRET_ACCESS_KEY,
@@ -211,6 +214,20 @@ def _cached_resolve_s3_region(bucket: str) -> Optional[str]:
         return resolve_s3_region(bucket=bucket)
     except (OSError, TypeError):
         logger.warning(f"Unable to resolve region for bucket {bucket}")
+        return None
+
+
+def _import_retry_strategy(impl: str) -> Optional[S3RetryStrategy]:
+    try:
+        path_parts = impl.split(".")
+        if len(path_parts) < 2:
+            raise ValueError(f"retry-strategy-impl should be full path (module.CustomS3RetryStrategy), got: {impl}")
+        module_name, class_name = ".".join(path_parts[:-1]), path_parts[-1]
+        module = importlib.import_module(module_name)
+        class_ = getattr(module, class_name)
+        return class_()
+    except (ModuleNotFoundError, AttributeError):
+        warnings.warn(f"Could not initialize S3 retry strategy: {impl}")
         return None
 
 
@@ -475,6 +492,11 @@ class PyArrowFileIO(FileIO):
 
         if self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING) is not None:
             client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, S3_FORCE_VIRTUAL_ADDRESSING, False)
+
+        if (retry_strategy_impl := self.properties.get(S3_RETRY_STRATEGY_IMPL)) and (
+            retry_instance := _import_retry_strategy(retry_strategy_impl)
+        ):
+            client_kwargs["retry_strategy"] = retry_instance
 
         return S3FileSystem(**client_kwargs)
 
