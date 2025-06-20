@@ -338,10 +338,6 @@ filterwarnings = [
   "ignore:datetime.datetime.utcnow\\(\\) is deprecated and scheduled for removal in a future version.",
   # Latest PySpark version (v3.5.3) throws this error, remove in a future release of PySpark (possibly v4.0.0).
   "ignore:is_datetime64tz_dtype is deprecated and will be removed in a future version.",
-  # From fsspec gcsfs
-  "ignore:pkg_resources is deprecated as an API.",
-  "ignore:Deprecated call to `pkg_resources\\.declare_namespace\\('.*'\\):DeprecationWarning",
-  "ignore::DeprecationWarning:google.rpc",
 ]
 
 [tool.black]
