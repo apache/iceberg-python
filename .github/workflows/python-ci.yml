@@ -79,26 +79,27 @@ jobs:
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
     - name: Install
       run: make install
+
     - name: Run integration tests
       run: make test-coverage-integration
     - name: Show debug logs
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose.yml logs
 
-  object-store-integration-test:
-    runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        python: ['3.9', '3.10', '3.11', '3.12']
-
-    steps:
-    - uses: actions/checkout@v4
-    - name: Install system dependencies
-      run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
-    - name: Install
-      run: make install
-    - name: Run object store integration tests
-      run: make test-coverage-object-store-integration
+    - name: Run s3 integration tests
+      run: make test-s3
     - name: Show debug logs
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose.yml logs
+
+    - name: Run adls integration tests
+      run: make test-adls
+    - name: Show debug logs
+      if: ${{ failure() }}
+      run: docker compose -f dev/docker-compose-azurite.yml logs
+
+    - name: Run gcs integration tests
+      run: make test-gcs
+    - name: Show debug logs
+      if: ${{ failure() }}
+      run: docker compose -f dev/docker-compose-gcs-server.yml logs
