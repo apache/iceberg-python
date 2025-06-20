@@ -1678,6 +1678,7 @@ def test_new_output_file_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
 
 
 @pytest.mark.gcs
+@pytest.mark.skip(reason="Open issue on Arrow: https://github.com/apache/arrow/issues/36993")
 def test_write_and_read_file_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
     """Test writing and reading a file using PyArrowFile"""
     location = f"gs://warehouse/{uuid4()}.txt"
@@ -1712,6 +1713,7 @@ def test_getting_length_of_file_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
 
 
 @pytest.mark.gcs
+@pytest.mark.skip(reason="Open issue on Arrow: https://github.com/apache/arrow/issues/36993")
 def test_file_tell_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
     location = f"gs://warehouse/{uuid4()}"
 
@@ -1732,6 +1734,7 @@ def test_file_tell_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
 
 
 @pytest.mark.gcs
+@pytest.mark.skip(reason="Open issue on Arrow: https://github.com/apache/arrow/issues/36993")
 def test_read_specified_bytes_for_file_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
     location = f"gs://warehouse/{uuid4()}"
 
@@ -1790,6 +1793,7 @@ def test_checking_if_a_file_exists_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> Non
 
 
 @pytest.mark.gcs
+@pytest.mark.skip(reason="Open issue on Arrow: https://github.com/apache/arrow/issues/36993")
 def test_closing_a_file_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
     """Test closing an output file and input file"""
     filename = str(uuid4())
@@ -1817,6 +1821,7 @@ def test_converting_an_outputfile_to_an_inputfile_gcs(pyarrow_fileio_gcs: PyArro
 
 
 @pytest.mark.gcs
+@pytest.mark.skip(reason="Open issue on Arrow: https://github.com/apache/arrow/issues/36993")
 def test_writing_avro_file_gcs(generated_manifest_entry_file: str, pyarrow_fileio_gcs: PyArrowFileIO) -> None:
     """Test that bytes match when reading a local avro file, writing it using pyarrow file-io, and then reading it again"""
     filename = str(uuid4())
