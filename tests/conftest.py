@@ -2309,6 +2309,8 @@ def data_file(table_schema_simple: Schema, tmp_path: str) -> str:
 
 @pytest.fixture
 def example_task(data_file: str) -> FileScanTask:
+    # MODIFIED
+
     return FileScanTask(
         data_file=DataFile.from_args(
             file_path=data_file,

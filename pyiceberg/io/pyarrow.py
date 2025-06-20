@@ -922,6 +922,7 @@ def _construct_fragment(fs: FileSystem, data_file: DataFile, file_format_kwargs:
 
 
 def _read_deletes(fs: FileSystem, data_file: DataFile) -> Dict[str, pa.ChunkedArray]:
+    # MODIFIED
     if data_file.file_format == FileFormat.PARQUET:
         delete_fragment = _construct_fragment(
             fs,
@@ -1398,6 +1399,8 @@ def _task_to_record_batches(
     name_mapping: Optional[NameMapping] = None,
     partition_spec: Optional[PartitionSpec] = None,
 ) -> Iterator[pa.RecordBatch]:
+    # MODIFIED
+
     _, _, path = _parse_location(task.file.file_path)
     arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
     with fs.open_input_file(path) as fin:
@@ -1446,10 +1449,10 @@ def _task_to_record_batches(
                 equality_deletes = [d for d in deletes if isinstance(d, pa.Table)]
                 if equality_deletes:
                     table = pa.Table.from_batches([current_batch])
-                    for delete_file in task.delete_files:
-                        if delete_file.content == DataFileContent.EQUALITY_DELETES and delete_file.equality_ids:
-                            if contains_equality_deletes(task.file, delete_file, delete_file.equality_ids):
-                                table = _apply_equality_deletes(table, equality_deletes[0], delete_file.equality_ids)
+                    task_eq_del = [df for df in task.delete_files if df.content == DataFileContent.EQUALITY_DELETES]
+                    for i, delete_file in enumerate(task_eq_del):
+                        if contains_equality_deletes(task.file, delete_file, delete_file.equality_ids):
+                            table = _apply_equality_deletes(table, equality_deletes[i], delete_file.equality_ids)
                     if table.num_rows > 0:
                         current_batch = table.combine_chunks().to_batches()[0]
                     else:
@@ -1489,21 +1492,44 @@ def _task_to_record_batches(
 
 
 def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
-    deletes_per_file: Dict[str, List[ChunkedArray]] = {}
+    # MODIFIED
+
+    deletes_per_file: Dict[str, List[Union[pa.ChunkedArray, pa.Table]]] = {}
+
+    unique_deletes = set(df for task in tasks for df in task.delete_files
+                         if df.content == DataFileContent.POSITION_DELETES)
+    if unique_deletes:
+        executor = ExecutorFactory.get_or_create()
+        deletes_per_files: Iterator[Dict[str, ChunkedArray]] = executor.map(
+            lambda args: _read_deletes(*args),
+            [(_fs_from_file_path(io, delete_file.file_path), delete_file) for delete_file in unique_deletes],
+        )
+        for delete in deletes_per_files:
+            for file, arr in delete.items():
+                if file in deletes_per_file:
+                    deletes_per_file[file].append(arr)
+                else:
+                    deletes_per_file[file] = [arr]
+
+    equality_delete_tasks = []
     for task in tasks:
-        if task.delete_files:
-            fs = _fs_from_file_path(io, task.file.file_path)
-            for delete_file in task.delete_files:
-                deletes = _read_deletes(fs, delete_file)
-                if delete_file.content == DataFileContent.POSITION_DELETES:
-                    if task.file.file_path in deletes:
-                        if task.file.file_path not in deletes_per_file:
-                            deletes_per_file[task.file.file_path] = []
-                        deletes_per_file[task.file.file_path].append(deletes[task.file.file_path])
-                elif delete_file.content == DataFileContent.EQUALITY_DELETES:
-                    if task.file.file_path not in deletes_per_file:
-                        deletes_per_file[task.file.file_path] = []
-                    deletes_per_file[task.file.file_path].append(deletes["equality_deletes"])
+        equality_deletes = [df for df in task.delete_files if df.content == DataFileContent.EQUALITY_DELETES]
+        if equality_deletes:
+            for delete_file in equality_deletes:
+                equality_delete_tasks.append((task.file.file_path, delete_file))
+
+    if equality_delete_tasks:
+        executor = ExecutorFactory.get_or_create()
+
+        # Processing equality delete tasks in parallel like positon deletes
+        equality_delete_results = executor.map(
+            lambda args: (args[0], _read_deletes(_fs_from_file_path(io, args[1].file_path), args[1])["equality_deletes"]),
+            equality_delete_tasks
+        )
+        for file_path, equality_delete_table in equality_delete_results:
+            if file_path not in deletes_per_file:
+                deletes_per_file[file_path] = []
+            deletes_per_file[file_path].append(equality_delete_table)
     return deletes_per_file
 
 
@@ -2747,12 +2773,21 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
     return table_partitions
 
 def _apply_equality_deletes(data_table: pa.Table, delete_table: pa.Table, equality_ids: List[int]) -> pa.Table:
+    """Apply equality deletes to a data table.
+    Filter out rows from the table that match the equality delete table the conditions in it.
+    Args:
+        data_table: A PyArrow table which has data to filter
+        delete_table: A PyArrow table containing the equality deletes
+        equality_ids: A List of field IDs to use for equality comparison
+    Returns:
+        A filtered PyArrow table with matching rows removed"""
     if len(delete_table) == 0:
         return data_table
 
     data_schema = pyarrow_to_schema(data_table.schema)
     equality_columns = [data_schema.find_field(fid).name for fid in equality_ids]
 
+    # Ensure columns in delete table have matching types with data table
     delete_type_matched = delete_table
     for col in equality_columns:
         data_type = data_table.schema.field(col).type
@@ -2763,6 +2798,7 @@ def _apply_equality_deletes(data_table: pa.Table, delete_table: pa.Table, equali
                 delete_table[col].cast(data_type)
             )
 
+    # Creating a set of keys that will be removed from the data table
     delete_keys = set()
     for row in delete_type_matched.to_pylist():
         key = tuple(row[col] for col in equality_columns)
@@ -2770,6 +2806,7 @@ def _apply_equality_deletes(data_table: pa.Table, delete_table: pa.Table, equali
 
     column_arrays = [data_table[col] for col in equality_columns]
 
+    # Create a mask of rows to keep (True if row should be kept)
     mask = [(tuple(arr[i].as_py() for arr in column_arrays) not in delete_keys) for i in range(len(data_table))]
 
     result = data_table.filter(pa.array(mask))
@@ -2777,6 +2814,18 @@ def _apply_equality_deletes(data_table: pa.Table, delete_table: pa.Table, equali
 
 
 def contains_equality_deletes(data_file: DataFile, delete_file: DataFile, equality_ids: List[int]) -> bool:
+    """ Check if a data file contains deletes from an equality delete file.
+    
+    Uses file metadata to check if the delete file's bounds overlap with the data file's bound.
+    
+    Args:
+        data_file: A data file object to check against
+        delete_file: The delete file object containing delete file metadata
+        equality_ids: List of column IDs to use for comparison
+    
+    Returns:
+        True if data file might contain deletes from the delete file, Flase otherwise
+    """""
 
     if not data_file.lower_bounds or not data_file.upper_bounds or not delete_file.lower_bounds or not delete_file.upper_bounds:
         return True
@@ -2788,10 +2837,17 @@ def contains_equality_deletes(data_file: DataFile, delete_file: DataFile, equali
         if data_file.upper_bounds.get(field_id) < delete_file.lower_bounds.get(field_id) or data_file.lower_bounds.get(field_id) > delete_file.upper_bounds.get(field_id):
             return False
 
-        data_null_count = data_file.null_value_counts.get(field_id, 0)
-        delete_null_count = delete_file.null_value_counts.get(field_id, 0)
+        data_null_count = data_file.null_value_counts.get(field_id, 0) if data_file.null_value_counts else 0
+        data_value_count = data_file.value_counts.get(field_id, 0) if data_file.value_counts else 0
+        delete_null_count = delete_file.null_value_counts.get(field_id, 0) if delete_file.null_value_counts else 0
+        delete_value_count = delete_file.value_counts.get(field_id, 0) if delete_file.value_counts else 0
 
-        if delete_null_count > 0 and data_null_count == 0:
+        # Check if data file contains only null values but delete file has no null deletes
+        if 0 < data_null_count == data_value_count > 0 and delete_null_count == 0:
+            return False
+
+        # Check if delete file removes only null rows but data file has no null values
+        if 0 < delete_null_count == delete_value_count > 0 and data_null_count == 0:
             return False
 
     return True

@@ -1663,7 +1663,7 @@ def _min_sequence_number(manifests: List[ManifestFile]) -> int:
         return INITIAL_SEQUENCE_NUMBER
 
 
-def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_entries: SortedList[ManifestEntry]) -> Set[DataFile]:
+def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_entries: SortedList[ManifestEntry], equality_delete_entries: List[ManifestEntry]) -> Set[DataFile]:
     """Check if the delete file is relevant for the data file.
 
     Using the column metrics to see if the filename is in the lower and upper bound.
@@ -1671,32 +1671,39 @@ def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_ent
     Args:
         data_entry (ManifestEntry): The manifest entry path of the datafile.
         positional_delete_entries (List[ManifestEntry]): All the candidate positional deletes manifest entries.
+        equality_delete_entries (List[ManifestEntry]): All the candidate equality deletes manifest entries.
 
     Returns:
-        A set of files that are relevant for the data file.
+        A set of delete files that are relevant for the data file.
     """
-    relevant_entries = positional_delete_entries[positional_delete_entries.bisect_right(data_entry) :]
+    # MODIFIED
 
-    if len(relevant_entries) > 0:
+    # Create a set of relevant positional delete entries
+    relevant_positional_entries = positional_delete_entries[positional_delete_entries.bisect_right(data_entry):]
+
+    if len(relevant_positional_entries) > 0:
         evaluator = _InclusiveMetricsEvaluator(POSITIONAL_DELETE_SCHEMA, EqualTo("file_path", data_entry.data_file.file_path))
-        return {
+        positional_set = {
             positional_delete_entry.data_file
-            for positional_delete_entry in relevant_entries
+            for positional_delete_entry in relevant_positional_entries
             if evaluator.eval(positional_delete_entry.data_file)
         }
     else:
-        return set()
+        positional_set = set()
 
-def _match_equality_deletes_to_data_file(data_entry: ManifestEntry, equality_delete_entries: List[ManifestEntry]) -> Set[DataFile]:
-    relevant_entries = []
+    # Create a set of relevant equality delete entries
+    relevant_equality_entries = []
     for entry in equality_delete_entries:
         if entry.data_file.file_path == data_entry.data_file.file_path:
             if (entry.sequence_number or INITIAL_SEQUENCE_NUMBER) - 1 >= (data_entry.sequence_number or INITIAL_SEQUENCE_NUMBER):
-                if (entry.data_file.partition == data_entry.data_file.partition and entry.data_file.spec_id == data_entry.data_file.spec_id) or (entry.data_file.spec_id == UNPARTITIONED_PARTITION_SPEC.spec_id):
-                    if entry.data_file.equality_ids is not None and data_entry.data_file.equality_ids is not None and set(entry.data_file.equality_ids) == set(data_entry.data_file.equality_ids):
-                        relevant_entries.append(entry)
+                if (entry.data_file.partition == data_entry.data_file.partition and entry.data_file.spec_id == data_entry.data_file.spec_id) or ( entry.data_file.spec_id == UNPARTITIONED_PARTITION_SPEC.spec_id):
+                    if entry.data_file.equality_ids is not None:
+                        relevant_equality_entries.append(entry)
 
-    return {entry.data_file for entry in relevant_entries}
+    equality_set = {entry.data_file for entry in relevant_equality_entries}
+
+    # Return a set of all relevant delete entries
+    return positional_set.union(equality_set)
 
 class DataScan(TableScan):
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
@@ -1777,6 +1784,8 @@ class DataScan(TableScan):
         Returns:
             List of FileScanTasks that contain both data and delete files.
         """
+        # MODIFIED
+
         snapshot = self.snapshot()
         if not snapshot:
             return iter([])
@@ -1837,10 +1846,8 @@ class DataScan(TableScan):
                 delete_files=_match_deletes_to_data_file(
                     data_entry,
                     positional_delete_entries,
-                ).union(_match_equality_deletes_to_data_file(
-                    data_entry,
                     equality_delete_entries,
-                )),
+                ),
                 residual=residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(
                     data_entry.data_file.partition
                 ),
