@@ -14,61 +14,80 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+# ========================
+# Configuration Variables
+# ========================
 
-# Optional arguments passed to pytest. Can be overridden at runtime:
-#   make test PYTEST_ARGS="-vv --tb=short"
-PYTEST_ARGS ?= -v
+PYTEST_ARGS ?= -v  # Override with e.g. PYTEST_ARGS="-vv --tb=short"
+COVERAGE ?= 0      # Set COVERAGE=1 to enable coverage: make test COVERAGE=1
 
-# Toggle coverage collection:
-#   make test COVERAGE=1   -> runs tests with coverage
-#   make test              -> runs tests without coverage
-COVERAGE ?= 0
-
-# Selects the test runner command based on the COVERAGE flag.
-# If COVERAGE=1, uses coverage to track test execution with --parallel-mode.
-# Otherwise, runs tests normally using poetry and pytest.
 ifeq ($(COVERAGE),1)
   TEST_RUNNER = poetry run coverage run --parallel-mode --source=pyiceberg -m
 else
   TEST_RUNNER = poetry run
 endif
 
-help: # Display this help
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
-
 POETRY_VERSION = 2.1.1
-install-poetry: # Ensure Poetry is installed and the correct version is being used.
+
+# ============
+# Help Section
+# ============
+
+##@ General
+
+help: ## Display this help message
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-25s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+
+# ==================
+# Installation Tasks
+# ==================
+
+##@ Setup
+
+install-poetry: ## Ensure Poetry is installed at the specified version
 	@if ! command -v poetry &> /dev/null; then \
-		echo "Poetry could not be found. Installing..."; \
+		echo "Poetry not found. Installing..."; \
 		pip install --user poetry==$(POETRY_VERSION); \
 	else \
 		INSTALLED_VERSION=$$(pip show poetry | grep Version | awk '{print $$2}'); \
 		if [ "$$INSTALLED_VERSION" != "$(POETRY_VERSION)" ]; then \
-			echo "Poetry version $$INSTALLED_VERSION does not match required version $(POETRY_VERSION). Updating..."; \
+			echo "Updating Poetry to version $(POETRY_VERSION)..."; \
 			pip install --user --upgrade poetry==$(POETRY_VERSION); \
 		else \
-			echo "Poetry version $$INSTALLED_VERSION is already installed."; \
-		fi \
+			echo "Poetry version $(POETRY_VERSION) already installed."; \
+		fi; \
 	fi
 
-install-dependencies: # Install dependencies including dev, docs, and all extras
+install-dependencies: ## Install all dependencies including extras
 	poetry install --all-extras
 
-install: | install-poetry install-dependencies # Install poetry and all dependencies
+install: install-poetry install-dependencies ## Install Poetry and dependencies
 
-check-license: # Check license headers
+# ===============
+# Code Validation
+# ===============
+
+##@ Quality
+
+check-license: ## Check license headers
 	./dev/check-license
 
-lint: # Run linters
+lint: ## Run code linters via pre-commit
 	poetry run pre-commit run --all-files
 
-test: # Run all unit tests
-	$(TEST_RUNNER) pytest tests/ -m "(unmarked or parametrize) and not integration" ${PYTEST_ARGS}
+# ===============
+# Testing Section
+# ===============
 
-test-integration: | test-integration-setup test-integration-exec # Run integration tests, excludes s3, adls, and gcs tests
-	$(TEST_RUNNER) pytest tests/ -m integration ${PYTEST_ARGS}
+##@ Testing
 
-test-integration-setup: # Prepare the environment for integration
+test: ## Run all unit tests (excluding integration)
+	$(TEST_RUNNER) pytest tests/ -m "(unmarked or parametrize) and not integration" $(PYTEST_ARGS)
+
+test-integration: test-integration-setup test-integration-exec ## Run integration tests
+	$(TEST_RUNNER) pytest tests/ -m integration $(PYTEST_ARGS)
+
+test-integration-setup: ## Start Docker services for integration tests
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml up -d
@@ -76,25 +95,25 @@ test-integration-setup: # Prepare the environment for integration
 	docker compose -f dev/docker-compose-integration.yml cp ./dev/provision.py spark-iceberg:/opt/spark/provision.py
 	docker compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
 
-test-integration-exec: # Execute integration tests
-	$(TEST_RUNNER) pytest tests/ -v -m integration ${PYTEST_ARGS}
+test-integration-exec: ## Run integration tests (excluding provision)
+	$(TEST_RUNNER) pytest tests/ -m integration $(PYTEST_ARGS)
 
-test-integration-rebuild:
+test-integration-rebuild: ## Rebuild integration Docker services from scratch
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml build --no-cache
 
-test-s3: # Run tests marked with s3
+test-s3: ## Run tests marked with @pytest.mark.s3
 	sh ./dev/run-minio.sh
-	$(TEST_RUNNER) pytest tests/ -m s3 ${PYTEST_ARGS}
+	$(TEST_RUNNER) pytest tests/ -m s3 $(PYTEST_ARGS)
 
-test-adls: # Run tests marked with adls
+test-adls: ## Run tests marked with @pytest.mark.adls
 	sh ./dev/run-azurite.sh
-	$(TEST_RUNNER) pytest tests/ -m adls ${PYTEST_ARGS}
+	$(TEST_RUNNER) pytest tests/ -m adls $(PYTEST_ARGS)
 
-test-gcs: # Run tests marked with gcs
+test-gcs: ## Run tests marked with @pytest.mark.gcs
 	sh ./dev/run-gcs-server.sh
-	$(TEST_RUNNER) pytest tests/ -m gcs ${PYTEST_ARGS}
+	$(TEST_RUNNER) pytest tests/ -m gcs $(PYTEST_ARGS)
 
 test-coverage: COVERAGE=1
 test-coverage: test test-integration test-s3 test-adls test-gcs ## Run all tests with coverage
@@ -103,21 +122,33 @@ test-coverage: test test-integration test-s3 test-adls test-gcs ## Run all tests
 	poetry run coverage html
 	poetry run coverage xml
 
-clean: # Clean up the project Python working environment
-	@echo "Cleaning up Cython and Python cached files"
+# ================
+# Documentation
+# ================
+
+##@ Documentation
+
+docs-install: ## Install docs dependencies
+	poetry install --with docs
+
+docs-serve: ## Serve local docs preview (hot reload)
+	poetry run mkdocs serve -f mkdocs/mkdocs.yml
+
+docs-build: ## Build the static documentation site
+	poetry run mkdocs build -f mkdocs/mkdocs.yml --strict
+
+# ===================
+# Project Maintenance
+# ===================
+
+##@ Maintenance
+
+clean: ## Remove build artifacts and caches
+	@echo "Cleaning up Cython and Python cached files..."
 	@rm -rf build dist *.egg-info
 	@find . -name "*.so" -exec echo Deleting {} \; -delete
 	@find . -name "*.pyc" -exec echo Deleting {} \; -delete
 	@find . -name "__pycache__" -exec echo Deleting {} \; -exec rm -rf {} +
 	@find . -name "*.pyd" -exec echo Deleting {} \; -delete
 	@find . -name "*.pyo" -exec echo Deleting {} \; -delete
-	@echo "Cleanup complete"
-
-docs-install:
-	poetry install --with docs
-
-docs-serve:
-	poetry run mkdocs serve -f mkdocs/mkdocs.yml
-
-docs-build:
-	poetry run mkdocs build -f mkdocs/mkdocs.yml --strict
+	@echo "Cleanup complete."
