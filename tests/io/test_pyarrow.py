@@ -110,7 +110,7 @@ from tests.conftest import UNIFIED_AWS_SESSION_PROPERTIES
 
 skip_if_pyarrow_too_old = pytest.mark.skipif(
     version.parse(pyarrow.__version__) < version.parse("20.0.0"),
-    reason=f"Requires pyarrow version >= 20.0.0",
+    reason="Requires pyarrow version >= 20.0.0",
 )
 
 
