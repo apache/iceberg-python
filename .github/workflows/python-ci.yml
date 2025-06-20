@@ -62,10 +62,10 @@ jobs:
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
     - name: Install
       run: make install-dependencies
-    - name: Linters
+    - name: Run linters
       run: make lint
-    - name: Tests
-      run: make test-coverage-unit
+    - name: Run unit tests
+      run: make test
 
   integration-test:
     runs-on: ubuntu-22.04
@@ -81,7 +81,7 @@ jobs:
       run: make install
 
     - name: Run integration tests
-      run: make test-coverage-integration
+      run: make test-integration
     - name: Show debug logs
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose.yml logs
