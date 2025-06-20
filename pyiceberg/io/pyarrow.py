@@ -25,7 +25,6 @@ with the pyarrow library.
 
 from __future__ import annotations
 
-import concurrent.futures
 import fnmatch
 import functools
 import itertools
@@ -36,7 +35,6 @@ import re
 import uuid
 import warnings
 from abc import ABC, abstractmethod
-from concurrent.futures import Future
 from copy import copy
 from dataclasses import dataclass
 from enum import Enum
@@ -70,7 +68,6 @@ from pyarrow.fs import (
     FileSystem,
     FileType,
 )
-from sortedcontainers import SortedList
 
 from pyiceberg.conversions import to_bytes
 from pyiceberg.exceptions import ResolveError
@@ -1586,47 +1583,20 @@ class ArrowScan:
             ResolveError: When a required field cannot be found in the file
             ValueError: When a field type in the file cannot be projected to the schema type
         """
-        deletes_per_file = _read_all_delete_files(self._io, tasks)
-        executor = ExecutorFactory.get_or_create()
-
-        def _table_from_scan_task(task: FileScanTask) -> pa.Table:
-            batches = list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file))
-            if len(batches) > 0:
-                return pa.Table.from_batches(batches)
-            else:
-                return None
-
-        futures = [
-            executor.submit(
-                _table_from_scan_task,
-                task,
-            )
-            for task in tasks
-        ]
-        total_row_count = 0
-        # for consistent ordering, we need to maintain future order
-        futures_index = {f: i for i, f in enumerate(futures)}
-        completed_futures: SortedList[Future[pa.Table]] = SortedList(iterable=[], key=lambda f: futures_index[f])
-        for future in concurrent.futures.as_completed(futures):
-            completed_futures.add(future)
-            if table_result := future.result():
-                total_row_count += len(table_result)
-            # stop early if limit is satisfied
-            if self._limit is not None and total_row_count >= self._limit:
-                break
-
-        # by now, we've either completed all tasks or satisfied the limit
-        if self._limit is not None:
-            _ = [f.cancel() for f in futures if not f.done()]
-
-        tables = [f.result() for f in completed_futures if f.result()]
-
         arrow_schema = schema_to_pyarrow(self._projected_schema, include_field_ids=False)
 
-        if len(tables) < 1:
-            return pa.Table.from_batches([], schema=arrow_schema)
+        batches = self.to_record_batches(tasks)
+        try:
+            first_batch = next(batches)
+        except StopIteration:
+            # Empty
+            return arrow_schema.empty_table()
 
-        result = pa.concat_tables(tables, promote_options="permissive")
+        # Note: cannot use pa.Table.from_batches(itertools.chain([first_batch], batches)))
+        #       as different batches can use different schema's (due to large_ types)
+        result = pa.concat_tables(
+            (pa.Table.from_batches([batch]) for batch in itertools.chain([first_batch], batches)), promote_options="permissive"
+        )
 
         if property_as_bool(self._io.properties, PYARROW_USE_LARGE_TYPES_ON_READ, False):
             deprecation_message(
@@ -1635,9 +1605,6 @@ class ArrowScan:
                 help_message=f"Property `{PYARROW_USE_LARGE_TYPES_ON_READ}` will be removed.",
             )
             result = result.cast(arrow_schema)
-
-        if self._limit is not None:
-            return result.slice(0, self._limit)
 
         return result
 
@@ -1660,7 +1627,32 @@ class ArrowScan:
             ValueError: When a field type in the file cannot be projected to the schema type
         """
         deletes_per_file = _read_all_delete_files(self._io, tasks)
-        return self._record_batches_from_scan_tasks_and_deletes(tasks, deletes_per_file)
+
+        total_row_count = 0
+        executor = ExecutorFactory.get_or_create()
+
+        def batches_for_task(task: FileScanTask) -> List[pa.RecordBatch]:
+            # Materialize the iterator here to ensure execution happens within the executor.
+            # Otherwise, the iterator would be lazily consumed later (in the main thread),
+            # defeating the purpose of using executor.map.
+            return list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file))
+
+        limit_reached = False
+        for batches in executor.map(batches_for_task, tasks):
+            for batch in batches:
+                current_batch_size = len(batch)
+                if self._limit is not None and total_row_count + current_batch_size >= self._limit:
+                    yield batch.slice(0, self._limit - total_row_count)
+
+                    limit_reached = True
+                    break
+                else:
+                    yield batch
+                    total_row_count += current_batch_size
+
+            if limit_reached:
+                # This break will also cancel all running tasks in the executor
+                break
 
     def _record_batches_from_scan_tasks_and_deletes(
         self, tasks: Iterable[FileScanTask], deletes_per_file: Dict[str, List[ChunkedArray]]
