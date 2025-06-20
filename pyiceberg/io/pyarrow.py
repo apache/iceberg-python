@@ -2786,30 +2786,12 @@ def _apply_equality_deletes(data_table: pa.Table, delete_table: pa.Table, equali
 
     data_schema = pyarrow_to_schema(data_table.schema)
     equality_columns = [data_schema.find_field(fid).name for fid in equality_ids]
-
-    # Ensure columns in delete table have matching types with data table
-    delete_type_matched = delete_table
-    for col in equality_columns:
-        data_type = data_table.schema.field(col).type
-        if delete_table[col].type != data_type:
-            delete_type_matched = delete_type_matched.set_column(
-                delete_type_matched.schema.get_field_index(col),
-                col,
-                delete_table[col].cast(data_type)
-            )
-
-    # Creating a set of keys that will be removed from the data table
-    delete_keys = set()
-    for row in delete_type_matched.to_pylist():
-        key = tuple(row[col] for col in equality_columns)
-        delete_keys.add(key)
-
-    column_arrays = [data_table[col] for col in equality_columns]
-
-    # Create a mask of rows to keep (True if row should be kept)
-    mask = [(tuple(arr[i].as_py() for arr in column_arrays) not in delete_keys) for i in range(len(data_table))]
-
-    result = data_table.filter(pa.array(mask))
+    # Use PyArrow's join function with left anti join type
+    result = data_table.join(
+        delete_table.select(equality_columns),
+        keys=equality_columns,
+        join_type='left anti'
+    )
     return result
 
 

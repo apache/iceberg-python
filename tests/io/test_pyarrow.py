@@ -2321,14 +2321,16 @@ def test_pyarrow_io_multi_fs() -> None:
         assert isinstance(pyarrow_file_io.new_input("file:///path/to/file")._filesystem, LocalFileSystem)
 
 @pytest.fixture
-def equality_deletes_file(tmp_path: str, example_task: FileScanTask) -> str:
+def equality_deletes_file(tmp_path: str, example_task: FileScanTask, table_schema_simple, pa_schema) -> str:
     deletes_file = os.path.join(tmp_path, "equality-deletes.parquet")
-    table = pa.table(
-        {
-            "foo": ["a", "b"],
-            "bar": [1, 2],
-        }
-    )
+    pa_schema = schema_to_pyarrow(table_schema_simple)
+    foo_type = pa_schema.field('foo').type
+    bar_type = pa_schema.field('bar').type
+
+    table = pa.table({
+        "foo": pa.array(["a", "b"], type=foo_type),
+        "bar": pa.array([1, 2], type=bar_type),
+    })
     pq.write_table(table, deletes_file)
     return deletes_file
 
