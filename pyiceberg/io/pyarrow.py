@@ -1630,9 +1630,9 @@ class ArrowScan:
 
                     limit_reached = True
                     break
-
-                yield batch
-                total_row_count += current_batch_size
+                else:
+                    yield batch
+                    total_row_count += current_batch_size
 
             if limit_reached:
                 # This break will also cancel all running tasks in the executor
