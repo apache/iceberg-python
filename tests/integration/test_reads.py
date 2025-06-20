@@ -113,6 +113,27 @@ def test_table_properties(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive")])
+def test_hive_properties(catalog: Catalog) -> None:
+    table = create_table(catalog)
+    table.transaction().set_properties({"abc": "def", "p1": "123"}).commit_transaction()
+
+    hive_client: _HiveClient = _HiveClient(catalog.properties["uri"])
+
+    with hive_client as open_client:
+        hive_table = open_client.get_table(*TABLE_NAME)
+        assert hive_table.parameters.get("abc") == "def"
+        assert hive_table.parameters.get("p1") == "123"
+        assert hive_table.parameters.get("not_exist_parameter") is None
+
+    table.transaction().remove_properties("abc").commit_transaction()
+
+    with hive_client as open_client:
+        hive_table = open_client.get_table(*TABLE_NAME)
+        assert hive_table.parameters.get("abc") is None
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_table_properties_dict(catalog: Catalog) -> None:
     table = create_table(catalog)

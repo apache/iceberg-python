@@ -44,6 +44,7 @@ from sqlalchemy.orm import (
 
 from pyiceberg.catalog import (
     METADATA_LOCATION,
+    URI,
     Catalog,
     MetastoreCatalog,
     PropertiesUpdateSummary,
@@ -119,7 +120,7 @@ class SqlCatalog(MetastoreCatalog):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
 
-        if not (uri_prop := self.properties.get("uri")):
+        if not (uri_prop := self.properties.get(URI)):
             raise NoSuchPropertyException("SQL connection URI is required")
 
         echo_str = str(self.properties.get("echo", DEFAULT_ECHO_VALUE)).lower()

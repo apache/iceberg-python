@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import importlib
 import logging
-import os
 import warnings
 from abc import ABC, abstractmethod
 from io import SEEK_SET
@@ -37,7 +36,6 @@ from typing import (
     List,
     Optional,
     Protocol,
-    Tuple,
     Type,
     Union,
     runtime_checkable,
@@ -83,6 +81,10 @@ ADLS_TENANT_ID = "adls.tenant-id"
 ADLS_CLIENT_ID = "adls.client-id"
 ADLS_CLIENT_SECRET = "adls.client-secret"
 ADLS_ACCOUNT_HOST = "adls.account-host"
+ADLS_BLOB_STORAGE_AUTHORITY = "adls.blob-storage-authority"
+ADLS_DFS_STORAGE_AUTHORITY = "adls.dfs-storage-authority"
+ADLS_BLOB_STORAGE_SCHEME = "adls.blob-storage-scheme"
+ADLS_DFS_STORAGE_SCHEME = "adls.dfs-storage-scheme"
 GCS_TOKEN = "gcs.oauth2.token"
 GCS_TOKEN_EXPIRES_AT_MS = "gcs.oauth2.token-expires-at"
 GCS_PROJECT_ID = "gcs.project-id"
@@ -372,14 +374,3 @@ def load_file_io(properties: Properties = EMPTY_DICT, location: Optional[str] = 
         raise ModuleNotFoundError(
             'Could not load a FileIO, please consider installing one: pip3 install "pyiceberg[pyarrow]", for more options refer to the docs.'
         ) from e
-
-
-def _parse_location(location: str) -> Tuple[str, str, str]:
-    """Return the path without the scheme."""
-    uri = urlparse(location)
-    if not uri.scheme:
-        return "file", uri.netloc, os.path.abspath(location)
-    elif uri.scheme in ("hdfs", "viewfs"):
-        return uri.scheme, uri.netloc, uri.path
-    else:
-        return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"

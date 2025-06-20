@@ -95,7 +95,7 @@ class Endpoints:
     register_table = "namespaces/{namespace}/register"
     load_table: str = "namespaces/{namespace}/tables/{table}"
     update_table: str = "namespaces/{namespace}/tables/{table}"
-    drop_table: str = "namespaces/{namespace}/tables/{table}?purgeRequested={purge}"
+    drop_table: str = "namespaces/{namespace}/tables/{table}"
     table_exists: str = "namespaces/{namespace}/tables/{table}"
     get_token: str = "oauth/tokens"
     rename_table: str = "tables/rename"
@@ -617,7 +617,8 @@ class RestCatalog(Catalog):
     @retry(**_RETRY_ARGS)
     def drop_table(self, identifier: Union[str, Identifier], purge_requested: bool = False) -> None:
         response = self._session.delete(
-            self.url(Endpoints.drop_table, prefixed=True, purge=purge_requested, **self._split_identifier_for_path(identifier)),
+            self.url(Endpoints.drop_table, prefixed=True, **self._split_identifier_for_path(identifier)),
+            params={"purgeRequested": purge_requested},
         )
         try:
             response.raise_for_status()
