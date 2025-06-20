@@ -60,7 +60,6 @@ from pyiceberg.expressions.literals import literal
 from pyiceberg.io import InputStream, OutputStream, load_file_io
 from pyiceberg.io.pyarrow import (
     ICEBERG_SCHEMA,
-    MIN_PYARROW_VERSION_SUPPORTING_AZURE_FS,
     ArrowScan,
     PyArrowFile,
     PyArrowFileIO,
@@ -110,8 +109,8 @@ from tests.catalog.test_base import InMemoryCatalog
 from tests.conftest import UNIFIED_AWS_SESSION_PROPERTIES
 
 skip_if_pyarrow_too_old = pytest.mark.skipif(
-    version.parse(pyarrow.__version__) < version.parse(MIN_PYARROW_VERSION_SUPPORTING_AZURE_FS),
-    reason=f"Requires pyarrow version >= {MIN_PYARROW_VERSION_SUPPORTING_AZURE_FS}",
+    version.parse(pyarrow.__version__) < version.parse("20.0.0"),
+    reason=f"Requires pyarrow version >= 20.0.0",
 )
 
 

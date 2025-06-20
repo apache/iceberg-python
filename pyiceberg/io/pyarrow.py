@@ -204,7 +204,6 @@ MAP_KEY_NAME = "key"
 MAP_VALUE_NAME = "value"
 DOC = "doc"
 UTC_ALIASES = {"UTC", "+00:00", "Etc/UTC", "Z"}
-MIN_PYARROW_VERSION_SUPPORTING_AZURE_FS = "20.0.0"
 
 T = TypeVar("T")
 
@@ -489,6 +488,7 @@ class PyArrowFileIO(FileIO):
     def _initialize_azure_fs(self) -> FileSystem:
         from packaging import version
 
+        MIN_PYARROW_VERSION_SUPPORTING_AZURE_FS = "20.0.0"
         if version.parse(pyarrow.__version__) < version.parse(MIN_PYARROW_VERSION_SUPPORTING_AZURE_FS):
             raise ImportError(
                 f"pyarrow version >= {MIN_PYARROW_VERSION_SUPPORTING_AZURE_FS} required for AzureFileSystem support, "
