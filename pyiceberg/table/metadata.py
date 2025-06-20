@@ -552,6 +552,9 @@ class TableMetadataV3(TableMetadataCommonFields, IcebergBaseModel):
     next_row_id: Optional[int] = Field(alias="next-row-id", default=None)
     """A long higher than all assigned row IDs; the next snapshot's `first-row-id`."""
 
+    row_lineage: Optional[bool] = Field(alias="row-lineage", default=False)
+    """Setting whether or not to track the creation and updates to rows in the table."""
+
     def model_dump_json(
         self, exclude_none: bool = True, exclude: Optional[Any] = None, by_alias: bool = True, **kwargs: Any
     ) -> str:
