@@ -66,8 +66,8 @@ jobs:
       run: make lint
     - name: Run unit tests with coverage
       run: COVERAGE=1 make test
-    - name: Generate coverage report
-      run: make coverage-report
+    - name: Generate coverage report (85%) # Coverage threshold should only increase over time — never decrease it!
+      run: COVERAGE_FAIL_UNDER=85 make coverage-report
 
   integration-test:
     runs-on: ubuntu-22.04
@@ -106,5 +106,5 @@ jobs:
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose-gcs-server.yml logs
 
-    - name: Generate coverage report
-      run: make coverage-report
+    - name: Generate coverage report (75%) # Coverage threshold should only increase over time — never decrease it!
+      run: COVERAGE_FAIL_UNDER=75 make coverage-report

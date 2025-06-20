@@ -20,6 +20,7 @@
 
 PYTEST_ARGS ?= -v  # Override with e.g. PYTEST_ARGS="-vv --tb=short"
 COVERAGE ?= 0      # Set COVERAGE=1 to enable coverage: make test COVERAGE=1
+COVERAGE_FAIL_UNDER ?= 85  # Minimum coverage % to pass: make coverage-report COVERAGE_FAIL_UNDER=70
 
 ifeq ($(COVERAGE),1)
   TEST_RUNNER = poetry run coverage run --parallel-mode --source=pyiceberg -m
@@ -119,7 +120,7 @@ test-coverage: test test-integration test-s3 test-adls test-gcs coverage-report 
 
 coverage-report: ## Combine and report coverage
 	poetry run coverage combine
-	poetry run coverage report -m --fail-under=85
+	poetry run coverage report -m --fail-under=$(COVERAGE_FAIL_UNDER)
 	poetry run coverage html
 	poetry run coverage xml
 
