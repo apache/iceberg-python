@@ -15,6 +15,13 @@
 # specific language governing permissions and limitations
 # under the License.
 
+PYTEST_ARGS ?= -v
+COVERAGE ?= 0
+ifeq ($(COVERAGE),1)
+  TEST_RUNNER = poetry run coverage run --parallel-mode --source=pyiceberg -m
+else
+  TEST_RUNNER = poetry run
+endif
 
 help: # Display this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
@@ -42,11 +49,11 @@ install: | install-poetry install-dependencies # Install poetry and all dependen
 check-license: # Check license headers
 	./dev/check-license
 
-lint: # lint
+lint: # Run linters
 	poetry run pre-commit run --all-files
 
 test: # Run all unit tests, can add arguments with PYTEST_ARGS="-vv"
-	poetry run pytest tests/ -m "(unmarked or parametrize) and not integration" ${PYTEST_ARGS}
+	$(TEST_RUNNER) pytest tests/ -m "(unmarked or parametrize) and not integration" ${PYTEST_ARGS}
 
 test-integration: | test-integration-setup test-integration-exec # Run all integration tests, can add arguments with PYTEST_ARGS="-vv"
 
@@ -59,45 +66,28 @@ test-integration-setup: # Prepare the environment for integration
 	docker compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
 
 test-integration-exec: # Execute integration tests, can add arguments with PYTEST_ARGS="-vv"
-	poetry run pytest tests/ -v -m integration ${PYTEST_ARGS}
+	$(TEST_RUNNER) pytest tests/ -v -m integration ${PYTEST_ARGS}
 
 test-integration-rebuild:
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml build --no-cache
 
-test-object-store-integration: test-s3 test-adls test-gcs # Run object stores integration tests, can add arguments with PYTEST_ARGS="-vv"
-
 test-s3: # Run tests marked with s3, can add arguments with PYTEST_ARGS="-vv"
 	sh ./dev/run-minio.sh
-	poetry run pytest tests/ -m s3 ${PYTEST_ARGS}
+	$(TEST_RUNNER) pytest tests/ -m s3 ${PYTEST_ARGS}
 
 test-adls: # Run tests marked with adls, can add arguments with PYTEST_ARGS="-vv"
 	sh ./dev/run-azurite.sh
-	poetry run pytest tests/ -m adls ${PYTEST_ARGS}
+	$(TEST_RUNNER) pytest tests/ -m adls ${PYTEST_ARGS}
 
 test-gcs: # Run tests marked with gcs, can add arguments with PYTEST_ARGS="-vv"
 	sh ./dev/run-gcs-server.sh
-	poetry run pytest tests/ -m gcs ${PYTEST_ARGS}
+	$(TEST_RUNNER) pytest tests/ -m gcs ${PYTEST_ARGS}
 
-test-coverage-unit: # Run test with coverage for unit tests, can add arguments with PYTEST_ARGS="-vv"
-	poetry run coverage run --source=pyiceberg/ --data-file=.coverage.unit -m pytest tests/ -v -m "(unmarked or parametrize) and not integration" ${PYTEST_ARGS}
-
-test-coverage-integration: test-integration-setup test-object-store-integration # Run test with coverage for integration tests, can add arguments with PYTEST_ARGS="-vv"
-	poetry run coverage run --source=pyiceberg/ --data-file=.coverage.integration -m pytest tests/ -v -m integration ${PYTEST_ARGS}
-
-test-coverage-object-store-integration: # Run test with coverage for object stores integration tests, can add arguments with PYTEST_ARGS="-vv"
-	sh ./dev/run-minio.sh
-	poetry run coverage run --source=pyiceberg/ --data-file=.coverage.integration -m pytest tests/ -m s3 ${PYTEST_ARGS}
-
-	sh ./dev/run-azurite.sh
-	poetry run coverage run --source=pyiceberg/ --data-file=.coverage.integration -m pytest tests/ -m adls ${PYTEST_ARGS}
-
-	sh ./dev/run-gcs-server.sh
-	poetry run coverage run --source=pyiceberg/ --data-file=.coverage.integration -m pytest tests/ -m gcs ${PYTEST_ARGS}
-
-test-coverage: | test-coverage-unit test-coverage-integration test-coverage-object-store-integration # Run all tests with coverage including unit and integration tests
-	poetry run coverage combine .coverage.unit .coverage.integration
+test-coverage: COVERAGE=1
+test-coverage: test test-integration test-s3 test-adls test-gcs ## Run all tests with coverage
+	poetry run coverage combine
 	poetry run coverage report -m --fail-under=90
 	poetry run coverage html
 	poetry run coverage xml
