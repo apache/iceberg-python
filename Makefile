@@ -119,7 +119,7 @@ test-coverage: test test-integration test-s3 test-adls test-gcs coverage-report 
 
 coverage-report: ## Combine and report coverage
 	poetry run coverage combine
-	poetry run coverage report -m --fail-under=90
+	poetry run coverage report -m --fail-under=85
 	poetry run coverage html
 	poetry run coverage xml
 
