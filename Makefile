@@ -15,8 +15,18 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# Optional arguments passed to pytest. Can be overridden at runtime:
+#   make test PYTEST_ARGS="-vv --tb=short"
 PYTEST_ARGS ?= -v
+
+# Toggle coverage collection:
+#   make test COVERAGE=1   -> runs tests with coverage
+#   make test              -> runs tests without coverage
 COVERAGE ?= 0
+
+# Selects the test runner command based on the COVERAGE flag.
+# If COVERAGE=1, uses coverage to track test execution with --parallel-mode.
+# Otherwise, runs tests normally using poetry and pytest.
 ifeq ($(COVERAGE),1)
   TEST_RUNNER = poetry run coverage run --parallel-mode --source=pyiceberg -m
 else
@@ -52,10 +62,11 @@ check-license: # Check license headers
 lint: # Run linters
 	poetry run pre-commit run --all-files
 
-test: # Run all unit tests, can add arguments with PYTEST_ARGS="-vv"
+test: # Run all unit tests
 	$(TEST_RUNNER) pytest tests/ -m "(unmarked or parametrize) and not integration" ${PYTEST_ARGS}
 
-test-integration: | test-integration-setup test-integration-exec # Run all integration tests, can add arguments with PYTEST_ARGS="-vv"
+test-integration: | test-integration-setup test-integration-exec # Run integration tests, excludes s3, adls, and gcs tests
+	$(TEST_RUNNER) pytest tests/ -m integration ${PYTEST_ARGS}
 
 test-integration-setup: # Prepare the environment for integration
 	docker compose -f dev/docker-compose-integration.yml kill
@@ -65,7 +76,7 @@ test-integration-setup: # Prepare the environment for integration
 	docker compose -f dev/docker-compose-integration.yml cp ./dev/provision.py spark-iceberg:/opt/spark/provision.py
 	docker compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
 
-test-integration-exec: # Execute integration tests, can add arguments with PYTEST_ARGS="-vv"
+test-integration-exec: # Execute integration tests
 	$(TEST_RUNNER) pytest tests/ -v -m integration ${PYTEST_ARGS}
 
 test-integration-rebuild:
@@ -73,15 +84,15 @@ test-integration-rebuild:
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml build --no-cache
 
-test-s3: # Run tests marked with s3, can add arguments with PYTEST_ARGS="-vv"
+test-s3: # Run tests marked with s3
 	sh ./dev/run-minio.sh
 	$(TEST_RUNNER) pytest tests/ -m s3 ${PYTEST_ARGS}
 
-test-adls: # Run tests marked with adls, can add arguments with PYTEST_ARGS="-vv"
+test-adls: # Run tests marked with adls
 	sh ./dev/run-azurite.sh
 	$(TEST_RUNNER) pytest tests/ -m adls ${PYTEST_ARGS}
 
-test-gcs: # Run tests marked with gcs, can add arguments with PYTEST_ARGS="-vv"
+test-gcs: # Run tests marked with gcs
 	sh ./dev/run-gcs-server.sh
 	$(TEST_RUNNER) pytest tests/ -m gcs ${PYTEST_ARGS}
 
