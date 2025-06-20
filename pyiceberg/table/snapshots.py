@@ -244,8 +244,12 @@ class Snapshot(IcebergBaseModel):
     manifest_list: str = Field(alias="manifest-list", description="Location of the snapshot's manifest list file")
     summary: Optional[Summary] = Field(default=None)
     schema_id: Optional[int] = Field(alias="schema-id", default=None)
-    first_row_id: Optional[int] = Field(alias="first-row-id", default=None, description="assigned to the first row in the first data file in the first manifest")
-    added_rows: Optional[int] = Field(alias="added-rows", default=None, description="Sum of the `added_rows_count` from all manifests added in this snapshot.")
+    first_row_id: Optional[int] = Field(
+        alias="first-row-id", default=None, description="assigned to the first row in the first data file in the first manifest"
+    )
+    added_rows: Optional[int] = Field(
+        alias="added-rows", default=None, description="Sum of the `added_rows_count` from all manifests added in this snapshot."
+    )
 
     def __str__(self) -> str:
         """Return the string representation of the Snapshot class."""
