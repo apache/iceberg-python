@@ -1574,7 +1574,7 @@ class ArrowScan:
             first_batch = next(batches)
         except StopIteration:
             # Empty
-            return pa.Table.from_batches([], schema=arrow_schema)
+            return arrow_schema.empty_table()
 
         # Note: cannot use pa.Table.from_batches(itertools.chain([first_batch], batches)))
         #       as different batches can use different schema's (due to large_ types)
