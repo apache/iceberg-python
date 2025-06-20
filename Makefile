@@ -85,7 +85,6 @@ test: ## Run all unit tests (excluding integration)
 	$(TEST_RUNNER) pytest tests/ -m "(unmarked or parametrize) and not integration" $(PYTEST_ARGS)
 
 test-integration: test-integration-setup test-integration-exec ## Run integration tests
-	$(TEST_RUNNER) pytest tests/ -m integration $(PYTEST_ARGS)
 
 test-integration-setup: ## Start Docker services for integration tests
 	docker compose -f dev/docker-compose-integration.yml kill
