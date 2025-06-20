@@ -1458,17 +1458,23 @@ def _task_to_record_batches(
         # the table format version.
         file_schema = pyarrow_to_schema(physical_schema, name_mapping, downcast_ns_timestamp_to_us=True)
 
-        pyarrow_filter = None
-        if bound_row_filter is not AlwaysTrue():
-            translated_row_filter = translate_column_names(bound_row_filter, file_schema, case_sensitive=case_sensitive)
-            bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
-            pyarrow_filter = expression_to_pyarrow(bound_file_filter)
-
         # Apply column projection rules
         # https://iceberg.apache.org/spec/#column-projection
         should_project_columns, projected_missing_fields = _get_column_projection_values(
             task.file, projected_schema, partition_spec, file_schema.field_ids
         )
+
+        pyarrow_filter = None
+        if bound_row_filter is not AlwaysTrue():
+            translated_row_filter = translate_column_names(
+                bound_row_filter,
+                file_schema,
+                projected_schema,
+                case_sensitive=case_sensitive,
+                projected_missing_fields=projected_missing_fields,
+            )
+            bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
+            pyarrow_filter = expression_to_pyarrow(bound_file_filter)
 
         file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
 
