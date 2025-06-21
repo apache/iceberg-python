@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 from functools import reduce
-from typing import TYPE_CHECKING, Set
+from typing import TYPE_CHECKING, Optional, Set
 
 from pyiceberg.utils.concurrent import ExecutorFactory
 
@@ -41,7 +41,7 @@ class MaintenanceTable:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For metadata operations PyArrow needs to be installed") from e
 
-    def _orphaned_files(self, location: str, older_than: timedelta = timedelta(days=3)) -> Set[str]:
+    def _orphaned_files(self, location: str, older_than: Optional[timedelta] = None) -> Set[str]:
         """Get all files which are not referenced in any metadata files of an Iceberg table and can thus be considered "orphaned".
 
         Args:
@@ -69,7 +69,10 @@ class MaintenanceTable:
 
         _, _, path = pyarrow_io.parse_location(location)
         selector = FileSelector(path, recursive=True)
+
         # filter to just files as it may return directories, and filter on time
+        if older_than is None:
+            older_than = timedelta(0)
         as_of = datetime.now(timezone.utc) - older_than
         all_files = [f.path for f in fs.get_file_info(selector) if f.type == FileType.File and f.mtime < as_of]
 
@@ -77,7 +80,7 @@ class MaintenanceTable:
 
         return orphaned_files
 
-    def remove_orphaned_files(self, older_than: timedelta = timedelta(days=3), dry_run: bool = False) -> None:
+    def remove_orphaned_files(self, older_than: Optional[timedelta] = None, dry_run: bool = False) -> None:
         """Remove files which are not referenced in any metadata files of an Iceberg table and can thus be considered "orphaned".
 
         Args:

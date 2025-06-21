@@ -72,10 +72,6 @@ def test_remove_orphaned_files(catalog: Catalog) -> None:
     tbl.maintenance.remove_orphaned_files(dry_run=True)
     assert orphaned_file.exists()
 
-    # should not delete because it was just created...
-    tbl.maintenance.remove_orphaned_files()
-    assert orphaned_file.exists()
-
     # modify creation date to be older than 3 days
     five_days_ago = (datetime.now() - timedelta(days=5)).timestamp()
     os.utime(orphaned_file, (five_days_ago, five_days_ago))
