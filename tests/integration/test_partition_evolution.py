@@ -89,7 +89,7 @@ def test_add_identity_partition(catalog: Catalog, table_schema_simple: Schema) -
 def test_add_year(catalog: Catalog) -> None:
     table = _table(catalog)
     table.update_spec().add_field("event_ts", YearTransform(), "year_transform").commit()
-    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 1000, YearTransform(), "year_transform"))
+    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 2, 1000, YearTransform(), "year_transform"))
 
 
 @pytest.mark.integration
@@ -97,7 +97,7 @@ def test_add_year(catalog: Catalog) -> None:
 def test_add_year_generates_default_name(catalog: Catalog) -> None:
     table = _table(catalog)
     table.update_spec().add_field("event_ts", YearTransform()).commit()
-    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 1000, YearTransform(), "event_ts_year"))
+    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 2, 1000, YearTransform(), "event_ts_year"))
 
 
 @pytest.mark.integration
@@ -105,7 +105,7 @@ def test_add_year_generates_default_name(catalog: Catalog) -> None:
 def test_add_month(catalog: Catalog) -> None:
     table = _table(catalog)
     table.update_spec().add_field("event_ts", MonthTransform(), "month_transform").commit()
-    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 1000, MonthTransform(), "month_transform"))
+    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 2, 1000, MonthTransform(), "month_transform"))
 
 
 @pytest.mark.integration
@@ -113,7 +113,7 @@ def test_add_month(catalog: Catalog) -> None:
 def test_add_month_generates_default_name(catalog: Catalog) -> None:
     table = _table(catalog)
     table.update_spec().add_field("event_ts", MonthTransform()).commit()
-    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 1000, MonthTransform(), "event_ts_month"))
+    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 2, 1000, MonthTransform(), "event_ts_month"))
 
 
 @pytest.mark.integration
@@ -121,7 +121,7 @@ def test_add_month_generates_default_name(catalog: Catalog) -> None:
 def test_add_day(catalog: Catalog) -> None:
     table = _table(catalog)
     table.update_spec().add_field("event_ts", DayTransform(), "day_transform").commit()
-    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 1000, DayTransform(), "day_transform"))
+    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 2, 1000, DayTransform(), "day_transform"))
 
 
 @pytest.mark.integration
@@ -129,7 +129,7 @@ def test_add_day(catalog: Catalog) -> None:
 def test_add_day_generates_default_name(catalog: Catalog) -> None:
     table = _table(catalog)
     table.update_spec().add_field("event_ts", DayTransform()).commit()
-    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 1000, DayTransform(), "event_ts_day"))
+    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 2, 1000, DayTransform(), "event_ts_day"))
 
 
 @pytest.mark.integration
@@ -137,7 +137,7 @@ def test_add_day_generates_default_name(catalog: Catalog) -> None:
 def test_add_hour(catalog: Catalog) -> None:
     table = _table(catalog)
     table.update_spec().add_field("event_ts", HourTransform(), "hour_transform").commit()
-    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 1000, HourTransform(), "hour_transform"))
+    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 2, 1000, HourTransform(), "hour_transform"))
 
 
 @pytest.mark.integration
@@ -145,7 +145,7 @@ def test_add_hour(catalog: Catalog) -> None:
 def test_add_hour_string_transform(catalog: Catalog) -> None:
     table = _table(catalog)
     table.update_spec().add_field("event_ts", "hour", "str_hour_transform").commit()
-    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 1000, HourTransform(), "str_hour_transform"))
+    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 2, 1000, HourTransform(), "str_hour_transform"))
 
 
 @pytest.mark.integration
@@ -153,7 +153,7 @@ def test_add_hour_string_transform(catalog: Catalog) -> None:
 def test_add_hour_generates_default_name(catalog: Catalog) -> None:
     table = _table(catalog)
     table.update_spec().add_field("event_ts", HourTransform()).commit()
-    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 1000, HourTransform(), "event_ts_hour"))
+    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 2, 1000, HourTransform(), "event_ts_hour"))
 
 
 @pytest.mark.integration
@@ -161,7 +161,9 @@ def test_add_hour_generates_default_name(catalog: Catalog) -> None:
 def test_add_bucket(catalog: Catalog, table_schema_simple: Schema) -> None:
     simple_table = _create_table_with_schema(catalog, table_schema_simple, "1")
     simple_table.update_spec().add_field("foo", BucketTransform(12), "bucket_transform").commit()
-    _validate_new_partition_fields(simple_table, 1000, 1, 1000, PartitionField(1, 1000, BucketTransform(12), "bucket_transform"))
+    _validate_new_partition_fields(
+        simple_table, 1000, 1, 1000, PartitionField(2, 1, 1000, BucketTransform(12), "bucket_transform")
+    )
 
 
 @pytest.mark.integration
@@ -169,7 +171,7 @@ def test_add_bucket(catalog: Catalog, table_schema_simple: Schema) -> None:
 def test_add_bucket_generates_default_name(catalog: Catalog, table_schema_simple: Schema) -> None:
     simple_table = _create_table_with_schema(catalog, table_schema_simple, "1")
     simple_table.update_spec().add_field("foo", BucketTransform(12)).commit()
-    _validate_new_partition_fields(simple_table, 1000, 1, 1000, PartitionField(1, 1000, BucketTransform(12), "foo_bucket_12"))
+    _validate_new_partition_fields(simple_table, 1000, 1, 1000, PartitionField(2, 1, 1000, BucketTransform(12), "foo_bucket_12"))
 
 
 @pytest.mark.integration
@@ -178,7 +180,7 @@ def test_add_truncate(catalog: Catalog, table_schema_simple: Schema) -> None:
     simple_table = _create_table_with_schema(catalog, table_schema_simple, "1")
     simple_table.update_spec().add_field("foo", TruncateTransform(1), "truncate_transform").commit()
     _validate_new_partition_fields(
-        simple_table, 1000, 1, 1000, PartitionField(1, 1000, TruncateTransform(1), "truncate_transform")
+        simple_table, 1000, 1, 1000, PartitionField(2, 1, 1000, TruncateTransform(1), "truncate_transform")
     )
 
 
@@ -187,7 +189,7 @@ def test_add_truncate(catalog: Catalog, table_schema_simple: Schema) -> None:
 def test_add_truncate_generates_default_name(catalog: Catalog, table_schema_simple: Schema) -> None:
     simple_table = _create_table_with_schema(catalog, table_schema_simple, "1")
     simple_table.update_spec().add_field("foo", TruncateTransform(1)).commit()
-    _validate_new_partition_fields(simple_table, 1000, 1, 1000, PartitionField(1, 1000, TruncateTransform(1), "foo_trunc_1"))
+    _validate_new_partition_fields(simple_table, 1000, 1, 1000, PartitionField(2, 1, 1000, TruncateTransform(1), "foo_trunc_1"))
 
 
 @pytest.mark.integration
@@ -202,9 +204,9 @@ def test_multiple_adds(catalog: Catalog) -> None:
         1002,
         1,
         1002,
-        PartitionField(1, 1000, IdentityTransform(), "id"),
-        PartitionField(2, 1001, HourTransform(), "hourly_partitioned"),
-        PartitionField(3, 1002, TruncateTransform(2), "truncate_str"),
+        PartitionField(2, 1, 1000, IdentityTransform(), "id"),
+        PartitionField(2, 2, 1001, HourTransform(), "hourly_partitioned"),
+        PartitionField(2, 3, 1002, TruncateTransform(2), "truncate_str"),
     )
 
 
@@ -213,7 +215,7 @@ def test_multiple_adds(catalog: Catalog) -> None:
 def test_add_void(catalog: Catalog, table_schema_simple: Schema) -> None:
     simple_table = _create_table_with_schema(catalog, table_schema_simple, "1")
     simple_table.update_spec().add_field("foo", VoidTransform(), "void_transform").commit()
-    _validate_new_partition_fields(simple_table, 1000, 1, 1000, PartitionField(1, 1000, VoidTransform(), "void_transform"))
+    _validate_new_partition_fields(simple_table, 1000, 1, 1000, PartitionField(2, 1, 1000, VoidTransform(), "void_transform"))
 
 
 @pytest.mark.integration
@@ -221,7 +223,7 @@ def test_add_void(catalog: Catalog, table_schema_simple: Schema) -> None:
 def test_add_void_generates_default_name(catalog: Catalog, table_schema_simple: Schema) -> None:
     simple_table = _create_table_with_schema(catalog, table_schema_simple, "1")
     simple_table.update_spec().add_field("foo", VoidTransform()).commit()
-    _validate_new_partition_fields(simple_table, 1000, 1, 1000, PartitionField(1, 1000, VoidTransform(), "foo_null"))
+    _validate_new_partition_fields(simple_table, 1000, 1, 1000, PartitionField(2, 1, 1000, VoidTransform(), "foo_null"))
 
 
 @pytest.mark.integration
@@ -235,8 +237,8 @@ def test_add_hour_to_day(catalog: Catalog) -> None:
         1001,
         2,
         1001,
-        PartitionField(2, 1000, DayTransform(), "daily_partitioned"),
-        PartitionField(2, 1001, HourTransform(), "hourly_partitioned"),
+        PartitionField(2, 2, 1000, DayTransform(), "daily_partitioned"),
+        PartitionField(2, 2, 1001, HourTransform(), "hourly_partitioned"),
     )
 
 
@@ -250,8 +252,8 @@ def test_add_multiple_buckets(catalog: Catalog) -> None:
         1001,
         1,
         1001,
-        PartitionField(1, 1000, BucketTransform(16), "id_bucket_16"),
-        PartitionField(1, 1001, BucketTransform(4), "id_bucket_4"),
+        PartitionField(2, 1, 1000, BucketTransform(16), "id_bucket_16"),
+        PartitionField(2, 1, 1001, BucketTransform(4), "id_bucket_4"),
     )
 
 
@@ -264,7 +266,7 @@ def test_remove_identity(catalog: Catalog) -> None:
     assert len(table.specs()) == 3
     assert table.spec().spec_id == 2
     assert table.spec() == PartitionSpec(
-        PartitionField(source_id=1, field_id=1000, transform=VoidTransform(), name="id"), spec_id=2
+        PartitionField(format_version=2, source_id=1, field_id=1000, transform=VoidTransform(), name="id"), spec_id=2
     )
 
 
@@ -290,8 +292,8 @@ def test_remove_and_add_identity(catalog: Catalog) -> None:
     assert len(table.specs()) == 4
     assert table.spec().spec_id == 3
     assert table.spec() == PartitionSpec(
-        PartitionField(source_id=1, field_id=1000, transform=VoidTransform(), name="id_1000"),
-        PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="id"),
+        PartitionField(format_version=2, source_id=1, field_id=1000, transform=VoidTransform(), name="id_1000"),
+        PartitionField(format_version=2, source_id=1, field_id=1001, transform=IdentityTransform(), name="id"),
         spec_id=3,
     )
 
@@ -307,7 +309,7 @@ def test_remove_and_add_identity_v2(catalog: Catalog) -> None:
     assert len(table_v2.specs()) == 2
     assert table_v2.spec().spec_id == 1
     assert table_v2.spec() == PartitionSpec(
-        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="id"), spec_id=1
+        PartitionField(format_version=2, source_id=1, field_id=1000, transform=IdentityTransform(), name="id"), spec_id=1
     )
 
 
@@ -327,8 +329,8 @@ def test_remove_bucket(catalog: Catalog) -> None:
         1001,
         2,
         1001,
-        PartitionField(source_id=1, field_id=1000, transform=VoidTransform(), name="bucketed_id"),
-        PartitionField(source_id=2, field_id=1001, transform=DayTransform(), name="day_ts"),
+        PartitionField(format_version=2, source_id=1, field_id=1000, transform=VoidTransform(), name="bucketed_id"),
+        PartitionField(format_version=2, source_id=2, field_id=1001, transform=DayTransform(), name="day_ts"),
     )
 
 
@@ -343,7 +345,11 @@ def test_remove_bucket_v2(catalog: Catalog) -> None:
         remove.remove_field("bucketed_id")
     assert len(table_v2.specs()) == 3
     _validate_new_partition_fields(
-        table_v2, 1001, 2, 1001, PartitionField(source_id=2, field_id=1001, transform=DayTransform(), name="day_ts")
+        table_v2,
+        1001,
+        2,
+        1001,
+        PartitionField(format_version=2, source_id=2, field_id=1001, transform=DayTransform(), name="day_ts"),
     )
 
 
@@ -363,8 +369,8 @@ def test_remove_day(catalog: Catalog) -> None:
         1001,
         2,
         1001,
-        PartitionField(source_id=1, field_id=1000, transform=BucketTransform(16), name="bucketed_id"),
-        PartitionField(source_id=2, field_id=1001, transform=VoidTransform(), name="day_ts"),
+        PartitionField(format_version=2, source_id=1, field_id=1000, transform=BucketTransform(16), name="bucketed_id"),
+        PartitionField(format_version=2, source_id=2, field_id=1001, transform=VoidTransform(), name="day_ts"),
     )
 
 
@@ -379,7 +385,11 @@ def test_remove_day_v2(catalog: Catalog) -> None:
         remove.remove_field("day_ts")
     assert len(table_v2.specs()) == 3
     _validate_new_partition_fields(
-        table_v2, 1000, 2, 1001, PartitionField(source_id=1, field_id=1000, transform=BucketTransform(16), name="bucketed_id")
+        table_v2,
+        1000,
+        2,
+        1001,
+        PartitionField(format_version=2, source_id=1, field_id=1000, transform=BucketTransform(16), name="bucketed_id"),
     )
 
 
@@ -391,7 +401,7 @@ def test_rename(catalog: Catalog) -> None:
     table.update_spec().rename_field("id", "sharded_id").commit()
     assert len(table.specs()) == 3
     assert table.spec().spec_id == 2
-    _validate_new_partition_fields(table, 1000, 2, 1000, PartitionField(1, 1000, IdentityTransform(), "sharded_id"))
+    _validate_new_partition_fields(table, 1000, 2, 1000, PartitionField(2, 1, 1000, IdentityTransform(), "sharded_id"))
 
 
 @pytest.mark.integration
@@ -485,9 +495,9 @@ def test_change_specs_and_schema_transaction(catalog: Catalog) -> None:
         1002,
         1,
         1002,
-        PartitionField(1, 1000, IdentityTransform(), "id"),
-        PartitionField(2, 1001, HourTransform(), "hourly_partitioned"),
-        PartitionField(3, 1002, TruncateTransform(2), "truncate_str"),
+        PartitionField(2, 1, 1000, IdentityTransform(), "id"),
+        PartitionField(2, 2, 1001, HourTransform(), "hourly_partitioned"),
+        PartitionField(2, 3, 1002, TruncateTransform(2), "truncate_str"),
     )
 
     assert table.schema() == Schema(
@@ -516,9 +526,9 @@ def test_multiple_adds_and_remove_v1(catalog: Catalog) -> None:
         1002,
         3,
         1002,
-        PartitionField(1, 1000, VoidTransform(), "bucketed_id"),
-        PartitionField(2, 1001, VoidTransform(), "day_ts"),
-        PartitionField(3, 1002, TruncateTransform(2), "truncated_str"),
+        PartitionField(2, 1, 1000, VoidTransform(), "bucketed_id"),
+        PartitionField(2, 2, 1001, VoidTransform(), "day_ts"),
+        PartitionField(2, 3, 1002, TruncateTransform(2), "truncated_str"),
     )
 
 
@@ -533,7 +543,7 @@ def test_multiple_adds_and_remove_v2(catalog: Catalog) -> None:
         update.remove_field("day_ts").remove_field("bucketed_id")
     with table_v2.update_spec() as update:
         update.add_field("str", TruncateTransform(2), "truncated_str")
-    _validate_new_partition_fields(table_v2, 1002, 2, 1002, PartitionField(3, 1002, TruncateTransform(2), "truncated_str"))
+    _validate_new_partition_fields(table_v2, 1002, 2, 1002, PartitionField(2, 3, 1002, TruncateTransform(2), "truncated_str"))
 
 
 @pytest.mark.integration
@@ -547,7 +557,7 @@ def test_multiple_remove_and_add_reuses_v2(catalog: Catalog) -> None:
         update.remove_field("day_ts").remove_field("bucketed_id")
     with table_v2.update_spec() as update:
         update.add_field("id", BucketTransform(16), "bucketed_id")
-    _validate_new_partition_fields(table_v2, 1000, 2, 1001, PartitionField(1, 1000, BucketTransform(16), "bucketed_id"))
+    _validate_new_partition_fields(table_v2, 1000, 2, 1001, PartitionField(2, 1, 1000, BucketTransform(16), "bucketed_id"))
 
 
 def _validate_new_partition_fields(
