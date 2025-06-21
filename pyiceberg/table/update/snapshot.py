@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Callable, Dict, Generic, List, Optional, Set, 
 
 from sortedcontainers import SortedList
 
+from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.expressions import (
     AlwaysFalse,
     BooleanExpression,
@@ -55,6 +56,7 @@ from pyiceberg.manifest import (
 from pyiceberg.partitioning import (
     PartitionSpec,
 )
+from pyiceberg.table.refs import SnapshotRefType
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
@@ -66,6 +68,7 @@ from pyiceberg.table.update import (
     AddSnapshotUpdate,
     AssertRefSnapshotId,
     RemoveSnapshotRefUpdate,
+    RemoveSnapshotsUpdate,
     SetSnapshotRefUpdate,
     TableRequirement,
     TableUpdate,
@@ -104,6 +107,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     _added_data_files: List[DataFile]
     _manifest_num_counter: itertools.count[int]
     _deleted_data_files: Set[DataFile]
+    _compression: AvroCompressionCodec
 
     def __init__(
         self,
@@ -126,6 +130,11 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._deleted_data_files = set()
         self.snapshot_properties = snapshot_properties
         self._manifest_num_counter = itertools.count(0)
+        from pyiceberg.table import TableProperties
+
+        self._compression = self._transaction.table_metadata.properties.get(  # type: ignore
+            TableProperties.WRITE_AVRO_COMPRESSION, TableProperties.WRITE_AVRO_COMPRESSION_DEFAULT
+        )
 
     def append_data_file(self, data_file: DataFile) -> _SnapshotProducer[U]:
         self._added_data_files.append(data_file)
@@ -154,6 +163,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                     schema=self._transaction.table_metadata.schema(),
                     output_file=self.new_manifest_output(),
                     snapshot_id=self._snapshot_id,
+                    avro_compression=self._compression,
                 ) as writer:
                     for data_file in self._added_data_files:
                         writer.add(
@@ -184,6 +194,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                         schema=self._transaction.table_metadata.schema(),
                         output_file=self.new_manifest_output(),
                         snapshot_id=self._snapshot_id,
+                        avro_compression=self._compression,
                     ) as writer:
                         for entry in entries:
                             writer.add_entry(entry)
@@ -249,12 +260,14 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         )
         location_provider = self._transaction._table.location_provider()
         manifest_list_file_path = location_provider.new_metadata_location(file_name)
+
         with write_manifest_list(
             format_version=self._transaction.table_metadata.format_version,
             output_file=self._io.new_output(manifest_list_file_path),
             snapshot_id=self._snapshot_id,
             parent_snapshot_id=self._parent_snapshot_id,
             sequence_number=next_sequence_number,
+            avro_compression=self._compression,
         ) as writer:
             writer.add_manifests(new_manifests)
 
@@ -291,6 +304,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             schema=self._transaction.table_metadata.schema(),
             output_file=self.new_manifest_output(),
             snapshot_id=self._snapshot_id,
+            avro_compression=self._compression,
         )
 
     def new_manifest_output(self) -> OutputFile:
@@ -416,6 +430,7 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
                                     schema=self._transaction.table_metadata.schema(),
                                     output_file=self.new_manifest_output(),
                                     snapshot_id=self._snapshot_id,
+                                    avro_compression=self._compression,
                                 ) as writer:
                                     for existing_entry in existing_entries:
                                         writer.add_entry(existing_entry)
@@ -550,6 +565,7 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
                             schema=self._transaction.table_metadata.schema(),
                             output_file=self.new_manifest_output(),
                             snapshot_id=self._snapshot_id,
+                            avro_compression=self._compression,
                         ) as writer:
                             [
                                 writer.add_entry(
@@ -842,3 +858,103 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             This for method chaining
         """
         return self._remove_ref_snapshot(ref_name=branch_name)
+
+
+class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
+    """
+    Expire snapshots by ID.
+
+    Use table.expire_snapshots().<operation>().commit() to run a specific operation.
+    Use table.expire_snapshots().<operation-one>().<operation-two>().commit() to run multiple operations.
+    Pending changes are applied on commit.
+    """
+
+    _snapshot_ids_to_expire: Set[int] = set()
+    _updates: Tuple[TableUpdate, ...] = ()
+    _requirements: Tuple[TableRequirement, ...] = ()
+
+    def _commit(self) -> UpdatesAndRequirements:
+        """
+        Commit the staged updates and requirements.
+
+        This will remove the snapshots with the given IDs, but will always skip protected snapshots (branch/tag heads).
+
+        Returns:
+            Tuple of updates and requirements to be committed,
+            as required by the calling parent apply functions.
+        """
+        # Remove any protected snapshot IDs from the set to expire, just in case
+        protected_ids = self._get_protected_snapshot_ids()
+        self._snapshot_ids_to_expire -= protected_ids
+        update = RemoveSnapshotsUpdate(snapshot_ids=self._snapshot_ids_to_expire)
+        self._updates += (update,)
+        return self._updates, self._requirements
+
+    def _get_protected_snapshot_ids(self) -> Set[int]:
+        """
+        Get the IDs of protected snapshots.
+
+        These are the HEAD snapshots of all branches and all tagged snapshots.  These ids are to be excluded from expiration.
+
+        Returns:
+            Set of protected snapshot IDs to exclude from expiration.
+        """
+        protected_ids: Set[int] = set()
+
+        for ref in self._transaction.table_metadata.refs.values():
+            if ref.snapshot_ref_type in [SnapshotRefType.TAG, SnapshotRefType.BRANCH]:
+                protected_ids.add(ref.snapshot_id)
+
+        return protected_ids
+
+    def expire_snapshot_by_id(self, snapshot_id: int) -> ExpireSnapshots:
+        """
+        Expire a snapshot by its ID.
+
+        This will mark the snapshot for expiration.
+
+        Args:
+            snapshot_id (int): The ID of the snapshot to expire.
+        Returns:
+            This for method chaining.
+        """
+        if self._transaction.table_metadata.snapshot_by_id(snapshot_id) is None:
+            raise ValueError(f"Snapshot with ID {snapshot_id} does not exist.")
+
+        if snapshot_id in self._get_protected_snapshot_ids():
+            raise ValueError(f"Snapshot with ID {snapshot_id} is protected and cannot be expired.")
+
+        self._snapshot_ids_to_expire.add(snapshot_id)
+
+        return self
+
+    def expire_snapshots_by_ids(self, snapshot_ids: List[int]) -> "ExpireSnapshots":
+        """
+        Expire multiple snapshots by their IDs.
+
+        This will mark the snapshots for expiration.
+
+        Args:
+            snapshot_ids (List[int]): List of snapshot IDs to expire.
+        Returns:
+            This for method chaining.
+        """
+        for snapshot_id in snapshot_ids:
+            self.expire_snapshot_by_id(snapshot_id)
+        return self
+
+    def expire_snapshots_older_than(self, timestamp_ms: int) -> "ExpireSnapshots":
+        """
+        Expire all unprotected snapshots with a timestamp older than a given value.
+
+        Args:
+            timestamp_ms (int): Only snapshots with timestamp_ms < this value will be expired.
+
+        Returns:
+            This for method chaining.
+        """
+        protected_ids = self._get_protected_snapshot_ids()
+        for snapshot in self._transaction.table_metadata.snapshots:
+            if snapshot.timestamp_ms < timestamp_ms and snapshot.snapshot_id not in protected_ids:
+                self._snapshot_ids_to_expire.add(snapshot.snapshot_id)
+        return self

@@ -21,7 +21,6 @@ from datetime import datetime, timedelta, timezone
 from functools import reduce
 from typing import TYPE_CHECKING, Set
 
-from pyiceberg.io import _parse_location
 from pyiceberg.utils.concurrent import ExecutorFactory
 
 logger = logging.getLogger(__name__)
@@ -59,20 +58,20 @@ class MaintenanceTable:
 
         from pyarrow.fs import FileSelector, FileType
 
-        from pyiceberg.io.pyarrow import _fs_from_file_path
+        from pyiceberg.io.pyarrow import PyArrowFileIO
 
         all_known_files = self.tbl.inspect._all_known_files()
         flat_known_files: set[str] = reduce(set.union, all_known_files.values(), set())
 
-        fs = _fs_from_file_path(self.tbl.io, location)
+        scheme, _, _ = PyArrowFileIO.parse_location(location)
+        pyarrow_io = PyArrowFileIO()
+        fs = pyarrow_io.fs_by_scheme(scheme, None)
 
-        _, _, path = _parse_location(location)
+        _, _, path = pyarrow_io.parse_location(location)
         selector = FileSelector(path, recursive=True)
         # filter to just files as it may return directories, and filter on time
         as_of = datetime.now(timezone.utc) - older_than
-        all_files = [
-            f.path for f in fs.get_file_info(selector) if f.type == FileType.File and (as_of is None or (f.mtime < as_of))
-        ]
+        all_files = [f.path for f in fs.get_file_info(selector) if f.type == FileType.File and f.mtime < as_of]
 
         orphaned_files = set(all_files).difference(flat_known_files)
 

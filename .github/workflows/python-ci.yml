@@ -62,10 +62,12 @@ jobs:
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
     - name: Install
       run: make install-dependencies
-    - name: Linters
+    - name: Run linters
       run: make lint
-    - name: Tests
-      run: make test-coverage-unit
+    - name: Run unit tests with coverage
+      run: COVERAGE=1 make test
+    - name: Generate coverage report (85%) # Coverage threshold should only increase over time — never decrease it!
+      run: COVERAGE_FAIL_UNDER=85 make coverage-report
 
   integration-test:
     runs-on: ubuntu-22.04
@@ -79,8 +81,30 @@ jobs:
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
     - name: Install
       run: make install
-    - name: Run integration tests
-      run: make test-coverage-integration
+
+    - name: Run integration tests with coverage
+      run: COVERAGE=1 make test-integration
     - name: Show debug logs
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose.yml logs
+
+    - name: Run s3 integration tests with coverage
+      run: COVERAGE=1 make test-s3
+    - name: Show debug logs
+      if: ${{ failure() }}
+      run: docker compose -f dev/docker-compose.yml logs
+
+    - name: Run adls integration tests with coverage
+      run: COVERAGE=1 make test-adls
+    - name: Show debug logs
+      if: ${{ failure() }}
+      run: docker compose -f dev/docker-compose-azurite.yml logs
+
+    - name: Run gcs integration tests with coverage
+      run: COVERAGE=1 make test-gcs
+    - name: Show debug logs
+      if: ${{ failure() }}
+      run: docker compose -f dev/docker-compose-gcs-server.yml logs
+
+    - name: Generate coverage report (75%) # Coverage threshold should only increase over time — never decrease it!
+      run: COVERAGE_FAIL_UNDER=75 make coverage-report

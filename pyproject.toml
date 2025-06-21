@@ -67,11 +67,10 @@ pandas = { version = ">=1.0.0,<3.0.0", optional = true }
 duckdb = { version = ">=0.5.0,<2.0.0", optional = true }
 ray = [
   { version = "==2.10.0", python = "<3.9", optional = true },
-  { version = ">=2.10.0,<3.0.0", python = ">=3.9", optional = true },
+  { version = ">=2.10.0,<=2.44.0", python = ">=3.9", optional = true },
 ]
 python-snappy = { version = ">=0.6.0,<1.0.0", optional = true }
 thrift = { version = ">=0.13.0,<1.0.0", optional = true }
-mypy-boto3-glue = { version = ">=1.28.18", optional = true }
 boto3 = { version = ">=1.24.59", optional = true }
 s3fs = { version = ">=2023.1.0", optional = true }
 adlfs = { version = ">=2023.1.0", optional = true }
@@ -95,13 +94,15 @@ fastavro = "1.11.1"
 coverage = { version = "^7.4.2", extras = ["toml"] }
 requests-mock = "1.12.1"
 moto = { version = "^5.0.2", extras = ["server"] }
-typing-extensions = "4.13.2"
+typing-extensions = "4.14.0"
 pytest-mock = "3.14.1"
 pyspark = "3.5.6"
 cython = "3.1.2"
 deptry = ">=0.14,<0.24"
 datafusion = ">=44,<48"
 docutils = "!=0.21.post1"   # https://github.com/python-poetry/poetry/issues/9248#issuecomment-2026240520
+mypy-boto3-glue = ">=1.28.18"
+mypy-boto3-dynamodb = ">=1.28.18"
 
 [tool.poetry.group.docs.dependencies]
 # for mkdocs
@@ -218,6 +219,10 @@ module = "mypy_boto3_glue.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = "mypy_boto3_dynamodb.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = "moto"
 ignore_missing_imports = true
 
@@ -299,7 +304,7 @@ snappy = ["python-snappy"]
 hive = ["thrift"]
 hive-kerberos = ["thrift", "thrift_sasl", "kerberos"]
 s3fs = ["s3fs"]
-glue = ["boto3", "mypy-boto3-glue"]
+glue = ["boto3"]
 adlfs = ["adlfs"]
 dynamodb = ["boto3"]
 zstandard = ["zstandard"]
