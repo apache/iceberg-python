@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import importlib
 import logging
-import os
 import warnings
 from abc import ABC, abstractmethod
 from io import SEEK_SET
@@ -37,7 +36,6 @@ from typing import (
     List,
     Optional,
     Protocol,
-    Tuple,
     Type,
     Union,
     runtime_checkable,
@@ -70,6 +68,7 @@ S3_SIGNER_ENDPOINT_DEFAULT = "v1/aws/s3/sign"
 S3_ROLE_ARN = "s3.role-arn"
 S3_ROLE_SESSION_NAME = "s3.role-session-name"
 S3_FORCE_VIRTUAL_ADDRESSING = "s3.force-virtual-addressing"
+S3_RETRY_STRATEGY_IMPL = "s3.retry-strategy-impl"
 HDFS_HOST = "hdfs.host"
 HDFS_PORT = "hdfs.port"
 HDFS_USER = "hdfs.user"
@@ -82,6 +81,10 @@ ADLS_TENANT_ID = "adls.tenant-id"
 ADLS_CLIENT_ID = "adls.client-id"
 ADLS_CLIENT_SECRET = "adls.client-secret"
 ADLS_ACCOUNT_HOST = "adls.account-host"
+ADLS_BLOB_STORAGE_AUTHORITY = "adls.blob-storage-authority"
+ADLS_DFS_STORAGE_AUTHORITY = "adls.dfs-storage-authority"
+ADLS_BLOB_STORAGE_SCHEME = "adls.blob-storage-scheme"
+ADLS_DFS_STORAGE_SCHEME = "adls.dfs-storage-scheme"
 GCS_TOKEN = "gcs.oauth2.token"
 GCS_TOKEN_EXPIRES_AT_MS = "gcs.oauth2.token-expires-at"
 GCS_PROJECT_ID = "gcs.project-id"
@@ -371,14 +374,3 @@ def load_file_io(properties: Properties = EMPTY_DICT, location: Optional[str] = 
         raise ModuleNotFoundError(
             'Could not load a FileIO, please consider installing one: pip3 install "pyiceberg[pyarrow]", for more options refer to the docs.'
         ) from e
-
-
-def _parse_location(location: str) -> Tuple[str, str, str]:
-    """Return the path without the scheme."""
-    uri = urlparse(location)
-    if not uri.scheme:
-        return "file", uri.netloc, os.path.abspath(location)
-    elif uri.scheme in ("hdfs", "viewfs"):
-        return uri.scheme, uri.netloc, uri.path
-    else:
-        return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
