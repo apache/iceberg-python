@@ -118,7 +118,7 @@ def test_remove_orphaned_files_with_invalid_file_doesnt_error(catalog: Catalog) 
     tbl.append(df)
 
     file_that_does_not_exist = "foo/bar.baz"
-    with patch.object(type(tbl.maintenance), "orphaned_files", return_value={file_that_does_not_exist}):
+    with patch.object(type(tbl.maintenance), "_orphaned_files", return_value={file_that_does_not_exist}):
         with patch.object(tbl.io, "delete", wraps=tbl.io.delete) as mock_delete:
             tbl.maintenance.remove_orphaned_files(timedelta(days=3))
             mock_delete.assert_called_with(file_that_does_not_exist)
