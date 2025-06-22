@@ -653,7 +653,7 @@ class InspectTable:
 
         executor = ExecutorFactory.get_or_create()
         results = list(
-            executor.map(lambda manifest: self._get_files_from_manifest(manifest, data_file_filter), snapshot.manifests(io))
+            executor.map(lambda manifest_list: self._get_files_from_manifest(manifest_list, data_file_filter), snapshot.manifests(io))
         )
         return pa.concat_tables(results)
 
