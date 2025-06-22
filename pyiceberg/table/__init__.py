@@ -855,7 +855,7 @@ class Transaction:
             import pyarrow.compute as pc
 
             expr = pc.field("file_path").isin(file_paths)
-            referenced_files = [file["file_path"] for file in self._table.inspect.files().filter(expr).to_pylist()]
+            referenced_files = [file["file_path"] for file in self._table.inspect.data_files().filter(expr).to_pylist()]
 
             if referenced_files:
                 raise ValueError(f"Cannot add files that are already referenced by table, files: {', '.join(referenced_files)}")

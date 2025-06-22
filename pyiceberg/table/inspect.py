@@ -650,11 +650,14 @@ class InspectTable:
 
         snapshot = self._get_snapshot(snapshot_id)
         io = self.tbl.io
-        files_table: list[pa.Table] = []
-        for manifest_list in snapshot.manifests(io):
-            files_table.append(self._get_files_from_manifest(manifest_list, data_file_filter))
 
-        return pa.concat_tables(files_table)
+        executor = ExecutorFactory.get_or_create()
+        results = list(
+            executor.map(
+                lambda manifest_list: self._get_files_from_manifest(manifest_list, data_file_filter), snapshot.manifests(io)
+            )
+        )
+        return pa.concat_tables(results)
 
     def files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
         return self._files(snapshot_id)
