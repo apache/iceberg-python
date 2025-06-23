@@ -130,6 +130,10 @@ class Schema(IcebergBaseModel):
 
     @model_validator(mode="after")
     def check_schema(self) -> Schema:
+        for field in self.fields:
+            if not _valid_avro_name(field.name):
+                raise ValueError(f"Invalid Avro field name: '{field.name}'")
+
         if self.identifier_field_ids:
             for field_id in self.identifier_field_ids:
                 self._validate_identifier_field(field_id)
@@ -378,6 +382,25 @@ class Schema(IcebergBaseModel):
                 raise ValueError(
                     f"{field.field_type} is only supported in {field.field_type.minimum_format_version()} or higher. Current format version is: {format_version}"
                 )
+
+    @classmethod
+    def create_with_invalid_names(cls, *fields: NestedField, **data: Any) -> "Schema":
+        """Create a Schema with potentially invalid field names for testing purposes.
+        
+        This method bypasses the Avro field name validation and should only be used for testing.
+        
+        Args:
+            *fields: The fields to include in the schema
+            **data: Additional schema data
+            
+        Returns:
+            Schema: A schema instance with validation bypassed
+        """
+        if fields:
+            data["fields"] = fields
+        schema = cls(**data)
+        schema._skip_validation = True
+        return schema
 
 
 class SchemaVisitor(Generic[T], ABC):
