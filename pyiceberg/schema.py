@@ -96,7 +96,23 @@ class Schema(IcebergBaseModel):
 
     def __init__(self, *fields: NestedField, **data: Any):
         if fields:
-            data["fields"] = fields
+            # Sanitize field names before creating the schema
+            sanitized_fields = []
+            for field in fields:
+                if not _valid_avro_name(field.name):
+                    sanitized_name = _sanitize_name(field.name)
+                    sanitized_fields.append(
+                        NestedField(
+                            field_id=field.field_id,
+                            name=sanitized_name,
+                            field_type=field.field_type,
+                            doc=field.doc,
+                            required=field.required,
+                        )
+                    )
+                else:
+                    sanitized_fields.append(field)
+            data["fields"] = sanitized_fields
         super().__init__(**data)
         self._name_to_id = index_by_name(self)
 
@@ -130,10 +146,6 @@ class Schema(IcebergBaseModel):
 
     @model_validator(mode="after")
     def check_schema(self) -> Schema:
-        for field in self.fields:
-            if not _valid_avro_name(field.name):
-                raise ValueError(f"Invalid Avro field name: '{field.name}'")
-
         if self.identifier_field_ids:
             for field_id in self.identifier_field_ids:
                 self._validate_identifier_field(field_id)

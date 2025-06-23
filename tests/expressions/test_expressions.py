@@ -1178,23 +1178,24 @@ def test_nested_bind() -> None:
 def test_bind_dot_name() -> None:
     schema = Schema(NestedField(1, "foo.bar", StringType()), schema_id=1)
     bound = BoundIsNull(BoundReference(schema.find_field(1), schema.accessor_for_field(1)))
-    assert IsNull(Reference("foo.bar")).bind(schema) == bound
+    assert IsNull(Reference("foo_x2Ebar")).bind(schema) == bound
 
 
 def test_nested_bind_with_dot_name() -> None:
     schema = Schema(NestedField(1, "foo.bar", StructType(NestedField(2, "baz", StringType()))), schema_id=1)
     bound = BoundIsNull(BoundReference(schema.find_field(2), schema.accessor_for_field(2)))
-    assert IsNull(Reference("foo.bar.baz")).bind(schema) == bound
+    assert IsNull(Reference("foo_x2Ebar.baz")).bind(schema) == bound
 
 
 def test_bind_ambiguous_name() -> None:
     with pytest.raises(ValueError) as exc_info:
         Schema(
-            NestedField(1, "foo", StructType(NestedField(2, "bar", StringType()))),
-            NestedField(3, "foo.bar", StringType()),
+            NestedField(1, "foo", StringType()),
+            NestedField(2, "foo.bar", StringType()),
+            NestedField(3, "foo_x2Ebar", StringType()),
             schema_id=1,
         )
-    assert "Invalid schema, multiple fields for name foo.bar: 2 and 3" in str(exc_info)
+    assert "Invalid schema, multiple fields for name foo_x2Ebar: 2 and 3" in str(exc_info.value)
 
 
 #   __  __      ___
