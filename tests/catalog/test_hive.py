@@ -48,6 +48,7 @@ from pyiceberg.catalog.hive import (
     DO_NOT_UPDATE_STATS,
     DO_NOT_UPDATE_STATS_DEFAULT,
     HIVE_KERBEROS_AUTH,
+    HIVE_KERBEROS_SERVICE_NAME,
     LOCK_CHECK_MAX_WAIT_TIME,
     LOCK_CHECK_MIN_WAIT_TIME,
     LOCK_CHECK_RETRIES,
@@ -1300,7 +1301,20 @@ def test_create_hive_client_success() -> None:
 
     with patch("pyiceberg.catalog.hive._HiveClient", return_value=MagicMock()) as mock_hive_client:
         client = HiveCatalog._create_hive_client(properties)
-        mock_hive_client.assert_called_once_with("thrift://localhost:10000", "user", False)
+        mock_hive_client.assert_called_once_with("thrift://localhost:10000", "user", False, "hive")
+        assert client is not None
+
+
+def test_create_hive_client_with_kerberos_success() -> None:
+    properties = {
+        "uri": "thrift://localhost:10000",
+        "ugi": "user",
+        HIVE_KERBEROS_AUTH: "true",
+        HIVE_KERBEROS_SERVICE_NAME: "hiveuser",
+    }
+    with patch("pyiceberg.catalog.hive._HiveClient", return_value=MagicMock()) as mock_hive_client:
+        client = HiveCatalog._create_hive_client(properties)
+        mock_hive_client.assert_called_once_with("thrift://localhost:10000", "user", True, "hiveuser")
         assert client is not None
 
 
@@ -1313,7 +1327,7 @@ def test_create_hive_client_multiple_uris() -> None:
         client = HiveCatalog._create_hive_client(properties)
         assert mock_hive_client.call_count == 2
         mock_hive_client.assert_has_calls(
-            [call("thrift://localhost:10000", "user", False), call("thrift://localhost:10001", "user", False)]
+            [call("thrift://localhost:10000", "user", False, "hive"), call("thrift://localhost:10001", "user", False, "hive")]
         )
         assert client is not None
 
