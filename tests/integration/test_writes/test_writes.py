@@ -470,7 +470,7 @@ def test_python_writes_special_character_column_with_spark_reads(
         ]
     )
     arrow_table_with_special_character_column = pa.Table.from_pydict(TEST_DATA_WITH_SPECIAL_CHARACTER_COLUMN, schema=pa_schema)
-    
+
     # Create table using Iceberg Schema directly to ensure field names are sanitized
     iceberg_schema = Schema(
         NestedField(field_id=1, name=sanitized_column_name, field_type=StringType(), required=False),
@@ -488,7 +488,7 @@ def test_python_writes_special_character_column_with_spark_reads(
             required=False,
         ),
     )
-    
+
     tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=iceberg_schema)
 
     tbl.append(arrow_table_with_special_character_column)
