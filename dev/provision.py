@@ -279,7 +279,7 @@ for catalog_name, catalog in catalogs.items():
 
     spark.sql(
         f"""
-    CREATE TABLE {catalog_name}.default.test_table_version (
+    CREATE TABLE OR REPLACE {catalog_name}.default.test_table_version (
         dt     date,
         number integer,
         letter string
