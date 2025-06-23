@@ -456,7 +456,9 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
             "last_sequence_number": update.snapshot.sequence_number,
             "snapshots": base_metadata.snapshots + [update.snapshot],
             "next_row_id": base_metadata.next_row_id + update.snapshot.added_rows
-            if base_metadata.next_row_id is not None and update.snapshot.added_rows is not None
+            if base_metadata.format_version >= 3
+            and base_metadata.next_row_id is not None
+            and update.snapshot.added_rows is not None
             else None,
         }
     )
