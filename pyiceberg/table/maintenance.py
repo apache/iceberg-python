@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 from functools import reduce
-from typing import TYPE_CHECKING, Optional, Set
+from typing import TYPE_CHECKING, List, Optional, Set
 
 from pyiceberg.utils.concurrent import ExecutorFactory
 
@@ -117,3 +117,88 @@ class MaintenanceTable:
                     logger.warning(f"Files:\n{failed_to_delete_files}")
         else:
             logger.info(f"No orphaned files found at {location}!")
+
+    def expire_snapshot_by_id(self, snapshot_id: int) -> None:
+        """Expire a single snapshot by its ID.
+
+        Args:
+            snapshot_id: The ID of the snapshot to expire.
+
+        Raises:
+            ValueError: If the snapshot does not exist or is protected.
+        """
+        with self.tbl.transaction() as txn:
+            # Check if snapshot exists
+            if txn.table_metadata.snapshot_by_id(snapshot_id) is None:
+                raise ValueError(f"Snapshot with ID {snapshot_id} does not exist.")
+
+            # Check if snapshot is protected
+            protected_ids = self._get_protected_snapshot_ids(txn.table_metadata)
+            if snapshot_id in protected_ids:
+                raise ValueError(f"Snapshot with ID {snapshot_id} is protected and cannot be expired.")
+
+            # Remove the snapshot
+            from pyiceberg.table.update import RemoveSnapshotsUpdate
+            txn._apply((RemoveSnapshotsUpdate(snapshot_ids=[snapshot_id]),))
+
+    def expire_snapshots_by_ids(self, snapshot_ids: List[int]) -> None:
+        """Expire multiple snapshots by their IDs.
+
+        Args:
+            snapshot_ids: List of snapshot IDs to expire.
+
+        Raises:
+            ValueError: If any snapshot does not exist or is protected.
+        """
+        with self.tbl.transaction() as txn:
+            protected_ids = self._get_protected_snapshot_ids(txn.table_metadata)
+            
+            # Validate all snapshots before expiring any
+            for snapshot_id in snapshot_ids:
+                if txn.table_metadata.snapshot_by_id(snapshot_id) is None:
+                    raise ValueError(f"Snapshot with ID {snapshot_id} does not exist.")
+                if snapshot_id in protected_ids:
+                    raise ValueError(f"Snapshot with ID {snapshot_id} is protected and cannot be expired.")
+
+            # Remove all snapshots
+            from pyiceberg.table.update import RemoveSnapshotsUpdate
+            txn._apply((RemoveSnapshotsUpdate(snapshot_ids=snapshot_ids),))
+
+    def expire_snapshots_older_than(self, timestamp_ms: int) -> None:
+        """Expire all unprotected snapshots with a timestamp older than a given value.
+
+        Args:
+            timestamp_ms: Only snapshots with timestamp_ms < this value will be expired.
+        """
+        # First check if there are any snapshots to expire to avoid unnecessary transactions
+        protected_ids = self._get_protected_snapshot_ids(self.tbl.metadata)
+        snapshots_to_expire = []
+        
+        for snapshot in self.tbl.metadata.snapshots:
+            if snapshot.timestamp_ms < timestamp_ms and snapshot.snapshot_id not in protected_ids:
+                snapshots_to_expire.append(snapshot.snapshot_id)
+        
+        if snapshots_to_expire:
+            with self.tbl.transaction() as txn:
+                from pyiceberg.table.update import RemoveSnapshotsUpdate
+                txn._apply((RemoveSnapshotsUpdate(snapshot_ids=snapshots_to_expire),))
+
+    def _get_protected_snapshot_ids(self, table_metadata) -> Set[int]:
+        """Get the IDs of protected snapshots.
+
+        These are the HEAD snapshots of all branches and all tagged snapshots.
+        These ids are to be excluded from expiration.
+
+        Args:
+            table_metadata: The table metadata to check for protected snapshots.
+
+        Returns:
+            Set of protected snapshot IDs to exclude from expiration.
+        """
+        from pyiceberg.table.refs import SnapshotRefType
+        
+        protected_ids: Set[int] = set()
+        for ref in table_metadata.refs.values():
+            if ref.snapshot_ref_type in [SnapshotRefType.TAG, SnapshotRefType.BRANCH]:
+                protected_ids.add(ref.snapshot_id)
+        return protected_ids
