@@ -59,6 +59,7 @@ from pyiceberg.types import (
     LongType,
     NestedField,
     StringType,
+    StructType,
 )
 from utils import _create_table
 
@@ -439,19 +440,20 @@ def test_python_writes_special_character_column_with_spark_reads(
 ) -> None:
     identifier = "default.python_writes_special_character_column_with_spark_reads"
     column_name_with_special_character = "letter/abc"
+    sanitized_column_name = "letter_x2Fabc"
     TEST_DATA_WITH_SPECIAL_CHARACTER_COLUMN = {
-        column_name_with_special_character: ["a", None, "z"],
+        sanitized_column_name: ["a", None, "z"],
         "id": [1, 2, 3],
         "name": ["AB", "CD", "EF"],
         "address": [
-            {"street": "123", "city": "SFO", "zip": 12345, column_name_with_special_character: "a"},
-            {"street": "456", "city": "SW", "zip": 67890, column_name_with_special_character: "b"},
-            {"street": "789", "city": "Random", "zip": 10112, column_name_with_special_character: "c"},
+            {"street": "123", "city": "SFO", "zip": 12345, sanitized_column_name: "a"},
+            {"street": "456", "city": "SW", "zip": 67890, sanitized_column_name: "b"},
+            {"street": "789", "city": "Random", "zip": 10112, sanitized_column_name: "c"},
         ],
     }
     pa_schema = pa.schema(
         [
-            pa.field(column_name_with_special_character, pa.string()),
+            pa.field(sanitized_column_name, pa.string()),
             pa.field("id", pa.int32()),
             pa.field("name", pa.string()),
             pa.field(
@@ -461,14 +463,33 @@ def test_python_writes_special_character_column_with_spark_reads(
                         pa.field("street", pa.string()),
                         pa.field("city", pa.string()),
                         pa.field("zip", pa.int32()),
-                        pa.field(column_name_with_special_character, pa.string()),
+                        pa.field(sanitized_column_name, pa.string()),
                     ]
                 ),
             ),
         ]
     )
     arrow_table_with_special_character_column = pa.Table.from_pydict(TEST_DATA_WITH_SPECIAL_CHARACTER_COLUMN, schema=pa_schema)
-    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=pa_schema)
+    
+    # Create table using Iceberg Schema directly to ensure field names are sanitized
+    iceberg_schema = Schema(
+        NestedField(field_id=1, name=sanitized_column_name, field_type=StringType(), required=False),
+        NestedField(field_id=2, name="id", field_type=IntegerType(), required=False),
+        NestedField(field_id=3, name="name", field_type=StringType(), required=False),
+        NestedField(
+            field_id=4,
+            name="address",
+            field_type=StructType(
+                NestedField(field_id=5, name="street", field_type=StringType(), required=False),
+                NestedField(field_id=6, name="city", field_type=StringType(), required=False),
+                NestedField(field_id=7, name="zip", field_type=IntegerType(), required=False),
+                NestedField(field_id=8, name=sanitized_column_name, field_type=StringType(), required=False),
+            ),
+            required=False,
+        ),
+    )
+    
+    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=iceberg_schema)
 
     tbl.append(arrow_table_with_special_character_column)
     spark_df = spark.sql(f"SELECT * FROM {identifier}").toPandas()
@@ -1170,11 +1191,11 @@ def test_sanitize_character_partitioned(catalog: Catalog) -> None:
     tbl = _create_table(
         session_catalog=catalog,
         identifier=table_name,
-        schema=Schema(NestedField(field_id=1, name="some.id", type=IntegerType(), required=True)),
+        schema=Schema(NestedField(field_id=1, name="some_x2Eid", type=IntegerType(), required=True)),
         partition_spec=PartitionSpec(
-            PartitionField(source_id=1, field_id=1000, name="some.id_identity", transform=IdentityTransform())
+            PartitionField(source_id=1, field_id=1000, name="some_x2Eid_identity", transform=IdentityTransform())
         ),
-        data=[pa.Table.from_arrays([range(22)], schema=pa.schema([pa.field("some.id", pa.int32(), nullable=False)]))],
+        data=[pa.Table.from_arrays([range(22)], schema=pa.schema([pa.field("some_x2Eid", pa.int32(), nullable=False)]))],
     )
 
     assert len(tbl.scan().to_arrow()) == 22

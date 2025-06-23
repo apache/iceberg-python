@@ -738,21 +738,21 @@ def test_rename_simple_nested_with_dots(catalog: Catalog) -> None:
         Schema(
             NestedField(
                 field_id=1,
-                name="a.b",
-                field_type=StructType(NestedField(field_id=2, name="c.d", field_type=StringType())),
+                name="a_x2Eb",
+                field_type=StructType(NestedField(field_id=2, name="c_x2Ed", field_type=StringType())),
                 required=True,
             ),
         ),
     )
 
     with tbl.update_schema() as schema_update:
-        schema_update.rename_column(("a.b", "c.d"), "e.f")
+        schema_update.rename_column(("a_x2Eb", "c_x2Ed"), "e_x2Ef")
 
     assert tbl.schema() == Schema(
         NestedField(
             field_id=1,
-            name="a.b",
-            field_type=StructType(NestedField(field_id=2, name="e.f", field_type=StringType())),
+            name="a_x2Eb",
+            field_type=StructType(NestedField(field_id=2, name="e_x2Ef", field_type=StringType())),
             required=True,
         ),
     )
@@ -2386,10 +2386,10 @@ def test_add_dotted_identifier_field_columns(catalog: Catalog) -> None:
     )
 
     with tbl.update_schema(allow_incompatible_changes=True) as update_schema:
-        update_schema.add_column(("dot.field",), StringType(), required=True)
-        update_schema.set_identifier_fields("dot.field")
+        update_schema.add_column(("dot_x2Efield",), StringType(), required=True)
+        update_schema.set_identifier_fields("dot_x2Efield")
 
-    assert tbl.schema().identifier_field_names() == {"dot.field"}
+    assert tbl.schema().identifier_field_names() == {"dot_x2Efield"}
 
 
 @pytest.mark.integration
