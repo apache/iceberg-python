@@ -273,13 +273,9 @@ for catalog_name, catalog in catalogs.items():
         """
         )
 
-    # There is an issue with CREATE OR REPLACE
-    # https://github.com/apache/iceberg/issues/8756
-    spark.sql(f"DROP TABLE IF EXISTS {catalog_name}.default.test_table_version")
-
     spark.sql(
         f"""
-    CREATE TABLE {catalog_name}.default.test_table_version (
+    CREATE OR REPLACE TABLE {catalog_name}.default.test_table_version (
         dt     date,
         number integer,
         letter string
