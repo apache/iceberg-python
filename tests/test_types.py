@@ -260,9 +260,9 @@ def test_nested_field_primitive_type_as_str() -> None:
             type_str,
             required=True,
         )
-        assert isinstance(
-            field_var.field_type, type_class
-        ), f"Expected {type_class.__name__}, got {field_var.field_type.__class__.__name__}"
+        assert isinstance(field_var.field_type, type_class), (
+            f"Expected {type_class.__name__}, got {field_var.field_type.__class__.__name__}"
+        )
 
     # Test that passing 'bool' raises a ValueError, as it should be 'boolean'
     with pytest.raises(ValueError) as exc_info:

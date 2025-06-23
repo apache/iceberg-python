@@ -115,11 +115,7 @@ from pyiceberg.table.update import (
     update_table_metadata,
 )
 from pyiceberg.table.update.schema import UpdateSchema
-from pyiceberg.table.update.snapshot import (
-    ManageSnapshots,
-    UpdateSnapshot,
-    _FastAppendFiles,
-)
+from pyiceberg.table.update.snapshot import ExpireSnapshots, ManageSnapshots, UpdateSnapshot, _FastAppendFiles
 from pyiceberg.table.update.spec import UpdateSpec
 from pyiceberg.table.update.statistics import UpdateStatistics
 from pyiceberg.transforms import IdentityTransform
@@ -191,6 +187,9 @@ class TableProperties:
 
     WRITE_TARGET_FILE_SIZE_BYTES = "write.target-file-size-bytes"
     WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT = 512 * 1024 * 1024  # 512 MB
+
+    WRITE_AVRO_COMPRESSION = "write.avro.compression-codec"
+    WRITE_AVRO_COMPRESSION_DEFAULT = "gzip"
 
     DEFAULT_WRITE_METRICS_MODE = "write.metadata.metrics.default"
     DEFAULT_WRITE_METRICS_MODE_DEFAULT = "truncate(16)"
@@ -798,14 +797,14 @@ class Transaction:
 
         # We must use Transaction.table_metadata for the scan. This includes all uncommitted - but relevant - changes.
         if branch is None:
-            matched_iceberg_table = DataScan(
-                table_metadata=self.table_metadata,
-                io=self._table.io,
-                row_filter=matched_predicate,
-                case_sensitive=case_sensitive,
-            ).to_arrow()
+            matched_iceberg_record_batches = DataScan(
+                    table_metadata=self.table_metadata,
+                    io=self._table.io,
+                    row_filter=matched_predicate,
+                    case_sensitive=case_sensitive,
+            ).to_arrow_batch_reader()
         else:
-            matched_iceberg_table = (
+            matched_iceberg_record_batches = (
                 DataScan(
                     table_metadata=self.table_metadata,
                     io=self._table.io,
@@ -816,33 +815,50 @@ class Transaction:
                 .to_arrow()
             )
 
+        batches_to_overwrite = []
+        overwrite_predicates = []
+        rows_to_insert = df
+
+        for batch in matched_iceberg_record_batches:
+            rows = pa.Table.from_batches([batch])
+
+            if when_matched_update_all:
+                # function get_rows_to_update is doing a check on non-key columns to see if any of the values have actually changed
+                # we don't want to do just a blanket overwrite for matched rows if the actual non-key column data hasn't changed
+                # this extra step avoids unnecessary IO and writes
+                rows_to_update = upsert_util.get_rows_to_update(df, rows, join_cols)
+
+                if len(rows_to_update) > 0:
+                    # build the match predicate filter
+                    overwrite_mask_predicate = upsert_util.create_match_filter(rows_to_update, join_cols)
+
+                    batches_to_overwrite.append(rows_to_update)
+                    overwrite_predicates.append(overwrite_mask_predicate)
+
+            if when_not_matched_insert_all:
+                expr_match = upsert_util.create_match_filter(rows, join_cols)
+                expr_match_bound = bind(self.table_metadata.schema(), expr_match, case_sensitive=case_sensitive)
+                expr_match_arrow = expression_to_pyarrow(expr_match_bound)
+
+                # Filter rows per batch.
+                rows_to_insert = rows_to_insert.filter(~expr_match_arrow)
+
         update_row_cnt = 0
         insert_row_cnt = 0
 
-        if when_matched_update_all:
-            # function get_rows_to_update is doing a check on non-key columns to see if any of the values have actually changed
-            # we don't want to do just a blanket overwrite for matched rows if the actual non-key column data hasn't changed
-            # this extra step avoids unnecessary IO and writes
-            rows_to_update = upsert_util.get_rows_to_update(df, matched_iceberg_table, join_cols)
-
+        if batches_to_overwrite:
+            rows_to_update = pa.concat_tables(batches_to_overwrite)
             update_row_cnt = len(rows_to_update)
-
-            if len(rows_to_update) > 0:
-                # build the match predicate filter
-                overwrite_mask_predicate = upsert_util.create_match_filter(rows_to_update, join_cols)
-
-                self.overwrite(rows_to_update, overwrite_filter=overwrite_mask_predicate, branch=branch)
+            self.overwrite(
+                rows_to_update,
+                overwrite_filter=Or(*overwrite_predicates) if len(overwrite_predicates) > 1 else overwrite_predicates[0],
+                branch=branch
+            )
 
         if when_not_matched_insert_all:
-            expr_match = upsert_util.create_match_filter(matched_iceberg_table, join_cols)
-            expr_match_bound = bind(self.table_metadata.schema(), expr_match, case_sensitive=case_sensitive)
-            expr_match_arrow = expression_to_pyarrow(expr_match_bound)
-            rows_to_insert = df.filter(~expr_match_arrow)
-
             insert_row_cnt = len(rows_to_insert)
-
-            if insert_row_cnt > 0:
-                self.append(rows_to_insert, branch=branch)
+            if rows_to_insert:
+                self.append(rows_to_insert,branch=branch)
 
         return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 
@@ -867,7 +883,7 @@ class Transaction:
             import pyarrow.compute as pc
 
             expr = pc.field("file_path").isin(file_paths)
-            referenced_files = [file["file_path"] for file in self._table.inspect.files().filter(expr).to_pylist()]
+            referenced_files = [file["file_path"] for file in self._table.inspect.data_files().filter(expr).to_pylist()]
 
             if referenced_files:
                 raise ValueError(f"Cannot add files that are already referenced by table, files: {', '.join(referenced_files)}")
@@ -1229,6 +1245,10 @@ class Table:
            ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
         """
         return ManageSnapshots(transaction=Transaction(self, autocommit=True))
+
+    def expire_snapshots(self) -> ExpireSnapshots:
+        """Shorthand to run expire snapshots by id or by a timestamp."""
+        return ExpireSnapshots(transaction=Transaction(self, autocommit=True))
 
     def update_statistics(self) -> UpdateStatistics:
         """

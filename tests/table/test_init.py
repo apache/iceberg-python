@@ -511,15 +511,15 @@ def test_update_column(table_v1: Table, table_v2: Table) -> None:
         assert new_schema3.find_field("z").required is False, "failed to update existing field required"
 
         # assert the above two updates also works with union_by_name
-        assert (
-            table.update_schema().union_by_name(new_schema)._apply() == new_schema
-        ), "failed to update existing field doc with union_by_name"
-        assert (
-            table.update_schema().union_by_name(new_schema2)._apply() == new_schema2
-        ), "failed to remove existing field doc with union_by_name"
-        assert (
-            table.update_schema().union_by_name(new_schema3)._apply() == new_schema3
-        ), "failed to update existing field required with union_by_name"
+        assert table.update_schema().union_by_name(new_schema)._apply() == new_schema, (
+            "failed to update existing field doc with union_by_name"
+        )
+        assert table.update_schema().union_by_name(new_schema2)._apply() == new_schema2, (
+            "failed to remove existing field doc with union_by_name"
+        )
+        assert table.update_schema().union_by_name(new_schema3)._apply() == new_schema3, (
+            "failed to update existing field required with union_by_name"
+        )
 
 
 def test_add_primitive_type_column(table_v2: Table) -> None:
