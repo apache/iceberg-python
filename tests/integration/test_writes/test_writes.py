@@ -885,11 +885,6 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
 @pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_create_table_transaction(catalog: Catalog, format_version: int) -> None:
-    if format_version == 1 and isinstance(catalog, RestCatalog):
-        pytest.skip(
-            "There is a bug in the REST catalog image (https://github.com/apache/iceberg/issues/8756) that prevents create and commit a staged version 1 table"
-        )
-
     identifier = f"default.arrow_create_table_transaction_{catalog.name}_{format_version}"
 
     try:
