@@ -796,24 +796,18 @@ class Transaction:
         matched_predicate = upsert_util.create_match_filter(df, join_cols)
 
         # We must use Transaction.table_metadata for the scan. This includes all uncommitted - but relevant - changes.
-        if branch is None:
-            matched_iceberg_record_batches = DataScan(
-                    table_metadata=self.table_metadata,
-                    io=self._table.io,
-                    row_filter=matched_predicate,
-                    case_sensitive=case_sensitive,
-            ).to_arrow_batch_reader()
-        else:
-            matched_iceberg_record_batches = (
-                DataScan(
-                    table_metadata=self.table_metadata,
-                    io=self._table.io,
-                    row_filter=matched_predicate,
-                    case_sensitive=case_sensitive,
-                )
-                .use_ref(branch)
-                .to_arrow()
-            )
+
+        matched_iceberg_record_batches_scan = DataScan(
+            table_metadata=self.table_metadata,
+            io=self._table.io,
+            row_filter=matched_predicate,
+            case_sensitive=case_sensitive,
+        )
+
+        if branch is not None:
+            matched_iceberg_record_batches_scan = matched_iceberg_record_batches_scan.use_ref(branch)
+
+        matched_iceberg_record_batches = matched_iceberg_record_batches_scan.to_arrow_batch_reader()
 
         batches_to_overwrite = []
         overwrite_predicates = []
@@ -852,13 +846,13 @@ class Transaction:
             self.overwrite(
                 rows_to_update,
                 overwrite_filter=Or(*overwrite_predicates) if len(overwrite_predicates) > 1 else overwrite_predicates[0],
-                branch=branch
+                branch=branch,
             )
 
         if when_not_matched_insert_all:
             insert_row_cnt = len(rows_to_insert)
             if rows_to_insert:
-                self.append(rows_to_insert,branch=branch)
+                self.append(rows_to_insert, branch=branch)
 
         return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 

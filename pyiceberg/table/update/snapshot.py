@@ -685,7 +685,7 @@ class UpdateSnapshot:
         return _OverwriteFiles(
             commit_uuid=commit_uuid,
             operation=Operation.OVERWRITE
-            if self._transaction.table_metadata.current_snapshot() is not None
+            if self._transaction.table_metadata.snapshot_by_name(name=self._branch) is not None
             else Operation.APPEND,
             transaction=self._transaction,
             io=self._io,
