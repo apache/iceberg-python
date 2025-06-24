@@ -658,10 +658,10 @@ class Transaction:
             bound_delete_filter = bind(self.table_metadata.schema(), delete_filter, case_sensitive)
             preserve_row_filter = _expression_to_complementary_pyarrow(bound_delete_filter)
 
-            if branch is None:
-                files = self._scan(row_filter=delete_filter, case_sensitive=case_sensitive).plan_files()
-            else:
-                files = self._scan(row_filter=delete_filter, case_sensitive=case_sensitive).use_ref(branch).plan_files()
+            file_scan = self._scan(row_filter=delete_filter, case_sensitive=case_sensitive)
+            if branch is not None:
+                file_scan = file_scan.use_ref(branch)
+            files = file_scan.plan_files()
 
             commit_uuid = uuid.uuid4()
             counter = itertools.count(0)
