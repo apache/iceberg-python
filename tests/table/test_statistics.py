@@ -14,7 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from pyiceberg.table.statistics import PartitionStatisticsFile
+from pyiceberg.table.statistics import BlobMetadata, PartitionStatisticsFile, StatisticsFile
 
 
 def test_partition_statistics_file() -> None:
@@ -28,3 +28,27 @@ def test_partition_statistics_file() -> None:
     )
 
     assert partition_statistics_file.model_dump_json() == partition_statistics_file_json
+
+
+def test_statistics_file() -> None:
+    statistics_file_json = """{"snapshot-id":123,"statistics-path":"s3://bucket/statistics.parquet","file-size-in-bytes":345,"file-footer-size-in-bytes":456,"blob-metadata":[{"type":"apache-datasketches-theta-v1","snapshot-id":567,"sequence-number":22,"fields":[1,2,3],"properties":{"foo":"bar"}}]}"""
+    statistics_file = StatisticsFile.model_validate_json(statistics_file_json)
+
+    assert statistics_file == StatisticsFile(
+        snapshot_id=123,
+        statistics_path="s3://bucket/statistics.parquet",
+        file_size_in_bytes=345,
+        file_footer_size_in_bytes=456,
+        key_metadata=None,
+        blob_metadata=[
+            BlobMetadata(
+                type="apache-datasketches-theta-v1",
+                snapshot_id=567,
+                sequence_number=22,
+                fields=[1, 2, 3],
+                properties={"foo": "bar"},
+            )
+        ],
+    )
+
+    assert statistics_file.model_dump_json() == statistics_file_json
