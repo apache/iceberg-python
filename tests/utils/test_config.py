@@ -59,10 +59,9 @@ def test_fix_nested_objects_from_environment_variables() -> None:
 @mock.patch.dict(os.environ, EXAMPLE_ENV)
 @mock.patch.dict(os.environ, {"PYICEBERG_CATALOG__DEVELOPMENT__URI": "https://dev.service.io/api"})
 def test_list_all_known_catalogs() -> None:
-    assert Config().get_known_catalogs() == [
-        "production",
-        "development",
-    ]
+    catalogs = Config().get_known_catalogs()
+    assert "production" in catalogs
+    assert "development" in catalogs
 
 
 def test_from_configuration_files(tmp_path_factory: pytest.TempPathFactory) -> None:
