@@ -37,13 +37,13 @@ class StatisticsCommonFields(IcebergBaseModel):
     file_size_in_bytes: int = Field(alias="file-size-in-bytes")
 
 
-class StatisticsFile(StatisticsCommonFields, IcebergBaseModel):
+class StatisticsFile(StatisticsCommonFields):
     file_footer_size_in_bytes: int = Field(alias="file-footer-size-in-bytes")
     key_metadata: Optional[str] = Field(alias="key-metadata", default=None)
     blob_metadata: List[BlobMetadata] = Field(alias="blob-metadata")
 
 
-class PartitionStatisticsFile(IcebergBaseModel):
+class PartitionStatisticsFile(StatisticsCommonFields):
     pass
 
 
