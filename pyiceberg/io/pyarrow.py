@@ -1820,6 +1820,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                     field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))
                 else:
                     field_arrays.append(pa.repeat(field.initial_default, len(struct_array)))
+                fields.append(self._construct_field(field, arrow_type))
             else:
                 raise ResolveError(f"Field is required, and could not be found in the file: {field}")
 
@@ -2251,7 +2252,7 @@ def parquet_path_to_id_mapping(
     Compute the mapping of parquet column path to Iceberg ID.
 
     For each column, the parquet file metadata has a path_in_schema attribute that follows
-    a specific naming scheme for nested columnds. This function computes a mapping of
+    a specific naming scheme for nested columns. This function computes a mapping of
     the full paths to the corresponding Iceberg IDs.
 
     Args:

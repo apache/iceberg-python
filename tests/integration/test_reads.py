@@ -29,6 +29,7 @@ import pytest
 from hive_metastore.ttypes import LockRequest, LockResponse, LockState, UnlockRequest
 from pyarrow.fs import S3FileSystem
 from pydantic_core import ValidationError
+from pyspark.sql import SparkSession
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.hive import HiveCatalog, _HiveClient
@@ -1024,3 +1025,30 @@ def test_scan_with_datetime(catalog: Catalog) -> None:
 
     df = table.scan(row_filter=LessThan("datetime", yesterday)).to_pandas()
     assert len(df) == 0
+
+
+@pytest.mark.integration
+# @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog")])
+def test_initial_default(catalog: Catalog, spark: SparkSession) -> None:
+    identifier = "default.test_initial_default"
+    try:
+        catalog.drop_table(identifier)
+    except NoSuchTableError:
+        pass
+
+    one_column = pa.table([pa.nulls(10, pa.int32())], ["some_field"])
+
+    tbl = catalog.create_table(identifier, schema=one_column.schema, properties={"format-version": "2"})
+
+    tbl.append(one_column)
+
+    # Do the bump version through Spark, since PyIceberg does not support this (yet)
+    spark.sql(f"ALTER TABLE {identifier} SET TBLPROPERTIES('format-version'='3')")
+
+    with tbl.update_schema() as upd:
+        upd.add_column("so_true", BooleanType(), required=False, default_value=True)
+
+    result_table = tbl.scan().filter("so_true == True").to_arrow()
+
+    assert len(result_table) == 10
