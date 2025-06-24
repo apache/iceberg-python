@@ -178,12 +178,12 @@ class RegisterTableRequest(IcebergBaseModel):
 
 
 class ConfigResponse(IcebergBaseModel):
-    defaults: Properties = Field()
+    defaults: Optional[Properties] = Field(default={})
     overrides: Properties = Field()
 
 
 class ListNamespaceResponse(IcebergBaseModel):
-    namespaces: List[Identifier] = Field()
+    namespaces: Optional[List[Identifier]] = Field(default=[])
 
 
 class NamespaceResponse(IcebergBaseModel):
