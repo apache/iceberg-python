@@ -95,7 +95,7 @@ def _filter_manifest_entries(
         data_filter: Optional filter to match data files
         partition_set: Optional set of partitions to match data files
         entry_status: Optional status to match data files
-        table: Table containing the schema for filtering
+        schema: schema for filtering
 
     Returns:
         True if the entry should be included, False otherwise
