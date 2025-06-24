@@ -1028,8 +1028,7 @@ def test_scan_with_datetime(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-# @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_initial_default(catalog: Catalog, spark: SparkSession) -> None:
     identifier = "default.test_initial_default"
     try:
