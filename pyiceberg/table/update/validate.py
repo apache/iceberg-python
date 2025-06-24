@@ -94,7 +94,7 @@ def _filter_manifest_entries(
         snapshot_ids: set of snapshot ids to match data files
         data_filter: Optional filter to match data files
         partition_set: Optional set of partitions to match data files
-        status: Optional status to match data files
+        entry_status: Optional status to match data files
         table: Table containing the schema for filtering
 
     Returns:
