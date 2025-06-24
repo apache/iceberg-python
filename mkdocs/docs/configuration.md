@@ -439,10 +439,11 @@ catalog:
     s3.secret-access-key: password
 ```
 
-| Key                          | Example | Description                       |
-|------------------------------| ------- | --------------------------------- |
-| hive.hive2-compatible        | true    | Using Hive 2.x compatibility mode |
-| hive.kerberos-authentication | true    | Using authentication via Kerberos |
+| Key                          | Example | Description                          |
+|------------------------------| ------- | ------------------------------------ |
+| hive.hive2-compatible        | true    | Using Hive 2.x compatibility mode    |
+| hive.kerberos-authentication | true    | Using authentication via Kerberos    |
+| hive.kerberos-service-name   | hive    | Kerberos service name (default hive) |
 
 When using Hive 2.x, make sure to set the compatibility flag:
 
