@@ -29,7 +29,7 @@ import click
 from click import Context
 
 from pyiceberg import __version__
-from pyiceberg.catalog import Catalog, load_catalog
+from pyiceberg.catalog import URI, Catalog, load_catalog
 from pyiceberg.cli.output import ConsoleOutput, JsonOutput, Output
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchPropertyException, NoSuchTableError
 from pyiceberg.table import TableProperties
@@ -75,7 +75,7 @@ def run(
     if ugi:
         properties["ugi"] = ugi
     if uri:
-        properties["uri"] = uri
+        properties[URI] = uri
     if credential:
         properties["credential"] = credential
 
@@ -300,7 +300,6 @@ def get_namespace(ctx: Context, identifier: str, property_name: str) -> None:
     identifier_tuple = Catalog.identifier_to_tuple(identifier)
 
     namespace_properties = catalog.load_namespace_properties(identifier_tuple)
-    assert namespace_properties
 
     if property_name:
         if property_value := namespace_properties.get(property_name):
@@ -322,7 +321,6 @@ def get_table(ctx: Context, identifier: str, property_name: str) -> None:
     identifier_tuple = Catalog.identifier_to_tuple(identifier)
 
     metadata = catalog.load_table(identifier_tuple).metadata
-    assert metadata
 
     if property_name:
         if property_value := metadata.properties.get(property_name):

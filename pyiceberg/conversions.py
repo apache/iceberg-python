@@ -503,27 +503,47 @@ def _(_: Union[IntegerType, LongType], val: int) -> int:
 
 
 @from_json.register(DateType)
-def _(_: DateType, val: str) -> date:
+def _(_: DateType, val: Union[str, int, date]) -> date:
     """JSON date is string encoded."""
-    return days_to_date(date_str_to_days(val))
+    if isinstance(val, str):
+        val = date_str_to_days(val)
+    if isinstance(val, int):
+        return days_to_date(val)
+    else:
+        return val
 
 
 @from_json.register(TimeType)
-def _(_: TimeType, val: str) -> time:
+def _(_: TimeType, val: Union[str, int, time]) -> time:
     """JSON ISO8601 string into Python time."""
-    return micros_to_time(time_str_to_micros(val))
+    if isinstance(val, str):
+        val = time_str_to_micros(val)
+    if isinstance(val, int):
+        return micros_to_time(val)
+    else:
+        return val
 
 
 @from_json.register(TimestampType)
-def _(_: PrimitiveType, val: str) -> datetime:
+def _(_: PrimitiveType, val: Union[str, int, datetime]) -> datetime:
     """JSON ISO8601 string into Python datetime."""
-    return micros_to_timestamp(timestamp_to_micros(val))
+    if isinstance(val, str):
+        val = timestamp_to_micros(val)
+    if isinstance(val, int):
+        return micros_to_timestamp(val)
+    else:
+        return val
 
 
 @from_json.register(TimestamptzType)
-def _(_: TimestamptzType, val: str) -> datetime:
+def _(_: TimestamptzType, val: Union[str, int, datetime]) -> datetime:
     """JSON ISO8601 string into Python datetime."""
-    return micros_to_timestamptz(timestamptz_to_micros(val))
+    if isinstance(val, str):
+        val = timestamptz_to_micros(val)
+    if isinstance(val, int):
+        return micros_to_timestamptz(val)
+    else:
+        return val
 
 
 @from_json.register(FloatType)
@@ -540,20 +560,24 @@ def _(_: StringType, val: str) -> str:
 
 
 @from_json.register(FixedType)
-def _(t: FixedType, val: str) -> bytes:
+def _(t: FixedType, val: Union[str, bytes]) -> bytes:
     """JSON hexadecimal encoded string into bytes."""
-    b = codecs.decode(val.encode(UTF8), "hex")
+    if isinstance(val, str):
+        val = codecs.decode(val.encode(UTF8), "hex")
 
-    if len(t) != len(b):
-        raise ValueError(f"FixedType has length {len(t)}, which is different from the value: {len(b)}")
+    if len(t) != len(val):
+        raise ValueError(f"FixedType has length {len(t)}, which is different from the value: {len(val)}")
 
-    return b
+    return val
 
 
 @from_json.register(BinaryType)
-def _(_: BinaryType, val: str) -> bytes:
+def _(_: BinaryType, val: Union[bytes, str]) -> bytes:
     """JSON hexadecimal encoded string into bytes."""
-    return codecs.decode(val.encode(UTF8), "hex")
+    if isinstance(val, str):
+        return codecs.decode(val.encode(UTF8), "hex")
+    else:
+        return val
 
 
 @from_json.register(DecimalType)
@@ -563,6 +587,11 @@ def _(_: DecimalType, val: str) -> Decimal:
 
 
 @from_json.register(UUIDType)
-def _(_: UUIDType, val: str) -> uuid.UUID:
+def _(_: UUIDType, val: Union[str, bytes, uuid.UUID]) -> uuid.UUID:
     """Convert JSON string into Python UUID."""
-    return uuid.UUID(val)
+    if isinstance(val, str):
+        return uuid.UUID(val)
+    elif isinstance(val, bytes):
+        return uuid.UUID(bytes=val)
+    else:
+        return val

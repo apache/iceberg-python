@@ -240,10 +240,8 @@ def test_nested_field() -> None:
     assert str(field_var) == str(eval(repr(field_var)))
     assert field_var == pickle.loads(pickle.dumps(field_var))
 
-    with pytest.raises(pydantic_core.ValidationError) as exc_info:
+    with pytest.raises(pydantic_core.ValidationError, match=".*validation errors for NestedField.*"):
         _ = (NestedField(1, "field", StringType(), required=True, write_default=(1, "a", True)),)  # type: ignore
-
-    assert "validation errors for NestedField" in str(exc_info.value)
 
 
 def test_nested_field_complex_type_as_str_unsupported() -> None:
@@ -262,9 +260,9 @@ def test_nested_field_primitive_type_as_str() -> None:
             type_str,
             required=True,
         )
-        assert isinstance(
-            field_var.field_type, type_class
-        ), f"Expected {type_class.__name__}, got {field_var.field_type.__class__.__name__}"
+        assert isinstance(field_var.field_type, type_class), (
+            f"Expected {type_class.__name__}, got {field_var.field_type.__class__.__name__}"
+        )
 
     # Test that passing 'bool' raises a ValueError, as it should be 'boolean'
     with pytest.raises(ValueError) as exc_info:

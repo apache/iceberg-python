@@ -25,9 +25,9 @@ with the pyarrow library.
 
 from __future__ import annotations
 
-import concurrent.futures
 import fnmatch
 import functools
+import importlib
 import itertools
 import logging
 import operator
@@ -36,7 +36,6 @@ import re
 import uuid
 import warnings
 from abc import ABC, abstractmethod
-from concurrent.futures import Future
 from copy import copy
 from dataclasses import dataclass
 from enum import Enum
@@ -65,13 +64,12 @@ import pyarrow.dataset as ds
 import pyarrow.lib
 import pyarrow.parquet as pq
 from pyarrow import ChunkedArray
+from pyarrow._s3fs import S3RetryStrategy
 from pyarrow.fs import (
     FileInfo,
     FileSystem,
     FileType,
-    FSSpecHandler,
 )
-from sortedcontainers import SortedList
 
 from pyiceberg.conversions import to_bytes
 from pyiceberg.exceptions import ResolveError
@@ -85,6 +83,13 @@ from pyiceberg.expressions.visitors import (
 )
 from pyiceberg.expressions.visitors import visit as boolean_expression_visit
 from pyiceberg.io import (
+    ADLS_ACCOUNT_KEY,
+    ADLS_ACCOUNT_NAME,
+    ADLS_BLOB_STORAGE_AUTHORITY,
+    ADLS_BLOB_STORAGE_SCHEME,
+    ADLS_DFS_STORAGE_AUTHORITY,
+    ADLS_DFS_STORAGE_SCHEME,
+    ADLS_SAS_TOKEN,
     AWS_ACCESS_KEY_ID,
     AWS_REGION,
     AWS_ROLE_ARN,
@@ -108,6 +113,7 @@ from pyiceberg.io import (
     S3_REGION,
     S3_REQUEST_TIMEOUT,
     S3_RESOLVE_REGION,
+    S3_RETRY_STRATEGY_IMPL,
     S3_ROLE_ARN,
     S3_ROLE_SESSION_NAME,
     S3_SECRET_ACCESS_KEY,
@@ -117,7 +123,6 @@ from pyiceberg.io import (
     InputStream,
     OutputFile,
     OutputStream,
-    _parse_location,
 )
 from pyiceberg.manifest import (
     DataFile,
@@ -209,6 +214,20 @@ def _cached_resolve_s3_region(bucket: str) -> Optional[str]:
         return resolve_s3_region(bucket=bucket)
     except (OSError, TypeError):
         logger.warning(f"Unable to resolve region for bucket {bucket}")
+        return None
+
+
+def _import_retry_strategy(impl: str) -> Optional[S3RetryStrategy]:
+    try:
+        path_parts = impl.split(".")
+        if len(path_parts) < 2:
+            raise ValueError(f"retry-strategy-impl should be full path (module.CustomS3RetryStrategy), got: {impl}")
+        module_name, class_name = ".".join(path_parts[:-1]), path_parts[-1]
+        module = importlib.import_module(module_name)
+        class_ = getattr(module, class_name)
+        return class_()
+    except (ModuleNotFoundError, AttributeError):
+        warnings.warn(f"Could not initialize S3 retry strategy: {impl}")
         return None
 
 
@@ -309,9 +328,7 @@ class PyArrowFile(InputFile, OutputFile):
                 input_file = self._filesystem.open_input_file(self._path)
             else:
                 input_file = self._filesystem.open_input_stream(self._path, buffer_size=self._buffer_size)
-        except FileNotFoundError:
-            raise
-        except PermissionError:
+        except (FileNotFoundError, PermissionError):
             raise
         except OSError as e:
             if e.errno == 2 or "Path does not exist" in str(e):
@@ -394,6 +411,9 @@ class PyArrowFileIO(FileIO):
         elif scheme in {"gs", "gcs"}:
             return self._initialize_gcs_fs()
 
+        elif scheme in {"abfs", "abfss", "wasb", "wasbs"}:
+            return self._initialize_azure_fs()
+
         elif scheme in {"file"}:
             return self._initialize_local_fs()
 
@@ -473,7 +493,49 @@ class PyArrowFileIO(FileIO):
         if self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING) is not None:
             client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, S3_FORCE_VIRTUAL_ADDRESSING, False)
 
+        if (retry_strategy_impl := self.properties.get(S3_RETRY_STRATEGY_IMPL)) and (
+            retry_instance := _import_retry_strategy(retry_strategy_impl)
+        ):
+            client_kwargs["retry_strategy"] = retry_instance
+
         return S3FileSystem(**client_kwargs)
+
+    def _initialize_azure_fs(self) -> FileSystem:
+        from packaging import version
+
+        MIN_PYARROW_VERSION_SUPPORTING_AZURE_FS = "20.0.0"
+        if version.parse(pyarrow.__version__) < version.parse(MIN_PYARROW_VERSION_SUPPORTING_AZURE_FS):
+            raise ImportError(
+                f"pyarrow version >= {MIN_PYARROW_VERSION_SUPPORTING_AZURE_FS} required for AzureFileSystem support, "
+                f"but found version {pyarrow.__version__}."
+            )
+
+        from pyarrow.fs import AzureFileSystem
+
+        client_kwargs: Dict[str, str] = {}
+
+        if account_name := self.properties.get(ADLS_ACCOUNT_NAME):
+            client_kwargs["account_name"] = account_name
+
+        if account_key := self.properties.get(ADLS_ACCOUNT_KEY):
+            client_kwargs["account_key"] = account_key
+
+        if blob_storage_authority := self.properties.get(ADLS_BLOB_STORAGE_AUTHORITY):
+            client_kwargs["blob_storage_authority"] = blob_storage_authority
+
+        if dfs_storage_authority := self.properties.get(ADLS_DFS_STORAGE_AUTHORITY):
+            client_kwargs["dfs_storage_authority"] = dfs_storage_authority
+
+        if blob_storage_scheme := self.properties.get(ADLS_BLOB_STORAGE_SCHEME):
+            client_kwargs["blob_storage_scheme"] = blob_storage_scheme
+
+        if dfs_storage_scheme := self.properties.get(ADLS_DFS_STORAGE_SCHEME):
+            client_kwargs["dfs_storage_scheme"] = dfs_storage_scheme
+
+        if sas_token := self.properties.get(ADLS_SAS_TOKEN):
+            client_kwargs["sas_token"] = sas_token
+
+        return AzureFileSystem(**client_kwargs)
 
     def _initialize_hdfs_fs(self, scheme: str, netloc: Optional[str]) -> FileSystem:
         from pyarrow.fs import HadoopFileSystem
@@ -636,6 +698,12 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.binary(len(fixed_type))
 
     def visit_decimal(self, decimal_type: DecimalType) -> pa.DataType:
+        # It looks like decimal{32,64} is not fully implemented:
+        # https://github.com/apache/arrow/issues/25483
+        # https://github.com/apache/arrow/issues/43956
+        # However, if we keep it as 128 in memory, and based on the
+        # precision/scale Arrow will map it to INT{32,64}
+        # https://github.com/apache/arrow/blob/598938711a8376cbfdceaf5c77ab0fd5057e6c02/cpp/src/parquet/arrow/schema.cc#L380-L392
         return pa.decimal128(decimal_type.precision, decimal_type.scale)
 
     def visit_boolean(self, _: BooleanType) -> pa.DataType:
@@ -910,27 +978,20 @@ def _get_file_format(file_format: FileFormat, **kwargs: Dict[str, Any]) -> ds.Fi
         raise ValueError(f"Unsupported file format: {file_format}")
 
 
-def _construct_fragment(fs: FileSystem, data_file: DataFile, file_format_kwargs: Dict[str, Any] = EMPTY_DICT) -> ds.Fragment:
-    _, _, path = PyArrowFileIO.parse_location(data_file.file_path)
-    return _get_file_format(data_file.file_format, **file_format_kwargs).make_fragment(path, fs)
-
-
-def _read_deletes(fs: FileSystem, data_file: DataFile) -> Dict[str, pa.ChunkedArray]:
+def _read_deletes(io: FileIO, data_file: DataFile) -> Dict[str, pa.ChunkedArray]:
     if data_file.file_format == FileFormat.PARQUET:
-        delete_fragment = _construct_fragment(
-            fs,
-            data_file,
-            file_format_kwargs={"dictionary_columns": ("file_path",), "pre_buffer": True, "buffer_size": ONE_MEGABYTE},
-        )
-        table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
+        with io.new_input(data_file.file_path).open() as fi:
+            delete_fragment = _get_file_format(
+                data_file.file_format, dictionary_columns=("file_path",), pre_buffer=True, buffer_size=ONE_MEGABYTE
+            ).make_fragment(fi)
+            table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
         table = table.unify_dictionaries()
         return {
             file.as_py(): table.filter(pc.field("file_path") == file).column("pos")
             for file in table.column("file_path").chunks[0].dictionary
         }
     elif data_file.file_format == FileFormat.PUFFIN:
-        _, _, path = PyArrowFileIO.parse_location(data_file.file_path)
-        with fs.open_input_file(path) as fi:
+        with io.new_input(data_file.file_path).open() as fi:
             payload = fi.read()
 
         return PuffinFile(payload).to_vector()
@@ -1377,7 +1438,7 @@ def _get_column_projection_values(
 
 
 def _task_to_record_batches(
-    fs: FileSystem,
+    io: FileIO,
     task: FileScanTask,
     bound_row_filter: BooleanExpression,
     projected_schema: Schema,
@@ -1387,9 +1448,8 @@ def _task_to_record_batches(
     name_mapping: Optional[NameMapping] = None,
     partition_spec: Optional[PartitionSpec] = None,
 ) -> Iterator[pa.RecordBatch]:
-    _, _, path = _parse_location(task.file.file_path)
     arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
-    with fs.open_input_file(path) as fin:
+    with io.new_input(task.file.file_path).open() as fin:
         fragment = arrow_format.make_fragment(fin)
         physical_schema = fragment.physical_schema
         # In V1 and V2 table formats, we only support Timestamp 'us' in Iceberg Schema
@@ -1473,7 +1533,7 @@ def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Dict[st
         executor = ExecutorFactory.get_or_create()
         deletes_per_files: Iterator[Dict[str, ChunkedArray]] = executor.map(
             lambda args: _read_deletes(*args),
-            [(_fs_from_file_path(io, delete_file.file_path), delete_file) for delete_file in unique_deletes],
+            [(io, delete_file) for delete_file in unique_deletes],
         )
         for delete in deletes_per_files:
             for file, arr in delete.items():
@@ -1483,25 +1543,6 @@ def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Dict[st
                     deletes_per_file[file] = [arr]
 
     return deletes_per_file
-
-
-def _fs_from_file_path(io: FileIO, file_path: str) -> FileSystem:
-    scheme, netloc, _ = _parse_location(file_path)
-    if isinstance(io, PyArrowFileIO):
-        return io.fs_by_scheme(scheme, netloc)
-    else:
-        try:
-            from pyiceberg.io.fsspec import FsspecFileIO
-
-            if isinstance(io, FsspecFileIO):
-                from pyarrow.fs import PyFileSystem
-
-                return PyFileSystem(FSSpecHandler(io.get_fs(scheme)))
-            else:
-                raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}")
-        except ModuleNotFoundError as e:
-            # When FsSpec is not installed
-            raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}") from e
 
 
 class ArrowScan:
@@ -1564,47 +1605,20 @@ class ArrowScan:
             ResolveError: When a required field cannot be found in the file
             ValueError: When a field type in the file cannot be projected to the schema type
         """
-        deletes_per_file = _read_all_delete_files(self._io, tasks)
-        executor = ExecutorFactory.get_or_create()
-
-        def _table_from_scan_task(task: FileScanTask) -> pa.Table:
-            batches = list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file))
-            if len(batches) > 0:
-                return pa.Table.from_batches(batches)
-            else:
-                return None
-
-        futures = [
-            executor.submit(
-                _table_from_scan_task,
-                task,
-            )
-            for task in tasks
-        ]
-        total_row_count = 0
-        # for consistent ordering, we need to maintain future order
-        futures_index = {f: i for i, f in enumerate(futures)}
-        completed_futures: SortedList[Future[pa.Table]] = SortedList(iterable=[], key=lambda f: futures_index[f])
-        for future in concurrent.futures.as_completed(futures):
-            completed_futures.add(future)
-            if table_result := future.result():
-                total_row_count += len(table_result)
-            # stop early if limit is satisfied
-            if self._limit is not None and total_row_count >= self._limit:
-                break
-
-        # by now, we've either completed all tasks or satisfied the limit
-        if self._limit is not None:
-            _ = [f.cancel() for f in futures if not f.done()]
-
-        tables = [f.result() for f in completed_futures if f.result()]
-
         arrow_schema = schema_to_pyarrow(self._projected_schema, include_field_ids=False)
 
-        if len(tables) < 1:
-            return pa.Table.from_batches([], schema=arrow_schema)
+        batches = self.to_record_batches(tasks)
+        try:
+            first_batch = next(batches)
+        except StopIteration:
+            # Empty
+            return arrow_schema.empty_table()
 
-        result = pa.concat_tables(tables, promote_options="permissive")
+        # Note: cannot use pa.Table.from_batches(itertools.chain([first_batch], batches)))
+        #       as different batches can use different schema's (due to large_ types)
+        result = pa.concat_tables(
+            (pa.Table.from_batches([batch]) for batch in itertools.chain([first_batch], batches)), promote_options="permissive"
+        )
 
         if property_as_bool(self._io.properties, PYARROW_USE_LARGE_TYPES_ON_READ, False):
             deprecation_message(
@@ -1613,9 +1627,6 @@ class ArrowScan:
                 help_message=f"Property `{PYARROW_USE_LARGE_TYPES_ON_READ}` will be removed.",
             )
             result = result.cast(arrow_schema)
-
-        if self._limit is not None:
-            return result.slice(0, self._limit)
 
         return result
 
@@ -1638,7 +1649,32 @@ class ArrowScan:
             ValueError: When a field type in the file cannot be projected to the schema type
         """
         deletes_per_file = _read_all_delete_files(self._io, tasks)
-        return self._record_batches_from_scan_tasks_and_deletes(tasks, deletes_per_file)
+
+        total_row_count = 0
+        executor = ExecutorFactory.get_or_create()
+
+        def batches_for_task(task: FileScanTask) -> List[pa.RecordBatch]:
+            # Materialize the iterator here to ensure execution happens within the executor.
+            # Otherwise, the iterator would be lazily consumed later (in the main thread),
+            # defeating the purpose of using executor.map.
+            return list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file))
+
+        limit_reached = False
+        for batches in executor.map(batches_for_task, tasks):
+            for batch in batches:
+                current_batch_size = len(batch)
+                if self._limit is not None and total_row_count + current_batch_size >= self._limit:
+                    yield batch.slice(0, self._limit - total_row_count)
+
+                    limit_reached = True
+                    break
+                else:
+                    yield batch
+                    total_row_count += current_batch_size
+
+            if limit_reached:
+                # This break will also cancel all running tasks in the executor
+                break
 
     def _record_batches_from_scan_tasks_and_deletes(
         self, tasks: Iterable[FileScanTask], deletes_per_file: Dict[str, List[ChunkedArray]]
@@ -1648,7 +1684,7 @@ class ArrowScan:
             if self._limit is not None and total_row_count >= self._limit:
                 break
             batches = _task_to_record_batches(
-                _fs_from_file_path(self._io, task.file.file_path),
+                self._io,
                 task,
                 self._bound_row_filter,
                 self._projected_schema,
@@ -2444,7 +2480,9 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         )
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
-            with pq.ParquetWriter(fos, schema=arrow_table.schema, **parquet_writer_kwargs) as writer:
+            with pq.ParquetWriter(
+                fos, schema=arrow_table.schema, store_decimal_as_integer=True, **parquet_writer_kwargs
+            ) as writer:
                 writer.write(arrow_table, row_group_size=row_group_size)
         statistics = data_file_statistics_from_parquet_metadata(
             parquet_metadata=writer.writer.metadata,

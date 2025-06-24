@@ -23,14 +23,14 @@ from pyarrow import Table as pa_table
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
-from pyiceberg.expressions import And, EqualTo, Reference
+from pyiceberg.expressions import AlwaysTrue, And, EqualTo, Reference
 from pyiceberg.expressions.literals import LongLiteral
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema
 from pyiceberg.table import UpsertResult
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.upsert_util import create_match_filter
-from pyiceberg.types import IntegerType, NestedField, StringType
+from pyiceberg.types import IntegerType, NestedField, StringType, StructType
 from tests.catalog.test_base import InMemoryCatalog, Table
 
 
@@ -83,7 +83,7 @@ def gen_source_dataset(start_row: int, end_row: int, composite_key: bool, add_du
     )
 
     sql = f"""
-        with t as (SELECT unnest(range({start_row},{end_row+1})) as order_id)
+        with t as (SELECT unnest(range({start_row},{end_row + 1})) as order_id)
         SELECT t.order_id {additional_columns}
             , date '2021-01-01' as order_date, 'B' as order_type
         from t
@@ -101,7 +101,7 @@ def gen_target_iceberg_table(
     additional_columns = ", t.order_id + 1000 as order_line_id" if composite_key else ""
 
     df = ctx.sql(f"""
-        with t as (SELECT unnest(range({start_row},{end_row+1})) as order_id)
+        with t as (SELECT unnest(range({start_row},{end_row + 1})) as order_id)
         SELECT t.order_id {additional_columns}
             , date '2021-01-01' as order_date, 'A' as order_type
         from t
@@ -511,6 +511,163 @@ def test_upsert_without_identifier_fields(catalog: Catalog) -> None:
         tbl.upsert(df)
 
 
+def test_upsert_with_struct_field_as_non_join_key(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_struct_field_fails"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(
+            2,
+            "nested_type",
+            StructType(
+                NestedField(3, "sub1", StringType(), required=True),
+                NestedField(4, "sub2", StringType(), required=True),
+            ),
+            required=False,
+        ),
+        identifier_field_ids=[1],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=False),
+            pa.field(
+                "nested_type",
+                pa.struct(
+                    [
+                        pa.field("sub1", pa.large_string(), nullable=False),
+                        pa.field("sub2", pa.large_string(), nullable=False),
+                    ]
+                ),
+                nullable=True,
+            ),
+        ]
+    )
+
+    initial_data = pa.Table.from_pylist(
+        [
+            {
+                "id": 1,
+                "nested_type": {"sub1": "bla1", "sub2": "bla"},
+            }
+        ],
+        schema=arrow_schema,
+    )
+    tbl.append(initial_data)
+
+    update_data = pa.Table.from_pylist(
+        [
+            {
+                "id": 2,
+                "nested_type": {"sub1": "bla1", "sub2": "bla"},
+            },
+            {
+                "id": 1,
+                "nested_type": {"sub1": "bla1", "sub2": "bla2"},
+            },
+        ],
+        schema=arrow_schema,
+    )
+
+    res = tbl.upsert(update_data, join_cols=["id"])
+
+    expected_updated = 1
+    expected_inserted = 1
+
+    assert_upsert_result(res, expected_updated, expected_inserted)
+
+    update_data = pa.Table.from_pylist(
+        [
+            {
+                "id": 2,
+                "nested_type": {"sub1": "bla1", "sub2": "bla"},
+            },
+            {
+                "id": 1,
+                "nested_type": {"sub1": "bla1", "sub2": "bla2"},
+            },
+        ],
+        schema=arrow_schema,
+    )
+
+    res = tbl.upsert(update_data, join_cols=["id"])
+
+    expected_updated = 0
+    expected_inserted = 0
+
+    assert_upsert_result(res, expected_updated, expected_inserted)
+
+
+def test_upsert_with_struct_field_as_join_key(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_with_struct_field_as_join_key"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(
+            2,
+            "nested_type",
+            StructType(
+                NestedField(3, "sub1", StringType(), required=True),
+                NestedField(4, "sub2", StringType(), required=True),
+            ),
+            required=False,
+        ),
+        identifier_field_ids=[1],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=False),
+            pa.field(
+                "nested_type",
+                pa.struct(
+                    [
+                        pa.field("sub1", pa.large_string(), nullable=False),
+                        pa.field("sub2", pa.large_string(), nullable=False),
+                    ]
+                ),
+                nullable=True,
+            ),
+        ]
+    )
+
+    initial_data = pa.Table.from_pylist(
+        [
+            {
+                "id": 1,
+                "nested_type": {"sub1": "bla1", "sub2": "bla"},
+            }
+        ],
+        schema=arrow_schema,
+    )
+    tbl.append(initial_data)
+
+    update_data = pa.Table.from_pylist(
+        [
+            {
+                "id": 2,
+                "nested_type": {"sub1": "bla1", "sub2": "bla"},
+            },
+            {
+                "id": 1,
+                "nested_type": {"sub1": "bla1", "sub2": "bla"},
+            },
+        ],
+        schema=arrow_schema,
+    )
+
+    with pytest.raises(
+        pa.lib.ArrowNotImplementedError, match="Keys of type struct<sub1: large_string not null, sub2: large_string not null>"
+    ):
+        _ = tbl.upsert(update_data, join_cols=["nested_type"])
+
+
 def test_upsert_with_nulls(catalog: Catalog) -> None:
     identifier = "default.test_upsert_with_nulls"
     _drop_table(catalog, identifier)
@@ -552,3 +709,64 @@ def test_upsert_with_nulls(catalog: Catalog) -> None:
         ],
         schema=schema,
     )
+
+
+def test_transaction(catalog: Catalog) -> None:
+    """Test the upsert within a Transaction. Make sure that if something fails the entire Transaction is
+    rolled back."""
+    identifier = "default.test_merge_source_dups"
+    _drop_table(catalog, identifier)
+
+    ctx = SessionContext()
+
+    table = gen_target_iceberg_table(1, 10, False, ctx, catalog, identifier)
+    df_before_transaction = table.scan().to_arrow()
+
+    source_df = gen_source_dataset(5, 15, False, True, ctx)
+
+    with pytest.raises(Exception, match="Duplicate rows found in source dataset based on the key columns. No upsert executed"):
+        with table.transaction() as tx:
+            tx.delete(delete_filter=AlwaysTrue())
+            tx.upsert(df=source_df, join_cols=["order_id"])
+
+    df = table.scan().to_arrow()
+
+    assert df_before_transaction == df
+
+
+def test_transaction_multiple_upserts(catalog: Catalog) -> None:
+    identifier = "default.test_multi_upsert"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(2, "name", StringType(), required=True),
+        identifier_field_ids=[1],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    # Define exact schema: required int32 and required string
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=False),
+            pa.field("name", pa.string(), nullable=False),
+        ]
+    )
+
+    tbl.append(pa.Table.from_pylist([{"id": 1, "name": "Alice"}], schema=arrow_schema))
+
+    df = pa.Table.from_pylist([{"id": 2, "name": "Bob"}, {"id": 1, "name": "Alicia"}], schema=arrow_schema)
+
+    with tbl.transaction() as txn:
+        txn.delete(delete_filter="id = 1")
+        txn.append(df)
+
+        # This should read the uncommitted changes
+        txn.upsert(df, join_cols=["id"])
+
+    result = tbl.scan().to_arrow().to_pylist()
+    assert sorted(result, key=lambda x: x["id"]) == [
+        {"id": 1, "name": "Alicia"},
+        {"id": 2, "name": "Bob"},
+    ]

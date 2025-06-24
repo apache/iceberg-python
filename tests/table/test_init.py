@@ -57,7 +57,6 @@ from pyiceberg.table.snapshots import (
     Snapshot,
     SnapshotLogEntry,
     Summary,
-    ancestors_of,
 )
 from pyiceberg.table.sorting import (
     NullOrder,
@@ -223,44 +222,6 @@ def test_snapshot_by_timestamp(table_v2: Table) -> None:
         schema_id=None,
     )
     assert table_v2.snapshot_as_of_timestamp(1515100955770, inclusive=False) is None
-
-
-def test_ancestors_of(table_v2: Table) -> None:
-    assert list(ancestors_of(table_v2.current_snapshot(), table_v2.metadata)) == [
-        Snapshot(
-            snapshot_id=3055729675574597004,
-            parent_snapshot_id=3051729675574597004,
-            sequence_number=1,
-            timestamp_ms=1555100955770,
-            manifest_list="s3://a/b/2.avro",
-            summary=Summary(Operation.APPEND),
-            schema_id=1,
-        ),
-        Snapshot(
-            snapshot_id=3051729675574597004,
-            parent_snapshot_id=None,
-            sequence_number=0,
-            timestamp_ms=1515100955770,
-            manifest_list="s3://a/b/1.avro",
-            summary=Summary(Operation.APPEND),
-            schema_id=None,
-        ),
-    ]
-
-
-def test_ancestors_of_recursive_error(table_v2_with_extensive_snapshots: Table) -> None:
-    # Test RecursionError: maximum recursion depth exceeded
-    assert (
-        len(
-            list(
-                ancestors_of(
-                    table_v2_with_extensive_snapshots.current_snapshot(),
-                    table_v2_with_extensive_snapshots.metadata,
-                )
-            )
-        )
-        == 2000
-    )
 
 
 def test_snapshot_by_id_does_not_exist(table_v2: Table) -> None:
@@ -550,15 +511,15 @@ def test_update_column(table_v1: Table, table_v2: Table) -> None:
         assert new_schema3.find_field("z").required is False, "failed to update existing field required"
 
         # assert the above two updates also works with union_by_name
-        assert (
-            table.update_schema().union_by_name(new_schema)._apply() == new_schema
-        ), "failed to update existing field doc with union_by_name"
-        assert (
-            table.update_schema().union_by_name(new_schema2)._apply() == new_schema2
-        ), "failed to remove existing field doc with union_by_name"
-        assert (
-            table.update_schema().union_by_name(new_schema3)._apply() == new_schema3
-        ), "failed to update existing field required with union_by_name"
+        assert table.update_schema().union_by_name(new_schema)._apply() == new_schema, (
+            "failed to update existing field doc with union_by_name"
+        )
+        assert table.update_schema().union_by_name(new_schema2)._apply() == new_schema2, (
+            "failed to remove existing field doc with union_by_name"
+        )
+        assert table.update_schema().union_by_name(new_schema3)._apply() == new_schema3, (
+            "failed to update existing field required with union_by_name"
+        )
 
 
 def test_add_primitive_type_column(table_v2: Table) -> None:

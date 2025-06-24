@@ -271,7 +271,7 @@ def test_location(catalog: InMemoryCatalog) -> None:
     runner = CliRunner()
     result = runner.invoke(run, ["location", "default.my_table"])
     assert result.exit_code == 0
-    assert result.output == f"""{catalog._warehouse_location}/default.db/my_table\n"""
+    assert result.output == f"""{catalog._warehouse_location}/default/my_table\n"""
 
 
 def test_location_does_not_exists(catalog: InMemoryCatalog) -> None:
@@ -700,7 +700,7 @@ def test_json_location(catalog: InMemoryCatalog) -> None:
     runner = CliRunner()
     result = runner.invoke(run, ["--output=json", "location", "default.my_table"])
     assert result.exit_code == 0
-    assert result.output == f'"{catalog._warehouse_location}/default.db/my_table"\n'
+    assert result.output == f'"{catalog._warehouse_location}/default/my_table"\n'
 
 
 def test_json_location_does_not_exists(catalog: InMemoryCatalog) -> None:
