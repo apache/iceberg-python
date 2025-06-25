@@ -175,3 +175,7 @@ class NoopCatalog(Catalog):
     @override
     def load_view(self, identifier: str | Identifier) -> View:
         raise NotImplementedError
+
+    @override
+    def rename_view(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> None:
+        raise NotImplementedError
