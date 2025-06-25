@@ -139,7 +139,7 @@ def test_deserialize_snapshot_with_properties(snapshot_with_properties: Snapshot
 def test_snapshot_repr(snapshot: Snapshot) -> None:
     assert (
         repr(snapshot)
-        == """Snapshot(snapshot_id=25, parent_snapshot_id=19, sequence_number=200, timestamp_ms=1602638573590, manifest_list='s3:/a/b/c.avro', summary=Summary(Operation.APPEND), schema_id=3)"""
+        == """Snapshot(snapshot_id=25, parent_snapshot_id=19, sequence_number=200, timestamp_ms=1602638573590, manifest_list='s3:/a/b/c.avro', summary=Summary(Operation.APPEND), schema_id=3, first_row_id=None)"""
     )
     assert snapshot == eval(repr(snapshot))
 
@@ -147,7 +147,7 @@ def test_snapshot_repr(snapshot: Snapshot) -> None:
 def test_snapshot_with_properties_repr(snapshot_with_properties: Snapshot) -> None:
     assert (
         repr(snapshot_with_properties)
-        == """Snapshot(snapshot_id=25, parent_snapshot_id=19, sequence_number=200, timestamp_ms=1602638573590, manifest_list='s3:/a/b/c.avro', summary=Summary(Operation.APPEND, **{'foo': 'bar'}), schema_id=3)"""
+        == """Snapshot(snapshot_id=25, parent_snapshot_id=19, sequence_number=200, timestamp_ms=1602638573590, manifest_list='s3:/a/b/c.avro', summary=Summary(Operation.APPEND, **{'foo': 'bar'}), schema_id=3, first_row_id=None)"""
     )
     assert snapshot_with_properties == eval(repr(snapshot_with_properties))
 

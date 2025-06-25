@@ -297,12 +297,10 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         ) as writer:
             writer.add_manifests(new_manifests)
 
-        added_rows: Optional[int] = None
         first_row_id: Optional[int] = None
 
         if self._transaction.table_metadata.format_version >= 3:
             first_row_id = self._transaction.table_metadata.next_row_id
-            added_rows = self._calculate_added_rows(new_manifests)
 
         snapshot = Snapshot(
             snapshot_id=self._snapshot_id,
@@ -311,7 +309,6 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             sequence_number=next_sequence_number,
             summary=summary,
             schema_id=self._transaction.table_metadata.current_schema_id,
-            added_rows=added_rows,
             first_row_id=first_row_id,
         )
 
