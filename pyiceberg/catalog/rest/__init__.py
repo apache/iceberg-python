@@ -183,7 +183,7 @@ class ConfigResponse(IcebergBaseModel):
 
 
 class ListNamespaceResponse(IcebergBaseModel):
-    namespaces: Optional[List[Identifier]] = Field(default=[])
+    namespaces: Optional[List[Identifier]] = Field(default_factory=list)
 
 
 class NamespaceResponse(IcebergBaseModel):
