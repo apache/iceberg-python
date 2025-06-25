@@ -44,6 +44,10 @@ class NoSuchViewError(Exception):
     """Raises when the view can't be found in the REST catalog."""
 
 
+class ViewAlreadyExistsError(Exception):
+    """Raises when the view being created already exists in the REST catalog."""
+
+
 class NoSuchIdentifierError(Exception):
     """Raises when the identifier can't be found in the REST catalog."""
 
