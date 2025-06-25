@@ -2325,7 +2325,6 @@ class TestRestCatalogClose:
         assert catalog is not None and hasattr(catalog, "_session")
         assert len(catalog._session.adapters) == self.EXPECTED_ADAPTERS_SIGV4
 
-<<<<<<< HEAD
     def test_server_side_planning_disabled_by_default(self, rest_mock: Mocker) -> None:
         catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
 
