@@ -56,7 +56,6 @@ from pyiceberg.manifest import (
 from pyiceberg.partitioning import (
     PartitionSpec,
 )
-from pyiceberg.table.refs import SnapshotRefType
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
@@ -68,7 +67,6 @@ from pyiceberg.table.update import (
     AddSnapshotUpdate,
     AssertRefSnapshotId,
     RemoveSnapshotRefUpdate,
-    RemoveSnapshotsUpdate,
     SetSnapshotRefUpdate,
     TableRequirement,
     TableUpdate,

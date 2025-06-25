@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from pyiceberg.table import Table
+    from pyiceberg.table.metadata import TableMetadata
 
 
 class MaintenanceTable:
@@ -139,6 +140,7 @@ class MaintenanceTable:
 
             # Remove the snapshot
             from pyiceberg.table.update import RemoveSnapshotsUpdate
+
             txn._apply((RemoveSnapshotsUpdate(snapshot_ids=[snapshot_id]),))
 
     def expire_snapshots_by_ids(self, snapshot_ids: List[int]) -> None:
@@ -152,7 +154,7 @@ class MaintenanceTable:
         """
         with self.tbl.transaction() as txn:
             protected_ids = self._get_protected_snapshot_ids(txn.table_metadata)
-            
+
             # Validate all snapshots before expiring any
             for snapshot_id in snapshot_ids:
                 if txn.table_metadata.snapshot_by_id(snapshot_id) is None:
@@ -162,6 +164,7 @@ class MaintenanceTable:
 
             # Remove all snapshots
             from pyiceberg.table.update import RemoveSnapshotsUpdate
+
             txn._apply((RemoveSnapshotsUpdate(snapshot_ids=snapshot_ids),))
 
     def expire_snapshots_older_than(self, timestamp_ms: int) -> None:
@@ -173,17 +176,18 @@ class MaintenanceTable:
         # First check if there are any snapshots to expire to avoid unnecessary transactions
         protected_ids = self._get_protected_snapshot_ids(self.tbl.metadata)
         snapshots_to_expire = []
-        
+
         for snapshot in self.tbl.metadata.snapshots:
             if snapshot.timestamp_ms < timestamp_ms and snapshot.snapshot_id not in protected_ids:
                 snapshots_to_expire.append(snapshot.snapshot_id)
-        
+
         if snapshots_to_expire:
             with self.tbl.transaction() as txn:
                 from pyiceberg.table.update import RemoveSnapshotsUpdate
+
                 txn._apply((RemoveSnapshotsUpdate(snapshot_ids=snapshots_to_expire),))
 
-    def _get_protected_snapshot_ids(self, table_metadata) -> Set[int]:
+    def _get_protected_snapshot_ids(self, table_metadata: TableMetadata) -> Set[int]:
         """Get the IDs of protected snapshots.
 
         These are the HEAD snapshots of all branches and all tagged snapshots.
@@ -196,7 +200,7 @@ class MaintenanceTable:
             Set of protected snapshot IDs to exclude from expiration.
         """
         from pyiceberg.table.refs import SnapshotRefType
-        
+
         protected_ids: Set[int] = set()
         for ref in table_metadata.refs.values():
             if ref.snapshot_ref_type in [SnapshotRefType.TAG, SnapshotRefType.BRANCH]:
