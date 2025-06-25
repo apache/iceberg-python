@@ -35,8 +35,10 @@ from pyiceberg.exceptions import (
     NamespaceAlreadyExistsError,
     NoSuchNamespaceError,
     NoSuchTableError,
+    NoSuchViewError,
     NotInstalledError,
     TableAlreadyExistsError,
+    ViewAlreadyExistsError,
 )
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import ManifestFile
@@ -708,6 +710,18 @@ class Catalog(ABC):
 
         Raises:
             ViewAlreadyExistsError: If a view with the name already exists.
+        """
+
+    @abstractmethod
+    def rename_view(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> None:
+        """Rename a fully classified view name.
+
+        Args:
+            from_identifier (str | Identifier): Existing view identifier.
+            to_identifier (str | Identifier): New view identifier.
+
+        Raises:
+            NoSuchViewError: If a view with the name does not exist.
         """
 
     @staticmethod
