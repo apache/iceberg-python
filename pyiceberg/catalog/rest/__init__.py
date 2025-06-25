@@ -179,7 +179,7 @@ class RegisterTableRequest(IcebergBaseModel):
 
 class ConfigResponse(IcebergBaseModel):
     defaults: Optional[Properties] = Field(default_factory=dict)
-    overrides: Properties = Field()
+    overrides: Optional[Properties] = Field(default_factory=dict)
 
 
 class ListNamespaceResponse(IcebergBaseModel):
