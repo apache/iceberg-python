@@ -158,6 +158,7 @@ class Endpoints:
     register_view: str = "namespaces/{namespace}/register-view"
     drop_view: str = "namespaces/{namespace}/views/{view}"
     view_exists: str = "namespaces/{namespace}/views/{view}"
+    rename_view: str = "views/rename"
     plan_table_scan: str = "namespaces/{namespace}/tables/{table}/plan"
     fetch_scan_tasks: str = "namespaces/{namespace}/tables/{table}/tasks"
 
@@ -187,6 +188,7 @@ class Capability:
     V1_VIEW_EXISTS = Endpoint(http_method=HttpMethod.HEAD, path=f"{API_PREFIX}/{Endpoints.view_exists}")
     V1_REGISTER_VIEW = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.register_view}")
     V1_DELETE_VIEW = Endpoint(http_method=HttpMethod.DELETE, path=f"{API_PREFIX}/{Endpoints.drop_view}")
+    V1_RENAME_VIEW = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.rename_view}")
     V1_SUBMIT_TABLE_SCAN_PLAN = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.plan_table_scan}")
     V1_TABLE_SCAN_PLAN_TASKS = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.fetch_scan_tasks}")
 
@@ -216,6 +218,7 @@ VIEW_ENDPOINTS: frozenset[Endpoint] = frozenset(
         Capability.V1_LIST_VIEWS,
         Capability.V1_LOAD_VIEW,
         Capability.V1_DELETE_VIEW,
+        Capability.V1_RENAME_VIEW,
     )
 )
 
@@ -1470,6 +1473,18 @@ class RestCatalog(Catalog):
             response.raise_for_status()
         except HTTPError as exc:
             _handle_non_200_response(exc, {404: NoSuchViewError})
+
+    @retry(**_RETRY_ARGS)
+    def rename_view(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> None:
+        payload = {
+            "source": self._split_identifier_for_json(from_identifier),
+            "destination": self._split_identifier_for_json(to_identifier),
+        }
+        response = self._session.post(self.url(Endpoints.rename_view), json=payload)
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            _handle_non_200_response(exc, {404: NoSuchViewError, 409: ViewAlreadyExistsError})
 
     def close(self) -> None:
         """Close the catalog and release Session connection adapters.
