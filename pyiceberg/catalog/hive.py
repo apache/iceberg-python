@@ -110,6 +110,8 @@ from pyiceberg.types import (
     UUIDType,
 )
 from pyiceberg.utils.properties import property_as_bool, property_as_float
+from pyiceberg.view import View
+from pyiceberg.view.metadata import ViewVersion
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -433,6 +435,16 @@ class HiveCatalog(MetastoreCatalog):
             hive_table = open_client.get_table(dbname=database_name, tbl_name=table_name)
 
         return self._convert_hive_into_iceberg(hive_table)
+
+    def create_view(
+        self,
+        identifier: Union[str, Identifier],
+        schema: Union[Schema, "pa.Schema"],
+        view_version: ViewVersion,
+        location: Optional[str] = None,
+        properties: Properties = EMPTY_DICT,
+    ) -> View:
+        raise NotImplementedError
 
     def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
         """Register a new table using existing metadata.

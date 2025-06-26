@@ -68,6 +68,8 @@ from pyiceberg.table.update import (
 )
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import strtobool
+from pyiceberg.view import View
+from pyiceberg.view.metadata import ViewVersion
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -721,6 +723,16 @@ class SqlCatalog(MetastoreCatalog):
                 session.execute(insert_stmt)
             session.commit()
         return properties_update_summary
+
+    def create_view(
+        self,
+        identifier: Union[str, Identifier],
+        schema: Union[Schema, "pa.Schema"],
+        view_version: ViewVersion,
+        location: Optional[str] = None,
+        properties: Properties = EMPTY_DICT,
+    ) -> View:
+        raise NotImplementedError
 
     def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         raise NotImplementedError
