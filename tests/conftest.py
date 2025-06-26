@@ -1136,7 +1136,46 @@ def table_metadata_v2_with_statistics() -> dict[str, Any]:
 
 
 @pytest.fixture
-def example_table_metadata_v3() -> dict[str, Any]:
+def example_view_metadata_v1() -> Dict[str, Any]:
+    return {
+        "view-uuid": "a20125c8-7284-442c-9aea-15fee620737c",
+        "format-version": 1,
+        "location": "s3://bucket/test/location/test_view",
+        "current-version-id": 1,
+        "versions": [
+            {
+                "version-id": 1,
+                "timestamp-ms": 1602638573874,
+                "schema-id": 1,
+                "summary": {"engine-name": "spark", "engineVersion": "3.3"},
+                "representations": [
+                    {
+                        "type": "sql",
+                        "sql": "SELECT * FROM prod.db.table",
+                        "dialect": "spark",
+                    }
+                ],
+                "default-namespace": ["default"],
+            }
+        ],
+        "schemas": [
+            {
+                "type": "struct",
+                "schema-id": 1,
+                "fields": [
+                    {"id": 1, "name": "x", "required": True, "type": "long"},
+                    {"id": 2, "name": "y", "required": True, "type": "long", "doc": "comment"},
+                    {"id": 3, "name": "z", "required": True, "type": "long"},
+                ],
+            }
+        ],
+        "version-log": [{"timestamp-ms": 1602638573874, "version-id": 1}],
+        "properties": {"comment": "this is a test view"},
+    }
+
+
+@pytest.fixture
+def example_table_metadata_v3() -> Dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_V3
 
 

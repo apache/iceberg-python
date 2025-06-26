@@ -782,10 +782,7 @@ class RestCatalog(Catalog):
     def _response_to_view(self, identifier_tuple: Tuple[str, ...], view_response: ViewResponse) -> View:
         return View(
             identifier=identifier_tuple,
-            metadata_location=view_response.metadata_location,  # type: ignore
             metadata=view_response.metadata,
-            io=self._load_file_io({**view_response.metadata.properties, **view_response.config}, view_response.metadata_location),
-            catalog=self,
         )
 
     def _refresh_token(self) -> None:
