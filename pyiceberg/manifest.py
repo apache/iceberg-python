@@ -752,12 +752,13 @@ class ManifestFile(Record):
         ]
 
 
-@cached(cache=LRUCache(maxsize=128), key=lambda io, manifest_list, table: hashkey(manifest_list))
+@cached(cache=LRUCache(maxsize=128), key=lambda io, manifest_list: hashkey(manifest_list))
 def _manifests(io: FileIO, manifest_list: str) -> Tuple[ManifestFile, ...]:
     """Read and cache manifests from the given manifest list, returning a tuple to prevent modification."""
     bs = io.new_input(manifest_list).open().read()
     from pyiceberg_core import manifest
 
+    entries = list(manifest.read_manifest_list(bs).entries())
     return tuple(
         ManifestFile(
             manifest.manifest_path,
@@ -773,10 +774,18 @@ def _manifests(io: FileIO, manifest_list: str) -> Tuple[ManifestFile, ...]:
             manifest.added_rows_count,
             manifest.existing_rows_count,
             manifest.deleted_rows_count,
-            manifest.partitions,
+            [
+                PartitionFieldSummary(
+                    partition.contains_null,
+                    partition.contains_nan,
+                    partition.lower_bound,
+                    partition.upper_bound,
+                )
+                for partition in manifest.partitions
+            ],
             manifest.key_metadata,
         )
-        for manifest in manifest.read_manifest_list(bs).entries()
+        for manifest in entries
     )
 
 
@@ -823,12 +832,12 @@ def _inherit_from_manifest(entry: ManifestEntry, manifest: ManifestFile) -> Mani
 
     # in v1 tables, the sequence number is not persisted and can be safely defaulted to 0
     # in v2 tables, the sequence number should be inherited iff the entry status is ADDED
-    if entry.sequence_number is None and (manifest.sequence_number == 0 or entry.status == ManifestEntryStatus.ADDED):
+    if entry.sequence_number is None:
         entry.sequence_number = manifest.sequence_number
 
     # in v1 tables, the file sequence number is not persisted and can be safely defaulted to 0
     # in v2 tables, the file sequence number should be inherited iff the entry status is ADDED
-    if entry.file_sequence_number is None and (manifest.sequence_number == 0 or entry.status == ManifestEntryStatus.ADDED):
+    if entry.file_sequence_number is None:
         # Only available in V2, always 0 in V1
         entry.file_sequence_number = manifest.sequence_number
 

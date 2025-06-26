@@ -47,6 +47,7 @@ from typing import (
 import boto3
 import pytest
 from moto import mock_aws
+from pydantic_core import to_json
 
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.noop import NoopCatalog
@@ -1878,7 +1879,7 @@ def generated_manifest_entry_file(
                 manifest_entry_records,
                 metadata={
                     "schema": test_schema.model_dump_json(),
-                    "partition-spec": test_partition_spec.fields,
+                    "partition-spec": to_json(test_partition_spec.fields).decode("utf-8"),
                 },
             )
         yield tmp_avro_file
