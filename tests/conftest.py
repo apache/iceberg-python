@@ -2827,7 +2827,7 @@ def pyarrow_schema_with_promoted_types() -> "pa.Schema":
             pa.field("list", pa.list_(pa.int32()), nullable=False),  # can support upcasting integer to long
             pa.field("map", pa.map_(pa.string(), pa.int32()), nullable=False),  # can support upcasting integer to long
             pa.field("double", pa.float32(), nullable=True),  # can support upcasting float to double
-            pa.field("uuid", pa.binary(length=16), nullable=True),  # can support upcasting float to double
+            pa.field("uuid", pa.binary(length=16), nullable=True),  # can support upcasting fixed to uuid
         )
     )
 
@@ -2843,7 +2843,10 @@ def pyarrow_table_with_promoted_types(pyarrow_schema_with_promoted_types: "pa.Sc
             "list": [[1, 1], [2, 2]],
             "map": [{"a": 1}, {"b": 2}],
             "double": [1.1, 9.2],
-            "uuid": [b"qZx\xefNS@\x89\x9b\xf9:\xd0\xee\x9b\xf5E", b"\x97]\x87T^JDJ\x96\x97\xf4v\xe4\x03\x0c\xde"],
+            "uuid": [
+                uuid.UUID("00000000-0000-0000-0000-000000000000").bytes,
+                uuid.UUID("11111111-1111-1111-1111-111111111111").bytes,
+            ],
         },
         schema=pyarrow_schema_with_promoted_types,
     )
