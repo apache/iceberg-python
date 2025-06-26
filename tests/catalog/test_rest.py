@@ -50,12 +50,14 @@ from pyiceberg.exceptions import (
     OAuthError,
     ServerError,
     TableAlreadyExistsError,
+    ViewAlreadyExistsError,
 )
 from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.table.metadata import TableMetadataV1
+from pyiceberg.table.view import View, ViewMetadata, ViewVersion
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import RecursiveDict
@@ -131,6 +133,18 @@ def example_table_metadata_no_snapshot_v1_rest_json(example_table_metadata_no_sn
     return {
         "metadata-location": "s3://warehouse/database/table/metadata.json",
         "metadata": example_table_metadata_no_snapshot_v1,
+        "config": {
+            "client.factory": "io.tabular.iceberg.catalog.TabularAwsClientFactory",
+            "region": "us-west-2",
+        },
+    }
+
+
+@pytest.fixture
+def example_view_metadata_rest_json(example_view_metadata_v1: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "metadata-location": "s3://warehouse/database/table/metadata/00001-5f2f8166-244c-4eae-ac36-384ecdec81fc.gz.metadata.json",
+        "metadata": example_view_metadata_v1,
         "config": {
             "client.factory": "io.tabular.iceberg.catalog.TabularAwsClientFactory",
             "region": "us-west-2",
@@ -1265,6 +1279,73 @@ def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> Non
             properties={"owner": "fokko"},
         )
     assert "Table already exists" in str(e.value)
+
+
+def test_create_view_200(
+    rest_mock: Mocker, table_schema_simple: Schema, example_view_metadata_rest_json: Dict[str, Any]
+) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/views",
+        json=example_view_metadata_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    actual = catalog.create_view(
+        identifier=("fokko", "fokko2"),
+        schema=table_schema_simple,
+        view_version=ViewVersion(
+            version_id=1,
+            timestamp_ms=12345,
+            schema_id=1,
+            summary={"engine-name": "spark", "engineVersion": "3.3"},
+            representations=[],
+        ),
+        location=None,
+        properties={"owner": "fokko"},
+    )
+    expected = View(
+        identifier=("fokko", "fokko2"),
+        metadata_location=example_view_metadata_rest_json["metadata-location"],
+        metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]),
+        io=load_file_io(),
+        catalog=catalog,
+    )
+    assert actual == expected
+
+
+def test_create_view_409(
+    rest_mock: Mocker,
+    table_schema_simple: Schema,
+) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/views",
+        json={
+            "error": {
+                "message": "View already exists: fokko.already_exists in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
+                "type": "AlreadyExistsException",
+                "code": 409,
+            }
+        },
+        status_code=409,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(ViewAlreadyExistsError) as e:
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).create_view(
+            identifier=("fokko", "fokko2"),
+            schema=table_schema_simple,
+            view_version=ViewVersion(
+                version_id=1,
+                timestamp_ms=12345,
+                schema_id=1,
+                summary={"engine-name": "spark", "engineVersion": "3.3"},
+                representations=[],
+            ),
+            location=None,
+            properties={"owner": "fokko"},
+        )
+    assert "View already exists" in str(e.value)
 
 
 def test_create_table_if_not_exists_200(
