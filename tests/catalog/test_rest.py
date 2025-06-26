@@ -1296,7 +1296,14 @@ def test_create_view_200(rest_mock: Mocker, table_schema_simple: Schema, example
             timestamp_ms=12345,
             schema_id=1,
             summary={"engine-name": "spark", "engineVersion": "3.3"},
-            representations=[],
+            representations=[
+                {
+                    "type": "sql",
+                    "sql": "SELECT * FROM prod.db.table",
+                    "dialect": "spark",
+                }
+            ],
+            default_namespace=["default"],
         ),
         location=None,
         properties={"owner": "fokko"},
@@ -1335,6 +1342,7 @@ def test_create_view_409(
                 schema_id=1,
                 summary={"engine-name": "spark", "engineVersion": "3.3"},
                 representations=[],
+                default_namespace=[],
             ),
             location=None,
             properties={"owner": "fokko"},
