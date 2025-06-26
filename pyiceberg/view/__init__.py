@@ -17,24 +17,20 @@
 from __future__ import annotations
 
 from typing import (
-    TYPE_CHECKING,
     Any,
-    Dict,
 )
 
 from pydantic import Field
 
-from pyiceberg.io import FileIO
-from pyiceberg.table.metadata import ViewMetadata
-from pyiceberg.typedef import EMPTY_DICT, Identifier
+from pyiceberg.typedef import Identifier
+from pyiceberg.view.metadata import ViewMetadata
+
 
 class View:
     """An Iceberg view."""
 
     _identifier: Identifier = Field()
     metadata: ViewMetadata
-    metadata_location: str = Field()
-    io: FileIO
 
     def __init__(
         self,
@@ -50,8 +46,4 @@ class View:
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the View class."""
-        return (
-            self.name() == other.name() and self.metadata == other.metadata
-            if isinstance(other, View)
-            else False
-        )
+        return self.name() == other.name() and self.metadata == other.metadata if isinstance(other, View) else False
