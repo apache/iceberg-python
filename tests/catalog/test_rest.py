@@ -57,12 +57,13 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.table.metadata import TableMetadataV1
-from pyiceberg.table.view import View, ViewMetadata, ViewVersion
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import RecursiveDict
 from pyiceberg.types import StringType
 from pyiceberg.utils.config import Config
+from pyiceberg.view import View
+from pyiceberg.view.metadata import ViewMetadata, ViewVersion
 
 TEST_URI = "https://iceberg-test-catalog/"
 TEST_CREDENTIALS = "client:secret_with:colon"
@@ -1281,9 +1282,7 @@ def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> Non
     assert "Table already exists" in str(e.value)
 
 
-def test_create_view_200(
-    rest_mock: Mocker, table_schema_simple: Schema, example_view_metadata_rest_json: Dict[str, Any]
-) -> None:
+def test_create_view_200(rest_mock: Mocker, table_schema_simple: Schema, example_view_metadata_rest_json: Dict[str, Any]) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/fokko/views",
         json=example_view_metadata_rest_json,
@@ -1306,10 +1305,7 @@ def test_create_view_200(
     )
     expected = View(
         identifier=("fokko", "fokko2"),
-        metadata_location=example_view_metadata_rest_json["metadata-location"],
         metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]),
-        io=load_file_io(),
-        catalog=catalog,
     )
     assert actual == expected
 

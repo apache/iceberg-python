@@ -19,6 +19,7 @@
 class TableAlreadyExistsError(Exception):
     """Raised when creating a table with a name that already exists."""
 
+
 class ViewAlreadyExistsError(Exception):
     """Raised when creating a view with a name that already exists."""
 

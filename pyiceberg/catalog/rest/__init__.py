@@ -69,7 +69,7 @@ from pyiceberg.table import (
     TableIdentifier,
     TableProperties,
 )
-from pyiceberg.table.metadata import TableMetadata, ViewMetadata, ViewVersion
+from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
 from pyiceberg.table.update import (
     TableRequirement,
@@ -80,6 +80,7 @@ from pyiceberg.types import transform_dict_value_to_str
 from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool
 from pyiceberg.view import View
+from pyiceberg.view.metadata import ViewMetadata, ViewVersion
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -783,9 +784,7 @@ class RestCatalog(Catalog):
             identifier=identifier_tuple,
             metadata_location=view_response.metadata_location,  # type: ignore
             metadata=view_response.metadata,
-            io=self._load_file_io(
-                {**view_response.metadata.properties, **view_response.config}, view_response.metadata_location
-            ),
+            io=self._load_file_io({**view_response.metadata.properties, **view_response.config}, view_response.metadata_location),
             catalog=self,
         )
 
