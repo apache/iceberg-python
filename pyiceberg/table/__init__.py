@@ -78,6 +78,7 @@ from pyiceberg.partitioning import (
     PartitionSpec,
 )
 from pyiceberg.schema import Schema
+from pyiceberg.table.delete_file_index import DeleteFileIndex
 from pyiceberg.table.inspect import InspectTable
 from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.table.metadata import (
@@ -1663,7 +1664,9 @@ def _min_sequence_number(manifests: List[ManifestFile]) -> int:
         return INITIAL_SEQUENCE_NUMBER
 
 
-def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_entries: SortedList[ManifestEntry], equality_delete_entries: List[ManifestEntry]) -> Set[DataFile]:
+def _match_deletes_to_data_file(
+    data_entry: ManifestEntry, positional_delete_entries: SortedList[ManifestEntry], delete_file_index: DeleteFileIndex
+) -> Set[DataFile]:
     """Check if the delete file is relevant for the data file.
 
     Using the column metrics to see if the filename is in the lower and upper bound.
@@ -1671,7 +1674,7 @@ def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_ent
     Args:
         data_entry (ManifestEntry): The manifest entry path of the datafile.
         positional_delete_entries (List[ManifestEntry]): All the candidate positional deletes manifest entries.
-        equality_delete_entries (List[ManifestEntry]): All the candidate equality deletes manifest entries.
+        delete_file_index (DeleteFileIndex): All the candidate equality deletes manifest entries.
 
     Returns:
         A set of delete files that are relevant for the data file.
@@ -1679,7 +1682,7 @@ def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_ent
     # MODIFIED
 
     # Create a set of relevant positional delete entries
-    relevant_positional_entries = positional_delete_entries[positional_delete_entries.bisect_right(data_entry):]
+    relevant_positional_entries = positional_delete_entries[positional_delete_entries.bisect_right(data_entry) :]
 
     if len(relevant_positional_entries) > 0:
         evaluator = _InclusiveMetricsEvaluator(POSITIONAL_DELETE_SCHEMA, EqualTo("file_path", data_entry.data_file.file_path))
@@ -1691,18 +1694,10 @@ def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_ent
     else:
         positional_set = set()
 
-    # Create a set of relevant equality delete entries
-    relevant_equality_entries = []
-    for entry in equality_delete_entries:
-        if entry.data_file.file_path == data_entry.data_file.file_path:
-            if (entry.sequence_number or INITIAL_SEQUENCE_NUMBER) - 1 >= (data_entry.sequence_number or INITIAL_SEQUENCE_NUMBER):
-                if (entry.data_file.partition == data_entry.data_file.partition and entry.data_file.spec_id == data_entry.data_file.spec_id) or ( entry.data_file.spec_id == UNPARTITIONED_PARTITION_SPEC.spec_id):
-                    if entry.data_file.equality_ids is not None:
-                        relevant_equality_entries.append(entry)
-
-    equality_set = {entry.data_file for entry in relevant_equality_entries}
-
-    # Return a set of all relevant delete entries
+    candidate_eq_deletes = delete_file_index.for_data_file(
+        data_entry.sequence_number or 0, data_entry.data_file, partition_key=data_entry.data_file.partition
+    )
+    equality_set = set(candidate_eq_deletes)
     return positional_set.union(equality_set)
 
 class DataScan(TableScan):
@@ -1840,13 +1835,16 @@ class DataScan(TableScan):
             else:
                 raise ValueError(f"Unknown DataFileContent ({data_file.content}): {manifest_entry}")
 
+        delete_file_index = DeleteFileIndex(self.table_metadata.schema())
+        for entry in equality_delete_entries:
+            delete_file_index.add_equality_delete(entry.data_file.spec_id, entry, partition_key=entry.data_file.partition)
         return [
             FileScanTask(
                 data_entry.data_file,
                 delete_files=_match_deletes_to_data_file(
                     data_entry,
                     positional_delete_entries,
-                    equality_delete_entries,
+                    delete_file_index,
                 ),
                 residual=residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(
                     data_entry.data_file.partition

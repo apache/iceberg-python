@@ -1451,8 +1451,7 @@ def _task_to_record_batches(
                     table = pa.Table.from_batches([current_batch])
                     task_eq_del = [df for df in task.delete_files if df.content == DataFileContent.EQUALITY_DELETES]
                     for i, delete_file in enumerate(task_eq_del):
-                        if contains_equality_deletes(task.file, delete_file, delete_file.equality_ids):
-                            table = _apply_equality_deletes(table, equality_deletes[i], delete_file.equality_ids)
+                        table = _apply_equality_deletes(table, equality_deletes[i], delete_file.equality_ids)
                     if table.num_rows > 0:
                         current_batch = table.combine_chunks().to_batches()[0]
                     else:
@@ -2793,43 +2792,3 @@ def _apply_equality_deletes(data_table: pa.Table, delete_table: pa.Table, equali
         join_type='left anti'
     )
     return result
-
-
-def contains_equality_deletes(data_file: DataFile, delete_file: DataFile, equality_ids: List[int]) -> bool:
-    """ Check if a data file contains deletes from an equality delete file.
-    
-    Uses file metadata to check if the delete file's bounds overlap with the data file's bound.
-    
-    Args:
-        data_file: A data file object to check against
-        delete_file: The delete file object containing delete file metadata
-        equality_ids: List of column IDs to use for comparison
-    
-    Returns:
-        True if data file might contain deletes from the delete file, Flase otherwise
-    """""
-
-    if not data_file.lower_bounds or not data_file.upper_bounds or not delete_file.lower_bounds or not delete_file.upper_bounds:
-        return True
-    for field_id in equality_ids:
-        if (field_id not in data_file.lower_bounds or field_id not in data_file.upper_bounds or
-                field_id not in delete_file.lower_bounds or field_id not in delete_file.upper_bounds):
-            continue
-
-        if data_file.upper_bounds.get(field_id) < delete_file.lower_bounds.get(field_id) or data_file.lower_bounds.get(field_id) > delete_file.upper_bounds.get(field_id):
-            return False
-
-        data_null_count = data_file.null_value_counts.get(field_id, 0) if data_file.null_value_counts else 0
-        data_value_count = data_file.value_counts.get(field_id, 0) if data_file.value_counts else 0
-        delete_null_count = delete_file.null_value_counts.get(field_id, 0) if delete_file.null_value_counts else 0
-        delete_value_count = delete_file.value_counts.get(field_id, 0) if delete_file.value_counts else 0
-
-        # Check if data file contains only null values but delete file has no null deletes
-        if 0 < data_null_count == data_value_count > 0 and delete_null_count == 0:
-            return False
-
-        # Check if delete file removes only null rows but data file has no null values
-        if 0 < delete_null_count == delete_value_count > 0 and data_null_count == 0:
-            return False
-
-    return True

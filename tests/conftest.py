@@ -60,7 +60,7 @@ from pyiceberg.io import (
     load_file_io,
 )
 from pyiceberg.io.fsspec import FsspecFileIO
-from pyiceberg.manifest import DataFile, FileFormat
+from pyiceberg.manifest import DataFile, FileFormat, ManifestEntry, ManifestEntryStatus
 from pyiceberg.manifest import DataFileContent
 from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
@@ -2845,4 +2845,116 @@ def pyarrow_table_with_promoted_types(pyarrow_schema_with_promoted_types: "pa.Sc
             "uuid": [b"qZx\xefNS@\x89\x9b\xf9:\xd0\xee\x9b\xf5E", b"\x97]\x87T^JDJ\x96\x97\xf4v\xe4\x03\x0c\xde"],
         },
         schema=pyarrow_schema_with_promoted_types,
+    )
+
+def create_equality_delete_entry(sequence_number=1, equality_ids=None, partition=None):
+    # Helper to create equality deletes
+    delete_file = DataFile.from_args(
+        content=DataFileContent.EQUALITY_DELETES,
+        file_path=f"s3://bucket/eq-delete-{sequence_number}.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=partition or {},
+        record_count=10,
+        file_size_in_bytes=100,
+        equality_ids=equality_ids or [1]
+    )
+
+    return ManifestEntry.from_args(
+        status=ManifestEntryStatus.ADDED,
+        sequence_number=sequence_number,
+        data_file=delete_file
+    )
+
+def create_positional_delete_entry(sequence_number=1, file_path="s3://bucket/data.parquet"):
+    # Helper to create positional delete entries
+    delete_file = DataFile.from_args(
+        content=DataFileContent.POSITION_DELETES,
+        file_path=f"s3://bucket/pos-delete-{sequence_number}.parquet",
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=10,
+        file_size_in_bytes=100,
+        lower_bounds={2147483546: file_path.encode()},
+        upper_bounds={2147483546: file_path.encode()}
+    )
+
+    return ManifestEntry.from_args(
+        status=ManifestEntryStatus.ADDED,
+        sequence_number=sequence_number,
+        data_file=delete_file
+    )
+
+# Common schema fixtures for delete tests
+@pytest.fixture(scope="session")
+def simple_id_schema() -> Schema:
+    return Schema(NestedField(1, "id", IntegerType(), required=True))
+
+
+@pytest.fixture(scope="session") 
+def id_data_schema() -> Schema:
+    return Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(2, "data", StringType(), required=True),
+    )
+
+
+# Common DataFile creation helper functions
+def create_basic_equality_delete_file(
+    file_path: str = "s3://bucket/eq-delete.parquet",
+    equality_ids: List[int] = None,
+    sequence_number: int = 1,
+    partition: Dict = None,
+    record_count: int = 5,
+    file_size_in_bytes: int = 50,
+    lower_bounds: Dict = None,
+    upper_bounds: Dict = None,
+    value_counts: Dict = None,
+    null_value_counts: Dict = None
+) -> DataFile:
+    return DataFile.from_args(
+        content=DataFileContent.EQUALITY_DELETES,
+        file_path=file_path,
+        file_format=FileFormat.PARQUET,
+        partition=partition or {},
+        record_count=record_count,
+        file_size_in_bytes=file_size_in_bytes,
+        equality_ids=equality_ids or [1],
+        lower_bounds=lower_bounds,
+        upper_bounds=upper_bounds,
+        value_counts=value_counts,
+        null_value_counts=null_value_counts,
+    )
+
+def create_basic_data_file(
+    file_path: str = "s3://bucket/data.parquet",
+    record_count: int = 100,
+    file_size_in_bytes: int = 1000,
+    partition: Dict = None,
+    lower_bounds: Dict = None,
+    upper_bounds: Dict = None,
+    value_counts: Dict = None,
+    null_value_counts: Dict = None
+) -> DataFile:
+    return DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=file_path,
+        file_format=FileFormat.PARQUET,
+        partition=partition or {},
+        record_count=record_count,
+        file_size_in_bytes=file_size_in_bytes,
+        lower_bounds=lower_bounds,
+        upper_bounds=upper_bounds,
+        value_counts=value_counts,
+        null_value_counts=null_value_counts,
+    )
+
+def create_manifest_entry_with_delete_file(
+    delete_file: DataFile,
+    sequence_number: int = 1,
+    status: ManifestEntryStatus = ManifestEntryStatus.ADDED
+) -> ManifestEntry:
+    return ManifestEntry.from_args(
+        status=status,
+        sequence_number=sequence_number,
+        data_file=delete_file,
     )

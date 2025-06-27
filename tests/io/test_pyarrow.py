@@ -1539,7 +1539,10 @@ def deletes_file(tmp_path: str, example_task: FileScanTask) -> str:
 
 
 def test_read_deletes(deletes_file: str, example_task: FileScanTask) -> None:
-    deletes = _read_deletes(LocalFileSystem(), DataFile.from_args( file_path=deletes_file, file_format=FileFormat.PARQUET, content=DataFileContent.POSITION_DELETES) )
+    deletes = _read_deletes(
+        LocalFileSystem(),
+        DataFile.from_args(file_path=deletes_file, file_format=FileFormat.PARQUET, content=DataFileContent.POSITION_DELETES),
+    )
     assert set(deletes.keys()) == {example_task.file.file_path}
     assert list(deletes.values())[0] == pa.chunked_array([[1, 3, 5]])
 
@@ -2320,48 +2323,56 @@ def test_pyarrow_io_multi_fs() -> None:
         # Same PyArrowFileIO instance resolves local file input to LocalFileSystem
         assert isinstance(pyarrow_file_io.new_input("file:///path/to/file")._filesystem, LocalFileSystem)
 
+
 @pytest.fixture
-def equality_deletes_file(tmp_path: str, example_task: FileScanTask, table_schema_simple, pa_schema) -> str:
+def equality_deletes_file_path(tmp_path: str, table_schema_simple: Schema) -> str:
+    """Create an equality deletes file and return its path"""
     deletes_file = os.path.join(tmp_path, "equality-deletes.parquet")
     pa_schema = schema_to_pyarrow(table_schema_simple)
-    foo_type = pa_schema.field('foo').type
-    bar_type = pa_schema.field('bar').type
+    foo_type = pa_schema.field("foo").type
+    bar_type = pa_schema.field("bar").type
 
-    table = pa.table({
-        "foo": pa.array(["a", "b"], type=foo_type),
-        "bar": pa.array([1, 2], type=bar_type),
-    })
+    table = pa.table(
+        {
+            "foo": pa.array(["a", "b"], type=foo_type),
+            "bar": pa.array([1, 2], type=bar_type),
+        }
+    )
     pq.write_table(table, deletes_file)
     return deletes_file
 
-def test_read_equality_deletes(equality_deletes_file: str, equality_delete_task: FileScanTask) -> None:
+
+def test_read_equality_deletes(equality_deletes_file_path: str) -> None:
     deletes = _read_deletes(
         LocalFileSystem(),
         DataFile.from_args(
-            file_path=equality_deletes_file,
+            file_path=equality_deletes_file_path,
             file_format=FileFormat.PARQUET,
             content=DataFileContent.EQUALITY_DELETES,
-            equality_ids=[1, 2] )  )
+            equality_ids=[1, 2],
+        ),
+    )
     assert deletes["equality_deletes"].num_rows == 2
     assert deletes["equality_deletes"]["foo"].to_pylist() == ["a", "b"]
     assert deletes["equality_deletes"]["bar"].to_pylist() == [1, 2]
 
 
-def test_equality_delete(equality_deletes_file: str, equality_delete_task: FileScanTask, table_schema_simple: Schema) -> None:
+def test_equality_delete(equality_deletes_file_path: str, equality_delete_task: FileScanTask, table_schema_simple: Schema) -> None:
     import pyarrow.parquet as pq
+
     print("Data table:")
     print(pq.read_table(equality_delete_task.file.file_path))
     print("Delete table:")
-    print(pq.read_table(equality_deletes_file))
+    print(pq.read_table(equality_deletes_file_path))
     metadata_location = "file://a/b/c.json"
     example_task_with_delete = FileScanTask(
         data_file=equality_delete_task.file,
         delete_files={
             DataFile.from_args(
                 content=DataFileContent.EQUALITY_DELETES,
-                file_path=equality_deletes_file,
+                file_path=equality_deletes_file_path,
                 file_format=FileFormat.PARQUET,
-                equality_ids=[1,2]
+                equality_ids=[1, 2],
             )
         },
     )
@@ -2382,3 +2393,176 @@ def test_equality_delete(equality_deletes_file: str, equality_delete_task: FileS
     assert len(with_deletes) == 2
     assert with_deletes["foo"].to_pylist() == ["c", "d"]
     assert with_deletes["bar"].to_pylist() == [3.0, 4.0]
+def test_mor_read_with_positional_and_equality_deletes( example_task: FileScanTask, equality_delete_task: FileScanTask, table_schema_simple: Schema, tmp_path: str, pa_schema):
+    pos_delete_path = os.path.join(tmp_path, "pos_delete.parquet")
+    pos_delete_table = pa.table(
+        {
+            "file_path": [example_task.file.file_path],
+            "pos": [1],
+        }
+    )
+    pq.write_table(pos_delete_table, pos_delete_path)
+    pos_delete_file = DataFile.from_args(
+        file_path=pos_delete_path,
+        file_format=FileFormat.PARQUET,
+        content=DataFileContent.POSITION_DELETES,
+    )
+
+    eq_delete_path = os.path.join(tmp_path, "eq_delete.parquet")
+    eq_delete_schema = pa.schema([("bar", pa.int32())])
+    eq_delete_table = pa.table(
+        {
+            "bar": pa.array([3], type=pa.int32()),
+        },
+        schema=eq_delete_schema
+    )
+    pq.write_table(eq_delete_table, eq_delete_path)
+    eq_delete_file = DataFile.from_args(
+        file_path=eq_delete_path,
+        file_format=FileFormat.PARQUET,
+        content=DataFileContent.EQUALITY_DELETES,
+        equality_ids=[2],
+    )
+
+    task_with_pos_delete = FileScanTask(
+        data_file=example_task.file,
+        delete_files={pos_delete_file},
+    )
+    task_with_eq_delete = FileScanTask(
+        data_file=equality_delete_task.file,
+        delete_files={eq_delete_file},
+    )
+
+    scan = ArrowScan(
+        table_metadata=TableMetadataV2(
+            location="file://dummy",
+            last_column_id=3,
+            format_version=2,
+            current_schema_id=1,
+            schemas=[table_schema_simple],
+            partition_specs=[PartitionSpec()],
+        ),
+        io=load_file_io(),
+        projected_schema=table_schema_simple,
+        row_filter=AlwaysTrue(),
+    )
+    result = scan.to_table(tasks=[task_with_pos_delete, task_with_eq_delete])
+
+    bars = result["bar"].to_pylist()
+    foos = result["foo"].to_pylist()
+    bazs = result["baz"].to_pylist()
+
+    assert bars == [1, 3, 1, 2, 4]
+    assert foos == ["a", "c", "a", "b", "d"]
+    assert bazs == [True, None, True, False, True]
+
+def test_mor_read_with_partitions_and_deletes( tmp_path: str, pa_schema):
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(2, "part", StringType(), required=True),
+        schema_id=1,  # Explicitly set schema_id to match current_schema_id
+    )
+    pa_schema = schema_to_pyarrow(schema)
+
+    data_a = pa.table({"id": [1, 2, 3], "part": ["A", "A", "A"]}, schema=pa_schema)
+    data_file_a = os.path.join(tmp_path, "data_a.parquet")
+    pq.write_table(data_a, data_file_a)
+    datafile_a = DataFile.from_args(
+        file_path=data_file_a,
+        file_format=FileFormat.PARQUET,
+        content=DataFileContent.DATA,
+    )
+
+    data_b = pa.table({"id": [4, 5, 6], "part": ["B", "B", "B"]}, schema=pa_schema)
+    data_file_b = os.path.join(tmp_path, "data_b.parquet")
+    pq.write_table(data_b, data_file_b)
+    datafile_b = DataFile.from_args(
+        file_path=data_file_b,
+        file_format=FileFormat.PARQUET,
+        content=DataFileContent.DATA,
+    )
+
+    eq_delete_a_path = os.path.join(tmp_path, "eq_delete_a.parquet")
+    eq_delete_a_table = pa.table({"id": pa.array([2], type=pa.int32())})
+    pq.write_table(eq_delete_a_table, eq_delete_a_path)
+    eq_delete_file_a = DataFile.from_args(
+        file_path=eq_delete_a_path,
+        file_format=FileFormat.PARQUET,
+        content=DataFileContent.EQUALITY_DELETES,
+        equality_ids=[1],
+    )
+
+    pos_delete_b_path = os.path.join(tmp_path, "pos_delete_b.parquet")
+    pos_delete_b_table = pa.table({"file_path": [data_file_b], "pos": [0]})
+    pq.write_table(pos_delete_b_table, pos_delete_b_path)
+    pos_delete_file_b = DataFile.from_args(
+        file_path=pos_delete_b_path,
+        file_format=FileFormat.PARQUET,
+        content=DataFileContent.POSITION_DELETES,
+    )
+
+    task_a = FileScanTask(
+        data_file=datafile_a,
+        delete_files={eq_delete_file_a},
+    )
+    task_b = FileScanTask(
+        data_file=datafile_b,
+        delete_files={pos_delete_file_b},
+    )
+
+    scan = ArrowScan(
+        table_metadata=TableMetadataV2(
+            location="file://dummy",
+            last_column_id=2,
+            format_version=2,
+            current_schema_id=1,
+            schemas=[schema],
+            partition_specs=[PartitionSpec()],
+        ),
+        io=load_file_io(),
+        projected_schema=schema,
+        row_filter=AlwaysTrue(),
+    )
+    result = scan.to_table(tasks=[task_a, task_b])
+
+    assert set(result["id"].to_pylist()) == {1, 3, 5, 6}
+    assert set(result["part"].to_pylist()) == {"A", "B"}
+
+def test_mor_read_with_duplicate_deletes( example_task: FileScanTask, table_schema_simple: Schema, tmp_path: str, pa_schema):
+    pos_delete_path = os.path.join(tmp_path, "pos_delete.parquet")
+    pos_delete_table = pa.table(
+        {
+            "file_path": [example_task.file.file_path],
+            "pos": [1],
+        }
+    )
+    pq.write_table(pos_delete_table, pos_delete_path)
+    pos_delete_file = DataFile.from_args(
+        file_path=pos_delete_path,
+        file_format=FileFormat.PARQUET,
+        content=DataFileContent.POSITION_DELETES,
+    )
+
+    task_with_duplicate_deletes = FileScanTask(
+        data_file=example_task.file,
+        delete_files={pos_delete_file, pos_delete_file},
+    )
+
+    scan = ArrowScan(
+        table_metadata=TableMetadataV2(
+            location="file://dummy",
+            last_column_id=3,
+            format_version=2,
+            current_schema_id=1,
+            schemas=[table_schema_simple],
+            partition_specs=[PartitionSpec()],
+        ),
+        io=load_file_io(),
+        projected_schema=table_schema_simple,
+        row_filter=AlwaysTrue(),
+    )
+    result = scan.to_table(tasks=[task_with_duplicate_deletes])
+
+    assert result["bar"].to_pylist() == [1, 3]
+    assert result["foo"].to_pylist() == ["a", "c"]
+    assert result["baz"].to_pylist() == [True, None]
