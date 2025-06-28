@@ -25,7 +25,7 @@ from pyiceberg.typedef import IcebergBaseModel, Properties
 from pyiceberg.types import transform_dict_value_to_str
 
 
-class ViewRepresentation(IcebergBaseModel):
+class SQLViewRepresentation(IcebergBaseModel):
     """Represents the SQL query that defines the view."""
 
     type: Literal["sql"] = Field()
@@ -47,7 +47,7 @@ class ViewVersion(IcebergBaseModel):
     """Timestamp when the version was created (ms from epoch)"""
     summary: Dict[str, str] = Field()
     """A string to string map of summary metadata about the version"""
-    representations: List[ViewRepresentation] = Field()
+    representations: List[SQLViewRepresentation] = Field()
     """A list of representations for the view definition"""
     default_catalog: Optional[str] = Field(alias="default-catalog", default=None)
     """Catalog name to use when a reference in the SELECT does not contain a catalog"""
