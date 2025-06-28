@@ -412,6 +412,28 @@ def test_list_tables_200(rest_mock: Mocker) -> None:
     assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_tables(namespace) == [("examples", "fooshare")]
 
 
+def test_list_tables_paginated_200(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables",
+        json={"identifiers": [{"namespace": ["examples"], "name": "fooshare"}], "next-page-token": "page2"},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables?pageToken=page2",
+        json={"identifiers": [{"namespace": ["examples"], "name": "fooshare2"}]},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_tables(namespace) == [
+        ("examples", "fooshare"),
+        ("examples", "fooshare2"),
+    ]
+    assert rest_mock.call_count == 3
+
+
 def test_list_tables_200_sigv4(rest_mock: Mocker) -> None:
     namespace = "examples"
     rest_mock.get(
@@ -456,6 +478,30 @@ def test_list_views_200(rest_mock: Mocker) -> None:
     )
 
     assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace) == [("examples", "fooshare")]
+
+
+def test_list_views_paginated_200(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views",
+        json={"identifiers": [{"namespace": ["examples"], "name": "fooshare"}], "next-page-token": "page2"},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views?pageToken=page2",
+        json={"identifiers": [{"namespace": ["examples"], "name": "fooshare2"}]},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace) == [
+        ("examples", "fooshare"),
+        ("examples", "fooshare2"),
+    ]
+
+    assert rest_mock.call_count == 3
 
 
 def test_list_views_200_sigv4(rest_mock: Mocker) -> None:
@@ -541,6 +587,33 @@ def test_list_namespaces_200(rest_mock: Mocker) -> None:
         ("fokko",),
         ("system",),
     ]
+
+
+def test_list_namespaces_paginated_200(rest_mock: Mocker) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={"namespaces": [["default"], ["examples"], ["fokko"], ["system"]], "next-page-token": "page2"},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces?pageToken=page2",
+        json={"namespaces": [["default2"], ["examples2"], ["fokko2"], ["system2"]]},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces() == [
+        ("default",),
+        ("examples",),
+        ("fokko",),
+        ("system",),
+        ("default2",),
+        ("examples2",),
+        ("fokko2",),
+        ("system2",),
+    ]
+
+    assert rest_mock.call_count == 3
 
 
 def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:

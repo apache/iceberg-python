@@ -607,7 +607,7 @@ class RestCatalog(Catalog):
             params["pageToken"] = next_page_token
         if page_size is not None:
             params["pageSize"] = page_size
-        response = self._session.get(self.url(Endpoints.list_tables, namespace=namespace_concat))
+        response = self._session.get(self.url(Endpoints.list_tables, namespace=namespace_concat), params=params)
         try:
             response.raise_for_status()
         except HTTPError as exc:
@@ -723,14 +723,12 @@ class RestCatalog(Catalog):
 
         next_page_token = None
         while True:
-            list_namespace_response = self.list_views_raw(
-                namespace=namespace, page_size=page_size, next_page_token=next_page_token
-            )
-            views.extend([(*view.namespace, view.name) for view in list_namespace_response.identifiers])
-            if list_namespace_response.next_page_token is None:
+            list_views_response = self.list_views_raw(namespace=namespace, page_size=page_size, next_page_token=next_page_token)
+            views.extend([(*view.namespace, view.name) for view in list_views_response.identifiers])
+            if list_views_response.next_page_token is None:
                 break
             else:
-                next_page_token = list_namespace_response.next_page_token
+                next_page_token = list_views_response.next_page_token
 
         return views
 
