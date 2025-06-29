@@ -24,7 +24,7 @@ hide:
 
 # Python API
 
-(Py)Iceberg is [catalog](https://iceberg.apache.org/terms/#catalog) centric. Meaning that reading/writing data goes via a catalog. First step is to instantiate a catalog to load a tables. Let's use the following configuration in `.pyiceberg.yaml` to define a REST catalog called `prod`:
+(Py)Iceberg is [catalog](https://iceberg.apache.org/terms/#catalog) centric. Meaning that reading/writing data goes via a catalog. First step is to instantiate a catalog to load a table. Let's use the following configuration in `.pyiceberg.yaml` to define a REST catalog called `prod`:
 
 ```yaml
 catalog:
