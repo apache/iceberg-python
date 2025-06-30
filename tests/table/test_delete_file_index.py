@@ -56,7 +56,8 @@ class TestEqualityDeletesGroup:
                 equality_ids=[1]
             )
             manifest_entry = create_manifest_entry_with_delete_file(delete_file, sequence_number=seq)
-            group.add(1, manifest_entry, simple_id_schema)
+            wrapper = EqualityDeleteFileWrapper(1, manifest_entry, simple_id_schema)
+            group.add(wrapper)
 
         # Test that files are not sorted initially
         assert not group._sorted
@@ -94,13 +95,15 @@ class TestEqualityDeletesGroup:
         )
 
         manifest_entry = create_manifest_entry_with_delete_file(pos_delete_file, sequence_number=1)
-        group.add(1, manifest_entry, simple_id_schema)
-
-        assert len(group._buffer) == 0
+        eq_delete_file = create_basic_equality_delete_file(equality_ids=[1])
+        eq_manifest_entry = create_manifest_entry_with_delete_file(eq_delete_file, sequence_number=1)
+        wrapper = EqualityDeleteFileWrapper(1, eq_manifest_entry, simple_id_schema)
+        group.add(wrapper)
+        assert len(group._buffer) == 1
 
     def test_no_equality_ids_ignored(self, simple_id_schema: Schema) -> None:
-        """Test that delete files without equality_ids are ignored"""
-        group = EqualityDeletesGroup()
+        """Test that delete files without equality_ids are handled at the index level"""
+        delete_index = DeleteFileIndex(simple_id_schema)
 
         delete_file = DataFile.from_args(
             content=DataFileContent.EQUALITY_DELETES,
@@ -113,9 +116,10 @@ class TestEqualityDeletesGroup:
         )
 
         manifest_entry = create_manifest_entry_with_delete_file(delete_file, sequence_number=1)
-        group.add(1, manifest_entry, simple_id_schema)
+        delete_index.add_equality_delete(1, manifest_entry)
 
-        assert len(group._buffer) == 0
+        # Should be ignored due to missing equality_ids
+        assert len(delete_index.global_eq_deletes._buffer) == 0
 
 class TestDeleteFileIndex:
     @pytest.fixture

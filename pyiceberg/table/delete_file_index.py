@@ -8,7 +8,6 @@ from pyiceberg.types import NestedField
 class EqualityDeleteFileWrapper:
     def __init__(self, spec_id: int, manifest_entry: ManifestEntry, schema):
         self.spec_id = spec_id
-        self.manifest_entry = manifest_entry
         self.delete_file = manifest_entry.data_file
         self.schema = schema
         self.apply_sequence_number = (manifest_entry.sequence_number or 0) - 1
@@ -30,11 +29,10 @@ class EqualityDeletesGroup:
         self._seqs: Optional[List[int]] = None
         self._files: Optional[List[EqualityDeleteFileWrapper]] = None
 
-    def add(self, spec_id: int, manifest_entry: ManifestEntry, schema):
-        """Add an equality delete file to the group"""
-        if manifest_entry.data_file.content == DataFileContent.EQUALITY_DELETES and manifest_entry.data_file.equality_ids:
-            self._buffer.append(EqualityDeleteFileWrapper(spec_id, manifest_entry, schema))
-            self._sorted = False
+    def add(self, wrapper: EqualityDeleteFileWrapper):
+        """Add an equality delete file wrapper to the group"""
+        self._buffer.append(wrapper)
+        self._sorted = False
 
     def _index_if_needed(self):
         if not self._sorted:
@@ -139,15 +137,19 @@ class DeleteFileIndex:
 
     def add_equality_delete(self, spec_id: int, manifest_entry: ManifestEntry, partition_key: Optional[Any] = None):
         """Add an equality delete to the index"""
+        if (manifest_entry.data_file.content != DataFileContent.EQUALITY_DELETES or
+            not manifest_entry.data_file.equality_ids):
+            return
+        wrapper = EqualityDeleteFileWrapper(spec_id, manifest_entry, self.table_schema)
         partition_str = self._partition_key_to_string(partition_key)
         if partition_str is None:
             # Global delete
-            self.global_eq_deletes.add(spec_id, manifest_entry, self.table_schema)
+            self.global_eq_deletes.add(wrapper)
         else:
             # Partition-specific delete
             if partition_str not in self.eq_deletes_by_partition:
                 self.eq_deletes_by_partition[partition_str] = EqualityDeletesGroup()
-            self.eq_deletes_by_partition[partition_str].add(spec_id, manifest_entry, self.table_schema)
+            self.eq_deletes_by_partition[partition_str].add(wrapper)
 
     def for_data_file(self, seq: int, data_file: DataFile, partition_key: Optional[Any] = None) -> List[DataFile]:
         """Find delete files that apply to the given data file"""
