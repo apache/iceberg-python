@@ -2400,13 +2400,13 @@ def test_identity_partition_on_multi_columns() -> None:
 
 def test_initial_value() -> None:
     # Have some fake data, otherwise it will generate a table without records
-    data = pa.record_batch([pa.nulls(10, pa.int32())], ["some_field"])
+    data = pa.record_batch([pa.nulls(10, pa.int64())], names=["some_field"])
     result = _to_requested_schema(
-        Schema(NestedField(1, "so-true", BooleanType(), required=True, initial_default=True)), Schema(), data
+        Schema(NestedField(1, "we-love-22", LongType(), required=True, initial_default=22)), Schema(), data
     )
-    assert result.column_names == ["so-true"]
+    assert result.column_names == ["we-love-22"]
     for val in result[0]:
-        assert val.as_py() is True
+        assert val.as_py() == 22
 
 
 def test__to_requested_schema_timestamps(

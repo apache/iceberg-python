@@ -1815,6 +1815,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                 field_arrays.append(array)
                 fields.append(self._construct_field(field, array.type))
             elif field.optional or field.initial_default is not None:
+                # When an optional field is added, or when a required field with a non-null initial default is added
                 arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)
                 if field.initial_default is None:
                     field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))
