@@ -1038,7 +1038,7 @@ def test_initial_default(catalog: Catalog, spark: SparkSession) -> None:
     except NoSuchTableError:
         pass
 
-    one_column = pa.table([pa.nulls(10, pa.int32())], ["some_field"])
+    one_column = pa.table([pa.nulls(10, pa.int32())], names=["some_field"])
 
     tbl = catalog.create_table(identifier, schema=one_column.schema, properties={"format-version": "2"})
 
