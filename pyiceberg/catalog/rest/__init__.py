@@ -614,7 +614,6 @@ class RestCatalog(Catalog):
             _handle_non_200_response(exc, {404: NoSuchNamespaceError})
         return ListTablesResponse.model_validate_json(response.text)
 
-    @retry(**_RETRY_ARGS)
     def list_tables(self, namespace: Union[str, Identifier], page_size: Optional[int] = None) -> List[Identifier]:
         tables = []
 
