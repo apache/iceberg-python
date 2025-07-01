@@ -399,9 +399,12 @@ def test_match_deletes_to_datafile(simple_id_schema: Schema) -> None:
         ),
     )
     delete_file_index = DeleteFileIndex(simple_id_schema)
+    # Add both delete files to the index
+    delete_file_index.add_delete_file(0, delete_entry_1)
+    delete_file_index.add_delete_file(0, delete_entry_2)
+
     assert _match_deletes_to_data_file(
         data_entry,
-        SortedList(iterable=[delete_entry_1, delete_entry_2], key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER),
         delete_file_index,
     ) == {
         delete_entry_2.data_file,
@@ -455,9 +458,10 @@ def test_match_deletes_to_datafile_duplicate_number(simple_id_schema: Schema) ->
         ),
     )
     delete_file_index = DeleteFileIndex(simple_id_schema)
+    delete_file_index.add_delete_file(0, delete_entry_1)
+    delete_file_index.add_delete_file(0, delete_entry_2)
     assert _match_deletes_to_data_file(
         data_entry,
-        SortedList(iterable=[delete_entry_1, delete_entry_2], key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER),
         delete_file_index,
     ) == {
         delete_entry_1.data_file,
@@ -523,9 +527,9 @@ def test_match_equality_deletes_to_data_file() -> None:
 
     delete_file_index = DeleteFileIndex(schema)
 
-    delete_file_index.add_equality_delete(1, eq_delete_entry)
-    delete_file_index.add_equality_delete(1, eq_delete_entry_new)
-    delete_file_index.add_equality_delete(1, eq_delete_entry_future)
+    delete_file_index.add_delete_file(1, eq_delete_entry)
+    delete_file_index.add_delete_file(1, eq_delete_entry_new)
+    delete_file_index.add_delete_file(1, eq_delete_entry_future)
 
     result = delete_file_index.for_data_file(5, data_file)
 
@@ -615,16 +619,17 @@ def test_match_all_deletes_to_data_file() -> None:
 
     delete_file_index = DeleteFileIndex(schema)
 
-    delete_file_index.add_equality_delete(
+    delete_file_index.add_delete_file(delete_entry_1.data_file.spec_id, delete_entry_1)
+    delete_file_index.add_delete_file(delete_entry_2.data_file.spec_id, delete_entry_2)
+    delete_file_index.add_delete_file(
         eq_delete_entry_1.data_file.spec_id, eq_delete_entry_1, partition_key=eq_delete_entry_1.data_file.partition
     )
-    delete_file_index.add_equality_delete(
+    delete_file_index.add_delete_file(
         eq_delete_entry_2.data_file.spec_id, eq_delete_entry_2, partition_key=eq_delete_entry_2.data_file.partition
     )
 
     result = _match_deletes_to_data_file(
         data_entry,
-        SortedList(iterable=[delete_entry_1, delete_entry_2], key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER),
         delete_file_index,
     )
 
@@ -1538,20 +1543,18 @@ def test_match_deletes_to_data_file_sequence_filtering() -> None:
     old_pos_delete = create_positional_delete_entry(sequence_number=3, file_path="s3://bucket/data.parquet")
     new_pos_delete = create_positional_delete_entry(sequence_number=7, file_path="s3://bucket/data.parquet")
 
-    positional_delete_entries = SortedList(
-        [old_pos_delete, new_pos_delete], 
-        key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER
-    )
-
     delete_file_index = DeleteFileIndex(schema)
 
+    delete_file_index.add_delete_file(0, old_pos_delete)
+    delete_file_index.add_delete_file(0, new_pos_delete)
+
     old_eq_delete = create_equality_delete_entry(sequence_number=2, equality_ids=[1])
-    delete_file_index.add_equality_delete(1, old_eq_delete)
+    delete_file_index.add_delete_file(1, old_eq_delete)
 
     new_eq_delete = create_equality_delete_entry(sequence_number=8, equality_ids=[1])
-    delete_file_index.add_equality_delete(1, new_eq_delete)
+    delete_file_index.add_delete_file(1, new_eq_delete)
 
-    result = _match_deletes_to_data_file(data_entry, positional_delete_entries, delete_file_index)
+    result = _match_deletes_to_data_file(data_entry, delete_file_index)
 
     assert len(result) == 2
 
@@ -1582,23 +1585,18 @@ def test_match_deletes_to_data_file_partition_filtering() -> None:
         data_file=data_file,
     )
 
-    positional_delete_entries = SortedList(
-        [], 
-        key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER
-    )
-
     delete_file_index = DeleteFileIndex(schema)
 
     global_delete = create_equality_delete_entry(sequence_number=6, equality_ids=[1])
-    delete_file_index.add_equality_delete(1, global_delete, partition_key=None)
+    delete_file_index.add_delete_file(1, global_delete, partition_key=None)
 
     same_partition_delete = create_equality_delete_entry(sequence_number=7, equality_ids=[1])
-    delete_file_index.add_equality_delete(1, same_partition_delete, partition_key={"bucket": 1})
+    delete_file_index.add_delete_file(1, same_partition_delete, partition_key={"bucket": 1})
 
     different_partition_delete = create_equality_delete_entry(sequence_number=8, equality_ids=[1])
-    delete_file_index.add_equality_delete(1, different_partition_delete, partition_key={"bucket": 2})
+    delete_file_index.add_delete_file(1, different_partition_delete, partition_key={"bucket": 2})
 
-    result = _match_deletes_to_data_file(data_entry, positional_delete_entries, delete_file_index)
+    result = _match_deletes_to_data_file(data_entry, delete_file_index)
 
     assert len(result) == 2
 
@@ -1634,7 +1632,7 @@ def test_match_equality_deletes_bounds_checking() -> None:
     )
 
     overlapping_delete_entry = create_manifest_entry_with_delete_file(overlapping_delete_file, sequence_number=6)
-    delete_file_index.add_equality_delete(1, overlapping_delete_entry)
+    delete_file_index.add_delete_file(1, overlapping_delete_entry)
 
     # Create non-overlapping delete file
     non_overlapping_delete_file = create_basic_equality_delete_file(
@@ -1645,7 +1643,7 @@ def test_match_equality_deletes_bounds_checking() -> None:
     )
 
     non_overlapping_delete_entry = create_manifest_entry_with_delete_file(non_overlapping_delete_file, sequence_number=7)
-    delete_file_index.add_equality_delete(1, non_overlapping_delete_entry)
+    delete_file_index.add_delete_file(1, non_overlapping_delete_entry)
 
     result = delete_file_index.for_data_file(5, data_file)
 
@@ -1688,7 +1686,7 @@ def test_match_equality_deletes_statistics_filtering() -> None:
         data_file=delete_no_nulls_file,
     )
 
-    delete_file_index1.add_equality_delete(1, delete_no_nulls_entry)
+    delete_file_index1.add_delete_file(1, delete_no_nulls_entry)
 
     # Should not match because data has only nulls, delete has no nulls
     result = delete_file_index1.for_data_file(5, data_file_all_nulls)
@@ -1725,7 +1723,7 @@ def test_match_equality_deletes_statistics_filtering() -> None:
         data_file=delete_only_nulls_file,
     )
 
-    delete_file_index2.add_equality_delete(1, delete_only_nulls_entry)
+    delete_file_index2.add_delete_file(1, delete_only_nulls_entry)
 
     result = delete_file_index2.for_data_file(5, data_file_no_nulls)
     assert len(result) == 0
@@ -1799,12 +1797,11 @@ def test_table_scan_integration_with_equality_deletes(table_v2: Table) -> None:
         NestedField(2, "field2", IntegerType(), required=False),
     )
     delete_file_index = DeleteFileIndex(schema)
-    delete_file_index.add_equality_delete(1, eq_delete_entry_1)
-    delete_file_index.add_equality_delete(1, eq_delete_entry_2)
+    delete_file_index.add_delete_file(1, eq_delete_entry_1)
+    delete_file_index.add_delete_file(1, eq_delete_entry_2)
 
     result = _match_deletes_to_data_file(
         data_entry,
-        SortedList([], key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER),
         delete_file_index,
     )
 
@@ -1845,13 +1842,12 @@ def test_table_scan_with_partitioned_equality_deletes(table_v2: Table) -> None:
     schema = Schema(NestedField(1, "field1", StringType(), required=False))
     delete_file_index = DeleteFileIndex(schema)
 
-    delete_file_index.add_equality_delete(1, global_eq_delete, partition_key=None)
-    delete_file_index.add_equality_delete(1, partition_eq_delete, partition_key=partition_data)
-    delete_file_index.add_equality_delete(1, different_partition_eq_delete, partition_key={"bucket": 2})
+    delete_file_index.add_delete_file(1, global_eq_delete, partition_key=None)
+    delete_file_index.add_delete_file(1, partition_eq_delete, partition_key=partition_data)
+    delete_file_index.add_delete_file(1, different_partition_eq_delete, partition_key={"bucket": 2})
 
     result = _match_deletes_to_data_file(
         data_entry,
-        SortedList([], key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER),
         delete_file_index,
     )
 
@@ -1888,13 +1884,12 @@ def test_table_scan_sequence_number_filtering_integration() -> None:
     same_delete = create_equality_delete_entry(sequence_number=10, equality_ids=[1])
     new_delete = create_equality_delete_entry(sequence_number=15, equality_ids=[1])
 
-    delete_file_index.add_equality_delete(1, old_delete)
-    delete_file_index.add_equality_delete(1, same_delete)
-    delete_file_index.add_equality_delete(1, new_delete)
+    delete_file_index.add_delete_file(1, old_delete)
+    delete_file_index.add_delete_file(1, same_delete)
+    delete_file_index.add_delete_file(1, new_delete)
 
     result = _match_deletes_to_data_file(
         data_entry,
-        SortedList([], key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER),
         delete_file_index,
     )
 
@@ -1941,11 +1936,11 @@ def test_table_scan_mixed_delete_types_integration() -> None:
 
     schema = Schema(NestedField(1, "field1", StringType(), required=False))
     delete_file_index = DeleteFileIndex(schema)
-    delete_file_index.add_equality_delete(1, eq_delete_entry)
+    delete_file_index.add_delete_file(0, pos_delete_entry)
+    delete_file_index.add_delete_file(1, eq_delete_entry)
 
     result = _match_deletes_to_data_file(
         data_entry,
-        SortedList([pos_delete_entry], key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER),
         delete_file_index,
     )
 

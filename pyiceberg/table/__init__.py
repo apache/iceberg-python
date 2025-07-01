@@ -41,7 +41,6 @@ from typing import (
 )
 
 from pydantic import Field
-from sortedcontainers import SortedList
 
 import pyiceberg.expressions.parser as parser
 from pyiceberg.expressions import (
@@ -64,7 +63,6 @@ from pyiceberg.expressions.visitors import (
 )
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import (
-    POSITIONAL_DELETE_SCHEMA,
     DataFile,
     DataFileContent,
     ManifestContent,
@@ -1664,41 +1662,23 @@ def _min_sequence_number(manifests: List[ManifestFile]) -> int:
         return INITIAL_SEQUENCE_NUMBER
 
 
-def _match_deletes_to_data_file(
-    data_entry: ManifestEntry, positional_delete_entries: SortedList[ManifestEntry], delete_file_index: DeleteFileIndex
-) -> Set[DataFile]:
-    """Check if the delete file is relevant for the data file.
-
-    Using the column metrics to see if the filename is in the lower and upper bound.
+def _match_deletes_to_data_file(data_entry: ManifestEntry, delete_file_index: DeleteFileIndex) -> Set[DataFile]:
+    """Check if delete files are relevant for the data file.
 
     Args:
-        data_entry (ManifestEntry): The manifest entry path of the datafile.
-        positional_delete_entries (List[ManifestEntry]): All the candidate positional deletes manifest entries.
-        delete_file_index (DeleteFileIndex): All the candidate equality deletes manifest entries.
+        data_entry (ManifestEntry): The manifest entry of the data file.
+        delete_file_index (DeleteFileIndex): Index containing all delete files.
 
     Returns:
         A set of delete files that are relevant for the data file.
     """
     # MODIFIED
-
-    # Create a set of relevant positional delete entries
-    relevant_positional_entries = positional_delete_entries[positional_delete_entries.bisect_right(data_entry) :]
-
-    if len(relevant_positional_entries) > 0:
-        evaluator = _InclusiveMetricsEvaluator(POSITIONAL_DELETE_SCHEMA, EqualTo("file_path", data_entry.data_file.file_path))
-        positional_set = {
-            positional_delete_entry.data_file
-            for positional_delete_entry in relevant_positional_entries
-            if evaluator.eval(positional_delete_entry.data_file)
-        }
-    else:
-        positional_set = set()
-
-    candidate_eq_deletes = delete_file_index.for_data_file(
-        data_entry.sequence_number or 0, data_entry.data_file, partition_key=data_entry.data_file.partition
+    candidate_deletes = delete_file_index.for_data_file(
+        data_entry.sequence_number or 0, 
+        data_entry.data_file, 
+        partition_key=data_entry.data_file.partition
     )
-    equality_set = set(candidate_eq_deletes)
-    return positional_set.union(equality_set)
+    return set(candidate_deletes)
 
 class DataScan(TableScan):
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
@@ -1806,8 +1786,7 @@ class DataScan(TableScan):
         min_sequence_number = _min_sequence_number(manifests)
 
         data_entries: List[ManifestEntry] = []
-        positional_delete_entries = SortedList(key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER)
-        equality_delete_entries: List[ManifestEntry] = []
+        delete_file_index = DeleteFileIndex(self.table_metadata.schema())
 
         executor = ExecutorFactory.get_or_create()
         for manifest_entry in chain(
@@ -1828,22 +1807,15 @@ class DataScan(TableScan):
             data_file = manifest_entry.data_file
             if data_file.content == DataFileContent.DATA:
                 data_entries.append(manifest_entry)
-            elif data_file.content == DataFileContent.POSITION_DELETES:
-                positional_delete_entries.add(manifest_entry)
-            elif data_file.content == DataFileContent.EQUALITY_DELETES:
-                equality_delete_entries.append(manifest_entry)
+            elif data_file.content in (DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES):
+                delete_file_index.add_delete_file(data_file.spec_id, manifest_entry, partition_key=data_file.partition)
             else:
                 raise ValueError(f"Unknown DataFileContent ({data_file.content}): {manifest_entry}")
-
-        delete_file_index = DeleteFileIndex(self.table_metadata.schema())
-        for entry in equality_delete_entries:
-            delete_file_index.add_equality_delete(entry.data_file.spec_id, entry, partition_key=entry.data_file.partition)
         return [
             FileScanTask(
                 data_entry.data_file,
                 delete_files=_match_deletes_to_data_file(
                     data_entry,
-                    positional_delete_entries,
                     delete_file_index,
                 ),
                 residual=residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(

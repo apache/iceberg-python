@@ -1,8 +1,10 @@
 from typing import List, Dict, Optional, Any
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 from pyiceberg.table import DataFile
-from pyiceberg.manifest import ManifestEntry, DataFileContent
+from pyiceberg.manifest import ManifestEntry, DataFileContent, POSITIONAL_DELETE_SCHEMA
 from pyiceberg.types import NestedField
+from pyiceberg.expressions import EqualTo
+from pyiceberg.expressions.visitors import _InclusiveMetricsEvaluator
 
 
 class EqualityDeleteFileWrapper:
@@ -21,6 +23,10 @@ class EqualityDeleteFileWrapper:
                 fields.append(field)
         return fields
 
+class PositionalDeleteFileWrapper:
+    def __init__(self, spec_id: int, manifest_entry: ManifestEntry, schema):
+        self.delete_file = manifest_entry.data_file
+        self.apply_sequence_number = manifest_entry.sequence_number or 0
 
 class EqualityDeletesGroup:
     def __init__(self):
@@ -115,12 +121,55 @@ class EqualityDeletesGroup:
 
         return True
 
+class PositionalDeletesGroup:
+    def __init__(self):
+        self._buffer: List[PositionalDeleteFileWrapper] = []
+        self._sorted: bool = False
+        self._seqs: Optional[List[int]] = None
+        self._files: Optional[List[PositionalDeleteFileWrapper]] = None
+
+    def add(self, wrapper: PositionalDeleteFileWrapper):
+        # Add a positional delete file wrapper to the group
+        self._buffer.append(wrapper)
+        self._sorted = False
+
+    def _index_if_needed(self):
+        if not self._sorted:
+            self._files = sorted(self._buffer, key=lambda f: f.apply_sequence_number)
+            self._seqs = [f.apply_sequence_number for f in self._files]
+            self._sorted = True
+
+    def filter(self, seq: int, data_file: DataFile) -> List[DataFile]:
+        """Filter positional delete files that apply to the given sequence number and data file"""
+        self._index_if_needed()
+
+        if not self._files:
+            return []
+
+        start_idx = bisect_left(self._seqs, seq)
+
+        if start_idx >= len(self._files):
+            return []
+
+        evaluator = _InclusiveMetricsEvaluator(POSITIONAL_DELETE_SCHEMA, EqualTo("file_path", data_file.file_path))
+        
+        matching_files = []
+        for wrapper in self._files[start_idx:]:
+            if evaluator.eval(wrapper.delete_file):
+                matching_files.append(wrapper.delete_file)
+
+        return matching_files
 
 class DeleteFileIndex:
     def __init__(self, table_schema):
         self.table_schema = table_schema
+        # Equality deletes
         self.global_eq_deletes = EqualityDeletesGroup()
         self.eq_deletes_by_partition: Dict[str, EqualityDeletesGroup] = {}
+        # Positional deletes
+        self.global_pos_deletes = PositionalDeletesGroup()
+        self.pos_deletes_by_partition: Dict[str, PositionalDeletesGroup] = {}
+        self.pos_deletes_by_path: Dict[str, PositionalDeletesGroup] = {}
 
     def _partition_key_to_string(self, partition_key: Optional[Any]) -> Optional[str]:
         """Convert partition key to string representation"""
@@ -135,7 +184,16 @@ class DeleteFileIndex:
         else:
             return str(partition_key) if partition_key else "unpartitioned"
 
-    def add_equality_delete(self, spec_id: int, manifest_entry: ManifestEntry, partition_key: Optional[Any] = None):
+    def add_delete_file(self, spec_id: int, manifest_entry: ManifestEntry, partition_key: Optional[Any] = None):
+        """Add delete file to the index"""
+        data_file = manifest_entry.data_file
+        
+        if data_file.content == DataFileContent.EQUALITY_DELETES:
+            self._add_equality_delete(spec_id, manifest_entry, partition_key)
+        elif data_file.content == DataFileContent.POSITION_DELETES:
+            self._add_positional_delete(spec_id, manifest_entry, partition_key)
+
+    def _add_equality_delete(self, spec_id: int, manifest_entry: ManifestEntry, partition_key: Optional[Any] = None):
         """Add an equality delete to the index"""
         if (manifest_entry.data_file.content != DataFileContent.EQUALITY_DELETES or
             not manifest_entry.data_file.equality_ids):
@@ -151,10 +209,26 @@ class DeleteFileIndex:
                 self.eq_deletes_by_partition[partition_str] = EqualityDeletesGroup()
             self.eq_deletes_by_partition[partition_str].add(wrapper)
 
+    def _add_positional_delete(self, spec_id: int, manifest_entry: ManifestEntry, partition_key: Optional[Any] = None):
+        # Add a positional delete to the index
+        wrapper = PositionalDeleteFileWrapper(spec_id, manifest_entry, self.table_schema)
+        
+        # For positional deletes, we organize them by partition
+        partition_str = self._partition_key_to_string(partition_key)
+        if partition_str is None:
+            # Global positional delete
+            self.global_pos_deletes.add(wrapper)
+        else:
+            # Partition-specific positional delete
+            if partition_str not in self.pos_deletes_by_partition:
+                self.pos_deletes_by_partition[partition_str] = PositionalDeletesGroup()
+            self.pos_deletes_by_partition[partition_str].add(wrapper)
+
     def for_data_file(self, seq: int, data_file: DataFile, partition_key: Optional[Any] = None) -> List[DataFile]:
         """Find delete files that apply to the given data file"""
         deletes = []
 
+        # Equality deletes
         deletes.extend(self.global_eq_deletes.filter(seq, data_file))
 
         # Adding partition-specific equality deletes
@@ -163,5 +237,13 @@ class DeleteFileIndex:
             deletes.extend(
                 self.eq_deletes_by_partition[partition_str].filter(seq, data_file)
             )
+
+        # Positional deletes
+        # Global positional deletes
+        deletes.extend(self.global_pos_deletes.filter(seq, data_file))
+        
+        # Partition-specific positional deletes
+        if partition_str and partition_str in self.pos_deletes_by_partition:
+            deletes.extend(self.pos_deletes_by_partition[partition_str].filter(seq, data_file))
 
         return deletes
