@@ -69,11 +69,11 @@ from pyiceberg.expressions.visitors import (
     BoundBooleanExpressionVisitor,
     _ManifestEvalVisitor,
     bind,
+    evaluate_projected_columns,
     expression_evaluator,
     expression_to_plain_format,
     rewrite_not,
     rewrite_to_dnf,
-    translate_column_names,
     visit,
     visit_bound_predicate,
 )
@@ -1652,13 +1652,10 @@ def test_expression_evaluator_null() -> None:
         ),
     ],
 )
-def test_translate_column_names_eval_projected_fields(
-    schema: Schema, before_expression: BooleanExpression, after_expression: BooleanExpression
-) -> None:
+def test_eval_projected_fields(schema: Schema, before_expression: BooleanExpression, after_expression: BooleanExpression) -> None:
     # exclude id from file_schema pretending that it's part of partition values
     file_schema = Schema(*[field for field in schema.columns if field.name != "id"])
     projected_missing_fields = {"id": 1}
-    assert (
-        translate_column_names(bind(schema, before_expression, True), file_schema, schema, True, projected_missing_fields)
-        == after_expression
-    )
+    assert evaluate_projected_columns(
+        bind(schema, before_expression, True), file_schema, schema, True, projected_missing_fields
+    ) == bind(schema, after_expression, True)

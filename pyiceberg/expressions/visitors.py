@@ -860,13 +860,74 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
 
     Args:
       file_schema (Schema): The schema of the file.
+      case_sensitive (bool): Whether to consider case when binding a reference to a field in a schema, defaults to True.
+
+    Raises:
+        TypeError: In the case of an UnboundPredicate.
+        ValueError: When a column name cannot be found.
+    """
+
+    file_schema: Schema
+    case_sensitive: bool
+
+    def __init__(self, file_schema: Schema, case_sensitive: bool) -> None:
+        self.file_schema = file_schema
+        self.case_sensitive = case_sensitive
+
+    def visit_true(self) -> BooleanExpression:
+        return AlwaysTrue()
+
+    def visit_false(self) -> BooleanExpression:
+        return AlwaysFalse()
+
+    def visit_not(self, child_result: BooleanExpression) -> BooleanExpression:
+        return Not(child=child_result)
+
+    def visit_and(self, left_result: BooleanExpression, right_result: BooleanExpression) -> BooleanExpression:
+        return And(left=left_result, right=right_result)
+
+    def visit_or(self, left_result: BooleanExpression, right_result: BooleanExpression) -> BooleanExpression:
+        return Or(left=left_result, right=right_result)
+
+    def visit_unbound_predicate(self, predicate: UnboundPredicate[L]) -> BooleanExpression:
+        raise TypeError(f"Expected Bound Predicate, got: {predicate.term}")
+
+    def visit_bound_predicate(self, predicate: BoundPredicate[L]) -> BooleanExpression:
+        file_column_name = self.file_schema.find_column_name(predicate.term.ref().field.field_id)
+
+        if file_column_name is None:
+            # In the case of schema evolution, the column might not be present
+            # in the file schema when reading older data
+            if isinstance(predicate, BoundIsNull):
+                return AlwaysTrue()
+            else:
+                return AlwaysFalse()
+
+        if isinstance(predicate, BoundUnaryPredicate):
+            return predicate.as_unbound(file_column_name)
+        elif isinstance(predicate, BoundLiteralPredicate):
+            return predicate.as_unbound(file_column_name, predicate.literal)
+        elif isinstance(predicate, BoundSetPredicate):
+            return predicate.as_unbound(file_column_name, predicate.literals)
+        else:
+            raise ValueError(f"Unsupported predicate: {predicate}")
+
+
+def translate_column_names(expr: BooleanExpression, file_schema: Schema, case_sensitive: bool) -> BooleanExpression:
+    return visit(expr, _ColumnNameTranslator(file_schema, case_sensitive))
+
+
+class _ProjectedColumnsEvaluator(BooleanExpressionVisitor[BooleanExpression]):
+    """Evaluated predicates which involve projected columns missing from the file.
+
+    Args:
+      file_schema (Schema): The schema of the file.
       projected_schema (Schema): The schema to project onto the data files.
       case_sensitive (bool): Whether to consider case when binding a reference to a field in a schema, defaults to True.
       projected_missing_fields(dict[str, Any]): Map of fields missing in file_schema, but present as partition values.
 
     Raises:
         TypeError: In the case of an UnboundPredicate.
-        ValueError: When a column name cannot be found.
     """
 
     file_schema: Schema
@@ -901,50 +962,35 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
     def visit_bound_predicate(self, predicate: BoundPredicate[L]) -> BooleanExpression:
         file_column_name = self.file_schema.find_column_name(predicate.term.ref().field.field_id)
 
-        if file_column_name is None:
-            # In the case of schema evolution, the column might not be present
-            # in the file schema when reading older data
-            if isinstance(predicate, BoundIsNull):
+        if file_column_name is None and (field_name := predicate.term.ref().field.name) in self.projected_missing_fields:
+            unbound_predicate: BooleanExpression
+            if isinstance(predicate, BoundUnaryPredicate):
+                unbound_predicate = predicate.as_unbound(field_name)
+            elif isinstance(predicate, BoundLiteralPredicate):
+                unbound_predicate = predicate.as_unbound(field_name, predicate.literal)
+            elif isinstance(predicate, BoundSetPredicate):
+                unbound_predicate = predicate.as_unbound(field_name, predicate.literals)
+            else:
+                raise ValueError(f"Unsupported predicate: {predicate}")
+            field = self.projected_schema.find_field(field_name)
+            schema = Schema(field)
+            evaluator = expression_evaluator(schema, unbound_predicate, self.case_sensitive)
+            if evaluator(Record(self.projected_missing_fields[field_name])):
                 return AlwaysTrue()
-            # Evaluate projected field by value extracted from partition
-            elif (field_name := predicate.term.ref().field.name) in self.projected_missing_fields:
-                unbound_predicate: BooleanExpression
-                if isinstance(predicate, BoundUnaryPredicate):
-                    unbound_predicate = predicate.as_unbound(field_name)
-                elif isinstance(predicate, BoundLiteralPredicate):
-                    unbound_predicate = predicate.as_unbound(field_name, predicate.literal)
-                elif isinstance(predicate, BoundSetPredicate):
-                    unbound_predicate = predicate.as_unbound(field_name, predicate.literals)
-                else:
-                    raise ValueError(f"Unsupported predicate: {predicate}")
-                field = self.projected_schema.find_field(field_name)
-                schema = Schema(field)
-                evaluator = expression_evaluator(schema, unbound_predicate, self.case_sensitive)
-                if evaluator(Record(self.projected_missing_fields[field_name])):
-                    return AlwaysTrue()
-                else:
-                    return AlwaysFalse()
             else:
                 return AlwaysFalse()
 
-        if isinstance(predicate, BoundUnaryPredicate):
-            return predicate.as_unbound(file_column_name)
-        elif isinstance(predicate, BoundLiteralPredicate):
-            return predicate.as_unbound(file_column_name, predicate.literal)
-        elif isinstance(predicate, BoundSetPredicate):
-            return predicate.as_unbound(file_column_name, predicate.literals)
-        else:
-            raise ValueError(f"Unsupported predicate: {predicate}")
+        return predicate
 
 
-def translate_column_names(
+def evaluate_projected_columns(
     expr: BooleanExpression,
     file_schema: Schema,
     projected_schema: Schema,
     case_sensitive: bool,
     projected_missing_fields: dict[str, Any],
 ) -> BooleanExpression:
-    return visit(expr, _ColumnNameTranslator(file_schema, projected_schema, case_sensitive, projected_missing_fields))
+    return visit(expr, _ProjectedColumnsEvaluator(file_schema, projected_schema, case_sensitive, projected_missing_fields))
 
 
 class _ExpressionFieldIDs(BooleanExpressionVisitor[Set[int]]):
