@@ -36,6 +36,10 @@ class SQLViewRepresentation(IcebergBaseModel):
     """The dialect of the SQL, e.g. `spark`, `trino`, `presto`."""
 
 
+class ViewRepresentation(BaseModel):
+    __root__: SQLViewRepresentation
+    
+    
 class ViewVersion(IcebergBaseModel):
     """A version of the view definition."""
 
