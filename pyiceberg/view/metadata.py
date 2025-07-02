@@ -16,7 +16,7 @@
 # under the License.
 from __future__ import annotations
 
-from typing import Dict, List, Literal, Optional, Union
+from typing import Dict, List, Literal, Optional
 
 from pydantic import Field, RootModel, field_validator
 
