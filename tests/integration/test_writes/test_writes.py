@@ -1780,7 +1780,7 @@ def test_create_view(
                 dialect="spark",
             )
         ],
-        default_namespace="default",
+        default_namespace=["default"],
     )
     session_catalog.create_view(
         identifier=identifier,
