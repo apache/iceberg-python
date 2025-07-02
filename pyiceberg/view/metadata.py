@@ -51,7 +51,7 @@ class ViewVersion(IcebergBaseModel):
     """A list of representations for the view definition"""
     default_catalog: Optional[str] = Field(alias="default-catalog", default=None)
     """Catalog name to use when a reference in the SELECT does not contain a catalog"""
-    default_namespace: List[str] = Field(alias="default-namespace")
+    default_namespace: Namespace = Field(alias="default-namespace")
     """Namespace to use when a reference in the SELECT is a single identifier"""
 
 
