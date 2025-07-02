@@ -55,7 +55,7 @@ class ViewVersion(IcebergBaseModel):
     """Namespace to use when a reference in the SELECT is a single identifier"""
 
 
-class ViewVersionLogEntry(IcebergBaseModel):
+class ViewHistoryEntry(IcebergBaseModel):
     """A log entry of a view version change."""
 
     timestamp_ms: int = Field(alias="timestamp-ms")
