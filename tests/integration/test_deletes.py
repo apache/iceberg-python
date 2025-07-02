@@ -894,3 +894,32 @@ def test_overwrite_with_filter_case_insensitive(test_table: Table) -> None:
     test_table.overwrite(df=new_table, overwrite_filter=f"Idx == {record_to_overwrite['idx']}", case_sensitive=False)
     assert record_to_overwrite not in test_table.scan().to_arrow().to_pylist()
     assert new_record_to_insert in test_table.scan().to_arrow().to_pylist()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.filterwarnings("ignore:Delete operation did not match any records")
+def test_delete_on_empty_table(spark: SparkSession, session_catalog: RestCatalog, format_version: int) -> None:
+    identifier = f"default.test_delete_on_empty_table_{format_version}"
+
+    run_spark_commands(
+        spark,
+        [
+            f"DROP TABLE IF EXISTS {identifier}",
+            f"""
+            CREATE TABLE {identifier} (
+                volume              int
+            )
+            USING iceberg
+            TBLPROPERTIES('format-version' = {format_version})
+        """,
+        ],
+    )
+
+    tbl = session_catalog.load_table(identifier)
+
+    # Perform a delete operation on the empty table
+    tbl.delete(AlwaysTrue())
+
+    # Assert that no new snapshot was created because no rows were deleted
+    assert len(tbl.snapshots()) == 0
