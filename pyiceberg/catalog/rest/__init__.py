@@ -293,7 +293,7 @@ class CreateViewRequest(IcebergBaseModel):
     location: Optional[str] = Field()
     view_schema: Schema = Field(alias="schema")
     view_version: ViewVersion = Field(alias="view-version")
-    properties: Dict[str, str] = Field(default_factory=dict)
+    properties: Properties = Field(default_factory=dict)
 
     @field_validator("properties", mode="before")
     def transform_properties_dict_value_to_str(cls, properties: Properties) -> Dict[str, str]:
