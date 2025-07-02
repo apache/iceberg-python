@@ -16,12 +16,12 @@
 # under the License.
 from __future__ import annotations
 
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional, Union
 
 from pydantic import Field, field_validator
 
 from pyiceberg.schema import Schema
-from pyiceberg.typedef import IcebergBaseModel, Properties
+from pyiceberg.typedef import IcebergBaseModel, Identifier, Properties
 from pyiceberg.types import transform_dict_value_to_str
 
 
@@ -36,10 +36,10 @@ class SQLViewRepresentation(IcebergBaseModel):
     """The dialect of the SQL, e.g. `spark`, `trino`, `presto`."""
 
 
-class ViewRepresentation(BaseModel):
+class ViewRepresentation(IcebergBaseModel):
     __root__: SQLViewRepresentation
-    
-    
+
+
 class ViewVersion(IcebergBaseModel):
     """A version of the view definition."""
 
@@ -51,11 +51,11 @@ class ViewVersion(IcebergBaseModel):
     """Timestamp when the version was created (ms from epoch)"""
     summary: Dict[str, str] = Field()
     """A string to string map of summary metadata about the version"""
-    representations: List[SQLViewRepresentation] = Field()
+    representations: List[ViewRepresentation] = Field()
     """A list of representations for the view definition"""
     default_catalog: Optional[str] = Field(alias="default-catalog", default=None)
     """Catalog name to use when a reference in the SELECT does not contain a catalog"""
-    default_namespace: Namespace = Field(alias="default-namespace")
+    default_namespace: Union[str, Identifier] = Field(alias="default-namespace")
     """Namespace to use when a reference in the SELECT is a single identifier"""
 
 
@@ -73,7 +73,7 @@ class ViewMetadata(IcebergBaseModel):
 
     view_uuid: str = Field(alias="view-uuid")
     """A UUID that identifies the view, generated when the view is created."""
-    format_version: int = Field(alias='format-version', ge=1, le=1)
+    format_version: int = Field(alias="format-version", ge=1, le=1)
     """An integer version number for the view format; must be 1"""
     location: str = Field()
     """The view's base location; used to create metadata file locations"""
@@ -83,7 +83,7 @@ class ViewMetadata(IcebergBaseModel):
     """ID of the current version of the view (version-id)"""
     versions: List[ViewVersion] = Field()
     """A list of known versions of the view"""
-    version_log: List[ViewVersionLogEntry] = Field(alias="version-log")
+    version_log: List[ViewHistoryEntry] = Field(alias="version-log")
     """A list of version log entries"""
     properties: Properties = Field(default_factory=dict)
     """A string to string map of view properties"""
