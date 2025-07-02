@@ -69,7 +69,7 @@ class ViewMetadata(IcebergBaseModel):
 
     view_uuid: str = Field(alias="view-uuid")
     """A UUID that identifies the view, generated when the view is created."""
-    format_version: Literal[1] = Field(alias="format-version")
+    format_version: int = Field(alias='format-version', ge=1, le=1)
     """An integer version number for the view format; must be 1"""
     location: str = Field()
     """The view's base location; used to create metadata file locations"""
