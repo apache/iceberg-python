@@ -1,5 +1,5 @@
 from typing import List, Dict, Optional, Any
-from bisect import bisect_left, bisect_right
+from bisect import bisect_left
 from pyiceberg.table import DataFile
 from pyiceberg.manifest import ManifestEntry, DataFileContent, POSITIONAL_DELETE_SCHEMA
 from pyiceberg.types import NestedField
@@ -8,8 +8,8 @@ from pyiceberg.expressions.visitors import _InclusiveMetricsEvaluator
 
 
 class EqualityDeleteFileWrapper:
-    def __init__(self, spec_id: int, manifest_entry: ManifestEntry, schema):
-        self.spec_id = spec_id
+    """Stores the equality delete file along with the sequence number."""
+    def __init__(self, manifest_entry: ManifestEntry, schema):
         self.delete_file = manifest_entry.data_file
         self.schema = schema
         self.apply_sequence_number = (manifest_entry.sequence_number or 0) - 1
@@ -24,44 +24,58 @@ class EqualityDeleteFileWrapper:
         return fields
 
 class PositionalDeleteFileWrapper:
-    def __init__(self, spec_id: int, manifest_entry: ManifestEntry, schema):
+    """Stores the position delete file along with the sequence number for filtering."""
+    def __init__(self, manifest_entry: ManifestEntry):
         self.delete_file = manifest_entry.data_file
         self.apply_sequence_number = manifest_entry.sequence_number or 0
 
-class EqualityDeletesGroup:
-    def __init__(self):
-        self._buffer: List[EqualityDeleteFileWrapper] = []
-        self._sorted: bool = False
-        self._seqs: Optional[List[int]] = None
-        self._files: Optional[List[EqualityDeleteFileWrapper]] = None
+class DeletesGroup:
+    """Base class for managing collections of delete files with lazy sorting and binary search.
 
-    def add(self, wrapper: EqualityDeleteFileWrapper):
-        """Add an equality delete file wrapper to the group"""
+    Provides O(1) insertion with deferred O(n log n) sorting and O(log n + k) filtering
+    where k is the number of matching delete files.
+    """
+    def __init__(self):
+        self._buffer = []
+        self._sorted: bool = False  # Lazy sorting flag
+        self._seqs = None
+        self._files = None
+
+    def add(self, wrapper):
+        """Add a delete file wrapper to the group"""
         self._buffer.append(wrapper)
         self._sorted = False
 
     def _index_if_needed(self):
+        """Sort wrappers by apply_sequence_number if not already sorted"""
         if not self._sorted:
-            # Sort by apply sequence number
             self._files = sorted(self._buffer, key=lambda f: f.apply_sequence_number)
             self._seqs = [f.apply_sequence_number for f in self._files]
             self._sorted = True
 
-    def filter(self, seq: int, data_file: DataFile) -> List[DataFile]:
-        """Filter delete files that apply to the given data file"""
+    def _get_candidates(self, seq: int):
+        """Get delete files with apply_sequence_number >= seq using binary search"""
         self._index_if_needed()
 
         if not self._files:
             return []
 
-        # Find the first delete file with apply_sequence_number >= seq
         start_idx = bisect_left(self._seqs, seq)
 
         if start_idx >= len(self._files):
             return []
 
+        return self._files[start_idx:]
+
+class EqualityDeletesGroup(DeletesGroup):
+    """Extends the base DeletesGroup with equality-specific filtering logic that uses file statistics and bounds to eliminate impossible matches before expensive operations."""
+
+    def filter(self, seq: int, data_file: DataFile) -> List[DataFile]:
+        """Find equality deletes that could apply to the data file"""
+        candidates = self._get_candidates(seq)
+
         matching_files = []
-        for wrapper in self._files[start_idx:]:
+        for wrapper in candidates:
             if self._can_contain_eq_deletes_for_file(data_file, wrapper):
                 matching_files.append(wrapper.delete_file)
 
@@ -115,61 +129,44 @@ class EqualityDeletesGroup:
                 if not (data_lower and data_upper and delete_lower and delete_upper):
                     continue
 
-                # Check ranges
+                # Check ranges, no overlap means delete can't affect data
                 if data_upper < delete_lower or data_lower > delete_upper:
                     return False
 
         return True
 
-class PositionalDeletesGroup:
-    def __init__(self):
-        self._buffer: List[PositionalDeleteFileWrapper] = []
-        self._sorted: bool = False
-        self._seqs: Optional[List[int]] = None
-        self._files: Optional[List[PositionalDeleteFileWrapper]] = None
-
-    def add(self, wrapper: PositionalDeleteFileWrapper):
-        # Add a positional delete file wrapper to the group
-        self._buffer.append(wrapper)
-        self._sorted = False
-
-    def _index_if_needed(self):
-        if not self._sorted:
-            self._files = sorted(self._buffer, key=lambda f: f.apply_sequence_number)
-            self._seqs = [f.apply_sequence_number for f in self._files]
-            self._sorted = True
+class PositionalDeletesGroup(DeletesGroup):
+    """Extends the base DeletesGroup with positional-specific filtering that uses file path evaluation to determine which deletes apply to which data files."""
 
     def filter(self, seq: int, data_file: DataFile) -> List[DataFile]:
         """Filter positional delete files that apply to the given sequence number and data file"""
-        self._index_if_needed()
-
-        if not self._files:
-            return []
-
-        start_idx = bisect_left(self._seqs, seq)
-
-        if start_idx >= len(self._files):
-            return []
-
-        evaluator = _InclusiveMetricsEvaluator(POSITIONAL_DELETE_SCHEMA, EqualTo("file_path", data_file.file_path))
+        candidates = self._get_candidates(seq)
+        
+        # Use metrics evaluator to check if delete file targets this data file
+        evaluator = _InclusiveMetricsEvaluator(
+            POSITIONAL_DELETE_SCHEMA, 
+            EqualTo("file_path", data_file.file_path)
+        )
         
         matching_files = []
-        for wrapper in self._files[start_idx:]:
+        for wrapper in candidates:
             if evaluator.eval(wrapper.delete_file):
                 matching_files.append(wrapper.delete_file)
 
         return matching_files
 
 class DeleteFileIndex:
+    """Main index that organizes delete files by partition for efficient lookup during scan planning."""
     def __init__(self, table_schema):
         self.table_schema = table_schema
-        # Equality deletes
+        
+        # Global deletes
         self.global_eq_deletes = EqualityDeletesGroup()
-        self.eq_deletes_by_partition: Dict[str, EqualityDeletesGroup] = {}
-        # Positional deletes
         self.global_pos_deletes = PositionalDeletesGroup()
+        
+        # Partition-specific deletes
+        self.eq_deletes_by_partition: Dict[str, EqualityDeletesGroup] = {}
         self.pos_deletes_by_partition: Dict[str, PositionalDeletesGroup] = {}
-        self.pos_deletes_by_path: Dict[str, PositionalDeletesGroup] = {}
 
     def _partition_key_to_string(self, partition_key: Optional[Any]) -> Optional[str]:
         """Convert partition key to string representation"""
@@ -184,62 +181,54 @@ class DeleteFileIndex:
         else:
             return str(partition_key) if partition_key else "unpartitioned"
 
-    def add_delete_file(self, spec_id: int, manifest_entry: ManifestEntry, partition_key: Optional[Any] = None):
-        """Add delete file to the index"""
+    def add_delete_file(self, manifest_entry: ManifestEntry, partition_key: Optional[Any] = None):
+        """Add delete file to the appropriate partition group based on its type"""
         data_file = manifest_entry.data_file
         
         if data_file.content == DataFileContent.EQUALITY_DELETES:
-            self._add_equality_delete(spec_id, manifest_entry, partition_key)
+            # Skip equality deletes without equality_ids
+            if not data_file.equality_ids:
+                return
+            wrapper = EqualityDeleteFileWrapper(manifest_entry, self.table_schema)
         elif data_file.content == DataFileContent.POSITION_DELETES:
-            self._add_positional_delete(spec_id, manifest_entry, partition_key)
-
-    def _add_equality_delete(self, spec_id: int, manifest_entry: ManifestEntry, partition_key: Optional[Any] = None):
-        """Add an equality delete to the index"""
-        if (manifest_entry.data_file.content != DataFileContent.EQUALITY_DELETES or
-            not manifest_entry.data_file.equality_ids):
+            wrapper = PositionalDeleteFileWrapper(manifest_entry)
+        else:
             return
-        wrapper = EqualityDeleteFileWrapper(spec_id, manifest_entry, self.table_schema)
-        partition_str = self._partition_key_to_string(partition_key)
-        if partition_str is None:
-            # Global delete
-            self.global_eq_deletes.add(wrapper)
-        else:
-            # Partition-specific delete
-            if partition_str not in self.eq_deletes_by_partition:
-                self.eq_deletes_by_partition[partition_str] = EqualityDeletesGroup()
-            self.eq_deletes_by_partition[partition_str].add(wrapper)
+            
+        self._add_to_partition_group(wrapper, partition_key)
 
-    def _add_positional_delete(self, spec_id: int, manifest_entry: ManifestEntry, partition_key: Optional[Any] = None):
-        # Add a positional delete to the index
-        wrapper = PositionalDeleteFileWrapper(spec_id, manifest_entry, self.table_schema)
-        
-        # For positional deletes, we organize them by partition
+    def _add_to_partition_group(self, wrapper, partition_key: Optional[Any]):
+        """Add wrapper to the appropriate partition group based on wrapper type """
         partition_str = self._partition_key_to_string(partition_key)
-        if partition_str is None:
-            # Global positional delete
-            self.global_pos_deletes.add(wrapper)
+
+        if isinstance(wrapper, EqualityDeleteFileWrapper):
+            if partition_str is None:
+                self.global_eq_deletes.add(wrapper)
+            else:
+                if partition_str not in self.eq_deletes_by_partition:
+                    self.eq_deletes_by_partition[partition_str] = EqualityDeletesGroup()
+                self.eq_deletes_by_partition[partition_str].add(wrapper)
         else:
-            # Partition-specific positional delete
-            if partition_str not in self.pos_deletes_by_partition:
-                self.pos_deletes_by_partition[partition_str] = PositionalDeletesGroup()
-            self.pos_deletes_by_partition[partition_str].add(wrapper)
+            if partition_str is None:
+                self.global_pos_deletes.add(wrapper)
+            else:
+                if partition_str not in self.pos_deletes_by_partition:
+                    self.pos_deletes_by_partition[partition_str] = PositionalDeletesGroup()
+                self.pos_deletes_by_partition[partition_str].add(wrapper)
 
     def for_data_file(self, seq: int, data_file: DataFile, partition_key: Optional[Any] = None) -> List[DataFile]:
-        """Find delete files that apply to the given data file"""
+        """Find all delete files that apply to the given data file"""
         deletes = []
-
-        # Equality deletes
-        deletes.extend(self.global_eq_deletes.filter(seq, data_file))
-
-        # Adding partition-specific equality deletes
         partition_str = self._partition_key_to_string(partition_key)
+        
+        # Global equality deletes (apply to all partitions)
+        deletes.extend(self.global_eq_deletes.filter(seq, data_file))
+        
+        # Partition-specific equality deletes
         if partition_str and partition_str in self.eq_deletes_by_partition:
-            deletes.extend(
-                self.eq_deletes_by_partition[partition_str].filter(seq, data_file)
-            )
-
-        # Positional deletes
-        # Global positional deletes
+            deletes.extend(self.eq_deletes_by_partition[partition_str].filter(seq, data_file))
+        
+        # Global positional deletes (apply to all partitions)
         deletes.extend(self.global_pos_deletes.filter(seq, data_file))
         
         # Partition-specific positional deletes

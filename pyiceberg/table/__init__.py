@@ -1808,7 +1808,7 @@ class DataScan(TableScan):
             if data_file.content == DataFileContent.DATA:
                 data_entries.append(manifest_entry)
             elif data_file.content in (DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES):
-                delete_file_index.add_delete_file(data_file.spec_id, manifest_entry, partition_key=data_file.partition)
+                delete_file_index.add_delete_file(manifest_entry, partition_key=data_file.partition)
             else:
                 raise ValueError(f"Unknown DataFileContent ({data_file.content}): {manifest_entry}")
         return [

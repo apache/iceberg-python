@@ -17,9 +17,8 @@ class TestEqualityDeleteFileWrapper:
         delete_file = create_basic_equality_delete_file(equality_ids=[1, 2])
         manifest_entry = create_manifest_entry_with_delete_file(delete_file, sequence_number=10)
 
-        wrapper = EqualityDeleteFileWrapper(1, manifest_entry, id_data_schema)
+        wrapper = EqualityDeleteFileWrapper(manifest_entry, id_data_schema)
 
-        assert wrapper.spec_id == 1
         assert wrapper.delete_file == delete_file
         assert wrapper.apply_sequence_number == 9  # sequence_number - 1
 
@@ -27,7 +26,7 @@ class TestEqualityDeleteFileWrapper:
         delete_file = create_basic_equality_delete_file(equality_ids=[1, 2])
         manifest_entry = create_manifest_entry_with_delete_file(delete_file, sequence_number=10)
 
-        wrapper = EqualityDeleteFileWrapper(1, manifest_entry, id_data_schema)
+        wrapper = EqualityDeleteFileWrapper(manifest_entry, id_data_schema)
         fields = wrapper.equality_fields()
 
         assert len(fields) == 2
@@ -39,7 +38,7 @@ class TestEqualityDeleteFileWrapper:
         delete_file = create_basic_equality_delete_file(equality_ids=[1, 999])  # 999 doesn't exist
         manifest_entry = create_manifest_entry_with_delete_file(delete_file, sequence_number=10)
 
-        wrapper = EqualityDeleteFileWrapper(1, manifest_entry, simple_id_schema)
+        wrapper = EqualityDeleteFileWrapper(manifest_entry, simple_id_schema)
         
         # Error raised when trying to find non-existent field
         with pytest.raises(ValueError, match="Could not find field with id: 999"):
@@ -57,7 +56,7 @@ class TestEqualityDeletesGroup:
                 equality_ids=[1]
             )
             manifest_entry = create_manifest_entry_with_delete_file(delete_file, sequence_number=seq)
-            wrapper = EqualityDeleteFileWrapper(1, manifest_entry, simple_id_schema)
+            wrapper = EqualityDeleteFileWrapper(manifest_entry, simple_id_schema)
             group.add(wrapper)
 
         # Test that files are not sorted initially
@@ -98,7 +97,7 @@ class TestEqualityDeletesGroup:
         manifest_entry = create_manifest_entry_with_delete_file(pos_delete_file, sequence_number=1)
         eq_delete_file = create_basic_equality_delete_file(equality_ids=[1])
         eq_manifest_entry = create_manifest_entry_with_delete_file(eq_delete_file, sequence_number=1)
-        wrapper = EqualityDeleteFileWrapper(1, eq_manifest_entry, simple_id_schema)
+        wrapper = EqualityDeleteFileWrapper(eq_manifest_entry, simple_id_schema)
         group.add(wrapper)
         assert len(group._buffer) == 1
 
@@ -117,7 +116,7 @@ class TestEqualityDeletesGroup:
         )
 
         manifest_entry = create_manifest_entry_with_delete_file(delete_file, sequence_number=1)
-        delete_index.add_delete_file(1, manifest_entry)
+        delete_index.add_delete_file(manifest_entry)
 
         # Should be ignored due to missing equality_ids
         assert len(delete_index.global_eq_deletes._buffer) == 0
@@ -140,7 +139,7 @@ class TestPositionalDeleteFileWrapper:
             data_file=pos_delete_file,
         )
 
-        wrapper = PositionalDeleteFileWrapper(1, manifest_entry, simple_id_schema)
+        wrapper = PositionalDeleteFileWrapper(manifest_entry)
 
         assert wrapper.delete_file == pos_delete_file
         assert wrapper.apply_sequence_number == 5
@@ -167,7 +166,7 @@ class TestPositionalDeletesGroup:
                 data_file=pos_delete_file,
             )
             
-            wrapper = PositionalDeleteFileWrapper(1, manifest_entry, simple_id_schema)
+            wrapper = PositionalDeleteFileWrapper(manifest_entry)
             group.add(wrapper)
 
         data_file = create_basic_data_file(file_path="s3://bucket/data.parquet")
@@ -196,7 +195,7 @@ class TestPositionalDeletesGroup:
             data_file=pos_delete_file,
         )
         
-        wrapper = PositionalDeleteFileWrapper(1, manifest_entry, simple_id_schema)
+        wrapper = PositionalDeleteFileWrapper(manifest_entry)
         group.add(wrapper)
 
         matching_data_file = create_basic_data_file(file_path="s3://bucket/target-data.parquet")
@@ -232,11 +231,11 @@ class TestDeleteFileIndex:
     def test_add_and_retrieve(self, delete_index: DeleteFileIndex) -> None:
         # global delete
         global_delete = create_equality_delete_entry(sequence_number=5, equality_ids=[1])
-        delete_index.add_delete_file(1, global_delete, partition_key=None)
+        delete_index.add_delete_file(global_delete, partition_key=None)
 
         # partition-specific delete
         partition_delete = create_equality_delete_entry(sequence_number=3, equality_ids=[1])
-        delete_index.add_delete_file(1, partition_delete, partition_key="partition1")
+        delete_index.add_delete_file(partition_delete, partition_key="partition1")
 
         data_file = create_basic_data_file()
 
@@ -257,7 +256,7 @@ class TestDeleteFileIndex:
         # Add delete files with different sequence numbers
         for seq in [1, 2, 3, 4]:
             delete_entry = create_equality_delete_entry(sequence_number=seq, equality_ids=[1])
-            delete_index.add_delete_file(1, delete_entry)
+            delete_index.add_delete_file(delete_entry)
 
         data_file = create_basic_data_file()
 
@@ -269,10 +268,10 @@ class TestDeleteFileIndex:
 
     def test_mixed_delete_types(self, delete_index: DeleteFileIndex) -> None:
         pos_delete_entry = create_positional_delete_entry(sequence_number=5, file_path="s3://bucket/data.parquet")
-        delete_index.add_delete_file(1, pos_delete_entry)
+        delete_index.add_delete_file(pos_delete_entry)
 
         eq_delete_entry = create_equality_delete_entry(sequence_number=3, equality_ids=[1])
-        delete_index.add_delete_file(1, eq_delete_entry)
+        delete_index.add_delete_file(eq_delete_entry)
 
         data_file = create_basic_data_file(file_path="s3://bucket/data.parquet")
 
@@ -285,11 +284,11 @@ class TestDeleteFileIndex:
 
     def test_positional_delete_partition_isolation(self, delete_index: DeleteFileIndex) -> None:
         global_pos_delete = create_positional_delete_entry(sequence_number=5, file_path="s3://bucket/data.parquet")
-        delete_index.add_delete_file(1, global_pos_delete, partition_key=None)
+        delete_index.add_delete_file(global_pos_delete, partition_key=None)
 
         partition_pos_delete = create_positional_delete_entry(sequence_number=3, file_path="s3://bucket/data.parquet")
         partition_key_1 = {"bucket": 1}
-        delete_index.add_delete_file(1, partition_pos_delete, partition_key=partition_key_1)
+        delete_index.add_delete_file(partition_pos_delete, partition_key=partition_key_1)
 
         data_file = create_basic_data_file(file_path="s3://bucket/data.parquet")
 
