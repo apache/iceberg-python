@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Literal, Optional, Union
 
-from pydantic import Field, field_validator
+from pydantic import Field, RootModel, field_validator
 
 from pyiceberg.schema import Schema
 from pyiceberg.typedef import IcebergBaseModel, Identifier, Properties
@@ -36,8 +36,8 @@ class SQLViewRepresentation(IcebergBaseModel):
     """The dialect of the SQL, e.g. `spark`, `trino`, `presto`."""
 
 
-class ViewRepresentation(IcebergBaseModel):
-    __root__: SQLViewRepresentation
+class ViewRepresentation(IcebergBaseModel, RootModel):
+    root: SQLViewRepresentation
 
 
 class ViewVersion(IcebergBaseModel):
@@ -55,7 +55,7 @@ class ViewVersion(IcebergBaseModel):
     """A list of representations for the view definition"""
     default_catalog: Optional[str] = Field(alias="default-catalog", default=None)
     """Catalog name to use when a reference in the SELECT does not contain a catalog"""
-    default_namespace: Union[str, Identifier] = Field(alias="default-namespace")
+    default_namespace: Identifier = Field(alias="default-namespace")
     """Namespace to use when a reference in the SELECT is a single identifier"""
 
 
