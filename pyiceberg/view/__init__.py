@@ -29,7 +29,7 @@ from pyiceberg.view.metadata import ViewMetadata
 class View:
     """An Iceberg view."""
 
-    _identifier: Identifier = Field()
+    _identifier: Identifier
     metadata: ViewMetadata
 
     def __init__(
