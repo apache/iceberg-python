@@ -351,6 +351,7 @@ catalog:
 | rest.signing-name   | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
 | oauth2-server-uri   | <https://auth-service/cc>          | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
 | snapshot-loading-mode | refs                             | The snapshots to return in the body of the metadata. Setting the value to `all` would return the full set of snapshots currently valid for the table. Setting the value to `refs` would load all snapshots referenced by branches or tags. |
+| warehouse          | myWarehouse                         | Warehouse location or identifier to request from the catalog service. May be used to determine server-side overrides, such as the warehouse location. |
 
 <!-- markdown-link-check-enable-->
 
@@ -438,10 +439,11 @@ catalog:
     s3.secret-access-key: password
 ```
 
-| Key                          | Example | Description                       |
-|------------------------------| ------- | --------------------------------- |
-| hive.hive2-compatible        | true    | Using Hive 2.x compatibility mode |
-| hive.kerberos-authentication | true    | Using authentication via Kerberos |
+| Key                          | Example | Description                          |
+|------------------------------| ------- | ------------------------------------ |
+| hive.hive2-compatible        | true    | Using Hive 2.x compatibility mode    |
+| hive.kerberos-authentication | true    | Using authentication via Kerberos    |
+| hive.kerberos-service-name   | hive    | Kerberos service name (default hive) |
 
 When using Hive 2.x, make sure to set the compatibility flag:
 
