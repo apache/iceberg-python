@@ -22,6 +22,7 @@ from pydantic import Field, RootModel, field_validator
 
 from pyiceberg.schema import Schema
 from pyiceberg.typedef import IcebergBaseModel, Identifier, Properties
+from pyiceberg.typedef import ViewVersion as ViewVersionLiteral
 from pyiceberg.types import transform_dict_value_to_str
 
 
@@ -73,7 +74,7 @@ class ViewMetadata(IcebergBaseModel):
 
     view_uuid: str = Field(alias="view-uuid")
     """A UUID that identifies the view, generated when the view is created."""
-    format_version: int = Field(alias="format-version", ge=1, le=1)
+    format_version: ViewVersionLiteral = Field(alias="format-version", ge=1, le=1)
     """An integer version number for the view format; must be 1"""
     location: str = Field()
     """The view's base location; used to create metadata file locations"""
