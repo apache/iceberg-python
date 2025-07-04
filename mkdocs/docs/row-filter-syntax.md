@@ -17,11 +17,11 @@
 
 # Row Filter Syntax
 
-In addtion to the primary [Expression DSL](expression-dsl.md), PyIceberg provides a string-based statement interface for filtering rows in Iceberg tables. This guide explains the syntax and provides examples for supported operations.
+In addition to the primary [Expression DSL](expression-dsl.md), PyIceberg provides a string-based statement interface for filtering rows in Iceberg tables. This guide explains the syntax and provides examples for supported operations.
 
 The row filter syntax is designed to be similar to SQL WHERE clauses. Here are the basic components:
 
-### Column References
+## Column References
 
 Columns can be referenced using either unquoted or quoted identifiers:
 
@@ -30,7 +30,7 @@ column_name
 "column.name"
 ```
 
-### Literals
+## Literals
 
 The following literal types are supported:
 
@@ -137,6 +137,7 @@ price IS NOT NULL AND price > 100 AND quantity > 0
 ## Common Pitfalls
 
 1. **String Quoting**: Always use single quotes for string literals. Double quotes are reserved for column identifiers.
+
    ```sql
    -- Correct
    name = 'John'
@@ -146,6 +147,7 @@ price IS NOT NULL AND price > 100 AND quantity > 0
    ```
 
 2. **Wildcard Usage**: The `%` wildcard in LIKE patterns can only appear at the end.
+
    ```sql
    -- Correct
    name LIKE 'John%'
@@ -155,6 +157,7 @@ price IS NOT NULL AND price > 100 AND quantity > 0
    ```
 
 3. **Case Sensitivity**: Boolean literals (`true`/`false`) are case insensitive, but string comparisons are case sensitive.
+
    ```sql
    -- All valid
    is_active = true
