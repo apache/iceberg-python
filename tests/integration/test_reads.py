@@ -345,6 +345,15 @@ def test_daft_nan_rewritten(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_bodo_nan(catalog: Catalog) -> None:
+    table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
+    df = table_test_null_nan_rewritten.to_bodo()
+    assert len(df) == 3
+    assert math.isnan(df.col_numeric.iloc[0])
+
+
+@pytest.mark.integration
 @pytest.mark.filterwarnings("ignore")
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_ray_nan(catalog: Catalog) -> None:

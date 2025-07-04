@@ -137,6 +137,7 @@ from pyiceberg.utils.config import Config
 from pyiceberg.utils.properties import property_as_bool
 
 if TYPE_CHECKING:
+    import bodo.pandas as bd
     import daft
     import pandas as pd
     import polars as pl
@@ -1483,6 +1484,16 @@ class Table:
         import daft
 
         return daft.read_iceberg(self)
+
+    def to_bodo(self) -> bd.DataFrame:
+        """Read a bodo DataFrame lazily from this Iceberg table.
+
+        Returns:
+            bd.DataFrame: Unmaterialized Bodo Dataframe created from the Iceberg table
+        """
+        import bodo.pandas as bd
+
+        return bd.read_iceberg_table(self)
 
     def to_polars(self) -> pl.LazyFrame:
         """Lazily read from this Apache Iceberg table.
