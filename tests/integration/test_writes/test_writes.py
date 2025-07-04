@@ -19,6 +19,7 @@ import math
 import os
 import random
 import time
+import uuid
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -49,7 +50,7 @@ from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
 from pyiceberg.table.refs import MAIN_BRANCH
 from pyiceberg.table.sorting import SortDirection, SortField, SortOrder
-from pyiceberg.transforms import DayTransform, HourTransform, IdentityTransform
+from pyiceberg.transforms import DayTransform, HourTransform, IdentityTransform, Transform
 from pyiceberg.types import (
     DateType,
     DecimalType,
@@ -59,6 +60,7 @@ from pyiceberg.types import (
     LongType,
     NestedField,
     StringType,
+    UUIDType,
 )
 from utils import _create_table
 
@@ -1286,7 +1288,7 @@ def test_table_write_schema_with_valid_upcast(
                 pa.field("list", pa.list_(pa.int64()), nullable=False),
                 pa.field("map", pa.map_(pa.string(), pa.int64()), nullable=False),
                 pa.field("double", pa.float64(), nullable=True),  # can support upcasting float to double
-                pa.field("uuid", pa.binary(length=16), nullable=True),  # can UUID is read as fixed length binary of length 16
+                pa.field("uuid", pa.uuid(), nullable=True),
             )
         )
     )
@@ -1856,6 +1858,59 @@ def test_read_write_decimals(session_catalog: Catalog) -> None:
     tbl.append(arrow_table)
 
     assert tbl.scan().to_arrow() == arrow_table
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "transform",
+    [
+        IdentityTransform(),
+        # Bucket is disabled because of an issue in Iceberg Java:
+        # https://github.com/apache/iceberg/pull/13324
+        # BucketTransform(32)
+    ],
+)
+def test_uuid_partitioning(session_catalog: Catalog, spark: SparkSession, transform: Transform) -> None:  # type: ignore
+    identifier = f"default.test_uuid_partitioning_{str(transform).replace('[32]', '')}"
+
+    schema = Schema(NestedField(field_id=1, name="uuid", field_type=UUIDType(), required=True))
+
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    partition_spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=transform, name="uuid_identity"))
+
+    import pyarrow as pa
+
+    arr_table = pa.Table.from_pydict(
+        {
+            "uuid": [
+                uuid.UUID("00000000-0000-0000-0000-000000000000").bytes,
+                uuid.UUID("11111111-1111-1111-1111-111111111111").bytes,
+            ],
+        },
+        schema=pa.schema(
+            [
+                # Uuid not yet supported, so we have to stick with `binary(16)`
+                # https://github.com/apache/arrow/issues/46468
+                pa.field("uuid", pa.binary(16), nullable=False),
+            ]
+        ),
+    )
+
+    tbl = session_catalog.create_table(
+        identifier=identifier,
+        schema=schema,
+        partition_spec=partition_spec,
+    )
+
+    tbl.append(arr_table)
+
+    lhs = [r[0] for r in spark.table(identifier).collect()]
+    rhs = [str(u.as_py()) for u in tbl.scan().to_arrow()["uuid"].combine_chunks()]
+    assert lhs == rhs
 
 
 @pytest.mark.integration
