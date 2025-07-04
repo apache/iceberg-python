@@ -72,7 +72,7 @@ def catalog_name() -> str:
 
 @pytest.fixture(name="random_table_identifier")
 def fixture_random_table_identifier(warehouse: Path, database_name: str, table_name: str) -> Identifier:
-    os.makedirs(f"{warehouse}/{database_name}.db/{table_name}/metadata/", exist_ok=True)
+    os.makedirs(f"{warehouse}/{database_name}/{table_name}/metadata/", exist_ok=True)
     return database_name, table_name
 
 
@@ -80,13 +80,13 @@ def fixture_random_table_identifier(warehouse: Path, database_name: str, table_n
 def fixture_another_random_table_identifier(warehouse: Path, database_name: str, table_name: str) -> Identifier:
     database_name = database_name + "_new"
     table_name = table_name + "_new"
-    os.makedirs(f"{warehouse}/{database_name}.db/{table_name}/metadata/", exist_ok=True)
+    os.makedirs(f"{warehouse}/{database_name}/{table_name}/metadata/", exist_ok=True)
     return database_name, table_name
 
 
 @pytest.fixture(name="random_hierarchical_identifier")
 def fixture_random_hierarchical_identifier(warehouse: Path, hierarchical_namespace_name: str, table_name: str) -> Identifier:
-    os.makedirs(f"{warehouse}/{hierarchical_namespace_name}.db/{table_name}/metadata/", exist_ok=True)
+    os.makedirs(f"{warehouse}/{hierarchical_namespace_name}/{table_name}/metadata/", exist_ok=True)
     return Catalog.identifier_to_tuple(".".join((hierarchical_namespace_name, table_name)))
 
 
@@ -96,7 +96,7 @@ def fixture_another_random_hierarchical_identifier(
 ) -> Identifier:
     hierarchical_namespace_name = hierarchical_namespace_name + "_new"
     table_name = table_name + "_new"
-    os.makedirs(f"{warehouse}/{hierarchical_namespace_name}.db/{table_name}/metadata/", exist_ok=True)
+    os.makedirs(f"{warehouse}/{hierarchical_namespace_name}/{table_name}/metadata/", exist_ok=True)
     return Catalog.identifier_to_tuple(".".join((hierarchical_namespace_name, table_name)))
 
 
@@ -115,7 +115,7 @@ def catalog_memory(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, 
 @pytest.fixture(scope="module")
 def catalog_sqlite(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, None, None]:
     props = {
-        "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+        "uri": f"sqlite:////{warehouse}/sql-catalog",
         "warehouse": f"file://{warehouse}",
     }
     catalog = SqlCatalog(catalog_name, **props)
@@ -126,7 +126,7 @@ def catalog_sqlite(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, 
 
 @pytest.fixture(scope="module")
 def catalog_uri(warehouse: Path) -> str:
-    return f"sqlite:////{warehouse}/sql-catalog.db"
+    return f"sqlite:////{warehouse}/sql-catalog"
 
 
 @pytest.fixture(scope="module")
@@ -137,7 +137,7 @@ def alchemy_engine(catalog_uri: str) -> Engine:
 @pytest.fixture(scope="module")
 def catalog_sqlite_without_rowcount(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, None, None]:
     props = {
-        "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+        "uri": f"sqlite:////{warehouse}/sql-catalog",
         "warehouse": f"file://{warehouse}",
     }
     catalog = SqlCatalog(catalog_name, **props)
@@ -150,7 +150,7 @@ def catalog_sqlite_without_rowcount(catalog_name: str, warehouse: Path) -> Gener
 @pytest.fixture(scope="module")
 def catalog_sqlite_fsspec(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, None, None]:
     props = {
-        "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+        "uri": f"sqlite:////{warehouse}/sql-catalog",
         "warehouse": f"file://{warehouse}",
         PY_IO_IMPL: FSSPEC_FILE_IO,
     }
@@ -176,7 +176,7 @@ def test_creation_with_echo_parameter(catalog_name: str, warehouse: Path) -> Non
 
     for echo_param, expected_echo_value in test_cases:
         props = {
-            "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+            "uri": f"sqlite:////{warehouse}/sql-catalog",
             "warehouse": f"file://{warehouse}",
         }
         # None is for default value
@@ -199,7 +199,7 @@ def test_creation_with_pool_pre_ping_parameter(catalog_name: str, warehouse: Pat
 
     for pool_pre_ping_param, expected_pool_pre_ping_value in test_cases:
         props = {
-            "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+            "uri": f"sqlite:////{warehouse}/sql-catalog",
             "warehouse": f"file://{warehouse}",
         }
         # None is for default value
@@ -219,7 +219,7 @@ def test_creation_from_impl(catalog_name: str, warehouse: Path) -> None:
             catalog_name,
             **{
                 "py-catalog-impl": "pyiceberg.catalog.sql.SqlCatalog",
-                "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+                "uri": f"sqlite:////{warehouse}/sql-catalog",
                 "warehouse": f"file://{warehouse}",
             },
         ),
@@ -493,7 +493,7 @@ def test_create_table_with_given_location_removes_trailing_slash(
     identifier_tuple = Catalog.identifier_to_tuple(table_identifier)
     namespace = Catalog.namespace_from(table_identifier)
     table_name = Catalog.table_name_from(identifier_tuple)
-    location = f"file://{warehouse}/{catalog.name}.db/{table_name}-given"
+    location = f"file://{warehouse}/{catalog.name}/{table_name}-given"
     catalog.create_namespace(namespace)
     catalog.create_table(table_identifier, table_schema_nested, location=f"{location}/")
     table = catalog.load_table(table_identifier)
@@ -1235,7 +1235,7 @@ def test_load_namespace_properties(catalog: SqlCatalog, namespace: str) -> None:
     warehouse_location = "/test/location"
     test_properties = {
         "comment": "this is a test description",
-        "location": f"{warehouse_location}/{namespace}.db",
+        "location": f"{warehouse_location}/{namespace}",
         "test_property1": "1",
         "test_property2": "2",
         "test_property3": "3",
@@ -1286,7 +1286,7 @@ def test_update_namespace_properties(catalog: SqlCatalog, namespace: str) -> Non
     warehouse_location = "/test/location"
     test_properties = {
         "comment": "this is a test description",
-        "location": f"{warehouse_location}/{namespace}.db",
+        "location": f"{warehouse_location}/{namespace}",
         "test_property1": "1",
         "test_property2": "2",
         "test_property3": "3",
@@ -1306,7 +1306,7 @@ def test_update_namespace_properties(catalog: SqlCatalog, namespace: str) -> Non
         "comment": "updated test description",
         "test_property4": "4",
         "test_property5": "5",
-        "location": f"{warehouse_location}/{namespace}.db",
+        "location": f"{warehouse_location}/{namespace}",
     }
 
 

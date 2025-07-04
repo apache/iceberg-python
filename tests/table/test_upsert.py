@@ -83,7 +83,7 @@ def gen_source_dataset(start_row: int, end_row: int, composite_key: bool, add_du
     )
 
     sql = f"""
-        with t as (SELECT unnest(range({start_row},{end_row+1})) as order_id)
+        with t as (SELECT unnest(range({start_row},{end_row + 1})) as order_id)
         SELECT t.order_id {additional_columns}
             , date '2021-01-01' as order_date, 'B' as order_type
         from t
@@ -101,7 +101,7 @@ def gen_target_iceberg_table(
     additional_columns = ", t.order_id + 1000 as order_line_id" if composite_key else ""
 
     df = ctx.sql(f"""
-        with t as (SELECT unnest(range({start_row},{end_row+1})) as order_id)
+        with t as (SELECT unnest(range({start_row},{end_row + 1})) as order_id)
         SELECT t.order_id {additional_columns}
             , date '2021-01-01' as order_date, 'A' as order_type
         from t

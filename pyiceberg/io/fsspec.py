@@ -36,7 +36,7 @@ from fsspec import AbstractFileSystem
 from fsspec.implementations.local import LocalFileSystem
 from requests import HTTPError
 
-from pyiceberg.catalog import TOKEN
+from pyiceberg.catalog import TOKEN, URI
 from pyiceberg.exceptions import SignError
 from pyiceberg.io import (
     ADLS_ACCOUNT_HOST,
@@ -91,7 +91,7 @@ if TYPE_CHECKING:
 
 
 def s3v4_rest_signer(properties: Properties, request: "AWSRequest", **_: Any) -> "AWSRequest":
-    signer_url = properties.get(S3_SIGNER_URI, properties["uri"]).rstrip("/")
+    signer_url = properties.get(S3_SIGNER_URI, properties[URI]).rstrip("/")  # type: ignore
     signer_endpoint = properties.get(S3_SIGNER_ENDPOINT, S3_SIGNER_ENDPOINT_DEFAULT)
 
     signer_headers = {}
