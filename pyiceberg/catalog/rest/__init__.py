@@ -615,7 +615,7 @@ class RestCatalog(Catalog):
             _handle_non_200_response(exc, {404: NoSuchNamespaceError})
         return ListTablesResponse.model_validate_json(response.text)
 
-    def iter_tables(self, namespace: Union[str, Identifier], page_size: Optional[int] = None) -> Iterator[Identifier]:
+    def list_tables(self, namespace: Union[str, Identifier], page_size: Optional[int] = None) -> Iterator[Identifier]:
         """Lazily iterate over tables in a namespace."""
         next_page_token = None
         while True:
@@ -625,14 +625,6 @@ class RestCatalog(Catalog):
                 break
             else:
                 next_page_token = list_tables_response.next_page_token
-
-    def list_tables(self, namespace: Union[str, Identifier], page_size: Optional[int] = None) -> List[Identifier]:
-        """List tables in a namespace.
-
-        Note: This method loads all tables into memory. For catalogs with many tables,
-        consider using iter_tables().
-        """
-        return list(self.iter_tables(namespace, page_size))
 
     @retry(**_RETRY_ARGS)
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
@@ -723,7 +715,7 @@ class RestCatalog(Catalog):
 
         return ListViewsResponse.model_validate_json(response.text)
 
-    def iter_views(self, namespace: Union[str, Identifier], page_size: Optional[int] = None) -> Iterator[Identifier]:
+    def list_views(self, namespace: Union[str, Identifier], page_size: Optional[int] = None) -> Iterator[Identifier]:
         """Lazily iterate over views in a namespace."""
         next_page_token = None
         while True:
@@ -733,14 +725,6 @@ class RestCatalog(Catalog):
                 break
             else:
                 next_page_token = list_views_response.next_page_token
-
-    def list_views(self, namespace: Union[str, Identifier], page_size: Optional[int] = None) -> List[Identifier]:
-        """List views in a namespace.
-
-        Note: This method loads all views into memory. For catalogs with many views,
-        consider using iter_views().
-        """
-        return list(self.iter_views(namespace, page_size))
 
     @retry(**_RETRY_ARGS)
     def commit_table(
@@ -844,8 +828,8 @@ class RestCatalog(Catalog):
 
         return ListNamespaceResponse.model_validate_json(response.text)
 
-    def iter_namespaces(self, namespace: Union[str, Identifier] = (), page_size: Optional[int] = None) -> Iterator[Identifier]:
-        """Lazily iterate over namespaces"""
+    def list_namespaces(self, namespace: Union[str, Identifier] = (), page_size: Optional[int] = None) -> Iterator[Identifier]:
+        """Lazily iterate over namespaces."""
         next_page_token = None
         while True:
             list_namespace_response = self.list_namespaces_raw(
@@ -856,14 +840,6 @@ class RestCatalog(Catalog):
                 break
             else:
                 next_page_token = list_namespace_response.next_page_token
-
-    def list_namespaces(self, namespace: Union[str, Identifier] = (), page_size: Optional[int] = None) -> List[Identifier]:
-        """List namespaces.
-
-        Note: This method loads all namespaces into memory. For catalogs with many namespaces,
-        consider using iter_namespaces().
-        """
-        return list(self.iter_namespaces(namespace, page_size))
 
     @retry(**_RETRY_ARGS)
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
