@@ -2357,7 +2357,9 @@ def test_read_equality_deletes(equality_deletes_file_path: str) -> None:
     assert deletes["equality_deletes"]["bar"].to_pylist() == [1, 2]
 
 
-def test_equality_delete(equality_deletes_file_path: str, equality_delete_task: FileScanTask, table_schema_simple: Schema) -> None:
+def test_equality_delete(
+    equality_deletes_file_path: str, equality_delete_task: FileScanTask, table_schema_simple: Schema
+) -> None:
     import pyarrow.parquet as pq
 
     print("Data table:")
@@ -2393,7 +2395,11 @@ def test_equality_delete(equality_deletes_file_path: str, equality_delete_task: 
     assert len(with_deletes) == 2
     assert with_deletes["foo"].to_pylist() == ["c", "d"]
     assert with_deletes["bar"].to_pylist() == [3.0, 4.0]
-def test_mor_read_with_positional_and_equality_deletes( example_task: FileScanTask, equality_delete_task: FileScanTask, table_schema_simple: Schema, tmp_path: str, pa_schema):
+
+
+def test_mor_read_with_positional_and_equality_deletes(
+    example_task: FileScanTask, equality_delete_task: FileScanTask, table_schema_simple: Schema, tmp_path: str, pa_schema: Any
+) -> None:
     pos_delete_path = os.path.join(tmp_path, "pos_delete.parquet")
     pos_delete_table = pa.table(
         {
@@ -2414,7 +2420,7 @@ def test_mor_read_with_positional_and_equality_deletes( example_task: FileScanTa
         {
             "bar": pa.array([3], type=pa.int32()),
         },
-        schema=eq_delete_schema
+        schema=eq_delete_schema,
     )
     pq.write_table(eq_delete_table, eq_delete_path)
     eq_delete_file = DataFile.from_args(
@@ -2456,7 +2462,8 @@ def test_mor_read_with_positional_and_equality_deletes( example_task: FileScanTa
     assert foos == ["a", "c", "a", "b", "d"]
     assert bazs == [True, None, True, False, True]
 
-def test_mor_read_with_partitions_and_deletes( tmp_path: str, pa_schema):
+
+def test_mor_read_with_partitions_and_deletes(tmp_path: str, pa_schema: Any) -> None:
     schema = Schema(
         NestedField(1, "id", IntegerType(), required=True),
         NestedField(2, "part", StringType(), required=True),
@@ -2528,7 +2535,10 @@ def test_mor_read_with_partitions_and_deletes( tmp_path: str, pa_schema):
     assert set(result["id"].to_pylist()) == {1, 3, 5, 6}
     assert set(result["part"].to_pylist()) == {"A", "B"}
 
-def test_mor_read_with_duplicate_deletes( example_task: FileScanTask, table_schema_simple: Schema, tmp_path: str, pa_schema):
+
+def test_mor_read_with_duplicate_deletes(
+    example_task: FileScanTask, table_schema_simple: Schema, tmp_path: str, pa_schema: Any
+) -> None:
     pos_delete_path = os.path.join(tmp_path, "pos_delete.parquet")
     pos_delete_table = pa.table(
         {

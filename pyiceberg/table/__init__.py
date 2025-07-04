@@ -1672,13 +1672,11 @@ def _match_deletes_to_data_file(data_entry: ManifestEntry, delete_file_index: De
     Returns:
         A set of delete files that are relevant for the data file.
     """
-    # MODIFIED
     candidate_deletes = delete_file_index.for_data_file(
-        data_entry.sequence_number or 0, 
-        data_entry.data_file, 
-        partition_key=data_entry.data_file.partition
+        data_entry.sequence_number or 0, data_entry.data_file, partition_key=data_entry.data_file.partition
     )
     return set(candidate_deletes)
+
 
 class DataScan(TableScan):
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
@@ -1759,8 +1757,6 @@ class DataScan(TableScan):
         Returns:
             List of FileScanTasks that contain both data and delete files.
         """
-        # MODIFIED
-
         snapshot = self.snapshot()
         if not snapshot:
             return iter([])
@@ -1786,7 +1782,7 @@ class DataScan(TableScan):
         min_sequence_number = _min_sequence_number(manifests)
 
         data_entries: List[ManifestEntry] = []
-        delete_file_index = DeleteFileIndex(self.table_metadata.schema())
+        delete_file_index = DeleteFileIndex(self.table_metadata.schema(), self.table_metadata.specs())
 
         executor = ExecutorFactory.get_or_create()
         for manifest_entry in chain(

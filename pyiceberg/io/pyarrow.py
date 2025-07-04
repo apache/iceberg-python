@@ -922,7 +922,6 @@ def _construct_fragment(fs: FileSystem, data_file: DataFile, file_format_kwargs:
 
 
 def _read_deletes(fs: FileSystem, data_file: DataFile) -> Dict[str, pa.ChunkedArray]:
-    # MODIFIED
     if data_file.file_format == FileFormat.PARQUET:
         delete_fragment = _construct_fragment(
             fs,
@@ -1399,8 +1398,6 @@ def _task_to_record_batches(
     name_mapping: Optional[NameMapping] = None,
     partition_spec: Optional[PartitionSpec] = None,
 ) -> Iterator[pa.RecordBatch]:
-    # MODIFIED
-
     _, _, path = _parse_location(task.file.file_path)
     arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
     with fs.open_input_file(path) as fin:
@@ -1432,7 +1429,8 @@ def _task_to_record_batches(
             # This will push down the query to Arrow.
             # But in case there are positional deletes, we have to apply them first
             filter=pyarrow_filter if not deletes else None,
-            columns=[col.name for col in file_project_schema.columns],)
+            columns=[col.name for col in file_project_schema.columns],
+        )
 
         next_index = 0
         batches = fragment_scanner.to_batches()
@@ -1444,14 +1442,15 @@ def _task_to_record_batches(
             if deletes:
                 positional_deletes = [d for d in deletes if isinstance(d, pa.ChunkedArray)]
                 if positional_deletes:
-                    indices =  _combine_positional_deletes(positional_deletes, current_index, current_index + len(batch))
+                    indices = _combine_positional_deletes(positional_deletes, current_index, current_index + len(batch))
                     current_batch = current_batch.take(indices)
                 equality_deletes = [d for d in deletes if isinstance(d, pa.Table)]
                 if equality_deletes:
                     table = pa.Table.from_batches([current_batch])
                     task_eq_del = [df for df in task.delete_files if df.content == DataFileContent.EQUALITY_DELETES]
                     for i, delete_file in enumerate(task_eq_del):
-                        table = _apply_equality_deletes(table, equality_deletes[i], delete_file.equality_ids)
+                        if delete_file.equality_ids is not None:
+                            table = _apply_equality_deletes(table, equality_deletes[i], delete_file.equality_ids)
                     if table.num_rows > 0:
                         current_batch = table.combine_chunks().to_batches()[0]
                     else:
@@ -1491,12 +1490,9 @@ def _task_to_record_batches(
 
 
 def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
-    # MODIFIED
-
     deletes_per_file: Dict[str, List[Union[pa.ChunkedArray, pa.Table]]] = {}
 
-    unique_deletes = set(df for task in tasks for df in task.delete_files
-                         if df.content == DataFileContent.POSITION_DELETES)
+    unique_deletes = {df for task in tasks for df in task.delete_files if df.content == DataFileContent.POSITION_DELETES}
     if unique_deletes:
         executor = ExecutorFactory.get_or_create()
         deletes_per_files: Iterator[Dict[str, ChunkedArray]] = executor.map(
@@ -1520,10 +1516,10 @@ def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Dict[st
     if equality_delete_tasks:
         executor = ExecutorFactory.get_or_create()
 
-        # Processing equality delete tasks in parallel like positon deletes
+        # Processing equality delete tasks in parallel like position deletes
         equality_delete_results = executor.map(
             lambda args: (args[0], _read_deletes(_fs_from_file_path(io, args[1].file_path), args[1])["equality_deletes"]),
-            equality_delete_tasks
+            equality_delete_tasks,
         )
         for file_path, equality_delete_table in equality_delete_results:
             if file_path not in deletes_per_file:
@@ -2771,24 +2767,23 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
 
     return table_partitions
 
+
 def _apply_equality_deletes(data_table: pa.Table, delete_table: pa.Table, equality_ids: List[int]) -> pa.Table:
     """Apply equality deletes to a data table.
+
     Filter out rows from the table that match the equality delete table the conditions in it.
     Args:
         data_table: A PyArrow table which has data to filter
         delete_table: A PyArrow table containing the equality deletes
         equality_ids: A List of field IDs to use for equality comparison
     Returns:
-        A filtered PyArrow table with matching rows removed"""
+        A filtered PyArrow table with matching rows removed
+    """
     if len(delete_table) == 0:
         return data_table
 
     data_schema = pyarrow_to_schema(data_table.schema)
     equality_columns = [data_schema.find_field(fid).name for fid in equality_ids]
     # Use PyArrow's join function with left anti join type
-    result = data_table.join(
-        delete_table.select(equality_columns),
-        keys=equality_columns,
-        join_type='left anti'
-    )
+    result = data_table.join(delete_table.select(equality_columns), keys=equality_columns, join_type="left anti")
     return result
