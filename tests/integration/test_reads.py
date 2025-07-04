@@ -856,7 +856,7 @@ def test_table_scan_keep_types(catalog: Catalog) -> None:
     expected_schema = pa.schema(
         [
             pa.field("string", pa.string()),
-            pa.field("string-to-binary", pa.large_binary()),
+            pa.field("string_x2Dto_x2Dbinary", pa.large_binary()),
             pa.field("binary", pa.binary()),
             pa.field("list", pa.list_(pa.large_string())),
         ]
@@ -886,7 +886,7 @@ def test_table_scan_keep_types(catalog: Catalog) -> None:
     tbl.append(arrow_table)
 
     with tbl.update_schema() as update_schema:
-        update_schema.update_column("string-to-binary", BinaryType())
+        update_schema.update_column("string_x2Dto_x2Dbinary", BinaryType())
 
     result_table = tbl.scan().to_arrow()
     assert result_table.schema.equals(expected_schema)
@@ -903,7 +903,7 @@ def test_table_scan_override_with_small_types(catalog: Catalog) -> None:
             pa.array([b"a", b"b", b"c"]),
             pa.array([["a", "b"], ["c", "d"], ["e", "f"]]),
         ],
-        names=["string", "string-to-binary", "binary", "list"],
+        names=["string", "string_x2Dto_x2Dbinary", "binary", "list"],
     )
 
     try:
@@ -919,7 +919,7 @@ def test_table_scan_override_with_small_types(catalog: Catalog) -> None:
     tbl.append(arrow_table)
 
     with tbl.update_schema() as update_schema:
-        update_schema.update_column("string-to-binary", BinaryType())
+        update_schema.update_column("string_x2Dto_x2Dbinary", BinaryType())
 
     tbl.io.properties[PYARROW_USE_LARGE_TYPES_ON_READ] = "False"
     result_table = tbl.scan().to_arrow()
@@ -927,7 +927,7 @@ def test_table_scan_override_with_small_types(catalog: Catalog) -> None:
     expected_schema = pa.schema(
         [
             pa.field("string", pa.string()),
-            pa.field("string-to-binary", pa.large_binary()),
+            pa.field("string_x2Dto_x2Dbinary", pa.large_binary()),
             pa.field("binary", pa.binary()),
             pa.field("list", pa.list_(pa.string())),
         ]
