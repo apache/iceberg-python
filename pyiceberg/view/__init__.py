@@ -20,8 +20,6 @@ from typing import (
     Any,
 )
 
-from pydantic import Field
-
 from pyiceberg.typedef import Identifier
 from pyiceberg.view.metadata import ViewMetadata
 
