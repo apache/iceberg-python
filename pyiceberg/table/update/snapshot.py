@@ -69,7 +69,6 @@ from pyiceberg.table.update import (
     RemoveSnapshotRefUpdate,
     RemoveSnapshotsUpdate,
     SetSnapshotRefUpdate,
-    TableMetadata,
     TableRequirement,
     TableUpdate,
     U,
@@ -88,7 +87,7 @@ if TYPE_CHECKING:
     pass
 
 
-from pyiceberg.table.metadata import Snapshot, TableMetadata
+from pyiceberg.table.metadata import Snapshot
 
 
 def _new_manifest_file_name(num: int, commit_uuid: uuid.UUID) -> str:
@@ -745,7 +744,6 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
        ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
     """
 
-    _snapshot_ids_to_expire = set()
     _updates: Tuple[TableUpdate, ...] = ()
     _requirements: Tuple[TableRequirement, ...] = ()
 
@@ -851,6 +849,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         """
         return self._remove_ref_snapshot(ref_name=branch_name)
 
+
 class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
     """
     Expire snapshots by ID.
@@ -858,7 +857,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
     Use table.expire_snapshots().<operation-one>().<operation-two>().commit() to run multiple operations.
     Pending changes are applied on commit.
     """
-    
+
     _snapshot_ids_to_expire = set()
     _updates: Tuple[TableUpdate, ...] = ()
     _requirements: Tuple[TableRequirement, ...] = ()
@@ -884,11 +883,11 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
             Set of protected snapshot IDs to exclude from expiration.
         """
         protected_ids = set()
-        
+
         for ref in self._transaction.table_metadata.refs.values():
             if ref.snapshot_ref_type in [SnapshotRefType.TAG, SnapshotRefType.BRANCH]:
                 protected_ids.add(ref.snapshot_id)
-        
+
         return protected_ids
 
     def expire_snapshot_by_id(self, snapshot_id: int) -> ExpireSnapshots:
@@ -901,10 +900,10 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         Returns:
             This for method chaining.
         """
-        
+
         if self._transaction.table_metadata.snapshot_by_id(snapshot_id) is None:
             raise ValueError(f"Snapshot with ID {snapshot_id} does not exist.")
-        
+
         if snapshot_id in self._get_protected_snapshot_ids():
             raise ValueError(f"Snapshot with ID {snapshot_id} is protected and cannot be expired.")
 
