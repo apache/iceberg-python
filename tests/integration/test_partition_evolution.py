@@ -140,7 +140,6 @@ def test_add_hour(catalog: Catalog) -> None:
     _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 1000, HourTransform(), "hour_transform"))
 
 
-
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_add_hour_generates_default_name(catalog: Catalog) -> None:
