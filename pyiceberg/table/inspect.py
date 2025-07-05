@@ -17,14 +17,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union
 
 from pyiceberg.conversions import from_bytes
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, PartitionFieldSummary
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.table.snapshots import Snapshot, ancestors_of
 from pyiceberg.types import PrimitiveType
-from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.singleton import _convert_to_hashable_type
 
 if TYPE_CHECKING:
@@ -645,15 +644,19 @@ class InspectTable:
     def delete_files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
         return self._files(snapshot_id, {DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES})
 
-    def all_manifests(self) -> "pa.Table":
+    def all_manifests(self, snapshots: Optional[Union[list[Snapshot], list[int]]] = None) -> "pa.Table":
         import pyarrow as pa
 
-        snapshots = self.tbl.snapshots()
+        # coerce into snapshot objects if users passes in snapshot ids
+        if snapshots is not None:
+            if isinstance(snapshots[0], int):
+                snapshots = [
+                    snapshot
+                    for snapshot_id in snapshots
+                    if (snapshot := self.tbl.metadata.snapshot_by_id(snapshot_id)) is not None
+                ]
+        else:
+            snapshots = self.tbl.snapshots()
+
         if not snapshots:
             return pa.Table.from_pylist([], schema=self._get_all_manifests_schema())
-
-        executor = ExecutorFactory.get_or_create()
-        manifests_by_snapshots: Iterator["pa.Table"] = executor.map(
-            lambda args: self._generate_manifests_table(*args), [(snapshot, True) for snapshot in snapshots]
-        )
-        return pa.concat_tables(manifests_by_snapshots)
