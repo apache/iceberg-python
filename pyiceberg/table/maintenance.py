@@ -105,9 +105,7 @@ class MaintenanceTable:
 
         if snapshots_to_expire:
             with self.tbl.transaction() as txn:
-                from pyiceberg.table.update import RemoveSnapshotsUpdate
-
-                txn._apply((RemoveSnapshotsUpdate(snapshot_ids=snapshots_to_expire),))
+                self.expire_snapshots_by_ids(snapshots_to_expire)
 
     def expire_snapshots_older_than_with_retention(
         self, timestamp_ms: int, retain_last_n: Optional[int] = None, min_snapshots_to_keep: Optional[int] = None
@@ -125,9 +123,7 @@ class MaintenanceTable:
 
         if snapshots_to_expire:
             with self.tbl.transaction() as txn:
-                from pyiceberg.table.update import RemoveSnapshotsUpdate
-
-                txn._apply((RemoveSnapshotsUpdate(snapshot_ids=snapshots_to_expire),))
+                self.expire_snapshots_by_ids(snapshots_to_expire)
 
     def retain_last_n_snapshots(self, n: int) -> None:
         """Keep only the last N snapshots, expiring all others.
@@ -163,9 +159,7 @@ class MaintenanceTable:
 
         if snapshots_to_expire:
             with self.tbl.transaction() as txn:
-                from pyiceberg.table.update import RemoveSnapshotsUpdate
-
-                txn._apply((RemoveSnapshotsUpdate(snapshot_ids=snapshots_to_expire),))
+                self.expire_snapshots_by_ids(snapshots_to_expire)
 
     def _get_snapshots_to_expire_with_retention(
         self, timestamp_ms: Optional[int] = None, retain_last_n: Optional[int] = None, min_snapshots_to_keep: Optional[int] = None
@@ -298,101 +292,108 @@ class MaintenanceTable:
                 protected_ids.add(ref.snapshot_id)
         return protected_ids
 
-    def _get_all_datafiles(
-        self,
-        scan_all_snapshots: bool = False,
-        target_file_path: Optional[str] = None,
-        parallel: bool = True,
-    ) -> List[DataFile]:
-        """Collect all DataFiles in the table, optionally filtering by file path."""
+    def _get_all_datafiles(self) -> List[DataFile]:
+        """Collect all DataFiles in the table, scanning all partitions."""
         datafiles: List[DataFile] = []
 
         def process_manifest(manifest: ManifestFile) -> list[DataFile]:
             found: list[DataFile] = []
             for entry in manifest.fetch_manifest_entry(io=self.tbl.io):
                 if hasattr(entry, "data_file"):
-                    df = entry.data_file
-                    if target_file_path is None or df.file_path == target_file_path:
-                        found.append(df)
+                    found.append(entry.data_file)
             return found
 
-        if scan_all_snapshots:
-            manifests = []
-            for snapshot in self.tbl.snapshots():
-                manifests.extend(snapshot.manifests(io=self.tbl.io))
-            if parallel:
-                with ThreadPoolExecutor() as executor:
-                    results = executor.map(process_manifest, manifests)
-                    for res in results:
-                        datafiles.extend(res)
-            else:
-                for manifest in manifests:
-                    datafiles.extend(process_manifest(manifest))
-        else:
-            # Only current snapshot
-            for chunk in self.tbl.inspect.data_files().to_pylist():
-                file_path = chunk.get("file_path")
-                partition: dict[str, Any] = dict(chunk.get("partition", {}) or {})
-                if target_file_path is None or file_path == target_file_path:
-                    datafiles.append(DataFile(file_path=file_path, partition=partition))
+        # Scan all snapshots
+        manifests = []
+        for snapshot in self.tbl.snapshots():
+            manifests.extend(snapshot.manifests(io=self.tbl.io))
+        with ThreadPoolExecutor() as executor:
+            results = executor.map(process_manifest, manifests)
+            for res in results:
+                datafiles.extend(res)
+
         return datafiles
 
-    def deduplicate_data_files(
-        self,
-        scan_all_partitions: bool = True,
-        scan_all_snapshots: bool = False,
-        to_remove: Optional[List[Union[DataFile, str]]] = None,
-        parallel: bool = True,
-    ) -> List[DataFile]:
+    def _get_all_datafiles_with_context(self) -> List[tuple[DataFile, str, int]]:
+        """Collect all DataFiles in the table, scanning all partitions, with manifest context."""
+        datafiles: List[tuple[DataFile, str, int]] = []
+
+        def process_manifest(manifest: ManifestFile) -> list[tuple[DataFile, str, int]]:
+            found: list[tuple[DataFile, str, int]] = []
+            for idx, entry in enumerate(manifest.fetch_manifest_entry(io=self.tbl.io)):
+                if hasattr(entry, "data_file"):
+                    found.append((entry.data_file, getattr(manifest, 'manifest_path', str(manifest)), idx))
+            return found
+
+        # Scan all snapshots
+        manifests = []
+        for snapshot in self.tbl.snapshots():
+            manifests.extend(snapshot.manifests(io=self.tbl.io))
+        with ThreadPoolExecutor() as executor:
+            results = executor.map(process_manifest, manifests)
+            for res in results:
+                datafiles.extend(res)
+
+        return datafiles
+
+    def _detect_duplicates(self, all_datafiles_with_context: List[tuple[DataFile, str, int]]) -> List[DataFile]:
+        """Detect duplicate data files based on file name and extension."""
+        seen = {}
+        processed_entries = set()
+        duplicates = []
+
+        for df, manifest_path, entry_idx in all_datafiles_with_context:
+            # Extract file name and extension
+            file_name_with_extension = df.file_path.split("/")[-1]
+            entry_key = (manifest_path, entry_idx)
+
+            if file_name_with_extension in seen:
+                if entry_key not in processed_entries:
+                    duplicates.append(df)
+                    processed_entries.add(entry_key)
+            else:
+                seen[file_name_with_extension] = (df, manifest_path, entry_idx)
+
+        return duplicates
+
+    def deduplicate_data_files(self) -> List[DataFile]:
         """
         Remove duplicate data files from an Iceberg table.
-
-        Args:
-            scan_all_partitions: If True, scan all partitions for duplicates (uses file_path+partition as key).
-            scan_all_snapshots: If True, scan all snapshots for duplicates, otherwise only current snapshot.
-            to_remove: List of DataFile objects or file path strings to remove. If None, auto-detect duplicates.
-            parallel: If True, parallelize manifest traversal.
 
         Returns:
             List of removed DataFile objects.
         """
         removed: List[DataFile] = []
 
-        # Determine what to remove
-        if to_remove is None:
-            # Auto-detect duplicates
-            all_datafiles = self._get_all_datafiles(scan_all_snapshots=scan_all_snapshots, parallel=parallel)
-            seen = {}
-            duplicates = []
-            for df in all_datafiles:
-                partition: dict[str, Any] = df.partition.to_dict() if hasattr(df.partition, "to_dict") else {}
-                if scan_all_partitions:
-                    key = (df.file_path, tuple(sorted(partition.items())) if partition else ())
-                else:
-                    key = (df.file_path, ())  # Add an empty tuple for partition when scan_all_partitions is False
-                if key in seen:
-                    duplicates.append(df)
-                else:
-                    seen[key] = df
-            to_remove = duplicates  # type: ignore[assignment]
+        # Collect all data files
+        all_datafiles_with_context = self._get_all_datafiles_with_context()
 
-        # Normalize to DataFile objects
-        normalized_to_remove: List[DataFile] = []
-        all_datafiles = self._get_all_datafiles(scan_all_snapshots=scan_all_snapshots, parallel=parallel)
-        for item in to_remove or []:
-            if isinstance(item, DataFile):
-                normalized_to_remove.append(item)
-            elif isinstance(item, str):
-                # Remove all DataFiles with this file_path
-                for df in all_datafiles:
-                    if df.file_path == item:
-                        normalized_to_remove.append(df)
-            else:
-                raise ValueError(f"Unsupported type in to_remove: {type(item)}")
+        # Detect duplicates
+        duplicates = self._detect_duplicates(all_datafiles_with_context)
 
         # Remove the DataFiles
-        for df in normalized_to_remove:
-            self.tbl.transaction().update_snapshot().overwrite().delete_data_file(df).commit()
+        for df in duplicates:
+            self.tbl.transaction().update_snapshot().overwrite().delete_data_file(df)
             removed.append(df)
 
         return removed
+
+    def _detect_duplicates(self, all_datafiles_with_context: List[tuple[DataFile, str, int]]) -> List[DataFile]:
+        """Detect duplicate data files based on file path and partition."""
+        seen = {}
+        processed_entries = set()
+        duplicates = []
+
+        for df, manifest_path, entry_idx in all_datafiles_with_context:
+            partition: dict[str, Any] = df.partition.to_dict() if hasattr(df.partition, "to_dict") else {}
+            key = (df.file_path, tuple(sorted(partition.items())) if partition else ())
+            entry_key = (manifest_path, entry_idx)
+
+            if key in seen:
+                if entry_key not in processed_entries:
+                    duplicates.append(df)
+                    processed_entries.add(entry_key)
+            else:
+                seen[key] = (df, manifest_path, entry_idx)
+
+        return duplicates
