@@ -234,21 +234,15 @@ def test_expire_snapshots_by_timestamp_skips_protected(table_v2: Table) -> None:
     table_v2.catalog.commit_table.return_value = mock_response
 
     table_v2.maintenance.expire_snapshots_older_than(future_timestamp)
-    # Update metadata to reflect the commit (as in other tests)
-    table_v2.metadata = mock_response.metadata
 
     # Both protected snapshots should remain
     remaining_ids = {s.snapshot_id for s in table_v2.metadata.snapshots}
     assert HEAD_SNAPSHOT in remaining_ids
     assert TAGGED_SNAPSHOT in remaining_ids
 
-    # No snapshots should have been expired (commit_table called, but with empty snapshot_ids)
-    args, _ = table_v2.catalog.commit_table.call_args
-    updates = args[2] if len(args) > 2 else ()
-    # Find RemoveSnapshotsUpdate in updates
-    remove_update = next((u for u in updates if getattr(u, "action", None) == "remove-snapshots"), None)
-    assert remove_update is not None
-    assert remove_update.snapshot_ids == []
+    # No snapshots should have been expired, so commit_table should not have been called
+    # This is the correct behavior - don't create unnecessary transactions when there's nothing to do
+    table_v2.catalog.commit_table.assert_not_called()
 
 
 def test_expire_snapshots_by_ids(table_v2: Table) -> None:
