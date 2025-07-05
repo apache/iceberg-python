@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, List, Optional, Set, Union
+from typing import TYPE_CHECKING, List, Optional, Set
 
 from pyiceberg.manifest import DataFile, ManifestFile
 from pyiceberg.utils.concurrent import ThreadPoolExecutor  # type: ignore[attr-defined]
@@ -104,7 +104,7 @@ class MaintenanceTable:
                 snapshots_to_expire.append(snapshot.snapshot_id)
 
         if snapshots_to_expire:
-            with self.tbl.transaction() as txn:
+            with self.tbl.transaction():
                 self.expire_snapshots_by_ids(snapshots_to_expire)
 
     def expire_snapshots_older_than_with_retention(
@@ -122,7 +122,7 @@ class MaintenanceTable:
         )
 
         if snapshots_to_expire:
-            with self.tbl.transaction() as txn:
+            with self.tbl.transaction():
                 self.expire_snapshots_by_ids(snapshots_to_expire)
 
     def retain_last_n_snapshots(self, n: int) -> None:
@@ -158,7 +158,7 @@ class MaintenanceTable:
                 snapshots_to_expire.append(snapshot.snapshot_id)
 
         if snapshots_to_expire:
-            with self.tbl.transaction() as txn:
+            with self.tbl.transaction():
                 self.expire_snapshots_by_ids(snapshots_to_expire)
 
     def _get_snapshots_to_expire_with_retention(
@@ -325,7 +325,7 @@ class MaintenanceTable:
         """
         import os
         from collections import defaultdict
-        
+
         removed: List[DataFile] = []
 
         # Get the current snapshot
@@ -349,8 +349,8 @@ class MaintenanceTable:
         has_duplicates = False
         files_to_remove = []
         files_to_keep = []
-        
-        for file_name, entries in file_groups.items():
+
+        for _file_name, entries in file_groups.items():
             if len(entries) > 1:
                 # Keep the first entry, remove the rest
                 files_to_keep.append(entries[0].data_file)
@@ -369,11 +369,11 @@ class MaintenanceTable:
                     # First, explicitly delete all the duplicate files
                     for file_to_remove in files_to_remove:
                         overwrite_snapshot.delete_data_file(file_to_remove)
-                    
+
                     # Then add back only the files that should be kept
                     for file_to_keep in files_to_keep:
                         overwrite_snapshot.append_data_file(file_to_keep)
-            
+
             # Refresh the table to reflect the changes
             self.tbl = self.tbl.refresh()
 

@@ -14,9 +14,10 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import os
+import uuid
 from pathlib import Path
 from typing import List, Set
-import os
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -26,7 +27,6 @@ from pyiceberg.manifest import DataFile
 from pyiceberg.table import Table
 from pyiceberg.table.maintenance import MaintenanceTable
 from tests.catalog.test_base import InMemoryCatalog
-import uuid
 
 
 @pytest.fixture
@@ -98,7 +98,9 @@ def test_overwrite_removes_only_selected_datafile(prepopulated_table: Table, dup
     assert dupe_data_file_path.name in file_names_after, f"Expected {dupe_data_file_path.name} to remain in the table"
     assert len(file_names_after) == 1, "Expected only one unique file name to remain after deduplication"
     # All removed files should have the same file name
-    assert all(df.file_path.split("/")[-1] == dupe_data_file_path.name for df in removed_files), "All removed files should be duplicates by name"
+    assert all(df.file_path.split("/")[-1] == dupe_data_file_path.name for df in removed_files), (
+        "All removed files should be duplicates by name"
+    )
 
 
 def test_get_all_datafiles_current_snapshot(prepopulated_table: Table, dupe_data_file_path: Path) -> None:
@@ -117,13 +119,17 @@ def test_get_all_datafiles_all_snapshots(prepopulated_table: Table, dupe_data_fi
     assert dupe_data_file_path.name in file_paths
 
 
-def test_deduplicate_data_files_removes_duplicates_in_current_snapshot(prepopulated_table: Table, dupe_data_file_path: Path) -> None:
+def test_deduplicate_data_files_removes_duplicates_in_current_snapshot(
+    prepopulated_table: Table, dupe_data_file_path: Path
+) -> None:
     mt = MaintenanceTable(tbl=prepopulated_table)
 
     all_datafiles: List[DataFile] = mt._get_all_datafiles()
     file_names: List[str] = [os.path.basename(df.file_path) for df in all_datafiles]
     # There should be more than one reference before deduplication
-    assert file_names.count(dupe_data_file_path.name) > 1, f"Expected multiple references to {dupe_data_file_path.name} before deduplication"
+    assert file_names.count(dupe_data_file_path.name) > 1, (
+        f"Expected multiple references to {dupe_data_file_path.name} before deduplication"
+    )
     removed: List[DataFile] = mt.deduplicate_data_files()
 
     all_datafiles_after: List[DataFile] = mt._get_all_datafiles()
