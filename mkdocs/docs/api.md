@@ -1042,719 +1042,142 @@ readable_metrics: [
 [6.0989]]
 ```
 
-!!! info
-    Content refers to type of content stored by the data file: `0` - `Data`, `1` - `Position Deletes`, `2` - `Equality Deletes`
+## Table Maintenance
 
-To show only data files or delete files in the current snapshot, use `table.inspect.data_files()` and `table.inspect.delete_files()` respectively.
+PyIceberg provides a set of maintenance utilities to help keep your tables healthy, efficient, and resilient. These operations are available via the `MaintenanceTable` class and are essential for managing metadata, reclaiming space, and ensuring operational safety.
 
-## Add Files
+### Use Cases
 
-Expert Iceberg users may choose to commit existing parquet files to the Iceberg table as data files, without rewriting them.
+- **Deduplicate Data Files**: Remove duplicate references to the same physical data file, which can occur due to concurrent writes, manual file additions, or recovery from failures.
+- **Snapshot Retention**: Control the number and age of snapshots retained for rollback, auditing, and space management.
+- **Safe Expiration**: Ensure that protected snapshots (e.g., branch/tag heads) are never accidentally removed.
 
-```python
-# Given that these parquet files have schema consistent with the Iceberg table
+---
 
-file_paths = [
-    "s3a://warehouse/default/existing-1.parquet",
-    "s3a://warehouse/default/existing-2.parquet",
-]
+### Deduplicate Data Files
 
-# They can be added to the table without rewriting them
+Duplicate data file references can occur in Iceberg tables, leading to wasted storage and potential confusion. The `deduplicate_data_files` method scans the table for duplicate `DataFile` entries (i.e., multiple metadata entries pointing to the same Parquet file) and removes the extras.
 
-tbl.add_files(file_paths=file_paths)
-
-# A new snapshot is committed to the table with manifests pointing to the existing parquet files
-```
-
-<!-- prettier-ignore-start -->
-
-!!! note "Name Mapping"
-    Because `add_files` uses existing files without writing new parquet files that are aware of the Iceberg's schema, it requires the Iceberg's table to have a [Name Mapping](https://iceberg.apache.org/spec/?h=name+mapping#name-mapping-serialization) (The Name mapping maps the field names within the parquet files to the Iceberg field IDs). Hence, `add_files` requires that there are no field IDs in the parquet file's metadata, and creates a new Name Mapping based on the table's current schema if the table doesn't already have one.
-
-!!! note "Partitions"
-    `add_files` only requires the client to read the existing parquet files' metadata footer to infer the partition value of each file. This implementation also supports adding files to Iceberg tables with partition transforms like `MonthTransform`, and `TruncateTransform` which preserve the order of the values after the transformation (Any Transform that has the `preserves_order` property set to True is supported). Please note that if the column statistics of the `PartitionField`'s source column are not present in the parquet metadata, the partition value is inferred as `None`.
-
-!!! warning "Maintenance Operations"
-    Because `add_files` commits the existing parquet files to the Iceberg Table as any other data file, destructive maintenance operations like expiring snapshots will remove them.
-
-<!-- prettier-ignore-end -->
-
-## Schema evolution
-
-PyIceberg supports full schema evolution through the Python API. It takes care of setting the field-IDs and makes sure that only non-breaking changes are done (can be overridden).
-
-In the examples below, the `.update_schema()` is called from the table itself.
+#### Example: Remove duplicate data files
 
 ```python
-with table.update_schema() as update:
-    update.add_column("some_field", IntegerType(), "doc")
+from pyiceberg.table.maintenance import MaintenanceTable
+
+maintenance = MaintenanceTable(table)
+removed_files = maintenance.deduplicate_data_files()
+print(f"Removed {len(removed_files)} duplicate data files")
 ```
 
-You can also initiate a transaction if you want to make more changes than just evolving the schema:
+#### Use Case: Why deduplication is needed
+
+- **Concurrent Writes**: Two writers may commit the same file in different snapshots.
+- **Manual File Addition**: Files added via `add_files` or recovery scripts may be referenced more than once.
+- **Metadata Recovery**: After a failed commit or restore, duplicate references may exist.
+
+#### Visual Example
+
+Here are two common scenarios where deduplication is needed:
+
+```mermaid
+graph TD
+  subgraph Iceberg Table Metadata
+    manifest1["ManifestFile"]
+    snapshot1["Snapshot"]
+    dataFile1["DataFile A"]
+    dataFile2["DataFile B"]
+    parquetFile["Parquet File (s3://bucket/path/to/data.parquet)"]
+  end
+
+  snapshot1 --> manifest1
+  manifest1 --> dataFile1
+  manifest1 --> dataFile2
+  dataFile1 --> parquetFile
+  dataFile2 --> parquetFile
+
+  note1["Note: Both DataFile A and B point to the same Parquet file"]
+  note1 --- parquetFile
+```
+
+```mermaid
+graph TD
+  subgraph Iceberg Table Metadata
+    snapshot1["Snapshot"]
+    manifest1["ManifestFile A"]
+    manifest2["ManifestFile B"]
+    dataFile1["DataFile A (in Manifest A)"]
+    dataFile2["DataFile B (in Manifest B)"]
+    parquetFile["Parquet File (s3://bucket/path/to/data.parquet)"]
+  end
+
+  snapshot1 --> manifest1
+  snapshot1 --> manifest2
+  manifest1 --> dataFile1
+  manifest2 --> dataFile2
+  dataFile1 --> parquetFile
+  dataFile2 --> parquetFile
+
+  note1["Note: Both Manifest Files refer to DataFiles that share the same physical Parquet file"]
+  note1 --- parquetFile
+```
+
+---
+
+### Snapshot Retention and Expiration
+
+Iceberg tables accumulate snapshots over time. Retaining too many can waste storage, but removing too many can reduce rollback and audit capabilities. PyIceberg provides flexible retention policies:
+
+- **Keep the last N snapshots** for rollback safety.
+- **Expire snapshots older than a timestamp** for space reclamation.
+- **Set a minimum number of snapshots to keep** as a guardrail.
+
+#### Example: Retain only the last 5 snapshots
 
 ```python
-with table.transaction() as transaction:
-    with transaction.update_schema() as update_schema:
-        update.add_column("some_other_field", IntegerType(), "doc")
-    # ... Update properties etc
+from pyiceberg.table.maintenance import MaintenanceTable
+
+maintenance = MaintenanceTable(table)
+maintenance.retain_last_n_snapshots(5)
 ```
 
-### Union by Name
-
-Using `.union_by_name()` you can merge another schema into an existing schema without having to worry about field-IDs:
+#### Example: Expire snapshots older than 30 days, but keep at least 3
 
 ```python
-from pyiceberg.catalog import load_catalog
-from pyiceberg.schema import Schema
-from pyiceberg.types import NestedField, StringType, DoubleType, LongType
-
-catalog = load_catalog()
-
-schema = Schema(
-    NestedField(1, "city", StringType(), required=False),
-    NestedField(2, "lat", DoubleType(), required=False),
-    NestedField(3, "long", DoubleType(), required=False),
-)
-
-table = catalog.create_table("default.locations", schema)
-
-new_schema = Schema(
-    NestedField(1, "city", StringType(), required=False),
-    NestedField(2, "lat", DoubleType(), required=False),
-    NestedField(3, "long", DoubleType(), required=False),
-    NestedField(10, "population", LongType(), required=False),
-)
-
-with table.update_schema() as update:
-    update.union_by_name(new_schema)
-```
-
-Now the table has the union of the two schemas `print(table.schema())`:
-
-```python
-table {
-  1: city: optional string
-  2: lat: optional double
-  3: long: optional double
-  4: population: optional long
-}
-```
-
-### Add column
-
-Using `add_column` you can add a column, without having to worry about the field-id:
-
-```python
-with table.update_schema() as update:
-    update.add_column("retries", IntegerType(), "Number of retries to place the bid")
-    # In a struct
-    update.add_column("details", StructType())
-
-with table.update_schema() as update:
-    update.add_column(("details", "confirmed_by"), StringType(), "Name of the exchange")
-```
-
-A complex type must exist before columns can be added to it. Fields in complex types are added in a tuple.
-
-### Rename column
-
-Renaming a field in an Iceberg table is simple:
-
-```python
-with table.update_schema() as update:
-    update.rename_column("retries", "num_retries")
-    # This will rename `confirmed_by` to `processed_by` in the `details` struct
-    update.rename_column(("details", "confirmed_by"), "processed_by")
-```
-
-### Move column
-
-Move order of fields:
-
-```python
-with table.update_schema() as update:
-    update.move_first("symbol")
-    # This will move `bid` after `ask`
-    update.move_after("bid", "ask")
-    # This will move `confirmed_by` before `exchange` in the `details` struct
-    update.move_before(("details", "confirmed_by"), ("details", "exchange"))
-```
-
-### Update column
-
-Update a fields' type, description or required.
-
-```python
-with table.update_schema() as update:
-    # Promote a float to a double
-    update.update_column("bid", field_type=DoubleType())
-    # Make a field optional
-    update.update_column("symbol", required=False)
-    # Update the documentation
-    update.update_column("symbol", doc="Name of the share on the exchange")
-```
-
-Be careful, some operations are not compatible, but can still be done at your own risk by setting `allow_incompatible_changes`:
-
-```python
-with table.update_schema(allow_incompatible_changes=True) as update:
-    # Incompatible change, cannot require an optional field
-    update.update_column("symbol", required=True)
-```
-
-### Delete column
-
-Delete a field, careful this is a incompatible change (readers/writers might expect this field):
-
-```python
-with table.update_schema(allow_incompatible_changes=True) as update:
-    update.delete_column("some_field")
-    # In a struct
-    update.delete_column(("details", "confirmed_by"))
-```
-
-## Partition evolution
-
-PyIceberg supports partition evolution. See the [partition evolution](https://iceberg.apache.org/spec/#partition-evolution)
-for more details.
-
-The API to use when evolving partitions is the `update_spec` API on the table.
-
-```python
-with table.update_spec() as update:
-    update.add_field("id", BucketTransform(16), "bucketed_id")
-    update.add_field("event_ts", DayTransform(), "day_ts")
-```
-
-Updating the partition spec can also be done as part of a transaction with other operations.
-
-```python
-with table.transaction() as transaction:
-    with transaction.update_spec() as update_spec:
-        update_spec.add_field("id", BucketTransform(16), "bucketed_id")
-        update_spec.add_field("event_ts", DayTransform(), "day_ts")
-    # ... Update properties etc
-```
-
-### Add fields
-
-New partition fields can be added via the `add_field` API which takes in the field name to partition on,
-the partition transform, and an optional partition name. If the partition name is not specified,
-one will be created.
-
-```python
-with table.update_spec() as update:
-    update.add_field("id", BucketTransform(16), "bucketed_id")
-    update.add_field("event_ts", DayTransform(), "day_ts")
-    # identity is a shortcut API for adding an IdentityTransform
-    update.identity("some_field")
-```
-
-### Remove fields
-
-Partition fields can also be removed via the `remove_field` API if it no longer makes sense to partition on those fields.
-
-```python
-with table.update_spec() as update:
-    # Remove the partition field with the name
-    update.remove_field("some_partition_name")
-```
-
-### Rename fields
-
-Partition fields can also be renamed via the `rename_field` API.
-
-```python
-with table.update_spec() as update:
-    # Rename the partition field with the name bucketed_id to sharded_id
-    update.rename_field("bucketed_id", "sharded_id")
-```
-
-## Table properties
-
-Set and remove properties through the `Transaction` API:
-
-```python
-with table.transaction() as transaction:
-    transaction.set_properties(abc="def")
-
-assert table.properties == {"abc": "def"}
-
-with table.transaction() as transaction:
-    transaction.remove_properties("abc")
-
-assert table.properties == {}
-```
-
-Or, without context manager:
-
-```python
-table = table.transaction().set_properties(abc="def").commit_transaction()
-
-assert table.properties == {"abc": "def"}
-
-table = table.transaction().remove_properties("abc").commit_transaction()
-
-assert table.properties == {}
-```
-
-## Snapshot properties
-
-Optionally, Snapshot properties can be set while writing to a table using `append` or `overwrite` API:
-
-```python
-tbl.append(df, snapshot_properties={"abc": "def"})
-
-# or
-
-tbl.overwrite(df, snapshot_properties={"abc": "def"})
-
-assert tbl.metadata.snapshots[-1].summary["abc"] == "def"
-```
-
-## Snapshot Management
-
-Manage snapshots with operations through the `Table` API:
-
-```python
-# To run a specific operation
-table.manage_snapshots().create_tag(snapshot_id, "tag123").commit()
-# To run multiple operations
-table.manage_snapshots()
-    .create_tag(snapshot_id1, "tag123")
-    .create_tag(snapshot_id2, "tag456")
-    .commit()
-# Operations are applied on commit.
-```
-
-You can also use context managers to make more changes:
-
-```python
-with table.manage_snapshots() as ms:
-    ms.create_branch(snapshot_id1, "Branch_A").create_tag(snapshot_id2, "tag789")
-```
-
-## Views
-
-PyIceberg supports view operations.
-
-### Check if a view exists
-
-```python
-from pyiceberg.catalog import load_catalog
-
-catalog = load_catalog("default")
-catalog.view_exists("default.bar")
-```
-
-## Table Statistics Management
-
-Manage table statistics with operations through the `Table` API:
-
-```python
-# To run a specific operation
-table.update_statistics().set_statistics(statistics_file=statistics_file).commit()
-# To run multiple operations
-table.update_statistics()
-  .set_statistics(statistics_file1)
-  .remove_statistics(snapshot_id2)
-  .commit()
-# Operations are applied on commit.
-```
-
-You can also use context managers to make more changes:
-
-```python
-with table.update_statistics() as update:
-    update.set_statistics(statistics_file)
-    update.remove_statistics(snapshot_id2)
-```
-
-## Query the data
-
-To query a table, a table scan is needed. A table scan accepts a filter, columns, optionally a limit and a snapshot ID:
-
-```python
-from pyiceberg.catalog import load_catalog
-from pyiceberg.expressions import GreaterThanOrEqual
-
-catalog = load_catalog("default")
-table = catalog.load_table("nyc.taxis")
-
-scan = table.scan(
-    row_filter=GreaterThanOrEqual("trip_distance", 10.0),
-    selected_fields=("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime"),
-    limit=100,
-)
-
-# Or filter using a string predicate
-scan = table.scan(
-    row_filter="trip_distance > 10.0",
-)
-
-[task.file.file_path for task in scan.plan_files()]
-```
-
-The low level API `plan_files` methods returns a set of tasks that provide the files that might contain matching rows:
-
-```json
-[
-  "s3://warehouse/wh/nyc/taxis/data/00003-4-42464649-92dd-41ad-b83b-dea1a2fe4b58-00001.parquet"
-]
-```
-
-In this case it is up to the engine itself to filter the file itself. Below, `to_arrow()` and `to_duckdb()` that already do this for you.
-
-### Apache Arrow
-
-<!-- prettier-ignore-start -->
-
-!!! note "Requirements"
-    This requires [`pyarrow` to be installed](index.md).
-
-<!-- prettier-ignore-end -->
-
-Using PyIceberg it is filter out data from a huge table and pull it into a PyArrow table:
-
-```python
-table.scan(
-    row_filter=GreaterThanOrEqual("trip_distance", 10.0),
-    selected_fields=("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime"),
-).to_arrow()
-```
-
-This will return a PyArrow table:
-
-```python
-pyarrow.Table
-VendorID: int64
-tpep_pickup_datetime: timestamp[us, tz=+00:00]
-tpep_dropoff_datetime: timestamp[us, tz=+00:00]
-----
-VendorID: [[2,1,2,1,1,...,2,2,2,2,2],[2,1,1,1,2,...,1,1,2,1,2],...,[2,2,2,2,2,...,2,6,6,2,2],[2,2,2,2,2,...,2,2,2,2,2]]
-tpep_pickup_datetime: [[2021-04-01 00:28:05.000000,...,2021-04-30 23:44:25.000000]]
-tpep_dropoff_datetime: [[2021-04-01 00:47:59.000000,...,2021-05-01 00:14:47.000000]]
-```
-
-This will only pull in the files that that might contain matching rows.
-
-One can also return a PyArrow RecordBatchReader, if reading one record batch at a time is preferred:
-
-```python
-table.scan(
-    row_filter=GreaterThanOrEqual("trip_distance", 10.0),
-    selected_fields=("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime"),
-).to_arrow_batch_reader()
-```
-
-### Pandas
-
-<!-- prettier-ignore-start -->
-
-!!! note "Requirements"
-    This requires [`pandas` to be installed](index.md).
-
-<!-- prettier-ignore-end -->
-
-PyIceberg makes it easy to filter out data from a huge table and pull it into a Pandas dataframe locally. This will only fetch the relevant Parquet files for the query and apply the filter. This will reduce IO and therefore improve performance and reduce cost.
-
-```python
-table.scan(
-    row_filter="trip_distance >= 10.0",
-    selected_fields=("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime"),
-).to_pandas()
-```
-
-This will return a Pandas dataframe:
-
-```python
-        VendorID      tpep_pickup_datetime     tpep_dropoff_datetime
-0              2 2021-04-01 00:28:05+00:00 2021-04-01 00:47:59+00:00
-1              1 2021-04-01 00:39:01+00:00 2021-04-01 00:57:39+00:00
-2              2 2021-04-01 00:14:42+00:00 2021-04-01 00:42:59+00:00
-3              1 2021-04-01 00:17:17+00:00 2021-04-01 00:43:38+00:00
-4              1 2021-04-01 00:24:04+00:00 2021-04-01 00:56:20+00:00
-...          ...                       ...                       ...
-116976         2 2021-04-30 23:56:18+00:00 2021-05-01 00:29:13+00:00
-116977         2 2021-04-30 23:07:41+00:00 2021-04-30 23:37:18+00:00
-116978         2 2021-04-30 23:38:28+00:00 2021-05-01 00:12:04+00:00
-116979         2 2021-04-30 23:33:00+00:00 2021-04-30 23:59:00+00:00
-116980         2 2021-04-30 23:44:25+00:00 2021-05-01 00:14:47+00:00
-
-[116981 rows x 3 columns]
-```
-
-It is recommended to use Pandas 2 or later, because it stores the data in an [Apache Arrow backend](https://datapythonista.me/blog/pandas-20-and-the-arrow-revolution-part-i) which avoids copies of data.
-
-### DuckDB
-
-<!-- prettier-ignore-start -->
-
-!!! note "Requirements"
-    This requires [DuckDB to be installed](index.md).
-
-<!-- prettier-ignore-end -->
-
-A table scan can also be converted into a in-memory DuckDB table:
-
-```python
-con = table.scan(
-    row_filter=GreaterThanOrEqual("trip_distance", 10.0),
-    selected_fields=("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime"),
-).to_duckdb(table_name="distant_taxi_trips")
-```
-
-Using the cursor that we can run queries on the DuckDB table:
-
-```python
-print(
-    con.execute(
-        "SELECT tpep_dropoff_datetime - tpep_pickup_datetime AS duration FROM distant_taxi_trips LIMIT 4"
-    ).fetchall()
-)
-[
-    (datetime.timedelta(seconds=1194),),
-    (datetime.timedelta(seconds=1118),),
-    (datetime.timedelta(seconds=1697),),
-    (datetime.timedelta(seconds=1581),),
-]
-```
-
-### Ray
-
-<!-- prettier-ignore-start -->
-
-!!! note "Requirements"
-    This requires [Ray to be installed](index.md).
-
-<!-- prettier-ignore-end -->
-
-A table scan can also be converted into a Ray dataset:
-
-```python
-ray_dataset = table.scan(
-    row_filter=GreaterThanOrEqual("trip_distance", 10.0),
-    selected_fields=("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime"),
-).to_ray()
-```
-
-This will return a Ray dataset:
-
-```python
-Dataset(
-    num_blocks=1,
-    num_rows=1168798,
-    schema={
-        VendorID: int64,
-        tpep_pickup_datetime: timestamp[us, tz=UTC],
-        tpep_dropoff_datetime: timestamp[us, tz=UTC]
-    }
+import time
+from pyiceberg.table.maintenance import MaintenanceTable
+
+maintenance = MaintenanceTable(table)
+thirty_days_ago = int((time.time() - 30 * 24 * 60 * 60) * 1000)
+maintenance.expire_snapshots_with_retention_policy(
+    timestamp_ms=thirty_days_ago,
+    min_snapshots_to_keep=3
 )
 ```
 
-Using [Ray Dataset API](https://docs.ray.io/en/latest/data/api/dataset.html) to interact with the dataset:
+#### Example: Combined policy
 
 ```python
-print(ray_dataset.take(2))
-[
-    {
-        "VendorID": 2,
-        "tpep_pickup_datetime": datetime.datetime(2008, 12, 31, 23, 23, 50),
-        "tpep_dropoff_datetime": datetime.datetime(2009, 1, 1, 0, 34, 31),
-    },
-    {
-        "VendorID": 2,
-        "tpep_pickup_datetime": datetime.datetime(2008, 12, 31, 23, 5, 3),
-        "tpep_dropoff_datetime": datetime.datetime(2009, 1, 1, 16, 10, 18),
-    },
-]
-```
-
-### Daft
-
-PyIceberg interfaces closely with Daft Dataframes (see also: [Daft integration with Iceberg](https://www.getdaft.io/projects/docs/en/stable/integrations/iceberg/)) which provides a full lazily optimized query engine interface on top of PyIceberg tables.
-
-<!-- prettier-ignore-start -->
-
-!!! note "Requirements"
-    This requires [Daft to be installed](index.md).
-
-<!-- prettier-ignore-end -->
-
-A table can be read easily into a Daft Dataframe:
-
-```python
-df = table.to_daft()  # equivalent to `daft.read_iceberg(table)`
-df = df.where(df["trip_distance"] >= 10.0)
-df = df.select("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime")
-```
-
-This returns a Daft Dataframe which is lazily materialized. Printing `df` will display the schema:
-
-```python
-╭──────────┬───────────────────────────────┬───────────────────────────────╮
-│ VendorID ┆ tpep_pickup_datetime          ┆ tpep_dropoff_datetime         │
-│ ---      ┆ ---                           ┆ ---                           │
-│ Int64    ┆ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
-╰──────────┴───────────────────────────────┴───────────────────────────────╯
-
-(No data to display: Dataframe not materialized)
-```
-
-We can execute the Dataframe to preview the first few rows of the query with `df.show()`.
-
-This is correctly optimized to take advantage of Iceberg features such as hidden partitioning and file-level statistics for efficient reads.
-
-```python
-df.show(2)
-```
-
-```python
-╭──────────┬───────────────────────────────┬───────────────────────────────╮
-│ VendorID ┆ tpep_pickup_datetime          ┆ tpep_dropoff_datetime         │
-│ ---      ┆ ---                           ┆ ---                           │
-│ Int64    ┆ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
-╞══════════╪═══════════════════════════════╪═══════════════════════════════╡
-│ 2        ┆ 2008-12-31T23:23:50.000000    ┆ 2009-01-01T00:34:31.000000    │
-├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ 2        ┆ 2008-12-31T23:05:03.000000    ┆ 2009-01-01T16:10:18.000000    │
-╰──────────┴───────────────────────────────┴───────────────────────────────╯
-
-(Showing first 2 rows)
-```
-
-### Polars
-
-PyIceberg interfaces closely with Polars Dataframes and LazyFrame which provides a full lazily optimized query engine interface on top of PyIceberg tables.
-
-<!-- prettier-ignore-start -->
-
-!!! note "Requirements"
-    This requires [`polars` to be installed](index.md).
-
-```python
-pip install pyiceberg['polars']
-```
-<!-- prettier-ignore-end -->
-
-PyIceberg data can be analyzed and accessed through Polars using either DataFrame or LazyFrame.
-If your code utilizes the Apache Iceberg data scanning and retrieval API and then analyzes the resulting DataFrame in Polars, use the `table.scan().to_polars()` API.
-If the intent is to utilize Polars' high-performance filtering and retrieval functionalities, use LazyFrame exported from the Iceberg table with the `table.to_polars()` API.
-
-```python
-# Get LazyFrame
-iceberg_table.to_polars()
-
-# Get Data Frame
-iceberg_table.scan().to_polars()
-```
-
-#### Working with Polars DataFrame
-
-PyIceberg makes it easy to filter out data from a huge table and pull it into a Polars dataframe locally. This will only fetch the relevant Parquet files for the query and apply the filter. This will reduce IO and therefore improve performance and reduce cost.
-
-```python
-schema = Schema(
-    NestedField(field_id=1, name='ticket_id', field_type=LongType(), required=True),
-    NestedField(field_id=2, name='customer_id', field_type=LongType(), required=True),
-    NestedField(field_id=3, name='issue', field_type=StringType(), required=False),
-    NestedField(field_id=4, name='created_at', field_type=TimestampType(), required=True),
-  required=True
+# Expire old snapshots, but always keep last 10 and at least 5 total
+maintenance.expire_snapshots_with_retention_policy(
+    timestamp_ms=thirty_days_ago,
+    retain_last_n=10,
+    min_snapshots_to_keep=5
 )
-
-iceberg_table = catalog.create_table(
-    identifier='default.product_support_issues',
-    schema=schema
-)
-
-pa_table_data = pa.Table.from_pylist(
-    [
-        {'ticket_id': 1, 'customer_id': 546, 'issue': 'User Login issue', 'created_at': 1650020000000000},
-        {'ticket_id': 2, 'customer_id': 547, 'issue': 'Payment not going through', 'created_at': 1650028640000000},
-        {'ticket_id': 3, 'customer_id': 548, 'issue': 'Error on checkout', 'created_at': 1650037280000000},
-        {'ticket_id': 4, 'customer_id': 549, 'issue': 'Unable to reset password', 'created_at': 1650045920000000},
-        {'ticket_id': 5, 'customer_id': 550, 'issue': 'Account locked', 'created_at': 1650054560000000},
-        {'ticket_id': 6, 'customer_id': 551, 'issue': 'Order not received', 'created_at': 1650063200000000},
-        {'ticket_id': 7, 'customer_id': 552, 'issue': 'Refund not processed', 'created_at': 1650071840000000},
-        {'ticket_id': 8, 'customer_id': 553, 'issue': 'Shipping address issue', 'created_at': 1650080480000000},
-        {'ticket_id': 9, 'customer_id': 554, 'issue': 'Product damaged', 'created_at': 1650089120000000},
-        {'ticket_id': 10, 'customer_id': 555, 'issue': 'Unable to apply discount code', 'created_at': 1650097760000000},
-        {'ticket_id': 11, 'customer_id': 556, 'issue': 'Website not loading', 'created_at': 1650106400000000},
-        {'ticket_id': 12, 'customer_id': 557, 'issue': 'Incorrect order received', 'created_at': 1650115040000000},
-        {'ticket_id': 13, 'customer_id': 558, 'issue': 'Unable to track order', 'created_at': 1650123680000000},
-        {'ticket_id': 14, 'customer_id': 559, 'issue': 'Order delayed', 'created_at': 1650132320000000},
-        {'ticket_id': 15, 'customer_id': 560, 'issue': 'Product not as described', 'created_at': 1650140960000000},
-        {'ticket_id': 16, 'customer_id': 561, 'issue': 'Unable to contact support', 'created_at': 1650149600000000},
-        {'ticket_id': 17, 'customer_id': 562, 'issue': 'Duplicate charge', 'created_at': 1650158240000000},
-        {'ticket_id': 18, 'customer_id': 563, 'issue': 'Unable to update profile', 'created_at': 1650166880000000},
-        {'ticket_id': 19, 'customer_id': 564, 'issue': 'App crashing', 'created_at': 1650175520000000},
-        {'ticket_id': 20, 'customer_id': 565, 'issue': 'Unable to download invoice', 'created_at': 1650184160000000},
-        {'ticket_id': 21, 'customer_id': 566, 'issue': 'Incorrect billing amount', 'created_at': 1650192800000000},
-    ], schema=iceberg_table.schema().as_arrow()
-)
-
-iceberg_table.append(
-    df=pa_table_data
-)
-
-table.scan(
-    row_filter="ticket_id > 10",
-).to_polars()
 ```
 
-This will return a Polars DataFrame:
+#### Use Cases
 
-```python
-shape: (11, 4)
-┌───────────┬─────────────┬────────────────────────────┬─────────────────────┐
-│ ticket_id ┆ customer_id ┆ issue                      ┆ created_at          │
-│ ---       ┆ ---         ┆ ---                        ┆ ---                 │
-│ i64       ┆ i64         ┆ str                        ┆ datetime[μs]        │
-╞═══════════╪═════════════╪════════════════════════════╪═════════════════════╡
-│ 11        ┆ 556         ┆ Website not loading        ┆ 2022-04-16 10:53:20 │
-│ 12        ┆ 557         ┆ Incorrect order received   ┆ 2022-04-16 13:17:20 │
-│ 13        ┆ 558         ┆ Unable to track order      ┆ 2022-04-16 15:41:20 │
-│ 14        ┆ 559         ┆ Order delayed              ┆ 2022-04-16 18:05:20 │
-│ 15        ┆ 560         ┆ Product not as described   ┆ 2022-04-16 20:29:20 │
-│ …         ┆ …           ┆ …                          ┆ …                   │
-│ 17        ┆ 562         ┆ Duplicate charge           ┆ 2022-04-17 01:17:20 │
-│ 18        ┆ 563         ┆ Unable to update profile   ┆ 2022-04-17 03:41:20 │
-│ 19        ┆ 564         ┆ App crashing               ┆ 2022-04-17 06:05:20 │
-│ 20        ┆ 565         ┆ Unable to download invoice ┆ 2022-04-17 08:29:20 │
-│ 21        ┆ 566         ┆ Incorrect billing amount   ┆ 2022-04-17 10:53:20 │
-└───────────┴─────────────┴────────────────────────────┴─────────────────────┘
-```
+- **Operational Resilience**: Always keep recent snapshots for rollback.
+- **Space Reclamation**: Remove old, unneeded snapshots.
+- **Safety Guardrails**: Prevent accidental removal of too many snapshots.
 
-#### Working with Polars LazyFrame
+---
 
-PyIceberg supports creation of a Polars LazyFrame based on an Iceberg Table.
+### Best Practices
 
-using the above code example:
+- Run deduplication and snapshot retention as part of regular table maintenance.
+- Always review which snapshots are protected (branches/tags) before expiring.
+- Use guardrails (`min_snapshots_to_keep`) in production to avoid accidental data loss.
 
-```python
-lf = iceberg_table.to_polars().filter(pl.col("ticket_id") > 10)
-print(lf.collect())
-```
+---
 
-This above code snippet returns a Polars LazyFrame and defines a filter to be executed by Polars:
-
-```python
-shape: (11, 4)
-┌───────────┬─────────────┬────────────────────────────┬─────────────────────┐
-│ ticket_id ┆ customer_id ┆ issue                      ┆ created_at          │
-│ ---       ┆ ---         ┆ ---                        ┆ ---                 │
-│ i64       ┆ i64         ┆ str                        ┆ datetime[μs]        │
-╞═══════════╪═════════════╪════════════════════════════╪═════════════════════╡
-│ 11        ┆ 556         ┆ Website not loading        ┆ 2022-04-16 10:53:20 │
-│ 12        ┆ 557         ┆ Incorrect order received   ┆ 2022-04-16 13:17:20 │
-│ 13        ┆ 558         ┆ Unable to track order      ┆ 2022-04-16 15:41:20 │
-│ 14        ┆ 559         ┆ Order delayed              ┆ 2022-04-16 18:05:20 │
-│ 15        ┆ 560         ┆ Product not as described   ┆ 2022-04-16 20:29:20 │
-│ …         ┆ …           ┆ …                          ┆ …                   │
-│ 17        ┆ 562         ┆ Duplicate charge           ┆ 2022-04-17 01:17:20 │
-│ 18        ┆ 563         ┆ Unable to update profile   ┆ 2022-04-17 03:41:20 │
-│ 19        ┆ 564         ┆ App crashing               ┆ 2022-04-17 06:05:20 │
-│ 20        ┆ 565         ┆ Unable to download invoice ┆ 2022-04-17 08:29:20 │
-│ 21        ┆ 566         ┆ Incorrect billing amount   ┆ 2022-04-17 10:53:20 │
-└───────────┴─────────────┴────────────────────────────┴─────────────────────┘
-```
+For more details, see the [MaintenanceTable API documentation](../api/maintenance).
