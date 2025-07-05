@@ -20,7 +20,7 @@ from typing import Generator
 
 import pytest
 
-from pyiceberg.catalog import Catalog
+from pyiceberg.catalog import Catalog, MetastoreCatalog
 from pyiceberg.catalog.dynamodb import DynamoDbCatalog
 from pyiceberg.catalog.glue import GLUE_CATALOG_ENDPOINT, GlueCatalog
 from pyiceberg.catalog.hive import HiveCatalog
@@ -28,10 +28,8 @@ from pyiceberg.catalog.memory import InMemoryCatalog
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.io import WAREHOUSE
+from pyiceberg.schema import Schema
 from tests.conftest import clean_up, get_bucket_name, get_glue_endpoint, get_s3_path
-
-# The number of tables/databases used in list_table/namespace test
-LIST_TEST_NUMBER = 2
 
 
 @pytest.fixture(scope="function")
@@ -117,3 +115,49 @@ def test_create_namespace(
     test_catalog.create_namespace(database_name)
     # note the use of `in` because some catalogs have a "default" namespace
     assert (database_name,) in test_catalog.list_namespaces()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "test_catalog",
+    [
+        pytest.lazy_fixture("glue"),
+        pytest.lazy_fixture("dynamodb"),
+        pytest.lazy_fixture("memory_catalog"),
+        pytest.lazy_fixture("sqlite_catalog_memory"),
+        pytest.lazy_fixture("sqlite_catalog_file"),
+        pytest.lazy_fixture("rest_catalog"),
+        pytest.lazy_fixture("hive_catalog"),
+    ],
+)
+def test_create_table_with_default_location(
+    test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str
+) -> None:
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(database_name)
+    test_catalog.create_table(identifier, table_schema_nested)
+    table = test_catalog.load_table(identifier)
+    assert table.name() == identifier
+    assert MetastoreCatalog._parse_metadata_version(table.metadata_location) == 0
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "test_catalog",
+    [
+        pytest.lazy_fixture("glue"),
+        pytest.lazy_fixture("dynamodb"),
+        pytest.lazy_fixture("memory_catalog"),
+        pytest.lazy_fixture("sqlite_catalog_memory"),
+        pytest.lazy_fixture("sqlite_catalog_file"),
+        pytest.lazy_fixture("rest_catalog"),
+        pytest.lazy_fixture("hive_catalog"),
+    ],
+)
+def test_create_table_with_invalid_location(
+    test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str
+) -> None:
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(database_name)
+    with pytest.raises(ValueError):
+        test_catalog.create_table(identifier, table_schema_nested)
