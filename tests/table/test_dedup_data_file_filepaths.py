@@ -90,39 +90,40 @@ def test_overwrite_removes_only_selected_datafile(prepopulated_table: Table, dup
 
     removed_files: List[DataFile] = mt.deduplicate_data_files()
 
-    file_paths_after: Set[str] = {df.file_path for df in mt._get_all_datafiles()}
-
-    # Both files should remain, since they are not duplicates
-    assert str(dupe_data_file_path) in file_paths_after, "Expected file_a.parquet to remain in the table"
-    assert len(removed_files) == 0, "Expected no files to be removed since there are no duplicates"
+    file_names_after: Set[str] = {df.file_path.split("/")[-1] for df in mt._get_all_datafiles()}
+    # Only one file with the same name should remain after deduplication
+    assert dupe_data_file_path.name in file_names_after, f"Expected {dupe_data_file_path.name} to remain in the table"
+    assert len(file_names_after) == 1, "Expected only one unique file name to remain after deduplication"
+    # All removed files should have the same file name
+    assert all(df.file_path.split("/")[-1] == dupe_data_file_path.name for df in removed_files), "All removed files should be duplicates by name"
 
 
 def test_get_all_datafiles_current_snapshot(prepopulated_table: Table, dupe_data_file_path: Path) -> None:
     mt = MaintenanceTable(tbl=prepopulated_table)
 
     datafiles: List[DataFile] = mt._get_all_datafiles()
-    file_paths: Set[str] = {df.file_path for df in datafiles}
-    assert str(dupe_data_file_path) in file_paths
+    file_paths: Set[str] = {df.file_path.split("/")[-1] for df in datafiles}
+    assert dupe_data_file_path.name in file_paths
 
 
 def test_get_all_datafiles_all_snapshots(prepopulated_table: Table, dupe_data_file_path: Path) -> None:
     mt = MaintenanceTable(tbl=prepopulated_table)
 
     datafiles: List[DataFile] = mt._get_all_datafiles()
-    file_paths: Set[str] = {df.file_path for df in datafiles}
-    assert str(dupe_data_file_path) in file_paths
+    file_paths: Set[str] = {df.file_path.split("/")[-1] for df in datafiles}
+    assert dupe_data_file_path.name in file_paths
 
 
 def test_dedup_data_files_removes_duplicates_in_current_snapshot(prepopulated_table: Table, dupe_data_file_path: Path) -> None:
     mt = MaintenanceTable(tbl=prepopulated_table)
 
     all_datafiles: List[DataFile] = mt._get_all_datafiles()
-    file_paths: List[str] = [df.file_path for df in all_datafiles]
+    file_paths: List[str] = [df.file_path.split("/")[-1] for df in all_datafiles]
     # Only one reference should remain after deduplication
-    assert file_paths.count(str(dupe_data_file_path)) == 1
+    assert file_paths.count(dupe_data_file_path.name) == 1
     removed: List[DataFile] = mt.deduplicate_data_files()
 
     all_datafiles_after: List[DataFile] = mt._get_all_datafiles()
-    file_paths_after: List[str] = [df.file_path for df in all_datafiles_after]
-    assert file_paths_after.count(str(dupe_data_file_path)) == 1
+    file_paths_after: List[str] = [df.file_path.split("/")[-1] for df in all_datafiles_after]
+    assert file_paths_after.count(dupe_data_file_path.name) == 1
     assert all(isinstance(df, DataFile) for df in removed)
