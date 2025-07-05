@@ -293,68 +293,28 @@ class MaintenanceTable:
         return protected_ids
 
     def _get_all_datafiles(self) -> List[DataFile]:
-        """Collect all DataFiles in the table, scanning all partitions."""
+        """Collect all DataFiles in the current snapshot only."""
         datafiles: List[DataFile] = []
+
+        current_snapshot = self.tbl.current_snapshot()
+        if not current_snapshot:
+            return datafiles
 
         def process_manifest(manifest: ManifestFile) -> list[DataFile]:
             found: list[DataFile] = []
-            for entry in manifest.fetch_manifest_entry(io=self.tbl.io):
+            for entry in manifest.fetch_manifest_entry(io=self.tbl.io, discard_deleted=True):
                 if hasattr(entry, "data_file"):
                     found.append(entry.data_file)
             return found
 
-        # Scan all snapshots
-        manifests = []
-        for snapshot in self.tbl.snapshots():
-            manifests.extend(snapshot.manifests(io=self.tbl.io))
+        # Scan only the current snapshot's manifests
+        manifests = current_snapshot.manifests(io=self.tbl.io)
         with ThreadPoolExecutor() as executor:
             results = executor.map(process_manifest, manifests)
             for res in results:
                 datafiles.extend(res)
 
         return datafiles
-
-    def _get_all_datafiles_with_context(self) -> List[tuple[DataFile, str, int]]:
-        """Collect all DataFiles in the table, scanning all partitions, with manifest context."""
-        datafiles: List[tuple[DataFile, str, int]] = []
-
-        def process_manifest(manifest: ManifestFile) -> list[tuple[DataFile, str, int]]:
-            found: list[tuple[DataFile, str, int]] = []
-            for idx, entry in enumerate(manifest.fetch_manifest_entry(io=self.tbl.io)):
-                if hasattr(entry, "data_file"):
-                    found.append((entry.data_file, getattr(manifest, 'manifest_path', str(manifest)), idx))
-            return found
-
-        # Scan all snapshots
-        manifests = []
-        for snapshot in self.tbl.snapshots():
-            manifests.extend(snapshot.manifests(io=self.tbl.io))
-        with ThreadPoolExecutor() as executor:
-            results = executor.map(process_manifest, manifests)
-            for res in results:
-                datafiles.extend(res)
-
-        return datafiles
-
-    def _detect_duplicates(self, all_datafiles_with_context: List[tuple[DataFile, str, int]]) -> List[DataFile]:
-        """Detect duplicate data files based on file name and extension."""
-        seen = {}
-        processed_entries = set()
-        duplicates = []
-
-        for df, manifest_path, entry_idx in all_datafiles_with_context:
-            # Extract file name and extension
-            file_name_with_extension = df.file_path.split("/")[-1]
-            entry_key = (manifest_path, entry_idx)
-
-            if file_name_with_extension in seen:
-                if entry_key not in processed_entries:
-                    duplicates.append(df)
-                    processed_entries.add(entry_key)
-            else:
-                seen[file_name_with_extension] = (df, manifest_path, entry_idx)
-
-        return duplicates
 
     def deduplicate_data_files(self) -> List[DataFile]:
         """
@@ -363,37 +323,58 @@ class MaintenanceTable:
         Returns:
             List of removed DataFile objects.
         """
+        import os
+        from collections import defaultdict
+        
         removed: List[DataFile] = []
 
-        # Collect all data files
-        all_datafiles_with_context = self._get_all_datafiles_with_context()
+        # Get the current snapshot
+        current_snapshot = self.tbl.current_snapshot()
+        if not current_snapshot:
+            return removed
 
-        # Detect duplicates
-        duplicates = self._detect_duplicates(all_datafiles_with_context)
+        # Collect all manifest entries from the current snapshot
+        all_entries = []
+        for manifest in current_snapshot.manifests(io=self.tbl.io):
+            entries = list(manifest.fetch_manifest_entry(io=self.tbl.io, discard_deleted=True))
+            all_entries.extend(entries)
 
-        # Remove the DataFiles
-        for df in duplicates:
-            self.tbl.transaction().update_snapshot().overwrite().delete_data_file(df)
-            removed.append(df)
+        # Group entries by file name
+        file_groups = defaultdict(list)
+        for entry in all_entries:
+            file_name = os.path.basename(entry.data_file.file_path)
+            file_groups[file_name].append(entry)
+
+        # Find duplicate entries to remove
+        has_duplicates = False
+        files_to_remove = []
+        files_to_keep = []
+        
+        for file_name, entries in file_groups.items():
+            if len(entries) > 1:
+                # Keep the first entry, remove the rest
+                files_to_keep.append(entries[0].data_file)
+                for duplicate_entry in entries[1:]:
+                    files_to_remove.append(duplicate_entry.data_file)
+                    removed.append(duplicate_entry.data_file)
+                    has_duplicates = True
+            else:
+                # No duplicates, keep the entry
+                files_to_keep.append(entries[0].data_file)
+
+        # Only create a new snapshot if we actually have duplicates to remove
+        if has_duplicates:
+            with self.tbl.transaction() as txn:
+                with txn.update_snapshot().overwrite() as overwrite_snapshot:
+                    # First, explicitly delete all the duplicate files
+                    for file_to_remove in files_to_remove:
+                        overwrite_snapshot.delete_data_file(file_to_remove)
+                    
+                    # Then add back only the files that should be kept
+                    for file_to_keep in files_to_keep:
+                        overwrite_snapshot.append_data_file(file_to_keep)
+            
+            # Refresh the table to reflect the changes
+            self.tbl = self.tbl.refresh()
 
         return removed
-
-    def _detect_duplicates(self, all_datafiles_with_context: List[tuple[DataFile, str, int]]) -> List[DataFile]:
-        """Detect duplicate data files based on file path and partition."""
-        seen = {}
-        processed_entries = set()
-        duplicates = []
-
-        for df, manifest_path, entry_idx in all_datafiles_with_context:
-            partition: dict[str, Any] = df.partition.to_dict() if hasattr(df.partition, "to_dict") else {}
-            key = (df.file_path, tuple(sorted(partition.items())) if partition else ())
-            entry_key = (manifest_path, entry_idx)
-
-            if key in seen:
-                if entry_key not in processed_entries:
-                    duplicates.append(df)
-                    processed_entries.add(entry_key)
-            else:
-                seen[key] = (df, manifest_path, entry_idx)
-
-        return duplicates

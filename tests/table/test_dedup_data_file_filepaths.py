@@ -16,6 +16,7 @@
 # under the License.
 from pathlib import Path
 from typing import List, Set
+import os
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -79,8 +80,10 @@ def prepopulated_table(iceberg_catalog: InMemoryCatalog, dupe_data_file_path: Pa
 
     tx = table.transaction()
     tx.add_files([str(dupe_data_file_path)], check_duplicate_files=False)
-    tx.add_files([str(dupe_data_file_path)], check_duplicate_files=False)
     tx.commit_transaction()
+    tx2 = table.transaction()
+    tx2.add_files([str(dupe_data_file_path)], check_duplicate_files=False)
+    tx2.commit_transaction()
 
     return table
 
@@ -114,16 +117,17 @@ def test_get_all_datafiles_all_snapshots(prepopulated_table: Table, dupe_data_fi
     assert dupe_data_file_path.name in file_paths
 
 
-def test_dedup_data_files_removes_duplicates_in_current_snapshot(prepopulated_table: Table, dupe_data_file_path: Path) -> None:
+def test_deduplicate_data_files_removes_duplicates_in_current_snapshot(prepopulated_table: Table, dupe_data_file_path: Path) -> None:
     mt = MaintenanceTable(tbl=prepopulated_table)
 
     all_datafiles: List[DataFile] = mt._get_all_datafiles()
-    file_paths: List[str] = [df.file_path.split("/")[-1] for df in all_datafiles]
-    # Only one reference should remain after deduplication
-    assert file_paths.count(dupe_data_file_path.name) == 1
+    file_names: List[str] = [os.path.basename(df.file_path) for df in all_datafiles]
+    # There should be more than one reference before deduplication
+    assert file_names.count(dupe_data_file_path.name) > 1, f"Expected multiple references to {dupe_data_file_path.name} before deduplication"
     removed: List[DataFile] = mt.deduplicate_data_files()
 
     all_datafiles_after: List[DataFile] = mt._get_all_datafiles()
-    file_paths_after: List[str] = [df.file_path.split("/")[-1] for df in all_datafiles_after]
-    assert file_paths_after.count(dupe_data_file_path.name) == 1
+    file_names_after: List[str] = [os.path.basename(df.file_path) for df in all_datafiles_after]
+    # Only one reference should remain after deduplication
+    assert file_names_after.count(dupe_data_file_path.name) == 1
     assert all(isinstance(df, DataFile) for df in removed)
