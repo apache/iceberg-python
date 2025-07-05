@@ -62,56 +62,59 @@ pyparsing = ">=3.1.0,<4.0.0"
 zstandard = ">=0.13.0,<1.0.0"
 tenacity = ">=8.2.3,<10.0.0"
 pyroaring = ">=1.0.0,<2.0.0"
-pyarrow = { version = ">=17.0.0,<20.0.0", optional = true }
+pyarrow = { version = ">=17.0.0,<21.0.0", optional = true }
 pandas = { version = ">=1.0.0,<3.0.0", optional = true }
 duckdb = { version = ">=0.5.0,<2.0.0", optional = true }
 ray = [
   { version = "==2.10.0", python = "<3.9", optional = true },
-  { version = ">=2.10.0,<3.0.0", python = ">=3.9", optional = true },
+  { version = ">=2.10.0,<=2.44.0", python = ">=3.9", optional = true },
 ]
 python-snappy = { version = ">=0.6.0,<1.0.0", optional = true }
 thrift = { version = ">=0.13.0,<1.0.0", optional = true }
-mypy-boto3-glue = { version = ">=1.28.18", optional = true }
 boto3 = { version = ">=1.24.59", optional = true }
 s3fs = { version = ">=2023.1.0", optional = true }
 adlfs = { version = ">=2023.1.0", optional = true }
 gcsfs = { version = ">=2023.1.0", optional = true }
+huggingface-hub = { version = ">=0.24.0", optional = true }
 psycopg2-binary = { version = ">=2.9.6", optional = true }
 sqlalchemy = { version = "^2.0.18", optional = true }
 getdaft = { version = ">=0.2.12", optional = true }
-cachetools = "^5.5.0"
-pyiceberg-core = { version = "^0.4.0", optional = true }
+cachetools = ">=5.5,<7.0"
+pyiceberg-core = { version = "^0.5.1", optional = true }
 polars = { version = "^1.21.0", optional = true }
 thrift-sasl = { version = ">=0.4.3", optional = true }
+kerberos = {version = "^1.3.1", optional = true}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "7.4.4"
 pytest-checkdocs = "2.13.0"
 pytest-lazy-fixture = "0.6.3"
 pre-commit = "4.2.0"
-fastavro = "1.10.0"
+fastavro = "1.11.1"
 coverage = { version = "^7.4.2", extras = ["toml"] }
 requests-mock = "1.12.1"
 moto = { version = "^5.0.2", extras = ["server"] }
-typing-extensions = "4.13.2"
-pytest-mock = "3.14.0"
-pyspark = "3.5.5"
-cython = "3.0.12"
+typing-extensions = "4.14.0"
+pytest-mock = "3.14.1"
+pyspark = "3.5.6"
+cython = "3.1.2"
 deptry = ">=0.14,<0.24"
-datafusion = ">=44,<47"
+datafusion = ">=44,<48"
 docutils = "!=0.21.post1"   # https://github.com/python-poetry/poetry/issues/9248#issuecomment-2026240520
+mypy-boto3-glue = ">=1.28.18"
+mypy-boto3-dynamodb = ">=1.28.18"
 
 [tool.poetry.group.docs.dependencies]
 # for mkdocs
 mkdocs = "1.6.1"
-griffe = "1.7.2"
+griffe = "1.7.3"
 jinja2 = "3.1.6"
 mkdocstrings = "0.29.1"
-mkdocstrings-python = "1.16.10"
+mkdocstrings-python = "1.16.12"
 mkdocs-literate-nav = "0.6.2"
-mkdocs-autorefs = "1.4.1"
+mkdocs-autorefs = "1.4.2"
 mkdocs-gen-files = "0.5.0"
-mkdocs-material = "9.6.11"
+mkdocs-material = "9.6.14"
 mkdocs-material-extensions = "1.3.1"
 mkdocs-section-index = "0.3.10"
 
@@ -216,6 +219,10 @@ module = "mypy_boto3_glue.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = "mypy_boto3_dynamodb.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = "moto"
 ignore_missing_imports = true
 
@@ -287,7 +294,7 @@ generate-setup-file = false
 script = "build-module.py"
 
 [tool.poetry.extras]
-pyarrow = ["pyarrow"]
+pyarrow = ["pyarrow", "pyiceberg-core"]
 pandas = ["pandas", "pyarrow"]
 duckdb = ["duckdb", "pyarrow"]
 ray = ["ray", "pyarrow", "pandas"]
@@ -295,9 +302,9 @@ daft = ["getdaft"]
 polars = ["polars"]
 snappy = ["python-snappy"]
 hive = ["thrift"]
-hive-kerberos = ["thrift", "thrift_sasl"]
+hive-kerberos = ["thrift", "thrift_sasl", "kerberos"]
 s3fs = ["s3fs"]
-glue = ["boto3", "mypy-boto3-glue"]
+glue = ["boto3"]
 adlfs = ["adlfs"]
 dynamodb = ["boto3"]
 zstandard = ["zstandard"]
@@ -305,6 +312,7 @@ sql-postgres = ["sqlalchemy", "psycopg2-binary"]
 sql-sqlite = ["sqlalchemy"]
 gcsfs = ["gcsfs"]
 rest-sigv4 = ["boto3"]
+hf = ["huggingface-hub"]
 pyiceberg-core = ["pyiceberg-core"]
 
 [tool.pytest.ini_options]
@@ -424,6 +432,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "gcsfs.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "huggingface_hub.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

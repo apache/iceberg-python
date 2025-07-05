@@ -20,21 +20,25 @@ import inspect
 from copy import copy
 from enum import Enum
 from tempfile import TemporaryDirectory
-from typing import Any
+from typing import Any, List
 
 import pytest
 from fastavro import reader
 
+from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import DataFile, write_manifest
 from pyiceberg.table import Table
+from pyiceberg.typedef import Record
 from pyiceberg.utils.lazydict import LazyDict
 
 
 # helper function to serialize our objects to dicts to enable
 # direct comparison with the dicts returned by fastavro
-def todict(obj: Any) -> Any:
+def todict(obj: Any, spec_keys: List[str]) -> Any:
+    if type(obj) is Record:
+        return {key: obj[pos] for key, pos in zip(spec_keys, range(len(obj)))}
     if isinstance(obj, dict) or isinstance(obj, LazyDict):
         data = []
         for k, v in obj.items():
@@ -43,9 +47,13 @@ def todict(obj: Any) -> Any:
     elif isinstance(obj, Enum):
         return obj.value
     elif hasattr(obj, "__iter__") and not isinstance(obj, str) and not isinstance(obj, bytes):
-        return [todict(v) for v in obj]
+        return [todict(v, spec_keys) for v in obj]
     elif hasattr(obj, "__dict__"):
-        return {key: todict(value) for key, value in inspect.getmembers(obj) if not callable(value) and not key.startswith("_")}
+        return {
+            key: todict(value, spec_keys)
+            for key, value in inspect.getmembers(obj)
+            if not callable(value) and not key.startswith("_")
+        }
     else:
         return obj
 
@@ -70,7 +78,8 @@ def table_test_all_types(catalog: Catalog) -> Table:
 
 
 @pytest.mark.integration
-def test_write_sample_manifest(table_test_all_types: Table) -> None:
+@pytest.mark.parametrize("compression", ["null", "deflate"])
+def test_write_sample_manifest(table_test_all_types: Table, compression: AvroCompressionCodec) -> None:
     test_snapshot = table_test_all_types.current_snapshot()
     if test_snapshot is None:
         raise ValueError("Table has no current snapshot, check the docker environment")
@@ -80,7 +89,7 @@ def test_write_sample_manifest(table_test_all_types: Table) -> None:
     entry = test_manifest_entries[0]
     test_schema = table_test_all_types.schema()
     test_spec = table_test_all_types.spec()
-    wrapped_data_file_v2_debug = DataFile(
+    wrapped_data_file_v2_debug = DataFile.from_args(
         format_version=2,
         content=entry.data_file.content,
         file_path=entry.data_file.file_path,
@@ -102,9 +111,7 @@ def test_write_sample_manifest(table_test_all_types: Table) -> None:
     )
     wrapped_entry_v2 = copy(entry)
     wrapped_entry_v2.data_file = wrapped_data_file_v2_debug
-    wrapped_entry_v2_dict = todict(wrapped_entry_v2)
-    # This one should not be written
-    del wrapped_entry_v2_dict["data_file"]["spec_id"]
+    wrapped_entry_v2_dict = todict(wrapped_entry_v2, [field.name for field in test_spec.fields])
 
     with TemporaryDirectory() as tmpdir:
         tmp_avro_file = tmpdir + "/test_write_manifest.avro"
@@ -115,6 +122,7 @@ def test_write_sample_manifest(table_test_all_types: Table) -> None:
             schema=test_schema,
             output_file=output,
             snapshot_id=test_snapshot.snapshot_id,
+            avro_compression=compression,
         ) as manifest_writer:
             # For simplicity, try one entry first
             manifest_writer.add_entry(test_manifest_entries[0])

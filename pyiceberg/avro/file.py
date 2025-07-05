@@ -35,7 +35,7 @@ from typing import (
     TypeVar,
 )
 
-from pyiceberg.avro.codecs import KNOWN_CODECS
+from pyiceberg.avro.codecs import AVRO_CODEC_KEY, CODEC_MAPPING_ICEBERG_TO_AVRO, KNOWN_CODECS
 from pyiceberg.avro.codecs.codec import Codec
 from pyiceberg.avro.decoder import BinaryDecoder, new_decoder
 from pyiceberg.avro.encoder import BinaryEncoder
@@ -69,15 +69,21 @@ META_SCHEMA = StructType(
     NestedField(field_id=300, name="sync", field_type=FixedType(length=SYNC_SIZE), required=True),
 )
 
-_CODEC_KEY = "avro.codec"
 _SCHEMA_KEY = "avro.schema"
 
 
 class AvroFileHeader(Record):
-    __slots__ = ("magic", "meta", "sync")
-    magic: bytes
-    meta: Dict[str, str]
-    sync: bytes
+    @property
+    def magic(self) -> bytes:
+        return self._data[0]
+
+    @property
+    def meta(self) -> Dict[str, str]:
+        return self._data[1]
+
+    @property
+    def sync(self) -> bytes:
+        return self._data[2]
 
     def compression_codec(self) -> Optional[Type[Codec]]:
         """Get the file's compression codec algorithm from the file's metadata.
@@ -85,11 +91,13 @@ class AvroFileHeader(Record):
         In the case of a null codec, we return a None indicating that we
         don't need to compress/decompress.
         """
-        codec_name = self.meta.get(_CODEC_KEY, "null")
+        from pyiceberg.table import TableProperties
+
+        codec_name = self.meta.get(AVRO_CODEC_KEY, TableProperties.WRITE_AVRO_COMPRESSION_DEFAULT)
         if codec_name not in KNOWN_CODECS:
             raise ValueError(f"Unsupported codec: {codec_name}")
 
-        return KNOWN_CODECS[codec_name]
+        return KNOWN_CODECS[codec_name]  # type: ignore
 
     def get_schema(self) -> Schema:
         if _SCHEMA_KEY in self.meta:
@@ -269,10 +277,35 @@ class AvroOutputFile(Generic[D]):
         self.output_stream.close()
 
     def _write_header(self) -> None:
+        from pyiceberg.table import TableProperties
+
+        codec_name = self.metadata.get(AVRO_CODEC_KEY, TableProperties.WRITE_AVRO_COMPRESSION_DEFAULT)
+        if avro_codec_name := CODEC_MAPPING_ICEBERG_TO_AVRO.get(codec_name):
+            codec_name = avro_codec_name
+
         json_schema = json.dumps(AvroSchemaConversion().iceberg_to_avro(self.file_schema, schema_name=self.schema_name))
-        meta = {**self.metadata, _SCHEMA_KEY: json_schema, _CODEC_KEY: "null"}
-        header = AvroFileHeader(magic=MAGIC, meta=meta, sync=self.sync_bytes)
+
+        meta = {**self.metadata, _SCHEMA_KEY: json_schema, AVRO_CODEC_KEY: codec_name}
+        header = AvroFileHeader(MAGIC, meta, self.sync_bytes)
         construct_writer(META_SCHEMA).write(self.encoder, header)
+
+    def compression_codec(self) -> Optional[Type[Codec]]:
+        """Get the file's compression codec algorithm from the file's metadata.
+
+        In the case of a null codec, we return a None indicating that we
+        don't need to compress/decompress.
+        """
+        from pyiceberg.table import TableProperties
+
+        codec_name = self.metadata.get(AVRO_CODEC_KEY, TableProperties.WRITE_AVRO_COMPRESSION_DEFAULT)
+
+        if avro_codec_name := CODEC_MAPPING_ICEBERG_TO_AVRO.get(codec_name):
+            codec_name = avro_codec_name
+
+        if codec_name not in KNOWN_CODECS:
+            raise ValueError(f"Unsupported codec: {codec_name}")
+
+        return KNOWN_CODECS[codec_name]  # type: ignore
 
     def write_block(self, objects: List[D]) -> None:
         in_memory = io.BytesIO()
@@ -282,6 +315,13 @@ class AvroOutputFile(Generic[D]):
         block_content = in_memory.getvalue()
 
         self.encoder.write_int(len(objects))
-        self.encoder.write_int(len(block_content))
-        self.encoder.write(block_content)
+
+        if codec := self.compression_codec():
+            content, content_length = codec.compress(block_content)
+            self.encoder.write_int(content_length)
+            self.encoder.write(content)
+        else:
+            self.encoder.write_int(len(block_content))
+            self.encoder.write(block_content)
+
         self.encoder.write(self.sync_bytes)

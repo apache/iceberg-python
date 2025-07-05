@@ -22,6 +22,7 @@ from unittest.mock import patch
 import fastavro
 import pytest
 
+from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.io import load_file_io
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import (
@@ -61,7 +62,7 @@ def _verify_metadata_with_fastavro(avro_file: str, expected_metadata: Dict[str, 
 
 
 def test_read_manifest_entry(generated_manifest_entry_file: str) -> None:
-    manifest = ManifestFile(
+    manifest = ManifestFile.from_args(
         manifest_path=generated_manifest_entry_file,
         manifest_length=0,
         partition_spec_id=0,
@@ -79,13 +80,13 @@ def test_read_manifest_entry(generated_manifest_entry_file: str) -> None:
 
     data_file = manifest_entry.data_file
 
-    assert data_file.content is DataFileContent.DATA
+    assert data_file.content == DataFileContent.DATA
     assert (
         data_file.file_path
         == "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet"
     )
     assert data_file.file_format == FileFormat.PARQUET
-    assert repr(data_file.partition) == "Record[VendorID=1, tpep_pickup_datetime=1925]"
+    assert repr(data_file.partition) == "Record[1, 1925]"
     assert data_file.record_count == 19513
     assert data_file.file_size_in_bytes == 388872
     assert data_file.column_sizes == {
@@ -351,13 +352,18 @@ def test_write_empty_manifest() -> None:
                 schema=test_schema,
                 output_file=io.new_output(tmp_avro_file),
                 snapshot_id=8744736658442914487,
+                avro_compression="deflate",
             ) as _:
                 pass
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("compression", ["null", "deflate", "zstd"])
 def test_write_manifest(
-    generated_manifest_file_file_v1: str, generated_manifest_file_file_v2: str, format_version: TableVersion
+    generated_manifest_file_file_v1: str,
+    generated_manifest_file_file_v2: str,
+    format_version: TableVersion,
+    compression: AvroCompressionCodec,
 ) -> None:
     io = load_file_io()
     snapshot = Snapshot(
@@ -387,6 +393,7 @@ def test_write_manifest(
             schema=test_schema,
             output_file=output,
             snapshot_id=8744736658442914487,
+            avro_compression=compression,
         ) as writer:
             for entry in manifest_entries:
                 writer.add_entry(entry)
@@ -416,13 +423,13 @@ def test_write_manifest(
 
         data_file = manifest_entry.data_file
 
-        assert data_file.content is DataFileContent.DATA
+        assert data_file.content == DataFileContent.DATA
         assert (
             data_file.file_path
             == "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet"
         )
         assert data_file.file_format == FileFormat.PARQUET
-        assert data_file.partition == Record(VendorID=1, tpep_pickup_datetime=1925)
+        assert data_file.partition == Record(1, 1925)
         assert data_file.record_count == 19513
         assert data_file.file_size_in_bytes == 388872
         assert data_file.column_sizes == {
@@ -527,11 +534,13 @@ def test_write_manifest(
 
 @pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize("parent_snapshot_id", [19, None])
+@pytest.mark.parametrize("compression", ["null", "deflate"])
 def test_write_manifest_list(
     generated_manifest_file_file_v1: str,
     generated_manifest_file_file_v2: str,
     format_version: TableVersion,
     parent_snapshot_id: Optional[int],
+    compression: AvroCompressionCodec,
 ) -> None:
     io = load_file_io()
 
@@ -554,6 +563,7 @@ def test_write_manifest_list(
             snapshot_id=25,
             parent_snapshot_id=parent_snapshot_id,
             sequence_number=0,
+            avro_compression=compression,
         ) as writer:
             writer.add_manifests(demo_manifest_list)
         new_manifest_list = list(read_manifest_list(io.new_input(path)))
@@ -621,9 +631,9 @@ def test_write_manifest_list(
 def test_file_format_case_insensitive(raw_file_format: str, expected_file_format: FileFormat) -> None:
     if expected_file_format:
         parsed_file_format = FileFormat(raw_file_format)
-        assert (
-            parsed_file_format == expected_file_format
-        ), f"File format {raw_file_format}: {parsed_file_format} != {expected_file_format}"
+        assert parsed_file_format == expected_file_format, (
+            f"File format {raw_file_format}: {parsed_file_format} != {expected_file_format}"
+        )
     else:
         with pytest.raises(ValueError):
             _ = FileFormat(raw_file_format)
