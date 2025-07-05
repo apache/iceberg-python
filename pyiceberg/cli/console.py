@@ -29,11 +29,11 @@ import click
 from click import Context
 
 from pyiceberg import __version__
-from pyiceberg.catalog import Catalog, load_catalog
+from pyiceberg.catalog import URI, Catalog, load_catalog
 from pyiceberg.cli.output import ConsoleOutput, JsonOutput, Output
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchPropertyException, NoSuchTableError
 from pyiceberg.table import TableProperties
-from pyiceberg.table.refs import SnapshotRef
+from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
 from pyiceberg.utils.properties import property_as_int
 
 
@@ -75,7 +75,7 @@ def run(
     if ugi:
         properties["ugi"] = ugi
     if uri:
-        properties["uri"] = uri
+        properties[URI] = uri
     if credential:
         properties["credential"] = credential
 
@@ -417,7 +417,7 @@ def list_refs(ctx: Context, identifier: str, type: str, verbose: bool) -> None:
     refs = table.refs()
     if type:
         type = type.lower()
-        if type not in {"branch", "tag"}:
+        if type not in {SnapshotRefType.BRANCH, SnapshotRefType.TAG}:
             raise ValueError(f"Type must be either branch or tag, got: {type}")
 
     relevant_refs = [
@@ -431,7 +431,7 @@ def list_refs(ctx: Context, identifier: str, type: str, verbose: bool) -> None:
 
 def _retention_properties(ref: SnapshotRef, table_properties: Dict[str, str]) -> Dict[str, str]:
     retention_properties = {}
-    if ref.snapshot_ref_type == "branch":
+    if ref.snapshot_ref_type == SnapshotRefType.BRANCH:
         default_min_snapshots_to_keep = property_as_int(
             table_properties,
             TableProperties.MIN_SNAPSHOTS_TO_KEEP,

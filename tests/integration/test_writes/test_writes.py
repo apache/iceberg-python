@@ -40,14 +40,14 @@ from pytest_mock.plugin import MockerFixture
 
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.hive import HiveCatalog
-from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
-from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.exceptions import CommitFailedException, NoSuchTableError
 from pyiceberg.expressions import And, EqualTo, GreaterThanOrEqual, In, LessThan, Not
 from pyiceberg.io.pyarrow import _dataframe_to_data_files
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
+from pyiceberg.table.refs import MAIN_BRANCH
 from pyiceberg.table.sorting import SortDirection, SortField, SortOrder
 from pyiceberg.transforms import DayTransform, HourTransform, IdentityTransform
 from pyiceberg.types import (
@@ -885,11 +885,6 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
 @pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_create_table_transaction(catalog: Catalog, format_version: int) -> None:
-    if format_version == 1 and isinstance(catalog, RestCatalog):
-        pytest.skip(
-            "There is a bug in the REST catalog image (https://github.com/apache/iceberg/issues/8756) that prevents create and commit a staged version 1 table"
-        )
-
     identifier = f"default.arrow_create_table_transaction_{catalog.name}_{format_version}"
 
     try:
@@ -942,11 +937,6 @@ def test_create_table_transaction(catalog: Catalog, format_version: int) -> None
 @pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_create_table_with_non_default_values(catalog: Catalog, table_schema_with_all_types: Schema, format_version: int) -> None:
-    if format_version == 1 and isinstance(catalog, RestCatalog):
-        pytest.skip(
-            "There is a bug in the REST catalog image (https://github.com/apache/iceberg/issues/8756) that prevents create and commit a staged version 1 table"
-        )
-
     identifier = f"default.arrow_create_table_transaction_with_non_default_values_{catalog.name}_{format_version}"
     identifier_ref = f"default.arrow_create_table_transaction_with_non_default_values_ref_{catalog.name}_{format_version}"
 
@@ -1156,6 +1146,30 @@ def test_hive_catalog_storage_descriptor(
     assert len(tbl.scan().to_arrow()) == 3
     # check if spark can read the table
     assert spark.sql("SELECT * FROM hive.default.test_storage_descriptor").count() == 3
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_hive_catalog_storage_descriptor_has_changed(
+    session_catalog_hive: HiveCatalog,
+    pa_schema: pa.Schema,
+    arrow_table_with_null: pa.Table,
+    spark: SparkSession,
+    format_version: int,
+) -> None:
+    tbl = _create_table(
+        session_catalog_hive, "default.test_storage_descriptor", {"format-version": format_version}, [arrow_table_with_null]
+    )
+
+    with tbl.transaction() as tx:
+        with tx.update_schema() as schema:
+            schema.update_column("string_long", doc="this is string_long")
+            schema.update_column("binary", doc="this is binary")
+
+    with session_catalog_hive._client as open_client:
+        hive_table = session_catalog_hive._get_hive_table(open_client, "default", "test_storage_descriptor")
+        assert "this is string_long" in str(hive_table.sd)
+        assert "this is binary" in str(hive_table.sd)
 
 
 @pytest.mark.integration
@@ -1867,3 +1881,160 @@ def test_avro_compression_codecs(session_catalog: Catalog, arrow_table_with_null
     with tbl.io.new_input(current_snapshot.manifest_list).open() as f:
         reader = fastavro.reader(f)
         assert reader.codec == "null"
+
+
+@pytest.mark.integration
+def test_append_to_non_existing_branch(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.test_non_existing_branch"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "2"}, [])
+    with pytest.raises(
+        CommitFailedException, match=f"Table has no snapshots and can only be written to the {MAIN_BRANCH} BRANCH."
+    ):
+        tbl.append(arrow_table_with_null, branch="non_existing_branch")
+
+
+@pytest.mark.integration
+def test_append_to_existing_branch(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.test_existing_branch_append"
+    branch = "existing_branch"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "2"}, [arrow_table_with_null])
+
+    assert tbl.metadata.current_snapshot_id is not None
+
+    tbl.manage_snapshots().create_branch(snapshot_id=tbl.metadata.current_snapshot_id, branch_name=branch).commit()
+    tbl.append(arrow_table_with_null, branch=branch)
+
+    assert len(tbl.scan().use_ref(branch).to_arrow()) == 6
+    assert len(tbl.scan().to_arrow()) == 3
+    branch_snapshot = tbl.metadata.snapshot_by_name(branch)
+    assert branch_snapshot is not None
+    main_snapshot = tbl.metadata.snapshot_by_name("main")
+    assert main_snapshot is not None
+    assert branch_snapshot.parent_snapshot_id == main_snapshot.snapshot_id
+
+
+@pytest.mark.integration
+def test_delete_to_existing_branch(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.test_existing_branch_delete"
+    branch = "existing_branch"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "2"}, [arrow_table_with_null])
+
+    assert tbl.metadata.current_snapshot_id is not None
+
+    tbl.manage_snapshots().create_branch(snapshot_id=tbl.metadata.current_snapshot_id, branch_name=branch).commit()
+    tbl.delete(delete_filter="int = 9", branch=branch)
+
+    assert len(tbl.scan().use_ref(branch).to_arrow()) == 2
+    assert len(tbl.scan().to_arrow()) == 3
+    branch_snapshot = tbl.metadata.snapshot_by_name(branch)
+    assert branch_snapshot is not None
+    main_snapshot = tbl.metadata.snapshot_by_name("main")
+    assert main_snapshot is not None
+    assert branch_snapshot.parent_snapshot_id == main_snapshot.snapshot_id
+
+
+@pytest.mark.integration
+def test_overwrite_to_existing_branch(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.test_existing_branch_overwrite"
+    branch = "existing_branch"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "2"}, [arrow_table_with_null])
+
+    assert tbl.metadata.current_snapshot_id is not None
+
+    tbl.manage_snapshots().create_branch(snapshot_id=tbl.metadata.current_snapshot_id, branch_name=branch).commit()
+    tbl.overwrite(arrow_table_with_null, branch=branch)
+
+    assert len(tbl.scan().use_ref(branch).to_arrow()) == 3
+    assert len(tbl.scan().to_arrow()) == 3
+    branch_snapshot = tbl.metadata.snapshot_by_name(branch)
+    assert branch_snapshot is not None and branch_snapshot.parent_snapshot_id is not None
+    delete_snapshot = tbl.metadata.snapshot_by_id(branch_snapshot.parent_snapshot_id)
+    assert delete_snapshot is not None
+    main_snapshot = tbl.metadata.snapshot_by_name("main")
+    assert main_snapshot is not None
+    assert (
+        delete_snapshot.parent_snapshot_id == main_snapshot.snapshot_id
+    )  # Currently overwrite is a delete followed by an append operation
+
+
+@pytest.mark.integration
+def test_intertwined_branch_writes(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.test_intertwined_branch_operations"
+    branch1 = "existing_branch_1"
+    branch2 = "existing_branch_2"
+
+    tbl = _create_table(session_catalog, identifier, {"format-version": "2"}, [arrow_table_with_null])
+
+    assert tbl.metadata.current_snapshot_id is not None
+
+    tbl.manage_snapshots().create_branch(snapshot_id=tbl.metadata.current_snapshot_id, branch_name=branch1).commit()
+
+    tbl.delete("int = 9", branch=branch1)
+
+    tbl.append(arrow_table_with_null)
+
+    tbl.manage_snapshots().create_branch(snapshot_id=tbl.metadata.current_snapshot_id, branch_name=branch2).commit()
+
+    tbl.overwrite(arrow_table_with_null, branch=branch2)
+
+    assert len(tbl.scan().use_ref(branch1).to_arrow()) == 2
+    assert len(tbl.scan().use_ref(branch2).to_arrow()) == 3
+    assert len(tbl.scan().to_arrow()) == 6
+
+
+@pytest.mark.integration
+def test_branch_spark_write_py_read(session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table) -> None:
+    # Initialize table with branch
+    identifier = "default.test_branch_spark_write_py_read"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "2"}, [arrow_table_with_null])
+    branch = "existing_spark_branch"
+
+    # Create branch in Spark
+    spark.sql(f"ALTER TABLE {identifier} CREATE BRANCH {branch}")
+
+    # Spark Write
+    spark.sql(
+        f"""
+            DELETE FROM {identifier}.branch_{branch}
+            WHERE int = 9
+        """
+    )
+
+    # Refresh table to get new refs
+    tbl.refresh()
+
+    # Python Read
+    assert len(tbl.scan().to_arrow()) == 3
+    assert len(tbl.scan().use_ref(branch).to_arrow()) == 2
+
+
+@pytest.mark.integration
+def test_branch_py_write_spark_read(session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table) -> None:
+    # Initialize table with branch
+    identifier = "default.test_branch_py_write_spark_read"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "2"}, [arrow_table_with_null])
+    branch = "existing_py_branch"
+
+    assert tbl.metadata.current_snapshot_id is not None
+
+    # Create branch
+    tbl.manage_snapshots().create_branch(snapshot_id=tbl.metadata.current_snapshot_id, branch_name=branch).commit()
+
+    # Python Write
+    tbl.delete("int = 9", branch=branch)
+
+    # Spark Read
+    main_df = spark.sql(
+        f"""
+            SELECT *
+            FROM {identifier}
+        """
+    )
+    branch_df = spark.sql(
+        f"""
+            SELECT *
+            FROM {identifier}.branch_{branch}
+        """
+    )
+    assert main_df.count() == 3
+    assert branch_df.count() == 2

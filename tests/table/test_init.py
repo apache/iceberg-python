@@ -50,7 +50,7 @@ from pyiceberg.table import (
     _match_deletes_to_data_file,
 )
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
-from pyiceberg.table.refs import SnapshotRef
+from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     MetadataLogEntry,
     Operation,
@@ -511,15 +511,15 @@ def test_update_column(table_v1: Table, table_v2: Table) -> None:
         assert new_schema3.find_field("z").required is False, "failed to update existing field required"
 
         # assert the above two updates also works with union_by_name
-        assert (
-            table.update_schema().union_by_name(new_schema)._apply() == new_schema
-        ), "failed to update existing field doc with union_by_name"
-        assert (
-            table.update_schema().union_by_name(new_schema2)._apply() == new_schema2
-        ), "failed to remove existing field doc with union_by_name"
-        assert (
-            table.update_schema().union_by_name(new_schema3)._apply() == new_schema3
-        ), "failed to update existing field required with union_by_name"
+        assert table.update_schema().union_by_name(new_schema)._apply() == new_schema, (
+            "failed to update existing field doc with union_by_name"
+        )
+        assert table.update_schema().union_by_name(new_schema2)._apply() == new_schema2, (
+            "failed to remove existing field doc with union_by_name"
+        )
+        assert table.update_schema().union_by_name(new_schema3)._apply() == new_schema3, (
+            "failed to update existing field required with union_by_name"
+        )
 
 
 def test_add_primitive_type_column(table_v2: Table) -> None:
@@ -1000,28 +1000,42 @@ def test_assert_table_uuid(table_v2: Table) -> None:
 
 def test_assert_ref_snapshot_id(table_v2: Table) -> None:
     base_metadata = table_v2.metadata
-    AssertRefSnapshotId(ref="main", snapshot_id=base_metadata.current_snapshot_id).validate(base_metadata)
+    AssertRefSnapshotId(ref=MAIN_BRANCH, snapshot_id=base_metadata.current_snapshot_id).validate(base_metadata)
 
     with pytest.raises(CommitFailedException, match="Requirement failed: current table metadata is missing"):
-        AssertRefSnapshotId(ref="main", snapshot_id=1).validate(None)
+        AssertRefSnapshotId(ref=MAIN_BRANCH, snapshot_id=1).validate(None)
 
     with pytest.raises(
         CommitFailedException,
-        match="Requirement failed: branch main was created concurrently",
+        match=f"Requirement failed: branch {MAIN_BRANCH} was created concurrently",
     ):
-        AssertRefSnapshotId(ref="main", snapshot_id=None).validate(base_metadata)
+        AssertRefSnapshotId(ref=MAIN_BRANCH, snapshot_id=None).validate(base_metadata)
 
     with pytest.raises(
         CommitFailedException,
-        match="Requirement failed: branch main has changed: expected id 1, found 3055729675574597004",
+        match=f"Requirement failed: branch {MAIN_BRANCH} has changed: expected id 1, found 3055729675574597004",
     ):
-        AssertRefSnapshotId(ref="main", snapshot_id=1).validate(base_metadata)
+        AssertRefSnapshotId(ref=MAIN_BRANCH, snapshot_id=1).validate(base_metadata)
+
+    non_existing_ref = "not_exist_branch_or_tag"
+    assert table_v2.refs().get("not_exist_branch_or_tag") is None
 
     with pytest.raises(
         CommitFailedException,
-        match="Requirement failed: branch or tag not_exist is missing, expected 1",
+        match=f"Requirement failed: branch or tag {non_existing_ref} is missing, expected 1",
     ):
-        AssertRefSnapshotId(ref="not_exist", snapshot_id=1).validate(base_metadata)
+        AssertRefSnapshotId(ref=non_existing_ref, snapshot_id=1).validate(base_metadata)
+
+    # existing Tag in metadata: test
+    ref_tag = table_v2.refs().get("test")
+    assert ref_tag is not None
+    assert ref_tag.snapshot_ref_type == SnapshotRefType.TAG, "TAG test should be present in table to be tested"
+
+    with pytest.raises(
+        CommitFailedException,
+        match="Requirement failed: tag test has changed: expected id 3055729675574597004, found 3051729675574597004",
+    ):
+        AssertRefSnapshotId(ref="test", snapshot_id=3055729675574597004).validate(base_metadata)
 
 
 def test_assert_last_assigned_field_id(table_v2: Table) -> None:

@@ -791,6 +791,8 @@ def test_commit_table_properties(
         Name=table_name,
     )
     assert table_info["Table"]["Description"] == "test_description"
+    assert table_info["Table"]["Parameters"]["test_a"] == "test_aa"
+    assert table_info["Table"]["Parameters"]["test_c"] == "test_c"
 
 
 @mock_aws

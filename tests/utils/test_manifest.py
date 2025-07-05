@@ -358,7 +358,7 @@ def test_write_empty_manifest() -> None:
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
-@pytest.mark.parametrize("compression", ["null", "deflate"])
+@pytest.mark.parametrize("compression", ["null", "deflate", "zstd"])
 def test_write_manifest(
     generated_manifest_file_file_v1: str,
     generated_manifest_file_file_v2: str,
@@ -631,9 +631,9 @@ def test_write_manifest_list(
 def test_file_format_case_insensitive(raw_file_format: str, expected_file_format: FileFormat) -> None:
     if expected_file_format:
         parsed_file_format = FileFormat(raw_file_format)
-        assert (
-            parsed_file_format == expected_file_format
-        ), f"File format {raw_file_format}: {parsed_file_format} != {expected_file_format}"
+        assert parsed_file_format == expected_file_format, (
+            f"File format {raw_file_format}: {parsed_file_format} != {expected_file_format}"
+        )
     else:
         with pytest.raises(ValueError):
             _ = FileFormat(raw_file_format)
