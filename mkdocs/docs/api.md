@@ -1164,7 +1164,7 @@ maintenance.expire_snapshots_with_retention_policy(
 )
 ```
 
-#### Use Cases
+#### Deduplication Use Cases
 
 - **Operational Resilience**: Always keep recent snapshots for rollback.
 - **Space Reclamation**: Remove old, unneeded snapshots.

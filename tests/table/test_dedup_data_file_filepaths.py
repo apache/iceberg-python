@@ -14,12 +14,14 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from pathlib import Path
+from typing import List, Set
+
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 from pyarrow import Table as pa_table
 
-from pyiceberg.io.pyarrow import parquet_file_to_data_file
 from pyiceberg.manifest import DataFile
 from pyiceberg.table import Table
 from pyiceberg.table.maintenance import MaintenanceTable
@@ -27,21 +29,19 @@ from tests.catalog.test_base import InMemoryCatalog
 
 
 @pytest.fixture
-def iceberg_catalog(tmp_path):
+def iceberg_catalog(tmp_path: Path) -> InMemoryCatalog:
     catalog = InMemoryCatalog("test.in_memory.catalog", warehouse=tmp_path.absolute().as_posix())
     catalog.create_namespace("default")
     return catalog
 
 
-def test_overwrite_removes_only_selected_datafile(iceberg_catalog, tmp_path):
-    # Create a table and append two batches referencing the same file path
+def test_overwrite_removes_only_selected_datafile(iceberg_catalog: InMemoryCatalog, tmp_path: Path) -> None:
     identifier = "default.test_overwrite_removes_only_selected_datafile"
     try:
         iceberg_catalog.drop_table(identifier)
     except Exception:
         pass
 
-    # Create Arrow schema and table
     arrow_schema = pa.schema(
         [
             pa.field("id", pa.int32(), nullable=False),
@@ -61,7 +61,6 @@ def test_overwrite_removes_only_selected_datafile(iceberg_catalog, tmp_path):
         schema=arrow_schema,
     )
 
-    # Write Arrow tables to Parquet files
     parquet_path_a = str(tmp_path / "file_a.parquet")
     parquet_path_b = str(tmp_path / "file_a.parquet")
     pq.write_table(df_a, parquet_path_a)
@@ -69,82 +68,75 @@ def test_overwrite_removes_only_selected_datafile(iceberg_catalog, tmp_path):
 
     table: Table = iceberg_catalog.create_table(identifier, arrow_schema)
 
-    # Add both files as DataFiles using add_files
     tx = table.transaction()
     tx.add_files([parquet_path_a], check_duplicate_files=False)
     tx.add_files([parquet_path_b], check_duplicate_files=False)
+    tx.commit_transaction()
 
-    # Find DataFile for file_b
-    data_file_b = parquet_file_to_data_file(table.io, table.metadata, parquet_path_b)
-
-    # Overwrite: Remove only the DataFile for file_b
     mt = MaintenanceTable(tbl=table)
 
-    # Find: duplicate data files, across all partitions and snapshots
     mt.tbl.maintenance.deduplicate_data_files(scan_all_partitions=True, scan_all_snapshots=True)
 
-    # Assert: only the row from file_a remains
-    # Get all file paths in the current table
-    file_paths = [chunk.as_py() for chunk in mt.tbl.inspect.data_files().to_pylist()]
+    file_paths: List[str] = [chunk.as_py() for chunk in mt.tbl.inspect.data_files().to_pylist()]
 
-    # Assert there are no duplicate file paths
     assert len(file_paths) == len(set(file_paths)), "Duplicate file paths found in the table"
 
 
-def test_get_all_datafiles_current_snapshot(iceberg_table, tmp_path):
+def test_get_all_datafiles_current_snapshot(iceberg_table: Table, tmp_path: Path) -> None:
     mt = MaintenanceTable(iceberg_table)
-    # Write two files
     df1 = pa.Table.from_pylist([{"id": 1, "value": "A"}])
     df2 = pa.Table.from_pylist([{"id": 2, "value": "B"}])
     path1 = str(tmp_path / "file1.parquet")
     path2 = str(tmp_path / "file2.parquet")
     pq.write_table(df1, path1)
     pq.write_table(df2, path2)
-    mt.tbl.transaction().add_files([path1, path2]).commit_transaction()
-    datafiles = mt._get_all_datafiles(scan_all_snapshots=False)
-    file_paths = {df.file_path for df in datafiles}
+    tx = mt.tbl.transaction()
+    tx.add_files([path1, path2])
+    tx.commit_transaction()
+    datafiles: List[DataFile] = mt._get_all_datafiles(scan_all_snapshots=False)
+    file_paths: Set[str] = {df.file_path for df in datafiles}
     assert path1 in file_paths and path2 in file_paths
 
 
-def test_get_all_datafiles_all_snapshots(iceberg_table, tmp_path):
+def test_get_all_datafiles_all_snapshots(iceberg_table: Table, tmp_path: Path) -> None:
     mt = MaintenanceTable(iceberg_table)
-    # Write and add a file, then overwrite
     df1 = pa.Table.from_pylist([{"id": 1, "value": "A"}])
     path1 = str(tmp_path / "file1.parquet")
     pq.write_table(df1, path1)
-    mt.tbl.transaction().add_files([path1]).commit_transaction()
-    # Overwrite with a new file
+    tx1 = mt.tbl.transaction()
+    tx1.add_files([path1])
+    tx1.commit_transaction()
     df2 = pa.Table.from_pylist([{"id": 2, "value": "B"}])
     path2 = str(tmp_path / "file2.parquet")
     pq.write_table(df2, path2)
-    mt.tbl.transaction().add_files([path2]).commit()
-    # Should find both files if scanning all snapshots
-    datafiles = mt._get_all_datafiles(scan_all_snapshots=True)
-    file_paths = {df.file_path for df in datafiles}
+    tx2 = mt.tbl.transaction()
+    tx2.add_files([path2])
+    tx2.commit_transaction()
+    datafiles: List[DataFile] = mt._get_all_datafiles(scan_all_snapshots=True)
+    file_paths: Set[str] = {df.file_path for df in datafiles}
     assert path1 in file_paths and path2 in file_paths
 
 
-def test_deduplicate_data_files_removes_duplicates(iceberg_table, tmp_path):
+def test_deduplicate_data_files_removes_duplicates(iceberg_table: Table, tmp_path: Path) -> None:
     mt = MaintenanceTable(iceberg_table)
-    # Write and add the same file twice (simulate duplicate)
     df = pa.Table.from_pylist([{"id": 1, "value": "A"}])
     path = str(tmp_path / "dup.parquet")
     pq.write_table(df, path)
 
-    # Add the same file twice to the table
-    mt.tbl.transaction().add_files([path]).commit_transaction()
-    mt.tbl.transaction().add_files([path]).commit_transaction()
+    tx1 = mt.tbl.transaction()
+    tx1.add_files([path])
+    tx1.commit_transaction()
+    tx2 = mt.tbl.transaction()
+    tx2.add_files([path])
+    tx2.commit_transaction()
 
-    # There should be duplicates
-    all_datafiles = mt._get_all_datafiles(scan_all_snapshots=True)
-    file_paths = [df.file_path for df in all_datafiles]
+    all_datafiles: List[DataFile] = mt._get_all_datafiles(scan_all_snapshots=True)
+    file_paths: List[str] = [df.file_path for df in all_datafiles]
     assert file_paths.count(path) > 1
 
-    # Deduplicate
-    removed = mt.deduplicate_data_files(scan_all_partitions=True, scan_all_snapshots=True)
+    removed: List[DataFile] = mt.deduplicate_data_files(scan_all_partitions=True, scan_all_snapshots=True)
 
-    # After deduplication, only one should remain
-    all_datafiles_after = mt._get_all_datafiles(scan_all_snapshots=True)
-    file_paths_after = [df.file_path for df in all_datafiles_after]
+    all_datafiles_after: List[DataFile] = mt._get_all_datafiles(scan_all_snapshots=True)
+    file_paths_after: List[str] = [df.file_path for df in all_datafiles_after]
     assert file_paths_after.count(path) == 1
     assert all(isinstance(df, DataFile) for df in removed)

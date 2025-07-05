@@ -82,10 +82,7 @@ from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.properties import property_as_bool, property_as_int
 
 if TYPE_CHECKING:
-    pass
-
-
-from pyiceberg.table.metadata import Snapshot
+    from pyiceberg.table import Transaction
 
 
 def _new_manifest_file_name(num: int, commit_uuid: uuid.UUID) -> str:

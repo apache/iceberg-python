@@ -907,6 +907,7 @@ class Table:
     @property
     def maintenance(self) -> MaintenanceTable:
         """Return the MaintenanceTable object for maintenance.
+
         Returns:
             MaintenanceTable object based on this Table.
         """

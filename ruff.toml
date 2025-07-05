@@ -34,13 +34,7 @@ exclude = [
     ".svn",
     ".tox",
     ".venv",
-    "__pypackages__",
-    "_build",
-    "buck-out",
-    "build",
-    "dist",
-    "node_modules",
-    "venv",
+    "vendor",
 ]
 
 # Ignore _all_ violations.
