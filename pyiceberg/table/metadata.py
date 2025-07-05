@@ -27,6 +27,7 @@ from pydantic import ValidationError as PydanticValidationError
 from pyiceberg.exceptions import ValidationError
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec, assign_fresh_partition_spec_ids
 from pyiceberg.schema import Schema, assign_fresh_schema_ids
+from pyiceberg.table.encryption import EncryptedKey
 from pyiceberg.table.name_mapping import NameMapping, parse_mapping_from_json
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import MetadataLogEntry, Snapshot, SnapshotLogEntry
@@ -516,6 +517,7 @@ class TableMetadataV3(TableMetadataCommonFields, IcebergBaseModel):
         - Multi-argument transforms for partitioning and sorting
         - Row Lineage tracking
         - Binary deletion vectors
+        - Encryption Keys
 
     For more information:
     https://iceberg.apache.org/spec/?column-projection#version-3-extended-types-and-capabilities
@@ -551,6 +553,9 @@ class TableMetadataV3(TableMetadataCommonFields, IcebergBaseModel):
 
     next_row_id: Optional[int] = Field(alias="next-row-id", default=None)
     """A long higher than all assigned row IDs; the next snapshot's `first-row-id`."""
+
+    encryption_keys: List[EncryptedKey] = Field(alias="encryption-keys", default=[])
+    """The list of encryption keys for this table."""
 
     def model_dump_json(
         self, exclude_none: bool = True, exclude: Optional[Any] = None, by_alias: bool = True, **kwargs: Any
