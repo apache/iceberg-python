@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, List, Optional, Set, Union
 
 from pyiceberg.manifest import DataFile
