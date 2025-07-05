@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM python:3.9-bullseye
+FROM python:3.12-bullseye
 
 RUN apt-get -qq update && \
     apt-get -qq install -y --no-install-recommends \
@@ -63,7 +63,7 @@ RUN chmod u+x /opt/spark/sbin/* && \
 
 RUN pip3 install -q ipython
 
-RUN pip3 install "pyiceberg[s3fs,hive]==${PYICEBERG_VERSION}"
+RUN pip3 install "pyiceberg[s3fs,hive,pyarrow]==${PYICEBERG_VERSION}"
 
 COPY entrypoint.sh .
 COPY provision.py .
