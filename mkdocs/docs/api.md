@@ -1758,3 +1758,66 @@ shape: (11, 4)
 │ 21        ┆ 566         ┆ Incorrect billing amount   ┆ 2022-04-17 10:53:20 │
 └───────────┴─────────────┴────────────────────────────┴─────────────────────┘
 ```
+
+### Apache DataFusion
+
+PyIceberg integrates with [Apache DataFusion](https://datafusion.apache.org/) through the Custom Table Provider interface ([FFI_TableProvider](https://datafusion.apache.org/python/user-guide/io/table_provider.html)) exposed through `iceberg-rust`.
+
+<!-- prettier-ignore-start -->
+
+!!! note "Requirements"
+    This requires [`datafusion` to be installed](index.md).
+
+<!-- prettier-ignore-end -->
+
+<!-- markdownlint-disable MD046 -- Allowing indented multi-line formatting in admonition-->
+
+!!! warning "Experimental Feature"
+    The DataFusion integration is considered **experimental**.
+
+    The integration has a few caveats:
+
+    - Only works with `datafusion >= 45`
+    - Depends directly on `iceberg-rust` instead of PyIceberg's implementation
+    - Has limited features compared to the full PyIceberg API
+
+    The integration will improve as both DataFusion and `iceberg-rust` matures.
+
+<!-- markdownlint-enable MD046 -->
+
+PyIceberg tables can be registered directly with DataFusion's SessionContext using the table provider interface.
+
+```python
+from datafusion import SessionContext
+from pyiceberg.catalog import load_catalog
+import pyarrow as pa
+
+# Load catalog and create/load a table
+catalog = load_catalog("catalog", type="in-memory")
+catalog.create_namespace_if_not_exists("default")
+
+# Create some sample data
+data = pa.table({"x": [1, 2, 3], "y": [4, 5, 6]})
+iceberg_table = catalog.create_table("default.test", schema=data.schema)
+iceberg_table.append(data)
+
+# Register the table with DataFusion
+ctx = SessionContext()
+ctx.register_table_provider("test", iceberg_table)
+
+# Query the table using DataFusion SQL
+ctx.table("test").show()
+```
+
+This will output:
+
+```python
+DataFrame()
++---+---+
+| x | y |
++---+---+
+| 1 | 4 |
+| 2 | 5 |
+| 3 | 6 |
++---+---+
+```
