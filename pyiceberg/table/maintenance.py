@@ -294,27 +294,9 @@ class MaintenanceTable:
 
     def _get_all_datafiles(self) -> List[DataFile]:
         """Collect all DataFiles in the current snapshot only."""
-        datafiles: List[DataFile] = []
-
-        current_snapshot = self.tbl.current_snapshot()
-        if not current_snapshot:
-            return datafiles
-
-        def process_manifest(manifest: ManifestFile) -> list[DataFile]:
-            found: list[DataFile] = []
-            for entry in manifest.fetch_manifest_entry(io=self.tbl.io, discard_deleted=True):
-                if hasattr(entry, "data_file"):
-                    found.append(entry.data_file)
-            return found
-
-        # Scan only the current snapshot's manifests
-        manifests = current_snapshot.manifests(io=self.tbl.io)
-        with ThreadPoolExecutor() as executor:
-            results = executor.map(process_manifest, manifests)
-            for res in results:
-                datafiles.extend(res)
-
-        return datafiles
+        data_file_structs = self.tbl.inspect.data_files()
+        data_files = [DataFile(df) for df in data_file_structs]
+        return data_files
 
     def deduplicate_data_files(self) -> List[DataFile]:
         """

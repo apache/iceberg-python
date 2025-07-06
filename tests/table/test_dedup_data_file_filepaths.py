@@ -124,6 +124,9 @@ def test_deduplicate_data_files_removes_duplicates_in_current_snapshot(
 ) -> None:
     mt = MaintenanceTable(tbl=prepopulated_table)
 
+    print("=== Before deduplication ===")
+    check_data_files(prepopulated_table)
+
     all_datafiles: List[DataFile] = mt._get_all_datafiles()
     file_names: List[str] = [os.path.basename(df.file_path) for df in all_datafiles]
     # There should be more than one reference before deduplication
@@ -131,6 +134,9 @@ def test_deduplicate_data_files_removes_duplicates_in_current_snapshot(
         f"Expected multiple references to {dupe_data_file_path.name} before deduplication"
     )
     removed: List[DataFile] = mt.deduplicate_data_files()
+
+    print("=== After deduplication ===")
+    check_data_files(prepopulated_table)
 
     all_datafiles_after: List[DataFile] = mt._get_all_datafiles()
     file_names_after: List[str] = [os.path.basename(df.file_path) for df in all_datafiles_after]
