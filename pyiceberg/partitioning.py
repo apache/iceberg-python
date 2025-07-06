@@ -21,7 +21,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from functools import cached_property, singledispatch
-from typing import Annotated, Any, Dict, Generic, List, Optional, Tuple, TypeVar, Union
+from typing import Annotated, Any, Callable, Dict, Generic, List, Optional, Tuple, TypeVar, Union
 from urllib.parse import quote_plus
 
 from pydantic import (
@@ -270,6 +270,56 @@ def assign_fresh_partition_spec_ids(spec: PartitionSpec, old_schema: Schema, fre
 
 
 T = TypeVar("T")
+
+
+class PartitionMap(Generic[T]):
+    _specs: dict[int, PartitionSpec]
+    _partition_maps: dict[int, dict[Record, T]]
+
+    def __init__(self, specs: dict[int, PartitionSpec]):
+        self._specs = specs
+        self._partition_maps = {}
+
+    def __len__(self) -> int:
+        """Return the length of the partition map.
+
+        Returns:
+            length of _partition_maps
+        """
+        return len(self._partition_maps.values())
+
+    def is_empty(self) -> bool:
+        return len(self._partition_maps.values()) == 0
+
+    def contains_key(self, spec_id: int, struct: Record) -> bool:
+        try:
+            return struct in self._partition_maps[spec_id]
+        except KeyError as _:
+            return False
+
+    def contains_value(self, value: T) -> bool:
+        return value in self._partition_maps.values()
+
+    def get(self, spec_id: int, struct: Record) -> Optional[T]:
+        if partition_map := self._partition_maps.get(spec_id):
+            return partition_map.get(struct)
+        return None
+
+    def put(self, spec_id: int, struct: Record, value: T) -> None:
+        if _ := self._specs.get(spec_id):
+            self._partition_maps[spec_id] = {struct: value}
+
+    def compute_if_absent(self, spec_id: int, struct: Record, value: T, value_factory: Callable[[], T]) -> T:
+        if partition_map := self._partition_maps.get(spec_id):
+            if val := partition_map.get(struct):
+                return val
+        return value_factory()
+
+    def values(self) -> list[T]:
+        result: list[T] = []
+        for partition_map in self._partition_maps.values():
+            result.extend(partition_map.values())
+        return result
 
 
 class PartitionSpecVisitor(Generic[T], ABC):

@@ -223,3 +223,7 @@ def test_deserialize_partition_field_v3() -> None:
 
     field = PartitionField.model_validate_json(json_partition_spec)
     assert field == PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate")
+
+
+def test_partition_map() -> None:
+    pass
