@@ -144,6 +144,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
     import ray
     from duckdb import DuckDBPyConnection
+    from pyiceberg_core.datafusion import IcebergDataFusionTable
 
     from pyiceberg.catalog import Catalog
 
@@ -1499,6 +1500,51 @@ class Table:
         import polars as pl
 
         return pl.scan_iceberg(self)
+
+    def __datafusion_table_provider__(self) -> "IcebergDataFusionTable":
+        """Return the DataFusion table provider PyCapsule interface.
+
+        To support DataFusion features such as push down filtering, this function will return a PyCapsule
+        interface that conforms to the FFI Table Provider required by DataFusion. From an end user perspective
+        you should not need to call this function directly. Instead you can use ``register_table_provider`` in
+        the DataFusion SessionContext.
+
+        Returns:
+            A PyCapsule DataFusion TableProvider interface.
+
+        Example:
+            ```python
+            from datafusion import SessionContext
+            from pyiceberg.catalog import load_catalog
+            import pyarrow as pa
+            catalog = load_catalog("catalog", type="in-memory")
+            catalog.create_namespace_if_not_exists("default")
+            data = pa.table({"x": [1, 2, 3], "y": [4, 5, 6]})
+            iceberg_table = catalog.create_table("default.test", schema=data.schema)
+            iceberg_table.append(data)
+            ctx = SessionContext()
+            ctx.register_table_provider("test", iceberg_table)
+            ctx.table("test").show()
+            ```
+            Results in
+            ```
+            DataFrame()
+            +---+---+
+            | x | y |
+            +---+---+
+            | 1 | 4 |
+            | 2 | 5 |
+            | 3 | 6 |
+            +---+---+
+            ```
+        """
+        from pyiceberg_core.datafusion import IcebergDataFusionTable
+
+        return IcebergDataFusionTable(
+            identifier=self.name(),
+            metadata_location=self.metadata_location,
+            file_io_properties=self.io.properties,
+        ).__datafusion_table_provider__()
 
 
 class StaticTable(Table):
