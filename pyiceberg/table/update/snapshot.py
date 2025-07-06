@@ -68,7 +68,6 @@ from pyiceberg.table.update import (
     AddSnapshotUpdate,
     AssertRefSnapshotId,
     RemoveSnapshotRefUpdate,
-    RemoveSnapshotsUpdate,
     SetSnapshotRefUpdate,
     TableRequirement,
     TableUpdate,

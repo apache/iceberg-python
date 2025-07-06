@@ -104,8 +104,7 @@ class MaintenanceTable:
                 snapshots_to_expire.append(snapshot.snapshot_id)
 
         if snapshots_to_expire:
-            with self.tbl.transaction():
-                self.expire_snapshots_by_ids(snapshots_to_expire)
+            self.expire_snapshots_by_ids(snapshots_to_expire)
 
     def expire_snapshots_older_than_with_retention(
         self, timestamp_ms: int, retain_last_n: Optional[int] = None, min_snapshots_to_keep: Optional[int] = None
@@ -122,8 +121,7 @@ class MaintenanceTable:
         )
 
         if snapshots_to_expire:
-            with self.tbl.transaction():
-                self.expire_snapshots_by_ids(snapshots_to_expire)
+            self.expire_snapshots_by_ids(snapshots_to_expire)
 
     def retain_last_n_snapshots(self, n: int) -> None:
         """Keep only the last N snapshots, expiring all others.
@@ -158,8 +156,7 @@ class MaintenanceTable:
                 snapshots_to_expire.append(snapshot.snapshot_id)
 
         if snapshots_to_expire:
-            with self.tbl.transaction():
-                self.expire_snapshots_by_ids(snapshots_to_expire)
+            self.expire_snapshots_by_ids(snapshots_to_expire)
 
     def _get_snapshots_to_expire_with_retention(
         self, timestamp_ms: Optional[int] = None, retain_last_n: Optional[int] = None, min_snapshots_to_keep: Optional[int] = None
@@ -215,7 +212,7 @@ class MaintenanceTable:
 
     def expire_snapshots_with_retention_policy(
         self, timestamp_ms: Optional[int] = None, retain_last_n: Optional[int] = None, min_snapshots_to_keep: Optional[int] = None
-    ) -> List[int]:
+    ) -> None:
         """Comprehensive snapshot expiration with multiple retention strategies.
 
         This method provides a unified interface for snapshot expiration with various
@@ -265,12 +262,7 @@ class MaintenanceTable:
         )
 
         if snapshots_to_expire:
-            with self.tbl.transaction() as txn:
-                from pyiceberg.table.update import RemoveSnapshotsUpdate
-
-                txn._apply((RemoveSnapshotsUpdate(snapshot_ids=snapshots_to_expire),))
-
-        return snapshots_to_expire
+            self.expire_snapshots_by_ids(snapshots_to_expire)
 
     def _get_protected_snapshot_ids(self, table_metadata: TableMetadata) -> Set[int]:
         """Get the IDs of protected snapshots.
