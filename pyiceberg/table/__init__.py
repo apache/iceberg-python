@@ -143,6 +143,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
     import ray
     from duckdb import DuckDBPyConnection
+    from pyiceberg_core.datafusion import IcebergDataFusionTable
 
     from pyiceberg.catalog import Catalog
 
@@ -1494,7 +1495,7 @@ class Table:
 
         return pl.scan_iceberg(self)
 
-    def __datafusion_table_provider__(self) -> Any:
+    def __datafusion_table_provider__(self) -> "IcebergDataFusionTable":
         """Return the DataFusion table provider PyCapsule interface.
 
         To support DataFusion features such as push down filtering, this function will return a PyCapsule
