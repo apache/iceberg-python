@@ -1134,6 +1134,7 @@ maintenance.expire_snapshots_with_retention_policy(
 ---
 
 =======
+
 ```python
 shape: (11, 4)
 ┌───────────┬─────────────┬────────────────────────────┬─────────────────────┐
