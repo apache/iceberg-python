@@ -357,7 +357,7 @@ catalog:
 
 #### Headers in RESTCatalog
 
-To configure custom headers in RESTCatalog, include them in the catalog properties with the prefix `header.`. This
+To configure custom headers in RESTCatalog, include them in the catalog properties with `header.<Header-Name>`. This
 ensures that all HTTP requests to the REST service include the specified headers.
 
 ```yaml
@@ -372,7 +372,73 @@ Specific headers defined by the RESTCatalog spec include:
 
 | Key                                  | Options                               | Default              | Description                                                                                                                                                                                        |
 | ------------------------------------ | ------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `header.X-Iceberg-Access-Delegation` | `{vended-credentials,remote-signing}` | `vended-credentials` | Signal to the server that the client supports delegated access via a comma-separated list of access mechanisms. The server may choose to supply access via any or none of the requested mechanisms |
+| `header.X-Iceberg-Access-Delegation` | `{vended-credentials,remote-signing}` | `vended-credentials` | Signal to the server that the client supports delegated access via a comma-separated list of access mechanisms. The server may choose to supply access via any or none of the requested mechanisms. When using `vended-credentials`, the server provides temporary credentials to the client. When using `remote-signing`, the server signs requests on behalf of the client. |
+
+#### Authentication Options
+- **SigV4**: For AWS services that require SigV4 signing.
+- **Token**: Use the `token` property to pass a bearer token for services that accept token-based authentication.
+- **Credential**: Use the `credential` property with format `client_id:client_secret` for authentication.
+- **OAuth2**: Use the `oauth2-server-uri` property to specify a custom OAuth2 endpoint for client credentials authentication.
+
+#### Common Integrations & Examples
+
+##### Glue (AWS)
+```yaml
+catalog:
+  s3_tables_catalog:
+    type: rest
+    uri: https://glue.<region>.amazonaws.com/iceberg
+    warehouse: <account-id>:s3tablescatalog/<table-bucket-name>
+    rest.sigv4-enabled: true
+    rest.signing-name: glue
+    rest.signing-region: <region>
+```
+
+##### Unity Catalog (Databricks)
+```yaml
+catalog:
+  unity_catalog:
+    type: rest
+    uri: https://<workspace-url>/api/2.1/unity-catalog/iceberg-rest
+    warehouse: <uc-catalog-name>
+    token: <databricks-pat-token>
+```
+
+##### R2 Data Catalog (Cloudflare)
+```yaml
+catalog:
+  r2_catalog:
+    type: rest
+    uri: <r2-catalog-uri>
+    warehouse: <r2-warehouse-name>
+    token: <r2-token>
+```
+
+##### Lakekeeper
+```yaml
+catalog:
+  lakekeeper_catalog:
+    type: rest
+    uri: <lakekeeper-catalog-uri>
+    warehouse: <lakekeeper-warehouse-name>
+    credential: <client-id>:<client-secret>
+    oauth2-server-uri: http://localhost:30080/realms/<keycloak-realm-name>/protocol/openid-connect/token
+    scope: lakekeeper
+```
+
+##### Polaris (Snowflake)
+```yaml
+catalog:
+  polaris_catalog:
+    type: rest
+    uri: https://<account>.snowflakecomputing.com/polaris/api/catalog
+    warehouse: <polaris-catalog-name>
+    credential: <client-id>:<client-secret>
+    header.X-Iceberg-Access-Delegation: vended-credentials
+    scope: PRINCIPAL_ROLE:ALL
+    token-refresh-enabled: true
+    py-io-impl: pyiceberg.io.fsspec.FsspecFileIO
+```
 
 ### SQL Catalog
 
