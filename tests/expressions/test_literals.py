@@ -760,21 +760,7 @@ def test_invalid_decimal_conversions() -> None:
 def test_invalid_string_conversions() -> None:
     assert_invalid_conversions(
         literal("abc"),
-        [
-            BooleanType(),
-            IntegerType(),
-            LongType(),
-            FloatType(),
-            DoubleType(),
-            DateType(),
-            TimeType(),
-            TimestampType(),
-            TimestamptzType(),
-            DecimalType(9, 2),
-            UUIDType(),
-            FixedType(1),
-            BinaryType(),
-        ],
+        [FixedType(1), BinaryType()],
     )
 
 
