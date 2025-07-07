@@ -115,7 +115,13 @@ from pyiceberg.table.update import (
     update_table_metadata,
 )
 from pyiceberg.table.update.schema import UpdateSchema
-from pyiceberg.table.update.snapshot import ExpireSnapshots, ManageSnapshots, RewriteManifestsResult, UpdateSnapshot, _FastAppendFiles, _ManifestMergeManager
+from pyiceberg.table.update.snapshot import (
+    ExpireSnapshots,
+    ManageSnapshots,
+    RewriteManifestsResult,
+    UpdateSnapshot,
+    _FastAppendFiles,
+)
 from pyiceberg.table.update.spec import UpdateSpec
 from pyiceberg.table.update.statistics import UpdateStatistics
 from pyiceberg.transforms import IdentityTransform
@@ -441,6 +447,7 @@ class Transaction:
             branch = MAIN_BRANCH
 
         return UpdateSnapshot(self, io=self._table.io, branch=branch, snapshot_properties=snapshot_properties)
+
     def rewrite_manifests(self) -> RewriteManifestsResult:
         if self._table.current_snapshot() is None:
             return RewriteManifestsResult(rewritten_manifests=[], added_manifests=[])

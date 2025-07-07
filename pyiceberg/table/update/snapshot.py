@@ -299,7 +299,8 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                 SetSnapshotRefUpdate(
                     snapshot_id=self._snapshot_id,
                     parent_snapshot_id=self._parent_snapshot_id,
-                    ref_name=self._target_branch, type=SnapshotRefType.BRANCH,
+                    ref_name=self._target_branch,
+                    type=SnapshotRefType.BRANCH,
                 ),
             ),
             (
@@ -357,7 +358,8 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         operation: Operation,
         transaction: Transaction,
         io: FileIO,
-        branch: str,commit_uuid: Optional[uuid.UUID] = None,
+        branch: str,
+        commit_uuid: Optional[uuid.UUID] = None,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ):
         super().__init__(operation, transaction, io, commit_uuid, snapshot_properties, branch)
@@ -453,11 +455,11 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
                                 # Rewrite the manifest
                                 if len(existing_entries) > 0:
                                     with write_manifest(
-                                    format_version=self._transaction.table_metadata.format_version,
-                                    spec=self._transaction.table_metadata.specs()[manifest_file.partition_spec_id],
-                                    schema=self._transaction.table_metadata.schema(),
-                                    output_file=self.new_manifest_output(),
-                                    snapshot_id=self._snapshot_id,
+                                        format_version=self._transaction.table_metadata.format_version,
+                                        spec=self._transaction.table_metadata.specs()[manifest_file.partition_spec_id],
+                                        schema=self._transaction.table_metadata.schema(),
+                                        output_file=self.new_manifest_output(),
+                                        snapshot_id=self._snapshot_id,
                                         avro_compression=self._compression,
                                     ) as writer:
                                         for existing_entry in existing_entries:
@@ -532,7 +534,8 @@ class _MergeAppendFiles(_FastAppendFiles):
         operation: Operation,
         transaction: Transaction,
         io: FileIO,
-        branch: str,commit_uuid: Optional[uuid.UUID] = None,
+        branch: str,
+        commit_uuid: Optional[uuid.UUID] = None,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ) -> None:
         from pyiceberg.table import TableProperties
@@ -844,20 +847,19 @@ class UpdateSnapshot:
 
     def fast_append(self) -> _FastAppendFiles:
         return _FastAppendFiles(
-            operation=Operation.APPEND, transaction=self._transaction, io=self._io,branch=self._branch,
+            operation=Operation.APPEND,
+            transaction=self._transaction,
+            io=self._io,
+            branch=self._branch,
             snapshot_properties=self._snapshot_properties,
         )
 
     def merge_append(self) -> _MergeAppendFiles:
         return _MergeAppendFiles(
-            operation=Operation.APPEND, transaction=self._transaction, io=self._io,branch=self._branch,
-            snapshot_properties=self._snapshot_properties,
-        )
-    def rewrite(self) -> _RewriteManifests:
-        return _RewriteManifests(
-            table=self._transaction._table,
+            operation=Operation.APPEND,
             transaction=self._transaction,
             io=self._io,
+            branch=self._branch,
             snapshot_properties=self._snapshot_properties,
         )
 

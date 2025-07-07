@@ -82,7 +82,6 @@ def table_v2_appended_with_null(session_catalog: Catalog, arrow_table_with_null:
     assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
 
 
-
 @pytest.mark.integration
 def test_rewrite_v1_v2_manifests(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.test_rewrite_v1_v2_manifests"
