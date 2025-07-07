@@ -339,21 +339,15 @@ catalog:
 
 | Key                 | Example                          | Description                                                                                        |
 | ------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
-| uri                 | <https://rest-catalog/ws>          | URI identifying the REST Server                                                                    |
+| uri                 | <https://rest-catalog/ws>        | URI identifying the REST Server                                                                    |
 | ugi                 | t-1234:secret                    | Hadoop UGI for Hive client.                                                                        |
-| credential          | t-1234:secret                    | Credential to use for OAuth2 credential flow when initializing the catalog                         |
-| token               | FEW23.DFSDF.FSDF                 | Bearer token value to use for `Authorization` header                                               |
 | scope               | openid offline corpds:ds:profile | Desired scope of the requested security token (default : catalog)                                  |
 | resource            | rest_catalog.iceberg.com         | URI for the target resource or service                                                             |
 | audience            | rest_catalog                     | Logical name of target resource or service                                                         |
-| rest.sigv4-enabled  | true                             | Sign requests to the REST Server using AWS SigV4 protocol                                          |
-| rest.signing-region | us-east-1                        | The region to use when SigV4 signing a request                                                     |
-| rest.signing-name   | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
-| oauth2-server-uri   | <https://auth-service/cc>          | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
-| snapshot-loading-mode | refs                             | The snapshots to return in the body of the metadata. Setting the value to `all` would return the full set of snapshots currently valid for the table. Setting the value to `refs` would load all snapshots referenced by branches or tags. |
-| warehouse          | myWarehouse                         | Warehouse location or identifier to request from the catalog service. May be used to determine server-side overrides, such as the warehouse location. |
+| snapshot-loading-mode | refs                           | The snapshots to return in the body of the metadata. Setting the value to `all` would return the full set of snapshots currently valid for the table. Setting the value to `refs` would load all snapshots referenced by branches or tags. |
+| warehouse           | myWarehouse                      | Warehouse location or identifier to request from the catalog service. May be used to determine server-side overrides, such as the warehouse location. |
+| `header.X-Iceberg-Access-Delegation` | `vended-credentials` | Signal to the server that the client supports delegated access via a comma-separated list of access mechanisms. The server may choose to supply access via any or none of the requested mechanisms. When using `vended-credentials`, the server provides temporary credentials to the client. When using `remote-signing`, the server signs requests on behalf of the client. (default: `vended-credentials`) |
 
-<!-- markdown-link-check-enable-->
 
 #### Headers in RESTCatalog
 
@@ -368,21 +362,28 @@ catalog:
     header.content-type: application/vnd.api+json
 ```
 
-Specific headers defined by the RESTCatalog spec include:
-
-| Key                                  | Options                               | Default              | Description                                                                                                                                                                                        |
-| ------------------------------------ | ------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `header.X-Iceberg-Access-Delegation` | `{vended-credentials,remote-signing}` | `vended-credentials` | Signal to the server that the client supports delegated access via a comma-separated list of access mechanisms. The server may choose to supply access via any or none of the requested mechanisms. When using `vended-credentials`, the server provides temporary credentials to the client. When using `remote-signing`, the server signs requests on behalf of the client. |
 
 #### Authentication Options
 - **SigV4**: For AWS services that require SigV4 signing.
-- **Token**: Use the `token` property to pass a bearer token for services that accept token-based authentication.
-- **Credential**: Use the `credential` property with format `client_id:client_secret` for authentication.
-- **OAuth2**: Use the `oauth2-server-uri` property to specify a custom OAuth2 endpoint for client credentials authentication.
+- **OAuth2**: For services that require OAuth2 authentication.
+    - **Bearer Token**: Use the `token` property to pass a bearer token directly for services that accept token-based authentication.
+    - **Client Credentials**: Use the `credential` property with the format `client_id:client_secret` to perform the OAuth2 client credentials flow. Optionally, use the `oauth2-server-uri` property to specify a custom OAuth2 endpoint for client credentials authentication.
+
+| Key                 | Example                          | Description                                                                                        |
+| ------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
+| rest.sigv4-enabled  | true                             | Sign requests to the REST Server using AWS SigV4 protocol                                          |
+| rest.signing-region | us-east-1                        | The region to use when SigV4 signing a request                                                     |
+| rest.signing-name   | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
+| oauth2-server-uri   | <https://auth-service/cc>        | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
+| token               | FEW23.DFSDF.FSDF                 | Bearer token value to use for `Authorization` header                                               |
+| credential          | t-1234:secret                    | Credential to use for OAuth2 credential flow when initializing the catalog                         |
+
+<!-- markdown-link-check-enable-->
+
 
 #### Common Integrations & Examples
 
-##### Glue (AWS)
+##### AWS Glue
 ```yaml
 catalog:
   s3_tables_catalog:
@@ -394,7 +395,7 @@ catalog:
     rest.signing-region: <region>
 ```
 
-##### Unity Catalog (Databricks)
+##### Unity Catalog
 ```yaml
 catalog:
   unity_catalog:
@@ -404,7 +405,7 @@ catalog:
     token: <databricks-pat-token>
 ```
 
-##### R2 Data Catalog (Cloudflare)
+##### R2 Data Catalog
 ```yaml
 catalog:
   r2_catalog:
@@ -426,7 +427,7 @@ catalog:
     scope: lakekeeper
 ```
 
-##### Polaris (Snowflake)
+##### Apache Polaris
 ```yaml
 catalog:
   polaris_catalog:
