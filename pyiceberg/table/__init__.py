@@ -1619,6 +1619,13 @@ def _parse_row_filter(expr: Union[str, BooleanExpression]) -> BooleanExpression:
     return parser.parse(expr) if isinstance(expr, str) else expr
 
 
+def _get_cached_property_names(cls: Any) -> Set[str]:
+    """Return a set of all cached property names defined on the class."""
+    from inspect import getmembers
+
+    return {name for name, attr in getmembers(cls) if isinstance(attr, cached_property)}
+
+
 S = TypeVar("S", bound="TableScan", covariant=True)
 
 
@@ -1691,7 +1698,13 @@ class TableScan(ABC):
 
     def update(self: S, **overrides: Any) -> S:
         """Create a copy of this table scan with updated fields."""
-        return type(self)(**{**self.__dict__, **overrides})
+        data = {**self.__dict__, **overrides}
+
+        # Cached properties are also stored in the __dict__, so must be removed
+        for cached_prop in _get_cached_property_names(self.__class__):
+            data.pop(cached_prop, None)
+
+        return type(self)(**data)
 
     def use_ref(self: S, name: str) -> S:
         if self.snapshot_id:
