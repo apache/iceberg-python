@@ -1024,3 +1024,16 @@ def test_scan_with_datetime(catalog: Catalog) -> None:
 
     df = table.scan(row_filter=LessThan("datetime", yesterday)).to_pandas()
     assert len(df) == 0
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_filter_after_arrow_scan(catalog: Catalog) -> None:
+    identifier = "test_partitioned_by_hours"
+    table = catalog.load_table(f"default.{identifier}")
+
+    scan = table.scan()
+    assert len(scan.to_arrow()) > 0
+
+    scan = scan.filter("ts >= '2023-03-05T00:00:00+00:00'")
+    assert len(scan.to_arrow()) > 0
