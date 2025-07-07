@@ -23,12 +23,12 @@ POETRY_VERSION = 2.1.1
 install-poetry:  ## Ensure Poetry is installed and the correct version is being used.
 	@if ! command -v poetry &> /dev/null; then \
 		echo "Poetry could not be found. Installing..."; \
-		pipx install poetry==$(POETRY_VERSION); \
+		pip install --user poetry==$(POETRY_VERSION); \
 	else \
-		INSTALLED_VERSION=$$(pipx show poetry | grep Version | awk '{print $$2}'); \
+		INSTALLED_VERSION=$$(pip show poetry | grep Version | awk '{print $$2}'); \
 		if [ "$$INSTALLED_VERSION" != "$(POETRY_VERSION)" ]; then \
 			echo "Poetry version $$INSTALLED_VERSION does not match required version $(POETRY_VERSION). Updating..."; \
-			pipx install poetry==$(POETRY_VERSION) --force; \
+			pip install --user --upgrade poetry==$(POETRY_VERSION); \
 		else \
 			echo "Poetry version $$INSTALLED_VERSION is already installed."; \
 		fi \
