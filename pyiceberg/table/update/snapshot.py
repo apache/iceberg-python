@@ -627,35 +627,6 @@ class _RewriteManifests(_SnapshotProducer["_RewriteManifests"]):
     def _summary(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> Summary:
         from pyiceberg.table import TableProperties
 
-        ssc = SnapshotSummaryCollector(
-            int(
-                self._transaction.table_metadata.properties.get(
-                    TableProperties.WRITE_PARTITION_SUMMARY_LIMIT, TableProperties.WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT
-                )
-            )
-        )
-
-        props = {
-            "manifests-kept": "0",
-            "manifests-created": str(len(self.added_manifests)),
-            "manifests-replaced": str(len(self.rewritten_manifests)),
-            "entries-processed": "0",
-        }
-        previous_snapshot = (
-            self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
-            if self._parent_snapshot_id is not None
-            else None
-        )
-
-        return update_snapshot_summaries(
-            summary=Summary(operation=self._operation, **ssc.build(), **props),
-            previous_summary=previous_snapshot.summary if previous_snapshot is not None else None,
-            truncate_full_table=False,
-        )
-
-    def _summary(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> Summary:
-        from pyiceberg.table import TableProperties
-
         ssc = SnapshotSummaryCollector()
         partition_summary_limit = int(
             self._transaction.table_metadata.properties.get(
