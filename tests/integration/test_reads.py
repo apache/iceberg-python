@@ -589,15 +589,15 @@ def test_partitioned_tables(catalog: Catalog) -> None:
 def test_unpartitioned_uuid_table(catalog: Catalog) -> None:
     unpartitioned_uuid = catalog.load_table("default.test_uuid_and_fixed_unpartitioned")
     arrow_table_eq = unpartitioned_uuid.scan(row_filter="uuid_col == '102cb62f-e6f8-4eb0-9973-d9b012ff0967'").to_arrow()
-    assert arrow_table_eq["uuid_col"].to_pylist() == [uuid.UUID("102cb62f-e6f8-4eb0-9973-d9b012ff0967").bytes]
+    assert arrow_table_eq["uuid_col"].to_pylist() == [uuid.UUID("102cb62f-e6f8-4eb0-9973-d9b012ff0967")]
 
     arrow_table_neq = unpartitioned_uuid.scan(
         row_filter="uuid_col != '102cb62f-e6f8-4eb0-9973-d9b012ff0967' and uuid_col != '639cccce-c9d2-494a-a78c-278ab234f024'"
     ).to_arrow()
     assert arrow_table_neq["uuid_col"].to_pylist() == [
-        uuid.UUID("ec33e4b2-a834-4cc3-8c4a-a1d3bfc2f226").bytes,
-        uuid.UUID("c1b0d8e0-0b0e-4b1e-9b0a-0e0b0d0c0a0b").bytes,
-        uuid.UUID("923dae77-83d6-47cd-b4b0-d383e64ee57e").bytes,
+        uuid.UUID("ec33e4b2-a834-4cc3-8c4a-a1d3bfc2f226"),
+        uuid.UUID("c1b0d8e0-0b0e-4b1e-9b0a-0e0b0d0c0a0b"),
+        uuid.UUID("923dae77-83d6-47cd-b4b0-d383e64ee57e"),
     ]
 
 
