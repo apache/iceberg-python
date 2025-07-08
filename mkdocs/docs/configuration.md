@@ -364,8 +364,9 @@ catalog:
 ##### OAuth2
 | Key                 | Example                          | Description                                                                                        |
 | ------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
-| token               | FEW23.DFSDF.FSDF                 | Bearer token value to use for `Authorization` header                                               |
 | oauth2-server-uri   | <https://auth-service/cc>        | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
+|
+| token               | FEW23.DFSDF.FSDF                 | Bearer token value to use for `Authorization` header                                               ```
 | credential          | client_id:client_secret          | Credential to use for OAuth2 credential flow when initializing the catalog                         |
 | scope               | openid offline corpds:ds:profile | Desired scope of the requested security token (default : catalog)                                  |
 | resource            | rest_catalog.iceberg.com         | URI for the target resource or service                                                             |
