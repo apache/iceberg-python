@@ -451,6 +451,11 @@ def test_dynamic_partition_overwrite_unpartitioned_evolve_to_identity_transform(
 
 @pytest.mark.integration
 def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    import pyarrow
+    from packaging import version
+
+    under_20_arrow = version.parse(pyarrow.__version__) < version.parse("20.0.0")
+
     identifier = "default.arrow_table_summaries"
 
     try:
@@ -547,14 +552,14 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
         "total-records": "6",
     }
     assert summaries[5] == {
-        "removed-files-size": "16174",
+        "removed-files-size": "15774" if under_20_arrow else "16174",
         "changed-partition-count": "2",
         "total-equality-deletes": "0",
         "deleted-data-files": "4",
         "total-position-deletes": "0",
         "total-delete-files": "0",
         "deleted-records": "4",
-        "total-files-size": "8884",
+        "total-files-size": "8684" if under_20_arrow else "8884",
         "total-data-files": "2",
         "total-records": "2",
     }
@@ -564,9 +569,9 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
         "total-equality-deletes": "0",
         "added-records": "2",
         "total-position-deletes": "0",
-        "added-files-size": "8087",
+        "added-files-size": "7887" if under_20_arrow else "8087",
         "total-delete-files": "0",
-        "total-files-size": "16971",
+        "total-files-size": "16571" if under_20_arrow else "16971",
         "total-data-files": "4",
         "total-records": "4",
     }

@@ -481,33 +481,33 @@ files = [
 
 [[package]]
 name = "bodo"
-version = "2025.7.3"
+version = "2025.7.4"
 description = "High-Performance Python Compute Engine for Data and AI"
 optional = true
-python-versions = "<3.14,>=3.9"
+python-versions = ">=3.9"
 groups = ["main"]
-markers = "python_version < \"3.14\" and extra == \"bodo\""
+markers = "extra == \"bodo\""
 files = [
-    {file = "bodo-2025.7.3-cp310-cp310-macosx_11_0_x86_64.whl", hash = "sha256:0cdb00739a34b0c8614482336f04318215cb52290a56e1459d31a99e6567dce1"},
-    {file = "bodo-2025.7.3-cp310-cp310-macosx_12_0_arm64.whl", hash = "sha256:0cdec7524499d16d421a87d07bc359f51320fb3e02813abfae0bad9b96da15ed"},
-    {file = "bodo-2025.7.3-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:caea707b6ce5cf8bf712ea17e2a54020fbbdcfa4c4d7a02b9662aa7ac48a0a06"},
-    {file = "bodo-2025.7.3-cp310-cp310-win_amd64.whl", hash = "sha256:713ffa4c61af40bf99aab9eb104ca9c186d5c94b8310ef1d723452689d9f15f8"},
-    {file = "bodo-2025.7.3-cp311-cp311-macosx_11_0_x86_64.whl", hash = "sha256:92f43d246d834c6301979bbc789d575a231e5617a0a1dd2e49a6515b3861f560"},
-    {file = "bodo-2025.7.3-cp311-cp311-macosx_12_0_arm64.whl", hash = "sha256:5fa5285062f9c002f149f1cb7fc0e36aec05d4fa0361b96c3effe8760f3badd3"},
-    {file = "bodo-2025.7.3-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:94ed33dc2529368c7a41274a2738c89c1d690644b0c77be7e8c9c42b86500245"},
-    {file = "bodo-2025.7.3-cp311-cp311-win_amd64.whl", hash = "sha256:7a523a6005ee2baa6801739f921b8c37fbf7238bfd6e2fdb077f5dc3da86daf6"},
-    {file = "bodo-2025.7.3-cp312-cp312-macosx_11_0_x86_64.whl", hash = "sha256:11b1b95b02b394ea426e2d350548d6ef3c610308765f2686250ed8db37ae05da"},
-    {file = "bodo-2025.7.3-cp312-cp312-macosx_12_0_arm64.whl", hash = "sha256:bd41c434f8e5e69dea9e92fa745e2d6f015330757275292911fc2c41d20b1694"},
-    {file = "bodo-2025.7.3-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:792d17fa321737703d4ba4a8526819133bd969d40b288a778fccede4912fb615"},
-    {file = "bodo-2025.7.3-cp312-cp312-win_amd64.whl", hash = "sha256:e3f38ad56c779940523e8f2b7a996862986c8072a213b346a3b806a7a53c1bf8"},
-    {file = "bodo-2025.7.3-cp313-cp313-macosx_11_0_x86_64.whl", hash = "sha256:528242ae89a786c6464c5d40e4697ed993c212979e2dab213b1e6df48ccefb37"},
-    {file = "bodo-2025.7.3-cp313-cp313-macosx_12_0_arm64.whl", hash = "sha256:cbd1bca679a5b7ae8bb66fc41f527e3db30446a1c4e34bb9cd208ae31332c269"},
-    {file = "bodo-2025.7.3-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:237a38775eb10d6f26446948a5ec7a0084fb6a7a9013eb3b817f0d57248eb364"},
-    {file = "bodo-2025.7.3-cp313-cp313-win_amd64.whl", hash = "sha256:80e83f16502597b96295be0a35afe41fd84a1345857a01059523d7ed3ae7c643"},
-    {file = "bodo-2025.7.3-cp39-cp39-macosx_11_0_x86_64.whl", hash = "sha256:92320b1cddfc859e0362bd76f64c87c434686f44285f33f02711ac5c92fcc4b7"},
-    {file = "bodo-2025.7.3-cp39-cp39-macosx_12_0_arm64.whl", hash = "sha256:ce7ae446fa90a0e94c76b43ce87f54b899091fbc6d598005d3b09a2716662cad"},
-    {file = "bodo-2025.7.3-cp39-cp39-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:8bdb7b4dfe7fab6c0d848c4da4e6efc20699f11ac751552f34e8733dcf411271"},
-    {file = "bodo-2025.7.3-cp39-cp39-win_amd64.whl", hash = "sha256:6a00268436ef35ddb5c0db6232cdb45de6416dd1ac495bd95f52e2e76c7d9c6a"},
+    {file = "bodo-2025.7.4-cp310-cp310-macosx_11_0_x86_64.whl", hash = "sha256:86aadaa0fbd091d88c0c7b3ca8b939a4aaf0f37c629516bbe39229e1d9e671b0"},
+    {file = "bodo-2025.7.4-cp310-cp310-macosx_12_0_arm64.whl", hash = "sha256:436d99d74df3ad1156c2e457eb862c0ba3aa57d7294000cc04d83a465b70e798"},
+    {file = "bodo-2025.7.4-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:53b5ac9ad52dfed51da614e07f05f1893f443dbb8760359c94dd62bfcad370b3"},
+    {file = "bodo-2025.7.4-cp310-cp310-win_amd64.whl", hash = "sha256:0e6d4b2e8e5bd0c3e26654ef1c5b08babb75f30fe8aec2c6b2c5ec83ef84b73c"},
+    {file = "bodo-2025.7.4-cp311-cp311-macosx_11_0_x86_64.whl", hash = "sha256:3ea8a7c900f3ba50302b7c8af4ddad05b08f3ee86fb268aa0c203ea463200cfb"},
+    {file = "bodo-2025.7.4-cp311-cp311-macosx_12_0_arm64.whl", hash = "sha256:fece428eac27bd27f3a471480bd71197b385277ac28a553387be4850bfa51022"},
+    {file = "bodo-2025.7.4-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:a7fb5083492c20d20eddd7c4b6424204524820fd7b2329953b35acae915a8a74"},
+    {file = "bodo-2025.7.4-cp311-cp311-win_amd64.whl", hash = "sha256:e3e8a8b62a04c656a03e1c6010d474ec52ca12f6bf7f2cae9e0111b2849baba2"},
+    {file = "bodo-2025.7.4-cp312-cp312-macosx_11_0_x86_64.whl", hash = "sha256:a8e5ae38d3571477edb4694fb1f1eab2fa98d3b988e271bb4d47f30472cfd084"},
+    {file = "bodo-2025.7.4-cp312-cp312-macosx_12_0_arm64.whl", hash = "sha256:6b66dff3b21c24898d0949b340f98a7fc2d501cf9f131655d35f96aea50d82a8"},
+    {file = "bodo-2025.7.4-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:ee686bd8295f974f262920df8e2ec865b58e7c675fa9bd5ccb4d1631c2675117"},
+    {file = "bodo-2025.7.4-cp312-cp312-win_amd64.whl", hash = "sha256:e1227783d1908558c30887ecb840e89fd3af16c6e426610516701f2f6237584b"},
+    {file = "bodo-2025.7.4-cp313-cp313-macosx_11_0_x86_64.whl", hash = "sha256:21b306b374c0022389f2dc2f9281852ac41a130b2deb4ad548f026c73bc0ad4e"},
+    {file = "bodo-2025.7.4-cp313-cp313-macosx_12_0_arm64.whl", hash = "sha256:7186a7a4f2c88be987d0a06d844e852a6d7bba39326bd65071c1fb2f90c43ff3"},
+    {file = "bodo-2025.7.4-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:cf830acdeb694a620f8d593d840cb20dbc2301085a920a9b29d1f66ea3b2eacd"},
+    {file = "bodo-2025.7.4-cp313-cp313-win_amd64.whl", hash = "sha256:e1a9424379c397de243e17f798a24d2fc78d765d1efd509dfac1e39ce3e6f413"},
+    {file = "bodo-2025.7.4-cp39-cp39-macosx_11_0_x86_64.whl", hash = "sha256:ce3f59110e57deeede105fa7ee8f3fc18cea526fea93a8f464a90ad988870109"},
+    {file = "bodo-2025.7.4-cp39-cp39-macosx_12_0_arm64.whl", hash = "sha256:7644b4ab43ae58e2a4e951c09c728a85c05383951e3c295aecf0ef483e9af3b9"},
+    {file = "bodo-2025.7.4-cp39-cp39-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:32bfdf0c9d32f64e7c19b27ef87640a05baf435968eeb1a6e35bb09bc9ce8332"},
+    {file = "bodo-2025.7.4-cp39-cp39-win_amd64.whl", hash = "sha256:93de5f447a30faa0290d3dc1b42bfaaabf1d60d080e81fa5877c0cff2a69bd26"},
 ]
 
 [package.dependencies]
@@ -891,7 +891,7 @@ description = "Pickler class to extend the standard pickle.Pickler functionality
 optional = true
 python-versions = ">=3.8"
 groups = ["main"]
-markers = "python_version < \"3.14\" and extra == \"bodo\""
+markers = "extra == \"bodo\""
 files = [
     {file = "cloudpickle-3.1.1-py3-none-any.whl", hash = "sha256:c8c5a44295039331ee9dad40ba100a9c7297b6f988e50e87ccdf3765a668350e"},
     {file = "cloudpickle-3.1.1.tar.gz", hash = "sha256:b216fa8ae4019d5482a8ac3c95d8f6346115d8835911fd4aefd1a445e4242c64"},
@@ -2210,7 +2210,7 @@ description = "Intel® MPI Library"
 optional = true
 python-versions = "*"
 groups = ["main"]
-markers = "sys_platform == \"win32\" and python_version < \"3.14\" and extra == \"bodo\""
+markers = "extra == \"bodo\" and sys_platform == \"win32\""
 files = [
     {file = "impi_rt-2021.16.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:d6121049766b2915f535b0abce65023e3ef4b0ef01c556ae9101dff7695a979f"},
     {file = "impi_rt-2021.16.0-py2.py3-none-win_amd64.whl", hash = "sha256:7f8e72b5bc020e6539115b1c02435b81bc16a6923fa82c99979baeedb4b2ba9a"},
@@ -2514,7 +2514,7 @@ description = "lightweight wrapper around basic LLVM functionality"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "python_version == \"3.9\" and extra == \"bodo\""
+markers = "python_version < \"3.10\" and extra == \"bodo\""
 files = [
     {file = "llvmlite-0.43.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:a289af9a1687c6cf463478f0fa8e8aa3b6fb813317b0d70bf1ed0759eab6f761"},
     {file = "llvmlite-0.43.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:6d4fd101f571a31acb1559ae1af30f30b1dc4b3186669f92ad780e17c81e91bc"},
@@ -2546,7 +2546,7 @@ description = "lightweight wrapper around basic LLVM functionality"
 optional = true
 python-versions = ">=3.10"
 groups = ["main"]
-markers = "python_version < \"3.14\" and extra == \"bodo\" and python_version >= \"3.10\""
+markers = "python_version >= \"3.10\" and extra == \"bodo\""
 files = [
     {file = "llvmlite-0.44.0-cp310-cp310-macosx_10_14_x86_64.whl", hash = "sha256:9fbadbfba8422123bab5535b293da1cf72f9f478a65645ecd73e781f962ca614"},
     {file = "llvmlite-0.44.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:cccf8eb28f24840f2689fb1a45f9c0f7e582dd24e088dcf96e424834af11f791"},
@@ -3447,7 +3447,7 @@ description = "compiling Python code using LLVM"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "python_version == \"3.9\" and extra == \"bodo\""
+markers = "python_version < \"3.10\" and extra == \"bodo\""
 files = [
     {file = "numba-0.60.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:5d761de835cd38fb400d2c26bb103a2726f548dc30368853121d66201672e651"},
     {file = "numba-0.60.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:159e618ef213fba758837f9837fb402bbe65326e60ba0633dbe6c7f274d42c1b"},
@@ -3483,7 +3483,7 @@ description = "compiling Python code using LLVM"
 optional = true
 python-versions = ">=3.10"
 groups = ["main"]
-markers = "python_version < \"3.14\" and extra == \"bodo\" and python_version >= \"3.10\""
+markers = "python_version >= \"3.10\" and extra == \"bodo\""
 files = [
     {file = "numba-0.61.2-cp310-cp310-macosx_10_14_x86_64.whl", hash = "sha256:cf9f9fc00d6eca0c23fc840817ce9f439b9f03c8f03d6246c0e7f0cb15b7162a"},
     {file = "numba-0.61.2-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:ea0247617edcb5dd61f6106a56255baab031acc4257bddaeddb3a1003b4ca3fd"},
@@ -3519,7 +3519,7 @@ description = "Fundamental package for array computing in Python"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "python_version == \"3.9\" and extra == \"bodo\" or (extra == \"pandas\" or extra == \"ray\") and python_version < \"3.10\""
+markers = "python_version < \"3.10\" and (extra == \"pandas\" or extra == \"ray\" or extra == \"bodo\")"
 files = [
     {file = "numpy-2.0.2-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:51129a29dbe56f9ca83438b706e2e69a39892b5eda6cedcb6b0c9fdc9b0d3ece"},
     {file = "numpy-2.0.2-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:f15975dfec0cf2239224d80e32c3170b1d168335eaedee69da84fbe9f1f9cd04"},
@@ -3575,7 +3575,7 @@ description = "Fundamental package for array computing in Python"
 optional = true
 python-versions = ">=3.10"
 groups = ["main"]
-markers = "(python_version < \"3.14\" or extra == \"pandas\" or extra == \"ray\") and (extra == \"bodo\" or extra == \"pandas\" or extra == \"ray\") and python_version >= \"3.10\""
+markers = "python_version >= \"3.10\" and (extra == \"pandas\" or extra == \"ray\" or extra == \"bodo\")"
 files = [
     {file = "numpy-2.2.6-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:b412caa66f72040e6d268491a59f2c43bf03eb6c96dd8f0307829feb7fa2b6fb"},
     {file = "numpy-2.2.6-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:8e41fd67c52b86603a91c1a505ebaef50b3314de0213461c7a6e99c9a3beff90"},
@@ -3723,7 +3723,7 @@ description = "Powerful data structures for data analysis, time series, and stat
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "python_version <= \"3.10\" and (extra == \"bodo\" or extra == \"pandas\" or extra == \"ray\") or python_version < \"3.14\" and (extra == \"pandas\" or extra == \"ray\" or extra == \"bodo\") or (extra == \"pandas\" or extra == \"ray\") and (extra == \"pandas\" or extra == \"ray\" or extra == \"bodo\")"
+markers = "extra == \"pandas\" or extra == \"ray\" or extra == \"bodo\""
 files = [
     {file = "pandas-2.3.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:22c2e866f7209ebc3a8f08d75766566aae02bcc91d196935a1d9e59c7b990ac9"},
     {file = "pandas-2.3.1-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:3583d348546201aff730c8c47e49bc159833f971c2899d6097bce68b9112a4f1"},
@@ -4092,7 +4092,7 @@ description = "Cross-platform lib for process and system monitoring in Python.  
 optional = true
 python-versions = ">=3.6"
 groups = ["main"]
-markers = "python_version < \"3.14\" and extra == \"bodo\""
+markers = "extra == \"bodo\""
 files = [
     {file = "psutil-7.0.0-cp36-abi3-macosx_10_9_x86_64.whl", hash = "sha256:101d71dc322e3cffd7cea0650b09b3d08b8e7c4109dd6809fe452dfd00e58b25"},
     {file = "psutil-7.0.0-cp36-abi3-macosx_11_0_arm64.whl", hash = "sha256:39db632f6bb862eeccf56660871433e111b6ea58f2caea825571951d4b6aa3da"},
@@ -4239,7 +4239,7 @@ description = "Python library for Apache Arrow"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "(extra == \"bodo\" or extra == \"pyarrow\" or extra == \"pandas\" or extra == \"duckdb\" or extra == \"ray\" or extra == \"daft\" or extra == \"datafusion\") and python_version < \"3.12\" or python_version >= \"3.12\" and python_version < \"3.14\" and extra == \"bodo\" or (extra == \"pyarrow\" or extra == \"pandas\" or extra == \"duckdb\" or extra == \"ray\" or extra == \"daft\" or extra == \"datafusion\") and python_version >= \"3.12\""
+markers = "extra == \"pyarrow\" or extra == \"pandas\" or extra == \"duckdb\" or extra == \"ray\" or extra == \"daft\" or extra == \"bodo\" or extra == \"datafusion\""
 files = [
     {file = "pyarrow-19.0.1-cp310-cp310-macosx_12_0_arm64.whl", hash = "sha256:fc28912a2dc924dddc2087679cc8b7263accc71b9ff025a1362b004711661a69"},
     {file = "pyarrow-19.0.1-cp310-cp310-macosx_12_0_x86_64.whl", hash = "sha256:fca15aabbe9b8355800d923cc2e82c8ef514af321e18b437c3d782aa884eaeec"},
@@ -4793,7 +4793,7 @@ description = "World timezone definitions, modern and historical"
 optional = true
 python-versions = "*"
 groups = ["main"]
-markers = "python_version <= \"3.10\" and (extra == \"bodo\" or extra == \"pandas\" or extra == \"ray\") or python_version < \"3.14\" and (extra == \"pandas\" or extra == \"ray\" or extra == \"bodo\") or (extra == \"pandas\" or extra == \"ray\") and (extra == \"pandas\" or extra == \"ray\" or extra == \"bodo\")"
+markers = "extra == \"pandas\" or extra == \"ray\" or extra == \"bodo\""
 files = [
     {file = "pytz-2025.2-py2.py3-none-any.whl", hash = "sha256:5ddf76296dd8c44c26eb8f4b6f35488f3ccbf6fbbd7adee0b7262d43f0ec2f00"},
     {file = "pytz-2025.2.tar.gz", hash = "sha256:360b9e3dbb49a209c21ad61809c7fb453643e048b38924c765813546746e81c3"},
@@ -5998,7 +5998,7 @@ description = "Provider of IANA time zone data"
 optional = true
 python-versions = ">=2"
 groups = ["main"]
-markers = "python_version <= \"3.10\" and (extra == \"bodo\" or extra == \"pandas\" or extra == \"ray\") or python_version < \"3.14\" and (extra == \"pandas\" or extra == \"ray\" or extra == \"bodo\") or (extra == \"pandas\" or extra == \"ray\") and (extra == \"pandas\" or extra == \"ray\" or extra == \"bodo\")"
+markers = "extra == \"pandas\" or extra == \"ray\" or extra == \"bodo\""
 files = [
     {file = "tzdata-2025.2-py2.py3-none-any.whl", hash = "sha256:1a403fada01ff9221ca8044d701868fa132215d84beb92242d9acd2147f667a8"},
     {file = "tzdata-2025.2.tar.gz", hash = "sha256:b60a638fcc0daffadf82fe0f57e53d06bdec2f36c4df66280ae79bce6bd6f2b9"},
@@ -6507,4 +6507,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9.2, !=3.9.7"
-content-hash = "02153fdae32a7396f1e27db690b3885c29739125ca97f6117f774049a399336a"
+content-hash = "e7787976897708b4f0fc973fcc53b724e841554e33fbe4f76bfd1d04220951a6"
