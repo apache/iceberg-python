@@ -345,9 +345,9 @@ catalog:
 | `header.X-Iceberg-Access-Delegation` | `vended-credentials` | Signal to the server that the client supports delegated access via a comma-separated list of access mechanisms. The server may choose to supply access via any or none of the requested mechanisms. When using `vended-credentials`, the server provides temporary credentials to the client. When using `remote-signing`, the server signs requests on behalf of the client. (default: `vended-credentials`) |
 
 
-#### Headers in RESTCatalog
+#### Headers in REST Catalog
 
-To configure custom headers in RESTCatalog, include them in the catalog properties with `header.<Header-Name>`. This
+To configure custom headers in REST Catalog, include them in the catalog properties with `header.<Header-Name>`. This
 ensures that all HTTP requests to the REST service include the specified headers.
 
 ```yaml
