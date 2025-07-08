@@ -344,7 +344,6 @@ catalog:
 | snapshot-loading-mode | refs                           | The snapshots to return in the body of the metadata. Setting the value to `all` would return the full set of snapshots currently valid for the table. Setting the value to `refs` would load all snapshots referenced by branches or tags. |
 | `header.X-Iceberg-Access-Delegation` | `vended-credentials` | Signal to the server that the client supports delegated access via a comma-separated list of access mechanisms. The server may choose to supply access via any or none of the requested mechanisms. When using `vended-credentials`, the server provides temporary credentials to the client. When using `remote-signing`, the server signs requests on behalf of the client. (default: `vended-credentials`) |
 
-
 #### Headers in REST Catalog
 
 To configure custom headers in REST Catalog, include them in the catalog properties with `header.<Header-Name>`. This
@@ -358,21 +357,21 @@ catalog:
     header.content-type: application/vnd.api+json
 ```
 
-
 #### Authentication Options
 
 ##### OAuth2
+
 | Key                 | Example                          | Description                                                                                        |
 | ------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
 | oauth2-server-uri   | <https://auth-service/cc>        | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
-|
-| token               | FEW23.DFSDF.FSDF                 | Bearer token value to use for `Authorization` header                                               ```
+| token               | FEW23.DFSDF.FSDF                 | Bearer token value to use for `Authorization` header |
 | credential          | client_id:client_secret          | Credential to use for OAuth2 credential flow when initializing the catalog                         |
 | scope               | openid offline corpds:ds:profile | Desired scope of the requested security token (default : catalog)                                  |
 | resource            | rest_catalog.iceberg.com         | URI for the target resource or service                                                             |
 | audience            | rest_catalog                     | Logical name of target resource or service                                                         |
 
 ##### SigV4
+
 | Key                 | Example                          | Description                                                                                        |
 | ------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
 | rest.sigv4-enabled  | true                             | Sign requests to the REST Server using AWS SigV4 protocol                                          |
@@ -381,10 +380,10 @@ catalog:
 
 <!-- markdown-link-check-enable-->
 
-
 #### Common Integrations & Examples
 
 ##### AWS Glue
+
 ```yaml
 catalog:
   s3_tables_catalog:
@@ -397,6 +396,7 @@ catalog:
 ```
 
 ##### Unity Catalog
+
 ```yaml
 catalog:
   unity_catalog:
@@ -407,6 +407,7 @@ catalog:
 ```
 
 ##### R2 Data Catalog
+
 ```yaml
 catalog:
   r2_catalog:
@@ -417,6 +418,7 @@ catalog:
 ```
 
 ##### Lakekeeper
+
 ```yaml
 catalog:
   lakekeeper_catalog:
@@ -429,6 +431,7 @@ catalog:
 ```
 
 ##### Apache Polaris
+
 ```yaml
 catalog:
   polaris_catalog:
