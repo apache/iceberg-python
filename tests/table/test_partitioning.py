@@ -255,7 +255,6 @@ def test_size_partition_map(specs_set: dict[int, PartitionSpec]) -> None:
     partition_map.put(specs_set[2].spec_id, Record("ccc", 2), "v4")
     assert not partition_map.is_empty()
     assert len(partition_map) == 4
-    # assert partition_map.get(UNPARTITIONED_PARTITION_SPEC.spec_id, None) == "v1"
 
 
 def test_put_and_get_partition_map(specs_set: dict[int, PartitionSpec]) -> None:
