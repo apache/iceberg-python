@@ -274,7 +274,7 @@ T = TypeVar("T")
 
 class PartitionMap(Generic[T]):
     _specs: dict[int, PartitionSpec]
-    _partition_maps: dict[int, dict[Record, T]]
+    _partition_maps: dict[int, dict[Record | None, T]]
 
     def __init__(self, specs: dict[int, PartitionSpec]):
         self._specs = specs
@@ -286,34 +286,38 @@ class PartitionMap(Generic[T]):
         Returns:
             length of _partition_maps
         """
-        return len(self._partition_maps.values())
+        return len(self.values())
 
     def is_empty(self) -> bool:
         return len(self._partition_maps.values()) == 0
 
     def contains_key(self, spec_id: int, struct: Record) -> bool:
-        try:
-            return struct in self._partition_maps[spec_id]
-        except KeyError as _:
-            return False
+        return self._partition_maps.get(spec_id) is not None
 
     def contains_value(self, value: T) -> bool:
         return value in self._partition_maps.values()
 
-    def get(self, spec_id: int, struct: Record) -> Optional[T]:
+    def get(self, spec_id: int, struct: Record | None) -> Optional[T]:
         if partition_map := self._partition_maps.get(spec_id):
-            return partition_map.get(struct)
+            if result := partition_map.get(struct):
+                return result
         return None
 
-    def put(self, spec_id: int, struct: Record, value: T) -> None:
+    def put(self, spec_id: int, struct: Record | None, value: T) -> None:
         if _ := self._specs.get(spec_id):
-            self._partition_maps[spec_id] = {struct: value}
+            if spec_id not in self._partition_maps:
+                self._partition_maps[spec_id] = {struct: value}
+            else:
+                self._partition_maps[spec_id][struct] = value
 
     def compute_if_absent(self, spec_id: int, struct: Record, value: T, value_factory: Callable[[], T]) -> T:
-        if partition_map := self._partition_maps.get(spec_id):
-            if val := partition_map.get(struct):
-                return val
-        return value_factory()
+        partition_map = self._partition_maps.setdefault(spec_id, {})
+        if struct in partition_map:
+            return partition_map[struct]
+
+        value = value_factory()
+        partition_map[struct] = value
+        return value
 
     def values(self) -> list[T]:
         result: list[T] = []

@@ -56,7 +56,7 @@ class _PositionDeletes:
             self._indexed = True
 
     def add_entry(self, entry: ManifestEntry) -> None:
-        if self._buffer is None:
+        if self._indexed:
             raise Exception("Can't add files upon indexing.")
         self._buffer.append(entry)
 
@@ -99,7 +99,7 @@ class _EqualityDeletes:
 
     def add_entry(self, spec: PartitionSpec, entry: ManifestEntry) -> None:
         # TODO: Equality deletes should consider the spec to get the equality fields
-        if self._buffer is None:
+        if self._indexed:
             raise Exception("Can't add files upon indexing.")
         self._buffer.append(entry)
 
