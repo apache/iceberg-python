@@ -746,7 +746,7 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.large_string()
 
     def visit_uuid(self, _: UUIDType) -> pa.DataType:
-        return pa.binary(16)
+        return pa.uuid()
 
     def visit_unknown(self, _: UnknownType) -> pa.DataType:
         return pa.null()
@@ -1307,6 +1307,8 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
             return FixedType(primitive.byte_width)
         elif pa.types.is_null(primitive):
             return UnknownType()
+        elif isinstance(primitive, pa.UuidType):
+            return UUIDType()
 
         raise TypeError(f"Unsupported type: {primitive}")
 
