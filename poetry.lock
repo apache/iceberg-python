@@ -59,7 +59,7 @@ description = "Happy Eyeballs for asyncio"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""
+markers = "extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""
 files = [
     {file = "aiohappyeyeballs-2.6.1-py3-none-any.whl", hash = "sha256:f349ba8f4b75cb25c99c5c2d84e997e485204d2902a9597802b0371f09331fb8"},
     {file = "aiohappyeyeballs-2.6.1.tar.gz", hash = "sha256:c3f9d0113123803ccadfdf3f0faa505bc78e6a72d1cc4806cbd719826e943558"},
@@ -72,7 +72,7 @@ description = "Async http client/server framework (asyncio)"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""
+markers = "extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""
 files = [
     {file = "aiohttp-3.12.13-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:5421af8f22a98f640261ee48aae3a37f0c41371e99412d55eaf2f8a46d5dad29"},
     {file = "aiohttp-3.12.13-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:0fcda86f6cb318ba36ed8f1396a6a4a3fd8f856f84d426584392083d10da4de0"},
@@ -202,7 +202,7 @@ description = "aiosignal: a list of registered asynchronous callbacks"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "(extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\") and (extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\" or extra == \"ray\")"
+markers = "(extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\") and (extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"ray\")"
 files = [
     {file = "aiosignal-1.3.2-py2.py3-none-any.whl", hash = "sha256:45cde58e409a301715980c2b01d0c28bdde3770d8290b5eb2173759d9acb31a5"},
     {file = "aiosignal-1.3.2.tar.gz", hash = "sha256:a8c255c66fafb1e499c9351d0bf32ff2d8a0321595ebac3b93713656d2436f54"},
@@ -268,7 +268,7 @@ description = "Timeout context manager for asyncio programs"
 optional = true
 python-versions = ">=3.8"
 groups = ["main"]
-markers = "(extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\") and python_version <= \"3.10\""
+markers = "(extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\") and python_version <= \"3.10\""
 files = [
     {file = "async_timeout-5.0.1-py3-none-any.whl", hash = "sha256:39e3809566ff85354557ec2398b55e096c8364bacac9405a7a1fa429e77fe76c"},
     {file = "async_timeout-5.0.1.tar.gz", hash = "sha256:d9321a7a3d5a6a5e187e824d2fa0793ce379a202935782d555d6e9d2735677d3"},
@@ -285,7 +285,7 @@ files = [
     {file = "attrs-25.3.0-py3-none-any.whl", hash = "sha256:427318ce031701fea540783410126f03899a97ffc6f61596ad581ac2e40e3bc3"},
     {file = "attrs-25.3.0.tar.gz", hash = "sha256:75d7cefc7fb576747b2c81b4442d4d4a1ce0900973527c011d1030fd3bf4af1b"},
 ]
-markers = {main = "(extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\") and (extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\" or extra == \"ray\")"}
+markers = {main = "(extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\") and (extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"ray\")"}
 
 [package.extras]
 benchmark = ["cloudpickle ; platform_python_implementation == \"CPython\"", "hypothesis", "mypy (>=1.11.1) ; platform_python_implementation == \"CPython\" and python_version >= \"3.10\"", "pympler", "pytest (>=4.3.0)", "pytest-codspeed", "pytest-mypy-plugins ; platform_python_implementation == \"CPython\" and python_version >= \"3.10\"", "pytest-xdist[psutil]"]
@@ -488,7 +488,7 @@ files = [
     {file = "boto3-1.38.27-py3-none-any.whl", hash = "sha256:95f5fe688795303a8a15e8b7e7f255cadab35eae459d00cc281a4fd77252ea80"},
     {file = "boto3-1.38.27.tar.gz", hash = "sha256:94bd7fdd92d5701b362d4df100d21e28f8307a67ff56b6a8b0398119cf22f859"},
 ]
-markers = {main = "extra == \"dynamodb\" or extra == \"glue\" or extra == \"rest-sigv4\""}
+markers = {main = "extra == \"glue\" or extra == \"dynamodb\" or extra == \"rest-sigv4\""}
 
 [package.dependencies]
 botocore = ">=1.38.27,<1.39.0"
@@ -509,7 +509,7 @@ files = [
     {file = "botocore-1.38.27-py3-none-any.whl", hash = "sha256:a785d5e9a5eda88ad6ab9ed8b87d1f2ac409d0226bba6ff801c55359e94d91a8"},
     {file = "botocore-1.38.27.tar.gz", hash = "sha256:9788f7efe974328a38cbade64cc0b1e67d27944b899f88cb786ae362973133b6"},
 ]
-markers = {main = "extra == \"dynamodb\" or extra == \"glue\" or extra == \"rest-sigv4\" or extra == \"s3fs\""}
+markers = {main = "extra == \"glue\" or extra == \"dynamodb\" or extra == \"rest-sigv4\" or extra == \"s3fs\""}
 
 [package.dependencies]
 jmespath = ">=0.7.1,<2.0.0"
@@ -1157,6 +1157,43 @@ files = [
 ]
 
 [[package]]
+name = "daft"
+version = "0.5.8"
+description = "Distributed Dataframes for Multimodal Data"
+optional = true
+python-versions = ">=3.9"
+groups = ["main"]
+markers = "extra == \"daft\""
+files = [
+    {file = "daft-0.5.8-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:d303a2756bb6d5ffe0c6341a781135c2625af1b8d64d59ab035b579f9f2f3082"},
+    {file = "daft-0.5.8-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:ae299ff189698dc462f22b7449011ed23d1dd46d841f592a73936e49645d510c"},
+    {file = "daft-0.5.8-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:5c6b93b27ebd8cbcbb087f801094b8177537c07c7f60a18c39ac2f5644cb034a"},
+    {file = "daft-0.5.8-cp39-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:13c1ee1f6b2812ca1da95f25c86cfca533816a6d2c725a3f90578758df34cf1d"},
+    {file = "daft-0.5.8-cp39-abi3-win_amd64.whl", hash = "sha256:434a8ad2869ce2138c6c3478d8e7f4c705f8b4d7145c02b3fff2ba6e8cf804ad"},
+    {file = "daft-0.5.8.tar.gz", hash = "sha256:563bddf3a7ff74a6393d9499585f488c584db6ea80427bbeea17fbc87274cf29"},
+]
+
+[package.dependencies]
+fsspec = "*"
+pyarrow = ">=8.0.0"
+tqdm = "*"
+typing-extensions = {version = ">=4.0.0", markers = "python_full_version < \"3.10.0\""}
+
+[package.extras]
+all = ["daft[aws,azure,deltalake,gcp,iceberg,numpy,pandas,ray,spark,sql,unity]"]
+aws = ["boto3"]
+deltalake = ["deltalake", "packaging"]
+hudi = ["pyarrow (>=8.0.0)"]
+iceberg = ["packaging", "pyiceberg (>=0.7.0)"]
+lance = ["pylance"]
+numpy = ["numpy"]
+pandas = ["pandas"]
+ray = ["packaging", "ray[client,data] (>=2.0.0) ; platform_system != \"Windows\"", "ray[client,data] (>=2.10.0) ; platform_system == \"Windows\""]
+spark = ["googleapis-common-protos (==1.56.4)", "grpcio (>=1.48,<1.57)", "grpcio-status (>=1.48,<1.57)", "numpy (>=1.15)", "pandas (>=1.0.5)", "py4j (>=0.10.9.7)", "pyspark (==3.5.5)"]
+sql = ["connectorx", "sqlalchemy", "sqlglot"]
+unity = ["httpx (<=0.27.2)", "unitycatalog"]
+
+[[package]]
 name = "datafusion"
 version = "47.0.0"
 description = "Build and run queries against data"
@@ -1474,7 +1511,7 @@ description = "A list-like structure which implements collections.abc.MutableSeq
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "(extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\") and (extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\" or extra == \"ray\")"
+markers = "(extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\") and (extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"ray\")"
 files = [
     {file = "frozenlist-1.7.0-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:cc4df77d638aa2ed703b878dd093725b72a824c3c546c076e8fdf276f78ee84a"},
     {file = "frozenlist-1.7.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:716a9973a2cc963160394f701964fe25012600f3d311f60c790400b00e568b61"},
@@ -1647,44 +1684,6 @@ requests = "*"
 [package.extras]
 crc = ["crcmod"]
 gcsfuse = ["fusepy"]
-
-[[package]]
-name = "getdaft"
-version = "0.4.18"
-description = "Distributed Dataframes for Multimodal Data"
-optional = true
-python-versions = ">=3.9"
-groups = ["main"]
-markers = "extra == \"daft\""
-files = [
-    {file = "getdaft-0.4.18-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:ef7fd708e230ef7a80afe0b91d2ecc03d5ff3ec78826c5f39ff5a8fb15517ed2"},
-    {file = "getdaft-0.4.18-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:d2ae3a7271eaa6f93e830bea80ea7ded0d2c3814b97b4b615af41e6aac91268b"},
-    {file = "getdaft-0.4.18-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:626f644af9f16ea77accf80177151fa6817313d596633e46d893ca2b232b1856"},
-    {file = "getdaft-0.4.18-cp39-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:4e5ad35750731499a39c6056620e09ef7f310e1364a7c9d6310341e5f7478ba2"},
-    {file = "getdaft-0.4.18-cp39-abi3-win_amd64.whl", hash = "sha256:def486c781c414b241a7843eb8c54c1ba105795cb14283d5986e395bd0510abc"},
-    {file = "getdaft-0.4.18.tar.gz", hash = "sha256:ff10119147a28cfaad949f1599d9e8317069d07f83098c8d40744c4f10b51398"},
-]
-
-[package.dependencies]
-fsspec = "*"
-importlib-metadata = {version = "*", markers = "python_full_version < \"3.10.0\""}
-pyarrow = ">=8.0.0"
-tqdm = "*"
-typing-extensions = {version = ">=4.0.0", markers = "python_full_version < \"3.10.0\""}
-
-[package.extras]
-all = ["daft[aws,azure,deltalake,gcp,iceberg,numpy,pandas,ray,spark,sql,unity]"]
-aws = ["boto3"]
-deltalake = ["deltalake", "packaging"]
-hudi = ["pyarrow (>=8.0.0)"]
-iceberg = ["packaging", "pyiceberg (>=0.7.0)"]
-lance = ["pylance"]
-numpy = ["numpy"]
-pandas = ["pandas"]
-ray = ["packaging", "ray[client,data] (>=2.0.0) ; platform_system != \"Windows\"", "ray[client,data] (>=2.10.0) ; platform_system == \"Windows\""]
-spark = ["googleapis-common-protos (==1.56.4)", "grpcio (>=1.48,<1.57)", "grpcio-status (>=1.48,<1.57)", "numpy (>=1.15)", "pandas (>=1.0.5)", "py4j (>=0.10.9.7)", "pyspark"]
-sql = ["connectorx", "sqlalchemy", "sqlglot"]
-unity = ["httpx (<=0.27.2)", "unitycatalog"]
 
 [[package]]
 name = "ghp-import"
@@ -2122,12 +2121,12 @@ version = "8.7.0"
 description = "Read metadata from Python packages"
 optional = false
 python-versions = ">=3.9"
-groups = ["main", "dev", "docs"]
+groups = ["dev", "docs"]
 files = [
     {file = "importlib_metadata-8.7.0-py3-none-any.whl", hash = "sha256:e5dd1551894c77868a30651cef00984d50e1002d06942a7101d34870c5f02afd"},
     {file = "importlib_metadata-8.7.0.tar.gz", hash = "sha256:d13b81ad223b890aa16c5471f2ac3056cf76c5f10f82d6f9292f0b415f389000"},
 ]
-markers = {main = "extra == \"daft\" and python_version < \"3.10\"", dev = "python_full_version < \"3.10.2\"", docs = "python_version < \"3.10\""}
+markers = {dev = "python_full_version < \"3.10.2\"", docs = "python_version < \"3.10\""}
 
 [package.dependencies]
 zipp = ">=3.20"
@@ -2248,7 +2247,7 @@ files = [
     {file = "jmespath-1.0.1-py3-none-any.whl", hash = "sha256:02e2e4cc71b5bcab88332eebf907519190dd9e6e82107fa7f83b1003a6252980"},
     {file = "jmespath-1.0.1.tar.gz", hash = "sha256:90261b206d6defd58fdd5e85f478bf633a2901798906be2ad389150c5c60edbe"},
 ]
-markers = {main = "extra == \"dynamodb\" or extra == \"glue\" or extra == \"rest-sigv4\" or extra == \"s3fs\""}
+markers = {main = "extra == \"glue\" or extra == \"dynamodb\" or extra == \"rest-sigv4\" or extra == \"s3fs\""}
 
 [[package]]
 name = "joserfc"
@@ -3038,7 +3037,7 @@ description = "multidict implementation"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""
+markers = "extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""
 files = [
     {file = "multidict-6.6.2-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:cfd9c74d337e710d7ee26e72a7dbedbd60e0c58d3df7c5ccbb748857e977783c"},
     {file = "multidict-6.6.2-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:9d2c5867a1bd182041a950e9ec3dd3622926260434655bd5d94a62d889100787"},
@@ -3770,7 +3769,7 @@ description = "Accelerated property cache"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""
+markers = "extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""
 files = [
     {file = "propcache-0.3.2-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:22d9962a358aedbb7a2e36187ff273adeaab9743373a272976d2e348d08c7770"},
     {file = "propcache-0.3.2-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:0d0fda578d1dc3f77b6b5a5dce3b9ad69a8250a891760a548df850a5e8da87f3"},
@@ -4040,7 +4039,7 @@ description = "Python library for Apache Arrow"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"datafusion\" or extra == \"daft\" or extra == \"duckdb\" or extra == \"pandas\" or extra == \"pyarrow\" or extra == \"ray\""
+markers = "extra == \"pyarrow\" or extra == \"pandas\" or extra == \"duckdb\" or extra == \"ray\" or extra == \"daft\" or extra == \"datafusion\""
 files = [
     {file = "pyarrow-20.0.0-cp310-cp310-macosx_12_0_arm64.whl", hash = "sha256:c7dd06fd7d7b410ca5dc839cc9d485d2bc4ae5240851bcd45d85105cc90a47d7"},
     {file = "pyarrow-20.0.0-cp310-cp310-macosx_12_0_x86_64.whl", hash = "sha256:d5382de8dc34c943249b01c19110783d0d64b207167c728461add1ecc2db88e4"},
@@ -5226,7 +5225,7 @@ files = [
     {file = "s3transfer-0.13.0-py3-none-any.whl", hash = "sha256:0148ef34d6dd964d0d8cf4311b2b21c474693e57c2e069ec708ce043d2b527be"},
     {file = "s3transfer-0.13.0.tar.gz", hash = "sha256:f5e6db74eb7776a37208001113ea7aa97695368242b364d73e91c981ac522177"},
 ]
-markers = {main = "extra == \"dynamodb\" or extra == \"glue\" or extra == \"rest-sigv4\""}
+markers = {main = "extra == \"glue\" or extra == \"dynamodb\" or extra == \"rest-sigv4\""}
 
 [package.dependencies]
 botocore = ">=1.37.4,<2.0a.0"
@@ -5734,7 +5733,7 @@ description = "Fast, Extensible Progress Meter"
 optional = true
 python-versions = ">=3.7"
 groups = ["main"]
-markers = "extra == \"daft\" or extra == \"hf\""
+markers = "extra == \"hf\" or extra == \"daft\""
 files = [
     {file = "tqdm-4.67.1-py3-none-any.whl", hash = "sha256:26445eca388f82e72884e0d580d5464cd801a3ea01e63e5601bdff9ba6a48de2"},
     {file = "tqdm-4.67.1.tar.gz", hash = "sha256:f8aef9c52c08c13a65f30ea34f4e5aac3fd1a34959879d7e59e63027286627f2"},
@@ -6019,7 +6018,7 @@ description = "Yet another URL library"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""
+markers = "extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""
 files = [
     {file = "yarl-1.20.1-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:6032e6da6abd41e4acda34d75a816012717000fa6839f37124a47fcefc49bec4"},
     {file = "yarl-1.20.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:2c7b34d804b8cf9b214f05015c4fee2ebe7ed05cf581e7192c06555c71f4446a"},
@@ -6138,12 +6137,12 @@ version = "3.23.0"
 description = "Backport of pathlib-compatible object wrapper for zip files"
 optional = false
 python-versions = ">=3.9"
-groups = ["main", "dev", "docs"]
+groups = ["dev", "docs"]
 files = [
     {file = "zipp-3.23.0-py3-none-any.whl", hash = "sha256:071652d6115ed432f5ce1d34c336c0adfd6a884660d1e9712a256d3d3bd4b14e"},
     {file = "zipp-3.23.0.tar.gz", hash = "sha256:a07157588a12518c9d4034df3fbbee09c814741a33ff63c05fa29d26a2404166"},
 ]
-markers = {main = "extra == \"daft\" and python_version < \"3.10\"", dev = "python_full_version < \"3.10.2\"", docs = "python_version < \"3.10\""}
+markers = {dev = "python_full_version < \"3.10.2\"", docs = "python_version < \"3.10\""}
 
 [package.extras]
 check = ["pytest-checkdocs (>=2.4)", "pytest-ruff (>=0.2.1) ; sys_platform != \"cygwin\""]
@@ -6269,7 +6268,7 @@ cffi = ["cffi (>=1.11)"]
 
 [extras]
 adlfs = ["adlfs"]
-daft = ["getdaft"]
+daft = ["daft"]
 datafusion = ["datafusion"]
 duckdb = ["duckdb", "pyarrow"]
 dynamodb = ["boto3"]
@@ -6293,4 +6292,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9.2, !=3.9.7"
-content-hash = "58010543009e37e6c980a945d2ec2e9683238c1f07361f469765c32cb1e35098"
+content-hash = "1fcc54f796bff7ede0e45748724603838832504827f18684285ac79158e7280a"
