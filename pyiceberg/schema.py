@@ -1617,9 +1617,11 @@ def promote(file_type: IcebergType, read_type: IcebergType) -> IcebergType:
     else:
         raise ResolveError(f"Cannot promote {file_type} to {read_type}")
 
+
 @promote.register(UnknownType)
 def _(file_type: UnknownType, read_type: IcebergType) -> IcebergType:
-    return read_type # Per V3 Spec, "Unknown" can be promoted to any type
+    return read_type  # Per V3 Spec, "Unknown" can be promoted to any type
+
 
 @promote.register(IntegerType)
 def _(file_type: IntegerType, read_type: IcebergType) -> IcebergType:
