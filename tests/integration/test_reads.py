@@ -321,9 +321,6 @@ def test_pyarrow_limit_with_multiple_files(catalog: Catalog) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_daft_nan(catalog: Catalog) -> None:
-    import daft
-
-    daft.context.set_runner_native()
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     df = table_test_null_nan_rewritten.to_daft()
     assert df.count_rows() == 3
@@ -333,9 +330,6 @@ def test_daft_nan(catalog: Catalog) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_daft_nan_rewritten(catalog: Catalog) -> None:
-    import daft
-
-    daft.context.set_runner_native()
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     df = table_test_null_nan_rewritten.to_daft()
     df = df.where(df["col_numeric"].float.is_nan())
