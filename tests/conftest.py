@@ -70,7 +70,7 @@ from pyiceberg.manifest import DataFile, FileFormat
 from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
-from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2
+from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2, TableMetadataV3
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -2372,6 +2372,18 @@ def table_v1(example_table_metadata_v1: Dict[str, Any]) -> Table:
 @pytest.fixture
 def table_v2(example_table_metadata_v2: Dict[str, Any]) -> Table:
     table_metadata = TableMetadataV2(**example_table_metadata_v2)
+    return Table(
+        identifier=("database", "table"),
+        metadata=table_metadata,
+        metadata_location=f"{table_metadata.location}/uuid.metadata.json",
+        io=load_file_io(),
+        catalog=NoopCatalog("NoopCatalog"),
+    )
+
+
+@pytest.fixture
+def table_v3(example_table_metadata_v3: Dict[str, Any]) -> Table:
+    table_metadata = TableMetadataV3(**example_table_metadata_v3)
     return Table(
         identifier=("database", "table"),
         metadata=table_metadata,
