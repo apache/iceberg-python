@@ -1619,13 +1619,6 @@ def _parse_row_filter(expr: Union[str, BooleanExpression]) -> BooleanExpression:
     return parser.parse(expr) if isinstance(expr, str) else expr
 
 
-def _get_cached_property_names(cls: Any) -> Set[str]:
-    """Return a set of all cached property names defined on the class."""
-    from inspect import getmembers
-
-    return {name for name, attr in getmembers(cls) if isinstance(attr, cached_property)}
-
-
 S = TypeVar("S", bound="TableScan", covariant=True)
 
 
@@ -1696,15 +1689,12 @@ class TableScan(ABC):
     @abstractmethod
     def to_polars(self) -> pl.DataFrame: ...
 
+    @abstractmethod
     def update(self: S, **overrides: Any) -> S:
         """Create a copy of this table scan with updated fields."""
-        data = {**self.__dict__, **overrides}
 
-        # Cached properties are also stored in the __dict__, so must be removed
-        for cached_prop in _get_cached_property_names(self.__class__):
-            data.pop(cached_prop, None)
-
-        return type(self)(**data)
+    def _construct(self: S, **kwargs: Any) -> S:
+        return type(self)(**kwargs)
 
     def use_ref(self: S, name: str) -> S:
         if self.snapshot_id:
@@ -1814,6 +1804,19 @@ def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_ent
 
 
 class DataScan(TableScan):
+    def update(self: DataScan, **overrides: Any) -> DataScan:
+        return self._construct(
+            table_metadata=self.table_metadata,
+            io=self.io,
+            row_filter=self.row_filter,
+            selected_fields=self.selected_fields,
+            case_sensitive=self.case_sensitive,
+            snapshot_id=self.snapshot_id,
+            options=self.options,
+            limit=self.limit,
+            **overrides,
+        )
+
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
         project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id], self.case_sensitive)
         return project(self.row_filter)
