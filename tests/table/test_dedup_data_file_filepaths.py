@@ -122,18 +122,25 @@ def test_get_all_datafiles_all_snapshots(prepopulated_table: Table, dupe_data_fi
 def test_deduplicate_data_files_removes_duplicates_in_current_snapshot(
     prepopulated_table: Table, dupe_data_file_path: Path
 ) -> None:
-    mt = MaintenanceTable(tbl=prepopulated_table)
+    try:
+        mt = MaintenanceTable(tbl=prepopulated_table)
 
-    all_datafiles: List[DataFile] = mt._get_all_datafiles()
-    file_names: List[str] = [os.path.basename(df.file_path) for df in all_datafiles]
-    # There should be more than one reference before deduplication
-    assert file_names.count(dupe_data_file_path.name) > 1, (
-        f"Expected multiple references to {dupe_data_file_path.name} before deduplication"
-    )
-    removed: List[DataFile] = mt.deduplicate_data_files()
+        all_datafiles: List[DataFile] = mt._get_all_datafiles()
+        file_names: List[str] = [os.path.basename(df.file_path) for df in all_datafiles]
+        # There should be more than one reference before deduplication
+        assert file_names.count(dupe_data_file_path.name) > 1, (
+            f"Expected multiple references to {dupe_data_file_path.name} before deduplication"
+        )
+        removed: List[DataFile] = mt.deduplicate_data_files()
 
-    all_datafiles_after: List[DataFile] = mt._get_all_datafiles()
-    file_names_after: List[str] = [os.path.basename(df.file_path) for df in all_datafiles_after]
-    # Only one reference should remain after deduplication
-    assert file_names_after.count(dupe_data_file_path.name) == 1
-    assert all(isinstance(df, DataFile) for df in removed)
+        all_datafiles_after: List[DataFile] = mt._get_all_datafiles()
+        file_names_after: List[str] = [os.path.basename(df.file_path) for df in all_datafiles_after]
+        # Only one reference should remain after deduplication
+        assert file_names_after.count(dupe_data_file_path.name) == 1
+        assert all(isinstance(df, DataFile) for df in removed)
+    finally:
+        # Ensure we close the table's catalog connection
+        if hasattr(prepopulated_table, "_catalog"):
+            catalog = prepopulated_table._catalog
+            if hasattr(catalog, "connection") and catalog.connection is not None:
+                catalog.connection.close()

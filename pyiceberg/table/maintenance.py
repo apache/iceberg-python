@@ -36,11 +36,6 @@ class MaintenanceTable:
     def __init__(self, tbl: Table) -> None:
         self.tbl = tbl
 
-        try:
-            import pyarrow as pa  # noqa
-        except ModuleNotFoundError as e:
-            raise ModuleNotFoundError("For metadata operations PyArrow needs to be installed") from e
-
     def expire_snapshot_by_id(self, snapshot_id: int) -> None:
         """Expire a single snapshot by its ID.
 
@@ -65,7 +60,7 @@ class MaintenanceTable:
 
             txn._apply((RemoveSnapshotsUpdate(snapshot_ids=[snapshot_id]),))
 
-    def expire_snapshots_by_ids(self, snapshot_ids: List[int]) -> None:
+    def _expire_snapshots_by_ids(self, snapshot_ids: List[int]) -> None:
         """Expire multiple snapshots by their IDs.
 
         Args:
@@ -104,7 +99,7 @@ class MaintenanceTable:
                 snapshots_to_expire.append(snapshot.snapshot_id)
 
         if snapshots_to_expire:
-            self.expire_snapshots_by_ids(snapshots_to_expire)
+            self._expire_snapshots_by_ids(snapshots_to_expire)
 
     def expire_snapshots_older_than_with_retention(
         self, timestamp_ms: int, retain_last_n: Optional[int] = None, min_snapshots_to_keep: Optional[int] = None
@@ -121,7 +116,7 @@ class MaintenanceTable:
         )
 
         if snapshots_to_expire:
-            self.expire_snapshots_by_ids(snapshots_to_expire)
+            self._expire_snapshots_by_ids(snapshots_to_expire)
 
     def retain_last_n_snapshots(self, n: int) -> None:
         """Keep only the last N snapshots, expiring all others.
@@ -156,7 +151,7 @@ class MaintenanceTable:
                 snapshots_to_expire.append(snapshot.snapshot_id)
 
         if snapshots_to_expire:
-            self.expire_snapshots_by_ids(snapshots_to_expire)
+            self._expire_snapshots_by_ids(snapshots_to_expire)
 
     def _get_snapshots_to_expire_with_retention(
         self, timestamp_ms: Optional[int] = None, retain_last_n: Optional[int] = None, min_snapshots_to_keep: Optional[int] = None
@@ -262,7 +257,7 @@ class MaintenanceTable:
         )
 
         if snapshots_to_expire:
-            self.expire_snapshots_by_ids(snapshots_to_expire)
+            self._expire_snapshots_by_ids(snapshots_to_expire)
 
     def _get_protected_snapshot_ids(self, table_metadata: TableMetadata) -> Set[int]:
         """Get the IDs of protected snapshots.
@@ -276,13 +271,7 @@ class MaintenanceTable:
         Returns:
             Set of protected snapshot IDs to exclude from expiration.
         """
-        from pyiceberg.table.refs import SnapshotRefType
-
-        protected_ids: Set[int] = set()
-        for ref in table_metadata.refs.values():
-            if ref.snapshot_ref_type in [SnapshotRefType.TAG, SnapshotRefType.BRANCH]:
-                protected_ids.add(ref.snapshot_id)
-        return protected_ids
+        return set(self.tbl.inspect.refs()["snapshot_id"].to_pylist())
 
     def _get_all_datafiles(self) -> List[DataFile]:
         """Collect all DataFiles in the current snapshot only."""

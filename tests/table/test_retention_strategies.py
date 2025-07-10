@@ -296,7 +296,7 @@ def test_expire_snapshots_by_ids(table_v2: Table) -> None:
     assert all(ref.snapshot_id not in (EXPIRE_SNAPSHOT_1, EXPIRE_SNAPSHOT_2) for ref in table_v2.metadata.refs.values())
 
     # Expire the snapshots
-    table_v2.maintenance.expire_snapshots_by_ids([EXPIRE_SNAPSHOT_1, EXPIRE_SNAPSHOT_2])
+    table_v2.maintenance._expire_snapshots_by_ids([EXPIRE_SNAPSHOT_1, EXPIRE_SNAPSHOT_2])
 
     table_v2.catalog.commit_table.assert_called_once()
     remaining_snapshots = table_v2.metadata.snapshots

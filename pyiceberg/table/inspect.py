@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from functools import reduce
-from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Set, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Set, Tuple
 
 from pyiceberg.conversions import from_bytes
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile, PartitionFieldSummary
@@ -666,18 +666,10 @@ class InspectTable:
     def delete_files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
         return self._files(snapshot_id, {DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES})
 
-    def all_manifests(self, snapshots: Optional[Union[list[Snapshot], list[int]]] = None) -> "pa.Table":
+    def all_manifests(self, snapshots: Optional[list[Snapshot]] = None) -> "pa.Table":
         import pyarrow as pa
 
-        # coerce into snapshot objects if users passes in snapshot ids
-        if snapshots is not None:
-            if isinstance(snapshots[0], int):
-                snapshots = [
-                    snapshot
-                    for snapshot_id in snapshots
-                    if (snapshot := self.tbl.metadata.snapshot_by_id(snapshot_id)) is not None
-                ]
-        else:
+        if snapshots is None:
             snapshots = self.tbl.snapshots()
 
         if not snapshots:
