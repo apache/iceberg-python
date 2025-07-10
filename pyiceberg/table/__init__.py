@@ -1689,13 +1689,23 @@ class TableScan(ABC):
     @abstractmethod
     def to_polars(self) -> pl.DataFrame: ...
 
-    @property
-    @abstractmethod
-    def _arguments(self) -> dict[str, Any]: ...
-
     def update(self: S, **overrides: Any) -> S:
         """Create a copy of this table scan with updated fields."""
         return type(self)(**{**self._arguments, **overrides})
+
+    @property
+    def _arguments(self) -> dict[str, Any]:
+        """Return the arguments for TableScan creation. Subclasses should override this to include their constructor arguments."""
+        return {
+            "table_metadata": self.table_metadata,
+            "io": self.io,
+            "row_filter": self.row_filter,
+            "selected_fields": self.selected_fields,
+            "case_sensitive": self.case_sensitive,
+            "snapshot_id": self.snapshot_id,
+            "options": self.options,
+            "limit": self.limit,
+        }
 
     def use_ref(self: S, name: str) -> S:
         if self.snapshot_id:
