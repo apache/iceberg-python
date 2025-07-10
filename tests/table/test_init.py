@@ -64,7 +64,7 @@ from pyiceberg.table.sorting import (
     SortField,
     SortOrder,
 )
-from pyiceberg.table.statistics import BlobMetadata, StatisticsFile
+from pyiceberg.table.statistics import BlobMetadata, PartitionStatisticsFile, StatisticsFile
 from pyiceberg.table.update import (
     AddSnapshotUpdate,
     AddSortOrderUpdate,
@@ -76,11 +76,13 @@ from pyiceberg.table.update import (
     AssertLastAssignedPartitionId,
     AssertRefSnapshotId,
     AssertTableUUID,
+    RemovePartitionStatisticsUpdate,
     RemovePropertiesUpdate,
     RemoveSnapshotRefUpdate,
     RemoveSnapshotsUpdate,
     RemoveStatisticsUpdate,
     SetDefaultSortOrderUpdate,
+    SetPartitionStatisticsUpdate,
     SetPropertiesUpdate,
     SetSnapshotRefUpdate,
     SetStatisticsUpdate,
@@ -1358,4 +1360,80 @@ def test_remove_statistics_update(table_v2_with_statistics: Table) -> None:
         update_table_metadata(
             table_v2_with_statistics.metadata,
             (RemoveStatisticsUpdate(snapshot_id=123456789),),
+        )
+
+
+def test_set_partition_statistics_update(table_v2_with_statistics: Table) -> None:
+    snapshot_id = table_v2_with_statistics.metadata.current_snapshot_id
+
+    partition_statistics_file = PartitionStatisticsFile(
+        snapshot_id=snapshot_id,
+        statistics_path="s3://bucket/warehouse/stats.puffin",
+        file_size_in_bytes=124,
+    )
+
+    update = SetPartitionStatisticsUpdate(
+        partition_statistics=partition_statistics_file,
+    )
+
+    new_metadata = update_table_metadata(
+        table_v2_with_statistics.metadata,
+        (update,),
+    )
+
+    expected = """
+    {
+      "snapshot-id": 3055729675574597004,
+      "statistics-path": "s3://bucket/warehouse/stats.puffin",
+      "file-size-in-bytes": 124
+    }"""
+
+    assert len(new_metadata.partition_statistics) == 1
+
+    updated_statistics = [stat for stat in new_metadata.partition_statistics if stat.snapshot_id == snapshot_id]
+
+    assert len(updated_statistics) == 1
+    assert json.loads(updated_statistics[0].model_dump_json()) == json.loads(expected)
+
+
+def test_remove_partition_statistics_update(table_v2_with_statistics: Table) -> None:
+    # Add partition statistics file.
+    snapshot_id = table_v2_with_statistics.metadata.current_snapshot_id
+
+    partition_statistics_file = PartitionStatisticsFile(
+        snapshot_id=snapshot_id,
+        statistics_path="s3://bucket/warehouse/stats.puffin",
+        file_size_in_bytes=124,
+    )
+
+    update = SetPartitionStatisticsUpdate(
+        partition_statistics=partition_statistics_file,
+    )
+
+    new_metadata = update_table_metadata(
+        table_v2_with_statistics.metadata,
+        (update,),
+    )
+    assert len(new_metadata.partition_statistics) == 1
+
+    # Remove the same partition statistics file.
+    remove_update = RemovePartitionStatisticsUpdate(snapshot_id=snapshot_id)
+
+    remove_metadata = update_table_metadata(
+        new_metadata,
+        (remove_update,),
+    )
+
+    assert len(remove_metadata.partition_statistics) == 0
+
+
+def test_remove_partition_statistics_update_with_invalid_snapshot_id(table_v2_with_statistics: Table) -> None:
+    # Remove the same partition statistics file.
+    with pytest.raises(
+        ValueError,
+        match="Partition Statistics with snapshot id 123456789 does not exist",
+    ):
+        update_table_metadata(
+            table_v2_with_statistics.metadata,
+            (RemovePartitionStatisticsUpdate(snapshot_id=123456789),),
         )
