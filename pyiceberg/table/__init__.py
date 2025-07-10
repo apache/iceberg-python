@@ -1951,11 +1951,7 @@ class ManifestGroupPlanner:
         self.case_sensitive = case_sensitive
         self.options = options
 
-    def plan_files(
-        self,
-        manifests: List[ManifestFile],
-        manifest_entry_filter: Callable[[ManifestEntry], bool] = lambda _: True,
-    ) -> Iterable[FileScanTask]:
+    def plan_files(self, manifests: List[ManifestFile]) -> Iterable[FileScanTask]:
         # step 1: filter manifests using partition summaries
         # the filter depends on the partition spec used to write the manifest file, so create a cache of filters for each spec id
 
@@ -1992,9 +1988,6 @@ class ManifestGroupPlanner:
                 ],
             )
         ):
-            if not manifest_entry_filter(manifest_entry):
-                continue
-
             data_file = manifest_entry.data_file
             if data_file.content == DataFileContent.DATA:
                 data_entries.append(manifest_entry)
@@ -2078,9 +2071,11 @@ class ManifestGroupPlanner:
     @staticmethod
     def _check_sequence_number(min_sequence_number: int, manifest: ManifestFile) -> bool:
         """Ensure that no manifests are loaded that contain deletes that are older than the data.
+
         Args:
             min_sequence_number (int): The minimal sequence number.
             manifest (ManifestFile): A ManifestFile that can be either data or deletes.
+
         Returns:
             Boolean indicating if it is either a data file, or a relevant delete file.
         """
