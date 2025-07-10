@@ -193,6 +193,11 @@ class RemoveStatisticsUpdate(IcebergBaseModel):
     snapshot_id: int = Field(alias="snapshot-id")
 
 
+class RemoveSchemasUpdate(IcebergBaseModel):
+    action: Literal["remove-schemas"] = Field(default="remove-schemas")
+    schema_ids: List[int] = Field(alias="schema-ids")
+
+
 class SetPartitionStatisticsUpdate(IcebergBaseModel):
     action: Literal["set-partition-statistics"] = Field(default="set-partition-statistics")
     partition_statistics: PartitionStatisticsFile
@@ -222,6 +227,7 @@ TableUpdate = Annotated[
         RemovePropertiesUpdate,
         SetStatisticsUpdate,
         RemoveStatisticsUpdate,
+        RemoveSchemasUpdate,
         SetPartitionStatisticsUpdate,
         RemovePartitionStatisticsUpdate,
     ],
@@ -587,6 +593,23 @@ def _(update: RemoveStatisticsUpdate, base_metadata: TableMetadata, context: _Ta
     context.add_update(update)
 
     return base_metadata.model_copy(update={"statistics": statistics})
+
+
+@_apply_table_update.register(RemoveSchemasUpdate)
+def _(update: RemoveSchemasUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    # This method should error if any schemas do not exist.
+    # It should error if the default schema is being removed.
+    # Otherwise, remove the schemas listed in update.schema_ids.
+    for remove_schema_id in update.schema_ids:
+        if not any(schema.schema_id == remove_schema_id for schema in base_metadata.schemas):
+            raise ValueError(f"Schema with schema id {remove_schema_id} does not exist")
+        if base_metadata.current_schema_id == remove_schema_id:
+            raise ValueError(f"Cannot remove current schema with id {remove_schema_id}")
+
+    schemas = [schema for schema in base_metadata.schemas if schema.schema_id not in update.schema_ids]
+    context.add_update(update)
+
+    return base_metadata.model_copy(update={"schemas": schemas})
 
 
 @_apply_table_update.register(SetPartitionStatisticsUpdate)
