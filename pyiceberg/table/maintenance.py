@@ -259,7 +259,7 @@ class MaintenanceTable:
         if snapshots_to_expire:
             self._expire_snapshots_by_ids(snapshots_to_expire)
 
-    def _get_protected_snapshot_ids(self, table_metadata: TableMetadata) -> Set[int]:
+    def _get_protected_snapshot_ids(self) -> Set[int]:
         """Get the IDs of protected snapshots.
 
         These are the HEAD snapshots of all branches and all tagged snapshots.
