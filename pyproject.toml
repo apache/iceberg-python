@@ -317,6 +317,8 @@ pyiceberg-core = ["pyiceberg-core"]
 datafusion = ["datafusion"]
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
+
 markers = [
   "unmarked: marks a test as a unittest",
   "s3: marks a test as requiring access to s3 compliant storage (use with --aws-access-key-id, --aws-secret-access-key, and --endpoint args)",
