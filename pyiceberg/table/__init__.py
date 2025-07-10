@@ -1695,7 +1695,7 @@ class TableScan(ABC):
 
     @property
     def _arguments(self) -> dict[str, Any]:
-        """Return the arguments for TableScan creation. Subclasses should override this to include their constructor arguments."""
+        """Return the arguments for TableScan creation. Subclasses with additional constructor arguments should override this to include them."""
         return {
             "table_metadata": self.table_metadata,
             "io": self.io,
@@ -1815,19 +1815,6 @@ def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_ent
 
 
 class DataScan(TableScan):
-    @property
-    def _arguments(self) -> dict[str, Any]:
-        return {
-            "table_metadata": self.table_metadata,
-            "io": self.io,
-            "row_filter": self.row_filter,
-            "selected_fields": self.selected_fields,
-            "case_sensitive": self.case_sensitive,
-            "snapshot_id": self.snapshot_id,
-            "options": self.options,
-            "limit": self.limit,
-        }
-
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
         project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id], self.case_sensitive)
         return project(self.row_filter)
