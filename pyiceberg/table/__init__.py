@@ -1857,7 +1857,8 @@ class DataScan(TableScan):
             )
         )
 
-    def _check_sequence_number(self, min_sequence_number: int, manifest: ManifestFile) -> bool:
+    @staticmethod
+    def _check_sequence_number(min_sequence_number: int, manifest: ManifestFile) -> bool:
         """Ensure that no manifests are loaded that contain deletes that are older than the data.
 
         Args:
