@@ -19,6 +19,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Dict,
+    Iterator,
     List,
     Optional,
     Set,
@@ -584,7 +585,7 @@ class RestCatalog(Catalog):
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
     @retry(**_RETRY_ARGS)
-    def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def _fetch_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
         response = self._session.get(self.url(Endpoints.list_tables, namespace=namespace_concat))
@@ -593,6 +594,11 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             _handle_non_200_response(exc, {404: NoSuchNamespaceError})
         return [(*table.namespace, table.name) for table in ListTablesResponse.model_validate_json(response.text).identifiers]
+
+    def list_tables(self, namespace: Union[str, Identifier]) -> Iterator[Identifier]:
+        """List tables, returning an iterator to handle retry logic properly."""
+        tables = self._fetch_tables(namespace)
+        yield from tables
 
     @retry(**_RETRY_ARGS)
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
@@ -655,7 +661,7 @@ class RestCatalog(Catalog):
         return table_request
 
     @retry(**_RETRY_ARGS)
-    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def _fetch_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
         response = self._session.get(self.url(Endpoints.list_views, namespace=namespace_concat))
@@ -664,6 +670,10 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             _handle_non_200_response(exc, {404: NoSuchNamespaceError})
         return [(*view.namespace, view.name) for view in ListViewsResponse.model_validate_json(response.text).identifiers]
+
+    def list_views(self, namespace: Union[str, Identifier]) -> Iterator[Identifier]:
+        """List views, returning an iterator to handle retry logic properly."""
+        yield from self._fetch_views(namespace)
 
     @retry(**_RETRY_ARGS)
     def commit_table(
@@ -732,7 +742,7 @@ class RestCatalog(Catalog):
             _handle_non_200_response(exc, {404: NoSuchNamespaceError, 409: NamespaceNotEmptyError})
 
     @retry(**_RETRY_ARGS)
-    def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
+    def _fetch_namespaces(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         namespace_tuple = self.identifier_to_tuple(namespace)
         response = self._session.get(
             self.url(
@@ -747,6 +757,10 @@ class RestCatalog(Catalog):
             _handle_non_200_response(exc, {404: NoSuchNamespaceError})
 
         return ListNamespaceResponse.model_validate_json(response.text).namespaces
+
+    def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> Iterator[Identifier]:
+        """List namespaces, returning an iterator to handle retry logic properly."""
+        yield from self._fetch_namespaces(namespace)
 
     @retry(**_RETRY_ARGS)
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
