@@ -1689,12 +1689,13 @@ class TableScan(ABC):
     @abstractmethod
     def to_polars(self) -> pl.DataFrame: ...
 
+    @property
     @abstractmethod
+    def _arguments(self) -> dict[str, Any]: ...
+
     def update(self: S, **overrides: Any) -> S:
         """Create a copy of this table scan with updated fields."""
-
-    def _construct(self: S, **kwargs: Any) -> S:
-        return type(self)(**kwargs)
+        return type(self)(**{**self._arguments, **overrides})
 
     def use_ref(self: S, name: str) -> S:
         if self.snapshot_id:
@@ -1804,18 +1805,18 @@ def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_ent
 
 
 class DataScan(TableScan):
-    def update(self: DataScan, **overrides: Any) -> DataScan:
-        return self._construct(
-            table_metadata=self.table_metadata,
-            io=self.io,
-            row_filter=self.row_filter,
-            selected_fields=self.selected_fields,
-            case_sensitive=self.case_sensitive,
-            snapshot_id=self.snapshot_id,
-            options=self.options,
-            limit=self.limit,
-            **overrides,
-        )
+    @property
+    def _arguments(self) -> dict[str, Any]:
+        return {
+            "table_metadata": self.table_metadata,
+            "io": self.io,
+            "row_filter": self.row_filter,
+            "selected_fields": self.selected_fields,
+            "case_sensitive": self.case_sensitive,
+            "snapshot_id": self.snapshot_id,
+            "options": self.options,
+            "limit": self.limit,
+        }
 
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
         project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id], self.case_sensitive)
