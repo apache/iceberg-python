@@ -1519,6 +1519,42 @@ def test_request_session_with_ssl_client_cert() -> None:
     assert "Could not find the TLS certificate file, invalid path: path_to_client_cert" in str(e.value)
 
 
+def test_rest_catalog_with_basic_auth_type() -> None:
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "basic",
+            "basic": {
+                "username": "one",
+            },
+        },
+    }
+    with pytest.raises(TypeError) as e:
+        # Missing namespace
+        RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert "BasicAuthManager.__init__() missing 1 required positional argument: 'password'" in str(e.value)
+
+
+def test_rest_catalog_with_auth_impl() -> None:
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "custom",
+            "impl": "dummy.nonexistent.package",
+            "custom": {
+                "property1": "one",
+                "property2": "two",
+            },
+        },
+    }
+    with pytest.raises(ValueError) as e:
+        # Missing namespace
+        RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert "Could not load AuthManager class for 'dummy.nonexistent.package'" in str(e.value)
+
+
 EXAMPLE_ENV = {"PYICEBERG_CATALOG__PRODUCTION__URI": TEST_URI}
 
 

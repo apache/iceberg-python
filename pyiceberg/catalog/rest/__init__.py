@@ -134,6 +134,7 @@ SIGV4_REGION = "rest.signing-region"
 SIGV4_SERVICE = "rest.signing-name"
 OAUTH2_SERVER_URI = "oauth2-server-uri"
 SNAPSHOT_LOADING_MODE = "snapshot-loading-mode"
+AUTH = "auth"
 
 NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
 
@@ -247,7 +248,19 @@ class RestCatalog(Catalog):
                 elif ssl_client_cert := ssl_client.get(CERT):
                     session.cert = ssl_client_cert
 
-        session.auth = AuthManagerAdapter(self._create_legacy_oauth2_auth_manager(session))
+        if auth_config := self.properties.get(AUTH):
+            # set up auth_manager based on the properties
+            auth_type = auth_config.get("type")
+            if auth_type is None:
+                raise ValueError("auth.type must be defined")
+            auth_type_config = auth_config.get(auth_type, {})
+            if auth_impl := auth_config.get("impl"):
+                session.auth = AuthManagerAdapter(AuthManagerFactory.create(auth_impl, auth_type_config))
+            else:
+                session.auth = AuthManagerAdapter(AuthManagerFactory.create(auth_type, auth_type_config))
+        else:
+            session.auth = AuthManagerAdapter(self._create_legacy_oauth2_auth_manager(session))
+
         # Set HTTP headers
         self._config_headers(session)
 
