@@ -52,6 +52,7 @@ You can mix and match optional dependencies depending on your needs:
 | pandas        | Installs both PyArrow and Pandas                                          |
 | duckdb        | Installs both PyArrow and DuckDB                                          |
 | ray           | Installs PyArrow, Pandas, and Ray                                         |
+| bodo          | Installs Bodo                                                             |
 | daft          | Installs Daft                                                             |
 | polars       | Installs Polars                                                           |
 | s3fs          | S3FS as a FileIO implementation to interact with the object store         |
