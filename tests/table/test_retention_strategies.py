@@ -37,22 +37,35 @@ def test_retain_last_n_snapshots(table_v2: Table) -> None:
         (5, 5000),
     ]
     snapshots = _make_snapshots(ids_and_ts)
-    table_v2.metadata = table_v2.metadata.model_copy(update={"snapshots": snapshots, "refs": {}})
-    table_v2.catalog = MagicMock()
-    # Simulate commit response with only last 3 snapshots
-    keep_ids = [3, 4, 5]
-    mock_response = CommitTableResponse(
-        metadata=table_v2.metadata.model_copy(update={"snapshots": [s for s in snapshots if s.snapshot_id in keep_ids]}),
-        metadata_location="mock://metadata/location",
-        uuid=uuid4(),
-    )
-    table_v2.catalog.commit_table.return_value = mock_response
-    table_v2.maintenance.retain_last_n_snapshots(3)
-    table_v2.catalog.commit_table.assert_called_once()
-    # Update metadata to reflect commit
-    table_v2.metadata = mock_response.metadata
-    remaining_ids = {s.snapshot_id for s in table_v2.metadata.snapshots}
-    assert remaining_ids == set(keep_ids)
+    
+    # Save original catalog for cleanup
+    original_catalog = table_v2.catalog
+    
+    try:
+        table_v2.metadata = table_v2.metadata.model_copy(update={"snapshots": snapshots, "refs": {}})
+        table_v2.catalog = MagicMock()
+        # Simulate commit response with only last 3 snapshots
+        keep_ids = [3, 4, 5]
+        mock_response = CommitTableResponse(
+            metadata=table_v2.metadata.model_copy(update={"snapshots": [s for s in snapshots if s.snapshot_id in keep_ids]}),
+            metadata_location="mock://metadata/location",
+            uuid=uuid4(),
+        )
+        table_v2.catalog.commit_table.return_value = mock_response
+        table_v2.maintenance.retain_last_n_snapshots(3)
+        table_v2.catalog.commit_table.assert_called_once()
+        # Update metadata to reflect commit
+        table_v2.metadata = mock_response.metadata
+        remaining_ids = {s.snapshot_id for s in table_v2.metadata.snapshots}
+        assert remaining_ids == set(keep_ids)
+    finally:
+        # Restore original catalog and cleanup
+        table_v2.catalog = original_catalog
+        if hasattr(original_catalog, '_connection') and original_catalog._connection is not None:
+            try:
+                original_catalog._connection.close()
+            except Exception:
+                pass
 
 
 def test_min_snapshots_to_keep(table_v2: Table) -> None:
@@ -65,21 +78,34 @@ def test_min_snapshots_to_keep(table_v2: Table) -> None:
         (5, 5000),
     ]
     snapshots = _make_snapshots(ids_and_ts)
-    table_v2.metadata = table_v2.metadata.model_copy(update={"snapshots": snapshots, "refs": {}})
-    table_v2.catalog = MagicMock()
-    # Only 1,2 should be expired (to keep 3 total)
-    keep_ids = [3, 4, 5]
-    mock_response = CommitTableResponse(
-        metadata=table_v2.metadata.model_copy(update={"snapshots": [s for s in snapshots if s.snapshot_id in keep_ids]}),
-        metadata_location="mock://metadata/location",
-        uuid=uuid4(),
-    )
-    table_v2.catalog.commit_table.return_value = mock_response
-    table_v2.maintenance.expire_snapshots_older_than_with_retention(timestamp_ms=4500, min_snapshots_to_keep=3)
-    table_v2.catalog.commit_table.assert_called_once()
-    table_v2.metadata = mock_response.metadata
-    remaining_ids = {s.snapshot_id for s in table_v2.metadata.snapshots}
-    assert remaining_ids == set(keep_ids)
+    
+    # Save original catalog for cleanup
+    original_catalog = table_v2.catalog
+    
+    try:
+        table_v2.metadata = table_v2.metadata.model_copy(update={"snapshots": snapshots, "refs": {}})
+        table_v2.catalog = MagicMock()
+        # Only 1,2 should be expired (to keep 3 total)
+        keep_ids = [3, 4, 5]
+        mock_response = CommitTableResponse(
+            metadata=table_v2.metadata.model_copy(update={"snapshots": [s for s in snapshots if s.snapshot_id in keep_ids]}),
+            metadata_location="mock://metadata/location",
+            uuid=uuid4(),
+        )
+        table_v2.catalog.commit_table.return_value = mock_response
+        table_v2.maintenance.expire_snapshots_older_than_with_retention(timestamp_ms=4500, min_snapshots_to_keep=3)
+        table_v2.catalog.commit_table.assert_called_once()
+        table_v2.metadata = mock_response.metadata
+        remaining_ids = {s.snapshot_id for s in table_v2.metadata.snapshots}
+        assert remaining_ids == set(keep_ids)
+    finally:
+        # Restore original catalog and cleanup
+        table_v2.catalog = original_catalog
+        if hasattr(original_catalog, '_connection') and original_catalog._connection is not None:
+            try:
+                original_catalog._connection.close()
+            except Exception:
+                pass
 
 
 def test_combined_constraints(table_v2: Table) -> None:
@@ -257,49 +283,184 @@ def test_expire_snapshots_by_ids(table_v2: Table) -> None:
     EXPIRE_SNAPSHOT_2 = 3051729675574597005
     KEEP_SNAPSHOT = 3055729675574597004
 
+    # Save the original catalog for cleanup
+    original_catalog = table_v2.catalog
+
+    try:
+        mock_response = CommitTableResponse(
+            metadata=table_v2.metadata.model_copy(update={"snapshots": [KEEP_SNAPSHOT]}),
+            metadata_location="mock://metadata/location",
+            uuid=uuid4(),
+        )
+        table_v2.catalog = MagicMock()
+        table_v2.catalog.commit_table.return_value = mock_response
+
+        # Remove any refs that protect the snapshots to be expired
+        table_v2.metadata = table_v2.metadata.model_copy(
+            update={
+                "refs": {
+                    "main": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="branch"),
+                    "tag1": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="tag"),
+                }
+            }
+        )
+
+        # Add snapshots to metadata for multi-id test
+        from types import SimpleNamespace
+
+        table_v2.metadata = table_v2.metadata.model_copy(
+            update={
+                "refs": {
+                    "main": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="branch"),
+                    "tag1": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="tag"),
+                },
+                "snapshots": [
+                    SimpleNamespace(snapshot_id=EXPIRE_SNAPSHOT_1, timestamp_ms=1, parent_snapshot_id=None),
+                    SimpleNamespace(snapshot_id=EXPIRE_SNAPSHOT_2, timestamp_ms=1, parent_snapshot_id=None),
+                    SimpleNamespace(snapshot_id=KEEP_SNAPSHOT, timestamp_ms=2, parent_snapshot_id=None),
+                ],
+            }
+        )
+
+        # Assert fixture data
+        assert all(ref.snapshot_id not in (EXPIRE_SNAPSHOT_1, EXPIRE_SNAPSHOT_2) for ref in table_v2.metadata.refs.values())
+
+        # Expire the snapshots
+        table_v2.maintenance._expire_snapshots_by_ids([EXPIRE_SNAPSHOT_1, EXPIRE_SNAPSHOT_2])
+
+        table_v2.catalog.commit_table.assert_called_once()
+        remaining_snapshots = table_v2.metadata.snapshots
+        assert EXPIRE_SNAPSHOT_1 not in remaining_snapshots
+        assert EXPIRE_SNAPSHOT_2 not in remaining_snapshots
+        assert len(table_v2.metadata.snapshots) == 1
+    finally:
+        # Restore original catalog and cleanup any connections
+        table_v2.catalog = original_catalog
+        if hasattr(original_catalog, '_connection') and original_catalog._connection is not None:
+            try:
+                original_catalog._connection.close()
+            except Exception:
+                pass
+
+
+def test_expire_snapshots_with_table_property_defaults(table_v2: Table) -> None:
+    """Test that table properties are used as defaults for expiration."""
+    # Setup: 5 snapshots with properties set
+    ids_and_ts = [
+        (1, 1000),  # Old snapshot
+        (2, 2000),  # Old snapshot
+        (3, 3000),  # Should be kept (min snapshots)
+        (4, 4000),  # Should be kept (min snapshots)
+        (5, 5000),  # Should be kept (newer than max age)
+    ]
+    snapshots = _make_snapshots(ids_and_ts)
+    
+    # Set table properties
+    properties = {
+        "history.expire.max-snapshot-age-ms": "4500",  # Keep snapshots newer than this
+        "history.expire.min-snapshots-to-keep": "3",   # Always keep at least 3 snapshots
+    }
+    
+    table_v2.metadata = table_v2.metadata.model_copy(
+        update={
+            "snapshots": snapshots,
+            "refs": {},
+            "properties": properties,
+        }
+    )
+    table_v2.catalog = MagicMock()
+
+    # Only snapshots 1,2 should be expired (keep 3,4,5 due to min_snapshots_to_keep=3)
+    keep_ids = [3, 4, 5]
     mock_response = CommitTableResponse(
-        metadata=table_v2.metadata.model_copy(update={"snapshots": [KEEP_SNAPSHOT]}),
+        metadata=table_v2.metadata.model_copy(update={"snapshots": [s for s in snapshots if s.snapshot_id in keep_ids]}),
         metadata_location="mock://metadata/location",
         uuid=uuid4(),
     )
-    table_v2.catalog = MagicMock()
     table_v2.catalog.commit_table.return_value = mock_response
 
-    # Remove any refs that protect the snapshots to be expired
-    table_v2.metadata = table_v2.metadata.model_copy(
-        update={
-            "refs": {
-                "main": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="branch"),
-                "tag1": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="tag"),
-            }
-        }
-    )
-
-    # Add snapshots to metadata for multi-id test
-    from types import SimpleNamespace
-
-    table_v2.metadata = table_v2.metadata.model_copy(
-        update={
-            "refs": {
-                "main": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="branch"),
-                "tag1": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="tag"),
-            },
-            "snapshots": [
-                SimpleNamespace(snapshot_id=EXPIRE_SNAPSHOT_1, timestamp_ms=1, parent_snapshot_id=None),
-                SimpleNamespace(snapshot_id=EXPIRE_SNAPSHOT_2, timestamp_ms=1, parent_snapshot_id=None),
-                SimpleNamespace(snapshot_id=KEEP_SNAPSHOT, timestamp_ms=2, parent_snapshot_id=None),
-            ],
-        }
-    )
-
-    # Assert fixture data
-    assert all(ref.snapshot_id not in (EXPIRE_SNAPSHOT_1, EXPIRE_SNAPSHOT_2) for ref in table_v2.metadata.refs.values())
-
-    # Expire the snapshots
-    table_v2.maintenance._expire_snapshots_by_ids([EXPIRE_SNAPSHOT_1, EXPIRE_SNAPSHOT_2])
+    # Call expire without explicit parameters - should use table properties
+    table_v2.maintenance.expire_snapshots_with_retention_policy()
 
     table_v2.catalog.commit_table.assert_called_once()
-    remaining_snapshots = table_v2.metadata.snapshots
-    assert EXPIRE_SNAPSHOT_1 not in remaining_snapshots
-    assert EXPIRE_SNAPSHOT_2 not in remaining_snapshots
-    assert len(table_v2.metadata.snapshots) == 1
+    table_v2.metadata = mock_response.metadata
+    remaining_ids = {s.snapshot_id for s in table_v2.metadata.snapshots}
+    assert remaining_ids == set(keep_ids)
+
+
+def test_explicit_parameters_override_table_properties(table_v2: Table) -> None:
+    """Test that explicit parameters override table property defaults."""
+    # Setup: 5 snapshots with properties set
+    ids_and_ts = [
+        (1, 1000),  # Old snapshot, will be expired
+        (2, 2000),  # Will be kept (min snapshots)
+        (3, 3000),  # Will be kept (min snapshots)
+        (4, 4000),  # Will be kept (min snapshots)
+        (5, 5000),  # Will be kept (min snapshots)
+    ]
+    snapshots = _make_snapshots(ids_and_ts)
+    
+    # Set table properties that are more aggressive than what we'll use
+    properties = {
+        "history.expire.max-snapshot-age-ms": "1500",  # Would expire more snapshots
+        "history.expire.min-snapshots-to-keep": "2",   # Would keep fewer snapshots
+    }
+    
+    table_v2.metadata = table_v2.metadata.model_copy(
+        update={
+            "snapshots": snapshots,
+            "refs": {},
+            "properties": properties,
+        }
+    )
+    table_v2.catalog = MagicMock()
+
+    # Should keep 2,3,4,5 due to explicit min_snapshots_to_keep=4
+    keep_ids = [2, 3, 4, 5]
+    mock_response = CommitTableResponse(
+        metadata=table_v2.metadata.model_copy(update={"snapshots": [s for s in snapshots if s.snapshot_id in keep_ids]}),
+        metadata_location="mock://metadata/location",
+        uuid=uuid4(),
+    )
+    table_v2.catalog.commit_table.return_value = mock_response
+
+    # Call expire with explicit parameters that should override the properties
+    table_v2.maintenance.expire_snapshots_with_retention_policy(
+        timestamp_ms=1500,  # Only expire snapshots older than this
+        min_snapshots_to_keep=4  # Keep at least 4 snapshots (overrides property of 2)
+    )
+
+    table_v2.catalog.commit_table.assert_called_once()
+    table_v2.metadata = mock_response.metadata
+    remaining_ids = {s.snapshot_id for s in table_v2.metadata.snapshots}
+    assert remaining_ids == set(keep_ids)
+
+
+def test_expire_snapshots_no_properties_no_parameters(table_v2: Table) -> None:
+    """Test that no snapshots are expired when no properties or parameters are set."""
+    # Setup: 5 snapshots with no properties
+    ids_and_ts = [
+        (1, 1000),
+        (2, 2000),
+        (3, 3000),
+        (4, 4000),
+        (5, 5000),
+    ]
+    snapshots = _make_snapshots(ids_and_ts)
+    
+    table_v2.metadata = table_v2.metadata.model_copy(
+        update={
+            "snapshots": snapshots,
+            "refs": {},
+            "properties": {},  # No properties set
+        }
+    )
+    table_v2.catalog = MagicMock()
+
+    # Call expire with no parameters
+    table_v2.maintenance.expire_snapshots_with_retention_policy()
+
+    # Should not attempt to expire anything since no criteria were provided
+    table_v2.catalog.commit_table.assert_not_called()
+    remaining_ids = {s.snapshot_id for s in table_v2.metadata.snapshots}
+    assert remaining_ids == {1, 2, 3, 4, 5}  # All snapshots should remain

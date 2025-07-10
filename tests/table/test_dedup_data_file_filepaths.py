@@ -17,7 +17,7 @@
 import os
 import uuid
 from pathlib import Path
-from typing import List, Set
+from typing import List, Set, Generator
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -30,10 +30,16 @@ from tests.catalog.test_base import InMemoryCatalog
 
 
 @pytest.fixture
-def iceberg_catalog(tmp_path: Path) -> InMemoryCatalog:
+def iceberg_catalog(tmp_path: Path) -> Generator[InMemoryCatalog, None, None]:
     catalog = InMemoryCatalog("test.in_memory.catalog", warehouse=tmp_path.absolute().as_posix())
     catalog.create_namespace("default")
-    return catalog
+    yield catalog
+    # Clean up SQLAlchemy engine connections
+    if hasattr(catalog, 'engine'):
+        try:
+            catalog.engine.dispose()
+        except Exception:
+            pass
 
 
 @pytest.fixture
@@ -43,7 +49,7 @@ def dupe_data_file_path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def prepopulated_table(iceberg_catalog: InMemoryCatalog, dupe_data_file_path: Path) -> Table:
+def prepopulated_table(iceberg_catalog: InMemoryCatalog, dupe_data_file_path: Path) -> Generator[Table, None, None]:
     identifier = "default.test_table"
     try:
         iceberg_catalog.drop_table(identifier)
@@ -85,7 +91,14 @@ def prepopulated_table(iceberg_catalog: InMemoryCatalog, dupe_data_file_path: Pa
     tx2.add_files([str(dupe_data_file_path)], check_duplicate_files=False)
     tx2.commit_transaction()
 
-    return table
+    yield table
+    
+    # Cleanup table's catalog connections
+    if hasattr(table, '_catalog') and hasattr(table._catalog, 'engine'):
+        try:
+            table._catalog.engine.dispose()
+        except Exception:
+            pass
 
 
 def test_overwrite_removes_only_selected_datafile(prepopulated_table: Table, dupe_data_file_path: Path) -> None:
@@ -112,11 +125,21 @@ def test_get_all_datafiles_current_snapshot(prepopulated_table: Table, dupe_data
 
 
 def test_get_all_datafiles_all_snapshots(prepopulated_table: Table, dupe_data_file_path: Path) -> None:
-    mt = MaintenanceTable(tbl=prepopulated_table)
+    try:
+        mt = MaintenanceTable(tbl=prepopulated_table)
 
-    datafiles: List[DataFile] = mt._get_all_datafiles()
-    file_paths: Set[str] = {df.file_path.split("/")[-1] for df in datafiles}
-    assert dupe_data_file_path.name in file_paths
+        datafiles: List[DataFile] = mt._get_all_datafiles()
+        file_paths: Set[str] = {df.file_path.split("/")[-1] for df in datafiles}
+        assert dupe_data_file_path.name in file_paths
+    finally:
+        # Ensure catalog connections are properly closed
+        if hasattr(prepopulated_table, '_catalog'):
+            catalog = prepopulated_table._catalog
+            if hasattr(catalog, '_connection') and catalog._connection is not None:
+                try:
+                    catalog._connection.close()
+                except Exception:
+                    pass
 
 
 def test_deduplicate_data_files_removes_duplicates_in_current_snapshot(

@@ -213,15 +213,20 @@ class MaintenanceTable:
         This method provides a unified interface for snapshot expiration with various
         retention policies to ensure operational resilience while allowing space reclamation.
 
+        The method will use table properties as defaults if they are set:
+        - history.expire.max-snapshot-age-ms: Default for timestamp_ms if not provided
+        - history.expire.min-snapshots-to-keep: Default for min_snapshots_to_keep if not provided
+        - history.expire.max-ref-age-ms: Used for ref expiration (branches/tags)
+
         Args:
             timestamp_ms: Only snapshots with timestamp_ms < this value will be considered for expiration.
-                         If None, all snapshots are candidates (subject to other constraints).
+                         If None, will use history.expire.max-snapshot-age-ms table property if set.
             retain_last_n: Always keep the last N snapshots regardless of age.
                           Useful when regular snapshot creation occurs and users want to keep
                           the last few for rollback purposes.
             min_snapshots_to_keep: Minimum number of snapshots to keep in total.
-                                 Acts as a guardrail to prevent aggressive expiration logic
-                                 from removing too many snapshots.
+                                 Acts as a guardrail to prevent aggressive expiration logic.
+                                 If None, will use history.expire.min-snapshots-to-keep table property if set.
 
         Returns:
             List of snapshot IDs that were expired.
@@ -230,22 +235,30 @@ class MaintenanceTable:
             ValueError: If retain_last_n or min_snapshots_to_keep is less than 1.
 
         Examples:
-            # Keep last 5 snapshots regardless of age
-            maintenance.expire_snapshots_with_retention_policy(retain_last_n=5)
+            # Use table property defaults
+            maintenance.expire_snapshots_with_retention_policy()
 
-            # Expire snapshots older than timestamp but keep at least 3 total
-            maintenance.expire_snapshots_with_retention_policy(
-                timestamp_ms=1234567890000,
-                min_snapshots_to_keep=3
-            )
-
-            # Combined policy: expire old snapshots but keep last 10 and at least 5 total
+            # Override defaults with explicit values
             maintenance.expire_snapshots_with_retention_policy(
                 timestamp_ms=1234567890000,
                 retain_last_n=10,
                 min_snapshots_to_keep=5
             )
         """
+        # Get default values from table properties
+        default_max_age, default_min_snapshots, _ = self._get_expiration_properties()
+        
+        # Use defaults from table properties if not explicitly provided
+        if timestamp_ms is None:
+            timestamp_ms = default_max_age
+        
+        if min_snapshots_to_keep is None:
+            min_snapshots_to_keep = default_min_snapshots
+
+        # If no expiration criteria are provided, don't expire anything
+        if timestamp_ms is None and retain_last_n is None and min_snapshots_to_keep is None:
+            return
+
         if retain_last_n is not None and retain_last_n < 1:
             raise ValueError("retain_last_n must be at least 1")
 
@@ -253,25 +266,31 @@ class MaintenanceTable:
             raise ValueError("min_snapshots_to_keep must be at least 1")
 
         snapshots_to_expire = self._get_snapshots_to_expire_with_retention(
-            timestamp_ms=timestamp_ms, retain_last_n=retain_last_n, min_snapshots_to_keep=min_snapshots_to_keep
+            timestamp_ms=timestamp_ms,
+            retain_last_n=retain_last_n,
+            min_snapshots_to_keep=min_snapshots_to_keep
         )
 
         if snapshots_to_expire:
             self._expire_snapshots_by_ids(snapshots_to_expire)
 
-    def _get_protected_snapshot_ids(self) -> Set[int]:
+    def _get_protected_snapshot_ids(self, table_metadata: Optional[TableMetadata] = None) -> Set[int]:
         """Get the IDs of protected snapshots.
 
         These are the HEAD snapshots of all branches and all tagged snapshots.
         These ids are to be excluded from expiration.
 
         Args:
-            table_metadata: The table metadata to check for protected snapshots.
+            table_metadata: Optional table metadata to check for protected snapshots.
+                          If not provided, uses the table's current metadata.
 
         Returns:
             Set of protected snapshot IDs to exclude from expiration.
         """
-        return set(self.tbl.inspect.refs()["snapshot_id"].to_pylist())
+        # Prefer provided metadata, fall back to current table metadata
+        metadata = table_metadata or self.tbl.metadata
+        refs = metadata.refs if metadata else {}
+        return {ref.snapshot_id for ref in refs.values()}
 
     def _get_all_datafiles(self) -> List[DataFile]:
         """Collect all DataFiles in the current snapshot only."""
@@ -359,3 +378,22 @@ class MaintenanceTable:
             self.tbl = self.tbl.refresh()
 
         return removed
+
+    def _get_expiration_properties(self) -> tuple[Optional[int], Optional[int], Optional[int]]:
+        """Get the default expiration properties from table properties.
+
+        Returns:
+            Tuple of (max_snapshot_age_ms, min_snapshots_to_keep, max_ref_age_ms)
+        """
+        properties = self.tbl.properties
+
+        max_snapshot_age_ms = properties.get("history.expire.max-snapshot-age-ms")
+        max_snapshot_age = int(max_snapshot_age_ms) if max_snapshot_age_ms is not None else None
+
+        min_snapshots = properties.get("history.expire.min-snapshots-to-keep")
+        min_snapshots_to_keep = int(min_snapshots) if min_snapshots is not None else None
+
+        max_ref_age = properties.get("history.expire.max-ref-age-ms")
+        max_ref_age_ms = int(max_ref_age) if max_ref_age is not None else None
+
+        return max_snapshot_age, min_snapshots_to_keep, max_ref_age_ms
