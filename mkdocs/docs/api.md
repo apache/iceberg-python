@@ -1106,7 +1106,106 @@ maintenance.expire_snapshots_with_retention_policy(
 )
 ```
 
-#### Example: Combined policy
+Using [Ray Dataset API](https://docs.ray.io/en/latest/data/api/dataset.html) to interact with the dataset:
+
+```python
+print(ray_dataset.take(2))
+[
+    {
+        "VendorID": 2,
+        "tpep_pickup_datetime": datetime.datetime(2008, 12, 31, 23, 23, 50),
+        "tpep_dropoff_datetime": datetime.datetime(2009, 1, 1, 0, 34, 31),
+    },
+    {
+        "VendorID": 2,
+        "tpep_pickup_datetime": datetime.datetime(2008, 12, 31, 23, 5, 3),
+        "tpep_dropoff_datetime": datetime.datetime(2009, 1, 1, 16, 10, 18),
+    },
+]
+```
+
+### Daft
+
+PyIceberg interfaces closely with Daft Dataframes (see also: [Daft integration with Iceberg](https://docs.daft.ai/en/stable/io/iceberg/)) which provides a full lazily optimized query engine interface on top of PyIceberg tables.
+
+<!-- prettier-ignore-start -->
+
+!!! note "Requirements"
+    This requires [Daft to be installed](index.md).
+
+<!-- prettier-ignore-end -->
+
+A table can be read easily into a Daft Dataframe:
+
+```python
+df = table.to_daft()  # equivalent to `daft.read_iceberg(table)`
+df = df.where(df["trip_distance"] >= 10.0)
+df = df.select("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime")
+```
+
+This returns a Daft Dataframe which is lazily materialized. Printing `df` will display the schema:
+
+```python
+╭──────────┬───────────────────────────────┬───────────────────────────────╮
+│ VendorID ┆ tpep_pickup_datetime          ┆ tpep_dropoff_datetime         │
+│ ---      ┆ ---                           ┆ ---                           │
+│ Int64    ┆ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
+╰──────────┴───────────────────────────────┴───────────────────────────────╯
+
+(No data to display: Dataframe not materialized)
+```
+
+We can execute the Dataframe to preview the first few rows of the query with `df.show()`.
+
+This is correctly optimized to take advantage of Iceberg features such as hidden partitioning and file-level statistics for efficient reads.
+
+```python
+df.show(2)
+```
+
+```python
+╭──────────┬───────────────────────────────┬───────────────────────────────╮
+│ VendorID ┆ tpep_pickup_datetime          ┆ tpep_dropoff_datetime         │
+│ ---      ┆ ---                           ┆ ---                           │
+│ Int64    ┆ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
+╞══════════╪═══════════════════════════════╪═══════════════════════════════╡
+│ 2        ┆ 2008-12-31T23:23:50.000000    ┆ 2009-01-01T00:34:31.000000    │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 2        ┆ 2008-12-31T23:05:03.000000    ┆ 2009-01-01T16:10:18.000000    │
+╰──────────┴───────────────────────────────┴───────────────────────────────╯
+
+(Showing first 2 rows)
+```
+
+### Polars
+
+PyIceberg interfaces closely with Polars Dataframes and LazyFrame which provides a full lazily optimized query engine interface on top of PyIceberg tables.
+
+<!-- prettier-ignore-start -->
+
+!!! note "Requirements"
+    This requires [`polars` to be installed](index.md).
+
+```python
+pip install pyiceberg['polars']
+```
+<!-- prettier-ignore-end -->
+
+PyIceberg data can be analyzed and accessed through Polars using either DataFrame or LazyFrame.
+If your code utilizes the Apache Iceberg data scanning and retrieval API and then analyzes the resulting DataFrame in Polars, use the `table.scan().to_polars()` API.
+If the intent is to utilize Polars' high-performance filtering and retrieval functionalities, use LazyFrame exported from the Iceberg table with the `table.to_polars()` API.
+
+```python
+# Get LazyFrame
+iceberg_table.to_polars()
+
+# Get Data Frame
+iceberg_table.scan().to_polars()
+```
+
+#### Working with Polars DataFrame
+
+PyIceberg makes it easy to filter out data from a huge table and pull it into a Polars dataframe locally. This will only fetch the relevant Parquet files for the query and apply the filter. This will reduce IO and therefore improve performance and reduce cost.
 
 ```python
 # Expire old snapshots, but always keep last 10 and at least 5 total

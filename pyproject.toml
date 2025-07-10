@@ -78,7 +78,7 @@ gcsfs = { version = ">=2023.1.0", optional = true }
 huggingface-hub = { version = ">=0.24.0", optional = true }
 psycopg2-binary = { version = ">=2.9.6", optional = true }
 sqlalchemy = { version = "^2.0.18", optional = true }
-getdaft = { version = ">=0.2.12", optional = true }
+daft = { version = ">=0.5.0", optional = true }
 cachetools = ">=5.5,<7.0"
 pyiceberg-core = { version = "^0.5.1", optional = true }
 polars = { version = "^1.21.0", optional = true }
@@ -298,7 +298,7 @@ pyarrow = ["pyarrow", "pyiceberg-core"]
 pandas = ["pandas", "pyarrow"]
 duckdb = ["duckdb", "pyarrow"]
 ray = ["ray", "pyarrow", "pandas"]
-daft = ["getdaft"]
+daft = ["daft"]
 polars = ["polars"]
 snappy = ["python-snappy"]
 hive = ["thrift"]
@@ -317,6 +317,8 @@ pyiceberg-core = ["pyiceberg-core"]
 datafusion = ["datafusion"]
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
+
 markers = [
   "unmarked: marks a test as a unittest",
   "s3: marks a test as requiring access to s3 compliant storage (use with --aws-access-key-id, --aws-secret-access-key, and --endpoint args)",

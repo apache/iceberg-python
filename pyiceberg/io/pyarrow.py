@@ -746,7 +746,7 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.large_string()
 
     def visit_uuid(self, _: UUIDType) -> pa.DataType:
-        return pa.binary(16)
+        return pa.uuid()
 
     def visit_unknown(self, _: UnknownType) -> pa.DataType:
         return pa.null()
@@ -1307,6 +1307,8 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
             return FixedType(primitive.byte_width)
         elif pa.types.is_null(primitive):
             return UnknownType()
+        elif isinstance(primitive, pa.UuidType):
+            return UUIDType()
 
         raise TypeError(f"Unsupported type: {primitive}")
 
@@ -1814,9 +1816,13 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                 array = self._cast_if_needed(field, field_array)
                 field_arrays.append(array)
                 fields.append(self._construct_field(field, array.type))
-            elif field.optional:
+            elif field.optional or field.initial_default is not None:
+                # When an optional field is added, or when a required field with a non-null initial default is added
                 arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)
-                field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))
+                if field.initial_default is None:
+                    field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))
+                else:
+                    field_arrays.append(pa.repeat(field.initial_default, len(struct_array)))
                 fields.append(self._construct_field(field, arrow_type))
             else:
                 raise ResolveError(f"Field is required, and could not be found in the file: {field}")
@@ -2249,7 +2255,7 @@ def parquet_path_to_id_mapping(
     Compute the mapping of parquet column path to Iceberg ID.
 
     For each column, the parquet file metadata has a path_in_schema attribute that follows
-    a specific naming scheme for nested columnds. This function computes a mapping of
+    a specific naming scheme for nested columns. This function computes a mapping of
     the full paths to the corresponding Iceberg IDs.
 
     Args:
