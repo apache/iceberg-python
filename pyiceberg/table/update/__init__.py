@@ -193,6 +193,11 @@ class RemoveStatisticsUpdate(IcebergBaseModel):
     snapshot_id: int = Field(alias="snapshot-id")
 
 
+class RemovePartitionSpecsUpdate(IcebergBaseModel):
+    action: Literal["remove-partition-spec"] = Field(default="remove-partition-spec")
+    spec_ids: List[int] = Field(alias="spec-ids")
+
+
 class RemoveSchemasUpdate(IcebergBaseModel):
     action: Literal["remove-schemas"] = Field(default="remove-schemas")
     schema_ids: List[int] = Field(alias="schema-ids")
@@ -227,6 +232,7 @@ TableUpdate = Annotated[
         RemovePropertiesUpdate,
         SetStatisticsUpdate,
         RemoveStatisticsUpdate,
+        RemovePartitionSpecsUpdate,
         RemoveSchemasUpdate,
         SetPartitionStatisticsUpdate,
         RemovePartitionStatisticsUpdate,
@@ -593,6 +599,21 @@ def _(update: RemoveStatisticsUpdate, base_metadata: TableMetadata, context: _Ta
     context.add_update(update)
 
     return base_metadata.model_copy(update={"statistics": statistics})
+
+
+@_apply_table_update.register(RemovePartitionSpecsUpdate)
+def _(update: RemovePartitionSpecsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    for remove_spec_id in update.spec_ids:
+        if not any(spec.spec_id == remove_spec_id for spec in base_metadata.partition_specs):
+            raise ValueError(f"Partition spec with id {remove_spec_id} does not exist")
+
+    if base_metadata.default_spec_id in update.spec_ids:
+        raise ValueError(f"Cannot remove default partition spec: {base_metadata.default_spec_id}")
+
+    partition_specs = [spec for spec in base_metadata.partition_specs if spec.spec_id not in update.spec_ids]
+
+    context.add_update(update)
+    return base_metadata.model_copy(update={"partition_specs": partition_specs})
 
 
 @_apply_table_update.register(RemoveSchemasUpdate)
