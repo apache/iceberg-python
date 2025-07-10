@@ -37,10 +37,10 @@ def test_retain_last_n_snapshots(table_v2: Table) -> None:
         (5, 5000),
     ]
     snapshots = _make_snapshots(ids_and_ts)
-    
+
     # Save original catalog for cleanup
     original_catalog = table_v2.catalog
-    
+
     try:
         table_v2.metadata = table_v2.metadata.model_copy(update={"snapshots": snapshots, "refs": {}})
         table_v2.catalog = MagicMock()
@@ -61,7 +61,7 @@ def test_retain_last_n_snapshots(table_v2: Table) -> None:
     finally:
         # Restore original catalog and cleanup
         table_v2.catalog = original_catalog
-        if hasattr(original_catalog, '_connection') and original_catalog._connection is not None:
+        if hasattr(original_catalog, "_connection") and original_catalog._connection is not None:
             try:
                 original_catalog._connection.close()
             except Exception:
@@ -78,10 +78,10 @@ def test_min_snapshots_to_keep(table_v2: Table) -> None:
         (5, 5000),
     ]
     snapshots = _make_snapshots(ids_and_ts)
-    
+
     # Save original catalog for cleanup
     original_catalog = table_v2.catalog
-    
+
     try:
         table_v2.metadata = table_v2.metadata.model_copy(update={"snapshots": snapshots, "refs": {}})
         table_v2.catalog = MagicMock()
@@ -101,7 +101,7 @@ def test_min_snapshots_to_keep(table_v2: Table) -> None:
     finally:
         # Restore original catalog and cleanup
         table_v2.catalog = original_catalog
-        if hasattr(original_catalog, '_connection') and original_catalog._connection is not None:
+        if hasattr(original_catalog, "_connection") and original_catalog._connection is not None:
             try:
                 original_catalog._connection.close()
             except Exception:
@@ -336,7 +336,7 @@ def test_expire_snapshots_by_ids(table_v2: Table) -> None:
     finally:
         # Restore original catalog and cleanup any connections
         table_v2.catalog = original_catalog
-        if hasattr(original_catalog, '_connection') and original_catalog._connection is not None:
+        if hasattr(original_catalog, "_connection") and original_catalog._connection is not None:
             try:
                 original_catalog._connection.close()
             except Exception:
@@ -354,13 +354,13 @@ def test_expire_snapshots_with_table_property_defaults(table_v2: Table) -> None:
         (5, 5000),  # Should be kept (newer than max age)
     ]
     snapshots = _make_snapshots(ids_and_ts)
-    
+
     # Set table properties
     properties = {
         "history.expire.max-snapshot-age-ms": "4500",  # Keep snapshots newer than this
-        "history.expire.min-snapshots-to-keep": "3",   # Always keep at least 3 snapshots
+        "history.expire.min-snapshots-to-keep": "3",  # Always keep at least 3 snapshots
     }
-    
+
     table_v2.metadata = table_v2.metadata.model_copy(
         update={
             "snapshots": snapshots,
@@ -399,13 +399,13 @@ def test_explicit_parameters_override_table_properties(table_v2: Table) -> None:
         (5, 5000),  # Will be kept (min snapshots)
     ]
     snapshots = _make_snapshots(ids_and_ts)
-    
+
     # Set table properties that are more aggressive than what we'll use
     properties = {
         "history.expire.max-snapshot-age-ms": "1500",  # Would expire more snapshots
-        "history.expire.min-snapshots-to-keep": "2",   # Would keep fewer snapshots
+        "history.expire.min-snapshots-to-keep": "2",  # Would keep fewer snapshots
     }
-    
+
     table_v2.metadata = table_v2.metadata.model_copy(
         update={
             "snapshots": snapshots,
@@ -427,7 +427,7 @@ def test_explicit_parameters_override_table_properties(table_v2: Table) -> None:
     # Call expire with explicit parameters that should override the properties
     table_v2.maintenance.expire_snapshots_with_retention_policy(
         timestamp_ms=1500,  # Only expire snapshots older than this
-        min_snapshots_to_keep=4  # Keep at least 4 snapshots (overrides property of 2)
+        min_snapshots_to_keep=4,  # Keep at least 4 snapshots (overrides property of 2)
     )
 
     table_v2.catalog.commit_table.assert_called_once()
@@ -447,7 +447,7 @@ def test_expire_snapshots_no_properties_no_parameters(table_v2: Table) -> None:
         (5, 5000),
     ]
     snapshots = _make_snapshots(ids_and_ts)
-    
+
     table_v2.metadata = table_v2.metadata.model_copy(
         update={
             "snapshots": snapshots,

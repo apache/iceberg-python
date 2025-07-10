@@ -247,11 +247,11 @@ class MaintenanceTable:
         """
         # Get default values from table properties
         default_max_age, default_min_snapshots, _ = self._get_expiration_properties()
-        
+
         # Use defaults from table properties if not explicitly provided
         if timestamp_ms is None:
             timestamp_ms = default_max_age
-        
+
         if min_snapshots_to_keep is None:
             min_snapshots_to_keep = default_min_snapshots
 
@@ -266,9 +266,7 @@ class MaintenanceTable:
             raise ValueError("min_snapshots_to_keep must be at least 1")
 
         snapshots_to_expire = self._get_snapshots_to_expire_with_retention(
-            timestamp_ms=timestamp_ms,
-            retain_last_n=retain_last_n,
-            min_snapshots_to_keep=min_snapshots_to_keep
+            timestamp_ms=timestamp_ms, retain_last_n=retain_last_n, min_snapshots_to_keep=min_snapshots_to_keep
         )
 
         if snapshots_to_expire:

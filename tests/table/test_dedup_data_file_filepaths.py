@@ -17,7 +17,7 @@
 import os
 import uuid
 from pathlib import Path
-from typing import List, Set, Generator
+from typing import Generator, List, Set
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -35,7 +35,7 @@ def iceberg_catalog(tmp_path: Path) -> Generator[InMemoryCatalog, None, None]:
     catalog.create_namespace("default")
     yield catalog
     # Clean up SQLAlchemy engine connections
-    if hasattr(catalog, 'engine'):
+    if hasattr(catalog, "engine"):
         try:
             catalog.engine.dispose()
         except Exception:
@@ -92,9 +92,9 @@ def prepopulated_table(iceberg_catalog: InMemoryCatalog, dupe_data_file_path: Pa
     tx2.commit_transaction()
 
     yield table
-    
+
     # Cleanup table's catalog connections
-    if hasattr(table, '_catalog') and hasattr(table._catalog, 'engine'):
+    if hasattr(table, "_catalog") and hasattr(table._catalog, "engine"):
         try:
             table._catalog.engine.dispose()
         except Exception:
@@ -133,9 +133,9 @@ def test_get_all_datafiles_all_snapshots(prepopulated_table: Table, dupe_data_fi
         assert dupe_data_file_path.name in file_paths
     finally:
         # Ensure catalog connections are properly closed
-        if hasattr(prepopulated_table, '_catalog'):
+        if hasattr(prepopulated_table, "_catalog"):
             catalog = prepopulated_table._catalog
-            if hasattr(catalog, '_connection') and catalog._connection is not None:
+            if hasattr(catalog, "_connection") and catalog._connection is not None:
                 try:
                     catalog._connection.close()
                 except Exception:
