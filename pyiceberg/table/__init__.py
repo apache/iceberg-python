@@ -1841,13 +1841,11 @@ class DataScan(TableScan):
     def _build_residual_evaluator(self, spec_id: int) -> Callable[[DataFile], ResidualEvaluator]:
         spec = self.table_metadata.specs()[spec_id]
 
+        from pyiceberg.expressions.visitors import residual_evaluator_of
+
         # The lambda created here is run in multiple threads.
         # So we avoid creating _EvaluatorExpression methods bound to a single
         # shared instance across multiple threads.
-        # return lambda data_file: (partition_schema, partition_expr, self.case_sensitive)(data_file.partition)
-        from pyiceberg.expressions.visitors import residual_evaluator_of
-
-        # assert self.row_filter == False
         return lambda datafile: (
             residual_evaluator_of(
                 spec=spec,
