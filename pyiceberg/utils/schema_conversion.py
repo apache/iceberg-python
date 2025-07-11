@@ -69,8 +69,10 @@ PRIMITIVE_FIELD_TYPE_MAPPING: Dict[str, PrimitiveType] = {
 LOGICAL_FIELD_TYPE_MAPPING: Dict[Tuple[str, str], PrimitiveType] = {
     ("date", "int"): DateType(),
     ("time-micros", "long"): TimeType(),
+    ("timestamp-millis", "int"): TimestampType(),
     ("timestamp-micros", "long"): TimestampType(),
     ("uuid", "fixed"): UUIDType(),
+    ("uuid", "string"): UUIDType(),
 }
 
 AvroType = Union[str, Any]
