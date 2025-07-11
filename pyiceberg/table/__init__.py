@@ -143,6 +143,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
     import ray
     from duckdb import DuckDBPyConnection
+    from pyiceberg_core.datafusion import IcebergDataFusionTable
 
     from pyiceberg.catalog import Catalog
 
@@ -1494,6 +1495,51 @@ class Table:
 
         return pl.scan_iceberg(self)
 
+    def __datafusion_table_provider__(self) -> "IcebergDataFusionTable":
+        """Return the DataFusion table provider PyCapsule interface.
+
+        To support DataFusion features such as push down filtering, this function will return a PyCapsule
+        interface that conforms to the FFI Table Provider required by DataFusion. From an end user perspective
+        you should not need to call this function directly. Instead you can use ``register_table_provider`` in
+        the DataFusion SessionContext.
+
+        Returns:
+            A PyCapsule DataFusion TableProvider interface.
+
+        Example:
+            ```python
+            from datafusion import SessionContext
+            from pyiceberg.catalog import load_catalog
+            import pyarrow as pa
+            catalog = load_catalog("catalog", type="in-memory")
+            catalog.create_namespace_if_not_exists("default")
+            data = pa.table({"x": [1, 2, 3], "y": [4, 5, 6]})
+            iceberg_table = catalog.create_table("default.test", schema=data.schema)
+            iceberg_table.append(data)
+            ctx = SessionContext()
+            ctx.register_table_provider("test", iceberg_table)
+            ctx.table("test").show()
+            ```
+            Results in
+            ```
+            DataFrame()
+            +---+---+
+            | x | y |
+            +---+---+
+            | 1 | 4 |
+            | 2 | 5 |
+            | 3 | 6 |
+            +---+---+
+            ```
+        """
+        from pyiceberg_core.datafusion import IcebergDataFusionTable
+
+        return IcebergDataFusionTable(
+            identifier=self.name(),
+            metadata_location=self.metadata_location,
+            file_io_properties=self.io.properties,
+        ).__datafusion_table_provider__()
+
 
 class StaticTable(Table):
     """Load a table directly from a metadata file (i.e., without using a catalog)."""
@@ -1795,13 +1841,11 @@ class DataScan(TableScan):
     def _build_residual_evaluator(self, spec_id: int) -> Callable[[DataFile], ResidualEvaluator]:
         spec = self.table_metadata.specs()[spec_id]
 
+        from pyiceberg.expressions.visitors import residual_evaluator_of
+
         # The lambda created here is run in multiple threads.
         # So we avoid creating _EvaluatorExpression methods bound to a single
         # shared instance across multiple threads.
-        # return lambda data_file: (partition_schema, partition_expr, self.case_sensitive)(data_file.partition)
-        from pyiceberg.expressions.visitors import residual_evaluator_of
-
-        # assert self.row_filter == False
         return lambda datafile: (
             residual_evaluator_of(
                 spec=spec,
@@ -1811,7 +1855,8 @@ class DataScan(TableScan):
             )
         )
 
-    def _check_sequence_number(self, min_sequence_number: int, manifest: ManifestFile) -> bool:
+    @staticmethod
+    def _check_sequence_number(min_sequence_number: int, manifest: ManifestFile) -> bool:
         """Ensure that no manifests are loaded that contain deletes that are older than the data.
 
         Args:
