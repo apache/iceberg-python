@@ -224,6 +224,7 @@ def test_snapshot_summary_collector_with_partition() -> None:
         "added-records": "100",
         "deleted-records": "300",
         "changed-partition-count": "2",
+        "partition-summaries-included": "true",
         "partitions.int_field=1": "added-files-size=1234,removed-files-size=1234,added-data-files=1,deleted-data-files=1,added-records=100,deleted-records=100",
         "partitions.int_field=2": "removed-files-size=4321,deleted-data-files=1,deleted-records=200",
     }
@@ -259,9 +260,30 @@ def test_snapshot_summary_collector_with_partition_limit_in_constructor() -> Non
         "added-records": "100",
         "deleted-records": "300",
         "changed-partition-count": "2",
+        "partition-summaries-included": "true",
         "partitions.int_field=1": "added-files-size=1234,removed-files-size=1234,added-data-files=1,deleted-data-files=1,added-records=100,deleted-records=100",
         "partitions.int_field=2": "removed-files-size=4321,deleted-data-files=1,deleted-records=200",
     }
+
+
+@pytest.mark.integration
+def test_partition_summaries_included_not_set_when_no_change() -> None:
+    ssc = SnapshotSummaryCollector()
+    # No files added, so no partition_metrics
+    ssc.set_partition_summary_limit(10)
+    result = ssc.build()
+    assert "partition-summaries-included" not in result
+    assert result == {}  # Should be empty dict
+
+
+@pytest.mark.integration
+def test_partition_summaries_included_not_set_when_unpartitioned_files(table_schema_simple) -> None:
+    ssc = SnapshotSummaryCollector()
+    data_file = DataFile.from_args(content=DataFileContent.DATA, record_count=100, file_size_in_bytes=1234, partition=Record())
+    ssc.add_file(data_file, schema=table_schema_simple)
+    ssc.set_partition_summary_limit(10)
+    result = ssc.build()
+    assert "partition-summaries-included" not in result
 
 
 def test_merge_snapshot_summaries_empty() -> None:
