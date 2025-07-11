@@ -2054,7 +2054,7 @@ def test_make_compatible_name() -> None:
     ],
 )
 def test_stats_aggregator_update_min(vals: List[Any], primitive_type: PrimitiveType, expected_result: Any) -> None:
-    stats = StatsAggregator(primitive_type, _primitive_to_physical(primitive_type))
+    stats = StatsAggregator(primitive_type, _primitive_to_physical(primitive_type), column_name="test_col")
 
     for val in vals:
         stats.update_min(val)
@@ -2074,7 +2074,7 @@ def test_stats_aggregator_update_min(vals: List[Any], primitive_type: PrimitiveT
     ],
 )
 def test_stats_aggregator_update_max(vals: List[Any], primitive_type: PrimitiveType, expected_result: Any) -> None:
-    stats = StatsAggregator(primitive_type, _primitive_to_physical(primitive_type))
+    stats = StatsAggregator(primitive_type, _primitive_to_physical(primitive_type), column_name="test_col")
 
     for val in vals:
         stats.update_max(val)
