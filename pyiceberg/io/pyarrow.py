@@ -2728,9 +2728,11 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
 
     for partition, name in zip(spec.fields, partition_fields):
         source_field = schema.find_field(partition.source_id)
-        arrow_table = arrow_table.append_column(
-            name, partition.transform.pyarrow_transform(source_field.field_type)(arrow_table[source_field.name])
-        )
+        full_field_name = schema.find_column_name(partition.source_id)
+        if full_field_name is None:
+            raise ValueError(f"Could not find column name for field ID: {partition.source_id}")
+        field_array = _get_field_from_arrow_table(arrow_table, full_field_name)
+        arrow_table = arrow_table.append_column(name, partition.transform.pyarrow_transform(source_field.field_type)(field_array))
 
     unique_partition_fields = arrow_table.select(partition_fields).group_by(partition_fields).aggregate([])
 
@@ -2765,3 +2767,22 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
         )
 
     return table_partitions
+
+
+def _get_field_from_arrow_table(arrow_table: pa.Table, field_path: str) -> pa.Array:
+    """Get a nested field from an Arrow table struct type field using dot notation.
+
+    Args:
+        arrow_table: The Arrow table containing the field
+        field_path: Dot-separated field path (e.g., "name" or "bar.baz.timestamp")
+
+    Returns:
+        The unnested field as a PyArrow Array
+    """
+    if "." not in field_path:
+        return arrow_table[field_path]
+
+    path_parts = field_path.split(".")
+    field_array = arrow_table[path_parts[0]]
+    field_array = pc.struct_field(field_array, path_parts[1:])  # type: ignore
+    return field_array
