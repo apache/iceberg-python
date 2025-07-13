@@ -704,6 +704,9 @@ class InspectTable:
         _all_known_files["manifests"] = set(self.all_manifests(snapshots)["path"].to_pylist())
         _all_known_files["manifest_lists"] = {snapshot.manifest_list for snapshot in snapshots}
         _all_known_files["statistics"] = {statistic.statistics_path for statistic in self.tbl.metadata.statistics}
+        _all_known_files["partition_statistics"] = {
+            statistic.statistics_path for statistic in self.tbl.metadata.partition_statistics
+        }
 
         metadata_files = {entry.metadata_file for entry in self.tbl.metadata.metadata_log}
         metadata_files.add(self.tbl.metadata_location)  # Include current metadata file
