@@ -60,14 +60,16 @@ class MaintenanceTable:
 
         from pyiceberg.io.pyarrow import PyArrowFileIO
 
+        if not isinstance(self.tbl.io, PyArrowFileIO):
+            raise TypeError("MaintenanceTable can only be used with PyArrowFileIO")
+
         all_known_files = self.tbl.inspect._all_known_files()
         flat_known_files: set[str] = reduce(set.union, all_known_files.values(), set())
 
-        scheme, _, _ = PyArrowFileIO.parse_location(location)
-        pyarrow_io = PyArrowFileIO()
-        fs = pyarrow_io.fs_by_scheme(scheme, None)
+        scheme, _, _ = self.tbl.io.parse_location(location)
+        fs = self.tbl.io.fs_by_scheme(scheme, None)
 
-        _, _, path = pyarrow_io.parse_location(location)
+        _, _, path = self.tbl.io.parse_location(location)
         selector = FileSelector(path, recursive=True)
 
         # filter to just files as it may return directories, and filter on time
