@@ -339,24 +339,14 @@ catalog:
 
 | Key                 | Example                          | Description                                                                                        |
 | ------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
-| uri                 | <https://rest-catalog/ws>          | URI identifying the REST Server                                                                    |
-| ugi                 | t-1234:secret                    | Hadoop UGI for Hive client.                                                                        |
-| credential          | t-1234:secret                    | Credential to use for OAuth2 credential flow when initializing the catalog                         |
-| token               | FEW23.DFSDF.FSDF                 | Bearer token value to use for `Authorization` header                                               |
-| scope               | openid offline corpds:ds:profile | Desired scope of the requested security token (default : catalog)                                  |
-| resource            | rest_catalog.iceberg.com         | URI for the target resource or service                                                             |
-| audience            | rest_catalog                     | Logical name of target resource or service                                                         |
-| rest.sigv4-enabled  | true                             | Sign requests to the REST Server using AWS SigV4 protocol                                          |
-| rest.signing-region | us-east-1                        | The region to use when SigV4 signing a request                                                     |
-| rest.signing-name   | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
-| oauth2-server-uri   | <https://auth-service/cc>          | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
-| snapshot-loading-mode | refs                             | The snapshots to return in the body of the metadata. Setting the value to `all` would return the full set of snapshots currently valid for the table. Setting the value to `refs` would load all snapshots referenced by branches or tags. |
+| uri                 | <https://rest-catalog/ws>        | URI identifying the REST Server                                                                    |
+| warehouse           | myWarehouse                      | Warehouse location or identifier to request from the catalog service. May be used to determine server-side overrides, such as the warehouse location. |
+| snapshot-loading-mode | refs                           | The snapshots to return in the body of the metadata. Setting the value to `all` would return the full set of snapshots currently valid for the table. Setting the value to `refs` would load all snapshots referenced by branches or tags. |
+| `header.X-Iceberg-Access-Delegation` | `vended-credentials` | Signal to the server that the client supports delegated access via a comma-separated list of access mechanisms. The server may choose to supply access via any or none of the requested mechanisms. When using `vended-credentials`, the server provides temporary credentials to the client. When using `remote-signing`, the server signs requests on behalf of the client. (default: `vended-credentials`) |
 
-<!-- markdown-link-check-enable-->
+#### Headers in REST Catalog
 
-#### Headers in RESTCatalog
-
-To configure custom headers in RESTCatalog, include them in the catalog properties with the prefix `header.`. This
+To configure custom headers in REST Catalog, include them in the catalog properties with `header.<Header-Name>`. This
 ensures that all HTTP requests to the REST service include the specified headers.
 
 ```yaml
@@ -367,11 +357,93 @@ catalog:
     header.content-type: application/vnd.api+json
 ```
 
-Specific headers defined by the RESTCatalog spec include:
+#### Authentication Options
 
-| Key                                  | Options                               | Default              | Description                                                                                                                                                                                        |
-| ------------------------------------ | ------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `header.X-Iceberg-Access-Delegation` | `{vended-credentials,remote-signing}` | `vended-credentials` | Signal to the server that the client supports delegated access via a comma-separated list of access mechanisms. The server may choose to supply access via any or none of the requested mechanisms |
+##### OAuth2
+
+| Key                 | Example                          | Description                                                                                        |
+| ------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
+| oauth2-server-uri   | <https://auth-service/cc>        | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
+| token               | FEW23.DFSDF.FSDF                 | Bearer token value to use for `Authorization` header |
+| credential          | client_id:client_secret          | Credential to use for OAuth2 credential flow when initializing the catalog                         |
+| scope               | openid offline corpds:ds:profile | Desired scope of the requested security token (default : catalog)                                  |
+| resource            | rest_catalog.iceberg.com         | URI for the target resource or service                                                             |
+| audience            | rest_catalog                     | Logical name of target resource or service                                                         |
+
+##### SigV4
+
+| Key                 | Example                          | Description                                                                                        |
+| ------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
+| rest.sigv4-enabled  | true                             | Sign requests to the REST Server using AWS SigV4 protocol                                          |
+| rest.signing-region | us-east-1                        | The region to use when SigV4 signing a request                                                     |
+| rest.signing-name   | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
+
+<!-- markdown-link-check-enable-->
+
+#### Common Integrations & Examples
+
+##### AWS Glue
+
+```yaml
+catalog:
+  s3_tables_catalog:
+    type: rest
+    uri: https://glue.<region>.amazonaws.com/iceberg
+    warehouse: <account-id>:s3tablescatalog/<table-bucket-name>
+    rest.sigv4-enabled: true
+    rest.signing-name: glue
+    rest.signing-region: <region>
+```
+
+##### Unity Catalog
+
+```yaml
+catalog:
+  unity_catalog:
+    type: rest
+    uri: https://<workspace-url>/api/2.1/unity-catalog/iceberg-rest
+    warehouse: <uc-catalog-name>
+    token: <databricks-pat-token>
+```
+
+##### R2 Data Catalog
+
+```yaml
+catalog:
+  r2_catalog:
+    type: rest
+    uri: <r2-catalog-uri>
+    warehouse: <r2-warehouse-name>
+    token: <r2-token>
+```
+
+##### Lakekeeper
+
+```yaml
+catalog:
+  lakekeeper_catalog:
+    type: rest
+    uri: <lakekeeper-catalog-uri>
+    warehouse: <lakekeeper-warehouse-name>
+    credential: <client-id>:<client-secret>
+    oauth2-server-uri: http://localhost:30080/realms/<keycloak-realm-name>/protocol/openid-connect/token
+    scope: lakekeeper
+```
+
+##### Apache Polaris
+
+```yaml
+catalog:
+  polaris_catalog:
+    type: rest
+    uri: https://<account>.snowflakecomputing.com/polaris/api/catalog
+    warehouse: <polaris-catalog-name>
+    credential: <client-id>:<client-secret>
+    header.X-Iceberg-Access-Delegation: vended-credentials
+    scope: PRINCIPAL_ROLE:ALL
+    token-refresh-enabled: true
+    py-io-impl: pyiceberg.io.fsspec.FsspecFileIO
+```
 
 ### SQL Catalog
 
@@ -438,10 +510,12 @@ catalog:
     s3.secret-access-key: password
 ```
 
-| Key                          | Example | Description                       |
-|------------------------------| ------- | --------------------------------- |
-| hive.hive2-compatible        | true    | Using Hive 2.x compatibility mode |
-| hive.kerberos-authentication | true    | Using authentication via Kerberos |
+| Key                          | Example | Description                          |
+|------------------------------| ------- | ------------------------------------ |
+| hive.hive2-compatible        | true    | Using Hive 2.x compatibility mode    |
+| hive.kerberos-authentication | true    | Using authentication via Kerberos    |
+| hive.kerberos-service-name   | hive    | Kerberos service name (default hive) |
+| ugi                 | t-1234:secret                    | Hadoop UGI for Hive client.                                                                        |
 
 When using Hive 2.x, make sure to set the compatibility flag:
 

@@ -32,6 +32,7 @@ from typing import (
     List,
     Optional,
     Tuple,
+    Union,
 )
 from uuid import UUID
 
@@ -121,8 +122,11 @@ class StringWriter(Writer):
 
 @dataclass(frozen=True)
 class UUIDWriter(Writer):
-    def write(self, encoder: BinaryEncoder, val: UUID) -> None:
-        encoder.write(val.bytes)
+    def write(self, encoder: BinaryEncoder, val: Union[UUID, bytes]) -> None:
+        if isinstance(val, UUID):
+            encoder.write(val.bytes)
+        else:
+            encoder.write(val)
 
 
 @dataclass(frozen=True)

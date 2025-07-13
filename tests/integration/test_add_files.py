@@ -737,7 +737,7 @@ def test_add_files_with_valid_upcast(
         with pq.ParquetWriter(fos, schema=pyarrow_schema_with_promoted_types) as writer:
             writer.write_table(pyarrow_table_with_promoted_types)
 
-    tbl.add_files(file_paths=[file_path])
+    tbl.add_files(file_paths=[file_path], check_duplicate_files=False)
     # table's long field should cast to long on read
     written_arrow_table = tbl.scan().to_arrow()
     assert written_arrow_table == pyarrow_table_with_promoted_types.cast(
@@ -747,7 +747,7 @@ def test_add_files_with_valid_upcast(
                 pa.field("list", pa.list_(pa.int64()), nullable=False),
                 pa.field("map", pa.map_(pa.string(), pa.int64()), nullable=False),
                 pa.field("double", pa.float64(), nullable=True),
-                pa.field("uuid", pa.binary(length=16), nullable=True),  # can UUID is read as fixed length binary of length 16
+                pa.field("uuid", pa.uuid(), nullable=True),
             )
         )
     )
