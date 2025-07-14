@@ -471,7 +471,7 @@ class HiveCatalog(MetastoreCatalog):
             try:
                 hive_table = open_client.get_tables(db_name=database_name, pattern=table_name).pop()
             except IndexError as e:
-                raise NoSuchTableError(f"Table does not exists: {table_name}") from e
+                raise NoSuchObjectException("get_table failed: unknown result") from e
 
         return self._convert_hive_into_iceberg(hive_table)
 
@@ -833,4 +833,3 @@ class HiveCatalog(MetastoreCatalog):
     def _get_default_warehouse_location(self, database_name: str, table_name: str) -> str:
         """Override the default warehouse location to follow Hive-style conventions."""
         return self._get_hive_style_warehouse_location(database_name, table_name)
-        
