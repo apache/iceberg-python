@@ -48,14 +48,7 @@ class PartitionStatisticsFile(StatisticsCommonFields):
 
 
 def filter_statistics_by_snapshot_id(
-    statistics: List[StatisticsFile],
+    statistics: List[StatisticsFile | PartitionStatisticsFile],
     reject_snapshot_id: int,
-) -> List[StatisticsFile]:
-    return [stat for stat in statistics if stat.snapshot_id != reject_snapshot_id]
-
-
-def filter_partition_statistics_by_snapshot_id(
-    statistics: List[PartitionStatisticsFile],
-    reject_snapshot_id: int,
-) -> List[PartitionStatisticsFile]:
+) -> List[StatisticsFile | PartitionStatisticsFile]:
     return [stat for stat in statistics if stat.snapshot_id != reject_snapshot_id]

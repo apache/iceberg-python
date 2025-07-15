@@ -39,7 +39,6 @@ from pyiceberg.table.sorting import SortOrder
 from pyiceberg.table.statistics import (
     PartitionStatisticsFile,
     StatisticsFile,
-    filter_partition_statistics_by_snapshot_id,
     filter_statistics_by_snapshot_id,
 )
 from pyiceberg.typedef import (
@@ -601,7 +600,7 @@ def _(update: RemoveStatisticsUpdate, base_metadata: TableMetadata, context: _Ta
 
 @_apply_table_update.register(SetPartitionStatisticsUpdate)
 def _(update: SetPartitionStatisticsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
-    partition_statistics = filter_partition_statistics_by_snapshot_id(
+    partition_statistics = filter_statistics_by_snapshot_id(
         base_metadata.partition_statistics, update.partition_statistics.snapshot_id
     )
     context.add_update(update)
@@ -616,7 +615,7 @@ def _(
     if not any(part_stat.snapshot_id == update.snapshot_id for part_stat in base_metadata.partition_statistics):
         raise ValueError(f"Partition Statistics with snapshot id {update.snapshot_id} does not exist")
 
-    statistics = filter_partition_statistics_by_snapshot_id(base_metadata.partition_statistics, update.snapshot_id)
+    statistics = filter_statistics_by_snapshot_id(base_metadata.partition_statistics, update.snapshot_id)
     context.add_update(update)
 
     return base_metadata.model_copy(update={"partition_statistics": statistics})
