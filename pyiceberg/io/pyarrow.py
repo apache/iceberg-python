@@ -2784,5 +2784,5 @@ def _get_field_from_arrow_table(arrow_table: pa.Table, field_path: str) -> pa.Ar
 
     path_parts = field_path.split(".")
     field_array = arrow_table[path_parts[0]]
-    field_array = pc.struct_field(field_array, path_parts[1:])  # type: ignore
+    field_array = pc.struct_field(field_array, path_parts[1:])
     return field_array
