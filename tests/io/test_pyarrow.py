@@ -84,7 +84,7 @@ from pyiceberg.schema import Schema, make_compatible_name, visit
 from pyiceberg.table import FileScanTask, TableProperties
 from pyiceberg.table.metadata import TableMetadataV2
 from pyiceberg.table.name_mapping import create_mapping_from_schema
-from pyiceberg.transforms import IdentityTransform
+from pyiceberg.transforms import HourTransform, IdentityTransform
 from pyiceberg.typedef import UTF8, Properties, Record
 from pyiceberg.types import (
     BinaryType,
@@ -2348,6 +2348,102 @@ def test_partition_for_demo() -> None:
     assert (
         pa.concat_tables([table_partition.arrow_table_partition for table_partition in result]).num_rows == arrow_table.num_rows
     )
+
+
+def test_partition_for_nested_field() -> None:
+    schema = Schema(
+        NestedField(id=1, name="foo", field_type=StringType(), required=True),
+        NestedField(
+            id=2,
+            name="bar",
+            field_type=StructType(
+                NestedField(id=3, name="baz", field_type=TimestampType(), required=False),
+                NestedField(id=4, name="qux", field_type=IntegerType(), required=False),
+            ),
+            required=True,
+        ),
+    )
+
+    spec = PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=HourTransform(), name="ts"))
+
+    from datetime import datetime
+
+    t1 = datetime(2025, 7, 11, 9, 30, 0)
+    t2 = datetime(2025, 7, 11, 10, 30, 0)
+
+    test_data = [
+        {"foo": "a", "bar": {"baz": t1, "qux": 1}},
+        {"foo": "b", "bar": {"baz": t2, "qux": 2}},
+    ]
+
+    arrow_table = pa.Table.from_pylist(test_data, schema=schema.as_arrow())
+    partitions = _determine_partitions(spec, schema, arrow_table)
+    partition_values = {p.partition_key.partition[0] for p in partitions}
+
+    assert partition_values == {486729, 486730}
+
+
+def test_partition_for_deep_nested_field() -> None:
+    schema = Schema(
+        NestedField(
+            id=1,
+            name="foo",
+            field_type=StructType(
+                NestedField(
+                    id=2,
+                    name="bar",
+                    field_type=StructType(NestedField(id=3, name="baz", field_type=StringType(), required=False)),
+                    required=True,
+                )
+            ),
+            required=True,
+        )
+    )
+
+    spec = PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=IdentityTransform(), name="qux"))
+
+    test_data = [
+        {"foo": {"bar": {"baz": "data-1"}}},
+        {"foo": {"bar": {"baz": "data-2"}}},
+        {"foo": {"bar": {"baz": "data-1"}}},
+    ]
+
+    arrow_table = pa.Table.from_pylist(test_data, schema=schema.as_arrow())
+    partitions = _determine_partitions(spec, schema, arrow_table)
+
+    assert len(partitions) == 2  # 2 unique partitions
+    partition_values = {p.partition_key.partition[0] for p in partitions}
+    assert partition_values == {"data-1", "data-2"}
+
+
+def test_inspect_partition_for_nested_field(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="foo", field_type=StringType(), required=True),
+        NestedField(
+            id=2,
+            name="bar",
+            field_type=StructType(
+                NestedField(id=3, name="baz", field_type=StringType(), required=False),
+                NestedField(id=4, name="qux", field_type=IntegerType(), required=False),
+            ),
+            required=True,
+        ),
+    )
+    spec = PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=IdentityTransform(), name="part"))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_partition_in_struct", schema=schema, partition_spec=spec)
+    test_data = [
+        {"foo": "a", "bar": {"baz": "data-a", "qux": 1}},
+        {"foo": "b", "bar": {"baz": "data-b", "qux": 2}},
+    ]
+
+    arrow_table = pa.Table.from_pylist(test_data, schema=table.schema().as_arrow())
+    table.append(arrow_table)
+    partitions_table = table.inspect.partitions()
+    partitions = partitions_table["partition"].to_pylist()
+
+    assert len(partitions) == 2
+    assert {part["part"] for part in partitions} == {"data-a", "data-b"}
 
 
 def test_identity_partition_on_multi_columns() -> None:

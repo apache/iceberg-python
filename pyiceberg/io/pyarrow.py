@@ -2728,9 +2728,11 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
 
     for partition, name in zip(spec.fields, partition_fields):
         source_field = schema.find_field(partition.source_id)
-        arrow_table = arrow_table.append_column(
-            name, partition.transform.pyarrow_transform(source_field.field_type)(arrow_table[source_field.name])
-        )
+        full_field_name = schema.find_column_name(partition.source_id)
+        if full_field_name is None:
+            raise ValueError(f"Could not find column name for field ID: {partition.source_id}")
+        field_array = _get_field_from_arrow_table(arrow_table, full_field_name)
+        arrow_table = arrow_table.append_column(name, partition.transform.pyarrow_transform(source_field.field_type)(field_array))
 
     unique_partition_fields = arrow_table.select(partition_fields).group_by(partition_fields).aggregate([])
 
@@ -2765,3 +2767,32 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
         )
 
     return table_partitions
+
+
+def _get_field_from_arrow_table(arrow_table: pa.Table, field_path: str) -> pa.Array:
+    """Get a field from an Arrow table, supporting both literal field names and nested field paths.
+
+    This function handles two cases:
+    1. Literal field names that may contain dots (e.g., "some.id")
+    2. Nested field paths using dot notation (e.g., "bar.baz" for nested access)
+
+    Args:
+        arrow_table: The Arrow table containing the field
+        field_path: Field name or dot-separated path
+
+    Returns:
+        The field as a PyArrow Array
+
+    Raises:
+        KeyError: If the field path cannot be resolved
+    """
+    # Try exact column name match (handles field names containing literal dots)
+    if field_path in arrow_table.column_names:
+        return arrow_table[field_path]
+
+    # If not found as exact name, treat as nested field path
+    path_parts = field_path.split(".")
+    # Get the struct column from the table (e.g., "bar" from "bar.baz")
+    field_array = arrow_table[path_parts[0]]
+    # Navigate into the struct using the remaining path parts
+    return pc.struct_field(field_array, path_parts[1:])
