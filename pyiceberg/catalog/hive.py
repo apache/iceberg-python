@@ -389,7 +389,7 @@ class HiveCatalog(MetastoreCatalog):
 
     def _get_hive_table(self, open_client: Client, database_name: str, table_name: str) -> HiveTable:
         try:
-            return open_client.get_tables(db_name=database_name, pattern=table_name).pop()
+            return open_client.get_table_objects_by_name(dbname=database_name, tbl_names=[table_name]).pop()
         except IndexError as e:
             raise NoSuchTableError(f"Table does not exists: {table_name}") from e
 
@@ -436,7 +436,7 @@ class HiveCatalog(MetastoreCatalog):
         with self._client as open_client:
             self._create_hive_table(open_client, tbl)
             try:
-                hive_table = open_client.get_tables(db_name=database_name, pattern=table_name).pop()
+                hive_table = open_client.get_table_objects_by_name(dbname=database_name, tbl_names=[table_name]).pop()
             except IndexError as e:
                 raise NoSuchObjectException("get_table failed: unknown result") from e
 
@@ -469,7 +469,7 @@ class HiveCatalog(MetastoreCatalog):
         with self._client as open_client:
             self._create_hive_table(open_client, tbl)
             try:
-                hive_table = open_client.get_tables(db_name=database_name, pattern=table_name).pop()
+                hive_table = open_client.get_table_objects_by_name(dbname=database_name, tbl_names=[table_name]).pop()
             except IndexError as e:
                 raise NoSuchObjectException("get_table failed: unknown result") from e
 
@@ -668,7 +668,7 @@ class HiveCatalog(MetastoreCatalog):
         try:
             with self._client as open_client:
                 try:
-                    tbl = open_client.get_tables(db_name=from_database_name, pattern=from_table_name).pop()
+                    tbl = open_client.get_table_objects_by_name(dbname=from_database_name, tbl_names=[from_table_name]).pop()
                 except IndexError as e:
                     raise NoSuchObjectException("get_table failed: unknown result") from e
                 tbl.dbName = to_database_name
