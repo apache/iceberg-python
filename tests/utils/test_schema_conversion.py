@@ -33,6 +33,7 @@ from pyiceberg.types import (
     NestedField,
     StringType,
     StructType,
+    TimeType,
     TimestampType,
     UnknownType,
     UUIDType,
