@@ -2416,6 +2416,36 @@ def test_partition_for_deep_nested_field() -> None:
     assert partition_values == {"data-1", "data-2"}
 
 
+def test_inspect_partition_for_nested_field(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="foo", field_type=StringType(), required=True),
+        NestedField(
+            id=2,
+            name="bar",
+            field_type=StructType(
+                NestedField(id=3, name="baz", field_type=StringType(), required=False),
+                NestedField(id=4, name="qux", field_type=IntegerType(), required=False),
+            ),
+            required=True,
+        ),
+    )
+    spec = PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=IdentityTransform(), name="part"))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_partition_in_struct", schema=schema, partition_spec=spec)
+    test_data = [
+        {"foo": "a", "bar": {"baz": "data-a", "qux": 1}},
+        {"foo": "b", "bar": {"baz": "data-b", "qux": 2}},
+    ]
+
+    arrow_table = pa.Table.from_pylist(test_data, schema=table.schema().as_arrow())
+    table.append(arrow_table)
+    partitions_table = table.inspect.partitions()
+    partitions = partitions_table["partition"].to_pylist()
+
+    assert len(partitions) == 2
+    assert {part["part"] for part in partitions} == {"data-a", "data-b"}
+
+
 def test_identity_partition_on_multi_columns() -> None:
     test_pa_schema = pa.schema([("born_year", pa.int64()), ("n_legs", pa.int64()), ("animal", pa.string())])
     test_schema = Schema(

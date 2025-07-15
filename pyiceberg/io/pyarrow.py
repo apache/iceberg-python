@@ -2770,19 +2770,29 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
 
 
 def _get_field_from_arrow_table(arrow_table: pa.Table, field_path: str) -> pa.Array:
-    """Get a nested field from an Arrow table struct type field using dot notation.
+    """Get a field from an Arrow table, supporting both literal field names and nested field paths.
+
+    This function handles two cases:
+    1. Literal field names that may contain dots (e.g., "some.id")
+    2. Nested field paths using dot notation (e.g., "bar.baz" for nested access)
 
     Args:
         arrow_table: The Arrow table containing the field
-        field_path: Dot-separated field path (e.g., "name" or "bar.baz.timestamp")
+        field_path: Field name or dot-separated path
 
     Returns:
-        The unnested field as a PyArrow Array
+        The field as a PyArrow Array
+
+    Raises:
+        KeyError: If the field path cannot be resolved
     """
-    if "." not in field_path:
+    # Try exact column name match (handles field names containing literal dots)
+    if field_path in arrow_table.column_names:
         return arrow_table[field_path]
 
+    # If not found as exact name, treat as nested field path
     path_parts = field_path.split(".")
+    # Get the struct column from the table (e.g., "bar" from "bar.baz")
     field_array = arrow_table[path_parts[0]]
-    field_array = pc.struct_field(field_array, path_parts[1:])
-    return field_array
+    # Navigate into the struct using the remaining path parts
+    return pc.struct_field(field_array, path_parts[1:])
