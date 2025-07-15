@@ -277,7 +277,7 @@ def test_partition_summaries_included_not_set_when_no_change() -> None:
 
 
 @pytest.mark.integration
-def test_partition_summaries_included_not_set_when_unpartitioned_files(table_schema_simple) -> None:
+def test_partition_summaries_included_not_set_when_unpartitioned_files(table_schema_simple: Schema) -> None:
     ssc = SnapshotSummaryCollector()
     data_file = DataFile.from_args(content=DataFileContent.DATA, record_count=100, file_size_in_bytes=1234, partition=Record())
     ssc.add_file(data_file, schema=table_schema_simple)
