@@ -31,6 +31,10 @@ from hive_metastore.ttypes import (
     AlreadyExistsException,
     EnvironmentContext,
     FieldSchema,
+    GetTableRequest,
+    GetTableResult,
+    GetTablesRequest,
+    GetTablesResult,
     InvalidOperationException,
     LockResponse,
     LockState,
@@ -280,7 +284,7 @@ def test_create_table(
 
     catalog._client = MagicMock()
     catalog._client.__enter__().create_table.return_value = None
-    catalog._client.__enter__().get_table_objects_by_name.return_value = [hive_table]
+    catalog._client.__enter__().get_table_req.return_value = GetTableResult(table=hive_table)
     catalog._client.__enter__().get_database.return_value = hive_database
     catalog.create_table(("default", "table"), schema=table_schema_with_all_types, properties={"owner": "javaberg"})
 
@@ -459,7 +463,7 @@ def test_create_table_with_given_location_removes_trailing_slash(
 
     catalog._client = MagicMock()
     catalog._client.__enter__().create_table.return_value = None
-    catalog._client.__enter__().get_table_objects_by_name.return_value = [hive_table]
+    catalog._client.__enter__().get_table_req.return_value = GetTableResult(table=hive_table)
     catalog._client.__enter__().get_database.return_value = hive_database
     catalog.create_table(
         ("default", "table"), schema=table_schema_with_all_types, properties={"owner": "javaberg"}, location=f"{location}/"
@@ -633,7 +637,7 @@ def test_create_v1_table(table_schema_simple: Schema, hive_database: HiveDatabas
 
     catalog._client = MagicMock()
     catalog._client.__enter__().create_table.return_value = None
-    catalog._client.__enter__().get_table_objects_by_name.return_value = [hive_table]
+    catalog._client.__enter__().get_table_req.return_value = GetTableResult(table=hive_table)
     catalog._client.__enter__().get_database.return_value = hive_database
     catalog.create_table(
         ("default", "table"), schema=table_schema_simple, properties={"owner": "javaberg", "format-version": "1"}
@@ -684,10 +688,10 @@ def test_load_table(hive_table: HiveTable) -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
     catalog._client = MagicMock()
-    catalog._client.__enter__().get_table_objects_by_name.return_value = [hive_table]
+    catalog._client.__enter__().get_table_req.return_value = GetTableResult(table=hive_table)
     table = catalog.load_table(("default", "new_tabl2e"))
 
-    catalog._client.__enter__().get_table_objects_by_name.assert_called_with(dbname="default", tbl_names=["new_tabl2e"])
+    catalog._client.__enter__().get_table_req.assert_called_with(req=GetTableRequest(dbName="default", tblName="new_tabl2e"))
 
     expected = TableMetadataV2(
         location="s3://bucket/test/location",
@@ -784,11 +788,11 @@ def test_load_table_from_self_identifier(hive_table: HiveTable) -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
     catalog._client = MagicMock()
-    catalog._client.__enter__().get_table_objects_by_name.side_effect = lambda dbname, tbl_names: [hive_table]
+    catalog._client.__enter__().get_table_req.return_value = GetTableResult(table=hive_table)
     intermediate = catalog.load_table(("default", "new_tabl2e"))
     table = catalog.load_table(intermediate.name())
 
-    catalog._client.__enter__().get_table_objects_by_name.assert_called_with(dbname="default", tbl_names=["new_tabl2e"])
+    catalog._client.__enter__().get_table_req.assert_called_with(req=GetTableRequest(dbName="default", tblName="new_tabl2e"))
 
     expected = TableMetadataV2(
         location="s3://bucket/test/location",
@@ -889,7 +893,10 @@ def test_rename_table(hive_table: HiveTable) -> None:
     renamed_table.tableName = "new_tabl3e"
 
     catalog._client = MagicMock()
-    catalog._client.__enter__().get_table_objects_by_name.side_effect = [[hive_table], [renamed_table]]
+    catalog._client.__enter__().get_table_req.side_effect = [
+        GetTableResult(table=hive_table),
+        GetTableResult(table=renamed_table),
+    ]
     catalog._client.__enter__().alter_table_with_environment_context.return_value = None
 
     from_identifier = ("default", "new_tabl2e")
@@ -898,8 +905,11 @@ def test_rename_table(hive_table: HiveTable) -> None:
 
     assert table.name() == to_identifier
 
-    calls = [call(dbname="default", tbl_names=["new_tabl2e"]), call(dbname="default", tbl_names=["new_tabl3e"])]
-    catalog._client.__enter__().get_table_objects_by_name.assert_has_calls(calls)
+    expected_calls = [
+        call(req=GetTableRequest(dbName="default", tblName="new_tabl2e")),
+        call(req=GetTableRequest(dbName="default", tblName="new_tabl3e")),
+    ]
+    catalog._client.__enter__().get_table_req.assert_has_calls(expected_calls)
     catalog._client.__enter__().alter_table_with_environment_context.assert_called_with(
         dbname="default",
         tbl_name="new_tabl2e",
@@ -912,25 +922,31 @@ def test_rename_table_from_self_identifier(hive_table: HiveTable) -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
     catalog._client = MagicMock()
-    catalog._client.__enter__().get_table_objects_by_name.return_value = [hive_table]
+    catalog._client.__enter__().get_table_req.return_value = GetTableResult(table=hive_table)
 
     from_identifier = ("default", "new_tabl2e")
     from_table = catalog.load_table(from_identifier)
-    catalog._client.__enter__().get_table_objects_by_name.assert_called_with(dbname="default", tbl_names=["new_tabl2e"])
+    catalog._client.__enter__().get_table_req.assert_called_with(req=GetTableRequest(dbName="default", tblName="new_tabl2e"))
 
     renamed_table = copy.deepcopy(hive_table)
     renamed_table.dbName = "default"
     renamed_table.tableName = "new_tabl3e"
 
-    catalog._client.__enter__().get_table_objects_by_name.side_effect = [[hive_table], [renamed_table]]
+    catalog._client.__enter__().get_table_req.side_effect = [
+        GetTableResult(table=hive_table),
+        GetTableResult(table=renamed_table),
+    ]
     catalog._client.__enter__().alter_table_with_environment_context.return_value = None
     to_identifier = ("default", "new_tabl3e")
     table = catalog.rename_table(from_table.name(), to_identifier)
 
     assert table.name() == to_identifier
 
-    calls = [call(dbname="default", tbl_names=["new_tabl2e"]), call(dbname="default", tbl_names=["new_tabl3e"])]
-    catalog._client.__enter__().get_table_objects_by_name.assert_has_calls(calls)
+    expected_calls = [
+        call(req=GetTableRequest(dbName="default", tblName="new_tabl2e")),
+        call(req=GetTableRequest(dbName="default", tblName="new_tabl3e")),
+    ]
+    catalog._client.__enter__().get_table_req.assert_has_calls(expected_calls)
     catalog._client.__enter__().alter_table_with_environment_context.assert_called_with(
         dbname="default",
         tbl_name="new_tabl2e",
@@ -1013,13 +1029,13 @@ def test_list_tables(hive_table: HiveTable) -> None:
 
     catalog._client = MagicMock()
     catalog._client.__enter__().get_all_tables.return_value = ["table1", "table2", "table3", "table4"]
-    catalog._client.__enter__().get_table_objects_by_name.return_value = [tbl1, tbl2, tbl3, tbl4]
+    catalog._client.__enter__().get_table_objects_by_name_req.return_value = GetTablesResult(tables=[tbl1, tbl2, tbl3, tbl4])
 
     got_tables = catalog.list_tables("database")
     assert got_tables == [("database", "table1"), ("database", "table2")]
     catalog._client.__enter__().get_all_tables.assert_called_with(db_name="database")
-    catalog._client.__enter__().get_table_objects_by_name.assert_called_with(
-        dbname="database", tbl_names=["table1", "table2", "table3", "table4"]
+    catalog._client.__enter__().get_table_objects_by_name_req.assert_called_with(
+        req=GetTablesRequest(dbName="database", tblNames=["table1", "table2", "table3", "table4"])
     )
 
 
@@ -1049,7 +1065,7 @@ def test_drop_table_from_self_identifier(hive_table: HiveTable) -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
     catalog._client = MagicMock()
-    catalog._client.__enter__().get_table_objects_by_name.return_value = [hive_table]
+    catalog._client.__enter__().get_table_req.return_value = GetTableResult(table=hive_table)
     table = catalog.load_table(("default", "new_tabl2e"))
 
     catalog._client.__enter__().get_all_databases.return_value = ["namespace1", "namespace2"]
