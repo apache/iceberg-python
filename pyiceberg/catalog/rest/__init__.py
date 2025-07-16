@@ -32,6 +32,7 @@ from tenacity import RetryCallState, retry, retry_if_exception_type, stop_after_
 
 from pyiceberg import __version__
 from pyiceberg.catalog import (
+    BOTOCORE_SESSION,
     TOKEN,
     URI,
     WAREHOUSE_LOCATION,
@@ -53,6 +54,7 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
     UnauthorizedError,
 )
+from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec, assign_fresh_partition_spec_ids
 from pyiceberg.schema import Schema, assign_fresh_schema_ids
 from pyiceberg.table import (
@@ -72,7 +74,7 @@ from pyiceberg.table.update import (
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
 from pyiceberg.types import transform_dict_value_to_str
 from pyiceberg.utils.deprecated import deprecation_message
-from pyiceberg.utils.properties import get_header_properties, property_as_bool
+from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -93,7 +95,7 @@ class Endpoints:
     register_table = "namespaces/{namespace}/register"
     load_table: str = "namespaces/{namespace}/tables/{table}"
     update_table: str = "namespaces/{namespace}/tables/{table}"
-    drop_table: str = "namespaces/{namespace}/tables/{table}?purgeRequested={purge}"
+    drop_table: str = "namespaces/{namespace}/tables/{table}"
     table_exists: str = "namespaces/{namespace}/tables/{table}"
     get_token: str = "oauth/tokens"
     rename_table: str = "tables/rename"
@@ -176,8 +178,8 @@ class RegisterTableRequest(IcebergBaseModel):
 
 
 class ConfigResponse(IcebergBaseModel):
-    defaults: Properties = Field()
-    overrides: Properties = Field()
+    defaults: Optional[Properties] = Field(default_factory=dict)
+    overrides: Optional[Properties] = Field(default_factory=dict)
 
 
 class ListNamespaceResponse(IcebergBaseModel):
@@ -390,11 +392,17 @@ class RestCatalog(Catalog):
             def __init__(self, **properties: str):
                 super().__init__()
                 self._properties = properties
+                self._boto_session = boto3.Session(
+                    region_name=get_first_property_value(self._properties, AWS_REGION),
+                    botocore_session=self._properties.get(BOTOCORE_SESSION),
+                    aws_access_key_id=get_first_property_value(self._properties, AWS_ACCESS_KEY_ID),
+                    aws_secret_access_key=get_first_property_value(self._properties, AWS_SECRET_ACCESS_KEY),
+                    aws_session_token=get_first_property_value(self._properties, AWS_SESSION_TOKEN),
+                )
 
             def add_headers(self, request: PreparedRequest, **kwargs: Any) -> None:  # pylint: disable=W0613
-                boto_session = boto3.Session()
-                credentials = boto_session.get_credentials().get_frozen_credentials()
-                region = self._properties.get(SIGV4_REGION, boto_session.region_name)
+                credentials = self._boto_session.get_credentials().get_frozen_credentials()
+                region = self._properties.get(SIGV4_REGION, self._boto_session.region_name)
                 service = self._properties.get(SIGV4_SERVICE, "execute-api")
 
                 url = str(request.url).split("?")[0]
@@ -609,7 +617,8 @@ class RestCatalog(Catalog):
     @retry(**_RETRY_ARGS)
     def drop_table(self, identifier: Union[str, Identifier], purge_requested: bool = False) -> None:
         response = self._session.delete(
-            self.url(Endpoints.drop_table, prefixed=True, purge=purge_requested, **self._split_identifier_for_path(identifier)),
+            self.url(Endpoints.drop_table, prefixed=True, **self._split_identifier_for_path(identifier)),
+            params={"purgeRequested": purge_requested},
         )
         try:
             response.raise_for_status()

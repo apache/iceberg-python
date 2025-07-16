@@ -38,6 +38,7 @@ from cachetools import LRUCache, cached
 from cachetools.keys import hashkey
 from pydantic_core import to_json
 
+from pyiceberg.avro.codecs import AVRO_CODEC_KEY, AvroCompressionCodec
 from pyiceberg.avro.file import AvroFile, AvroOutputFile
 from pyiceberg.conversions import to_bytes
 from pyiceberg.exceptions import ValidationError
@@ -293,6 +294,129 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
             doc="ID representing sort order for this file",
         ),
     ),
+    3: StructType(
+        NestedField(
+            field_id=134,
+            name="content",
+            field_type=IntegerType(),
+            required=True,
+            doc="File format name: avro, orc, or parquet",
+            initial_default=DataFileContent.DATA,
+        ),
+        NestedField(field_id=100, name="file_path", field_type=StringType(), required=True, doc="Location URI with FS scheme"),
+        NestedField(
+            field_id=101,
+            name="file_format",
+            field_type=StringType(),
+            required=True,
+            doc="File format name: avro, orc, or parquet",
+        ),
+        NestedField(
+            field_id=102,
+            name="partition",
+            field_type=StructType(),
+            required=True,
+            doc="Partition data tuple, schema based on the partition spec",
+        ),
+        NestedField(field_id=103, name="record_count", field_type=LongType(), required=True, doc="Number of records in the file"),
+        NestedField(
+            field_id=104, name="file_size_in_bytes", field_type=LongType(), required=True, doc="Total file size in bytes"
+        ),
+        NestedField(
+            field_id=108,
+            name="column_sizes",
+            field_type=MapType(key_id=117, key_type=IntegerType(), value_id=118, value_type=LongType()),
+            required=False,
+            doc="Map of column id to total size on disk",
+        ),
+        NestedField(
+            field_id=109,
+            name="value_counts",
+            field_type=MapType(key_id=119, key_type=IntegerType(), value_id=120, value_type=LongType()),
+            required=False,
+            doc="Map of column id to total count, including null and NaN",
+        ),
+        NestedField(
+            field_id=110,
+            name="null_value_counts",
+            field_type=MapType(key_id=121, key_type=IntegerType(), value_id=122, value_type=LongType()),
+            required=False,
+            doc="Map of column id to null value count",
+        ),
+        NestedField(
+            field_id=137,
+            name="nan_value_counts",
+            field_type=MapType(key_id=138, key_type=IntegerType(), value_id=139, value_type=LongType()),
+            required=False,
+            doc="Map of column id to number of NaN values in the column",
+        ),
+        NestedField(
+            field_id=125,
+            name="lower_bounds",
+            field_type=MapType(key_id=126, key_type=IntegerType(), value_id=127, value_type=BinaryType()),
+            required=False,
+            doc="Map of column id to lower bound",
+        ),
+        NestedField(
+            field_id=128,
+            name="upper_bounds",
+            field_type=MapType(key_id=129, key_type=IntegerType(), value_id=130, value_type=BinaryType()),
+            required=False,
+            doc="Map of column id to upper bound",
+        ),
+        NestedField(
+            field_id=131, name="key_metadata", field_type=BinaryType(), required=False, doc="Encryption key metadata blob"
+        ),
+        NestedField(
+            field_id=132,
+            name="split_offsets",
+            field_type=ListType(element_id=133, element_type=LongType(), element_required=True),
+            required=False,
+            doc="Splittable offsets",
+        ),
+        NestedField(
+            field_id=135,
+            name="equality_ids",
+            field_type=ListType(element_id=136, element_type=LongType(), element_required=True),
+            required=False,
+            doc="Field ids used to determine row equality in equality delete files.",
+        ),
+        NestedField(
+            field_id=140,
+            name="sort_order_id",
+            field_type=IntegerType(),
+            required=False,
+            doc="ID representing sort order for this file",
+        ),
+        NestedField(
+            field_id=142,
+            name="first_row_id",
+            field_type=LongType(),
+            required=False,
+            doc="The _row_id for the first row in the data file.",
+        ),
+        NestedField(
+            field_id=143,
+            name="referenced_data_file",
+            field_type=StringType(),
+            required=False,
+            doc="Fully qualified location (URI with FS scheme) of a data file that all deletes reference",
+        ),
+        NestedField(
+            field_id=144,
+            name="content_offset",
+            field_type=LongType(),
+            required=False,
+            doc="The offset in the file where the content starts.",
+        ),
+        NestedField(
+            field_id=145,
+            name="content_size_in_bytes",
+            field_type=LongType(),
+            required=False,
+            doc="The length of a referenced content stored in the file; required if content_offset is present",
+        ),
+    ),
 }
 
 
@@ -437,6 +561,13 @@ MANIFEST_ENTRY_SCHEMAS = {
         NestedField(3, "sequence_number", LongType(), required=False),
         NestedField(4, "file_sequence_number", LongType(), required=False),
         NestedField(2, "data_file", DATA_FILE_TYPE[2], required=True),
+    ),
+    3: Schema(
+        NestedField(0, "status", IntegerType(), required=True),
+        NestedField(1, "snapshot_id", LongType(), required=False),
+        NestedField(3, "sequence_number", LongType(), required=False),
+        NestedField(4, "file_sequence_number", LongType(), required=False),
+        NestedField(2, "data_file", DATA_FILE_TYPE[3], required=True),
     ),
 }
 
@@ -607,6 +738,24 @@ MANIFEST_LIST_FILE_SCHEMAS: Dict[int, Schema] = {
         NestedField(514, "deleted_rows_count", LongType(), required=True),
         NestedField(507, "partitions", ListType(508, PARTITION_FIELD_SUMMARY_TYPE, element_required=True), required=False),
         NestedField(519, "key_metadata", BinaryType(), required=False),
+    ),
+    3: Schema(
+        NestedField(500, "manifest_path", StringType(), required=True, doc="Location URI with FS scheme"),
+        NestedField(501, "manifest_length", LongType(), required=True),
+        NestedField(502, "partition_spec_id", IntegerType(), required=True),
+        NestedField(517, "content", IntegerType(), required=True, initial_default=ManifestContent.DATA),
+        NestedField(515, "sequence_number", LongType(), required=True, initial_default=0),
+        NestedField(516, "min_sequence_number", LongType(), required=True, initial_default=0),
+        NestedField(503, "added_snapshot_id", LongType(), required=True),
+        NestedField(504, "added_files_count", IntegerType(), required=True),
+        NestedField(505, "existing_files_count", IntegerType(), required=True),
+        NestedField(506, "deleted_files_count", IntegerType(), required=True),
+        NestedField(512, "added_rows_count", LongType(), required=True),
+        NestedField(513, "existing_rows_count", LongType(), required=True),
+        NestedField(514, "deleted_rows_count", LongType(), required=True),
+        NestedField(507, "partitions", ListType(508, PARTITION_FIELD_SUMMARY_TYPE, element_required=True), required=False),
+        NestedField(519, "key_metadata", BinaryType(), required=False),
+        NestedField(520, "first_row_id", LongType(), required=False),
     ),
 }
 
@@ -827,7 +976,7 @@ def _inherit_from_manifest(entry: ManifestEntry, manifest: ManifestFile) -> Mani
     """
     # Inherit sequence numbers.
     # The snapshot_id is required in V1, inherit with V2 when null
-    if entry.snapshot_id is None:
+    if entry.snapshot_id is None and manifest.added_snapshot_id is not None:
         entry.snapshot_id = manifest.added_snapshot_id
 
     # in v1 tables, the sequence number is not persisted and can be safely defaulted to 0
@@ -862,9 +1011,16 @@ class ManifestWriter(ABC):
     _deleted_rows: int
     _min_sequence_number: Optional[int]
     _partitions: List[Record]
-    _reused_entry_wrapper: ManifestEntry
+    _compression: AvroCompressionCodec
 
-    def __init__(self, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int) -> None:
+    def __init__(
+        self,
+        spec: PartitionSpec,
+        schema: Schema,
+        output_file: OutputFile,
+        snapshot_id: int,
+        avro_compression: AvroCompressionCodec,
+    ) -> None:
         self.closed = False
         self._spec = spec
         self._schema = schema
@@ -879,6 +1035,7 @@ class ManifestWriter(ABC):
         self._deleted_rows = 0
         self._min_sequence_number = None
         self._partitions = []
+        self._compression = avro_compression
 
     def __enter__(self) -> ManifestWriter:
         """Open the writer."""
@@ -914,6 +1071,7 @@ class ManifestWriter(ABC):
             "partition-spec": to_json(self._spec.fields).decode("utf-8"),
             "partition-spec-id": str(self._spec.spec_id),
             "format-version": str(self.version),
+            AVRO_CODEC_KEY: self._compression,
         }
 
     def _with_partition(self, format_version: TableVersion) -> Schema:
@@ -1025,13 +1183,15 @@ class ManifestWriter(ABC):
 
 
 class ManifestWriterV1(ManifestWriter):
-    def __init__(self, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int):
-        super().__init__(
-            spec,
-            schema,
-            output_file,
-            snapshot_id,
-        )
+    def __init__(
+        self,
+        spec: PartitionSpec,
+        schema: Schema,
+        output_file: OutputFile,
+        snapshot_id: int,
+        avro_compression: AvroCompressionCodec,
+    ):
+        super().__init__(spec, schema, output_file, snapshot_id, avro_compression)
 
     def content(self) -> ManifestContent:
         return ManifestContent.DATA
@@ -1045,8 +1205,15 @@ class ManifestWriterV1(ManifestWriter):
 
 
 class ManifestWriterV2(ManifestWriter):
-    def __init__(self, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int):
-        super().__init__(spec, schema, output_file, snapshot_id)
+    def __init__(
+        self,
+        spec: PartitionSpec,
+        schema: Schema,
+        output_file: OutputFile,
+        snapshot_id: int,
+        avro_compression: AvroCompressionCodec,
+    ):
+        super().__init__(spec, schema, output_file, snapshot_id, avro_compression)
 
     def content(self) -> ManifestContent:
         return ManifestContent.DATA
@@ -1072,12 +1239,17 @@ class ManifestWriterV2(ManifestWriter):
 
 
 def write_manifest(
-    format_version: TableVersion, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int
+    format_version: TableVersion,
+    spec: PartitionSpec,
+    schema: Schema,
+    output_file: OutputFile,
+    snapshot_id: int,
+    avro_compression: AvroCompressionCodec,
 ) -> ManifestWriter:
     if format_version == 1:
-        return ManifestWriterV1(spec, schema, output_file, snapshot_id)
+        return ManifestWriterV1(spec, schema, output_file, snapshot_id, avro_compression)
     elif format_version == 2:
-        return ManifestWriterV2(spec, schema, output_file, snapshot_id)
+        return ManifestWriterV2(spec, schema, output_file, snapshot_id, avro_compression)
     else:
         raise ValueError(f"Cannot write manifest for table version: {format_version}")
 
@@ -1127,7 +1299,13 @@ class ManifestListWriter(ABC):
 
 
 class ManifestListWriterV1(ManifestListWriter):
-    def __init__(self, output_file: OutputFile, snapshot_id: int, parent_snapshot_id: Optional[int]):
+    def __init__(
+        self,
+        output_file: OutputFile,
+        snapshot_id: int,
+        parent_snapshot_id: Optional[int],
+        compression: AvroCompressionCodec,
+    ):
         super().__init__(
             format_version=1,
             output_file=output_file,
@@ -1135,6 +1313,7 @@ class ManifestListWriterV1(ManifestListWriter):
                 "snapshot-id": str(snapshot_id),
                 "parent-snapshot-id": str(parent_snapshot_id) if parent_snapshot_id is not None else "null",
                 "format-version": "1",
+                AVRO_CODEC_KEY: compression,
             },
         )
 
@@ -1148,7 +1327,14 @@ class ManifestListWriterV2(ManifestListWriter):
     _commit_snapshot_id: int
     _sequence_number: int
 
-    def __init__(self, output_file: OutputFile, snapshot_id: int, parent_snapshot_id: Optional[int], sequence_number: int):
+    def __init__(
+        self,
+        output_file: OutputFile,
+        snapshot_id: int,
+        parent_snapshot_id: Optional[int],
+        sequence_number: int,
+        compression: AvroCompressionCodec,
+    ):
         super().__init__(
             format_version=2,
             output_file=output_file,
@@ -1158,6 +1344,7 @@ class ManifestListWriterV2(ManifestListWriter):
                 "sequence-number": str(sequence_number),
                 "format-version": "2",
                 "content": "data",
+                AVRO_CODEC_KEY: compression,
             },
         )
         self._commit_snapshot_id = snapshot_id
@@ -1192,12 +1379,13 @@ def write_manifest_list(
     snapshot_id: int,
     parent_snapshot_id: Optional[int],
     sequence_number: Optional[int],
+    avro_compression: AvroCompressionCodec,
 ) -> ManifestListWriter:
     if format_version == 1:
-        return ManifestListWriterV1(output_file, snapshot_id, parent_snapshot_id)
+        return ManifestListWriterV1(output_file, snapshot_id, parent_snapshot_id, avro_compression)
     elif format_version == 2:
         if sequence_number is None:
             raise ValueError(f"Sequence-number is required for V2 tables: {sequence_number}")
-        return ManifestListWriterV2(output_file, snapshot_id, parent_snapshot_id, sequence_number)
+        return ManifestListWriterV2(output_file, snapshot_id, parent_snapshot_id, sequence_number, avro_compression)
     else:
         raise ValueError(f"Cannot write manifest list for table version: {format_version}")
