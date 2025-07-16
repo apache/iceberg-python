@@ -23,7 +23,7 @@ ENV AWS_SDK_BUNDLE=1.12.753
 RUN curl https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/${HADOOP_VERSION}/hadoop-aws-${HADOOP_VERSION}.jar -Lo /tmp/hadoop-aws-${HADOOP_VERSION}.jar
 RUN curl https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/${AWS_SDK_BUNDLE}/aws-java-sdk-bundle-${AWS_SDK_BUNDLE}.jar -Lo /tmp/aws-java-sdk-bundle-${AWS_SDK_BUNDLE}.jar
 
-FROM apache/hive:4.0.0
+FROM apache/hive:4.0.1
 
 ENV HADOOP_VERSION=3.3.6
 ENV AWS_SDK_BUNDLE=1.12.753
