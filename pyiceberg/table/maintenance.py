@@ -359,14 +359,13 @@ class MaintenanceTable:
         """
         Remove duplicate data files from the current snapshot of an Iceberg table.
 
-        This method identifies DataFile entries in the current snapshot that reference 
-        the same file path and removes the duplicate references, keeping only one 
+        This method identifies DataFile entries in the current snapshot that reference
+        the same file path and removes the duplicate references, keeping only one
         reference per unique file path.
 
         Returns:
             List of removed DataFile objects.
         """
-        import os
         from collections import defaultdict
 
         removed: List[DataFile] = []
@@ -385,7 +384,7 @@ class MaintenanceTable:
         has_duplicates = False
         unique_files_to_keep = []
 
-        for file_path, file_list in file_groups.items():
+        for _file_path, file_list in file_groups.items():
             if len(file_list) > 1:
                 # Keep the first occurrence, mark the rest as duplicates to remove
                 unique_files_to_keep.append(file_list[0])
@@ -404,11 +403,11 @@ class MaintenanceTable:
                 # First, delete ALL current files
                 for data_file in current_datafiles:
                     overwrite_files.delete_data_file(data_file)
-                
+
                 # Then append only the unique files we want to keep
                 for data_file in unique_files_to_keep:
                     overwrite_files.append_data_file(data_file)
-            
+
             transaction.commit_transaction()
 
         return removed
