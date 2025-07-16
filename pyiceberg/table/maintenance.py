@@ -314,6 +314,28 @@ class MaintenanceTable:
 
         return datafiles
 
+    def _get_all_datafiles_across_snapshots(self) -> List[DataFile]:
+        """Collect all DataFiles across ALL snapshots."""
+        datafiles: List[DataFile] = []
+        all_snapshots = self.tbl.metadata.snapshots
+
+        def process_manifest(manifest: ManifestFile) -> list[DataFile]:
+            found: list[DataFile] = []
+            for entry in manifest.fetch_manifest_entry(io=self.tbl.io, discard_deleted=True):
+                if hasattr(entry, "data_file"):
+                    found.append(entry.data_file)
+            return found
+
+        # Scan all snapshots' manifests
+        for snapshot in all_snapshots:
+            manifests = snapshot.manifests(io=self.tbl.io)
+            with ThreadPoolExecutor() as executor:
+                results = executor.map(process_manifest, manifests)
+                for res in results:
+                    datafiles.extend(res)
+
+        return datafiles
+
     def _get_expiration_properties(self) -> tuple[Optional[int], Optional[int], Optional[int]]:
         """Get the default expiration properties from table properties.
 
@@ -335,7 +357,11 @@ class MaintenanceTable:
 
     def deduplicate_data_files(self) -> List[DataFile]:
         """
-        Remove duplicate data files from an Iceberg table.
+        Remove duplicate data files from the current snapshot of an Iceberg table.
+
+        This method identifies DataFile entries in the current snapshot that reference 
+        the same file path and removes the duplicate references, keeping only one 
+        reference per unique file path.
 
         Returns:
             List of removed DataFile objects.
@@ -345,53 +371,44 @@ class MaintenanceTable:
 
         removed: List[DataFile] = []
 
-        # Get the current snapshot
-        current_snapshot = self.tbl.current_snapshot()
-        if not current_snapshot:
+        # Get all data files from current snapshot only - we can only modify the current snapshot
+        current_datafiles = self._get_all_datafiles()
+        if not current_datafiles:
             return removed
 
-        # Collect all manifest entries from the current snapshot
-        all_entries = []
-        for manifest in current_snapshot.manifests(io=self.tbl.io):
-            entries = list(manifest.fetch_manifest_entry(io=self.tbl.io, discard_deleted=True))
-            all_entries.extend(entries)
-
-        # Group entries by file name
+        # Group data files by file path (full path, not just basename)
         file_groups = defaultdict(list)
-        for entry in all_entries:
-            file_name = os.path.basename(entry.data_file.file_path)
-            file_groups[file_name].append(entry)
+        for data_file in current_datafiles:
+            file_groups[data_file.file_path].append(data_file)
 
-        # Find duplicate entries to remove
+        # Find duplicate files to remove and unique files to keep
         has_duplicates = False
-        files_to_remove = []
-        files_to_keep = []
+        unique_files_to_keep = []
 
-        for _file_name, entries in file_groups.items():
-            if len(entries) > 1:
-                # Keep the first entry, remove the rest
-                files_to_keep.append(entries[0].data_file)
-                for duplicate_entry in entries[1:]:
-                    files_to_remove.append(duplicate_entry.data_file)
-                    removed.append(duplicate_entry.data_file)
+        for file_path, file_list in file_groups.items():
+            if len(file_list) > 1:
+                # Keep the first occurrence, mark the rest as duplicates to remove
+                unique_files_to_keep.append(file_list[0])
+                for duplicate_file in file_list[1:]:
+                    removed.append(duplicate_file)
                     has_duplicates = True
             else:
-                # No duplicates, keep the entry
-                files_to_keep.append(entries[0].data_file)
+                # No duplicates, keep the file
+                unique_files_to_keep.append(file_list[0])
 
         # Only create a new snapshot if we actually have duplicates to remove
         if has_duplicates:
-            with self.tbl.transaction() as txn:
-                with txn.update_snapshot().overwrite() as overwrite_snapshot:
-                    # First, explicitly delete all the duplicate files
-                    for file_to_remove in files_to_remove:
-                        overwrite_snapshot.delete_data_file(file_to_remove)
-
-                    # Then add back only the files that should be kept
-                    for file_to_keep in files_to_keep:
-                        overwrite_snapshot.append_data_file(file_to_keep)
-
-            # Refresh the table to reflect the changes
-            self.tbl = self.tbl.refresh()
+            # Use overwrite correctly: first delete existing files, then append unique ones
+            transaction = self.tbl.transaction()
+            with transaction.update_snapshot().overwrite() as overwrite_files:
+                # First, delete ALL current files
+                for data_file in current_datafiles:
+                    overwrite_files.delete_data_file(data_file)
+                
+                # Then append only the unique files we want to keep
+                for data_file in unique_files_to_keep:
+                    overwrite_files.append_data_file(data_file)
+            
+            transaction.commit_transaction()
 
         return removed
