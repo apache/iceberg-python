@@ -332,3 +332,66 @@ class MaintenanceTable:
         max_ref_age_ms = int(max_ref_age) if max_ref_age is not None else None
 
         return max_snapshot_age, min_snapshots_to_keep, max_ref_age_ms
+
+    def deduplicate_data_files(self) -> List[DataFile]:
+        """
+        Remove duplicate data files from an Iceberg table.
+
+        Returns:
+            List of removed DataFile objects.
+        """
+        import os
+        from collections import defaultdict
+
+        removed: List[DataFile] = []
+
+        # Get the current snapshot
+        current_snapshot = self.tbl.current_snapshot()
+        if not current_snapshot:
+            return removed
+
+        # Collect all manifest entries from the current snapshot
+        all_entries = []
+        for manifest in current_snapshot.manifests(io=self.tbl.io):
+            entries = list(manifest.fetch_manifest_entry(io=self.tbl.io, discard_deleted=True))
+            all_entries.extend(entries)
+
+        # Group entries by file name
+        file_groups = defaultdict(list)
+        for entry in all_entries:
+            file_name = os.path.basename(entry.data_file.file_path)
+            file_groups[file_name].append(entry)
+
+        # Find duplicate entries to remove
+        has_duplicates = False
+        files_to_remove = []
+        files_to_keep = []
+
+        for _file_name, entries in file_groups.items():
+            if len(entries) > 1:
+                # Keep the first entry, remove the rest
+                files_to_keep.append(entries[0].data_file)
+                for duplicate_entry in entries[1:]:
+                    files_to_remove.append(duplicate_entry.data_file)
+                    removed.append(duplicate_entry.data_file)
+                    has_duplicates = True
+            else:
+                # No duplicates, keep the entry
+                files_to_keep.append(entries[0].data_file)
+
+        # Only create a new snapshot if we actually have duplicates to remove
+        if has_duplicates:
+            with self.tbl.transaction() as txn:
+                with txn.update_snapshot().overwrite() as overwrite_snapshot:
+                    # First, explicitly delete all the duplicate files
+                    for file_to_remove in files_to_remove:
+                        overwrite_snapshot.delete_data_file(file_to_remove)
+
+                    # Then add back only the files that should be kept
+                    for file_to_keep in files_to_keep:
+                        overwrite_snapshot.append_data_file(file_to_keep)
+
+            # Refresh the table to reflect the changes
+            self.tbl = self.tbl.refresh()
+
+        return removed
