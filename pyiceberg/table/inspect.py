@@ -681,32 +681,6 @@ class InspectTable:
         )
         return pa.concat_tables(manifests_by_snapshots)
 
-    def _all_known_files(self) -> dict[str, set[str]]:
-        """Get all the known files in the table.
-
-        Returns:
-            dict of {file_type: set of file paths} for each file type.
-        """
-        snapshots = self.tbl.snapshots()
-
-        _all_known_files = {}
-        _all_known_files["manifests"] = set(self.all_manifests(snapshots)["path"].to_pylist())
-        _all_known_files["manifest_lists"] = {snapshot.manifest_list for snapshot in snapshots}
-        _all_known_files["statistics"] = {statistic.statistics_path for statistic in self.tbl.metadata.statistics}
-
-        metadata_files = {entry.metadata_file for entry in self.tbl.metadata.metadata_log}
-        metadata_files.add(self.tbl.metadata_location)  # Include current metadata file
-        _all_known_files["metadata"] = metadata_files
-
-        executor = ExecutorFactory.get_or_create()
-        snapshot_ids = [snapshot.snapshot_id for snapshot in snapshots]
-        files_by_snapshots: Iterator[Set[str]] = executor.map(
-            lambda snapshot_id: set(self.files(snapshot_id)["file_path"].to_pylist()), snapshot_ids
-        )
-        _all_known_files["datafiles"] = reduce(set.union, files_by_snapshots, set())
-
-        return _all_known_files
-
     def _all_files(self, data_file_filter: Optional[Set[DataFileContent]] = None) -> "pa.Table":
         import pyarrow as pa
 
