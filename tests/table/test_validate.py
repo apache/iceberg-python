@@ -22,14 +22,16 @@ import pytest
 
 from pyiceberg.exceptions import ValidationException
 from pyiceberg.io import FileIO
-from pyiceberg.manifest import ManifestContent, ManifestEntry, ManifestEntryStatus, ManifestFile
+from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestEntry, ManifestEntryStatus, ManifestFile
 from pyiceberg.table import Table
 from pyiceberg.table.snapshots import Operation, Snapshot, Summary
 from pyiceberg.table.update.validate import (
     _added_data_files,
+    _added_delete_files,
     _deleted_data_files,
     _validate_added_data_files,
     _validate_deleted_data_files,
+    _validate_no_new_delete_files,
     _validation_history,
 )
 
@@ -350,3 +352,141 @@ def test_validate_added_data_files_raises_on_conflict(
                 data_filter=None,
                 parent_snapshot=oldest_snapshot,
             )
+
+
+def test_validate_new_delete_files_raises_on_conflict(
+    table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]],
+) -> None:
+    table, _ = table_v2_with_extensive_snapshots_and_manifests
+    oldest_snapshot = table.snapshots()[0]
+    newest_snapshot = cast(Snapshot, table.current_snapshot())
+
+    with patch("pyiceberg.table.update.validate.DeleteFileIndex.is_empty", return_value=False):
+        with pytest.raises(ValidationException):
+            _validate_no_new_delete_files(
+                table=table,
+                starting_snapshot=newest_snapshot,
+                data_filter=None,
+                partition_set=None,
+                parent_snapshot=oldest_snapshot,
+            )
+
+
+@pytest.mark.parametrize("operation", [Operation.APPEND, Operation.REPLACE])
+def test_validate_added_delete_files_non_conflicting_count(
+    table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]],
+    operation: Operation,
+) -> None:
+    table, mock_manifests = table_v2_with_extensive_snapshots_and_manifests
+
+    snapshot_history = 100
+    snapshots = table.snapshots()
+    for i in range(1, snapshot_history + 1):
+        altered_snapshot = snapshots[-i]
+        altered_snapshot = altered_snapshot.model_copy(update={"summary": Summary(operation=operation)})
+        snapshots[-i] = altered_snapshot
+
+    table.metadata = table.metadata.model_copy(
+        update={"snapshots": snapshots},
+    )
+
+    oldest_snapshot = table.snapshots()[-snapshot_history]
+    newest_snapshot = cast(Snapshot, table.current_snapshot())
+
+    def mock_read_manifest_side_effect(self: Snapshot, io: FileIO) -> list[ManifestFile]:
+        """Mock the manifests method to use the snapshot_id for lookup."""
+        snapshot_id = self.snapshot_id
+        if snapshot_id in mock_manifests:
+            return mock_manifests[snapshot_id]
+        return []
+
+    def mock_fetch_manifest_entry(self: ManifestFile, io: FileIO, discard_deleted: bool = True) -> list[ManifestEntry]:
+        return [
+            ManifestEntry.from_args(
+                status=ManifestEntryStatus.ADDED, snapshot_id=self.added_snapshot_id, sequence_number=self.sequence_number
+            )
+        ]
+
+    with (
+        patch("pyiceberg.table.snapshots.Snapshot.manifests", new=mock_read_manifest_side_effect),
+        patch("pyiceberg.manifest.ManifestFile.fetch_manifest_entry", new=mock_fetch_manifest_entry),
+    ):
+        dfi = _added_delete_files(
+            table=table,
+            starting_snapshot=newest_snapshot,
+            data_filter=None,
+            parent_snapshot=oldest_snapshot,
+            partition_set=None,
+        )
+
+        assert dfi.is_empty()
+        assert not dfi.has_position_deletes()
+        assert not dfi.has_equality_deletes()
+        assert len(dfi.referenced_delete_files()) == 0
+
+
+@pytest.mark.parametrize("operation", [Operation.DELETE, Operation.OVERWRITE])
+def test_validate_added_delete_files_conflicting_count(
+    table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]],
+    operation: Operation,
+) -> None:
+    table, mock_manifests = table_v2_with_extensive_snapshots_and_manifests
+
+    snapshot_history = 100
+    snapshots = table.snapshots()
+    for i in range(1, snapshot_history + 1):
+        altered_snapshot = snapshots[-i]
+        altered_snapshot = altered_snapshot.model_copy(update={"summary": Summary(operation=operation)})
+        snapshots[-i] = altered_snapshot
+
+    table.metadata = table.metadata.model_copy(
+        update={"snapshots": snapshots},
+    )
+
+    oldest_snapshot = table.snapshots()[-snapshot_history]
+    newest_snapshot = cast(Snapshot, table.current_snapshot())
+
+    mock_delete_file = DataFile.from_args(
+        content=DataFileContent.POSITION_DELETES,
+        file_path="s3://dummy/path",
+    )
+
+    def mock_read_manifest_side_effect(self: Snapshot, io: FileIO) -> list[ManifestFile]:
+        """Mock the manifests method to use the snapshot_id for lookup."""
+        snapshot_id = self.snapshot_id
+        if snapshot_id in mock_manifests:
+            return mock_manifests[snapshot_id]
+        return []
+
+    def mock_fetch_manifest_entry(self: ManifestFile, io: FileIO, discard_deleted: bool = True) -> list[ManifestEntry]:
+        result = [
+            ManifestEntry.from_args(
+                status=ManifestEntryStatus.ADDED, snapshot_id=self.added_snapshot_id, sequence_number=self.min_sequence_number
+            )
+        ]
+
+        result[-1] = ManifestEntry.from_args(
+            status=ManifestEntryStatus.ADDED,
+            snapshot_id=self.added_snapshot_id,
+            sequence_number=10000,
+            data_file=mock_delete_file,
+        )
+
+        return result
+
+    with (
+        patch("pyiceberg.table.snapshots.Snapshot.manifests", new=mock_read_manifest_side_effect),
+        patch("pyiceberg.manifest.ManifestFile.fetch_manifest_entry", new=mock_fetch_manifest_entry),
+    ):
+        dfi = _added_delete_files(
+            table=table,
+            starting_snapshot=newest_snapshot,
+            data_filter=None,
+            parent_snapshot=oldest_snapshot,
+            partition_set=None,
+        )
+
+        assert not dfi.is_empty()
+        assert dfi.has_position_deletes()
+        assert not dfi.has_equality_deletes()
+        assert dfi.referenced_delete_files()[0] == mock_delete_file

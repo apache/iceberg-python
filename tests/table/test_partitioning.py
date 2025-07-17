@@ -21,7 +21,7 @@ from uuid import UUID
 
 import pytest
 
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionMap, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import (
     BucketTransform,
@@ -223,3 +223,64 @@ def test_deserialize_partition_field_v3() -> None:
 
     field = PartitionField.model_validate_json(json_partition_spec)
     assert field == PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate")
+
+
+@pytest.fixture
+def specs_set() -> dict[int, PartitionSpec]:
+    return {
+        0: UNPARTITIONED_PARTITION_SPEC,
+        1: PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=DayTransform(), name="dayPartition"), spec_id=1),
+        2: PartitionSpec(
+            PartitionField(source_id=1, field_id=1000, transform=DayTransform(), name="dayPartition"),
+            PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="identityPartition"),
+            spec_id=2,
+        ),
+    }
+
+
+def test_empty_partition_map() -> None:
+    specs: dict[int, PartitionSpec] = {UNPARTITIONED_PARTITION_SPEC.spec_id: UNPARTITIONED_PARTITION_SPEC}
+    partition_map: PartitionMap[str] = PartitionMap(specs)
+    assert partition_map.is_empty()
+    assert len(partition_map) == 0
+    assert not partition_map.contains_key(1, Record(1))
+    assert len(partition_map.values()) == 0
+
+
+def test_size_partition_map(specs_set: dict[int, PartitionSpec]) -> None:
+    partition_map: PartitionMap[str] = PartitionMap(specs_set)
+    partition_map.put(UNPARTITIONED_PARTITION_SPEC.spec_id, None, "v1")
+    partition_map.put(specs_set[1].spec_id, Record("aaa"), "v2")
+    partition_map.put(specs_set[1].spec_id, Record("bbb"), "v3")
+    partition_map.put(specs_set[2].spec_id, Record("ccc", 2), "v4")
+    assert not partition_map.is_empty()
+    assert len(partition_map) == 4
+
+
+def test_put_and_get_partition_map(specs_set: dict[int, PartitionSpec]) -> None:
+    partition_map: PartitionMap[str] = PartitionMap(specs_set)
+    partition_map.put(UNPARTITIONED_PARTITION_SPEC.spec_id, None, "v1")
+    partition_map.put(specs_set[1].spec_id, Record("aaa", 1), "v2")
+    assert partition_map.get(UNPARTITIONED_PARTITION_SPEC.spec_id, None) == "v1"
+    assert partition_map.get(specs_set[1].spec_id, Record("aaa", 1)) == "v2"
+
+
+def test_values_partition_map(specs_set: dict[int, PartitionSpec]) -> None:
+    partition_map: PartitionMap[str] = PartitionMap(specs_set)
+    partition_map.put(UNPARTITIONED_PARTITION_SPEC.spec_id, None, "v1")
+    partition_map.put(specs_set[1].spec_id, Record("aaa"), "v2")
+    partition_map.put(specs_set[1].spec_id, Record("bbb"), "v3")
+    partition_map.put(specs_set[2].spec_id, Record("ccc", 2), "v4")
+    assert partition_map.values() == ["v1", "v2", "v3", "v4"]
+
+
+def test_compute_if_absent_partition_map(specs_set: dict[int, PartitionSpec]) -> None:
+    partition_map: PartitionMap[str] = PartitionMap(specs_set)
+
+    result1 = partition_map.compute_if_absent(specs_set[1].spec_id, Record("a"), lambda: "v1")
+    assert result1 == "v1"
+    assert partition_map.get(specs_set[1].spec_id, Record("a")) == "v1"
+
+    result2 = partition_map.compute_if_absent(specs_set[1].spec_id, Record("a"), lambda: "v2")
+    assert result2 == "v1"
+    assert partition_map.get(specs_set[1].spec_id, Record("a")) == "v1"
