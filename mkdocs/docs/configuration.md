@@ -374,6 +374,94 @@ Specific headers defined by the RESTCatalog spec include:
 | ------------------------------------ | ------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `header.X-Iceberg-Access-Delegation` | `{vended-credentials,remote-signing}` | `vended-credentials` | Signal to the server that the client supports delegated access via a comma-separated list of access mechanisms. The server may choose to supply access via any or none of the requested mechanisms |
 
+#### Authentication in RESTCatalog
+
+The RESTCatalog supports pluggable authentication via the `auth` configuration block. This allows you to specify which how the access token will be fetched and managed for use with the HTTP requests to the RESTCatalog server. The authentication method is selected by setting the `auth.type` property, and additional configuration can be provided as needed for each method.
+
+##### Supported Authentication Types
+
+- `noop`: No authentication (no Authorization header sent).
+- `basic`: HTTP Basic authentication.
+- `oauth2`: OAuth2 client credentials flow.
+- `legacyoauth2`: Legacy OAuth2 client credentials flow (Deprecated and will be removed in PyIceberg 1.0.0)
+- `custom`: Custom authentication manager (requires `auth.impl`).
+
+##### Configuration Properties
+
+The `auth` block is structured as follows:
+
+```yaml
+catalog:
+  default:
+    type: rest
+    uri: http://rest-catalog/ws/
+    auth:
+      type: <auth_type>
+      <auth_type>:
+        # Type-specific configuration
+      impl: <custom_class_path>  # Only for custom auth
+```
+
+**Property Reference:**
+
+| Property         | Required | Description                                                                                     |
+|------------------|----------|-------------------------------------------------------------------------------------------------|
+| `auth.type`      | Yes      | The authentication type to use (`noop`, `basic`, `oauth2`, or `custom`).                       |
+| `auth.impl`      | Conditionally | The fully qualified class path for a custom AuthManager. Required if `auth.type` is `custom`. |
+| `auth.basic`     | If type is `basic` | Block containing `username` and `password` for HTTP Basic authentication.           |
+| `auth.oauth2`    | If type is `oauth2` | Block containing OAuth2 configuration (see below).                                 |
+| `auth.custom`    | If type is `custom` | Block containing configuration for the custom AuthManager.                          |
+
+##### Examples
+
+**No Authentication:**
+
+```yaml
+auth:
+  type: noop
+```
+
+**Basic Authentication:**
+
+```yaml
+auth:
+  type: basic
+  basic:
+    username: myuser
+    password: mypass
+```
+
+**OAuth2 Authentication:**
+
+```yaml
+auth:
+  type: oauth2
+  oauth2:
+    client_id: my-client-id
+    client_secret: my-client-secret
+    token_url: https://auth.example.com/oauth/token
+    scope: read
+    refresh_margin: 60         # (optional) seconds before expiry to refresh
+    expires_in: 3600           # (optional) fallback if server does not provide
+```
+
+**Custom Authentication:**
+
+```yaml
+auth:
+  type: custom
+  impl: mypackage.module.MyAuthManager
+  custom:
+    property1: value1
+    property2: value2
+```
+
+##### Notes
+
+- If `auth.type` is `custom`, you **must** specify `auth.impl` with the full class path to your custom AuthManager.
+- If `auth.type` is not `custom`, specifying `auth.impl` is not allowed.
+- The configuration block under each type (e.g., `basic`, `oauth2`, `custom`) is passed as keyword arguments to the corresponding AuthManager.
+
 ### SQL Catalog
 
 The SQL catalog requires a database for its backend. PyIceberg supports PostgreSQL and SQLite through psycopg2. The database connection has to be configured using the `uri` property. The init_catalog_tables is optional and defaults to True. If it is set to False, the catalog tables will not be created when the SQLCatalog is initialized. See SQLAlchemy's [documentation for URL format](https://docs.sqlalchemy.org/en/20/core/engines.html#backend-specific-urls):
