@@ -1533,7 +1533,7 @@ def test_rest_catalog_with_basic_auth_type() -> None:
     with pytest.raises(TypeError) as e:
         # Missing namespace
         RestCatalog("rest", **catalog_properties)  # type: ignore
-    assert "BasicAuthManager.__init__() missing 1 required positional argument: 'password'" in str(e.value)
+    assert "__init__() missing 1 required positional argument: 'password'" in str(e.value)
 
 
 def test_rest_catalog_with_custom_auth_type() -> None:
