@@ -1536,7 +1536,7 @@ def test_rest_catalog_with_basic_auth_type() -> None:
     assert "BasicAuthManager.__init__() missing 1 required positional argument: 'password'" in str(e.value)
 
 
-def test_rest_catalog_with_auth_impl() -> None:
+def test_rest_catalog_with_custom_auth_type() -> None:
     # Given
     catalog_properties = {
         "uri": TEST_URI,
@@ -1553,6 +1553,95 @@ def test_rest_catalog_with_auth_impl() -> None:
         # Missing namespace
         RestCatalog("rest", **catalog_properties)  # type: ignore
     assert "Could not load AuthManager class for 'dummy.nonexistent.package'" in str(e.value)
+
+
+def test_rest_catalog_with_custom_auth_type_no_impl() -> None:
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "custom",
+            "custom": {
+                "property1": "one",
+                "property2": "two",
+            },
+        },
+    }
+    with pytest.raises(ValueError) as e:
+        # Missing namespace
+        RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert "auth.impl must be specified when using custom auth.type" in str(e.value)
+
+
+def test_rest_catalog_with_non_custom_auth_type_impl() -> None:
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "oauth2",
+            "impl": "oauth2.package",
+            "oauth2": {
+                "property1": "one",
+                "property2": "two",
+            },
+        },
+    }
+    with pytest.raises(ValueError) as e:
+        # Missing namespace
+        RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert "auth.impl can only be specified when using custom auth.type" in str(e.value)
+
+
+def test_rest_catalog_with_unsupported_auth_type() -> None:
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "unsupported",
+            "unsupported": {
+                "property1": "one",
+                "property2": "two",
+            },
+        },
+    }
+    with pytest.raises(ValueError) as e:
+        # Missing namespace
+        RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert "Could not load AuthManager class for 'unsupported'" in str(e.value)
+
+
+def test_rest_catalog_with_oauth2_auth_type(requests_mock: Mocker) -> None:
+    requests_mock.post(
+        f"{TEST_URI}oauth2/token",
+        json={
+            "access_token": "MTQ0NjJkZmQ5OTM2NDE1ZTZjNGZmZjI3",
+            "token_type": "Bearer",
+            "expires_in": 3600,
+            "refresh_token": "IwOGYzYTlmM2YxOTQ5MGE3YmNmMDFkNTVk",
+            "scope": "read",
+        },
+        status_code=200,
+    )
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "oauth2",
+            "oauth2": {
+                "client_id": "some_client_id",
+                "client_secret": "some_client_secret",
+                "token_url": f"{TEST_URI}oauth2/token",
+                "scope": "read",
+            },
+        },
+    }
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert catalog.uri == TEST_URI
 
 
 EXAMPLE_ENV = {"PYICEBERG_CATALOG__PRODUCTION__URI": TEST_URI}

@@ -189,8 +189,23 @@ class OAuth2TokenProvider:
 class OAuth2AuthManager(AuthManager):
     """Auth Manager implementation that supports OAuth2 as defined in IETF RFC6749."""
 
-    def __init__(self, token_provider: OAuth2TokenProvider):
-        self.token_provider = token_provider
+    def __init__(
+        self,
+        client_id: str,
+        client_secret: str,
+        token_url: str,
+        scope: Optional[str] = None,
+        refresh_margin: int = 60,
+        expires_in: Optional[int] = None,
+    ):
+        self.token_provider = OAuth2TokenProvider(
+            client_id,
+            client_secret,
+            token_url,
+            scope,
+            refresh_margin,
+            expires_in,
+        )
 
     def auth_header(self) -> str:
         return f"Bearer {self.token_provider.get_token()}"
@@ -274,3 +289,4 @@ class AuthManagerFactory:
 AuthManagerFactory.register("noop", NoopAuthManager)
 AuthManagerFactory.register("basic", BasicAuthManager)
 AuthManagerFactory.register("legacyoauth2", LegacyOAuth2AuthManager)
+AuthManagerFactory.register("oauth2", OAuth2AuthManager)

@@ -135,6 +135,7 @@ SIGV4_SERVICE = "rest.signing-name"
 OAUTH2_SERVER_URI = "oauth2-server-uri"
 SNAPSHOT_LOADING_MODE = "snapshot-loading-mode"
 AUTH = "auth"
+CUSTOM = "custom"
 
 NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
 
@@ -249,15 +250,19 @@ class RestCatalog(Catalog):
                     session.cert = ssl_client_cert
 
         if auth_config := self.properties.get(AUTH):
-            # set up auth_manager based on the properties
             auth_type = auth_config.get("type")
             if auth_type is None:
                 raise ValueError("auth.type must be defined")
             auth_type_config = auth_config.get(auth_type, {})
-            if auth_impl := auth_config.get("impl"):
-                session.auth = AuthManagerAdapter(AuthManagerFactory.create(auth_impl, auth_type_config))
-            else:
-                session.auth = AuthManagerAdapter(AuthManagerFactory.create(auth_type, auth_type_config))
+            auth_impl = auth_config.get("impl")
+
+            if auth_type is CUSTOM and not auth_impl:
+                raise ValueError("auth.impl must be specified when using custom auth.type")
+
+            if auth_type is not CUSTOM and auth_impl:
+                raise ValueError("auth.impl can only be specified when using custom auth.type")
+
+            session.auth = AuthManagerAdapter(AuthManagerFactory.create(auth_impl or auth_type, auth_type_config))
         else:
             session.auth = AuthManagerAdapter(self._create_legacy_oauth2_auth_manager(session))
 
