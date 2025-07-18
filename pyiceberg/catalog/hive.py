@@ -389,8 +389,8 @@ class HiveCatalog(MetastoreCatalog):
 
     def _get_hive_table(self, open_client: Client, database_name: str, table_name: str) -> HiveTable:
         try:
-            return open_client.get_table(dbname=database_name, tbl_name=table_name)
-        except NoSuchObjectException as e:
+            return open_client.get_table_objects_by_name(dbname=database_name, tbl_names=[table_name]).pop()
+        except IndexError as e:
             raise NoSuchTableError(f"Table does not exists: {table_name}") from e
 
     def create_table(
@@ -435,7 +435,10 @@ class HiveCatalog(MetastoreCatalog):
 
         with self._client as open_client:
             self._create_hive_table(open_client, tbl)
-            hive_table = open_client.get_table(dbname=database_name, tbl_name=table_name)
+            try:
+                hive_table = open_client.get_table_objects_by_name(dbname=database_name, tbl_names=[table_name]).pop()
+            except IndexError as e:
+                raise NoSuchObjectException("get_table failed: unknown result") from e
 
         return self._convert_hive_into_iceberg(hive_table)
 
@@ -465,7 +468,10 @@ class HiveCatalog(MetastoreCatalog):
         tbl = self._convert_iceberg_into_hive(staged_table)
         with self._client as open_client:
             self._create_hive_table(open_client, tbl)
-            hive_table = open_client.get_table(dbname=database_name, tbl_name=table_name)
+            try:
+                hive_table = open_client.get_table_objects_by_name(dbname=database_name, tbl_names=[table_name]).pop()
+            except IndexError as e:
+                raise NoSuchObjectException("get_table failed: unknown result") from e
 
         return self._convert_hive_into_iceberg(hive_table)
 
@@ -656,7 +662,10 @@ class HiveCatalog(MetastoreCatalog):
         to_database_name, to_table_name = self.identifier_to_database_and_table(to_identifier)
         try:
             with self._client as open_client:
-                tbl = open_client.get_table(dbname=from_database_name, tbl_name=from_table_name)
+                try:
+                    tbl = open_client.get_table_objects_by_name(dbname=from_database_name, tbl_names=[from_table_name]).pop()
+                except IndexError as e:
+                    raise NoSuchObjectException("get_table failed: unknown result") from e
                 tbl.dbName = to_database_name
                 tbl.tableName = to_table_name
                 open_client.alter_table_with_environment_context(
