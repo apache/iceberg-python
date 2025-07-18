@@ -16,6 +16,7 @@
 # under the License.
 import os
 import uuid
+import warnings
 from pathlib import Path
 from typing import Generator, List, Set
 
@@ -287,6 +288,162 @@ def test_deduplicate_ensures_no_duplicate_paths_across_all_snapshots(iceberg_cat
         assert len(unique_paths_after) == 3, (
             f"Expected 3 unique file paths after deduplication, got {len(unique_paths_after)}: {unique_paths_after}"
         )
+
+    finally:
+        # Cleanup table's catalog connections
+        if hasattr(table, "_catalog") and hasattr(table._catalog, "engine"):
+            try:
+                table._catalog.engine.dispose()
+            except Exception:
+                pass
+
+def test_rebuild_current_snapshot(iceberg_catalog: InMemoryCatalog, tmp_path: Path) -> None:
+    """Test that rebuild_current_snapshot successfully rebuilds a snapshot with unique data files."""
+    identifier = "default.rebuild_snapshot_test"
+    try:
+        iceberg_catalog.drop_table(identifier)
+    except Exception:
+        pass
+
+    arrow_schema = pa.schema([
+        pa.field("id", pa.int32(), nullable=False),
+        pa.field("value", pa.string(), nullable=True),
+    ])
+
+    # Create test files
+    unique_id = uuid.uuid4()
+    base_dir = tmp_path / f"{unique_id}_rebuild"
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    file1 = base_dir / "file1.parquet"
+    file2 = base_dir / "file2.parquet"
+    
+    # Create test data
+    data1 = pa.Table.from_pylist([{"id": 1, "value": "DATA1"}], schema=arrow_schema)
+    data2 = pa.Table.from_pylist([{"id": 2, "value": "DATA2"}], schema=arrow_schema)
+    
+    # Write files
+    pq.write_table(data1, str(file1))
+    pq.write_table(data2, str(file2))
+
+    table: Table = iceberg_catalog.create_table(identifier, arrow_schema)
+
+    try:
+        # Add some files to the table
+        tx1 = table.transaction()
+        tx1.add_files([str(file1)], check_duplicate_files=False)
+        tx1.commit_transaction()
+        
+        tx2 = table.transaction()
+        tx2.add_files([str(file2)], check_duplicate_files=False)
+        tx2.commit_transaction()
+
+        # Get initial snapshot count
+        initial_snapshot_count = len(table.metadata.snapshots)
+        
+        # Get initial data files count
+        mt = MaintenanceTable(tbl=table)
+        initial_datafiles = mt._get_all_datafiles()
+        initial_file_count = len(initial_datafiles)
+        
+        # Test rebuild_current_snapshot
+        snapshot_properties = {"rebuild.test": "true", "rebuild.timestamp": "123456789"}
+        
+        # Rebuild the current snapshot
+        result = mt.rebuild_current_snapshot(snapshot_properties=snapshot_properties)
+        
+        # Verify the result contains expected information
+        assert isinstance(result, dict), "rebuild_current_snapshot should return a dict"
+        assert 'rebuilt' in result, "Result should contain 'rebuilt' key"
+        assert 'total_files' in result, "Result should contain 'total_files' key"
+        assert 'unique_files' in result, "Result should contain 'unique_files' key"
+        assert 'duplicates_removed' in result, "Result should contain 'duplicates_removed' key"
+        
+        # Since we added two different files, there should be no duplicates
+        assert result['rebuilt'] == False, "Should not rebuild when no duplicates exist"
+        assert result['total_files'] == initial_file_count, f"Expected {initial_file_count} total files"
+        assert result['unique_files'] == initial_file_count, f"Expected {initial_file_count} unique files"
+        assert result['duplicates_removed'] == 0, "Expected 0 duplicates removed"
+        
+        # Verify no new snapshot was created (optimization working)
+        table = table.refresh()
+        new_snapshot_count = len(table.metadata.snapshots)
+        assert new_snapshot_count == initial_snapshot_count, (
+            f"Expected {initial_snapshot_count} snapshots (no rebuild), got {new_snapshot_count}"
+        )
+
+    finally:
+        # Cleanup table's catalog connections
+        if hasattr(table, "_catalog") and hasattr(table._catalog, "engine"):
+            try:
+                table._catalog.engine.dispose()
+            except Exception:
+                pass
+
+
+def test_rebuild_current_snapshot_with_duplicates(
+    iceberg_catalog: InMemoryCatalog,
+    tmp_path: Path,
+) -> None:
+    identifier = "default.rebuild_test_duplicates"
+    
+    arrow_schema = pa.schema([
+        pa.field("id", pa.int32(), nullable=False),
+        pa.field("value", pa.string(), nullable=True),
+    ])
+    
+    # Create test table
+    table: Table = iceberg_catalog.create_table(identifier, arrow_schema)
+
+    try:
+        # Create data files with the same path to simulate duplicates
+        file1 = tmp_path / "data1.parquet" 
+        data1 = pa.Table.from_pylist([{"id": 1, "value": "DATA1"}], schema=arrow_schema)
+        pq.write_table(data1, str(file1))
+
+        # Add the same file twice to create duplicates
+        tx1 = table.transaction()
+        tx1.add_files([str(file1)], check_duplicate_files=False)
+        tx1.commit_transaction()
+        
+        tx2 = table.transaction()
+        tx2.add_files([str(file1)], check_duplicate_files=False)  # Same file again
+        tx2.commit_transaction()
+
+        # Get initial snapshot count
+        initial_snapshot_count = len(table.metadata.snapshots)
+        
+        # Get initial data files count
+        mt = MaintenanceTable(tbl=table)
+        initial_datafiles = mt._get_all_datafiles()
+        initial_file_count = len(initial_datafiles)
+        
+        # Should have duplicates now
+        assert initial_file_count > len({df.file_path for df in initial_datafiles}), "Should have duplicate files"
+        
+        # Test rebuild_current_snapshot with duplicates
+        snapshot_properties = {"rebuild.test": "true", "rebuild.timestamp": "123456789"}
+        
+        result = mt.rebuild_current_snapshot(snapshot_properties=snapshot_properties)
+        
+        # Verify rebuild happened due to duplicates
+        assert isinstance(result, dict), "rebuild_current_snapshot should return a dict"
+        assert result['rebuilt'] == True, "Should rebuild when duplicates exist"
+        assert result['duplicates_removed'] > 0, "Should have removed duplicates"
+        assert result['unique_files'] < result['total_files'], "Unique files should be less than total"
+        
+        # Verify new snapshot was created
+        table = table.refresh()
+        new_snapshot_count = len(table.metadata.snapshots)
+        assert new_snapshot_count > initial_snapshot_count, (
+            f"Expected more than {initial_snapshot_count} snapshots after rebuild with duplicates"
+        )
+        
+        # Verify duplicates were removed
+        mt_refreshed = MaintenanceTable(tbl=table)
+        final_datafiles = mt_refreshed._get_all_datafiles()
+        final_file_paths = {df.file_path for df in final_datafiles}
+        assert len(final_file_paths) == len(final_datafiles), "All file paths should be unique after rebuild"
 
     finally:
         # Cleanup table's catalog connections

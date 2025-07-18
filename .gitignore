@@ -51,3 +51,5 @@ htmlcov
 pyiceberg/avro/decoder_fast.c
 pyiceberg/avro/*.html
 pyiceberg/avro/*.so
+poetry.lock
+pyproject.toml

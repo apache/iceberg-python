@@ -17,10 +17,14 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
+from pyiceberg.exceptions import CommitFailedException
+from pyiceberg.expressions import AlwaysTrue
 from pyiceberg.manifest import DataFile, ManifestFile
+from pyiceberg.typedef import EMPTY_DICT
 from pyiceberg.utils.concurrent import ThreadPoolExecutor  # type: ignore[attr-defined]
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger(__name__)
 
@@ -292,25 +296,30 @@ class MaintenanceTable:
 
     def _get_all_datafiles(self) -> List[DataFile]:
         """Collect all DataFiles in the current snapshot only."""
-        datafiles: List[DataFile] = []
-
         current_snapshot = self.tbl.current_snapshot()
         if not current_snapshot:
-            return datafiles
+            return []
 
-        def process_manifest(manifest: ManifestFile) -> list[DataFile]:
-            found: list[DataFile] = []
+        def process_manifest(manifest: ManifestFile) -> List[DataFile]:
+            """Process a single manifest file and return its data files."""
+            datafiles = []
             for entry in manifest.fetch_manifest_entry(io=self.tbl.io, discard_deleted=True):
                 if hasattr(entry, "data_file"):
-                    found.append(entry.data_file)
-            return found
+                    datafiles.append(entry.data_file)
+            return datafiles
 
-        # Scan only the current snapshot's manifests
+        # Get all manifests for the current snapshot
         manifests = current_snapshot.manifests(io=self.tbl.io)
+        
+        # Use ThreadPoolExecutor for parallel processing of manifests
         with ThreadPoolExecutor() as executor:
-            results = executor.map(process_manifest, manifests)
-            for res in results:
-                datafiles.extend(res)
+            # Submit all manifest processing tasks
+            future_results = list(executor.map(process_manifest, manifests))
+            
+            # Flatten results efficiently
+            datafiles = []
+            for result in future_results:
+                datafiles.extend(result)
 
         return datafiles
 
@@ -411,3 +420,119 @@ class MaintenanceTable:
             transaction.commit_transaction()
 
         return removed
+
+    def rebuild_current_snapshot(
+        self,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        **retry_kwargs: Any,
+    ) -> Dict[str, Any]:
+        """
+        Rebuild the current snapshot with unique data files.
+
+        This method creates a new snapshot containing all unique data files from the current snapshot,
+        effectively deduplicating any duplicate file references while preserving all unique data.
+
+        Args:
+            snapshot_properties: Properties to apply to the new snapshot.
+            **retry_kwargs: Additional retry configuration parameters passed to the retry decorator.
+                          Supported parameters: stop, wait, retry, reraise, etc.
+
+        Returns:
+            Dict containing operation summary with keys:
+            - 'rebuilt': bool - Whether a rebuild was actually performed
+            - 'total_files': int - Total number of data files processed
+            - 'unique_files': int - Number of unique files after deduplication
+            - 'duplicates_removed': int - Number of duplicate file references removed
+
+        Raises:
+            CommitFailedException: If the commit fails after all retries are exhausted.
+        """
+        # Configure retry parameters with defaults
+        retry_config = {
+            'stop': stop_after_attempt(3),
+            'wait': wait_exponential(multiplier=1, min=2, max=10),
+            'retry': retry_if_exception_type(CommitFailedException),
+            'reraise': True,
+        }
+        # Override defaults with any provided retry_kwargs
+        retry_config.update(retry_kwargs)
+
+        # Get initial data files and track snapshot ID for optimization
+        current_snapshot = self.tbl.current_snapshot()
+        last_snapshot_id = current_snapshot.snapshot_id if current_snapshot else None
+        current_datafiles = self._get_all_datafiles()
+        
+        # Early exit: Check if there are actually duplicates before proceeding
+        file_path_counts: Dict[str, int] = {}
+        for data_file in current_datafiles:
+            file_path_counts[data_file.file_path] = file_path_counts.get(data_file.file_path, 0) + 1
+        
+        # If no duplicates exist, skip the rebuild entirely
+        has_duplicates = any(count > 1 for count in file_path_counts.values())
+        if not has_duplicates:
+            return {
+                'rebuilt': False,
+                'total_files': len(current_datafiles),
+                'unique_files': len(current_datafiles),
+                'duplicates_removed': 0
+            }
+        
+        # Only create distinct_datafiles dict if we have duplicates
+        distinct_datafiles = {data_file.file_path: data_file for data_file in current_datafiles}
+        duplicates_removed = len(current_datafiles) - len(distinct_datafiles)
+
+        @retry(**retry_config)
+        def attempt_rebuild_snapshot():
+            nonlocal last_snapshot_id, current_datafiles, distinct_datafiles
+            
+            # Refresh table state on each attempt
+            self.tbl.refresh()
+            
+            # Only re-fetch data files if snapshot ID has changed
+            current_snapshot = self.tbl.current_snapshot()
+            current_snapshot_id = current_snapshot.snapshot_id if current_snapshot else None
+            
+            if current_snapshot_id != last_snapshot_id:
+                current_datafiles = self._get_all_datafiles()
+                
+                # Re-check for duplicates after refresh
+                file_path_counts = {}
+                for data_file in current_datafiles:
+                    file_path_counts[data_file.file_path] = file_path_counts.get(data_file.file_path, 0) + 1
+                
+                # Early exit if no duplicates after refresh
+                has_duplicates = any(count > 1 for count in file_path_counts.values())
+                if not has_duplicates:
+                    return {
+                        'rebuilt': False,
+                        'total_files': len(current_datafiles),
+                        'unique_files': len(current_datafiles),
+                        'duplicates_removed': 0
+                    }
+                
+                distinct_datafiles = {data_file.file_path: data_file for data_file in current_datafiles}
+                last_snapshot_id = current_snapshot_id
+
+            transaction = self.tbl.transaction()
+            with transaction.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as overwrite_files:
+                # Batch delete all current files first
+                for data_file in current_datafiles:
+                    overwrite_files.delete_data_file(data_file)
+
+                # Batch append all unique files
+                for data_file in distinct_datafiles.values():
+                    overwrite_files.append_data_file(data_file)
+
+            transaction.commit_transaction()
+
+        attempt_rebuild_snapshot()
+        
+        return {
+            'rebuilt': True,
+            'total_files': len(current_datafiles),
+            'unique_files': len(distinct_datafiles),
+            'duplicates_removed': duplicates_removed
+        }
+
+
+                
