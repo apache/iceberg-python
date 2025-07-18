@@ -109,12 +109,12 @@ BUCKET_PARSER = ParseNumberFromBrackets(BUCKET)
 TRUNCATE_PARSER = ParseNumberFromBrackets(TRUNCATE)
 
 
-def _try_import(module_name: str, extras_name: str | None = None) -> types.ModuleType:
+def _try_import(module_name: str, extras_name: Optional[str] = None) -> types.ModuleType:
     try:
         return importlib.import_module(module_name)
     except ImportError:
         if extras_name:
-            msg = f"{module_name} needs to be installed. `pip install pyiceberg[{extras_name}]`"
+            msg = f'{module_name} needs to be installed. pip install "pyiceberg[{extras_name}]"'
         else:
             msg = f"{module_name} needs to be installed."
         raise NotInstalledError(msg) from None
@@ -396,7 +396,7 @@ class BucketTransform(Transform[S, int]):
         return f"BucketTransform(num_buckets={self._num_buckets})"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg_core").transform
+        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
         return _pyiceberg_transform_wrapper(pyiceberg_core_transform.bucket, self._num_buckets)
 
     @property
@@ -523,7 +523,7 @@ class YearTransform(TimeTransform[S]):
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
         pa = _try_import("pyarrow")
-        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg_core").transform
+        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
         return _pyiceberg_transform_wrapper(pyiceberg_core_transform.year, expected_type=pa.int32())
 
 
@@ -583,7 +583,7 @@ class MonthTransform(TimeTransform[S]):
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
         pa = _try_import("pyarrow")
-        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg_core").transform
+        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
 
         return _pyiceberg_transform_wrapper(pyiceberg_core_transform.month, expected_type=pa.int32())
 
@@ -651,8 +651,8 @@ class DayTransform(TimeTransform[S]):
         return "DayTransform()"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        pa = _try_import("pyarrow")
-        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg_core").transform
+        pa = _try_import("pyarrow", extras_name="pyarrow")
+        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
 
         return _pyiceberg_transform_wrapper(pyiceberg_core_transform.day, expected_type=pa.int32())
 
@@ -704,7 +704,7 @@ class HourTransform(TimeTransform[S]):
         return "HourTransform()"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg_core").transform
+        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
 
         return _pyiceberg_transform_wrapper(pyiceberg_core_transform.hour)
 
@@ -927,7 +927,7 @@ class TruncateTransform(Transform[S, S]):
         return f"TruncateTransform(width={self._width})"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg_core").transform
+        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
 
         return _pyiceberg_transform_wrapper(pyiceberg_core_transform.truncate, self._width)
 
