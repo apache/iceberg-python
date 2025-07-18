@@ -364,70 +364,13 @@ class MaintenanceTable:
 
         return max_snapshot_age, min_snapshots_to_keep, max_ref_age_ms
 
-    def deduplicate_data_files(self) -> List[DataFile]:
-        """
-        Remove duplicate data files from the current snapshot of an Iceberg table.
-
-        This method identifies DataFile entries in the current snapshot that reference
-        the same file path and removes the duplicate references, keeping only one
-        reference per unique file path.
-
-        Returns:
-            List of removed DataFile objects.
-        """
-        from collections import defaultdict
-
-        removed: List[DataFile] = []
-
-        # Get all data files from current snapshot only - we can only modify the current snapshot
-        current_datafiles = self._get_all_datafiles()
-        if not current_datafiles:
-            return removed
-
-        # Group data files by file path (full path, not just basename)
-        file_groups = defaultdict(list)
-        for data_file in current_datafiles:
-            file_groups[data_file.file_path].append(data_file)
-
-        # Find duplicate files to remove and unique files to keep
-        has_duplicates = False
-        unique_files_to_keep = []
-
-        for _file_path, file_list in file_groups.items():
-            if len(file_list) > 1:
-                # Keep the first occurrence, mark the rest as duplicates to remove
-                unique_files_to_keep.append(file_list[0])
-                for duplicate_file in file_list[1:]:
-                    removed.append(duplicate_file)
-                    has_duplicates = True
-            else:
-                # No duplicates, keep the file
-                unique_files_to_keep.append(file_list[0])
-
-        # Only create a new snapshot if we actually have duplicates to remove
-        if has_duplicates:
-            # Use overwrite correctly: first delete existing files, then append unique ones
-            transaction = self.tbl.transaction()
-            with transaction.update_snapshot().overwrite() as overwrite_files:
-                # First, delete ALL current files
-                for data_file in current_datafiles:
-                    overwrite_files.delete_data_file(data_file)
-
-                # Then append only the unique files we want to keep
-                for data_file in unique_files_to_keep:
-                    overwrite_files.append_data_file(data_file)
-
-            transaction.commit_transaction()
-
-        return removed
-
-    def rebuild_current_snapshot(
+    def deduplicate_data_files(
         self,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
         **retry_kwargs: Any,
     ) -> Dict[str, Any]:
         """
-        Rebuild the current snapshot with unique data files.
+        Remove duplicate data files from the current snapshot of an Iceberg table.
 
         This method creates a new snapshot containing all unique data files from the current snapshot,
         effectively deduplicating any duplicate file references while preserving all unique data.

@@ -105,16 +105,17 @@ def prepopulated_table(iceberg_catalog: InMemoryCatalog, dupe_data_file_path: Pa
 def test_overwrite_removes_only_selected_datafile(prepopulated_table: Table, dupe_data_file_path: Path) -> None:
     mt = MaintenanceTable(tbl=prepopulated_table)
 
-    removed_files: List[DataFile] = mt.deduplicate_data_files()
+    result = mt.deduplicate_data_files()
 
     file_names_after: Set[str] = {df.file_path.split("/")[-1] for df in mt._get_all_datafiles()}
     # Only one file with the same name should remain after deduplication
     assert dupe_data_file_path.name in file_names_after, f"Expected {dupe_data_file_path.name} to remain in the table"
     assert len(file_names_after) == 1, "Expected only one unique file name to remain after deduplication"
-    # All removed files should have the same file name
-    assert all(df.file_path.split("/")[-1] == dupe_data_file_path.name for df in removed_files), (
-        "All removed files should be duplicates by name"
-    )
+    
+    # Verify the result shows duplicates were removed
+    assert isinstance(result, dict), "deduplicate_data_files should return a dict"
+    assert result['rebuilt'] == True, "Should have rebuilt when duplicates existed"
+    assert result['duplicates_removed'] > 0, "Should have removed duplicates"
 
 
 def test_get_all_datafiles_current_snapshot(prepopulated_table: Table, dupe_data_file_path: Path) -> None:
@@ -155,13 +156,17 @@ def test_deduplicate_data_files_removes_duplicates_in_current_snapshot(
         assert file_names.count(dupe_data_file_path.name) > 1, (
             f"Expected multiple references to {dupe_data_file_path.name} before deduplication"
         )
-        removed: List[DataFile] = mt.deduplicate_data_files()
+        result = mt.deduplicate_data_files()
 
         all_datafiles_after: List[DataFile] = mt._get_all_datafiles()
         file_names_after: List[str] = [os.path.basename(df.file_path) for df in all_datafiles_after]
         # Only one reference should remain after deduplication
         assert file_names_after.count(dupe_data_file_path.name) == 1
-        assert all(isinstance(df, DataFile) for df in removed)
+        
+        # Verify the result shows operation was successful
+        assert isinstance(result, dict), "deduplicate_data_files should return a dict"
+        assert result['rebuilt'] == True, "Should have rebuilt when duplicates existed"
+        assert result['duplicates_removed'] > 0, "Should have removed duplicates"
     finally:
         # Ensure we close the table's catalog connection
         if hasattr(prepopulated_table, "_catalog"):
@@ -241,7 +246,7 @@ def test_deduplicate_ensures_no_duplicate_paths_across_all_snapshots(iceberg_cat
         unique2_count_before = file_paths_before.count(str(unique_file_2))
 
         # Perform deduplication
-        removed_files: List[DataFile] = mt.deduplicate_data_files()
+        result = mt.deduplicate_data_files()
 
         # Verify after deduplication
         all_datafiles_after: List[DataFile] = mt._get_all_datafiles()
@@ -272,18 +277,14 @@ def test_deduplicate_ensures_no_duplicate_paths_across_all_snapshots(iceberg_cat
             f"Unique file 2 count changed: before={unique2_count_before}, after={unique2_count_after}"
         )
 
-        # Test 4: Verify removed files were actually duplicates
-        assert len(removed_files) == duplicate_count_before - 1, (
-            f"Expected {duplicate_count_before - 1} files to be removed, got {len(removed_files)}"
+        # Test 4: Verify operation summary
+        assert isinstance(result, dict), "deduplicate_data_files should return a dict"
+        assert result['rebuilt'] == True, "Should have rebuilt when duplicates existed"
+        assert result['duplicates_removed'] == duplicate_count_before - 1, (
+            f"Expected {duplicate_count_before - 1} duplicates removed, got {result['duplicates_removed']}"
         )
 
-        # Test 5: All removed files should be the duplicate file
-        for removed_file in removed_files:
-            assert removed_file.file_path == str(duplicate_file), (
-                f"Removed file should be the duplicate file, got {removed_file.file_path}"
-            )
-
-        # Test 6: Total number of unique file paths should be 3 (duplicate + unique1 + unique2)
+        # Test 5: Total number of unique file paths should be 3 (duplicate + unique1 + unique2)
         unique_paths_after = set(file_paths_after)
         assert len(unique_paths_after) == 3, (
             f"Expected 3 unique file paths after deduplication, got {len(unique_paths_after)}: {unique_paths_after}"
@@ -297,8 +298,8 @@ def test_deduplicate_ensures_no_duplicate_paths_across_all_snapshots(iceberg_cat
             except Exception:
                 pass
 
-def test_rebuild_current_snapshot(iceberg_catalog: InMemoryCatalog, tmp_path: Path) -> None:
-    """Test that rebuild_current_snapshot successfully rebuilds a snapshot with unique data files."""
+def test_deduplicate_data_files_no_duplicates(iceberg_catalog: InMemoryCatalog, tmp_path: Path) -> None:
+    """Test that deduplicate_data_files correctly handles cases with no duplicates."""
     identifier = "default.rebuild_snapshot_test"
     try:
         iceberg_catalog.drop_table(identifier)
@@ -346,14 +347,14 @@ def test_rebuild_current_snapshot(iceberg_catalog: InMemoryCatalog, tmp_path: Pa
         initial_datafiles = mt._get_all_datafiles()
         initial_file_count = len(initial_datafiles)
         
-        # Test rebuild_current_snapshot
+        # Test deduplicate_data_files
         snapshot_properties = {"rebuild.test": "true", "rebuild.timestamp": "123456789"}
         
-        # Rebuild the current snapshot
-        result = mt.rebuild_current_snapshot(snapshot_properties=snapshot_properties)
+        # Deduplicate the current snapshot
+        result = mt.deduplicate_data_files(snapshot_properties=snapshot_properties)
         
         # Verify the result contains expected information
-        assert isinstance(result, dict), "rebuild_current_snapshot should return a dict"
+        assert isinstance(result, dict), "deduplicate_data_files should return a dict"
         assert 'rebuilt' in result, "Result should contain 'rebuilt' key"
         assert 'total_files' in result, "Result should contain 'total_files' key"
         assert 'unique_files' in result, "Result should contain 'unique_files' key"
@@ -381,7 +382,7 @@ def test_rebuild_current_snapshot(iceberg_catalog: InMemoryCatalog, tmp_path: Pa
                 pass
 
 
-def test_rebuild_current_snapshot_with_duplicates(
+def test_deduplicate_data_files_with_duplicates(
     iceberg_catalog: InMemoryCatalog,
     tmp_path: Path,
 ) -> None:
@@ -421,13 +422,13 @@ def test_rebuild_current_snapshot_with_duplicates(
         # Should have duplicates now
         assert initial_file_count > len({df.file_path for df in initial_datafiles}), "Should have duplicate files"
         
-        # Test rebuild_current_snapshot with duplicates
+        # Test deduplicate_data_files with duplicates
         snapshot_properties = {"rebuild.test": "true", "rebuild.timestamp": "123456789"}
         
-        result = mt.rebuild_current_snapshot(snapshot_properties=snapshot_properties)
+        result = mt.deduplicate_data_files(snapshot_properties=snapshot_properties)
         
         # Verify rebuild happened due to duplicates
-        assert isinstance(result, dict), "rebuild_current_snapshot should return a dict"
+        assert isinstance(result, dict), "deduplicate_data_files should return a dict"
         assert result['rebuilt'] == True, "Should rebuild when duplicates exist"
         assert result['duplicates_removed'] > 0, "Should have removed duplicates"
         assert result['unique_files'] < result['total_files'], "Unique files should be less than total"
