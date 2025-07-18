@@ -1704,6 +1704,8 @@ class TableScan(ABC):
         """Create a copy of this table scan with updated fields."""
         from inspect import signature
 
+        # Extract those attributes that are constructor parameters. We don't use self.__dict__ as the kwargs to the
+        # constructors because it may contain additional attributes that are not part of the constructor signature.
         params = signature(type(self).__init__).parameters.keys() - {"self"}  # Skip "self" parameter
         kwargs = {param: getattr(self, param) for param in params}  # Assume parameters are attributes
 
