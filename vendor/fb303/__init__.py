@@ -15,4 +15,4 @@
 #  specific language governing permissions and limitations
 #  under the License.
 
-__all__ = ["ttypes", "constants", "FacebookService"]
+__all__ = ['ttypes', 'constants', 'FacebookService']
