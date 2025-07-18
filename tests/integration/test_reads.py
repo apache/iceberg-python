@@ -1057,3 +1057,16 @@ def test_initial_default(catalog: Catalog, spark: SparkSession) -> None:
     result_table = tbl.scan().filter("so_true == True").to_arrow()
 
     assert len(result_table) == 10
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_filter_after_arrow_scan(catalog: Catalog) -> None:
+    identifier = "test_partitioned_by_hours"
+    table = catalog.load_table(f"default.{identifier}")
+
+    scan = table.scan()
+    assert len(scan.to_arrow()) > 0
+
+    scan = scan.filter("ts >= '2023-03-05T00:00:00+00:00'")
+    assert len(scan.to_arrow()) > 0
