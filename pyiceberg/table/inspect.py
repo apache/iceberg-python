@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from functools import reduce
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Set, Tuple
 
 from pyiceberg.conversions import from_bytes
@@ -650,14 +651,11 @@ class InspectTable:
 
         snapshot = self._get_snapshot(snapshot_id)
         io = self.tbl.io
+        files_table: list[pa.Table] = []
+        for manifest_list in snapshot.manifests(io):
+            files_table.append(self._get_files_from_manifest(manifest_list, data_file_filter))
 
-        executor = ExecutorFactory.get_or_create()
-        results = list(
-            executor.map(
-                lambda manifest_list: self._get_files_from_manifest(manifest_list, data_file_filter), snapshot.manifests(io)
-            )
-        )
-        return pa.concat_tables(results)
+        return pa.concat_tables(files_table)
 
     def files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
         return self._files(snapshot_id)
@@ -668,10 +666,12 @@ class InspectTable:
     def delete_files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
         return self._files(snapshot_id, {DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES})
 
-    def all_manifests(self) -> "pa.Table":
+    def all_manifests(self, snapshots: Optional[list[Snapshot]] = None) -> "pa.Table":
         import pyarrow as pa
 
-        snapshots = self.tbl.snapshots()
+        if snapshots is None:
+            snapshots = self.tbl.snapshots()
+
         if not snapshots:
             return pa.Table.from_pylist([], schema=self._get_all_manifests_schema())
 
@@ -680,6 +680,32 @@ class InspectTable:
             lambda args: self._generate_manifests_table(*args), [(snapshot, True) for snapshot in snapshots]
         )
         return pa.concat_tables(manifests_by_snapshots)
+
+    def _all_known_files(self) -> dict[str, set[str]]:
+        """Get all the known files in the table.
+
+        Returns:
+            dict of {file_type: set of file paths} for each file type.
+        """
+        snapshots = self.tbl.snapshots()
+
+        _all_known_files = {}
+        _all_known_files["manifests"] = set(self.all_manifests(snapshots)["path"].to_pylist())
+        _all_known_files["manifest_lists"] = {snapshot.manifest_list for snapshot in snapshots}
+        _all_known_files["statistics"] = {statistic.statistics_path for statistic in self.tbl.metadata.statistics}
+
+        metadata_files = {entry.metadata_file for entry in self.tbl.metadata.metadata_log}
+        metadata_files.add(self.tbl.metadata_location)  # Include current metadata file
+        _all_known_files["metadata"] = metadata_files
+
+        executor = ExecutorFactory.get_or_create()
+        snapshot_ids = [snapshot.snapshot_id for snapshot in snapshots]
+        files_by_snapshots: Iterator[Set[str]] = executor.map(
+            lambda snapshot_id: set(self.files(snapshot_id)["file_path"].to_pylist()), snapshot_ids
+        )
+        _all_known_files["datafiles"] = reduce(set.union, files_by_snapshots, set())
+
+        return _all_known_files
 
     def _all_files(self, data_file_filter: Optional[Set[DataFileContent]] = None) -> "pa.Table":
         import pyarrow as pa
