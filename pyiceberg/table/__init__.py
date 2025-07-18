@@ -137,6 +137,7 @@ from pyiceberg.utils.config import Config
 from pyiceberg.utils.properties import property_as_bool
 
 if TYPE_CHECKING:
+    import bodo.pandas as bd
     import daft
     import pandas as pd
     import polars as pl
@@ -1485,6 +1486,16 @@ class Table:
 
         return daft.read_iceberg(self)
 
+    def to_bodo(self) -> bd.DataFrame:
+        """Read a bodo DataFrame lazily from this Iceberg table.
+
+        Returns:
+            bd.DataFrame: Unmaterialized Bodo Dataframe created from the Iceberg table
+        """
+        import bodo.pandas as bd
+
+        return bd.read_iceberg_table(self)
+
     def to_polars(self) -> pl.LazyFrame:
         """Lazily read from this Apache Iceberg table.
 
@@ -1846,13 +1857,11 @@ class DataScan(TableScan):
     def _build_residual_evaluator(self, spec_id: int) -> Callable[[DataFile], ResidualEvaluator]:
         spec = self.table_metadata.specs()[spec_id]
 
+        from pyiceberg.expressions.visitors import residual_evaluator_of
+
         # The lambda created here is run in multiple threads.
         # So we avoid creating _EvaluatorExpression methods bound to a single
         # shared instance across multiple threads.
-        # return lambda data_file: (partition_schema, partition_expr, self.case_sensitive)(data_file.partition)
-        from pyiceberg.expressions.visitors import residual_evaluator_of
-
-        # assert self.row_filter == False
         return lambda datafile: (
             residual_evaluator_of(
                 spec=spec,
@@ -1862,7 +1871,8 @@ class DataScan(TableScan):
             )
         )
 
-    def _check_sequence_number(self, min_sequence_number: int, manifest: ManifestFile) -> bool:
+    @staticmethod
+    def _check_sequence_number(min_sequence_number: int, manifest: ManifestFile) -> bool:
         """Ensure that no manifests are loaded that contain deletes that are older than the data.
 
         Args:

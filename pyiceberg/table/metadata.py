@@ -36,7 +36,7 @@ from pyiceberg.table.sorting import (
     SortOrder,
     assign_fresh_sort_order_ids,
 )
-from pyiceberg.table.statistics import StatisticsFile
+from pyiceberg.table.statistics import PartitionStatisticsFile, StatisticsFile
 from pyiceberg.typedef import (
     EMPTY_DICT,
     IcebergBaseModel,
@@ -221,6 +221,14 @@ class TableMetadataCommonFields(IcebergBaseModel):
     information. Statistics support is not required to read the
     table correctly. A table can contain many statistics files
     associated with different table snapshots."""
+
+    partition_statistics: List[PartitionStatisticsFile] = Field(alias="partition-statistics", default_factory=list)
+    """A optional list of partition statistics files.
+    Partition statistics are not required for reading or planning
+    and readers may ignore them. Each table snapshot may be associated
+    with at most one partition statistics file. A writer can optionally
+    write the partition statistics file during each write operation,
+    or it can also be computed on demand."""
 
     # validators
     @field_validator("properties", mode="before")

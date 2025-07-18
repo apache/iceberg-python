@@ -1523,9 +1523,55 @@ print(ray_dataset.take(2))
 ]
 ```
 
+### Bodo
+
+PyIceberg interfaces closely with Bodo Dataframes (see [Bodo Iceberg Quick Start](https://docs.bodo.ai/latest/quick_start/quickstart_local_iceberg/)),
+which provides a drop-in replacement for Pandas that applies query, compiler and HPC optimizations automatically.
+Bodo accelerates and scales Python code from single laptops to large clusters without code rewrites.
+
+<!-- prettier-ignore-start -->
+
+!!! note "Requirements"
+    This requires [`bodo` to be installed](index.md).
+
+```python
+pip install pyiceberg['bodo']
+```
+<!-- prettier-ignore-end -->
+
+A table can be read easily into a Bodo Dataframe to perform Pandas operations:
+
+```python
+df = table.to_bodo()  # equivalent to `bodo.pandas.read_iceberg_table(table)`
+df = df[df["trip_distance"] >= 10.0]
+df = df[["VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime"]]
+print(df)
+```
+
+This creates a lazy query, optimizes it, and runs it on all available cores (print triggers execution):
+
+```python
+        VendorID tpep_pickup_datetime tpep_dropoff_datetime
+0              2  2023-01-01 00:27:12   2023-01-01 00:49:56
+1              2  2023-01-01 00:09:29   2023-01-01 00:29:23
+2              1  2023-01-01 00:13:30   2023-01-01 00:44:00
+3              2  2023-01-01 00:41:41   2023-01-01 01:19:32
+4              2  2023-01-01 00:22:39   2023-01-01 01:30:45
+...          ...                  ...                   ...
+245478         2  2023-01-31 22:32:57   2023-01-31 23:01:48
+245479         2  2023-01-31 22:03:26   2023-01-31 22:46:13
+245480         2  2023-01-31 23:25:56   2023-02-01 00:05:42
+245481         2  2023-01-31 23:18:00   2023-01-31 23:46:00
+245482         2  2023-01-31 23:18:00   2023-01-31 23:41:00
+
+[245483 rows x 3 columns]
+```
+
+Bodo is optimized to take advantage of Iceberg features such as hidden partitioning and various statistics for efficient reads.
+
 ### Daft
 
-PyIceberg interfaces closely with Daft Dataframes (see also: [Daft integration with Iceberg](https://www.getdaft.io/projects/docs/en/stable/integrations/iceberg/)) which provides a full lazily optimized query engine interface on top of PyIceberg tables.
+PyIceberg interfaces closely with Daft Dataframes (see also: [Daft integration with Iceberg](https://docs.daft.ai/en/stable/io/iceberg/)) which provides a full lazily optimized query engine interface on top of PyIceberg tables.
 
 <!-- prettier-ignore-start -->
 

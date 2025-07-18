@@ -78,7 +78,8 @@ gcsfs = { version = ">=2023.1.0", optional = true }
 huggingface-hub = { version = ">=0.24.0", optional = true }
 psycopg2-binary = { version = ">=2.9.6", optional = true }
 sqlalchemy = { version = "^2.0.18", optional = true }
-getdaft = { version = ">=0.2.12", optional = true }
+bodo = { version = ">=2025.7.4", optional = true }
+daft = { version = ">=0.5.0", optional = true }
 cachetools = ">=5.5,<7.0"
 pyiceberg-core = { version = "^0.5.1", optional = true }
 polars = { version = "^1.21.0", optional = true }
@@ -95,7 +96,7 @@ fastavro = "1.11.1"
 coverage = { version = "^7.4.2", extras = ["toml"] }
 requests-mock = "1.12.1"
 moto = { version = "^5.0.2", extras = ["server"] }
-typing-extensions = "4.14.0"
+typing-extensions = "4.14.1"
 pytest-mock = "3.14.1"
 pyspark = "3.5.6"
 cython = "3.1.2"
@@ -114,7 +115,7 @@ mkdocstrings-python = "1.16.12"
 mkdocs-literate-nav = "0.6.2"
 mkdocs-autorefs = "1.4.2"
 mkdocs-gen-files = "0.5.0"
-mkdocs-material = "9.6.14"
+mkdocs-material = "9.6.15"
 mkdocs-material-extensions = "1.3.1"
 mkdocs-section-index = "0.3.10"
 
@@ -298,7 +299,8 @@ pyarrow = ["pyarrow", "pyiceberg-core"]
 pandas = ["pandas", "pyarrow"]
 duckdb = ["duckdb", "pyarrow"]
 ray = ["ray", "pyarrow", "pandas"]
-daft = ["getdaft"]
+bodo = ["bodo"]
+daft = ["daft"]
 polars = ["polars"]
 snappy = ["python-snappy"]
 hive = ["thrift"]
@@ -317,6 +319,8 @@ pyiceberg-core = ["pyiceberg-core"]
 datafusion = ["datafusion"]
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
+
 markers = [
   "unmarked: marks a test as a unittest",
   "s3: marks a test as requiring access to s3 compliant storage (use with --aws-access-key-id, --aws-secret-access-key, and --endpoint args)",
@@ -481,6 +485,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "daft.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "bodo.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

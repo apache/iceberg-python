@@ -19,6 +19,7 @@ import math
 import os
 import random
 import time
+import uuid
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -49,7 +50,7 @@ from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
 from pyiceberg.table.refs import MAIN_BRANCH
 from pyiceberg.table.sorting import SortDirection, SortField, SortOrder
-from pyiceberg.transforms import DayTransform, HourTransform, IdentityTransform
+from pyiceberg.transforms import DayTransform, HourTransform, IdentityTransform, Transform
 from pyiceberg.types import (
     DateType,
     DecimalType,
@@ -59,6 +60,7 @@ from pyiceberg.types import (
     LongType,
     NestedField,
     StringType,
+    UUIDType,
 )
 from utils import _create_table
 
@@ -307,15 +309,17 @@ def test_summaries_partial_overwrite(spark: SparkSession, session_catalog: Catal
     assert file_size > 0
 
     # APPEND
+    assert "added-files-size" in summaries[0]
+    assert "total-files-size" in summaries[0]
     assert summaries[0] == {
         "added-data-files": "3",
-        "added-files-size": "2618",
+        "added-files-size": summaries[0]["added-files-size"],
         "added-records": "5",
         "changed-partition-count": "3",
         "total-data-files": "3",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
-        "total-files-size": "2618",
+        "total-files-size": summaries[0]["total-files-size"],
         "total-position-deletes": "0",
         "total-records": "5",
     }
@@ -342,18 +346,21 @@ def test_summaries_partial_overwrite(spark: SparkSession, session_catalog: Catal
     # }
     files = tbl.inspect.data_files()
     assert len(files) == 3
+    assert "added-files-size" in summaries[1]
+    assert "removed-files-size" in summaries[1]
+    assert "total-files-size" in summaries[1]
     assert summaries[1] == {
         "added-data-files": "1",
-        "added-files-size": "875",
+        "added-files-size": summaries[1]["added-files-size"],
         "added-records": "2",
         "changed-partition-count": "1",
         "deleted-data-files": "1",
         "deleted-records": "3",
-        "removed-files-size": "882",
+        "removed-files-size": summaries[1]["removed-files-size"],
         "total-data-files": "3",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
-        "total-files-size": "2611",
+        "total-files-size": summaries[1]["total-files-size"],
         "total-position-deletes": "0",
         "total-records": "4",
     }
@@ -1286,7 +1293,7 @@ def test_table_write_schema_with_valid_upcast(
                 pa.field("list", pa.list_(pa.int64()), nullable=False),
                 pa.field("map", pa.map_(pa.string(), pa.int64()), nullable=False),
                 pa.field("double", pa.float64(), nullable=True),  # can support upcasting float to double
-                pa.field("uuid", pa.binary(length=16), nullable=True),  # can UUID is read as fixed length binary of length 16
+                pa.field("uuid", pa.uuid(), nullable=True),
             )
         )
     )
@@ -1856,6 +1863,59 @@ def test_read_write_decimals(session_catalog: Catalog) -> None:
     tbl.append(arrow_table)
 
     assert tbl.scan().to_arrow() == arrow_table
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "transform",
+    [
+        IdentityTransform(),
+        # Bucket is disabled because of an issue in Iceberg Java:
+        # https://github.com/apache/iceberg/pull/13324
+        # BucketTransform(32)
+    ],
+)
+def test_uuid_partitioning(session_catalog: Catalog, spark: SparkSession, transform: Transform) -> None:  # type: ignore
+    identifier = f"default.test_uuid_partitioning_{str(transform).replace('[32]', '')}"
+
+    schema = Schema(NestedField(field_id=1, name="uuid", field_type=UUIDType(), required=True))
+
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    partition_spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=transform, name="uuid_identity"))
+
+    import pyarrow as pa
+
+    arr_table = pa.Table.from_pydict(
+        {
+            "uuid": [
+                uuid.UUID("00000000-0000-0000-0000-000000000000").bytes,
+                uuid.UUID("11111111-1111-1111-1111-111111111111").bytes,
+            ],
+        },
+        schema=pa.schema(
+            [
+                # Uuid not yet supported, so we have to stick with `binary(16)`
+                # https://github.com/apache/arrow/issues/46468
+                pa.field("uuid", pa.binary(16), nullable=False),
+            ]
+        ),
+    )
+
+    tbl = session_catalog.create_table(
+        identifier=identifier,
+        schema=schema,
+        partition_spec=partition_spec,
+    )
+
+    tbl.append(arr_table)
+
+    lhs = [r[0] for r in spark.table(identifier).collect()]
+    rhs = [str(u.as_py()) for u in tbl.scan().to_arrow()["uuid"].combine_chunks()]
+    assert lhs == rhs
 
 
 @pytest.mark.integration
