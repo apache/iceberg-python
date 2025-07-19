@@ -21,31 +21,13 @@ from typing import Generator
 import pytest
 
 from pyiceberg.catalog import Catalog, MetastoreCatalog
-from pyiceberg.catalog.dynamodb import DynamoDbCatalog
-from pyiceberg.catalog.glue import GLUE_CATALOG_ENDPOINT, GlueCatalog
 from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.memory import InMemoryCatalog
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.io import WAREHOUSE
 from pyiceberg.schema import Schema
-from tests.conftest import clean_up, get_bucket_name, get_glue_endpoint, get_s3_path
-
-
-@pytest.fixture(scope="function")
-def dynamodb() -> Generator[Catalog, None, None]:
-    test_catalog = DynamoDbCatalog("test_dynamodb_catalog", warehouse=get_s3_path(get_bucket_name()))
-    yield test_catalog
-    clean_up(test_catalog)
-
-
-@pytest.fixture(scope="function")
-def glue() -> Generator[Catalog, None, None]:
-    test_catalog = GlueCatalog(
-        "test_glue_catalog", **{"warehouse": get_s3_path(get_bucket_name()), GLUE_CATALOG_ENDPOINT: get_glue_endpoint()}
-    )
-    yield test_catalog
-    clean_up(test_catalog)
+from tests.conftest import clean_up
 
 
 @pytest.fixture(scope="function")
