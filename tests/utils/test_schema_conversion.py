@@ -34,6 +34,7 @@ from pyiceberg.types import (
     StringType,
     StructType,
     TimestampType,
+    TimeType,
     UnknownType,
     UUIDType,
 )
@@ -341,8 +342,20 @@ def test_convert_uuid_fixed_type() -> None:
     assert actual == UUIDType()
 
 
+def test_convert_time_millis_type() -> None:
+    avro_logical_type = {"type": "int", "logicalType": "time-millis"}
+    actual = AvroSchemaConversion()._convert_logical_type(avro_logical_type)
+    assert actual == TimeType()
+
+
+def test_convert_time_micros_type() -> None:
+    avro_logical_type = {"type": "long", "logicalType": "time-micros"}
+    actual = AvroSchemaConversion()._convert_logical_type(avro_logical_type)
+    assert actual == TimeType()
+
+
 def test_convert_timestamp_millis_type() -> None:
-    avro_logical_type = {"type": "int", "logicalType": "timestamp-millis"}
+    avro_logical_type = {"type": "long", "logicalType": "timestamp-millis"}
     actual = AvroSchemaConversion()._convert_logical_type(avro_logical_type)
     assert actual == TimestampType()
 
