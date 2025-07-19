@@ -15,19 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 import pytest
+from sqlalchemy import Connection, inspect
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError, TableAlreadyExistsError
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
-from pyiceberg.types import (
-    BooleanType,
-    DateType,
-    IntegerType,
-    NestedField,
-    StringType,
-)
+from pyiceberg.types import BooleanType, DateType, IntegerType, NestedField, StringType
 
 TABLE_SCHEMA = Schema(
     NestedField(field_id=1, name="foo", field_type=BooleanType(), required=False),
@@ -86,3 +81,35 @@ def test_register_table_existing(
     # Assert that registering the table again raises TableAlreadyExistsError
     with pytest.raises(TableAlreadyExistsError):
         catalog.register_table(("default", "register_table_existing"), metadata_location=tbl.metadata_location)
+
+
+@pytest.mark.integration_trino
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "catalog, trino_conn",
+    [
+        (pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("trino_hive_conn")),
+        (pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("trino_rest_conn")),
+    ],
+)
+def test_register_table_existing_in_trino(
+    catalog: Catalog,
+    trino_conn: Connection,
+) -> None:
+    """Test the registration of a table in the catalog that already exists in Trino.
+    This test verifies that a table can be registered in the catalog with an existing
+    metadata location and properly reflected in Trino.
+    """
+    namespace = "default"
+    table_name = "register_table_trino"
+    identifier = f"{namespace}.{table_name}"
+    location = f"s3a://warehouse/{namespace}/{table_name}"
+    tbl = _create_table(catalog, identifier, 2, location)
+    assert catalog.table_exists(identifier=identifier)
+    assert table_name in inspect(trino_conn).get_table_names(schema=namespace)
+    catalog.drop_table(identifier=identifier)
+    assert not catalog.table_exists(identifier=identifier)
+    assert table_name not in inspect(trino_conn).get_table_names(schema=namespace)
+    catalog.register_table((namespace, table_name), metadata_location=tbl.metadata_location)
+    assert catalog.table_exists(identifier=identifier)
+    assert table_name in inspect(trino_conn).get_table_names(schema=namespace)
