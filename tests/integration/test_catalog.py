@@ -86,7 +86,7 @@ def hive_catalog() -> Generator[Catalog, None, None]:
         },
     )
     yield test_catalog
-    clean_up(test_catalog, drop_if_cannot_purge=True)
+    clean_up(test_catalog)
 
 
 @pytest.mark.integration
