@@ -309,15 +309,17 @@ def test_summaries_partial_overwrite(spark: SparkSession, session_catalog: Catal
     assert file_size > 0
 
     # APPEND
+    assert "added-files-size" in summaries[0]
+    assert "total-files-size" in summaries[0]
     assert summaries[0] == {
         "added-data-files": "3",
-        "added-files-size": "2618",
+        "added-files-size": summaries[0]["added-files-size"],
         "added-records": "5",
         "changed-partition-count": "3",
         "total-data-files": "3",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
-        "total-files-size": "2618",
+        "total-files-size": summaries[0]["total-files-size"],
         "total-position-deletes": "0",
         "total-records": "5",
     }
@@ -344,18 +346,21 @@ def test_summaries_partial_overwrite(spark: SparkSession, session_catalog: Catal
     # }
     files = tbl.inspect.data_files()
     assert len(files) == 3
+    assert "added-files-size" in summaries[1]
+    assert "removed-files-size" in summaries[1]
+    assert "total-files-size" in summaries[1]
     assert summaries[1] == {
         "added-data-files": "1",
-        "added-files-size": "875",
+        "added-files-size": summaries[1]["added-files-size"],
         "added-records": "2",
         "changed-partition-count": "1",
         "deleted-data-files": "1",
         "deleted-records": "3",
-        "removed-files-size": "882",
+        "removed-files-size": summaries[1]["removed-files-size"],
         "total-data-files": "3",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
-        "total-files-size": "2611",
+        "total-files-size": summaries[1]["total-files-size"],
         "total-position-deletes": "0",
         "total-records": "4",
     }

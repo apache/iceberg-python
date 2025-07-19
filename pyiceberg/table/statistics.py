@@ -14,7 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional, Union
 
 from pydantic import Field
 
@@ -48,7 +48,7 @@ class PartitionStatisticsFile(StatisticsCommonFields):
 
 
 def filter_statistics_by_snapshot_id(
-    statistics: List[StatisticsFile],
+    statistics: List[Union[StatisticsFile, PartitionStatisticsFile]],
     reject_snapshot_id: int,
-) -> List[StatisticsFile]:
+) -> List[Union[StatisticsFile, PartitionStatisticsFile]]:
     return [stat for stat in statistics if stat.snapshot_id != reject_snapshot_id]
