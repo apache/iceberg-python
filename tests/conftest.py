@@ -2318,13 +2318,19 @@ def fixture_s3_client() -> boto3.client:
     yield boto3.client("s3")
 
 
-def clean_up(test_catalog: Catalog) -> None:
+def clean_up(test_catalog: Catalog, drop_if_cannot_purge: bool = False) -> None:
     """Clean all databases and tables created during the integration test."""
     for database_tuple in test_catalog.list_namespaces():
         database_name = database_tuple[0]
         if "my_iceberg_database-" in database_name:
             for identifier in test_catalog.list_tables(database_name):
-                test_catalog.purge_table(identifier)
+                try:
+                    test_catalog.purge_table(identifier)
+                except Exception as e:
+                    if drop_if_cannot_purge:
+                        test_catalog.drop_table(identifier)
+                    else:
+                        raise e
             test_catalog.drop_namespace(database_name)
 
 

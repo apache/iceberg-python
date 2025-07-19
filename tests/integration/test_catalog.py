@@ -36,9 +36,6 @@ from pyiceberg.io import WAREHOUSE
 from pyiceberg.schema import Schema
 from tests.conftest import clean_up
 
-# The number of tables/databases used in list_table/namespace test
-LIST_TEST_NUMBER = 2
-
 
 @pytest.fixture(scope="function")
 def memory_catalog(tmp_path: PosixPath) -> Generator[Catalog, None, None]:
@@ -81,10 +78,15 @@ def rest_catalog() -> Generator[Catalog, None, None]:
 def hive_catalog() -> Generator[Catalog, None, None]:
     test_catalog = HiveCatalog(
         "test_hive_catalog",
-        uri="thrift://localhost:9083",
+        **{
+            "uri": "http://localhost:9083",
+            "s3.endpoint": "http://localhost:9000",
+            "s3.access-key-id": "admin",
+            "s3.secret-access-key": "password",
+        },
     )
     yield test_catalog
-    clean_up(test_catalog)
+    clean_up(test_catalog, drop_if_cannot_purge=True)
 
 
 @pytest.mark.integration
@@ -201,7 +203,7 @@ def test_list_tables(test_catalog: Catalog, table_schema_nested: Schema, databas
     for table_name in table_list:
         test_catalog.create_table((database_name, table_name), table_schema_nested)
     identifier_list = test_catalog.list_tables(database_name)
-    assert len(identifier_list) == LIST_TEST_NUMBER
+    assert len(identifier_list) == len(table_list)
     for table_name in table_list:
         assert (database_name, table_name) in identifier_list
 
@@ -263,7 +265,7 @@ def test_drop_table(test_catalog: Catalog, table_schema_nested: Schema, table_na
         pytest.lazy_fixture("sqlite_catalog_memory"),
         pytest.lazy_fixture("sqlite_catalog_file"),
         pytest.lazy_fixture("rest_catalog"),
-        pytest.lazy_fixture("hive_catalog"),
+        # NOTE: HiveCatalog does not support purge_table
     ],
 )
 def test_purge_table(test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str) -> None:
