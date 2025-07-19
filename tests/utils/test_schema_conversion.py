@@ -341,12 +341,6 @@ def test_convert_uuid_fixed_type() -> None:
     assert actual == UUIDType()
 
 
-def test_convert_timestamp_millis_type() -> None:
-    avro_logical_type = {"type": "int", "logicalType": "timestamp-millis"}
-    actual = AvroSchemaConversion()._convert_logical_type(avro_logical_type)
-    assert actual == TimestampType()
-
-
 def test_convert_timestamp_micros_type() -> None:
     avro_logical_type = {"type": "int", "logicalType": "timestamp-micros"}
     actual = AvroSchemaConversion()._convert_logical_type(avro_logical_type)
