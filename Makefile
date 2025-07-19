@@ -103,6 +103,10 @@ test-integration-rebuild: ## Rebuild integration Docker services from scratch
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml build --no-cache
 
+test-integration-trino:
+	sh ./dev/run-trino.sh
+	$(TEST_RUNNER) pytest tests/ -m integration_trino $(PYTEST_ARGS)
+
 test-s3: ## Run tests marked with @pytest.mark.s3
 	sh ./dev/run-minio.sh
 	$(TEST_RUNNER) pytest tests/ -m s3 $(PYTEST_ARGS)
