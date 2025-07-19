@@ -1981,14 +1981,14 @@ _PRIMITIVE_TO_PHYSICAL_TYPE_VISITOR = PrimitiveToPhysicalType()
 class StatsAggregator:
     current_min: Any
     current_max: Any
-    column_name: str
     trunc_length: Optional[int]
+    column_name: Optional[str]
 
-    def __init__(self, iceberg_type: PrimitiveType, physical_type_string: str, column_name: str, trunc_length: Optional[int] = None) -> None:
+    def __init__(self, iceberg_type: PrimitiveType, physical_type_string: str, trunc_length: Optional[int] = None, column_name: Optional[str] = None) -> None:
         self.current_min = None
         self.current_max = None
-        self.column_name = column_name
         self.trunc_length = trunc_length
+        self.column_name = column_name
 
         expected_physical_type = _primitive_to_physical(iceberg_type)
         if expected_physical_type != physical_type_string:
@@ -2000,7 +2000,7 @@ class StatsAggregator:
                 pass
             else:
                 raise ValueError(
-                    f"Unexpected physical type {physical_type_string} for {self.column_name} with iceberg type {iceberg_type}, expected {expected_physical_type}"
+                    f"Unexpected physical type {physical_type_string} for {self.column_name or '<unknown column>'} with iceberg type {iceberg_type}, expected {expected_physical_type}"
                 )
 
         self.primitive_type = iceberg_type
@@ -2407,7 +2407,7 @@ def data_file_statistics_from_parquet_metadata(
 
                     if field_id not in col_aggs:
                         col_aggs[field_id] = StatsAggregator(
-                            stats_col.iceberg_type, statistics.physical_type, stats_col.column_name, stats_col.mode.length
+                            stats_col.iceberg_type, statistics.physical_type, stats_col.mode.length, stats_col.column_name
                         )
 
                     if isinstance(stats_col.iceberg_type, DecimalType) and statistics.physical_type != "FIXED_LEN_BYTE_ARRAY":
