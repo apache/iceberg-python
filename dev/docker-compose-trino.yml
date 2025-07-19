@@ -15,7 +15,7 @@ services:
       - CATALOG_S3_ENDPOINT=http://minio:9000
 
   trino:
-    image: trinodb/trino
+    image: trinodb/trino:476
     container_name: pyiceberg-trino
     networks:
       iceberg_net:

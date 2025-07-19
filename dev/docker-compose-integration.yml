@@ -53,6 +53,21 @@ services:
       - CATALOG_WAREHOUSE=s3://warehouse/
       - CATALOG_IO__IMPL=org.apache.iceberg.aws.s3.S3FileIO
       - CATALOG_S3_ENDPOINT=http://minio:9000
+
+  trino:
+    image: trinodb/trino:476
+    container_name: pyiceberg-trino
+    networks:
+      iceberg_net:
+    ports:
+      - 8082:8080
+    environment:
+      - CATALOG_MANAGEMENT=dynamic
+    depends_on:
+      - rest
+      - hive
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog
   minio:
     image: minio/minio
     container_name: pyiceberg-minio
