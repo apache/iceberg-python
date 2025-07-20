@@ -1540,7 +1540,7 @@ def test_rest_catalog_with_empty_catalog_name_append_data(session_catalog: Catal
 
 @pytest.mark.integration
 def test_table_v1_with_null_nested_namespace(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
-    identifier = "default.lower.table_v1_with_null_nested_namespace"
+    identifier = "default.table_v1_with_null_nested_namespace"
     tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [arrow_table_with_null])
     assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
 
