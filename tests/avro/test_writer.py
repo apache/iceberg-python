@@ -30,6 +30,8 @@ from pyiceberg.avro.writer import (
     DoubleWriter,
     FixedWriter,
     FloatWriter,
+    GeographyWriter,
+    GeometryWriter,
     IntegerWriter,
     StringWriter,
     TimestampNanoWriter,
@@ -49,6 +51,8 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IntegerType,
     ListType,
     LongType,
@@ -134,6 +138,14 @@ def test_string_writer() -> None:
 
 def test_binary_writer() -> None:
     assert construct_writer(BinaryType()) == BinaryWriter()
+
+
+def test_geography_writer() -> None:
+    assert construct_writer(GeographyType()) == GeographyWriter()
+
+
+def test_geometry_writer() -> None:
+    assert construct_writer(GeometryType()) == GeometryWriter()
 
 
 def test_unknown_type() -> None:

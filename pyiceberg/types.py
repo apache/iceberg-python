@@ -33,6 +33,7 @@ Notes:
 from __future__ import annotations
 
 import re
+from enum import Enum
 from functools import cached_property
 from typing import (
     Annotated,
@@ -61,6 +62,8 @@ from pyiceberg.utils.parsing import ParseNumberFromBrackets
 from pyiceberg.utils.singleton import Singleton
 
 DECIMAL_REGEX = re.compile(r"decimal\((\d+),\s*(\d+)\)")
+GEOGRAPHY_REGEX = re.compile(r"""geography(\(([a-zA-Z0-9:]+)(,\s*([a-zA-Z]+))?\))?""")
+GEOMETRY_REGEX = re.compile(r"""geometry(\(([a-zA-Z0-9:]+)\))?""")
 FIXED = "fixed"
 FIXED_PARSER = ParseNumberFromBrackets(FIXED)
 
@@ -85,6 +88,32 @@ def _parse_decimal_type(decimal: Any) -> Tuple[int, int]:
     else:
         return decimal
 
+def _parse_geography_type(geography: Any) -> Tuple[str, GeographyType.EdgeAlgorithm]:
+    if isinstance(geography, str):
+        matches = GEOGRAPHY_REGEX.search(geography)
+        if matches:
+            edge_algorithm = None
+            if matches.group(4):
+                edge_algorithm = GeographyType.EdgeAlgorithm(matches.group(4))
+            return matches.group(2), edge_algorithm
+        else:
+            raise ValidationError(f"Could not parse {geography} into a GeographyType")
+    elif isinstance(geography, dict):
+        return geography["crs"], geography["edge_algorithm"]
+    else:
+        return geography
+
+def _parse_geometry_type(geometry: Any) -> str:
+    if isinstance(geometry, str):
+        matches = GEOMETRY_REGEX.search(geometry)
+        if matches:
+            return matches.group(2)
+        else:
+            raise ValidationError(f"Could not parse {geometry} into a GeometryType")
+    elif isinstance(geometry, dict):
+        return geometry["crs"]
+    else:
+        return geometry
 
 def _parse_fixed_type(fixed: Any) -> int:
     if isinstance(fixed, str):
@@ -162,6 +191,12 @@ class IcebergType(IcebergBaseModel):
             if v.startswith("decimal"):
                 precision, scale = _parse_decimal_type(v)
                 return DecimalType(precision, scale)
+            if v.startswith("geography"):
+                crs, edge_algorithm = _parse_geography_type(v)
+                return GeographyType(crs, edge_algorithm)
+            if v.startswith("geometry"):
+                crs = _parse_geometry_type(v)
+                return GeometryType(crs)
             else:
                 raise ValueError(f"Type not recognized: {v}")
         if isinstance(v, dict) and cls == IcebergType:
@@ -848,6 +883,134 @@ class BinaryType(PrimitiveType):
     """
 
     root: Literal["binary"] = Field(default="binary")
+
+
+class GeographyType(PrimitiveType):
+    """A geography data type in Iceberg.
+
+    Example:
+        >>> GeographyType()
+        GeographyType(crs="OGC:CRS84")
+    """
+
+    class EdgeAlgorithm(Enum):
+        SPHERICAL = 'spherical'
+        VINCENTY = 'vincenty'
+        THOMAS = 'thomas'
+        ANDOYER = 'andoyer'
+        KARNEY = 'karney'
+
+    root: Tuple[Optional[str], Optional[EdgeAlgorithm]]
+
+    default_crs: ClassVar[str] = 'OGC:CRS84'
+
+    def __init__(self, crs: Optional[str]=None, edge_algorithm: Optional[EdgeAlgorithm]=None) -> None:
+        super().__init__(root=(
+            None if crs is None or crs == GeographyType.default_crs else crs,
+            edge_algorithm
+        ))
+
+    @model_serializer
+    def ser_model(self) -> str:
+        """Serialize the model to a string."""
+        if self.edge_algorithm is None:
+            if self.crs is None:
+                return "geography"
+            else:
+                return f"geography({self.crs})"
+        else:
+            return f"geography({self.crs or GeographyType.default_crs}, {self.edge_algorithm.value})"
+
+    @property
+    def crs(self) -> str:
+        """Return the crs of the geography."""
+        return self.root[0]
+
+    @property
+    def edge_algorithm(self) -> EdgeAlgorithm:
+        """Return the algorithm of the geography."""
+        return self.root[1]
+
+    def __repr__(self) -> str:
+        """Return the string representation of the GeographyType class."""
+        return f"GeographyType(crs={self.crs}, edge_algorithm={self.edge_algorithm})"
+
+    def __str__(self) -> str:
+        """Return the string representation."""
+        if self.edge_algorithm is None:
+            if self.crs is None:
+                return f"geography"
+            else:
+                return f"geometry({self.crs})"
+        return f"geography({self.crs or GeographyType.default_crs}, {self.edge_algorithm})"
+
+    def __hash__(self) -> int:
+        """Return the hash of the crs."""
+        return hash(self.root)
+
+    def __getnewargs__(self) -> Tuple[str, EdgeAlgorithm]:
+        """Pickle the GeographyType class."""
+        return self.crs, self.edge_algorithm
+
+    def __eq__(self, other: Any) -> bool:
+        """Compare to root to another object."""
+        return self.root == other.root if isinstance(other, GeographyType) else False
+
+    def minimum_format_version(self) -> TableVersion:
+        return 3
+
+
+class GeometryType(PrimitiveType):
+    """A geometry data type in Iceberg.
+
+    Example:
+        >>> GeometryType()
+        GeometryType(crs="OGC:CRS84")
+    """
+
+    root: Tuple[Optional[str]]
+
+    default_crs: ClassVar[str] = 'OGC:CRS84'
+
+    def __init__(self, crs: Optional[str]=None) -> None:
+        super().__init__(root=(None if crs is None or crs == GeometryType.default_crs else crs, ))
+
+    @model_serializer
+    def ser_model(self) -> str:
+        """Serialize the model to a string."""
+        if self.crs is None:
+            return "geometry"
+        return f"geometry({self.crs})"
+
+    @property
+    def crs(self) -> str:
+        """Return the crs of the geometry."""
+        return self.root[0]
+
+    def __repr__(self) -> str:
+        """Return the string representation of the GeometryType class."""
+        return f"GeometryType(crs={self.crs})"
+
+    def __str__(self) -> str:
+        """Return the string representation."""
+        if self.crs is None:
+            return "geometry"
+        return f"geometry({self.crs})"
+
+    def __hash__(self) -> int:
+        """Return the hash of the crs."""
+        return hash(self.root)
+
+    def __getnewargs__(self) -> str:
+        """Pickle the GeometryType class."""
+        return (self.crs, )
+
+    def __eq__(self, other: Any) -> bool:
+        """Compare to root to another object."""
+        return self.root == other.root if isinstance(other, GeometryType) else False
+
+    def minimum_format_version(self) -> TableVersion:
+        return 3
 
 
 class UnknownType(PrimitiveType):
