@@ -89,17 +89,17 @@ def hive_catalog() -> Generator[Catalog, None, None]:
     clean_up(test_catalog)
 
 
+CATALOGS = [
+    pytest.lazy_fixture("memory_catalog"),
+    pytest.lazy_fixture("sqlite_catalog_memory"),
+    pytest.lazy_fixture("sqlite_catalog_file"),
+    pytest.lazy_fixture("rest_catalog"),
+    pytest.lazy_fixture("hive_catalog"),
+]
+
+
 @pytest.mark.integration
-@pytest.mark.parametrize(
-    "test_catalog",
-    [
-        pytest.lazy_fixture("memory_catalog"),
-        pytest.lazy_fixture("sqlite_catalog_memory"),
-        pytest.lazy_fixture("sqlite_catalog_file"),
-        pytest.lazy_fixture("rest_catalog"),
-        pytest.lazy_fixture("hive_catalog"),
-    ],
-)
+@pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_create_table_with_default_location(
     test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str
 ) -> None:
@@ -112,16 +112,7 @@ def test_create_table_with_default_location(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(
-    "test_catalog",
-    [
-        pytest.lazy_fixture("memory_catalog"),
-        pytest.lazy_fixture("sqlite_catalog_memory"),
-        pytest.lazy_fixture("sqlite_catalog_file"),
-        pytest.lazy_fixture("rest_catalog"),
-        pytest.lazy_fixture("hive_catalog"),
-    ],
-)
+@pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_create_table_with_invalid_database(test_catalog: Catalog, table_schema_nested: Schema, table_name: str) -> None:
     identifier = ("invalid", table_name)
     with pytest.raises(NoSuchNamespaceError):
@@ -129,16 +120,7 @@ def test_create_table_with_invalid_database(test_catalog: Catalog, table_schema_
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(
-    "test_catalog",
-    [
-        pytest.lazy_fixture("memory_catalog"),
-        pytest.lazy_fixture("sqlite_catalog_memory"),
-        pytest.lazy_fixture("sqlite_catalog_file"),
-        pytest.lazy_fixture("rest_catalog"),
-        pytest.lazy_fixture("hive_catalog"),
-    ],
-)
+@pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_create_duplicated_table(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_name: str) -> None:
     test_catalog.create_namespace(database_name)
     test_catalog.create_table((database_name, table_name), table_schema_nested)
@@ -147,16 +129,7 @@ def test_create_duplicated_table(test_catalog: Catalog, table_schema_nested: Sch
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(
-    "test_catalog",
-    [
-        pytest.lazy_fixture("memory_catalog"),
-        pytest.lazy_fixture("sqlite_catalog_memory"),
-        pytest.lazy_fixture("sqlite_catalog_file"),
-        pytest.lazy_fixture("rest_catalog"),
-        pytest.lazy_fixture("hive_catalog"),
-    ],
-)
+@pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_create_table_if_not_exists_duplicated_table(
     test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -167,16 +140,7 @@ def test_create_table_if_not_exists_duplicated_table(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(
-    "test_catalog",
-    [
-        pytest.lazy_fixture("memory_catalog"),
-        pytest.lazy_fixture("sqlite_catalog_memory"),
-        pytest.lazy_fixture("sqlite_catalog_file"),
-        pytest.lazy_fixture("rest_catalog"),
-        pytest.lazy_fixture("hive_catalog"),
-    ],
-)
+@pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_load_table(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_name: str) -> None:
     identifier = (database_name, table_name)
     test_catalog.create_namespace(database_name)
@@ -188,16 +152,7 @@ def test_load_table(test_catalog: Catalog, table_schema_nested: Schema, database
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(
-    "test_catalog",
-    [
-        pytest.lazy_fixture("memory_catalog"),
-        pytest.lazy_fixture("sqlite_catalog_memory"),
-        pytest.lazy_fixture("sqlite_catalog_file"),
-        pytest.lazy_fixture("rest_catalog"),
-        pytest.lazy_fixture("hive_catalog"),
-    ],
-)
+@pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_list_tables(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_list: List[str]) -> None:
     test_catalog.create_namespace(database_name)
     for table_name in table_list:
@@ -209,16 +164,7 @@ def test_list_tables(test_catalog: Catalog, table_schema_nested: Schema, databas
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(
-    "test_catalog",
-    [
-        pytest.lazy_fixture("memory_catalog"),
-        pytest.lazy_fixture("sqlite_catalog_memory"),
-        pytest.lazy_fixture("sqlite_catalog_file"),
-        pytest.lazy_fixture("rest_catalog"),
-        pytest.lazy_fixture("hive_catalog"),
-    ],
-)
+@pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_rename_table(test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str) -> None:
     new_database_name = f"{database_name}_new"
     test_catalog.create_namespace(database_name)
@@ -237,16 +183,7 @@ def test_rename_table(test_catalog: Catalog, table_schema_nested: Schema, table_
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(
-    "test_catalog",
-    [
-        pytest.lazy_fixture("memory_catalog"),
-        pytest.lazy_fixture("sqlite_catalog_memory"),
-        pytest.lazy_fixture("sqlite_catalog_file"),
-        pytest.lazy_fixture("rest_catalog"),
-        pytest.lazy_fixture("hive_catalog"),
-    ],
-)
+@pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_drop_table(test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str) -> None:
     identifier = (database_name, table_name)
     test_catalog.create_namespace(database_name)
@@ -258,17 +195,11 @@ def test_drop_table(test_catalog: Catalog, table_schema_nested: Schema, table_na
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(
-    "test_catalog",
-    [
-        pytest.lazy_fixture("memory_catalog"),
-        pytest.lazy_fixture("sqlite_catalog_memory"),
-        pytest.lazy_fixture("sqlite_catalog_file"),
-        pytest.lazy_fixture("rest_catalog"),
-        # NOTE: HiveCatalog does not support purge_table
-    ],
-)
+@pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_purge_table(test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str) -> None:
+    if isinstance(test_catalog, HiveCatalog):
+        pytest.skip("HiveCatalog does not support purge_table operation yet")
+
     identifier = (database_name, table_name)
     test_catalog.create_namespace(database_name)
     test_catalog.create_table(identifier, table_schema_nested)
@@ -280,16 +211,7 @@ def test_purge_table(test_catalog: Catalog, table_schema_nested: Schema, table_n
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(
-    "test_catalog",
-    [
-        pytest.lazy_fixture("memory_catalog"),
-        pytest.lazy_fixture("sqlite_catalog_memory"),
-        pytest.lazy_fixture("sqlite_catalog_file"),
-        pytest.lazy_fixture("rest_catalog"),
-        pytest.lazy_fixture("hive_catalog"),
-    ],
-)
+@pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_table_exists(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_name: str) -> None:
     test_catalog.create_namespace(database_name)
     test_catalog.create_table((database_name, table_name), table_schema_nested)
@@ -297,32 +219,14 @@ def test_table_exists(test_catalog: Catalog, table_schema_nested: Schema, databa
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(
-    "test_catalog",
-    [
-        pytest.lazy_fixture("memory_catalog"),
-        pytest.lazy_fixture("sqlite_catalog_memory"),
-        pytest.lazy_fixture("sqlite_catalog_file"),
-        pytest.lazy_fixture("rest_catalog"),
-        pytest.lazy_fixture("hive_catalog"),
-    ],
-)
+@pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_create_namespace(test_catalog: Catalog, database_name: str) -> None:
     test_catalog.create_namespace(database_name)
     assert (database_name,) in test_catalog.list_namespaces()
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(
-    "test_catalog",
-    [
-        pytest.lazy_fixture("memory_catalog"),
-        pytest.lazy_fixture("sqlite_catalog_memory"),
-        pytest.lazy_fixture("sqlite_catalog_file"),
-        pytest.lazy_fixture("rest_catalog"),
-        pytest.lazy_fixture("hive_catalog"),
-    ],
-)
+@pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_create_duplicate_namespace(test_catalog: Catalog, database_name: str) -> None:
     test_catalog.create_namespace(database_name)
     with pytest.raises(NamespaceAlreadyExistsError):
@@ -330,16 +234,7 @@ def test_create_duplicate_namespace(test_catalog: Catalog, database_name: str) -
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(
-    "test_catalog",
-    [
-        pytest.lazy_fixture("memory_catalog"),
-        pytest.lazy_fixture("sqlite_catalog_memory"),
-        pytest.lazy_fixture("sqlite_catalog_file"),
-        pytest.lazy_fixture("rest_catalog"),
-        pytest.lazy_fixture("hive_catalog"),
-    ],
-)
+@pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_create_namepsace_if_not_exists(test_catalog: Catalog, database_name: str) -> None:
     test_catalog.create_namespace(database_name)
     test_catalog.create_namespace_if_not_exists(database_name)
@@ -347,16 +242,7 @@ def test_create_namepsace_if_not_exists(test_catalog: Catalog, database_name: st
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(
-    "test_catalog",
-    [
-        pytest.lazy_fixture("memory_catalog"),
-        pytest.lazy_fixture("sqlite_catalog_memory"),
-        pytest.lazy_fixture("sqlite_catalog_file"),
-        pytest.lazy_fixture("rest_catalog"),
-        pytest.lazy_fixture("hive_catalog"),
-    ],
-)
+@pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_create_namespace_with_comment(test_catalog: Catalog, database_name: str) -> None:
     test_properties = {
         "comment": "this is a test description",
@@ -369,16 +255,7 @@ def test_create_namespace_with_comment(test_catalog: Catalog, database_name: str
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(
-    "test_catalog",
-    [
-        pytest.lazy_fixture("memory_catalog"),
-        pytest.lazy_fixture("sqlite_catalog_memory"),
-        pytest.lazy_fixture("sqlite_catalog_file"),
-        pytest.lazy_fixture("rest_catalog"),
-        pytest.lazy_fixture("hive_catalog"),
-    ],
-)
+@pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_list_namespaces(test_catalog: Catalog, database_list: List[str]) -> None:
     for database_name in database_list:
         test_catalog.create_namespace(database_name)
@@ -389,16 +266,7 @@ def test_list_namespaces(test_catalog: Catalog, database_list: List[str]) -> Non
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(
-    "test_catalog",
-    [
-        pytest.lazy_fixture("memory_catalog"),
-        pytest.lazy_fixture("sqlite_catalog_memory"),
-        pytest.lazy_fixture("sqlite_catalog_file"),
-        pytest.lazy_fixture("rest_catalog"),
-        pytest.lazy_fixture("hive_catalog"),
-    ],
-)
+@pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_drop_namespace(test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str) -> None:
     test_catalog.create_namespace(database_name)
     assert (database_name,) in test_catalog.list_namespaces()
@@ -411,16 +279,7 @@ def test_drop_namespace(test_catalog: Catalog, table_schema_nested: Schema, tabl
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(
-    "test_catalog",
-    [
-        pytest.lazy_fixture("memory_catalog"),
-        pytest.lazy_fixture("sqlite_catalog_memory"),
-        pytest.lazy_fixture("sqlite_catalog_file"),
-        pytest.lazy_fixture("rest_catalog"),
-        pytest.lazy_fixture("hive_catalog"),
-    ],
-)
+@pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_load_namespace_properties(test_catalog: Catalog, database_name: str) -> None:
     test_properties = {
         "comment": "this is a test description",
@@ -435,16 +294,7 @@ def test_load_namespace_properties(test_catalog: Catalog, database_name: str) ->
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(
-    "test_catalog",
-    [
-        pytest.lazy_fixture("memory_catalog"),
-        pytest.lazy_fixture("sqlite_catalog_memory"),
-        pytest.lazy_fixture("sqlite_catalog_file"),
-        pytest.lazy_fixture("rest_catalog"),
-        pytest.lazy_fixture("hive_catalog"),
-    ],
-)
+@pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_update_namespace_properties(test_catalog: Catalog, database_name: str) -> None:
     test_properties = {
         "comment": "this is a test description",
