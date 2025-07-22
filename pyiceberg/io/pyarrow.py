@@ -1437,8 +1437,7 @@ def _task_to_record_batches(
     if task.file.file_format == FileFormat.PARQUET:
         arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
     elif task.file.file_format == FileFormat.ORC:
-        arrow_format = ds.OrcFileFormat()
-        # arrow_format = ds.OrcFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
+        arrow_format = ds.OrcFileFormat() # currently ORC doesn't support any fragment scan options
     else:
         raise ValueError("Unsupported file format")
     with io.new_input(task.file.file_path).open() as fin:
