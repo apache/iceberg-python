@@ -75,7 +75,7 @@ def test_schema_exists_in_trino(trino_rest_conn: Connection, catalog: RestCatalo
     catalog, it becomes visible as a schema in the Trino environment.
     """
 
-    if not catalog.namespace_exists(TEST_NAMESPACE_IDENTIFIER):
+    if catalog.namespace_exists(TEST_NAMESPACE_IDENTIFIER):
         catalog.drop_namespace(TEST_NAMESPACE_IDENTIFIER)
     catalog.create_namespace_if_not_exists(TEST_NAMESPACE_IDENTIFIER)
 
