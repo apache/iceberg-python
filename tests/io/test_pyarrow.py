@@ -28,6 +28,7 @@ from uuid import uuid4
 import pyarrow
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pyarrow.orc as orc
 import pytest
 from packaging import version
 from pyarrow.fs import AwsDefaultS3RetryStrategy, FileType, LocalFileSystem, S3FileSystem
@@ -2654,3 +2655,102 @@ def test_retry_strategy_not_found() -> None:
     io = PyArrowFileIO(properties={S3_RETRY_STRATEGY_IMPL: "pyiceberg.DoesNotExist"})
     with pytest.warns(UserWarning, match="Could not initialize S3 retry strategy: pyiceberg.DoesNotExist"):
         io.new_input("s3://bucket/path/to/file")
+
+
+def test_write_and_read_orc(tmp_path):
+    # Create a simple Arrow table
+    data = pa.table({'a': [1, 2, 3], 'b': ['x', 'y', 'z']})
+    orc_path = tmp_path / 'test.orc'
+    orc.write_table(data, str(orc_path))
+    # Read it back
+    orc_file = orc.ORCFile(str(orc_path))
+    table_read = orc_file.read()
+    assert table_read.equals(data)
+
+
+def test_orc_file_format_integration(tmp_path):
+    # This test mimics a minimal integration with PyIceberg's FileFormat enum and pyarrow.orc
+    from pyiceberg.manifest import FileFormat
+    import pyarrow.dataset as ds
+    data = pa.table({'a': [10, 20], 'b': ['foo', 'bar']})
+    orc_path = tmp_path / 'iceberg.orc'
+    orc.write_table(data, str(orc_path))
+    # Use PyArrow dataset API to read as ORC
+    dataset = ds.dataset(str(orc_path), format=ds.OrcFileFormat())
+    table_read = dataset.to_table()
+    assert table_read.equals(data)
+
+
+def test_iceberg_write_and_read_orc(tmp_path):
+    """
+    Integration test: Write and read ORC via Iceberg API.
+    To run just this test:
+        pytest tests/io/test_pyarrow.py -k test_iceberg_write_and_read_orc
+    """
+    import pyarrow as pa
+    from pyiceberg.schema import Schema, NestedField
+    from pyiceberg.types import IntegerType, StringType
+    from pyiceberg.manifest import FileFormat, DataFileContent
+    from pyiceberg.table.metadata import TableMetadataV2
+    from pyiceberg.partitioning import PartitionSpec
+    from pyiceberg.io.pyarrow import write_file, PyArrowFileIO, ArrowScan
+    from pyiceberg.table import WriteTask, FileScanTask
+    import uuid
+
+    # Define schema and data
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(2, "name", StringType(), required=False),
+    )
+    data = pa.table({"id": pa.array([1, 2, 3], type=pa.int32()), "name": ["a", "b", "c"]})
+
+    # Create table metadata
+    table_metadata = TableMetadataV2(
+        location=str(tmp_path),
+        last_column_id=2,
+        format_version=2,
+        schemas=[schema],
+        partition_specs=[PartitionSpec()],
+        properties={
+            "write.format.default": "orc",
+        }
+    )
+    io = PyArrowFileIO()
+
+    # Write ORC file using Iceberg API
+    write_uuid = uuid.uuid4()
+    tasks = [
+        WriteTask(
+            write_uuid=write_uuid,
+            task_id=0,
+            record_batches=data.to_batches(),
+            schema=schema,
+        )
+    ]
+    data_files = list(write_file(io, table_metadata, iter(tasks)))
+    assert len(data_files) == 1
+    data_file = data_files[0]
+    assert data_file.file_format == FileFormat.ORC
+    assert data_file.content == DataFileContent.DATA
+
+    # Read back using ArrowScan
+    scan = ArrowScan(
+        table_metadata=table_metadata,
+        io=io,
+        projected_schema=schema,
+        row_filter=AlwaysTrue(),
+        case_sensitive=True,
+    )
+    scan_task = FileScanTask(data_file=data_file)
+    table_read = scan.to_table([scan_task])
+    
+    # Compare data ignoring schema metadata (like not null constraints)
+    assert table_read.num_rows == data.num_rows
+    assert table_read.num_columns == data.num_columns
+    assert table_read.column_names == data.column_names
+    
+    # Compare actual column data values
+    for col_name in data.column_names:
+        original_values = data.column(col_name).to_pylist()
+        read_values = table_read.column(col_name).to_pylist()
+        assert original_values == read_values, f"Column {col_name} values don't match"

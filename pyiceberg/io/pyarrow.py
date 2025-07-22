@@ -63,6 +63,7 @@ import pyarrow.compute as pc
 import pyarrow.dataset as ds
 import pyarrow.lib
 import pyarrow.parquet as pq
+import pyarrow.orc as orc
 from pyarrow import ChunkedArray
 from pyarrow._s3fs import S3RetryStrategy
 from pyarrow.fs import (
@@ -973,6 +974,8 @@ def _expression_to_complementary_pyarrow(expr: BooleanExpression) -> pc.Expressi
 def _get_file_format(file_format: FileFormat, **kwargs: Dict[str, Any]) -> ds.FileFormat:
     if file_format == FileFormat.PARQUET:
         return ds.ParquetFileFormat(**kwargs)
+    elif file_format == FileFormat.ORC:
+        return ds.OrcFileFormat(**kwargs)
     else:
         raise ValueError(f"Unsupported file format: {file_format}")
 
@@ -1431,7 +1434,13 @@ def _task_to_record_batches(
     name_mapping: Optional[NameMapping] = None,
     partition_spec: Optional[PartitionSpec] = None,
 ) -> Iterator[pa.RecordBatch]:
-    arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
+    if task.file.file_format == FileFormat.PARQUET:
+        arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
+    elif task.file.file_format == FileFormat.ORC:
+        arrow_format = ds.OrcFileFormat()
+        # arrow_format = ds.OrcFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
+    else:
+        raise ValueError("Unsupported file format")
     with io.new_input(task.file.file_path).open() as fin:
         fragment = arrow_format.make_fragment(fin)
         physical_schema = fragment.physical_schema
@@ -2498,9 +2507,60 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
 
         return data_file
 
-    executor = ExecutorFactory.get_or_create()
-    data_files = executor.map(write_parquet, tasks)
+    def write_orc(task: WriteTask) -> DataFile:
+        table_schema = table_metadata.schema()
+        if (sanitized_schema := sanitize_column_names(table_schema)) != table_schema:
+            file_schema = sanitized_schema
+        else:
+            file_schema = table_schema
 
+        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+        batches = [
+            _to_requested_schema(
+                requested_schema=file_schema,
+                file_schema=task.schema,
+                batch=batch,
+                downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+                include_field_ids=True,
+            )
+            for batch in task.record_batches
+        ]
+        arrow_table = pa.Table.from_batches(batches)
+        file_path = location_provider.new_data_location(
+            data_file_name=task.generate_data_file_filename("orc"),
+            partition_key=task.partition_key,
+        )
+        fo = io.new_output(file_path)
+        with fo.create(overwrite=True) as fos:
+            orc.write_table(arrow_table, fos)
+        # You may want to add statistics extraction here if needed
+        data_file = DataFile.from_args(
+            content=DataFileContent.DATA,
+            file_path=file_path,
+            file_format=FileFormat.ORC,
+            partition=task.partition_key.partition if task.partition_key else Record(),
+            file_size_in_bytes=len(fo),
+            sort_order_id=None,
+            spec_id=table_metadata.default_spec_id,
+            equality_ids=None,
+            key_metadata=None,
+            # statistics=... (if you implement ORC stats)
+        )
+        return data_file
+
+    executor = ExecutorFactory.get_or_create()
+    def dispatch(task: WriteTask) -> DataFile:
+        file_format = FileFormat(table_metadata.properties.get(
+            TableProperties.WRITE_FILE_FORMAT, 
+            TableProperties.WRITE_FILE_FORMAT_DEFAULT))
+        if file_format == FileFormat.PARQUET:
+            return write_parquet(task)
+        elif file_format == FileFormat.ORC:
+            return write_orc(task)
+        else:
+            raise ValueError(f"Unsupported file format: {file_format}")
+
+    data_files = executor.map(dispatch, tasks)
     return iter(data_files)
 
 

@@ -161,6 +161,9 @@ class UpsertResult:
 
 
 class TableProperties:
+    WRITE_FILE_FORMAT = "write.format.default"
+    WRITE_FILE_FORMAT_DEFAULT = "parquet"
+
     PARQUET_ROW_GROUP_SIZE_BYTES = "write.parquet.row-group-size-bytes"
     PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT = 128 * 1024 * 1024  # 128 MB
 
