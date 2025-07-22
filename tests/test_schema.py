@@ -563,6 +563,36 @@ def test_sanitize() -> None:
     assert sanitize_column_names(before_sanitized) == expected_schema
 
 
+def test_sanitize_special_chars() -> None:
+    """Test sanitizing schema with special characters in field names, using only StringType fields."""
+    # Test names with special characters: numbers at start, dots, unicode, hash
+    # Expected sanitized names: numbers prefixed with _, dots become _x2E, unicode becomes _x<hex>, hash becomes _x23
+    names = ["9x", "x_", "a.b", "☃", "a#b"]
+    expected_names = ["_9x", "x_", "a_x2Eb", "_x2603", "a_x23b"]
+
+    before_sanitized = Schema(
+        NestedField(field_id=1, name=names[0], field_type=StringType(), required=True),
+        NestedField(field_id=2, name=names[1], field_type=StringType(), required=True),
+        NestedField(field_id=3, name=names[2], field_type=StringType(), required=True),
+        NestedField(field_id=4, name=names[3], field_type=StringType(), required=True),
+        NestedField(field_id=5, name=names[4], field_type=StringType(), required=True),
+        schema_id=1,
+        identifier_field_ids=[1],
+    )
+
+    expected_schema = Schema(
+        NestedField(field_id=1, name=expected_names[0], field_type=StringType(), required=True),
+        NestedField(field_id=2, name=expected_names[1], field_type=StringType(), required=True),
+        NestedField(field_id=3, name=expected_names[2], field_type=StringType(), required=True),
+        NestedField(field_id=4, name=expected_names[3], field_type=StringType(), required=True),
+        NestedField(field_id=5, name=expected_names[4], field_type=StringType(), required=True),
+        schema_id=1,
+        identifier_field_ids=[1],
+    )
+
+    assert sanitize_column_names(before_sanitized) == expected_schema
+
+
 def test_prune_columns_string(table_schema_nested_with_struct_key_map: Schema) -> None:
     assert prune_columns(table_schema_nested_with_struct_key_map, {1}, False) == Schema(
         NestedField(field_id=1, name="foo", field_type=StringType(), required=True), schema_id=1, identifier_field_ids=[1]
