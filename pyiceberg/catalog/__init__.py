@@ -699,9 +699,8 @@ class Catalog(ABC):
         Args:
             identifier (str | Identifier): View identifier.
             schema (Schema): View's schema.
+            view_version (ViewVersion): The format version for the view.
             location (str | None): Location for the view. Optional Argument.
-            partition_spec (PartitionSpec): PartitionSpec for the view.
-            sort_order (SortOrder): SortOrder for the view.
             properties (Properties): View properties that can be a string based dictionary.
 
         Returns:
