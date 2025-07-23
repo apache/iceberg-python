@@ -17,12 +17,9 @@
 
 import base64
 import importlib
-import threading
-import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, Type
 
-import requests
 from requests import HTTPError, PreparedRequest, Session
 from requests.auth import AuthBase
 
@@ -122,95 +119,6 @@ class LegacyOAuth2AuthManager(AuthManager):
         return f"Bearer {self._token}"
 
 
-class OAuth2TokenProvider:
-    """Thread-safe OAuth2 token provider with token refresh support."""
-
-    client_id: str
-    client_secret: str
-    token_url: str
-    scope: Optional[str]
-    refresh_margin: int
-    expires_in: Optional[int]
-
-    _token: Optional[str]
-    _expires_at: int
-    _lock: threading.Lock
-
-    def __init__(
-        self,
-        client_id: str,
-        client_secret: str,
-        token_url: str,
-        scope: Optional[str] = None,
-        refresh_margin: int = 60,
-        expires_in: Optional[int] = None,
-    ):
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.token_url = token_url
-        self.scope = scope
-        self.refresh_margin = refresh_margin
-        self.expires_in = expires_in
-
-        self._token = None
-        self._expires_at = 0
-        self._lock = threading.Lock()
-
-    def _refresh_token(self) -> None:
-        data = {
-            "grant_type": "client_credentials",
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
-        }
-        if self.scope:
-            data["scope"] = self.scope
-
-        response = requests.post(self.token_url, data=data)
-        response.raise_for_status()
-        result = response.json()
-
-        self._token = result["access_token"]
-        expires_in = result.get("expires_in", self.expires_in)
-        if expires_in is None:
-            raise ValueError(
-                "The expiration time of the Token must be provided by the Server in the Access Token Response in `expired_in` field, or by the PyIceberg Client."
-            )
-        self._expires_at = time.time() + expires_in - self.refresh_margin
-
-    def get_token(self) -> str:
-        with self._lock:
-            if not self._token or time.time() >= self._expires_at:
-                self._refresh_token()
-            if self._token is None:
-                raise ValueError("Authorization token is None after refresh")
-            return self._token
-
-
-class OAuth2AuthManager(AuthManager):
-    """Auth Manager implementation that supports OAuth2 as defined in IETF RFC6749."""
-
-    def __init__(
-        self,
-        client_id: str,
-        client_secret: str,
-        token_url: str,
-        scope: Optional[str] = None,
-        refresh_margin: int = 60,
-        expires_in: Optional[int] = None,
-    ):
-        self.token_provider = OAuth2TokenProvider(
-            client_id,
-            client_secret,
-            token_url,
-            scope,
-            refresh_margin,
-            expires_in,
-        )
-
-    def auth_header(self) -> str:
-        return f"Bearer {self.token_provider.get_token()}"
-
-
 class AuthManagerAdapter(AuthBase):
     """A `requests.auth.AuthBase` adapter that integrates an `AuthManager` into a `requests.Session` to automatically attach the appropriate Authorization header to every request.
 
@@ -289,4 +197,3 @@ class AuthManagerFactory:
 AuthManagerFactory.register("noop", NoopAuthManager)
 AuthManagerFactory.register("basic", BasicAuthManager)
 AuthManagerFactory.register("legacyoauth2", LegacyOAuth2AuthManager)
-AuthManagerFactory.register("oauth2", OAuth2AuthManager)

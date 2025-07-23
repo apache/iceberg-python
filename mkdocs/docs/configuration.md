@@ -382,7 +382,6 @@ The RESTCatalog supports pluggable authentication via the `auth` configuration b
 
 - `noop`: No authentication (no Authorization header sent).
 - `basic`: HTTP Basic authentication.
-- `oauth2`: OAuth2 client credentials flow.
 - `legacyoauth2`: Legacy OAuth2 client credentials flow (Deprecated and will be removed in PyIceberg 1.0.0)
 - `custom`: Custom authentication manager (requires `auth.impl`).
 
@@ -406,10 +405,9 @@ catalog:
 
 | Property         | Required | Description                                                                                     |
 |------------------|----------|-------------------------------------------------------------------------------------------------|
-| `auth.type`      | Yes      | The authentication type to use (`noop`, `basic`, `oauth2`, or `custom`).                       |
+| `auth.type`      | Yes      | The authentication type to use (`noop`, `basic`, or `custom`).                       |
 | `auth.impl`      | Conditionally | The fully qualified class path for a custom AuthManager. Required if `auth.type` is `custom`. |
 | `auth.basic`     | If type is `basic` | Block containing `username` and `password` for HTTP Basic authentication.           |
-| `auth.oauth2`    | If type is `oauth2` | Block containing OAuth2 configuration (see below).                                 |
 | `auth.custom`    | If type is `custom` | Block containing configuration for the custom AuthManager.                          |
 
 ##### Examples
@@ -431,20 +429,6 @@ auth:
     password: mypass
 ```
 
-**OAuth2 Authentication:**
-
-```yaml
-auth:
-  type: oauth2
-  oauth2:
-    client_id: my-client-id
-    client_secret: my-client-secret
-    token_url: https://auth.example.com/oauth/token
-    scope: read
-    refresh_margin: 60         # (optional) seconds before expiry to refresh
-    expires_in: 3600           # (optional) fallback if server does not provide
-```
-
 **Custom Authentication:**
 
 ```yaml
@@ -460,7 +444,7 @@ auth:
 
 - If `auth.type` is `custom`, you **must** specify `auth.impl` with the full class path to your custom AuthManager.
 - If `auth.type` is not `custom`, specifying `auth.impl` is not allowed.
-- The configuration block under each type (e.g., `basic`, `oauth2`, `custom`) is passed as keyword arguments to the corresponding AuthManager.
+- The configuration block under each type (e.g., `basic`, `custom`) is passed as keyword arguments to the corresponding AuthManager.
 
 ### SQL Catalog
 
