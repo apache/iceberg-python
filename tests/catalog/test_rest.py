@@ -15,6 +15,7 @@
 #  specific language governing permissions and limitations
 #  under the License.
 # pylint: disable=redefined-outer-name,unused-argument
+import base64
 import os
 from typing import Any, Callable, Dict, cast
 from unittest import mock
@@ -1540,6 +1541,10 @@ def test_rest_catalog_with_basic_auth_type(rest_mock: Mocker) -> None:
     catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
     assert catalog.uri == TEST_URI
 
+    encoded_user_pass = base64.b64encode(b"one:two").decode()
+    expected_auth_header = f"Basic {encoded_user_pass}"
+    assert rest_mock.last_request.headers["Authorization"] == expected_auth_header
+
 
 def test_rest_catalog_with_custom_auth_type() -> None:
     # Given
@@ -1580,6 +1585,10 @@ def test_rest_catalog_with_custom_basic_auth_type(rest_mock: Mocker) -> None:
     )
     catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
     assert catalog.uri == TEST_URI
+
+    encoded_user_pass = base64.b64encode(b"one:two").decode()
+    expected_auth_header = f"Basic {encoded_user_pass}"
+    assert rest_mock.last_request.headers["Authorization"] == expected_auth_header
 
 
 def test_rest_catalog_with_custom_auth_type_no_impl() -> None:
