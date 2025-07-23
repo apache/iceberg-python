@@ -79,8 +79,8 @@ from pyiceberg.table.update import (
     AssertLastAssignedPartitionId,
     AssertRefSnapshotId,
     AssertTableUUID,
-    RemovePartitionStatisticsUpdate,
     RemoveEncryptedKeyUpdate,
+    RemovePartitionStatisticsUpdate,
     RemovePropertiesUpdate,
     RemoveSchemasUpdate,
     RemoveSnapshotRefUpdate,
@@ -1423,9 +1423,7 @@ def test_set_partition_statistics_update(table_v2_with_statistics: Table) -> Non
     new_metadata = update_table_metadata(
         table_v2_with_statistics.metadata,
         (update,),
-
-def test_add_encryption_key(table_v3: Table) -> None:
-    update = AddEncryptedKeyUpdate(key=EncryptedKey(key_id="test", encrypted_key_metadata=base64.b64encode(b"hello")))
+    )
 
     expected = """
     {
@@ -1483,6 +1481,13 @@ def test_remove_partition_statistics_update_with_invalid_snapshot_id(table_v2_wi
             table_v2_with_statistics.metadata,
             (RemovePartitionStatisticsUpdate(snapshot_id=123456789),),
         )
+
+
+def test_add_encryption_key(table_v3: Table) -> None:
+    update = AddEncryptedKeyUpdate(key=EncryptedKey(key_id="test", encrypted_key_metadata=base64.b64encode(b"hello")))
+
+    expected = """
+    {
       "key-id": "test",
       "encrypted-key-metadata": "aGVsbG8="
     }"""
@@ -1510,11 +1515,11 @@ def test_remove_non_existent_encryption_key(table_v3: Table) -> None:
     assert len(add_metadata.encryption_keys) == 1
 
     update_remove = RemoveEncryptedKeyUpdate(key_id="non_existent_key")
-    remove_metadata = update_table_metadata(add_metadata, (update_remove,))
-    assert len(remove_metadata.encryption_keys) == 1  # Should be a no-op
+    with pytest.raises(ValueError, match=r"Encryption key non_existent_key not found"):
+        update_table_metadata(add_metadata, (update_remove,))
 
 
 def test_add_remove_encryption_key_v2_table(table_v2: Table) -> None:
     update_add = AddEncryptedKeyUpdate(key=EncryptedKey(key_id="test_v2", encrypted_key_metadata=base64.b64encode(b"hello_v2")))
-    with pytest.raises(ValueError, match=r"Cannot add encryption keys from Iceberg v1 or v2 table"):
+    with pytest.raises(ValueError, match=r"Cannot add encryption keys to Iceberg v1 or v2 table"):
         update_table_metadata(table_v2.metadata, (update_add,))

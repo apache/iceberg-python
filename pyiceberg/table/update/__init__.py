@@ -617,6 +617,21 @@ def _(update: AddEncryptedKeyUpdate, base_metadata: TableMetadata, context: _Tab
 
     return base_metadata.model_copy(update={"encryption_keys": base_metadata.encryption_keys + [update.key]})
 
+
+@_apply_table_update.register(RemoveEncryptedKeyUpdate)
+def _(update: RemoveEncryptedKeyUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    context.add_update(update)
+
+    if base_metadata.format_version <= 2:
+        raise ValueError("Cannot add encryption keys to Iceberg v1 or v2 tables")
+
+    encryption_keys = [key for key in base_metadata.encryption_keys if key.key_id != update.key_id]
+    if len(encryption_keys) == len(base_metadata.encryption_keys):
+        raise ValueError(f"Encryption key {update.key_id} not found")
+
+    return base_metadata.model_copy(update={"encryption_keys": encryption_keys})
+
+
 @_apply_table_update.register(RemoveSchemasUpdate)
 def _(update: RemoveSchemasUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     # This method should error if any schemas do not exist.
