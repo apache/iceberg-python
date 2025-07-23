@@ -351,6 +351,10 @@ class FsspecFileIO(FileIO):
             FsspecInputFile: An FsspecInputFile instance for the given location.
         """
         uri = urlparse(location)
+        if uri.scheme in ("", "file"):
+            path_to_check = uri.path if uri.scheme else location
+            if not os.path.isabs(path_to_check):
+                raise ValueError(f"FileIO implementation for local files requires absolute paths: {location}")
         fs = self.get_fs(uri.scheme)
         return FsspecInputFile(location=location, fs=fs)
 
@@ -364,6 +368,10 @@ class FsspecFileIO(FileIO):
             FsspecOutputFile: An FsspecOutputFile instance for the given location.
         """
         uri = urlparse(location)
+        if uri.scheme in ("", "file"):
+            path_to_check = uri.path if uri.scheme else location
+            if not os.path.isabs(path_to_check):
+                raise ValueError(f"FileIO implementation for local files requires absolute paths: {location}")
         fs = self.get_fs(uri.scheme)
         return FsspecOutputFile(location=location, fs=fs)
 

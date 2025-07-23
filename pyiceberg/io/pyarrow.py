@@ -391,7 +391,13 @@ class PyArrowFileIO(FileIO):
         """Return the path without the scheme."""
         uri = urlparse(location)
         if not uri.scheme:
-            return "file", uri.netloc, os.path.abspath(location)
+            if not os.path.isabs(location):
+                raise ValueError(f"FileIO implementation for local files requires absolute paths: {location}")
+            return "file", uri.netloc, location
+        elif uri.scheme == "file":
+            if not os.path.isabs(uri.path):
+                raise ValueError(f"FileIO implementation for local files requires absolute paths: {location}")
+            return uri.scheme, uri.netloc, uri.path
         elif uri.scheme in ("hdfs", "viewfs"):
             return uri.scheme, uri.netloc, uri.path
         else:
