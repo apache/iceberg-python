@@ -79,7 +79,8 @@ P = TypeVar("P")
 INITIAL_SCHEMA_ID = 0
 
 FIELD_ID_PROP = "field-id"
-ICEBERG_FIELD_NAME_PROP = "iceberg-field-name" 
+ICEBERG_FIELD_NAME_PROP = "iceberg-field-name"
+
 
 class Schema(IcebergBaseModel):
     """A table Schema.
@@ -1359,17 +1360,17 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
 # Implementation copied from Apache Iceberg repo.
 def make_compatible_name(name: str) -> str:
     """Make a field name compatible with Avro specification.
-    
+
     This function sanitizes field names to comply with Avro naming rules:
     - Names must start with [A-Za-z_]
     - Subsequent characters must be [A-Za-z0-9_]
-    
+
     Invalid characters are replaced with _xHHHH where HHHH is the hex code.
     Names starting with digits get a leading underscore.
-    
+
     Args:
         name: The original field name
-        
+
     Returns:
         A sanitized name that complies with Avro specification
     """

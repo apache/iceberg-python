@@ -26,7 +26,15 @@ from typing import (
     Union,
 )
 
-from pyiceberg.schema import Schema, SchemaVisitorPerPrimitiveType, visit, ICEBERG_FIELD_NAME_PROP, FIELD_ID_PROP, make_compatible_name, _valid_avro_name
+from pyiceberg.schema import (
+    FIELD_ID_PROP,
+    ICEBERG_FIELD_NAME_PROP,
+    Schema,
+    SchemaVisitorPerPrimitiveType,
+    _valid_avro_name,
+    make_compatible_name,
+    visit,
+)
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
