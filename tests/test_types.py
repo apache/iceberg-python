@@ -62,8 +62,6 @@ non_parameterized_types = [
     (10, StringType),
     (11, UUIDType),
     (12, BinaryType),
-    (13, GeographyType),
-    (14, GeometryType),
 ]
 
 primitive_types = {
@@ -79,8 +77,6 @@ primitive_types = {
     "string": StringType,
     "uuid": UUIDType,
     "binary": BinaryType,
-    "geography": GeographyType,
-    "geometry": GeometryType,
 }
 
 
@@ -105,8 +101,6 @@ def test_repr_primitive_types(input_index: int, input_type: Type[PrimitiveType])
         (StringType(), True),
         (UUIDType(), True),
         (BinaryType(), True),
-        (GeographyType(), True),
-        (GeometryType(), True),
         (DecimalType(32, 3), True),
         (FixedType(8), True),
         (ListType(1, StringType(), True), False),
@@ -520,7 +514,7 @@ def test_str_geography() -> None:
 
 
 def test_repr_geography() -> None:
-    assert repr(GeographyType()) == "GeographyType()"
+    assert repr(GeographyType()) == "GeographyType(crs=None, edge_algorithm=None)"
 
 
 def test_serialization_geometry() -> None:
@@ -536,7 +530,7 @@ def test_str_geometry() -> None:
 
 
 def test_repr_geometry() -> None:
-    assert repr(GeometryType()) == "GeometryType()"
+    assert repr(GeometryType()) == "GeometryType(crs=None)"
 
 
 def test_serialization_decimal() -> None:
