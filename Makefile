@@ -103,7 +103,7 @@ test-integration-rebuild: ## Rebuild integration Docker services from scratch
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml build --no-cache
 
-test-integration-trino:
+test-integration-trino: ## Run tests marked with @pytest.mark.integration_trino
 	sh ./dev/run-trino.sh
 	$(TEST_RUNNER) pytest tests/ -m integration_trino $(PYTEST_ARGS)
 
@@ -120,7 +120,7 @@ test-gcs: ## Run tests marked with @pytest.mark.gcs
 	$(TEST_RUNNER) pytest tests/ -m gcs $(PYTEST_ARGS)
 
 test-coverage: COVERAGE=1
-test-coverage: test test-integration test-s3 test-adls test-gcs coverage-report ## Run all tests with coverage and report
+test-coverage: test test-integration test-integration-trino test-s3 test-adls test-gcs coverage-report ## Run all tests with coverage and report
 
 coverage-report: ## Combine and report coverage
 	poetry run coverage combine
