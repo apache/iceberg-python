@@ -58,6 +58,7 @@ TOTAL_RECORDS = "total-records"
 TOTAL_FILE_SIZE = "total-files-size"
 CHANGED_PARTITION_COUNT_PROP = "changed-partition-count"
 CHANGED_PARTITION_PREFIX = "partitions."
+PARTITION_SUMMARY_PROP = "partition-summaries-included"
 OPERATION = "operation"
 
 INITIAL_SEQUENCE_NUMBER = 0
@@ -306,6 +307,8 @@ class SnapshotSummaryCollector:
         changed_partitions_size = len(self.partition_metrics)
         set_when_positive(properties, changed_partitions_size, CHANGED_PARTITION_COUNT_PROP)
         if changed_partitions_size <= self.max_changed_partitions_for_summaries:
+            if changed_partitions_size > 0:
+                properties[PARTITION_SUMMARY_PROP] = "true"
             for partition_path, update_metrics_partition in self.partition_metrics.items():
                 if (summary := self._partition_summary(update_metrics_partition)) and len(summary) != 0:
                     properties[CHANGED_PARTITION_PREFIX + partition_path] = summary

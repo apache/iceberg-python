@@ -36,7 +36,11 @@ from pyiceberg.table.snapshots import (
     SnapshotLogEntry,
 )
 from pyiceberg.table.sorting import SortOrder
-from pyiceberg.table.statistics import StatisticsFile, filter_statistics_by_snapshot_id
+from pyiceberg.table.statistics import (
+    PartitionStatisticsFile,
+    StatisticsFile,
+    filter_statistics_by_snapshot_id,
+)
 from pyiceberg.typedef import (
     IcebergBaseModel,
     Properties,
@@ -198,6 +202,16 @@ class RemoveStatisticsUpdate(IcebergBaseModel):
     snapshot_id: int = Field(alias="snapshot-id")
 
 
+class SetPartitionStatisticsUpdate(IcebergBaseModel):
+    action: Literal["set-partition-statistics"] = Field(default="set-partition-statistics")
+    partition_statistics: PartitionStatisticsFile
+
+
+class RemovePartitionStatisticsUpdate(IcebergBaseModel):
+    action: Literal["remove-partition-statistics"] = Field(default="remove-partition-statistics")
+    snapshot_id: int = Field(alias="snapshot-id")
+
+
 TableUpdate = Annotated[
     Union[
         AssignUUIDUpdate,
@@ -217,6 +231,8 @@ TableUpdate = Annotated[
         RemovePropertiesUpdate,
         SetStatisticsUpdate,
         RemoveStatisticsUpdate,
+        SetPartitionStatisticsUpdate,
+        RemovePartitionStatisticsUpdate,
     ],
     Field(discriminator="action"),
 ]
@@ -580,6 +596,29 @@ def _(update: RemoveStatisticsUpdate, base_metadata: TableMetadata, context: _Ta
     context.add_update(update)
 
     return base_metadata.model_copy(update={"statistics": statistics})
+
+
+@_apply_table_update.register(SetPartitionStatisticsUpdate)
+def _(update: SetPartitionStatisticsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    partition_statistics = filter_statistics_by_snapshot_id(
+        base_metadata.partition_statistics, update.partition_statistics.snapshot_id
+    )
+    context.add_update(update)
+
+    return base_metadata.model_copy(update={"partition_statistics": partition_statistics + [update.partition_statistics]})
+
+
+@_apply_table_update.register(RemovePartitionStatisticsUpdate)
+def _(
+    update: RemovePartitionStatisticsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext
+) -> TableMetadata:
+    if not any(part_stat.snapshot_id == update.snapshot_id for part_stat in base_metadata.partition_statistics):
+        raise ValueError(f"Partition Statistics with snapshot id {update.snapshot_id} does not exist")
+
+    statistics = filter_statistics_by_snapshot_id(base_metadata.partition_statistics, update.snapshot_id)
+    context.add_update(update)
+
+    return base_metadata.model_copy(update={"partition_statistics": statistics})
 
 
 def update_table_metadata(

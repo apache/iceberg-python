@@ -137,6 +137,7 @@ from pyiceberg.utils.config import Config
 from pyiceberg.utils.properties import property_as_bool
 
 if TYPE_CHECKING:
+    import bodo.pandas as bd
     import daft
     import pandas as pd
     import polars as pl
@@ -1485,6 +1486,16 @@ class Table:
 
         return daft.read_iceberg(self)
 
+    def to_bodo(self) -> bd.DataFrame:
+        """Read a bodo DataFrame lazily from this Iceberg table.
+
+        Returns:
+            bd.DataFrame: Unmaterialized Bodo Dataframe created from the Iceberg table
+        """
+        import bodo.pandas as bd
+
+        return bd.read_iceberg_table(self)
+
     def to_polars(self) -> pl.LazyFrame:
         """Lazily read from this Apache Iceberg table.
 
@@ -1691,7 +1702,14 @@ class TableScan(ABC):
 
     def update(self: S, **overrides: Any) -> S:
         """Create a copy of this table scan with updated fields."""
-        return type(self)(**{**self.__dict__, **overrides})
+        from inspect import signature
+
+        # Extract those attributes that are constructor parameters. We don't use self.__dict__ as the kwargs to the
+        # constructors because it may contain additional attributes that are not part of the constructor signature.
+        params = signature(type(self).__init__).parameters.keys() - {"self"}  # Skip "self" parameter
+        kwargs = {param: getattr(self, param) for param in params}  # Assume parameters are attributes
+
+        return type(self)(**{**kwargs, **overrides})
 
     def use_ref(self: S, name: str) -> S:
         if self.snapshot_id:

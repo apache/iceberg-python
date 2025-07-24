@@ -78,6 +78,7 @@ gcsfs = { version = ">=2023.1.0", optional = true }
 huggingface-hub = { version = ">=0.24.0", optional = true }
 psycopg2-binary = { version = ">=2.9.6", optional = true }
 sqlalchemy = { version = "^2.0.18", optional = true }
+bodo = { version = ">=2025.7.4", optional = true }
 daft = { version = ">=0.5.0", optional = true }
 cachetools = ">=5.5,<7.0"
 pyiceberg-core = { version = "^0.5.1", optional = true }
@@ -298,6 +299,7 @@ pyarrow = ["pyarrow", "pyiceberg-core"]
 pandas = ["pandas", "pyarrow"]
 duckdb = ["duckdb", "pyarrow"]
 ray = ["ray", "pyarrow", "pandas"]
+bodo = ["bodo"]
 daft = ["daft"]
 polars = ["polars"]
 snappy = ["python-snappy"]
@@ -483,6 +485,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "daft.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "bodo.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
