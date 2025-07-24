@@ -27,7 +27,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 import thrift.transport.TSocket
-from hive_metastore.ttypes import (
+from hive_metastore.v4.ttypes import (
     AlreadyExistsException,
     EnvironmentContext,
     FieldSchema,
@@ -39,9 +39,9 @@ from hive_metastore.ttypes import (
     SerDeInfo,
     SkewedInfo,
     StorageDescriptor,
+    Database as HiveDatabase,
+    Table as HiveTable,
 )
-from hive_metastore.ttypes import Database as HiveDatabase
-from hive_metastore.ttypes import Table as HiveTable
 
 from pyiceberg.catalog import PropertiesUpdateSummary
 from pyiceberg.catalog.hive import (
@@ -255,6 +255,8 @@ def test_no_uri_supplied() -> None:
 
 
 def test_check_number_of_namespaces(table_schema_simple: Schema) -> None:
+    _HiveClient._get_hive_version = MagicMock()
+    _HiveClient._get_hive_version.return_value = 3
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
     with pytest.raises(ValueError):
@@ -281,7 +283,8 @@ def test_create_table(
 
     catalog._client = MagicMock()
     catalog._client.__enter__().create_table.return_value = None
-    catalog._client.__enter__().get_table_objects_by_name.return_value = [hive_table]
+    catalog._get_hive_table = MagicMock()
+    catalog._get_hive_table.return_value = hive_table
     catalog._client.__enter__().get_database.return_value = hive_database
     catalog.create_table(("default", "table"), schema=table_schema_with_all_types, properties={"owner": "javaberg"})
 
@@ -460,7 +463,8 @@ def test_create_table_with_given_location_removes_trailing_slash(
 
     catalog._client = MagicMock()
     catalog._client.__enter__().create_table.return_value = None
-    catalog._client.__enter__().get_table_objects_by_name.return_value = [hive_table]
+    catalog._get_hive_table = MagicMock()
+    catalog._get_hive_table.return_value = hive_table
     catalog._client.__enter__().get_database.return_value = hive_database
     catalog.create_table(
         ("default", "table"), schema=table_schema_with_all_types, properties={"owner": "javaberg"}, location=f"{location}/"
@@ -633,8 +637,9 @@ def test_create_v1_table(table_schema_simple: Schema, hive_database: HiveDatabas
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
     catalog._client = MagicMock()
+    catalog._get_hive_table = MagicMock()
     catalog._client.__enter__().create_table.return_value = None
-    catalog._client.__enter__().get_table_objects_by_name.return_value = [hive_table]
+    catalog._get_hive_table.return_value = hive_table
     catalog._client.__enter__().get_database.return_value = hive_database
     catalog.create_table(
         ("default", "table"), schema=table_schema_simple, properties={"owner": "javaberg", "format-version": "1"}
@@ -685,10 +690,11 @@ def test_load_table(hive_table: HiveTable) -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
     catalog._client = MagicMock()
-    catalog._client.__enter__().get_table_objects_by_name.return_value = [hive_table]
+    catalog._get_hive_table = MagicMock()
+    catalog._get_hive_table.return_value = hive_table
     table = catalog.load_table(("default", "new_tabl2e"))
 
-    catalog._client.__enter__().get_table_objects_by_name.assert_called_with(dbname="default", tbl_names=["new_tabl2e"])
+    catalog._get_hive_table.assert_called_with(catalog._client.__enter__(), dbname="default", tbl_name="new_tabl2e")
 
     expected = TableMetadataV2(
         location="s3://bucket/test/location",
@@ -785,11 +791,12 @@ def test_load_table_from_self_identifier(hive_table: HiveTable) -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
     catalog._client = MagicMock()
-    catalog._client.__enter__().get_table_objects_by_name.side_effect = lambda dbname, tbl_names: [hive_table]
+    catalog._get_hive_table = MagicMock()
+    catalog._get_hive_table.return_value = hive_table
     intermediate = catalog.load_table(("default", "new_tabl2e"))
     table = catalog.load_table(intermediate.name())
 
-    catalog._client.__enter__().get_table_objects_by_name.assert_called_with(dbname="default", tbl_names=["new_tabl2e"])
+    catalog._get_hive_table.assert_called_with(catalog._client.__enter__(), dbname="default", tbl_name="new_tabl2e")
 
     expected = TableMetadataV2(
         location="s3://bucket/test/location",
@@ -891,7 +898,8 @@ def test_rename_table(hive_table: HiveTable) -> None:
     renamed_table.tableName = "new_tabl3e"
 
     catalog._client = MagicMock()
-    catalog._client.__enter__().get_table_objects_by_name.side_effect = [[hive_table], [renamed_table]]
+    catalog._get_hive_table = MagicMock()
+    catalog._get_hive_table.side_effect = [hive_table, renamed_table]
     catalog._client.__enter__().alter_table_with_environment_context.return_value = None
 
     from_identifier = ("default", "new_tabl2e")
@@ -900,8 +908,8 @@ def test_rename_table(hive_table: HiveTable) -> None:
 
     assert table.name() == to_identifier
 
-    calls = [call(dbname="default", tbl_names=["new_tabl2e"]), call(dbname="default", tbl_names=["new_tabl3e"])]
-    catalog._client.__enter__().get_table_objects_by_name.assert_has_calls(calls)
+    calls = [call(catalog._client.__enter__(), dbname="default", tbl_name="new_tabl2e"), call(catalog._client.__enter__(), dbname="default", tbl_name="new_tabl3e")]
+    catalog._get_hive_table.assert_has_calls(calls)
     catalog._client.__enter__().alter_table_with_environment_context.assert_called_with(
         dbname="default",
         tbl_name="new_tabl2e",
@@ -915,25 +923,26 @@ def test_rename_table_from_self_identifier(hive_table: HiveTable) -> None:
     catalog.table_exists = MagicMock(return_value=False)  # type: ignore[method-assign]
 
     catalog._client = MagicMock()
-    catalog._client.__enter__().get_table_objects_by_name.return_value = [hive_table]
+    catalog._get_hive_table = MagicMock()
+    catalog._get_hive_table.return_value = hive_table
 
     from_identifier = ("default", "new_tabl2e")
     from_table = catalog.load_table(from_identifier)
-    catalog._client.__enter__().get_table_objects_by_name.assert_called_with(dbname="default", tbl_names=["new_tabl2e"])
+    catalog._get_hive_table.assert_called_with(catalog._client.__enter__(), dbname="default", tbl_name="new_tabl2e")
 
     renamed_table = copy.deepcopy(hive_table)
     renamed_table.dbName = "default"
     renamed_table.tableName = "new_tabl3e"
 
-    catalog._client.__enter__().get_table_objects_by_name.side_effect = [[hive_table], [renamed_table]]
+    catalog._get_hive_table.side_effect = [hive_table, renamed_table]
     catalog._client.__enter__().alter_table_with_environment_context.return_value = None
     to_identifier = ("default", "new_tabl3e")
     table = catalog.rename_table(from_table.name(), to_identifier)
 
     assert table.name() == to_identifier
 
-    calls = [call(dbname="default", tbl_names=["new_tabl2e"]), call(dbname="default", tbl_names=["new_tabl3e"])]
-    catalog._client.__enter__().get_table_objects_by_name.assert_has_calls(calls)
+    calls = [call(catalog._client.__enter__(), dbname="default", tbl_name="new_tabl2e"), call(catalog._client.__enter__(), dbname="default", tbl_name="new_tabl3e")]
+    catalog._get_hive_table.assert_has_calls(calls)
     catalog._client.__enter__().alter_table_with_environment_context.assert_called_with(
         dbname="default",
         tbl_name="new_tabl2e",
@@ -947,6 +956,7 @@ def test_rename_table_from_does_not_exists() -> None:
     catalog.table_exists = MagicMock(return_value=False)  # type: ignore[method-assign]
 
     catalog._client = MagicMock()
+    catalog._client.__enter__()._hive_version = 3
     catalog._client.__enter__().alter_table_with_environment_context.side_effect = NoSuchObjectException(
         message="hive.default.does_not_exists table not found"
     )
@@ -962,6 +972,7 @@ def test_rename_table_to_namespace_does_not_exists() -> None:
     catalog.table_exists = MagicMock(return_value=False)  # type: ignore[method-assign]
 
     catalog._client = MagicMock()
+    catalog._client.__enter__()._hive_version = 3
     catalog._client.__enter__().alter_table_with_environment_context.side_effect = InvalidOperationException(
         message="Unable to change partition or table. Database default does not exist Check metastore logs for detailed stack.does_not_exists"
     )
@@ -1028,13 +1039,14 @@ def test_list_tables(hive_table: HiveTable) -> None:
 
     catalog._client = MagicMock()
     catalog._client.__enter__().get_all_tables.return_value = ["table1", "table2", "table3", "table4"]
-    catalog._client.__enter__().get_table_objects_by_name.return_value = [tbl1, tbl2, tbl3, tbl4]
+    catalog._get_table_objects_by_name = MagicMock()
+    catalog._get_table_objects_by_name.return_value = [tbl1, tbl2, tbl3, tbl4]
 
     got_tables = catalog.list_tables("database")
     assert got_tables == [("database", "table1"), ("database", "table2")]
     catalog._client.__enter__().get_all_tables.assert_called_with(db_name="database")
-    catalog._client.__enter__().get_table_objects_by_name.assert_called_with(
-        dbname="database", tbl_names=["table1", "table2", "table3", "table4"]
+    catalog._get_table_objects_by_name.assert_called_with(
+        catalog._client.__enter__(), dbname="database", tbl_names=["table1", "table2", "table3", "table4"]
     )
 
 
@@ -1064,7 +1076,8 @@ def test_drop_table_from_self_identifier(hive_table: HiveTable) -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
     catalog._client = MagicMock()
-    catalog._client.__enter__().get_table_objects_by_name.return_value = [hive_table]
+    catalog._get_hive_table = MagicMock()
+    catalog._get_hive_table.return_value = hive_table
     table = catalog.load_table(("default", "new_tabl2e"))
 
     catalog._client.__enter__().get_all_databases.return_value = ["namespace1", "namespace2"]
@@ -1171,7 +1184,7 @@ def test_update_namespace_properties(hive_database: HiveDatabase) -> None:
             name="default",
             description=None,
             locationUri=hive_database.locationUri,
-            parameters={"label": "core"},
+            parameters={"test": None, "label": "core"},
             privileges=None,
             ownerName=None,
             ownerType=1,
