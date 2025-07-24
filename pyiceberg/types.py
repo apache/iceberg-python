@@ -62,8 +62,8 @@ from pyiceberg.utils.parsing import ParseNumberFromBrackets
 from pyiceberg.utils.singleton import Singleton
 
 DECIMAL_REGEX = re.compile(r"decimal\((\d+),\s*(\d+)\)")
-GEOGRAPHY_REGEX = re.compile(r"""geography(\(([a-zA-Z0-9:]+)(,\s*([a-zA-Z]+))?\))?""")
-GEOMETRY_REGEX = re.compile(r"""geometry(\(([a-zA-Z0-9:]+)\))?""")
+GEOGRAPHY_REGEX = re.compile(r"""geography\s*(?:\(\s*([^,]*?)\s*(?:,\s*(\w*)\s*)?\))?""", re.IGNORECASE)
+GEOMETRY_REGEX = re.compile(r"""geometry\s*(?:\(\s*([^)]*?)\s*\))?""", re.IGNORECASE)
 FIXED = "fixed"
 FIXED_PARSER = ParseNumberFromBrackets(FIXED)
 
@@ -92,10 +92,13 @@ def _parse_geography_type(geography: Any) -> Tuple[str, GeographyType.EdgeAlgori
     if isinstance(geography, str):
         matches = GEOGRAPHY_REGEX.search(geography)
         if matches:
+            crs = None
             edge_algorithm = None
-            if matches.group(4):
-                edge_algorithm = GeographyType.EdgeAlgorithm(matches.group(4))
-            return matches.group(2), edge_algorithm
+            if matches.group(1):
+                crs = matches.group(1)
+            if matches.group(2):
+                edge_algorithm = GeographyType.EdgeAlgorithm(matches.group(2).lower())
+            return crs, edge_algorithm
         else:
             raise ValidationError(f"Could not parse {geography} into a GeographyType")
     elif isinstance(geography, dict):
@@ -107,7 +110,10 @@ def _parse_geometry_type(geometry: Any) -> str:
     if isinstance(geometry, str):
         matches = GEOMETRY_REGEX.search(geometry)
         if matches:
-            return matches.group(2)
+            crs = None
+            if matches.group(1):
+                crs = matches.group(1)
+            return crs
         else:
             raise ValidationError(f"Could not parse {geometry} into a GeometryType")
     elif isinstance(geometry, dict):

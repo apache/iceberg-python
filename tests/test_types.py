@@ -507,6 +507,8 @@ def test_serialization_geography() -> None:
 
 def test_deserialization_geography() -> None:
     assert GeographyType.model_validate_json('"geography"') == GeographyType()
+    assert GeographyType.model_validate_json('"geography(OGC:CRS84, thomas)"') == GeographyType(crs="OGC:CRS84", edge_algorithm=GeographyType.EdgeAlgorithm.THOMAS)
+    assert GeographyType.model_validate_json('"geography(OGC:CRS84)"') == GeographyType(crs="OGC:CRS84", edge_algorithm=None)
 
 
 def test_str_geography() -> None:
@@ -523,6 +525,7 @@ def test_serialization_geometry() -> None:
 
 def test_deserialization_geometry() -> None:
     assert GeometryType.model_validate_json('"geometry"') == GeometryType()
+    assert GeometryType.model_validate_json('"geometry(OGC:CRS84)"') == GeometryType(crs="OGC:CRS84")
 
 
 def test_str_geometry() -> None:
