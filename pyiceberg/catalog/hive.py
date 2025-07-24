@@ -188,9 +188,10 @@ class _HiveClient:
 
     def _client(self) -> Client:
         protocol = TBinaryProtocol.TBinaryProtocol(self._transport)
-        client: Client = self.hms_v4.Client(protocol)
-        if self._hive_version and self._hive_version < 4:
+        if self._hive_version < 4:
             client: Client = self.hms_v3.Client(protocol)
+        else:
+            client: Client = self.hms_v4.Client(protocol)
         if self._ugi:
             client.set_ugi(*self._ugi)
         return client
@@ -347,12 +348,6 @@ class HiveCatalog(MetastoreCatalog):
             raise last_exception
         else:
             raise ValueError(f"Unable to connect to hive using uri: {properties[URI]}")
-
-    def _update_imported_metastore_modules(self, properties) -> None:
-        breakpoint()
-        v3 = importlib.import_module('hive_metastore.v3.ThriftHiveMetastore')
-        Client = v3.Client
-        self._client = self._create_hive_client(properties)
 
     def _convert_hive_into_iceberg(self, table: HiveTable) -> Table:
         properties: Dict[str, str] = table.parameters
