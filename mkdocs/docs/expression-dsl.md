@@ -17,7 +17,7 @@
 
 # Expression DSL
 
-The PyIceberg library provides a powerful expression DSL (Domain Specific Language) for building complex row filter expressions. This guide will help you understand how to use the expression DSL effectively. This DSL allows you to build type-safe expressions for use in the `row_filter` scan argument.
+The PyIceberg library provides a powerful expression Domain Specific Language (DSL) for building complex row filter expressions. This guide will help you understand how to use the expression DSL effectively. This DSL allows you to build type-safe expressions for use in the `row_filter` scan argument.
 
 They are composed of terms, predicates, and logical operators.
 
@@ -151,20 +151,6 @@ age_in_range = Not(
 )
 ```
 
-### Type Safety
-
-The expression DSL provides type safety through Python's type system. When you create expressions, the types are checked at runtime:
-
-```python
-from pyiceberg.expressions import EqualTo
-
-# This will work
-age_equals_18 = EqualTo("age", 18)
-
-# This will raise a TypeError if the field type doesn't match
-age_equals_18 = EqualTo("age", "18")  # Will fail if age is an integer field
-```
-
 ## Best Practices
 
 1. **Use Type Hints**: Always use type hints when working with expressions to catch type-related errors early.
@@ -204,7 +190,7 @@ complex_filter = And(age_range, status_filter)
    - `IsNull` (and `IsNaN` for doubles/floats) on a required field will always return `False`
    - `NotNull` (and `NotNaN` for doubles/floats) on a required field will always return `True`
 
-2. **String Comparisons**: When using string predicates like `StartsWith`, ensure that the field type is actually a string type.
+2. **String Comparisons**: When using string predicates like `StartsWith`, ensure that the field type is a string type.
 
 ## Examples
 
@@ -213,7 +199,6 @@ Here are some practical examples of using the expression DSL:
 ### Basic Filtering
 
 ```python
-
 from datetime import datetime
 from pyiceberg.expressions import (
     And,
