@@ -29,6 +29,7 @@ import pytest
 from hive_metastore.ttypes import LockRequest, LockResponse, LockState, UnlockRequest
 from pyarrow.fs import S3FileSystem
 from pydantic_core import ValidationError
+from pyspark.sql import SparkSession
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.hive import HiveCatalog, _HiveClient
@@ -320,9 +321,6 @@ def test_pyarrow_limit_with_multiple_files(catalog: Catalog) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_daft_nan(catalog: Catalog) -> None:
-    import daft
-
-    daft.context.set_runner_native()
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     df = table_test_null_nan_rewritten.to_daft()
     assert df.count_rows() == 3
@@ -332,9 +330,6 @@ def test_daft_nan(catalog: Catalog) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_daft_nan_rewritten(catalog: Catalog) -> None:
-    import daft
-
-    daft.context.set_runner_native()
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     df = table_test_null_nan_rewritten.to_daft()
     df = df.where(df["col_numeric"].float.is_nan())
@@ -342,6 +337,20 @@ def test_daft_nan_rewritten(catalog: Catalog) -> None:
     assert df.count_rows() == 1
     assert df.to_pydict()["idx"][0] == 1
     assert math.isnan(df.to_pydict()["col_numeric"][0])
+
+
+@pytest.mark.integration
+@pytest.mark.filterwarnings("ignore")
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_bodo_nan(catalog: Catalog, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Avoid local Mac issues (see https://github.com/apache/iceberg-python/issues/2225)
+    monkeypatch.setenv("BODO_DATAFRAME_LIBRARY_RUN_PARALLEL", "0")
+    monkeypatch.setenv("FI_PROVIDER", "tcp")
+
+    table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
+    df = table_test_null_nan_rewritten.to_bodo()
+    assert len(df) == 3
+    assert math.isnan(df.col_numeric.iloc[0])
 
 
 @pytest.mark.integration
@@ -588,15 +597,15 @@ def test_partitioned_tables(catalog: Catalog) -> None:
 def test_unpartitioned_uuid_table(catalog: Catalog) -> None:
     unpartitioned_uuid = catalog.load_table("default.test_uuid_and_fixed_unpartitioned")
     arrow_table_eq = unpartitioned_uuid.scan(row_filter="uuid_col == '102cb62f-e6f8-4eb0-9973-d9b012ff0967'").to_arrow()
-    assert arrow_table_eq["uuid_col"].to_pylist() == [uuid.UUID("102cb62f-e6f8-4eb0-9973-d9b012ff0967").bytes]
+    assert arrow_table_eq["uuid_col"].to_pylist() == [uuid.UUID("102cb62f-e6f8-4eb0-9973-d9b012ff0967")]
 
     arrow_table_neq = unpartitioned_uuid.scan(
         row_filter="uuid_col != '102cb62f-e6f8-4eb0-9973-d9b012ff0967' and uuid_col != '639cccce-c9d2-494a-a78c-278ab234f024'"
     ).to_arrow()
     assert arrow_table_neq["uuid_col"].to_pylist() == [
-        uuid.UUID("ec33e4b2-a834-4cc3-8c4a-a1d3bfc2f226").bytes,
-        uuid.UUID("c1b0d8e0-0b0e-4b1e-9b0a-0e0b0d0c0a0b").bytes,
-        uuid.UUID("923dae77-83d6-47cd-b4b0-d383e64ee57e").bytes,
+        uuid.UUID("ec33e4b2-a834-4cc3-8c4a-a1d3bfc2f226"),
+        uuid.UUID("c1b0d8e0-0b0e-4b1e-9b0a-0e0b0d0c0a0b"),
+        uuid.UUID("923dae77-83d6-47cd-b4b0-d383e64ee57e"),
     ]
 
 
@@ -1024,3 +1033,44 @@ def test_scan_with_datetime(catalog: Catalog) -> None:
 
     df = table.scan(row_filter=LessThan("datetime", yesterday)).to_pandas()
     assert len(df) == 0
+
+
+@pytest.mark.integration
+# TODO: For Hive we require writing V3
+# @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog")])
+def test_initial_default(catalog: Catalog, spark: SparkSession) -> None:
+    identifier = "default.test_initial_default"
+    try:
+        catalog.drop_table(identifier)
+    except NoSuchTableError:
+        pass
+
+    one_column = pa.table([pa.nulls(10, pa.int32())], names=["some_field"])
+
+    tbl = catalog.create_table(identifier, schema=one_column.schema, properties={"format-version": "2"})
+
+    tbl.append(one_column)
+
+    # Do the bump version through Spark, since PyIceberg does not support this (yet)
+    spark.sql(f"ALTER TABLE {identifier} SET TBLPROPERTIES('format-version'='3')")
+
+    with tbl.update_schema() as upd:
+        upd.add_column("so_true", BooleanType(), required=False, default_value=True)
+
+    result_table = tbl.scan().filter("so_true == True").to_arrow()
+
+    assert len(result_table) == 10
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_filter_after_arrow_scan(catalog: Catalog) -> None:
+    identifier = "test_partitioned_by_hours"
+    table = catalog.load_table(f"default.{identifier}")
+
+    scan = table.scan()
+    assert len(scan.to_arrow()) > 0
+
+    scan = scan.filter("ts >= '2023-03-05T00:00:00+00:00'")
+    assert len(scan.to_arrow()) > 0

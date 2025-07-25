@@ -256,10 +256,10 @@ class RestCatalog(Catalog):
             auth_type_config = auth_config.get(auth_type, {})
             auth_impl = auth_config.get("impl")
 
-            if auth_type is CUSTOM and not auth_impl:
+            if auth_type == CUSTOM and not auth_impl:
                 raise ValueError("auth.impl must be specified when using custom auth.type")
 
-            if auth_type is not CUSTOM and auth_impl:
+            if auth_type != CUSTOM and auth_impl:
                 raise ValueError("auth.impl can only be specified when using custom auth.type")
 
             session.auth = AuthManagerAdapter(AuthManagerFactory.create(auth_impl or auth_type, auth_type_config))
@@ -523,7 +523,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {409: TableAlreadyExistsError})
+            _handle_non_200_response(exc, {409: TableAlreadyExistsError, 404: NoSuchNamespaceError})
         return TableResponse.model_validate_json(response.text)
 
     @retry(**_RETRY_ARGS)
