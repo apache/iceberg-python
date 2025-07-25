@@ -23,6 +23,7 @@ from typing import (
     Dict,
     Generic,
     List,
+    Optional,
     Set,
     SupportsFloat,
     Tuple,
@@ -861,6 +862,7 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
     Args:
       file_schema (Schema): The schema of the file.
       case_sensitive (bool): Whether to consider case when binding a reference to a field in a schema, defaults to True.
+      projected_fields (Dict[str, Any]): Partition field values for missing fields from projection.
 
     Raises:
         TypeError: In the case of an UnboundPredicate.
@@ -869,10 +871,12 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
 
     file_schema: Schema
     case_sensitive: bool
+    projected_fields: Dict[str, Any]
 
-    def __init__(self, file_schema: Schema, case_sensitive: bool) -> None:
+    def __init__(self, file_schema: Schema, case_sensitive: bool, projected_fields: Optional[Dict[str, Any]] = None) -> None:
         self.file_schema = file_schema
         self.case_sensitive = case_sensitive
+        self.projected_fields = projected_fields or {}
 
     def visit_true(self) -> BooleanExpression:
         return AlwaysTrue()
@@ -912,7 +916,9 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
 
             return (
                 AlwaysTrue()
-                if expression_evaluator(Schema(field), pred, case_sensitive=self.case_sensitive)(Record(field.initial_default))
+                if expression_evaluator(Schema(field), pred, case_sensitive=self.case_sensitive)(
+                    Record(field.initial_default or self.projected_fields.get(field.name, None))
+                )
                 else AlwaysFalse()
             )
 
@@ -926,8 +932,10 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
             raise ValueError(f"Unsupported predicate: {predicate}")
 
 
-def translate_column_names(expr: BooleanExpression, file_schema: Schema, case_sensitive: bool) -> BooleanExpression:
-    return visit(expr, _ColumnNameTranslator(file_schema, case_sensitive))
+def translate_column_names(
+    expr: BooleanExpression, file_schema: Schema, case_sensitive: bool, projected_fields: Optional[Dict[str, Any]] = None
+) -> BooleanExpression:
+    return visit(expr, _ColumnNameTranslator(file_schema, case_sensitive, projected_fields))
 
 
 class _ProjectedColumnsEvaluator(BooleanExpressionVisitor[BooleanExpression]):

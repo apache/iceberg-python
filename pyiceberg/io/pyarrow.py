@@ -78,7 +78,6 @@ from pyiceberg.expressions.literals import Literal
 from pyiceberg.expressions.visitors import (
     BoundBooleanExpressionVisitor,
     bind,
-    evaluate_projected_columns,
     extract_field_ids,
     translate_column_names,
 )
@@ -1469,17 +1468,8 @@ def _task_to_record_batches(
 
         pyarrow_filter = None
         if bound_row_filter is not AlwaysTrue():
-            evaluated_projected_columns_filter = evaluate_projected_columns(
-                bound_row_filter,
-                file_schema,
-                projected_schema,
-                case_sensitive=case_sensitive,
-                projected_missing_fields=projected_missing_fields,
-            )
             translated_row_filter = translate_column_names(
-                evaluated_projected_columns_filter,
-                file_schema,
-                case_sensitive=case_sensitive,
+                bound_row_filter, file_schema, case_sensitive=case_sensitive, projected_fields=projected_missing_fields
             )
             bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
             pyarrow_filter = expression_to_pyarrow(bound_file_filter)
