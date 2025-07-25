@@ -359,7 +359,9 @@ catalog:
 
 #### Authentication Options
 
-##### OAuth2
+##### Legacy OAuth2
+
+Legacy OAuth2 Properties will be removed in PyIceberg 1.0 in place of pluggable AuthManager properties below
 
 | Key                 | Example                          | Description                                                                                        |
 | ------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
@@ -377,6 +379,77 @@ catalog:
 | rest.sigv4-enabled  | true                             | Sign requests to the REST Server using AWS SigV4 protocol                                          |
 | rest.signing-region | us-east-1                        | The region to use when SigV4 signing a request                                                     |
 | rest.signing-name   | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
+
+##### Pluggable Authentication via AuthManager
+
+The RESTCatalog supports pluggable authentication via the `auth` configuration block. This allows you to specify which how the access token will be fetched and managed for use with the HTTP requests to the RESTCatalog server. The authentication method is selected by setting the `auth.type` property, and additional configuration can be provided as needed for each method.
+
+###### Supported Authentication Types
+
+- `noop`: No authentication (no Authorization header sent).
+- `basic`: HTTP Basic authentication.
+- `custom`: Custom authentication manager (requires `auth.impl`).
+
+###### Configuration Properties
+
+The `auth` block is structured as follows:
+
+```yaml
+catalog:
+  default:
+    type: rest
+    uri: http://rest-catalog/ws/
+    auth:
+      type: <auth_type>
+      <auth_type>:
+        # Type-specific configuration
+      impl: <custom_class_path>  # Only for custom auth
+```
+
+###### Property Reference
+
+| Property         | Required | Description                                                                                     |
+|------------------|----------|-------------------------------------------------------------------------------------------------|
+| `auth.type`      | Yes      | The authentication type to use (`noop`, `basic`, or `custom`).                       |
+| `auth.impl`      | Conditionally | The fully qualified class path for a custom AuthManager. Required if `auth.type` is `custom`. |
+| `auth.basic`     | If type is `basic` | Block containing `username` and `password` for HTTP Basic authentication.           |
+| `auth.custom`    | If type is `custom` | Block containing configuration for the custom AuthManager.                          |
+
+###### Examples
+
+No Authentication:
+
+```yaml
+auth:
+  type: noop
+```
+
+Basic Authentication:
+
+```yaml
+auth:
+  type: basic
+  basic:
+    username: myuser
+    password: mypass
+```
+
+Custom Authentication:
+
+```yaml
+auth:
+  type: custom
+  impl: mypackage.module.MyAuthManager
+  custom:
+    property1: value1
+    property2: value2
+```
+
+###### Notes
+
+- If `auth.type` is `custom`, you **must** specify `auth.impl` with the full class path to your custom AuthManager.
+- If `auth.type` is not `custom`, specifying `auth.impl` is not allowed.
+- The configuration block under each type (e.g., `basic`, `custom`) is passed as keyword arguments to the corresponding AuthManager.
 
 <!-- markdown-link-check-enable-->
 
@@ -444,78 +517,6 @@ catalog:
     token-refresh-enabled: true
     py-io-impl: pyiceberg.io.fsspec.FsspecFileIO
 ```
-
-#### Authentication in RESTCatalog
-
-The RESTCatalog supports pluggable authentication via the `auth` configuration block. This allows you to specify which how the access token will be fetched and managed for use with the HTTP requests to the RESTCatalog server. The authentication method is selected by setting the `auth.type` property, and additional configuration can be provided as needed for each method.
-
-##### Supported Authentication Types
-
-- `noop`: No authentication (no Authorization header sent).
-- `basic`: HTTP Basic authentication.
-- `legacyoauth2`: Legacy OAuth2 client credentials flow (Deprecated and will be removed in PyIceberg 1.0.0)
-- `custom`: Custom authentication manager (requires `auth.impl`).
-
-##### Configuration Properties
-
-The `auth` block is structured as follows:
-
-```yaml
-catalog:
-  default:
-    type: rest
-    uri: http://rest-catalog/ws/
-    auth:
-      type: <auth_type>
-      <auth_type>:
-        # Type-specific configuration
-      impl: <custom_class_path>  # Only for custom auth
-```
-
-**Property Reference:**
-
-| Property         | Required | Description                                                                                     |
-|------------------|----------|-------------------------------------------------------------------------------------------------|
-| `auth.type`      | Yes      | The authentication type to use (`noop`, `basic`, or `custom`).                       |
-| `auth.impl`      | Conditionally | The fully qualified class path for a custom AuthManager. Required if `auth.type` is `custom`. |
-| `auth.basic`     | If type is `basic` | Block containing `username` and `password` for HTTP Basic authentication.           |
-| `auth.custom`    | If type is `custom` | Block containing configuration for the custom AuthManager.                          |
-
-##### Examples
-
-**No Authentication:**
-
-```yaml
-auth:
-  type: noop
-```
-
-**Basic Authentication:**
-
-```yaml
-auth:
-  type: basic
-  basic:
-    username: myuser
-    password: mypass
-```
-
-**Custom Authentication:**
-
-```yaml
-auth:
-  type: custom
-  impl: mypackage.module.MyAuthManager
-  custom:
-    property1: value1
-    property2: value2
-```
-
-##### Notes
-
-- If `auth.type` is `custom`, you **must** specify `auth.impl` with the full class path to your custom AuthManager.
-- If `auth.type` is not `custom`, specifying `auth.impl` is not allowed.
-- The configuration block under each type (e.g., `basic`, `custom`) is passed as keyword arguments to the corresponding AuthManager.
 
 ### SQL Catalog
 
