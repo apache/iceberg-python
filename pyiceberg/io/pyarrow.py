@@ -423,29 +423,67 @@ class PyArrowFileIO(FileIO):
     def _initialize_oss_fs(self) -> FileSystem:
         from pyarrow.fs import S3FileSystem
 
-        client_kwargs: Dict[str, Any] = {
-            "endpoint_override": self.properties.get(S3_ENDPOINT),
-            "access_key": get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
-            "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
-            "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
-            "region": get_first_property_value(self.properties, S3_REGION, AWS_REGION),
-            "force_virtual_addressing": property_as_bool(self.properties, S3_FORCE_VIRTUAL_ADDRESSING, True),
+        # Mapping from PyIceberg properties to S3FileSystem parameter names
+        property_mapping = {
+            S3_ENDPOINT: "endpoint_override",
+            S3_ACCESS_KEY_ID: "access_key",
+            AWS_ACCESS_KEY_ID: "access_key",
+            S3_SECRET_ACCESS_KEY: "secret_key",
+            AWS_SECRET_ACCESS_KEY: "secret_key",
+            S3_SESSION_TOKEN: "session_token",
+            AWS_SESSION_TOKEN: "session_token",
+            S3_REGION: "region",
+            AWS_REGION: "region",
+            S3_PROXY_URI: "proxy_options",
+            S3_CONNECT_TIMEOUT: "connect_timeout",
+            S3_REQUEST_TIMEOUT: "request_timeout",
+            S3_FORCE_VIRTUAL_ADDRESSING: "force_virtual_addressing",
         }
 
-        if proxy_uri := self.properties.get(S3_PROXY_URI):
-            client_kwargs["proxy_options"] = proxy_uri
+        # Properties that need special handling
+        special_properties = {
+            S3_CONNECT_TIMEOUT,
+            S3_REQUEST_TIMEOUT,
+            S3_FORCE_VIRTUAL_ADDRESSING,
+            S3_ROLE_SESSION_NAME,
+            S3_RESOLVE_REGION,
+            AWS_ROLE_SESSION_NAME,
+        }
 
-        if connect_timeout := self.properties.get(S3_CONNECT_TIMEOUT):
-            client_kwargs["connect_timeout"] = float(connect_timeout)
+        client_kwargs: Dict[str, Any] = {}
 
-        if request_timeout := self.properties.get(S3_REQUEST_TIMEOUT):
-            client_kwargs["request_timeout"] = float(request_timeout)
+        for prop_name, prop_value in self.properties.items():
+            if prop_value is None:
+                continue
 
-        if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
-            client_kwargs["role_arn"] = role_arn
+            # Skip properties that need special handling
+            if prop_name in special_properties:
+                continue
 
-        if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
-            client_kwargs["session_name"] = session_name
+            # Map known property names to S3FileSystem parameter names
+            if prop_name in property_mapping:
+                param_name = property_mapping[prop_name]
+                client_kwargs[param_name] = prop_value
+
+            # Pass through any other s3.* properties to S3FileSystem
+            elif prop_name.startswith("s3."):
+                param_name = prop_name.split(".", 1)[1]
+                client_kwargs[param_name] = prop_value
+
+        # Handle properties that need first value resolution
+        if S3_ACCESS_KEY_ID in self.properties or AWS_ACCESS_KEY_ID in self.properties:
+            client_kwargs["access_key"] = get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID)
+
+        if S3_SECRET_ACCESS_KEY in self.properties or AWS_SECRET_ACCESS_KEY in self.properties:
+            client_kwargs["secret_key"] = get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY)
+
+        if S3_SESSION_TOKEN in self.properties or AWS_SESSION_TOKEN in self.properties:
+            client_kwargs["session_token"] = get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN)
+
+        if S3_REGION in self.properties or AWS_REGION in self.properties:
+            client_kwargs["region"] = get_first_property_value(self.properties, S3_REGION, AWS_REGION)
+
+        client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, S3_FORCE_VIRTUAL_ADDRESSING, True)
 
         return S3FileSystem(**client_kwargs)
 
@@ -467,16 +505,71 @@ class PyArrowFileIO(FileIO):
         else:
             bucket_region = provided_region
 
-        client_kwargs: Dict[str, Any] = {
-            "endpoint_override": self.properties.get(S3_ENDPOINT),
-            "access_key": get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
-            "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
-            "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
-            "region": bucket_region,
+        # Properties that need special handling
+        property_mapping = {
+            S3_ENDPOINT: "endpoint_override",
+            S3_ACCESS_KEY_ID: "access_key",
+            AWS_ACCESS_KEY_ID: "access_key",
+            S3_SECRET_ACCESS_KEY: "secret_key",
+            AWS_SECRET_ACCESS_KEY: "secret_key",
+            S3_SESSION_TOKEN: "session_token",
+            AWS_SESSION_TOKEN: "session_token",
+            S3_PROXY_URI: "proxy_options",
+            S3_CONNECT_TIMEOUT: "connect_timeout",
+            S3_REQUEST_TIMEOUT: "request_timeout",
+            S3_ROLE_ARN: "role_arn",
+            AWS_ROLE_ARN: "role_arn",
+            S3_ROLE_SESSION_NAME: "session_name",
+            AWS_ROLE_SESSION_NAME: "session_name",
+            S3_FORCE_VIRTUAL_ADDRESSING: "force_virtual_addressing",
+            S3_RETRY_STRATEGY_IMPL: "retry_strategy",
         }
 
-        if proxy_uri := self.properties.get(S3_PROXY_URI):
-            client_kwargs["proxy_options"] = proxy_uri
+        # Properties that need special handling and should not be passed directly
+        special_properties = {
+            S3_RESOLVE_REGION,
+            S3_REGION,
+            AWS_REGION,
+            S3_RETRY_STRATEGY_IMPL,
+            S3_CONNECT_TIMEOUT,
+            S3_REQUEST_TIMEOUT,
+        }
+
+        client_kwargs: Dict[str, Any] = {}
+
+        client_kwargs["region"] = bucket_region
+        for prop_name, prop_value in self.properties.items():
+            if prop_value is None:
+                continue
+
+            # Skip properties that need special handling
+            if prop_name in special_properties:
+                continue
+
+            if prop_name in property_mapping:
+                param_name = property_mapping[prop_name]
+                client_kwargs[param_name] = prop_value
+
+            # Pass through any other s3.* properties that might be used by S3FileSystem
+            elif prop_name.startswith("s3."):
+                param_name = prop_name.split(".", 1)[1]
+                client_kwargs[param_name] = prop_value
+
+        # Handle properties that need first value resolution
+        if S3_ACCESS_KEY_ID in self.properties or AWS_ACCESS_KEY_ID in self.properties:
+            client_kwargs["access_key"] = get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID)
+
+        if S3_SECRET_ACCESS_KEY in self.properties or AWS_SECRET_ACCESS_KEY in self.properties:
+            client_kwargs["secret_key"] = get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY)
+
+        if S3_SESSION_TOKEN in self.properties or AWS_SESSION_TOKEN in self.properties:
+            client_kwargs["session_token"] = get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN)
+
+        if S3_ROLE_ARN in self.properties or AWS_ROLE_ARN in self.properties:
+            client_kwargs["role_arn"] = get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN)
+
+        if S3_ROLE_SESSION_NAME in self.properties or AWS_ROLE_SESSION_NAME in self.properties:
+            client_kwargs["session_name"] = get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME)
 
         if connect_timeout := self.properties.get(S3_CONNECT_TIMEOUT):
             client_kwargs["connect_timeout"] = float(connect_timeout)
@@ -484,15 +577,7 @@ class PyArrowFileIO(FileIO):
         if request_timeout := self.properties.get(S3_REQUEST_TIMEOUT):
             client_kwargs["request_timeout"] = float(request_timeout)
 
-        if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
-            client_kwargs["role_arn"] = role_arn
-
-        if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
-            client_kwargs["session_name"] = session_name
-
-        if self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING) is not None:
-            client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, S3_FORCE_VIRTUAL_ADDRESSING, False)
-
+        # Handle retry strategy special case
         if (retry_strategy_impl := self.properties.get(S3_RETRY_STRATEGY_IMPL)) and (
             retry_instance := _import_retry_strategy(retry_strategy_impl)
         ):
@@ -512,59 +597,111 @@ class PyArrowFileIO(FileIO):
 
         from pyarrow.fs import AzureFileSystem
 
-        client_kwargs: Dict[str, str] = {}
+        # Mapping from PyIceberg properties to AzureFileSystem parameter names
+        property_mapping = {
+            ADLS_ACCOUNT_NAME: "account_name",
+            ADLS_ACCOUNT_KEY: "account_key",
+            ADLS_BLOB_STORAGE_AUTHORITY: "blob_storage_authority",
+            ADLS_DFS_STORAGE_AUTHORITY: "dfs_storage_authority",
+            ADLS_BLOB_STORAGE_SCHEME: "blob_storage_scheme",
+            ADLS_DFS_STORAGE_SCHEME: "dfs_storage_scheme",
+            ADLS_SAS_TOKEN: "sas_token",
+        }
 
-        if account_name := self.properties.get(ADLS_ACCOUNT_NAME):
-            client_kwargs["account_name"] = account_name
+        client_kwargs: Dict[str, Any] = {}
 
-        if account_key := self.properties.get(ADLS_ACCOUNT_KEY):
-            client_kwargs["account_key"] = account_key
+        for prop_name, prop_value in self.properties.items():
+            if prop_value is None:
+                continue
 
-        if blob_storage_authority := self.properties.get(ADLS_BLOB_STORAGE_AUTHORITY):
-            client_kwargs["blob_storage_authority"] = blob_storage_authority
+            # Map known property names to AzureFileSystem parameter names
+            if prop_name in property_mapping:
+                param_name = property_mapping[prop_name]
+                client_kwargs[param_name] = prop_value
 
-        if dfs_storage_authority := self.properties.get(ADLS_DFS_STORAGE_AUTHORITY):
-            client_kwargs["dfs_storage_authority"] = dfs_storage_authority
-
-        if blob_storage_scheme := self.properties.get(ADLS_BLOB_STORAGE_SCHEME):
-            client_kwargs["blob_storage_scheme"] = blob_storage_scheme
-
-        if dfs_storage_scheme := self.properties.get(ADLS_DFS_STORAGE_SCHEME):
-            client_kwargs["dfs_storage_scheme"] = dfs_storage_scheme
-
-        if sas_token := self.properties.get(ADLS_SAS_TOKEN):
-            client_kwargs["sas_token"] = sas_token
+            # Pass through any other adls.* properties that might be used by AzureFileSystem
+            elif prop_name.startswith("adls."):
+                param_name = prop_name.split(".", 1)[1]
+                client_kwargs[param_name] = prop_value
 
         return AzureFileSystem(**client_kwargs)
 
     def _initialize_hdfs_fs(self, scheme: str, netloc: Optional[str]) -> FileSystem:
         from pyarrow.fs import HadoopFileSystem
 
-        hdfs_kwargs: Dict[str, Any] = {}
         if netloc:
             return HadoopFileSystem.from_uri(f"{scheme}://{netloc}")
-        if host := self.properties.get(HDFS_HOST):
-            hdfs_kwargs["host"] = host
-        if port := self.properties.get(HDFS_PORT):
-            # port should be an integer type
-            hdfs_kwargs["port"] = int(port)
-        if user := self.properties.get(HDFS_USER):
-            hdfs_kwargs["user"] = user
-        if kerb_ticket := self.properties.get(HDFS_KERB_TICKET):
-            hdfs_kwargs["kerb_ticket"] = kerb_ticket
+
+        # Mapping from PyIceberg properties to S3FileSystem parameter names
+        property_mapping = {
+            HDFS_HOST: "host",
+            HDFS_PORT: "port",
+            HDFS_USER: "user",
+            HDFS_KERB_TICKET: "kerb_ticket",
+        }
+
+        hdfs_kwargs: Dict[str, Any] = {}
+
+        for prop_name, prop_value in self.properties.items():
+            if prop_value is None:
+                continue
+
+            # Map known property names to HadoopFileSystem parameter names
+            if prop_name in property_mapping:
+                param_name = property_mapping[prop_name]
+
+                if param_name == "port":
+                    hdfs_kwargs[param_name] = int(prop_value)
+                else:
+                    hdfs_kwargs[param_name] = prop_value
+
+            # Pass through any other hdfs.* properties used to be used by HadoopFileSystem
+            elif prop_name.startswith("hdfs."):
+                param_name = prop_name.split(".", 1)[1]
+                hdfs_kwargs[param_name] = prop_value
 
         return HadoopFileSystem(**hdfs_kwargs)
 
     def _initialize_gcs_fs(self) -> FileSystem:
         from pyarrow.fs import GcsFileSystem
 
+        # Mapping from PyIceberg properties to GcsFileSystem parameter names
+        property_mapping = {
+            GCS_TOKEN: "access_token",
+            GCS_TOKEN_EXPIRES_AT_MS: "credential_token_expiration",
+            GCS_DEFAULT_LOCATION: "default_bucket_location",
+            GCS_SERVICE_HOST: "endpoint_override",
+        }
+
+        # Properties that need special handling
+        special_properties = {
+            GCS_TOKEN_EXPIRES_AT_MS,
+            GCS_SERVICE_HOST,
+        }
+
         gcs_kwargs: Dict[str, Any] = {}
-        if access_token := self.properties.get(GCS_TOKEN):
-            gcs_kwargs["access_token"] = access_token
+
+        for prop_name, prop_value in self.properties.items():
+            if prop_value is None:
+                continue
+
+            # Skip properties that need special handling
+            if prop_name in special_properties:
+                continue
+
+            # Map known property names to GcsFileSystem parameter names
+            if prop_name in property_mapping:
+                param_name = property_mapping[prop_name]
+                gcs_kwargs[param_name] = prop_value
+
+            # Pass through any other gcs.* properties that might be used by GcsFileSystem
+            elif prop_name.startswith("gcs."):
+                param_name = prop_name.split(".", 1)[1]
+                gcs_kwargs[param_name] = prop_value
+
         if expiration := self.properties.get(GCS_TOKEN_EXPIRES_AT_MS):
             gcs_kwargs["credential_token_expiration"] = millis_to_datetime(int(expiration))
-        if bucket_location := self.properties.get(GCS_DEFAULT_LOCATION):
-            gcs_kwargs["default_bucket_location"] = bucket_location
+
         if endpoint := self.properties.get(GCS_SERVICE_HOST):
             url_parts = urlparse(endpoint)
             gcs_kwargs["scheme"] = url_parts.scheme
@@ -573,7 +710,18 @@ class PyArrowFileIO(FileIO):
         return GcsFileSystem(**gcs_kwargs)
 
     def _initialize_local_fs(self) -> FileSystem:
-        return PyArrowLocalFileSystem()
+        local_kwargs: Dict[str, Any] = {}
+
+        for prop_name, prop_value in self.properties.items():
+            if prop_value is None:
+                continue
+
+            # Pass through any other file.* properties that might be used by PyArrowLocalFileSystem
+            elif prop_name.startswith("file."):
+                param_name = prop_name.split(".", 1)[1]
+                local_kwargs[param_name] = prop_value
+
+        return PyArrowLocalFileSystem(**local_kwargs)
 
     def new_input(self, location: str) -> PyArrowFile:
         """Get a PyArrowFile instance to read bytes from the file at the given location.

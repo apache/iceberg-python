@@ -412,6 +412,69 @@ def test_pyarrow_unified_session_properties() -> None:
         )
 
 
+def test_pyarrow_s3_filesystem_specific_properties() -> None:
+    pyarrow_file_io = PyArrowFileIO(
+        {
+            "s3.endpoint": "http://localhost:9000",
+            "s3.access-key-id": "user",
+            "s3.secret-access-key": "pass",
+            "s3.load_frequency": 900,
+        }
+    )
+
+    # Test that valid PyArrow properties work without error
+    pyarrow_file_io.new_input("s3://bucket/path/to/file")
+
+    # Test that invalid PyArrow properties raise TypeError
+    with pytest.raises(TypeError) as exc_info:
+        pyarrow_file_io = PyArrowFileIO(
+            {
+                "s3.endpoint": "http://localhost:9000",
+                "s3.access-key-id": "admin",
+                "s3.secret-access-key": "password",
+                "s3.unknown_property": "val",
+            }
+        )
+        pyarrow_file_io.new_input("s3://bucket/path/to/file")
+
+    assert "got an unexpected keyword argument 'unknown_property'" in str(exc_info.value)
+
+
+def test_pyarrow_gcs_filesystem_specific_properties() -> None:
+    pyarrow_file_io = PyArrowFileIO(
+        {
+            "gcs.project_id": "test-project",
+        }
+    )
+
+    # Test that valid PyArrow properties work without error
+    pyarrow_file_io.new_input("gs://warehouse/path/to/file")
+
+    # Test that invalid PyArrow properties raise TypeError
+    with pytest.raises(TypeError) as exc_info:
+        pyarrow_file_io = PyArrowFileIO({"gcs.project_id": "test-project", "gcs.unknown_property": "val"})
+        pyarrow_file_io.new_input("gs://warehouse/path/to/file")
+
+    assert "got an unexpected keyword argument 'unknown_property'" in str(exc_info.value)
+
+
+@skip_if_pyarrow_too_old
+def test_pyarrow_adls_filesystem_specific_properties() -> None:
+    pyarrow_file_io = PyArrowFileIO({"adls.account-name": "user", "adls.account-key": "pass", "adls.blob_cache_size": 1024})
+
+    # Test that valid PyArrow properties work without error
+    pyarrow_file_io.new_input("abfss://test/file")
+
+    # Test that invalid PyArrow properties raise TypeError
+    with pytest.raises(TypeError) as exc_info:
+        pyarrow_file_io = PyArrowFileIO(
+            {"adls.account-name": "testaccount", "adls.account-key": "testkey", "adls.unknown_property": "val"}
+        )
+        pyarrow_file_io.new_input("abfss://test/file")
+
+    assert "got an unexpected keyword argument 'unknown_property'" in str(exc_info.value)
+
+
 def test_schema_to_pyarrow_schema_include_field_ids(table_schema_nested: Schema) -> None:
     actual = schema_to_pyarrow(table_schema_nested)
     expected = """foo: large_string
@@ -2607,6 +2670,17 @@ def test_pyarrow_io_new_input_multi_region(caplog: Any) -> None:
 
             # For oss scheme, user provided region is used instead
             assert pyarrow_file_io.new_input(f"oss://{bucket_region[0]}/path/to/file")._filesystem.region == user_provided_region
+
+
+def test_pyarrow_filesystem_properties() -> None:
+    pyarrow_file_io = PyArrowFileIO({"s3.load_frequency": 200})
+    pyarrow_file_io.new_input("s3://bucket/path/to/file")
+
+    with pytest.raises(TypeError) as exc_info:
+        pyarrow_file_io = PyArrowFileIO({"s3.unknown_property": "val"})
+        pyarrow_file_io.new_input("s3://bucket/path/to/file")
+
+    assert "got an unexpected keyword argument 'unknown_property'" in str(exc_info.value)
 
 
 def test_pyarrow_io_multi_fs() -> None:
