@@ -384,144 +384,6 @@ Legacy OAuth2 Properties will be removed in PyIceberg 1.0 in place of pluggable 
 
 The RESTCatalog supports pluggable authentication via the `auth` configuration block. This allows you to specify which how the access token will be fetched and managed for use with the HTTP requests to the RESTCatalog server. The authentication method is selected by setting the `auth.type` property, and additional configuration can be provided as needed for each method.
 
-###### Supported Authentication Types
-
-- `noop`: No authentication (no Authorization header sent).
-- `basic`: HTTP Basic authentication.
-- `custom`: Custom authentication manager (requires `auth.impl`).
-
-###### Configuration Properties
-
-The `auth` block is structured as follows:
-
-```yaml
-catalog:
-  default:
-    type: rest
-    uri: http://rest-catalog/ws/
-    auth:
-      type: <auth_type>
-      <auth_type>:
-        # Type-specific configuration
-      impl: <custom_class_path>  # Only for custom auth
-```
-
-###### Property Reference
-
-| Property         | Required | Description                                                                                     |
-|------------------|----------|-------------------------------------------------------------------------------------------------|
-| `auth.type`      | Yes      | The authentication type to use (`noop`, `basic`, or `custom`).                       |
-| `auth.impl`      | Conditionally | The fully qualified class path for a custom AuthManager. Required if `auth.type` is `custom`. |
-| `auth.basic`     | If type is `basic` | Block containing `username` and `password` for HTTP Basic authentication.           |
-| `auth.custom`    | If type is `custom` | Block containing configuration for the custom AuthManager.                          |
-
-###### Examples
-
-No Authentication:
-
-```yaml
-auth:
-  type: noop
-```
-
-Basic Authentication:
-
-```yaml
-auth:
-  type: basic
-  basic:
-    username: myuser
-    password: mypass
-```
-
-Custom Authentication:
-
-```yaml
-auth:
-  type: custom
-  impl: mypackage.module.MyAuthManager
-  custom:
-    property1: value1
-    property2: value2
-```
-
-###### Notes
-
-- If `auth.type` is `custom`, you **must** specify `auth.impl` with the full class path to your custom AuthManager.
-- If `auth.type` is not `custom`, specifying `auth.impl` is not allowed.
-- The configuration block under each type (e.g., `basic`, `custom`) is passed as keyword arguments to the corresponding AuthManager.
-
-<!-- markdown-link-check-enable-->
-
-#### Common Integrations & Examples
-
-##### AWS Glue
-
-```yaml
-catalog:
-  s3_tables_catalog:
-    type: rest
-    uri: https://glue.<region>.amazonaws.com/iceberg
-    warehouse: <account-id>:s3tablescatalog/<table-bucket-name>
-    rest.sigv4-enabled: true
-    rest.signing-name: glue
-    rest.signing-region: <region>
-```
-
-##### Unity Catalog
-
-```yaml
-catalog:
-  unity_catalog:
-    type: rest
-    uri: https://<workspace-url>/api/2.1/unity-catalog/iceberg-rest
-    warehouse: <uc-catalog-name>
-    token: <databricks-pat-token>
-```
-
-##### R2 Data Catalog
-
-```yaml
-catalog:
-  r2_catalog:
-    type: rest
-    uri: <r2-catalog-uri>
-    warehouse: <r2-warehouse-name>
-    token: <r2-token>
-```
-
-##### Lakekeeper
-
-```yaml
-catalog:
-  lakekeeper_catalog:
-    type: rest
-    uri: <lakekeeper-catalog-uri>
-    warehouse: <lakekeeper-warehouse-name>
-    credential: <client-id>:<client-secret>
-    oauth2-server-uri: http://localhost:30080/realms/<keycloak-realm-name>/protocol/openid-connect/token
-    scope: lakekeeper
-```
-
-##### Apache Polaris
-
-```yaml
-catalog:
-  polaris_catalog:
-    type: rest
-    uri: https://<account>.snowflakecomputing.com/polaris/api/catalog
-    warehouse: <polaris-catalog-name>
-    credential: <client-id>:<client-secret>
-    header.X-Iceberg-Access-Delegation: vended-credentials
-    scope: PRINCIPAL_ROLE:ALL
-    token-refresh-enabled: true
-    py-io-impl: pyiceberg.io.fsspec.FsspecFileIO
-```
-
-#### Authentication in RESTCatalog
-
-The RESTCatalog supports pluggable authentication via the `auth` configuration block. This allows you to specify which how the access token will be fetched and managed for use with the HTTP requests to the RESTCatalog server. The authentication method is selected by setting the `auth.type` property, and additional configuration can be provided as needed for each method.
-
 ##### Supported Authentication Types
 
 - `noop`: No authentication (no Authorization header sent).
@@ -605,6 +467,73 @@ auth:
 - If `auth.type` is `custom`, you **must** specify `auth.impl` with the full class path to your custom AuthManager.
 - If `auth.type` is not `custom`, specifying `auth.impl` is not allowed.
 - The configuration block under each type (e.g., `basic`, `oauth2`, `custom`) is passed as keyword arguments to the corresponding AuthManager.
+
+<!-- markdown-link-check-enable-->
+
+#### Common Integrations & Examples
+
+##### AWS Glue
+
+```yaml
+catalog:
+  s3_tables_catalog:
+    type: rest
+    uri: https://glue.<region>.amazonaws.com/iceberg
+    warehouse: <account-id>:s3tablescatalog/<table-bucket-name>
+    rest.sigv4-enabled: true
+    rest.signing-name: glue
+    rest.signing-region: <region>
+```
+
+##### Unity Catalog
+
+```yaml
+catalog:
+  unity_catalog:
+    type: rest
+    uri: https://<workspace-url>/api/2.1/unity-catalog/iceberg-rest
+    warehouse: <uc-catalog-name>
+    token: <databricks-pat-token>
+```
+
+##### R2 Data Catalog
+
+```yaml
+catalog:
+  r2_catalog:
+    type: rest
+    uri: <r2-catalog-uri>
+    warehouse: <r2-warehouse-name>
+    token: <r2-token>
+```
+
+##### Lakekeeper
+
+```yaml
+catalog:
+  lakekeeper_catalog:
+    type: rest
+    uri: <lakekeeper-catalog-uri>
+    warehouse: <lakekeeper-warehouse-name>
+    credential: <client-id>:<client-secret>
+    oauth2-server-uri: http://localhost:30080/realms/<keycloak-realm-name>/protocol/openid-connect/token
+    scope: lakekeeper
+```
+
+##### Apache Polaris
+
+```yaml
+catalog:
+  polaris_catalog:
+    type: rest
+    uri: https://<account>.snowflakecomputing.com/polaris/api/catalog
+    warehouse: <polaris-catalog-name>
+    credential: <client-id>:<client-secret>
+    header.X-Iceberg-Access-Delegation: vended-credentials
+    scope: PRINCIPAL_ROLE:ALL
+    token-refresh-enabled: true
+    py-io-impl: pyiceberg.io.fsspec.FsspecFileIO
+```
 
 ### SQL Catalog
 
