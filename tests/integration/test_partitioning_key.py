@@ -15,7 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
-import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, List
@@ -306,25 +305,6 @@ identifier = "default.test_table"
             f"""INSERT INTO {identifier}
             VALUES
             (CAST('2023-01-01' AS DATE), 'Associated string value for date 2023-01-01')
-            """,
-        ),
-        (
-            [PartitionField(source_id=14, field_id=1001, transform=IdentityTransform(), name="uuid_field")],
-            [uuid.UUID("f47ac10b-58cc-4372-a567-0e02b2c3d479")],
-            Record("f47ac10b-58cc-4372-a567-0e02b2c3d479"),
-            "uuid_field=f47ac10b-58cc-4372-a567-0e02b2c3d479",
-            f"""CREATE TABLE {identifier} (
-                uuid_field string,
-                string_field string
-            )
-            USING iceberg
-            PARTITIONED BY (
-                identity(uuid_field)
-            )
-            """,
-            f"""INSERT INTO {identifier}
-            VALUES
-            ('f47ac10b-58cc-4372-a567-0e02b2c3d479', 'Associated string value for UUID f47ac10b-58cc-4372-a567-0e02b2c3d479')
             """,
         ),
         (

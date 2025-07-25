@@ -140,12 +140,20 @@ EXISTING_RETRY_MODES = [STANDARD_RETRY_MODE, ADAPTIVE_RETRY_MODE, LEGACY_RETRY_M
 
 
 def _construct_parameters(
-    metadata_location: str, glue_table: Optional["TableTypeDef"] = None, prev_metadata_location: Optional[str] = None
+    metadata_location: str,
+    glue_table: Optional["TableTypeDef"] = None,
+    prev_metadata_location: Optional[str] = None,
+    metadata_properties: Optional[Properties] = None,
 ) -> Properties:
     new_parameters = glue_table.get("Parameters", {}) if glue_table else {}
     new_parameters.update({TABLE_TYPE: ICEBERG.upper(), METADATA_LOCATION: metadata_location})
     if prev_metadata_location:
         new_parameters[PREVIOUS_METADATA_LOCATION] = prev_metadata_location
+
+    if metadata_properties:
+        for key, value in metadata_properties.items():
+            new_parameters[key] = str(value)
+
     return new_parameters
 
 
@@ -236,7 +244,7 @@ def _construct_table_input(
     table_input: "TableInputTypeDef" = {
         "Name": table_name,
         "TableType": EXTERNAL_TABLE,
-        "Parameters": _construct_parameters(metadata_location, glue_table, prev_metadata_location),
+        "Parameters": _construct_parameters(metadata_location, glue_table, prev_metadata_location, properties),
         "StorageDescriptor": {
             "Columns": _to_columns(metadata),
             "Location": metadata.location,

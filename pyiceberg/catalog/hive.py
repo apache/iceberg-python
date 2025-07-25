@@ -561,6 +561,12 @@ class HiveCatalog(MetastoreCatalog):
                         previous_metadata_location=current_table.metadata_location,
                         metadata_properties=updated_staged_table.properties,
                     )
+                    # Update hive's schema and properties
+                    hive_table.sd = _construct_hive_storage_descriptor(
+                        updated_staged_table.schema(),
+                        updated_staged_table.location(),
+                        property_as_bool(updated_staged_table.properties, HIVE2_COMPATIBLE, HIVE2_COMPATIBLE_DEFAULT),
+                    )
                     open_client.alter_table_with_environment_context(
                         dbname=database_name,
                         tbl_name=table_name,
@@ -794,7 +800,7 @@ class HiveCatalog(MetastoreCatalog):
             if removals:
                 for key in removals:
                     if key in parameters:
-                        parameters[key] = None
+                        parameters.pop(key)
                         removed.add(key)
             if updates:
                 for key, value in updates.items():

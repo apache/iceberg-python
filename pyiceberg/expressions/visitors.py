@@ -893,15 +893,28 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
         raise TypeError(f"Expected Bound Predicate, got: {predicate.term}")
 
     def visit_bound_predicate(self, predicate: BoundPredicate[L]) -> BooleanExpression:
-        file_column_name = self.file_schema.find_column_name(predicate.term.ref().field.field_id)
+        field = predicate.term.ref().field
+        file_column_name = self.file_schema.find_column_name(field.field_id)
 
         if file_column_name is None:
             # In the case of schema evolution, the column might not be present
-            # in the file schema when reading older data
-            if isinstance(predicate, BoundIsNull):
-                return AlwaysTrue()
+            # we can use the default value as a constant and evaluate it against
+            # the predicate
+            pred: BooleanExpression
+            if isinstance(predicate, BoundUnaryPredicate):
+                pred = predicate.as_unbound(field.name)
+            elif isinstance(predicate, BoundLiteralPredicate):
+                pred = predicate.as_unbound(field.name, predicate.literal)
+            elif isinstance(predicate, BoundSetPredicate):
+                pred = predicate.as_unbound(field.name, predicate.literals)
             else:
-                return AlwaysFalse()
+                raise ValueError(f"Unsupported predicate: {predicate}")
+
+            return (
+                AlwaysTrue()
+                if expression_evaluator(Schema(field), pred, case_sensitive=self.case_sensitive)(Record(field.initial_default))
+                else AlwaysFalse()
+            )
 
         if isinstance(predicate, BoundUnaryPredicate):
             return predicate.as_unbound(file_column_name)

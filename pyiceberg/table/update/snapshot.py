@@ -56,7 +56,7 @@ from pyiceberg.manifest import (
 from pyiceberg.partitioning import (
     PartitionSpec,
 )
-from pyiceberg.table.refs import SnapshotRefType
+from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRefType
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
@@ -108,6 +108,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     _manifest_num_counter: itertools.count[int]
     _deleted_data_files: Set[DataFile]
     _compression: AvroCompressionCodec
+    _target_branch = MAIN_BRANCH
 
     def __init__(
         self,
@@ -116,16 +117,13 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         io: FileIO,
         commit_uuid: Optional[uuid.UUID] = None,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        branch: str = MAIN_BRANCH,
     ) -> None:
         super().__init__(transaction)
         self.commit_uuid = commit_uuid or uuid.uuid4()
         self._io = io
         self._operation = operation
         self._snapshot_id = self._transaction.table_metadata.new_snapshot_id()
-        # Since we only support the main branch for now
-        self._parent_snapshot_id = (
-            snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.current_snapshot()) else None
-        )
         self._added_data_files = []
         self._deleted_data_files = set()
         self.snapshot_properties = snapshot_properties
@@ -135,6 +133,20 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._compression = self._transaction.table_metadata.properties.get(  # type: ignore
             TableProperties.WRITE_AVRO_COMPRESSION, TableProperties.WRITE_AVRO_COMPRESSION_DEFAULT
         )
+        self._target_branch = self._validate_target_branch(branch=branch)
+        self._parent_snapshot_id = (
+            snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.snapshot_by_name(self._target_branch)) else None
+        )
+
+    def _validate_target_branch(self, branch: str) -> str:
+        # Default is already set to MAIN_BRANCH. So branch name can't be None.
+        if branch is None:
+            raise ValueError("Invalid branch name: null")
+        if branch in self._transaction.table_metadata.refs:
+            ref = self._transaction.table_metadata.refs[branch]
+            if ref.snapshot_ref_type != SnapshotRefType.BRANCH:
+                raise ValueError(f"{branch} is a tag, not a branch. Tags cannot be targets for producing snapshots")
+        return branch
 
     def append_data_file(self, data_file: DataFile) -> _SnapshotProducer[U]:
         self._added_data_files.append(data_file)
@@ -284,10 +296,20 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             (
                 AddSnapshotUpdate(snapshot=snapshot),
                 SetSnapshotRefUpdate(
-                    snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name="main", type="branch"
+                    snapshot_id=self._snapshot_id,
+                    parent_snapshot_id=self._parent_snapshot_id,
+                    ref_name=self._target_branch,
+                    type=SnapshotRefType.BRANCH,
                 ),
             ),
-            (AssertRefSnapshotId(snapshot_id=self._transaction.table_metadata.current_snapshot_id, ref="main"),),
+            (
+                AssertRefSnapshotId(
+                    snapshot_id=self._transaction.table_metadata.refs[self._target_branch].snapshot_id
+                    if self._target_branch in self._transaction.table_metadata.refs
+                    else None,
+                    ref=self._target_branch,
+                ),
+            ),
         )
 
     @property
@@ -335,10 +357,11 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         operation: Operation,
         transaction: Transaction,
         io: FileIO,
+        branch: str,
         commit_uuid: Optional[uuid.UUID] = None,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ):
-        super().__init__(operation, transaction, io, commit_uuid, snapshot_properties)
+        super().__init__(operation, transaction, io, commit_uuid, snapshot_properties, branch)
         self._predicate = AlwaysFalse()
         self._case_sensitive = True
 
@@ -398,47 +421,53 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         total_deleted_entries = []
         partial_rewrites_needed = False
         self._deleted_data_files = set()
-        if snapshot := self._transaction.table_metadata.current_snapshot():
-            for manifest_file in snapshot.manifests(io=self._io):
-                if manifest_file.content == ManifestContent.DATA:
-                    if not manifest_evaluators[manifest_file.partition_spec_id](manifest_file):
-                        # If the manifest isn't relevant, we can just keep it in the manifest-list
-                        existing_manifests.append(manifest_file)
-                    else:
-                        # It is relevant, let's check out the content
-                        deleted_entries = []
-                        existing_entries = []
-                        for entry in manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True):
-                            if strict_metrics_evaluator(entry.data_file) == ROWS_MUST_MATCH:
-                                # Based on the metadata, it can be dropped right away
-                                deleted_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.DELETED))
-                                self._deleted_data_files.add(entry.data_file)
-                            else:
-                                # Based on the metadata, we cannot determine if it can be deleted
-                                existing_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.EXISTING))
-                                if inclusive_metrics_evaluator(entry.data_file) != ROWS_MIGHT_NOT_MATCH:
-                                    partial_rewrites_needed = True
 
-                        if len(deleted_entries) > 0:
-                            total_deleted_entries += deleted_entries
-
-                            # Rewrite the manifest
-                            if len(existing_entries) > 0:
-                                with write_manifest(
-                                    format_version=self._transaction.table_metadata.format_version,
-                                    spec=self._transaction.table_metadata.specs()[manifest_file.partition_spec_id],
-                                    schema=self._transaction.table_metadata.schema(),
-                                    output_file=self.new_manifest_output(),
-                                    snapshot_id=self._snapshot_id,
-                                    avro_compression=self._compression,
-                                ) as writer:
-                                    for existing_entry in existing_entries:
-                                        writer.add_entry(existing_entry)
-                                existing_manifests.append(writer.to_manifest_file())
-                        else:
+        # Determine the snapshot to read manifests from for deletion
+        # Should be the current tip of the _target_branch
+        parent_snapshot_id_for_delete_source = self._parent_snapshot_id
+        if parent_snapshot_id_for_delete_source is not None:
+            snapshot = self._transaction.table_metadata.snapshot_by_id(parent_snapshot_id_for_delete_source)
+            if snapshot:  # Ensure snapshot is found
+                for manifest_file in snapshot.manifests(io=self._io):
+                    if manifest_file.content == ManifestContent.DATA:
+                        if not manifest_evaluators[manifest_file.partition_spec_id](manifest_file):
+                            # If the manifest isn't relevant, we can just keep it in the manifest-list
                             existing_manifests.append(manifest_file)
-                else:
-                    existing_manifests.append(manifest_file)
+                        else:
+                            # It is relevant, let's check out the content
+                            deleted_entries = []
+                            existing_entries = []
+                            for entry in manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True):
+                                if strict_metrics_evaluator(entry.data_file) == ROWS_MUST_MATCH:
+                                    # Based on the metadata, it can be dropped right away
+                                    deleted_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.DELETED))
+                                    self._deleted_data_files.add(entry.data_file)
+                                else:
+                                    # Based on the metadata, we cannot determine if it can be deleted
+                                    existing_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.EXISTING))
+                                    if inclusive_metrics_evaluator(entry.data_file) != ROWS_MIGHT_NOT_MATCH:
+                                        partial_rewrites_needed = True
+
+                            if len(deleted_entries) > 0:
+                                total_deleted_entries += deleted_entries
+
+                                # Rewrite the manifest
+                                if len(existing_entries) > 0:
+                                    with write_manifest(
+                                        format_version=self._transaction.table_metadata.format_version,
+                                        spec=self._transaction.table_metadata.specs()[manifest_file.partition_spec_id],
+                                        schema=self._transaction.table_metadata.schema(),
+                                        output_file=self.new_manifest_output(),
+                                        snapshot_id=self._snapshot_id,
+                                        avro_compression=self._compression,
+                                    ) as writer:
+                                        for existing_entry in existing_entries:
+                                            writer.add_entry(existing_entry)
+                                    existing_manifests.append(writer.to_manifest_file())
+                            else:
+                                existing_manifests.append(manifest_file)
+                    else:
+                        existing_manifests.append(manifest_file)
 
         return existing_manifests, total_deleted_entries, partial_rewrites_needed
 
@@ -498,12 +527,13 @@ class _MergeAppendFiles(_FastAppendFiles):
         operation: Operation,
         transaction: Transaction,
         io: FileIO,
+        branch: str,
         commit_uuid: Optional[uuid.UUID] = None,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ) -> None:
         from pyiceberg.table import TableProperties
 
-        super().__init__(operation, transaction, io, commit_uuid, snapshot_properties)
+        super().__init__(operation, transaction, io, commit_uuid, snapshot_properties, branch)
         self._target_size_bytes = property_as_int(
             self._transaction.table_metadata.properties,
             TableProperties.MANIFEST_TARGET_SIZE_BYTES,
@@ -549,7 +579,7 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
         """Determine if there are any existing manifest files."""
         existing_files = []
 
-        if snapshot := self._transaction.table_metadata.current_snapshot():
+        if snapshot := self._transaction.table_metadata.snapshot_by_name(name=self._target_branch):
             for manifest_file in snapshot.manifests(io=self._io):
                 entries = manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True)
                 found_deleted_data_files = [entry.data_file for entry in entries if entry.data_file in self._deleted_data_files]
@@ -567,19 +597,17 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
                             snapshot_id=self._snapshot_id,
                             avro_compression=self._compression,
                         ) as writer:
-                            [
-                                writer.add_entry(
-                                    ManifestEntry.from_args(
-                                        status=ManifestEntryStatus.EXISTING,
-                                        snapshot_id=entry.snapshot_id,
-                                        sequence_number=entry.sequence_number,
-                                        file_sequence_number=entry.file_sequence_number,
-                                        data_file=entry.data_file,
+                            for entry in entries:
+                                if entry.data_file not in found_deleted_data_files:
+                                    writer.add_entry(
+                                        ManifestEntry.from_args(
+                                            status=ManifestEntryStatus.EXISTING,
+                                            snapshot_id=entry.snapshot_id,
+                                            sequence_number=entry.sequence_number,
+                                            file_sequence_number=entry.file_sequence_number,
+                                            data_file=entry.data_file,
+                                        )
                                     )
-                                )
-                                for entry in entries
-                                if entry.data_file not in found_deleted_data_files
-                            ]
                         existing_files.append(writer.to_manifest_file())
         return existing_files
 
@@ -620,31 +648,48 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
 class UpdateSnapshot:
     _transaction: Transaction
     _io: FileIO
+    _branch: str
     _snapshot_properties: Dict[str, str]
 
-    def __init__(self, transaction: Transaction, io: FileIO, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+    def __init__(
+        self,
+        transaction: Transaction,
+        io: FileIO,
+        branch: str,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+    ) -> None:
         self._transaction = transaction
         self._io = io
         self._snapshot_properties = snapshot_properties
+        self._branch = branch
 
     def fast_append(self) -> _FastAppendFiles:
         return _FastAppendFiles(
-            operation=Operation.APPEND, transaction=self._transaction, io=self._io, snapshot_properties=self._snapshot_properties
+            operation=Operation.APPEND,
+            transaction=self._transaction,
+            io=self._io,
+            branch=self._branch,
+            snapshot_properties=self._snapshot_properties,
         )
 
     def merge_append(self) -> _MergeAppendFiles:
         return _MergeAppendFiles(
-            operation=Operation.APPEND, transaction=self._transaction, io=self._io, snapshot_properties=self._snapshot_properties
+            operation=Operation.APPEND,
+            transaction=self._transaction,
+            io=self._io,
+            branch=self._branch,
+            snapshot_properties=self._snapshot_properties,
         )
 
     def overwrite(self, commit_uuid: Optional[uuid.UUID] = None) -> _OverwriteFiles:
         return _OverwriteFiles(
             commit_uuid=commit_uuid,
             operation=Operation.OVERWRITE
-            if self._transaction.table_metadata.current_snapshot() is not None
+            if self._transaction.table_metadata.snapshot_by_name(name=self._branch) is not None
             else Operation.APPEND,
             transaction=self._transaction,
             io=self._io,
+            branch=self._branch,
             snapshot_properties=self._snapshot_properties,
         )
 
@@ -653,6 +698,7 @@ class UpdateSnapshot:
             operation=Operation.DELETE,
             transaction=self._transaction,
             io=self._io,
+            branch=self._branch,
             snapshot_properties=self._snapshot_properties,
         )
 
