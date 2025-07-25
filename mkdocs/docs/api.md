@@ -1015,6 +1015,9 @@ Because `add_files` uses existing files without writing new parquet files that a
 !!! warning "Maintenance Operations"
 Because `add_files` commits the existing parquet files to the Iceberg Table as any other data file, destructive maintenance operations like expiring snapshots will remove them.
 
+!!! warning "Check Duplicate Files"
+The `check_duplicate_files` parameter is `True` by default and will check the new files against the existing Iceberg table data files to prevent duplicates. This check can be expensive for large tables with many files. It is recommended to use the default configuration. The check can be turned off by setting `check_duplicate_files=False`, but this may result in duplicate files being added to the table, which can lead to data consistency issues and potential table corruption if the same data file is added multiple times.
+
 <!-- prettier-ignore-end -->
 
 ### Usage
