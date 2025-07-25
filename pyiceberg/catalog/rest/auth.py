@@ -28,6 +28,7 @@ from pyiceberg.catalog.rest.response import TokenResponse, _handle_non_200_respo
 from pyiceberg.exceptions import OAuthError
 
 COLON = ":"
+logger = logging.getLogger(__name__)
 
 
 class AuthManager(ABC):
@@ -140,7 +141,7 @@ class GoogleAuthManager(AuthManager):
         if credentials_path:
             self.credentials, _ = google.auth.load_credentials_from_file(credentials_path, scopes=scopes)
         else:
-            logging.info("Using Google Default Application Credentials")
+            logger.info("Using Google Default Application Credentials")
             self.credentials, _ = google.auth.default(scopes=scopes)
         self._auth_request = google.auth.transport.requests.Request()
 
