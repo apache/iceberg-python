@@ -127,6 +127,7 @@ For the FileIO there are several configuration options available:
 | s3.request-timeout          | 60.0                       | Configure socket read timeouts on Windows and macOS, in seconds.                                                                                                                                                                                            |
 | s3.force-virtual-addressing | False                      | Whether to use virtual addressing of buckets. If true, then virtual addressing is always enabled. If false, then virtual addressing is only enabled if endpoint_override is empty. This can be used for non-AWS backends that only support virtual hosted-style access. |
 | s3.retry-strategy-impl      | None                       | Ability to set a custom S3 retry strategy. A full path to a class needs to be given that extends the [S3RetryStrategy](https://github.com/apache/arrow/blob/639201bfa412db26ce45e73851432018af6c945e/python/pyarrow/_s3fs.pyx#L110) base class.            |
+| storage_options             | {"session": <session_obj>} | Configure storage options including custom aiobotocore session and other s3fs parameters. Only implemented for `FsspecFileIO`. |
 
 <!-- markdown-link-check-enable-->
 
