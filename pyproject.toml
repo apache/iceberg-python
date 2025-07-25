@@ -322,7 +322,7 @@ rest-sigv4 = ["boto3"]
 hf = ["huggingface-hub"]
 pyiceberg-core = ["pyiceberg-core"]
 datafusion = ["datafusion"]
-gcp-auth=["google-auth"]
+gcp-auth = ["google-auth"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
