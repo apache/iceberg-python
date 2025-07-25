@@ -454,16 +454,59 @@ def test_partitioned_table_positional_deletes_sequence_number(spark: SparkSessio
     files = list(tbl.scan().plan_files())
     assert len(files) == 2
 
-    # Will rewrite a data file without a positional delete
+    # Will rewrite a data file, not using positional delete
     tbl.delete(EqualTo("number", 201))
 
     snapshots = tbl.snapshots()
     assert len(snapshots) == 3
 
     # Snapshots produced by Spark
-    assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()[0:2]] == ["append", "delete"]
+    assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()] == ["append", "delete", "overwrite"]
 
-    # Will rewrite one parquet file
+    # Insert 5 rows into 2 different partitions
+    assert snapshots[0].summary == Summary(
+        Operation.APPEND,
+        **{
+            "spark.app.id": snapshots[0].summary["spark.app.id"],
+            "added-data-files": "2",
+            "added-records": "5",
+            "added-files-size": snapshots[0].summary["added-files-size"],
+            "changed-partition-count": "2",
+            "total-records": "5",
+            "total-files-size": snapshots[0].summary["total-files-size"],
+            "total-data-files": "2",
+            "total-delete-files": "0",
+            "total-position-deletes": "0",
+            "total-equality-deletes": "0",
+            "engine-version": snapshots[0].summary["engine-version"],
+            "app-id": snapshots[0].summary["app-id"],
+            "engine-name": snapshots[0].summary["engine-name"],
+            "iceberg-version": snapshots[0].summary["iceberg-version"],
+        },
+    )
+    # MoR delete 1 row, add 1 positional delete file
+    assert snapshots[1].summary == Summary(
+        Operation.DELETE,
+        **{
+            "added-position-delete-files": "1",
+            "added-delete-files": "1",
+            "added-files-size": snapshots[1].summary["added-files-size"],
+            "added-position-deletes": "1",
+            "changed-partition-count": "1",
+            "total-records": "5",  # ???
+            "total-files-size": snapshots[1].summary["total-files-size"],
+            "total-data-files": "2",
+            "total-delete-files": "1",
+            "total-position-deletes": "1",
+            "total-equality-deletes": "0",
+            "spark.app.id": snapshots[1].summary["spark.app.id"],
+            "engine-version": snapshots[1].summary["engine-version"],
+            "app-id": snapshots[1].summary["app-id"],
+            "engine-name": snapshots[1].summary["engine-name"],
+            "iceberg-version": snapshots[1].summary["iceberg-version"],
+        },
+    )
+    # CoW delete 1 row, rewrite 1 parquet file
     assert snapshots[2].summary == Summary(
         Operation.OVERWRITE,
         **{
