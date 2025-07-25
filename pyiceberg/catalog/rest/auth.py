@@ -144,7 +144,7 @@ class GoogleAuthManager(AuthManager):
             self.credentials, _ = google.auth.default(scopes=scopes)
         self._auth_request = google.auth.transport.requests.Request()
 
-    def auth_header(self) -> Optional[str]:
+    def auth_header(self) -> str:
         self.credentials.refresh(self._auth_request)
         return f"Bearer {self.credentials.token}"
 
