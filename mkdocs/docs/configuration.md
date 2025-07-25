@@ -384,7 +384,7 @@ Legacy OAuth2 Properties will be removed in PyIceberg 1.0 in place of pluggable 
 
 The RESTCatalog supports pluggable authentication via the `auth` configuration block. This allows you to specify which how the access token will be fetched and managed for use with the HTTP requests to the RESTCatalog server. The authentication method is selected by setting the `auth.type` property, and additional configuration can be provided as needed for each method.
 
-##### Supported Authentication Types
+###### Supported Authentication Types
 
 - `noop`: No authentication (no Authorization header sent).
 - `basic`: HTTP Basic authentication.
@@ -392,7 +392,7 @@ The RESTCatalog supports pluggable authentication via the `auth` configuration b
 - `legacyoauth2`: Legacy OAuth2 client credentials flow (Deprecated and will be removed in PyIceberg 1.0.0)
 - `custom`: Custom authentication manager (requires `auth.impl`).
 
-##### Configuration Properties
+###### Configuration Properties
 
 The `auth` block is structured as follows:
 
@@ -408,7 +408,7 @@ catalog:
       impl: <custom_class_path>  # Only for custom auth
 ```
 
-**Property Reference:**
+###### Property Reference
 
 | Property         | Required | Description                                                                                     |
 |------------------|----------|-------------------------------------------------------------------------------------------------|
@@ -418,16 +418,16 @@ catalog:
 | `auth.oauth2`    | If type is `oauth2` | Block containing OAuth2 configuration (see below).                                 |
 | `auth.custom`    | If type is `custom` | Block containing configuration for the custom AuthManager.                          |
 
-##### Examples
+###### Examples
 
-**No Authentication:**
+No Authentication:
 
 ```yaml
 auth:
   type: noop
 ```
 
-**Basic Authentication:**
+Basic Authentication:
 
 ```yaml
 auth:
@@ -437,7 +437,7 @@ auth:
     password: mypass
 ```
 
-**OAuth2 Authentication:**
+OAuth2 Authentication:
 
 ```yaml
 auth:
@@ -451,7 +451,7 @@ auth:
     expires_in: 3600           # (optional) fallback if server does not provide
 ```
 
-**Custom Authentication:**
+Custom Authentication:
 
 ```yaml
 auth:
@@ -462,7 +462,7 @@ auth:
     property2: value2
 ```
 
-##### Notes
+###### Notes
 
 - If `auth.type` is `custom`, you **must** specify `auth.impl` with the full class path to your custom AuthManager.
 - If `auth.type` is not `custom`, specifying `auth.impl` is not allowed.
