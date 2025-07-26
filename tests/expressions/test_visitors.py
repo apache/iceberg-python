@@ -1799,3 +1799,29 @@ def test_translate_column_names_always_true_false() -> None:
     # Test AlwaysFalse
     translated_false = translate_column_names(AlwaysFalse(), file_schema, case_sensitive=True)
     assert translated_false == AlwaysFalse()
+
+
+def test_translate_column_names_column_projection_missing_field_no_initial_default() -> None:
+    """Test translate_column_names for column projection when field is missing from file schema and has no initial_default."""
+    # Original schema with a field that has no initial_default (defaults to None)
+    original_schema = Schema(
+        NestedField(field_id=1, name="existing_col", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="missing_col", field_type=IntegerType(), required=False),  # No initial_default specified
+        schema_id=1,
+    )
+
+    # Create bound expression for the missing column
+    unbound_expr = EqualTo("missing_col", 42)
+    bound_expr = visit(unbound_expr, visitor=BindVisitor(schema=original_schema, case_sensitive=True))
+
+    # File schema only has the existing column (field_id=1), missing field_id=2
+    file_schema = Schema(
+        NestedField(field_id=1, name="existing_col", field_type=StringType(), required=False),
+        schema_id=1,
+    )
+
+    # Translate column names
+    translated_expr = translate_column_names(bound_expr, file_schema, case_sensitive=True)
+
+    # Should evaluate to AlwaysTrue when field has no initial_default, allowing for further evaluation
+    assert translated_expr == AlwaysTrue()

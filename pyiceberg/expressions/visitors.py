@@ -897,6 +897,12 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
         file_column_name = self.file_schema.find_column_name(field.field_id)
 
         if file_column_name is None:
+            # In the case of column projection, the field might not be present in the file schema
+            # If the field has no initial_default, return AlwaysTrue to include all rows
+            # for further evaluation
+            if field.initial_default is None:
+                return AlwaysTrue()
+
             # In the case of schema evolution, the column might not be present
             # we can use the default value as a constant and evaluate it against
             # the predicate
