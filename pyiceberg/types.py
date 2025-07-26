@@ -144,7 +144,7 @@ def _raise_if_any_missing_dictionary_key(d: Dict, expected_type: str, *keys: str
             missing_keys.append(key)
     if len(missing_keys) == 0:
         return
-    raise ValidationError(f"Missing required key(s): {', '.join(missing_keys)} for expected_type")
+    raise ValidationError(f"Missing required key(s): {', '.join(missing_keys)} for {expected_type}")
 
 
 def strtobool(val: str) -> bool:
