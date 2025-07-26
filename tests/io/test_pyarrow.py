@@ -1197,6 +1197,16 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
         },
         schema=schema,
     )
+    # Test that the partition value is projected correctly
+    assert table.scan(row_filter="partition_id = 1").to_arrow() == pa.table(
+        {
+            "other_field": ["foo", "bar", "baz"],
+            "partition_id": [1, 1, 1],
+        },
+        schema=schema,
+    )
+    # Test that the partition value is not projected for a non-existing partition
+    assert len(table.scan(row_filter="partition_id = -1").to_arrow()) == 0
 
 
 def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryCatalog) -> None:
