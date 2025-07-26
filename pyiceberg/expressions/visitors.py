@@ -898,7 +898,9 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
 
         # In the case of schema evolution or column projection, the field might not be present in the file schema
         if file_column_name is None:
-            # If the field has no initial_default, return AlwaysTrue to include all rows for further evaluation
+            # If the field has no initial_default, return AlwaysTrue to include all rows for further evaluation.
+            # This ensures that the predicate is evaluated during row-level filtering rather than being eliminated
+            # at the file level, preserving the ability to apply more granular filtering later in the process.
             if field.initial_default is None:
                 return AlwaysTrue()
 
