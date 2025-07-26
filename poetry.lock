@@ -3335,14 +3335,14 @@ typing-extensions = {version = "*", markers = "python_version < \"3.12\""}
 
 [[package]]
 name = "mypy-boto3-glue"
-version = "1.39.0"
-description = "Type annotations for boto3 Glue 1.39.0 service generated with mypy-boto3-builder 8.11.0"
+version = "1.39.7"
+description = "Type annotations for boto3 Glue 1.39.7 service generated with mypy-boto3-builder 8.11.0"
 optional = false
 python-versions = ">=3.8"
 groups = ["dev"]
 files = [
-    {file = "mypy_boto3_glue-1.39.0-py3-none-any.whl", hash = "sha256:6ba8cc33d77402ced0247df81da11906dada15bc02dab098517d8d2686ef2369"},
-    {file = "mypy_boto3_glue-1.39.0.tar.gz", hash = "sha256:e3fa80713eb57c09af1d7f7057071b36f66e196bb86b47661a1973dc71fcebaf"},
+    {file = "mypy_boto3_glue-1.39.7-py3-none-any.whl", hash = "sha256:a2edf7064ea1b63678112b1466270ee4e23bc533650144026c10a3c4cd6161f1"},
+    {file = "mypy_boto3_glue-1.39.7.tar.gz", hash = "sha256:fc156e874a1c416a5671d971156e8d221a75a50e61369fc98a38bd1cca060fb5"},
 ]
 
 [package.dependencies]
@@ -4480,19 +4480,19 @@ windows-terminal = ["colorama (>=0.4.6)"]
 
 [[package]]
 name = "pyiceberg-core"
-version = "0.5.1"
+version = "0.6.22"
 description = ""
 optional = false
 python-versions = "~=3.9"
 groups = ["main"]
 markers = "extra == \"pyarrow\" or extra == \"pyiceberg-core\""
 files = [
-    {file = "pyiceberg_core-0.5.1-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:57554e4c56d9ee9fecb9028c559767a921b00bdc9bdb59d72cd6a26effa14f79"},
+    {file = "pyiceberg_core-0.6.22-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:7e8f8fb7bc63cb26ee40171f15ae04a02b7207c38ea94709985ee64d9e345aa6"},
 ]
 
 [package.source]
 type = "file"
-url = "../iceberg-rust/bindings/python/dist/pyiceberg_core-0.5.1-cp39-abi3-macosx_11_0_arm64.whl"
+url = "../iceberg-rust/bindings/python/dist/pyiceberg_core-0.6.22-cp39-abi3-macosx_11_0_arm64.whl"
 
 [[package]]
 name = "pyjwt"
@@ -6509,4 +6509,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9.2, !=3.9.7"
-content-hash = "c215de5aacda4e970842ea785bef31217a771ca8ac07c03d00c217304823746e"
+content-hash = "a548112f990b9c4362a69807d80f738b35747893e013acf35bb510a6c51f3935"
