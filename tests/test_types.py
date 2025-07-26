@@ -516,7 +516,7 @@ def test_str_geography() -> None:
 
 
 def test_repr_geography() -> None:
-    assert repr(GeographyType()) == "GeographyType(crs=None, edge_algorithm=None)"
+    assert repr(GeographyType()) == "GeographyType(crs=OGC:CRS84, edge_algorithm=spherical)"
 
 
 def test_serialization_geometry() -> None:
@@ -533,7 +533,7 @@ def test_str_geometry() -> None:
 
 
 def test_repr_geometry() -> None:
-    assert repr(GeometryType()) == "GeometryType(crs=None)"
+    assert repr(GeometryType()) == "GeometryType(crs=OGC:CRS84)"
 
 
 def test_serialization_decimal() -> None:

@@ -84,9 +84,21 @@ def _parse_decimal_type(decimal: Any) -> Tuple[int, int]:
         else:
             raise ValidationError(f"Could not parse {decimal} into a DecimalType")
     elif isinstance(decimal, dict):
+        _raise_if_any_missing_dictionary_key(decimal, "DecimalType", "precision", "scale")
         return decimal["precision"], decimal["scale"]
     else:
         return decimal
+
+
+def _parse_fixed_type(fixed: Any) -> int:
+    if isinstance(fixed, str):
+        return FIXED_PARSER.match(fixed)
+    elif isinstance(fixed, dict):
+        _raise_if_any_missing_dictionary_key(fixed, "FixedType", "length")
+        return fixed["length"]
+    else:
+        return fixed
+
 
 def _parse_geography_type(geography: Any) -> Tuple[str, GeographyType.EdgeAlgorithm]:
     if isinstance(geography, str):
@@ -102,9 +114,11 @@ def _parse_geography_type(geography: Any) -> Tuple[str, GeographyType.EdgeAlgori
         else:
             raise ValidationError(f"Could not parse {geography} into a GeographyType")
     elif isinstance(geography, dict):
+        _raise_if_any_missing_dictionary_key(geography, "GeographyType", "crs", "edge_algorithm")
         return geography["crs"], geography["edge_algorithm"]
     else:
         return geography
+
 
 def _parse_geometry_type(geometry: Any) -> str:
     if isinstance(geometry, str):
@@ -117,17 +131,20 @@ def _parse_geometry_type(geometry: Any) -> str:
         else:
             raise ValidationError(f"Could not parse {geometry} into a GeometryType")
     elif isinstance(geometry, dict):
+        _raise_if_any_missing_dictionary_key(geometry, "GeometryType", "crs")
         return geometry["crs"]
     else:
         return geometry
 
-def _parse_fixed_type(fixed: Any) -> int:
-    if isinstance(fixed, str):
-        return FIXED_PARSER.match(fixed)
-    elif isinstance(fixed, dict):
-        return fixed["length"]
-    else:
-        return fixed
+
+def _raise_if_any_missing_dictionary_key(d: Dict, expected_type: str, *keys: str):
+    missing_keys = []
+    for key in keys:
+        if key not in d:
+            missing_keys.append(key)
+    if len(missing_keys) == 0:
+        return
+    raise ValidationError(f"Missing required key(s): {', '.join(missing_keys)} for expected_type")
 
 
 def strtobool(val: str) -> bool:
@@ -939,7 +956,7 @@ class GeographyType(PrimitiveType):
 
     def __repr__(self) -> str:
         """Return the string representation of the GeographyType class."""
-        return f"GeographyType(crs={self.crs}, edge_algorithm={self.edge_algorithm})"
+        return f"GeographyType(crs={self.crs or GeographyType.default_crs}, edge_algorithm={self.edge_algorithm or GeographyType.EdgeAlgorithm.SPHERICAL.value})"
 
     def __str__(self) -> str:
         """Return the string representation."""
@@ -948,7 +965,7 @@ class GeographyType(PrimitiveType):
                 return f"geography"
             else:
                 return f"geometry({self.crs})"
-        return f"geography({self.crs or GeographyType.default_crs}, {self.edge_algorithm})"
+        return f"geography({self.crs or GeographyType.default_crs}, {self.edge_algorithm.value})"
 
     def __hash__(self) -> int:
         """Return the hash of the crs."""
@@ -995,7 +1012,7 @@ class GeometryType(PrimitiveType):
 
     def __repr__(self) -> str:
         """Return the string representation of the GeometryType class."""
-        return f"GeometryType(crs={self.crs})"
+        return f"GeometryType(crs={self.crs or GeometryType.default_crs})"
 
     def __str__(self) -> str:
         """Return the string representation."""
