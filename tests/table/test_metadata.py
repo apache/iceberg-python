@@ -43,6 +43,8 @@ from pyiceberg.typedef import UTF8
 from pyiceberg.types import (
     BooleanType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IntegerType,
     ListType,
     LongType,
@@ -778,6 +780,8 @@ def test_new_table_metadata_with_v3_schema() -> None:
         NestedField(field_id=33, name="baz", field_type=BooleanType(), required=False),
         NestedField(field_id=34, name="qux", field_type=TimestampNanoType(), required=False),
         NestedField(field_id=35, name="quux", field_type=TimestamptzNanoType(), required=False),
+        NestedField(field_id=46, name="corge", field_type=GeographyType(), required=False),
+        NestedField(field_id=47, name="grault", field_type=GeometryType(), required=False),
         schema_id=10,
         identifier_field_ids=[22],
     )
@@ -805,6 +809,8 @@ def test_new_table_metadata_with_v3_schema() -> None:
         NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
         NestedField(field_id=4, name="qux", field_type=TimestampNanoType(), required=False),
         NestedField(field_id=5, name="quux", field_type=TimestamptzNanoType(), required=False),
+        NestedField(field_id=6, name="corge", field_type=GeographyType(), required=False),
+        NestedField(field_id=7, name="grault", field_type=GeometryType(), required=False),
         schema_id=0,
         identifier_field_ids=[2],
     )
@@ -820,7 +826,7 @@ def test_new_table_metadata_with_v3_schema() -> None:
         location="s3://some_v1_location/",
         table_uuid=actual.table_uuid,
         last_updated_ms=actual.last_updated_ms,
-        last_column_id=5,
+        last_column_id=7,
         schemas=[expected_schema],
         schema_=expected_schema,
         current_schema_id=0,
