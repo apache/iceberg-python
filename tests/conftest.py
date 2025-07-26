@@ -2350,7 +2350,7 @@ def clean_up(test_catalog: Catalog) -> None:
         database_name = database_tuple[0]
         if "my_iceberg_database-" in database_name:
             for identifier in test_catalog.list_tables(database_name):
-                test_catalog.purge_table(identifier)
+                test_catalog.drop_table(identifier)
             test_catalog.drop_namespace(database_name)
 
 

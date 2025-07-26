@@ -2410,9 +2410,12 @@ def data_file_statistics_from_parquet_metadata(
                         continue
 
                     if field_id not in col_aggs:
-                        col_aggs[field_id] = StatsAggregator(
-                            stats_col.iceberg_type, statistics.physical_type, stats_col.mode.length
-                        )
+                        try:
+                            col_aggs[field_id] = StatsAggregator(
+                                stats_col.iceberg_type, statistics.physical_type, stats_col.mode.length
+                            )
+                        except ValueError as e:
+                            raise ValueError(f"{e} for column '{stats_col.column_name}'") from e
 
                     if isinstance(stats_col.iceberg_type, DecimalType) and statistics.physical_type != "FIXED_LEN_BYTE_ARRAY":
                         scale = stats_col.iceberg_type.scale
