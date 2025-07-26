@@ -896,16 +896,13 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
         field = predicate.term.ref().field
         file_column_name = self.file_schema.find_column_name(field.field_id)
 
+        # In the case of schema evolution or column projection, the field might not be present in the file schema
         if file_column_name is None:
-            # In the case of column projection, the field might not be present in the file schema
-            # If the field has no initial_default, return AlwaysTrue to include all rows
-            # for further evaluation
+            # If the field has no initial_default, return AlwaysTrue to include all rows for further evaluation
             if field.initial_default is None:
                 return AlwaysTrue()
 
-            # In the case of schema evolution, the column might not be present
-            # we can use the default value as a constant and evaluate it against
-            # the predicate
+            # If the field has initial_default, use the default value as a constant and evaluate it against the predicate
             pred: BooleanExpression
             if isinstance(predicate, BoundUnaryPredicate):
                 pred = predicate.as_unbound(field.name)
