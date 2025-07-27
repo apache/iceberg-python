@@ -862,7 +862,7 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
     Args:
       file_schema (Schema): The schema of the file.
       case_sensitive (bool): Whether to consider case when binding a reference to a field in a schema, defaults to True.
-      projected_fields (Dict[str, Any]): Partition field values for missing fields from projection.
+      projected_field_values (Dict[str, Any]): Values for projected fields not present in the data file.
 
     Raises:
         TypeError: In the case of an UnboundPredicate.
@@ -871,12 +871,14 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
 
     file_schema: Schema
     case_sensitive: bool
-    projected_fields: Dict[str, Any]
+    projected_field_values: Dict[str, Any]
 
-    def __init__(self, file_schema: Schema, case_sensitive: bool, projected_fields: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(
+        self, file_schema: Schema, case_sensitive: bool, projected_field_values: Optional[Dict[str, Any]] = None
+    ) -> None:
         self.file_schema = file_schema
         self.case_sensitive = case_sensitive
-        self.projected_fields = projected_fields or {}
+        self.projected_field_values = projected_field_values or {}
 
     def visit_true(self) -> BooleanExpression:
         return AlwaysTrue()
@@ -901,9 +903,8 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
         file_column_name = self.file_schema.find_column_name(field.field_id)
 
         if file_column_name is None:
-            # In the case of schema evolution, the column might not be present
-            # we can use the default value as a constant and evaluate it against
-            # the predicate
+            # In the case of schema evolution or column projection, the column might not be present in the file schema.
+            # we can use the projected value or the field's default value as a constant and evaluate it against the predicate
             pred: BooleanExpression
             if isinstance(predicate, BoundUnaryPredicate):
                 pred = predicate.as_unbound(field.name)
@@ -917,7 +918,7 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
             return (
                 AlwaysTrue()
                 if expression_evaluator(Schema(field), pred, case_sensitive=self.case_sensitive)(
-                    Record(field.initial_default or self.projected_fields.get(field.name, None))
+                    Record(self.projected_field_values.get(field.name, None) or field.initial_default)
                 )
                 else AlwaysFalse()
             )
@@ -933,9 +934,9 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
 
 
 def translate_column_names(
-    expr: BooleanExpression, file_schema: Schema, case_sensitive: bool, projected_fields: Optional[Dict[str, Any]] = None
+    expr: BooleanExpression, file_schema: Schema, case_sensitive: bool, projected_field_values: Optional[Dict[str, Any]] = None
 ) -> BooleanExpression:
-    return visit(expr, _ColumnNameTranslator(file_schema, case_sensitive, projected_fields))
+    return visit(expr, _ColumnNameTranslator(file_schema, case_sensitive, projected_field_values))
 
 
 class _ExpressionFieldIDs(BooleanExpressionVisitor[Set[int]]):

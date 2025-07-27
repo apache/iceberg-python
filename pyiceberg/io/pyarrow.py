@@ -1469,7 +1469,7 @@ def _task_to_record_batches(
         pyarrow_filter = None
         if bound_row_filter is not AlwaysTrue():
             translated_row_filter = translate_column_names(
-                bound_row_filter, file_schema, case_sensitive=case_sensitive, projected_fields=projected_missing_fields
+                bound_row_filter, file_schema, case_sensitive=case_sensitive, projected_field_values=projected_missing_fields
             )
             bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
             pyarrow_filter = expression_to_pyarrow(bound_file_filter)
