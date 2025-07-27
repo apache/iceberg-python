@@ -903,7 +903,7 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
         file_column_name = self.file_schema.find_column_name(field.field_id)
 
         if file_column_name is None:
-            # In the case of schema evolution or column projection, the column might not be present in the file schema.
+            # In the case of schema evolution or column projection, the field might not be present in the file schema.
             # we can use the projected value or the field's default value as a constant and evaluate it against the predicate
             pred: BooleanExpression
             if isinstance(predicate, BoundUnaryPredicate):
@@ -915,6 +915,8 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
             else:
                 raise ValueError(f"Unsupported predicate: {predicate}")
 
+            # In the order described by the "Column Projection" section of the Iceberg spec:
+            # https://iceberg.apache.org/spec/#column-projection
             # Evaluate column projection first if it exists
             if projected_field_value := self.projected_field_values.get(field.name):
                 if expression_evaluator(Schema(field), pred, case_sensitive=self.case_sensitive)(Record(projected_field_value)):
