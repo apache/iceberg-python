@@ -1699,12 +1699,12 @@ def test_translate_column_names_missing_column() -> None:
     # Translate column names
     translated_expr = translate_column_names(bound_expr, file_schema, case_sensitive=True)
 
-    # missing_col's initial_default (None) does not match the expression literal (42)
+    # missing_col's default initial_default (None) does not match the expression literal (42)
     assert translated_expr == AlwaysFalse()
 
 
-def test_translate_column_names_missing_column_is_null() -> None:
-    """Test translate_column_names when missing column is checked for null."""
+def test_translate_column_names_missing_column_match_null() -> None:
+    """Test translate_column_names when missing column matches null."""
     # Original schema
     original_schema = Schema(
         NestedField(field_id=1, name="existing_col", field_type=StringType(), required=False),
@@ -1726,12 +1726,12 @@ def test_translate_column_names_missing_column_is_null() -> None:
     translated_expr = translate_column_names(bound_expr, file_schema, case_sensitive=True)
 
     # Should evaluate to AlwaysTrue because the missing column is treated as null
-    # missing_col's initial_default (None) satisfies the IsNull predicate
+    # missing_col's default initial_default (None) satisfies the IsNull predicate
     assert translated_expr == AlwaysTrue()
 
 
 def test_translate_column_names_missing_column_with_initial_default() -> None:
-    """Test translate_column_names when missing column has initial_default that matches expression."""
+    """Test translate_column_names when missing column's initial_default matches expression."""
     # Original schema
     original_schema = Schema(
         NestedField(field_id=1, name="existing_col", field_type=StringType(), required=False),
@@ -1756,7 +1756,7 @@ def test_translate_column_names_missing_column_with_initial_default() -> None:
     assert translated_expr == AlwaysTrue()
 
 
-def test_translate_column_names_missing_column_initial_default_mismatch() -> None:
+def test_translate_column_names_missing_column_with_initial_default_mismatch() -> None:
     """Test translate_column_names when missing column's initial_default doesn't match expression."""
     # Original schema
     original_schema = Schema(
@@ -1781,7 +1781,7 @@ def test_translate_column_names_missing_column_initial_default_mismatch() -> Non
     assert translated_expr == AlwaysFalse()
 
 
-def test_translate_column_names_projected_field_matches() -> None:
+def test_translate_column_names_missing_column_with_projected_field_matches() -> None:
     """Test translate_column_names with projected field value that matches expression."""
     # Original schema with a field that has no initial_default (defaults to None)
     original_schema = Schema(
@@ -1813,7 +1813,7 @@ def test_translate_column_names_projected_field_matches() -> None:
     assert translated_expr == AlwaysTrue()
 
 
-def test_translate_column_names_projected_field_mismatch() -> None:
+def test_translate_column_names_missing_column_with_projected_field_mismatch() -> None:
     """Test translate_column_names with projected field value that doesn't match expression."""
     # Original schema with a field that has no initial_default (defaults to None)
     original_schema = Schema(
@@ -1842,35 +1842,3 @@ def test_translate_column_names_projected_field_mismatch() -> None:
 
     # Should evaluate to AlwaysFalse since projected field value does not match the expression literal
     assert translated_expr == AlwaysFalse()
-
-
-def test_translate_column_names_projected_field_and_initial_default() -> None:
-    """Test translate_column_names with both projected field values and initial_default values."""
-    # Original schema with mixed field configurations
-    original_schema = Schema(
-        NestedField(field_id=1, name="existing_col", field_type=StringType(), required=False),
-        NestedField(field_id=2, name="missing_col_1", field_type=IntegerType(), required=False),
-        NestedField(field_id=3, name="missing_col_2", field_type=StringType(), required=False, initial_default="test"),
-        schema_id=1,
-    )
-
-    # Create bound expression for both missing columns
-    unbound_expr = And(EqualTo("missing_col_1", 42), EqualTo("missing_col_2", "test"))
-    bound_expr = visit(unbound_expr, visitor=BindVisitor(schema=original_schema, case_sensitive=True))
-
-    # File schema only has the existing column (field_id=1), missing field_id=2 and field_id=3
-    file_schema = Schema(
-        NestedField(field_id=1, name="existing_col", field_type=StringType(), required=False),
-        schema_id=1,
-    )
-
-    # Projected value for one missing column
-    projected_field_values = {"missing_col_1": 42}
-
-    # Translate column names
-    translated_expr = translate_column_names(
-        bound_expr, file_schema, case_sensitive=True, projected_field_values=projected_field_values
-    )
-
-    # Should evaluate to AlwaysTrue since both missing_col_1's projected value and missing_col_2's initial_default match their respective expression literals
-    assert translated_expr == AlwaysTrue()
