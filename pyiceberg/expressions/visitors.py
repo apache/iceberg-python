@@ -915,11 +915,15 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
             else:
                 raise ValueError(f"Unsupported predicate: {predicate}")
 
+            # Evaluate column projection first if it exists
+            if projected_field_value := self.projected_field_values.get(field.name):
+                if expression_evaluator(Schema(field), pred, case_sensitive=self.case_sensitive)(Record(projected_field_value)):
+                    return AlwaysTrue()
+
+            # Evaluate initial_default value
             return (
                 AlwaysTrue()
-                if expression_evaluator(Schema(field), pred, case_sensitive=self.case_sensitive)(
-                    Record(self.projected_field_values.get(field.name, None) or field.initial_default)
-                )
+                if expression_evaluator(Schema(field), pred, case_sensitive=self.case_sensitive)(Record(field.initial_default))
                 else AlwaysFalse()
             )
 
