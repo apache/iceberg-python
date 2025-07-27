@@ -1895,7 +1895,7 @@ def test_translate_column_names_missing_column_projected_field_matches_initial_d
     )
 
     # Projected field value that matches the expression literal
-    projected_field_values = {"missing_col_1": 10}  # This doesn't match expression literal (42)
+    projected_field_values = {"missing_col": 10}  # This doesn't match expression literal (42)
 
     # Translate column names
     translated_expr = translate_column_names(
