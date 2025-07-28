@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from functools import reduce
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Set, Tuple
 
 from pyiceberg.conversions import from_bytes
