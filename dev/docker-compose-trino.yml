@@ -44,6 +44,7 @@ services:
       - hive
     volumes:
       - ./trino/catalog:/etc/trino/catalog
+      - ./trino/config.properties:/etc/trino/config.properties
 
   minio:
     image: minio/minio
