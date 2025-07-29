@@ -412,18 +412,29 @@ def test_pyarrow_unified_session_properties() -> None:
         )
 
 
-def test_pyarrow_s3_filesystem_specific_properties() -> None:
+def test_s3_pyarrow_specific_properties() -> None:
     pyarrow_file_io = PyArrowFileIO(
         {
             "s3.endpoint": "http://localhost:9000",
             "s3.access-key-id": "user",
             "s3.secret-access-key": "pass",
             "s3.load_frequency": 900,
+            "s3.region": "us-east-1",
         }
     )
 
     # Test that valid PyArrow properties work without error
-    pyarrow_file_io.new_input("s3://bucket/path/to/file")
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs:
+        pyarrow_file_io._initialize_s3_fs(None)
+
+        # Verify that properties are passed through correctly
+        mock_s3fs.assert_called_with(
+            endpoint_override="http://localhost:9000",
+            access_key="user",
+            secret_key="pass",
+            load_frequency=900,
+            region="us-east-1",
+        )
 
     # Test that invalid PyArrow properties raise TypeError
     with pytest.raises(TypeError) as exc_info:
@@ -435,44 +446,108 @@ def test_pyarrow_s3_filesystem_specific_properties() -> None:
                 "s3.unknown_property": "val",
             }
         )
-        pyarrow_file_io.new_input("s3://bucket/path/to/file")
+        pyarrow_file_io._initialize_s3_fs(None)
 
     assert "got an unexpected keyword argument 'unknown_property'" in str(exc_info.value)
 
 
-def test_pyarrow_gcs_filesystem_specific_properties() -> None:
+def test_iceberg_cred_properties_take_precedence() -> None:
+    session_properties: Properties = {
+        "s3.access-key-id": "explicit-access-key",
+        "s3.secret-access-key": "explicit-secret-key",
+        "s3.region": "us-east-1",
+        # These should be ignored because explicit properties take precedence
+        "s3.access_key": "passed-access-key",
+        "s3.secret_key": "passed-secret-key",
+    }
+
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs:
+        s3_fileio = PyArrowFileIO(properties=session_properties)
+
+        s3_fileio._initialize_s3_fs(None)
+
+        # Assert that explicit properties are used from above
+        mock_s3fs.assert_called_with(
+            access_key="explicit-access-key",
+            secret_key="explicit-secret-key",
+            region="us-east-1",
+        )
+
+
+def test_hdfs_pyarrow_specific_properties() -> None:
+    hdfs_properties: Properties = {
+        "hdfs.host": "localhost",
+        "hdfs.port": "9000",
+        "hdfs.user": "user",
+        "hdfs.kerberos_ticket": "test",
+        # non iceberg properties
+        "hdfs.replication": 3,
+        "hdfs.block_size": 134217728,
+    }
+
+    with patch("pyarrow.fs.HadoopFileSystem") as mock_hdfs:
+        hdfs_fileio = PyArrowFileIO(properties=hdfs_properties)
+        hdfs_fileio._initialize_hdfs_fs("hdfs", None)
+
+        mock_hdfs.assert_called_with(
+            host="localhost",
+            port=9000,
+            user="user",
+            kerb_ticket="test",
+            replication=3,
+            block_size=134217728,
+        )
+
+
+def test_local_filesystem_pyarrow_specific_properties() -> None:
+    local_properties: Properties = {"file.buffer_size": 8192, "file.use_mmap": True}
+
+    with patch("pyiceberg.io.pyarrow.PyArrowLocalFileSystem") as mock_local:
+        local_fileio = PyArrowFileIO(properties=local_properties)
+        local_fileio._initialize_local_fs()
+
+        mock_local.assert_called_with(
+            buffer_size=8192,
+            use_mmap=True,
+        )
+
+
+def test_gcs_pyarrow_specific_properties() -> None:
     pyarrow_file_io = PyArrowFileIO(
         {
-            "gcs.project_id": "test-project",
+            "gcs.project-id": "project",
+            "gcs.oauth2.token": "test",
+            "gcs.default-bucket-location": "loc",
         }
     )
 
-    # Test that valid PyArrow properties work without error
-    pyarrow_file_io.new_input("gs://warehouse/path/to/file")
+    with patch("pyarrow.fs.GcsFileSystem") as mock_gcs:
+        pyarrow_file_io._initialize_gcs_fs()
 
-    # Test that invalid PyArrow properties raise TypeError
-    with pytest.raises(TypeError) as exc_info:
-        pyarrow_file_io = PyArrowFileIO({"gcs.project_id": "test-project", "gcs.unknown_property": "val"})
-        pyarrow_file_io.new_input("gs://warehouse/path/to/file")
-
-    assert "got an unexpected keyword argument 'unknown_property'" in str(exc_info.value)
+        mock_gcs.assert_called_with(
+            project_id="project",
+            access_token="test",
+            default_bucket_location="loc",
+        )
 
 
 @skip_if_pyarrow_too_old
-def test_pyarrow_adls_filesystem_specific_properties() -> None:
-    pyarrow_file_io = PyArrowFileIO({"adls.account-name": "user", "adls.account-key": "pass", "adls.blob_cache_size": 1024})
+def test_pyarrow_adls_pyarrow_specific_properties() -> None:
+    pyarrow_file_io = PyArrowFileIO(
+        {"adls.account-name": "user", "adls.account-key": "pass", "adls.sas-token": "testsas", "adls.client_id": "client"}
+    )
 
     # Test that valid PyArrow properties work without error
-    pyarrow_file_io.new_input("abfss://test/file")
+    with patch("pyarrow.fs.AzureFileSystem") as mock_azure:
+        pyarrow_file_io._initialize_azure_fs()
 
-    # Test that invalid PyArrow properties raise TypeError
-    with pytest.raises(TypeError) as exc_info:
-        pyarrow_file_io = PyArrowFileIO(
-            {"adls.account-name": "testaccount", "adls.account-key": "testkey", "adls.unknown_property": "val"}
+        # Verify that properties are passed through correctly
+        mock_azure.assert_called_with(
+            account_name="user",
+            account_key="pass",
+            sas_token="testsas",
+            client_id="client",
         )
-        pyarrow_file_io.new_input("abfss://test/file")
-
-    assert "got an unexpected keyword argument 'unknown_property'" in str(exc_info.value)
 
 
 def test_schema_to_pyarrow_schema_include_field_ids(table_schema_nested: Schema) -> None:
@@ -2712,3 +2787,22 @@ def test_retry_strategy_not_found() -> None:
     io = PyArrowFileIO(properties={S3_RETRY_STRATEGY_IMPL: "pyiceberg.DoesNotExist"})
     with pytest.warns(UserWarning, match="Could not initialize S3 retry strategy: pyiceberg.DoesNotExist"):
         io.new_input("s3://bucket/path/to/file")
+
+
+def test_hdfs_filesystem_properties_with_netloc() -> None:
+    """Test that HDFS filesystem uses from_uri when netloc is provided."""
+    hdfs_properties: Properties = {
+        "hdfs.host": "localhost",
+        "hdfs.port": "9000",
+        "hdfs.user": "testuser",
+    }
+
+    with patch("pyarrow.fs.HadoopFileSystem") as mock_hdfs:
+        hdfs_fileio = PyArrowFileIO(properties=hdfs_properties)
+        filename = str(uuid.uuid4())
+
+        # When netloc is provided, it should use from_uri instead of properties
+        hdfs_fileio.new_input(location=f"hdfs://testcluster:8020/{filename}")
+
+        # Verify that from_uri is called instead of constructor with properties
+        mock_hdfs.from_uri.assert_called_with("hdfs://testcluster:8020")
