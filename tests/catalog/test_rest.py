@@ -544,6 +544,23 @@ def test_list_namespaces_200(rest_mock: Mocker) -> None:
     ]
 
 
+def test_list_multipart_namespaces_200(rest_mock: Mocker) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={"namespaces": [["default"], ["multipart"]]},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces() == [("default",), ("multipart",)]
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces?parent=multipart",
+        json={"namespaces": [["multipart", "namespace1"], ["multipart", "namespace2"]]},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+
 def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces?parent=accounting",
