@@ -15,8 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 [tool.poetry]
-name = "pyiceberg"
-version = "0.10.0"
+name = "pyiceberg-gp"
+version = "0.1.0"
 readme = "README.md"
 homepage = "https://py.iceberg.apache.org/"
 repository = "https://github.com/apache/iceberg-python"

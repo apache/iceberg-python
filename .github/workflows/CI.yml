@@ -1,0 +1,56 @@
+name: Publish Python Package
+
+on:
+  workflow_call:
+    inputs:
+      VERSION:
+        required: true
+        type: string
+
+jobs:
+  build-and-publish:
+    name: Build artifacts for PyPi on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-22.04, windows-2022, macos-13, macos-14 ]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: |
+            3.9
+            3.10
+            3.11
+            3.12
+
+      - name: Install Poetry
+        run: make install poetry
+
+      - name: Set version with RC
+        env:
+          VERSION: ${{ inputs.VERSION }}
+        run: python -m poetry version "${{ env.VERSION }}"
+
+      # Publish the source distribution with the version that's in
+      # the repository, otherwise the tests will fail
+      - name: Compile source distribution
+        run: python3 -m poetry build --format=sdist
+        if: startsWith(matrix.os, 'ubuntu')
+
+      - name: Build wheels
+        run: poetry build --format wheel
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages_dir: dist/
+          skip_existing: true
+          repository_url: https://test.pypi.org/legacy/
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
