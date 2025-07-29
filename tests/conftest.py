@@ -79,6 +79,8 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IntegerType,
     ListType,
     LongType,
@@ -349,6 +351,8 @@ def table_schema_with_all_types() -> Schema:
                 NestedField(field_id=22, name="inner_int", field_type=IntegerType(), required=True),
             ),
         ),
+        NestedField(field_id=23, name="geography", field_type=GeographyType(), required=True),
+        NestedField(field_id=24, name="geometry", field_type=GeometryType(), required=True),
         schema_id=1,
         identifier_field_ids=[2],
     )
