@@ -104,6 +104,7 @@ def test_register_table_existing_in_trino(
     table_name = "register_table_trino"
     identifier = f"{namespace}.{table_name}"
     location = f"s3a://warehouse/{namespace}/{table_name}"
+    catalog.create_namespace_if_not_exists(namespace)
     tbl = _create_table(catalog, identifier, 2, location)
     assert catalog.table_exists(identifier=identifier)
     assert table_name in inspect(trino_conn).get_table_names(schema=namespace)
