@@ -545,6 +545,19 @@ def iceberg_schema_nested_no_ids() -> Schema:
 
 
 @pytest.fixture(scope="session")
+def simple_id_schema() -> Schema:
+    return Schema(NestedField(1, "id", IntegerType(), required=True))
+
+
+@pytest.fixture(scope="session")
+def id_data_schema() -> Schema:
+    return Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(2, "data", StringType(), required=True),
+    )
+
+
+@pytest.fixture(scope="session")
 def all_avro_types() -> dict[str, Any]:
     return {
         "type": "record",
@@ -2470,6 +2483,7 @@ def equality_delete_task(table_schema_simple: Schema, tmp_path: str) -> FileScan
         {"foo": ["a", "b", "c", "d"], "bar": [1, 2, 3, 4], "baz": [True, False, None, True]},
         schema=schema_to_pyarrow(table_schema_simple),
     )
+
     file_path = f"{tmp_path}/equality-data.parquet"
     pq.write_table(table=table, where=file_path)
 
@@ -3006,7 +3020,7 @@ def create_equality_delete_entry(
     )
     delete_file._spec_id = spec_id
 
-    return ManifestEntry.from_args(status=ManifestEntryStatus.ADDED, sequence_number=sequence_number, data_file=delete_file)
+    return ManifestEntry.from_args(status=ManifestEntryStatus.DELETED, sequence_number=sequence_number, data_file=delete_file)
 
 
 def create_positional_delete_entry(
@@ -3024,7 +3038,7 @@ def create_positional_delete_entry(
     )
     delete_file._spec_id = spec_id
 
-    return ManifestEntry.from_args(status=ManifestEntryStatus.ADDED, sequence_number=sequence_number, data_file=delete_file)
+    return ManifestEntry.from_args(status=ManifestEntryStatus.DELETED, sequence_number=sequence_number, data_file=delete_file)
 
 
 def create_partition_positional_delete_entry(
@@ -3041,7 +3055,7 @@ def create_partition_positional_delete_entry(
     )
     delete_file._spec_id = spec_id
 
-    return ManifestEntry.from_args(status=ManifestEntryStatus.ADDED, sequence_number=sequence_number, data_file=delete_file)
+    return ManifestEntry.from_args(status=ManifestEntryStatus.DELETED, sequence_number=sequence_number, data_file=delete_file)
 
 
 def create_deletion_vector_entry(
@@ -3055,29 +3069,14 @@ def create_deletion_vector_entry(
         partition=Record(),
         record_count=10,
         file_size_in_bytes=100,
-        refereence_file_path= file_path,
+        reference_file_path=file_path,
     )
     delete_file._spec_id = spec_id
 
-    return ManifestEntry.from_args(status=ManifestEntryStatus.ADDED, sequence_number=sequence_number, data_file=delete_file)
+    return ManifestEntry.from_args(status=ManifestEntryStatus.DELETED, sequence_number=sequence_number, data_file=delete_file)
 
 
-# Common schema fixtures for delete tests
-@pytest.fixture(scope="session")
-def simple_id_schema() -> Schema:
-    return Schema(NestedField(1, "id", IntegerType(), required=True))
-
-
-@pytest.fixture(scope="session")
-def id_data_schema() -> Schema:
-    return Schema(
-        NestedField(1, "id", IntegerType(), required=True),
-        NestedField(2, "data", StringType(), required=True),
-    )
-
-
-# Common DataFile creation helper functions
-def create_basic_equality_delete_file(
+def create_equality_delete_file(
     file_path: str = "s3://bucket/eq-delete.parquet",
     equality_ids: Optional[List[int]] = None,
     sequence_number: int = 1,
@@ -3108,7 +3107,7 @@ def create_basic_equality_delete_file(
     return data_file
 
 
-def create_basic_data_file(
+def create_data_file(
     file_path: str = "s3://bucket/data.parquet",
     record_count: int = 100,
     file_size_in_bytes: int = 1000,
@@ -3141,7 +3140,7 @@ def create_basic_data_file(
 
 
 def create_manifest_entry_with_delete_file(
-    delete_file: DataFile, sequence_number: int = 1, status: ManifestEntryStatus = ManifestEntryStatus.ADDED
+    delete_file: DataFile, sequence_number: int = 1, status: ManifestEntryStatus = ManifestEntryStatus.DELETED
 ) -> ManifestEntry:
     return ManifestEntry.from_args(
         status=status,

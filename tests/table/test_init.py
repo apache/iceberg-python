@@ -48,11 +48,9 @@ from pyiceberg.table import (
     TableIdentifier,
     _match_deletes_to_data_file,
 )
-from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
-from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.delete_file_index import DeleteFileIndex
 from pyiceberg.table.metadata import TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
-from pyiceberg.table.refs import SnapshotRef
+from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     MetadataLogEntry,
     Operation,
@@ -382,15 +380,16 @@ def test_static_table_io_does_not_exist(metadata_location: str) -> None:
 
 
 def test_match_deletes_to_datafile(simple_id_schema: Schema) -> None:
-    from tests.conftest import create_basic_data_file, create_manifest_entry_with_delete_file, create_positional_delete_entry
+    from tests.conftest import create_data_file, create_manifest_entry_with_delete_file, create_positional_delete_entry
 
-    data_file = create_basic_data_file(file_path="s3://bucket/0000.parquet", record_count=3, file_size_in_bytes=3)
+    data_file = create_data_file(record_count=3, file_size_in_bytes=3)
     data_entry = create_manifest_entry_with_delete_file(data_file, sequence_number=1)
 
-    delete_entry_1 = create_positional_delete_entry(sequence_number=0, file_path="s3://bucket/0000.parquet", spec_id=0)
-    delete_entry_2 = create_positional_delete_entry(sequence_number=3, file_path="s3://bucket/0000.parquet", spec_id=0)
+    delete_entry_1 = create_positional_delete_entry(sequence_number=0, spec_id=0)
+    delete_entry_2 = create_positional_delete_entry(sequence_number=3, spec_id=0)
 
     delete_file_index = DeleteFileIndex(simple_id_schema, {0: PartitionSpec()})
+
     # Add both delete files to the index
     delete_file_index.add_delete_file(delete_entry_1)
     delete_file_index.add_delete_file(delete_entry_2)
@@ -404,13 +403,13 @@ def test_match_deletes_to_datafile(simple_id_schema: Schema) -> None:
 
 
 def test_match_deletes_to_datafile_duplicate_number(simple_id_schema: Schema) -> None:
-    from tests.conftest import create_basic_data_file, create_manifest_entry_with_delete_file, create_positional_delete_entry
+    from tests.conftest import create_data_file, create_manifest_entry_with_delete_file, create_positional_delete_entry
 
-    data_file = create_basic_data_file(file_path="s3://bucket/0000.parquet", record_count=3, file_size_in_bytes=3)
+    data_file = create_data_file(record_count=3, file_size_in_bytes=3)
     data_entry = create_manifest_entry_with_delete_file(data_file, sequence_number=1)
 
-    delete_entry_1 = create_positional_delete_entry(sequence_number=3, file_path="s3://bucket/0000.parquet", spec_id=0)
-    delete_entry_2 = create_positional_delete_entry(sequence_number=3, file_path="s3://bucket/0000.parquet", spec_id=0)
+    delete_entry_1 = create_positional_delete_entry(sequence_number=3, spec_id=0)
+    delete_entry_2 = create_positional_delete_entry(sequence_number=3, spec_id=0)
 
     delete_file_index = DeleteFileIndex(simple_id_schema, {0: PartitionSpec()})
     delete_file_index.add_delete_file(delete_entry_1)
@@ -425,31 +424,22 @@ def test_match_deletes_to_datafile_duplicate_number(simple_id_schema: Schema) ->
     }
 
 
-def test_match_all_deletes_to_data_file() -> None:
+def test_match_all_deletes_to_data_file(id_data_schema: Schema) -> None:
     from pyiceberg.table.delete_file_index import DeleteFileIndex
     from tests.conftest import (
-        create_basic_data_file,
-        create_basic_equality_delete_file,
+        create_data_file,
+        create_equality_delete_file,
         create_manifest_entry_with_delete_file,
         create_positional_delete_entry,
     )
 
-    schema = Schema(
-        NestedField(1, "field1", StringType(), required=False),
-        NestedField(2, "field2", IntegerType(), required=False),
-    )
-
-    data_file = create_basic_data_file(file_path="s3://bucket/0000.parquet", record_count=3, file_size_in_bytes=3)
-    data_file._spec_id = 1
+    data_file = create_data_file(record_count=3, file_size_in_bytes=3)
     data_entry = create_manifest_entry_with_delete_file(data_file, sequence_number=1)
 
-    # Create positional delete files
-    delete_entry_1 = create_positional_delete_entry(sequence_number=0, file_path="s3://bucket/0000.parquet", spec_id=1)
-    delete_entry_2 = create_positional_delete_entry(sequence_number=3, file_path="s3://bucket/0000.parquet", spec_id=1)
+    delete_entry_1 = create_positional_delete_entry(sequence_number=0, spec_id=1)
+    delete_entry_2 = create_positional_delete_entry(sequence_number=3, spec_id=1)
 
-    # Create equality delete files
-    eq_delete_file_1 = create_basic_equality_delete_file(
-        file_path="s3://bucket/eq-delete-1.parquet",
+    eq_delete_file_1 = create_equality_delete_file(
         equality_ids=[1, 2],
         lower_bounds={1: b"a", 2: b"1"},
         upper_bounds={1: b"z", 2: b"999"},
@@ -459,8 +449,7 @@ def test_match_all_deletes_to_data_file() -> None:
     )
     eq_delete_entry_1 = create_manifest_entry_with_delete_file(eq_delete_file_1, sequence_number=0)
 
-    eq_delete_file_2 = create_basic_equality_delete_file(
-        file_path="s3://bucket/eq-delete-2.parquet",
+    eq_delete_file_2 = create_equality_delete_file(
         equality_ids=[1, 2],
         lower_bounds={1: b"a", 2: b"1"},
         upper_bounds={1: b"z", 2: b"999"},
@@ -470,9 +459,8 @@ def test_match_all_deletes_to_data_file() -> None:
     )
     eq_delete_entry_2 = create_manifest_entry_with_delete_file(eq_delete_file_2, sequence_number=3)
 
-    delete_file_index = DeleteFileIndex(schema, {1: PartitionSpec()})
+    delete_file_index = DeleteFileIndex(id_data_schema, {0: PartitionSpec()})
 
-    # Add delete files to the index using the proper API
     delete_file_index.add_delete_file(delete_entry_1, partition_key=None)
     delete_file_index.add_delete_file(delete_entry_2, partition_key=None)
     delete_file_index.add_delete_file(eq_delete_entry_1, partition_key=None)

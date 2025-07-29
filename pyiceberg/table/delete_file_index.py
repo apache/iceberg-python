@@ -333,7 +333,7 @@ class PositionalDeletesGroup(DeletesGroup):
 
 
 class DeleteFileIndex:
-    """Main index that organizes delete files by partition for efficient lookup during scan planning.
+    """Index that organizes delete files by partition for efficient lookup during scan planning.
 
     This class indexes delete files by type (equality or positional), partition, and path
     to enable efficient lookup of delete files that apply to a given data file.
@@ -372,18 +372,18 @@ class DeleteFileIndex:
         Raises:
             ValueError: If attempting to add multiple deletion vectors for the same data file
         """
-        data_file = manifest_entry.data_file
+        delete_file = manifest_entry.data_file
 
-        if data_file.content == DataFileContent.EQUALITY_DELETES:
+        if delete_file.content == DataFileContent.EQUALITY_DELETES:
             # Skip equality deletes without equality_ids
-            if not data_file.equality_ids or len(data_file.equality_ids) == 0:
+            if not delete_file.equality_ids or len(delete_file.equality_ids) == 0:
                 return
 
             wrapper = EqualityDeleteFileWrapper(manifest_entry, self.table_schema)
 
             # Check if the partition spec is unpartitioned
             is_unpartitioned = False
-            spec_id = data_file.spec_id or 0
+            spec_id = delete_file.spec_id or 0
 
             if spec_id in self.partition_specs:
                 spec = self.partition_specs[spec_id]
@@ -397,16 +397,16 @@ class DeleteFileIndex:
                 # Otherwise, add to partition-specific deletes
                 self._add_to_partition_group(wrapper, partition_key)
 
-        elif data_file.content == DataFileContent.POSITION_DELETES:
+        elif delete_file.content == DataFileContent.POSITION_DELETES:
             # Check if this is a deletion vector (Puffin format)
-            if data_file.file_format == FileFormat.PUFFIN:
+            if delete_file.file_format == FileFormat.PUFFIN:
                 sequence_number = manifest_entry.sequence_number or 0
-                path = data_file.file_path
-                self.dv[path] = (data_file, sequence_number)
+                path = delete_file.file_path
+                self.dv[path] = (delete_file, sequence_number)
             else:
                 pos_wrapper = PositionalDeleteFileWrapper(manifest_entry)
 
-                target_path = self.get_referenced_data_file(data_file)
+                target_path = self._get_referenced_data_file(delete_file)
                 if target_path:
                     # Index by target file path
                     self.pos_deletes_by_path.setdefault(target_path, PositionalDeletesGroup()).add(pos_wrapper)
@@ -414,7 +414,7 @@ class DeleteFileIndex:
                     # Index by partition
                     self._add_to_partition_group(pos_wrapper, partition_key)
 
-    def get_referenced_data_file(self, data_file: DataFile) -> Optional[str]:
+    def _get_referenced_data_file(self, data_file: DataFile) -> Optional[str]:
         """Extract the target data file path from a position delete file.
 
         Args:
@@ -479,13 +479,13 @@ class DeleteFileIndex:
         """
         deletes = []
 
-        # Global equality deletes (apply to all partitions)
+        # Global equality deletes
         deletes.extend(self.global_eq_deletes.filter(seq, data_file))
 
         # Partition-specific equality deletes
         spec_id = data_file.spec_id or 0
         if partition_key is not None:
-            eq_group = self.eq_deletes_by_partition.get(spec_id, partition_key)
+            eq_group: Optional[EqualityDeletesGroup] = self.eq_deletes_by_partition.get(spec_id, partition_key)
             if eq_group:
                 deletes.extend(eq_group.filter(seq, data_file))
 
@@ -495,11 +495,12 @@ class DeleteFileIndex:
                 self.dv_values = sorted(self.dv.values(), key=lambda x: x[1])
                 self.dv_sorted = True
 
-            start_idx = bisect_left([item[1] for item in self.dv_values], seq)
-            deletes.extend([item[0] for item in self.dv_values[start_idx:]])
+            if self.dv_values is not None:
+                start_idx = bisect_left([item[1] for item in self.dv_values], seq)
+                deletes.extend([item[0] for item in self.dv_values[start_idx:]])
 
         # Add position deletes
-        pos_group = self.pos_deletes_by_partition.get(spec_id, partition_key)
+        pos_group: Optional[PositionalDeletesGroup] = self.pos_deletes_by_partition.get(spec_id, partition_key)
         if pos_group:
             deletes.extend(pos_group.filter(seq, data_file))
 
@@ -509,4 +510,3 @@ class DeleteFileIndex:
             deletes.extend(self.pos_deletes_by_path[file_path].filter(seq, data_file))
 
         return deletes
-

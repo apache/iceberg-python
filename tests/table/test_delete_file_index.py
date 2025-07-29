@@ -14,49 +14,32 @@ from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Record
 from pyiceberg.types import IntegerType, NestedField, StringType
 from tests.conftest import (
-    create_basic_data_file,
-    create_basic_equality_delete_file,
+    create_data_file,
     create_deletion_vector_entry,
     create_equality_delete_entry,
+    create_equality_delete_file,
     create_manifest_entry_with_delete_file,
     create_partition_positional_delete_entry,
     create_positional_delete_entry,
 )
 
 
-@pytest.fixture
-def id_data_schema() -> Schema:
-    return Schema(
-        NestedField(1, "id", IntegerType(), required=True),
-        NestedField(2, "data", StringType(), required=True),
-    )
-
-
-@pytest.fixture
-def delete_index(id_data_schema: Schema) -> DeleteFileIndex:
-    """Create a DeleteFileIndex with the id_data_schema."""
-    return DeleteFileIndex(id_data_schema)
-
-
 class TestDeleteFileIndex:
     """Tests for the DeleteFileIndex class."""
 
-    def test_empty_index(self, delete_index: DeleteFileIndex) -> None:
-        """Test that an empty index returns no delete files."""
-        data_file = create_basic_data_file()
+    def test_empty_delete_file_index(self, id_data_schema: Schema) -> None:
+        delete_index: DeleteFileIndex = DeleteFileIndex(id_data_schema)
+        data_file = create_data_file()
         assert len(delete_index.for_data_file(1, data_file)) == 0
 
     def test_min_sequence_number_filtering(self, id_data_schema: Schema) -> None:
-        """Test filtering delete files by minimum sequence number."""
         part_spec = PartitionSpec()
 
         # Create delete files with different sequence numbers
-        eq_delete_1 = create_basic_equality_delete_file(equality_ids=[1])
-        eq_delete_1._spec_id = 0
+        eq_delete_1 = create_equality_delete_file(equality_ids=[1])
         eq_delete_entry_1 = create_manifest_entry_with_delete_file(eq_delete_1, sequence_number=4)
 
-        eq_delete_2 = create_basic_equality_delete_file(equality_ids=[1])
-        eq_delete_2._spec_id = 0
+        eq_delete_2 = create_equality_delete_file(equality_ids=[1])
         eq_delete_entry_2 = create_manifest_entry_with_delete_file(eq_delete_2, sequence_number=6)
 
         # Create a delete index with a minimum sequence number filter
@@ -64,8 +47,7 @@ class TestDeleteFileIndex:
         delete_index.add_delete_file(eq_delete_entry_1)
         delete_index.add_delete_file(eq_delete_entry_2)
 
-        data_file = create_basic_data_file()
-        data_file._spec_id = 0
+        data_file = create_data_file()
 
         # Only one delete file should apply with sequence number > 4
         result = delete_index.for_data_file(4, data_file)
@@ -77,12 +59,9 @@ class TestDeleteFileIndex:
         part_spec = PartitionSpec()
 
         # Unpartitioned equality delete files
-        eq_delete_1 = create_basic_equality_delete_file(equality_ids=[1])
-        eq_delete_1._spec_id = 0
+        eq_delete_1 = create_equality_delete_file(equality_ids=[1])
         eq_delete_entry_1 = create_manifest_entry_with_delete_file(eq_delete_1, sequence_number=4)
-
-        eq_delete_2 = create_basic_equality_delete_file(equality_ids=[1])
-        eq_delete_2._spec_id = 0
+        eq_delete_2 = create_equality_delete_file(equality_ids=[1])
         eq_delete_entry_2 = create_manifest_entry_with_delete_file(eq_delete_2, sequence_number=6)
 
         # Path specific position delete files
@@ -90,15 +69,13 @@ class TestDeleteFileIndex:
         pos_delete_2 = create_positional_delete_entry(sequence_number=6, spec_id=0)
 
         # Create delete index
-        delete_index = DeleteFileIndex(id_data_schema, {0: part_spec, 1: PartitionSpec()})
+        delete_index = DeleteFileIndex(id_data_schema, {0: part_spec})
         delete_index.add_delete_file(eq_delete_entry_1)
         delete_index.add_delete_file(eq_delete_entry_2)
         delete_index.add_delete_file(pos_delete_1)
         delete_index.add_delete_file(pos_delete_2)
 
-        #  Unpartitioned data file
-        data_file = create_basic_data_file()
-        data_file._spec_id = 0
+        data_file = create_data_file()
 
         # All deletes should apply
         result = delete_index.for_data_file(0, data_file)
@@ -125,8 +102,7 @@ class TestDeleteFileIndex:
         assert len(result) == 0
 
         # Global equality deletes and path specific position deletes should apply to partitioned file
-        partitioned_file = create_basic_data_file(partition={"id": 1})
-        partitioned_file._spec_id = 1
+        partitioned_file = create_data_file(partition={"id": 1}, spec_id=1)
 
         result = delete_index.for_data_file(0, partitioned_file)
         assert len(result) == 4
@@ -137,12 +113,10 @@ class TestDeleteFileIndex:
 
         # Partitioned equality delete files
         partition_key = Record(1)
-        eq_delete_1 = create_basic_equality_delete_file(equality_ids=[1], partition=partition_key)
-        eq_delete_1._spec_id = 0
+        eq_delete_1 = create_equality_delete_file(equality_ids=[1], partition=partition_key)
         eq_delete_entry_1 = create_manifest_entry_with_delete_file(eq_delete_1, sequence_number=4)
 
-        eq_delete_2 = create_basic_equality_delete_file(equality_ids=[1], partition=partition_key)
-        eq_delete_2._spec_id = 0
+        eq_delete_2 = create_equality_delete_file(equality_ids=[1], partition=partition_key)
         eq_delete_entry_2 = create_manifest_entry_with_delete_file(eq_delete_2, sequence_number=6)
 
         # Position delete files with partition
@@ -157,8 +131,7 @@ class TestDeleteFileIndex:
         delete_index.add_delete_file(pos_delete_2, partition_key=partition_key)
 
         # Data file with same partition
-        data_file_a = create_basic_data_file(partition={"id": 1})
-        data_file_a._spec_id = 0
+        data_file_a = create_data_file(partition={"id": 1})
 
         result = delete_index.for_data_file(0, data_file_a, partition_key=partition_key)
         assert len(result) == 4
@@ -180,8 +153,7 @@ class TestDeleteFileIndex:
         assert len(result) == 0
 
         # Test with file in different partition
-        data_file_b = create_basic_data_file(partition={"id": 2})
-        data_file_b._spec_id = 0
+        data_file_b = create_data_file(partition={"id": 2})
         different_partition_key = Record(2)
 
         # No deletes should apply to file in different partition
@@ -189,8 +161,7 @@ class TestDeleteFileIndex:
         assert len(result) == 0
 
         # Test with unpartitioned file
-        unpartitioned_file = create_basic_data_file()
-        unpartitioned_file._spec_id = 1
+        unpartitioned_file = create_data_file(spec_id=1)
 
         # No partition deletes should apply to unpartitioned file
         result = delete_index.for_data_file(0, unpartitioned_file)
@@ -203,12 +174,10 @@ class TestDeleteFileIndex:
 
         # Create partitioned data file
         partition_key = Record(1)
-        data_file = create_basic_data_file(partition={"id": 1})
-        data_file._spec_id = 0
+        data_file = create_data_file(partition={"id": 1})
 
         # Create unpartitioned equality delete file (global)
-        unpart_eq_delete = create_basic_equality_delete_file(equality_ids=[1])
-        unpart_eq_delete._spec_id = 1  # Unpartitioned spec
+        unpart_eq_delete = create_equality_delete_file(equality_ids=[1], spec_id=1)
         unpart_eq_delete_entry = create_manifest_entry_with_delete_file(unpart_eq_delete, sequence_number=5)
 
         # Create unpartitioned position delete file
@@ -231,17 +200,14 @@ class TestDeleteFileIndex:
 
         # Partitioned data file
         partition_key = Record(1)
-        data_file = create_basic_data_file(partition={"id": 1})
-        data_file._spec_id = 0
+        data_file = create_data_file(partition={"id": 1})
 
         # Partitioned equality delete file
-        part_eq_delete = create_basic_equality_delete_file(equality_ids=[1], partition=partition_key)
-        part_eq_delete._spec_id = 0
+        part_eq_delete = create_equality_delete_file(equality_ids=[1], partition=partition_key)
         part_eq_delete_entry = create_manifest_entry_with_delete_file(part_eq_delete, sequence_number=4)
 
         # Unpartitioned equality delete file (global)
-        unpart_eq_delete = create_basic_equality_delete_file(equality_ids=[1])
-        unpart_eq_delete._spec_id = 1  # Unpartitioned spec
+        unpart_eq_delete = create_equality_delete_file(equality_ids=[1], spec_id=1)
         unpart_eq_delete_entry = create_manifest_entry_with_delete_file(unpart_eq_delete, sequence_number=5)
 
         # Unpartitioned position delete file
@@ -264,13 +230,9 @@ class TestDeleteFileIndex:
 
     def test_partitioned_table_sequence_numbers(self, id_data_schema: Schema) -> None:
         """Test sequence number handling in partitioned tables."""
-        data_file = create_basic_data_file(file_path="s3://bucket/data.parquet", partition={"id": 1})
-        data_file._spec_id = 0
+        data_file = create_data_file(partition={"id": 1})
 
-        eq_delete = create_basic_equality_delete_file(
-            file_path="s3://bucket/eq-delete.parquet", equality_ids=[1], partition=Record(1)
-        )
-        eq_delete._spec_id = 0
+        eq_delete = create_equality_delete_file(equality_ids=[1], partition=Record(1))
         eq_delete_entry = create_manifest_entry_with_delete_file(eq_delete, sequence_number=5)
 
         pos_delete = create_positional_delete_entry(sequence_number=5, file_path="s3://bucket/data.parquet", spec_id=0)
@@ -292,14 +254,12 @@ class TestDeleteFileIndex:
 
     def test_unpartitioned_table_sequence_numbers(self, id_data_schema: Schema) -> None:
         """Test sequence number handling in unpartitioned tables."""
-        data_file = create_basic_data_file(file_path="s3://bucket/data.parquet")
-        data_file._spec_id = 0
+        data_file = create_data_file()
 
-        eq_delete = create_basic_equality_delete_file(file_path="s3://bucket/eq-delete.parquet", equality_ids=[1])
-        eq_delete._spec_id = 0
+        eq_delete = create_equality_delete_file(equality_ids=[1])
         eq_delete_entry = create_manifest_entry_with_delete_file(eq_delete, sequence_number=5)
 
-        pos_delete = create_positional_delete_entry(sequence_number=5, file_path="s3://bucket/data.parquet", spec_id=0)
+        pos_delete = create_positional_delete_entry(sequence_number=5)
         delete_index = DeleteFileIndex(id_data_schema, {0: PartitionSpec()})
         delete_index.add_delete_file(eq_delete_entry)
         delete_index.add_delete_file(pos_delete)
@@ -330,22 +290,22 @@ class TestDeleteFileIndex:
         group.add(PositionalDeleteFileWrapper(create_manifest_entry_with_delete_file(pos_delete_3, sequence_number=3)))
 
         # Test filtering by sequence number
-        result_0 = group.filter(0, create_basic_data_file())
+        result_0 = group.filter(0, create_data_file())
         assert len(result_0) == 4
 
-        result_1 = group.filter(1, create_basic_data_file())
+        result_1 = group.filter(1, create_data_file())
         assert len(result_1) == 4
 
-        result_2 = group.filter(2, create_basic_data_file())
+        result_2 = group.filter(2, create_data_file())
         assert len(result_2) == 3
 
-        result_3 = group.filter(3, create_basic_data_file())
+        result_3 = group.filter(3, create_data_file())
         assert len(result_3) == 2
 
-        result_4 = group.filter(4, create_basic_data_file())
+        result_4 = group.filter(4, create_data_file())
         assert len(result_4) == 1
 
-        result_5 = group.filter(5, create_basic_data_file())
+        result_5 = group.filter(5, create_data_file())
         assert len(result_5) == 0
 
         # Test that adding files after indexing raises an error
@@ -356,10 +316,10 @@ class TestDeleteFileIndex:
     def test_equality_deletes_group(self, id_data_schema: Schema) -> None:
         """Test the EqualityDeletesGroup class."""
         # Create equality delete files with different sequence numbers
-        eq_delete_1 = create_basic_equality_delete_file(equality_ids=[1])
-        eq_delete_2 = create_basic_equality_delete_file(equality_ids=[1])
-        eq_delete_3 = create_basic_equality_delete_file(equality_ids=[1])
-        eq_delete_4 = create_basic_equality_delete_file(equality_ids=[1])
+        eq_delete_1 = create_equality_delete_file(equality_ids=[1])
+        eq_delete_2 = create_equality_delete_file(equality_ids=[1])
+        eq_delete_3 = create_equality_delete_file(equality_ids=[1])
+        eq_delete_4 = create_equality_delete_file(equality_ids=[1])
 
         # EqualityDeletesGroup
         group = EqualityDeletesGroup()
@@ -376,7 +336,7 @@ class TestDeleteFileIndex:
             EqualityDeleteFileWrapper(create_manifest_entry_with_delete_file(eq_delete_3, sequence_number=3), id_data_schema)
         )
 
-        data_file = create_basic_data_file()
+        data_file = create_data_file()
 
         # Test filtering by sequence number
         result_0 = group.filter(0, data_file)
@@ -403,11 +363,9 @@ class TestDeleteFileIndex:
 
     def test_mix_delete_files_and_dvs(self, id_data_schema: Schema) -> None:
         """Test mixing regular delete files and deletion vectors."""
-        data_file_a = create_basic_data_file(file_path="s3://bucket/data-a.parquet", partition={"id": 1})
-        data_file_a._spec_id = 0
+        data_file_a = create_data_file(file_path="s3://bucket/data-a.parquet", partition={"id": 1})
 
-        data_file_b = create_basic_data_file(file_path="s3://bucket/data-b.parquet", partition={"id": 2})
-        data_file_b._spec_id = 0
+        data_file_b = create_data_file(file_path="s3://bucket/data-b.parquet", partition={"id": 2})
 
         # Position delete for file A
         pos_delete_a = create_positional_delete_entry(sequence_number=1, file_path="s3://bucket/data-a.parquet", spec_id=0)
@@ -440,14 +398,14 @@ class TestDeleteFileIndex:
     def test_equality_delete_bounds_filtering(self, id_data_schema: Schema) -> None:
         """Test that equality deletes use bounds to filter out impossible matches."""
         # Create data file with bounds
-        data_file = create_basic_data_file(
+        data_file = create_data_file(
             lower_bounds={1: b"\x05\x00\x00\x00"},  # id >= 5
             upper_bounds={1: b"\x0a\x00\x00\x00"},  # id <= 10
         )
 
         # With non-overlapping bounds
         delete_index1 = DeleteFileIndex(id_data_schema)
-        eq_delete_file = create_basic_equality_delete_file(
+        eq_delete_file = create_equality_delete_file(
             equality_ids=[1],
             lower_bounds={1: b"\x0f\x00\x00\x00"},  # id >= 15
             upper_bounds={1: b"\x14\x00\x00\x00"},  # id <= 20
@@ -460,7 +418,7 @@ class TestDeleteFileIndex:
 
         # Overlapping bounds
         delete_index2 = DeleteFileIndex(id_data_schema)
-        eq_delete_file2 = create_basic_equality_delete_file(
+        eq_delete_file2 = create_equality_delete_file(
             equality_ids=[1],
             lower_bounds={1: b"\x08\x00\x00\x00"},  # id >= 8
             upper_bounds={1: b"\x0f\x00\x00\x00"},  # id <= 15
@@ -478,13 +436,13 @@ class TestDeleteFileIndex:
             NestedField(2, "data", StringType(), required=False),
         )
 
-        data_file = create_basic_data_file(
+        data_file = create_data_file(
             value_counts={1: 100, 2: 100},
             null_value_counts={1: 100, 2: 0},  # All values in field 1 are null
         )
 
         delete_index1 = DeleteFileIndex(schema)
-        eq_delete_file = create_basic_equality_delete_file(
+        eq_delete_file = create_equality_delete_file(
             equality_ids=[1],
             value_counts={1: 10},
             null_value_counts={1: 0},  # No nulls in delete file
@@ -496,7 +454,7 @@ class TestDeleteFileIndex:
         assert len(delete_index1.for_data_file(0, data_file)) == 0
 
         delete_index2 = DeleteFileIndex(schema)
-        eq_delete_file2 = create_basic_equality_delete_file(
+        eq_delete_file2 = create_equality_delete_file(
             equality_ids=[1],
             value_counts={1: 10},
             null_value_counts={1: 5},  # Has nulls in delete file
@@ -525,7 +483,7 @@ class TestDeleteFileIndex:
         dv_entry = create_deletion_vector_entry(sequence_number=5, file_path=file_path)
         delete_index.add_delete_file(dv_entry)
 
-        data_file = create_basic_data_file(file_path=file_path)
+        data_file = create_data_file(file_path=file_path)
         deletes = delete_index.for_data_file(4, data_file)
 
         # Should all deletes

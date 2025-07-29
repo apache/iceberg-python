@@ -1077,12 +1077,11 @@ def _construct_fragment(io: FileIO, data_file: DataFile, file_format_kwargs: dic
 
 def _read_deletes(io: FileIO, data_file: DataFile) -> dict[str, pa.ChunkedArray] | pa.Table:
     if data_file.file_format == FileFormat.PARQUET:
-        delete_fragment = _construct_fragment(
-            io,
-            data_file,
-            file_format_kwargs={"dictionary_columns": ("file_path",), "pre_buffer": True, "buffer_size": ONE_MEGABYTE},
-        )
-        table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
+        with io.new_input(data_file.file_path).open() as fi:
+            delete_fragment = _get_file_format(
+                data_file.file_format, dictionary_columns=("file_path",), pre_buffer=True, buffer_size=ONE_MEGABYTE
+            ).make_fragment(fi)
+            table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
         if data_file.content == DataFileContent.POSITION_DELETES:
             table = table.unify_dictionaries()
             return {
@@ -1618,15 +1617,17 @@ def _task_to_record_batches(
             filter=pyarrow_filter if not deletes else None,
             columns=[col.name for col in file_project_schema.columns],
         )
-        positional_deletes = []
-        combined_eq_deletes = []
+        positional_deletes = None
+        equality_delete_groups = None
         if deletes:
             positional_deletes = [d for d in deletes if isinstance(d, pa.ChunkedArray)]
             equality_deletes = [d for d in deletes if isinstance(d, pa.Table)]
+
+            # preprocess equality deletes to be applied
             if equality_deletes:
                 task_eq_files = [df for df in task.delete_files if df.content == DataFileContent.EQUALITY_DELETES]
-                # Group and combine equality deletes
-                combined_eq_deletes = group_equality_deletes(task_eq_files, equality_deletes)
+                # concatenate equality delete tables with same set of field ids to reduce anti joins
+                equality_delete_groups = _group_deletes_by_equality_ids(task_eq_files, equality_deletes)
 
         next_index = 0
         batches = fragment_scanner.to_batches()
@@ -1644,10 +1645,10 @@ def _task_to_record_batches(
             if current_batch.num_rows == 0:
                 continue
 
-            if combined_eq_deletes:
+            if equality_delete_groups:
                 table = pa.Table.from_batches([current_batch])
-                for equality_ids, combined_table in combined_eq_deletes:
-                    table = _apply_equality_deletes(table, combined_table, equality_ids, file_schema)
+                for equality_ids, combined_table in equality_delete_groups.items():
+                    table = _apply_equality_deletes(table, combined_table, list(equality_ids), file_schema)
                     if table.num_rows == 0:
                         break
                 if table.num_rows > 0:
@@ -1678,18 +1679,17 @@ def _task_to_record_batches(
 def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> dict[str, list[pa.ChunkedArray | pa.Table]]:
     deletes_per_file: dict[str, list[pa.ChunkedArray | pa.Table]] = {}
 
-    # Position Deletes
-    unique_deletes = {
+    positional_deletes = {
         df
         for task in tasks
         for df in task.delete_files
         if df.content == DataFileContent.POSITION_DELETES and df.file_format != FileFormat.PUFFIN
     }
-    if unique_deletes:
+    if positional_deletes:
         executor = ExecutorFactory.get_or_create()
         deletes_per_files: Iterator[dict[str, ChunkedArray]] = executor.map(
             lambda args: _read_deletes(*args),
-            [(io, delete_file) for delete_file in unique_deletes],
+            [(io, delete_file) for delete_file in positional_deletes],
         )
         for delete in deletes_per_files:
             for file, arr in delete.items():
@@ -1697,7 +1697,6 @@ def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> dict[st
                     deletes_per_file[file].append(arr)
                 else:
                     deletes_per_file[file] = [arr]
-    # Deletion Vectors
     deletion_vectors = {
         df
         for task in tasks
@@ -1706,31 +1705,31 @@ def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> dict[st
     }
     if deletion_vectors:
         executor = ExecutorFactory.get_or_create()
-        dv_results = executor.map(
+        dv_results: Iterator[Dict[str, ChunkedArray]] = executor.map(
             lambda args: _read_deletes(*args),
-            [(_fs_from_file_path(io, delete_file.file_path), delete_file) for delete_file in deletion_vectors],
+            [(io, delete_file) for delete_file in deletion_vectors],
         )
         for delete in dv_results:
             for file, arr in delete.items():
                 # Deletion vectors replace all position deletes for a file
                 deletes_per_file[file] = [arr]
 
-    # Equality Deletes
     equality_delete_tasks = []
     for task in tasks:
         equality_deletes = [df for df in task.delete_files if df.content == DataFileContent.EQUALITY_DELETES]
         if equality_deletes:
             for delete_file in equality_deletes:
+                # create a group of datafile to associated equality delete
                 equality_delete_tasks.append((task.file.file_path, delete_file))
 
     if equality_delete_tasks:
         executor = ExecutorFactory.get_or_create()
-
         # Processing equality delete tasks in parallel like position deletes
         equality_delete_results = executor.map(
-            lambda args: (args[0], _read_deletes(_fs_from_file_path(io, args[1].file_path), args[1])),
+            lambda args: (args[0], _read_deletes(io, args[1])),
             equality_delete_tasks,
         )
+
         for file_path, equality_delete_table in equality_delete_results:
             if file_path not in deletes_per_file:
                 deletes_per_file[file_path] = []
@@ -1872,7 +1871,7 @@ class ArrowScan:
                 break
 
     def _record_batches_from_scan_tasks_and_deletes(
-        self, tasks: Iterable[FileScanTask], deletes_per_file: dict[str, list[ChunkedArray]]
+        self, tasks: Iterable[FileScanTask], deletes_per_file: dict[str, list[pa.ChunkedArray | pa.Table]]
     ) -> Iterator[pa.RecordBatch]:
         total_row_count = 0
         for task in tasks:
@@ -3042,33 +3041,26 @@ def _get_field_from_arrow_table(arrow_table: pa.Table, field_path: str) -> pa.Ar
     return pc.struct_field(field_array, path_parts[1:])
 
 
-def group_equality_deletes(
+def _group_deletes_by_equality_ids(
     task_eq_files: List[DataFile], equality_delete_tables: List[pa.Table]
-) -> List[Tuple[List[int], pa.Table]]:
-    """Group equality delete tables by their equality IDs."""
-    equality_delete_groups: Dict[frozenset[int], List[Tuple[List[int], pa.Table]]] = {}
+) -> dict[FrozenSet[int], pa.Table]:
+    """Concatenate equality delete tables by their equality IDs to reduce number of anti joins."""
+    from collections import defaultdict
 
+    equality_delete_groups: Dict[FrozenSet[int], pa.Table] = {}
+    group_map = defaultdict(list)
+
+    # Group the tables by their equality IDs
     for delete_file, delete_table in zip(task_eq_files, equality_delete_tables):
-        if delete_file.equality_ids:
+        if delete_file.equality_ids is not None:
             key = frozenset(delete_file.equality_ids)
+            group_map[key].append(delete_table)
 
-            # Add to the appropriate group
-            if key not in equality_delete_groups:
-                equality_delete_groups[key] = []
-            equality_delete_groups[key].append((delete_file.equality_ids, delete_table))
-
-    # Combine tables with the same equality IDs
-    combined_deletes = []
-    for items in equality_delete_groups.values():
-        # Use the original equality IDs from the first item
-        original_ids = items[0][0]
-        tables = [item[1] for item in items]
-
-        if tables:
-            combined_table = pa.concat_tables(tables)
-            combined_deletes.append((original_ids, combined_table))
-
-    return combined_deletes
+    # Concat arrow tables in the same groups
+    for equality_ids, delete_tables in group_map.items():
+        if delete_tables:
+            equality_delete_groups[equality_ids] = pa.concat_tables(delete_tables) if len(delete_tables) > 1 else delete_tables[0]
+    return equality_delete_groups
 
 
 def _apply_equality_deletes(
@@ -3089,7 +3081,10 @@ def _apply_equality_deletes(
         return data_table
     if data_schema is None:
         raise ValueError("Schema is required for applying equality deletes")
+
+    # Resolve the correct columns to be used in the anti join
     equality_columns = [data_schema.find_field(fid).name for fid in equality_ids]
+
     # Use PyArrow's join function with left anti join type
     result = data_table.join(delete_table.select(equality_columns), keys=equality_columns, join_type="left anti")
     return result
