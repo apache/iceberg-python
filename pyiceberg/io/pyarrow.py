@@ -83,23 +83,35 @@ from pyiceberg.expressions.visitors import (
 )
 from pyiceberg.expressions.visitors import visit as boolean_expression_visit
 from pyiceberg.io import (
+    ADLS_ACCOUNT_HOST,
     ADLS_ACCOUNT_KEY,
     ADLS_ACCOUNT_NAME,
     ADLS_BLOB_STORAGE_AUTHORITY,
     ADLS_BLOB_STORAGE_SCHEME,
+    ADLS_CLIENT_ID,
+    ADLS_CLIENT_SECRET,
+    ADLS_CONNECTION_STRING,
     ADLS_DFS_STORAGE_AUTHORITY,
     ADLS_DFS_STORAGE_SCHEME,
     ADLS_SAS_TOKEN,
+    ADLS_TENANT_ID,
     AWS_ACCESS_KEY_ID,
     AWS_REGION,
     AWS_ROLE_ARN,
     AWS_ROLE_SESSION_NAME,
     AWS_SECRET_ACCESS_KEY,
     AWS_SESSION_TOKEN,
+    GCS_ACCESS,
+    GCS_CACHE_TIMEOUT,
+    GCS_CONSISTENCY,
     GCS_DEFAULT_LOCATION,
+    GCS_PROJECT_ID,
+    GCS_REQUESTER_PAYS,
     GCS_SERVICE_HOST,
+    GCS_SESSION_KWARGS,
     GCS_TOKEN,
     GCS_TOKEN_EXPIRES_AT_MS,
+    GCS_VERSION_AWARE,
     HDFS_HOST,
     HDFS_KERB_TICKET,
     HDFS_PORT,
@@ -118,6 +130,8 @@ from pyiceberg.io import (
     S3_ROLE_SESSION_NAME,
     S3_SECRET_ACCESS_KEY,
     S3_SESSION_TOKEN,
+    S3_SIGNER_ENDPOINT,
+    S3_SIGNER_URI,
     FileIO,
     InputFile,
     InputStream,
@@ -397,6 +411,32 @@ class PyArrowFileIO(FileIO):
         else:
             return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
 
+    def _process_basic_properties(
+        self, property_mapping: Dict[str, str], special_properties: Set[str], prefix: str
+    ) -> Dict[str, Any]:
+        """Process basic property mappings and prefix passthrough logic."""
+        client_kwargs: Dict[str, Any] = {}
+
+        for prop_name, prop_value in self.properties.items():
+            if prop_value is None:
+                continue
+
+            # Skip properties that need special handling
+            if prop_name in special_properties:
+                continue
+
+            # Map known property names to filesystem parameter names
+            if prop_name in property_mapping:
+                param_name = property_mapping[prop_name]
+                client_kwargs[param_name] = prop_value
+
+            # Pass through any other {prefix}.* properties
+            elif prop_name.startswith(f"{prefix}."):
+                param_name = prop_name.split(".", 1)[1]
+                client_kwargs[param_name] = prop_value
+
+        return client_kwargs
+
     def _initialize_fs(self, scheme: str, netloc: Optional[str] = None) -> FileSystem:
         """Initialize FileSystem for different scheme."""
         if scheme in {"oss"}:
@@ -423,29 +463,42 @@ class PyArrowFileIO(FileIO):
     def _initialize_oss_fs(self) -> FileSystem:
         from pyarrow.fs import S3FileSystem
 
-        client_kwargs: Dict[str, Any] = {
-            "endpoint_override": self.properties.get(S3_ENDPOINT),
-            "access_key": get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
-            "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
-            "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
-            "region": get_first_property_value(self.properties, S3_REGION, AWS_REGION),
-            "force_virtual_addressing": property_as_bool(self.properties, S3_FORCE_VIRTUAL_ADDRESSING, True),
+        # Mapping from PyIceberg properties to S3FileSystem parameter names
+        property_mapping = {
+            S3_ENDPOINT: "endpoint_override",
+            S3_PROXY_URI: "proxy_options",
+            S3_CONNECT_TIMEOUT: "connect_timeout",
+            S3_REQUEST_TIMEOUT: "request_timeout",
         }
 
-        if proxy_uri := self.properties.get(S3_PROXY_URI):
-            client_kwargs["proxy_options"] = proxy_uri
+        # Properties that need special handling
+        special_properties = {
+            S3_ACCESS_KEY_ID,
+            S3_SECRET_ACCESS_KEY,
+            S3_SESSION_TOKEN,
+            S3_CONNECT_TIMEOUT,
+            S3_REQUEST_TIMEOUT,
+            S3_FORCE_VIRTUAL_ADDRESSING,
+            S3_ROLE_SESSION_NAME,
+            S3_RESOLVE_REGION,
+            S3_REGION,
+        }
 
-        if connect_timeout := self.properties.get(S3_CONNECT_TIMEOUT):
-            client_kwargs["connect_timeout"] = float(connect_timeout)
+        client_kwargs = self._process_basic_properties(property_mapping, special_properties, "s3")
 
-        if request_timeout := self.properties.get(S3_REQUEST_TIMEOUT):
-            client_kwargs["request_timeout"] = float(request_timeout)
+        if S3_ACCESS_KEY_ID in self.properties or AWS_ACCESS_KEY_ID in self.properties:
+            client_kwargs["access_key"] = get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID)
 
-        if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
-            client_kwargs["role_arn"] = role_arn
+        if S3_SECRET_ACCESS_KEY in self.properties or AWS_SECRET_ACCESS_KEY in self.properties:
+            client_kwargs["secret_key"] = get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY)
 
-        if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
-            client_kwargs["session_name"] = session_name
+        if S3_SESSION_TOKEN in self.properties or AWS_SESSION_TOKEN in self.properties:
+            client_kwargs["session_token"] = get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN)
+
+        if S3_REGION in self.properties or AWS_REGION in self.properties:
+            client_kwargs["region"] = get_first_property_value(self.properties, S3_REGION, AWS_REGION)
+
+        client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, S3_FORCE_VIRTUAL_ADDRESSING, True)
 
         return S3FileSystem(**client_kwargs)
 
@@ -467,16 +520,49 @@ class PyArrowFileIO(FileIO):
         else:
             bucket_region = provided_region
 
-        client_kwargs: Dict[str, Any] = {
-            "endpoint_override": self.properties.get(S3_ENDPOINT),
-            "access_key": get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
-            "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
-            "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
-            "region": bucket_region,
+        # Mapping from PyIceberg properties to S3FileSystem parameter names
+        property_mapping = {
+            S3_ENDPOINT: "endpoint_override",
+            S3_PROXY_URI: "proxy_options",
+            S3_CONNECT_TIMEOUT: "connect_timeout",
+            S3_REQUEST_TIMEOUT: "request_timeout",
+            S3_RETRY_STRATEGY_IMPL: "retry_strategy",
         }
 
-        if proxy_uri := self.properties.get(S3_PROXY_URI):
-            client_kwargs["proxy_options"] = proxy_uri
+        # Properties that need special handling
+        special_properties = {
+            S3_ACCESS_KEY_ID,
+            S3_SECRET_ACCESS_KEY,
+            S3_SESSION_TOKEN,
+            S3_ROLE_ARN,
+            S3_ROLE_SESSION_NAME,
+            S3_RESOLVE_REGION,
+            S3_REGION,
+            S3_RETRY_STRATEGY_IMPL,
+            S3_CONNECT_TIMEOUT,
+            S3_REQUEST_TIMEOUT,
+            S3_SIGNER_ENDPOINT,
+            S3_SIGNER_URI,
+            S3_FORCE_VIRTUAL_ADDRESSING,
+        }
+
+        client_kwargs = self._process_basic_properties(property_mapping, special_properties, "s3")
+        client_kwargs["region"] = bucket_region
+
+        if S3_ACCESS_KEY_ID in self.properties or AWS_ACCESS_KEY_ID in self.properties:
+            client_kwargs["access_key"] = get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID)
+
+        if S3_SECRET_ACCESS_KEY in self.properties or AWS_SECRET_ACCESS_KEY in self.properties:
+            client_kwargs["secret_key"] = get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY)
+
+        if S3_SESSION_TOKEN in self.properties or AWS_SESSION_TOKEN in self.properties:
+            client_kwargs["session_token"] = get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN)
+
+        if S3_ROLE_ARN in self.properties or AWS_ROLE_ARN in self.properties:
+            client_kwargs["role_arn"] = get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN)
+
+        if S3_ROLE_SESSION_NAME in self.properties or AWS_ROLE_SESSION_NAME in self.properties:
+            client_kwargs["session_name"] = get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME)
 
         if connect_timeout := self.properties.get(S3_CONNECT_TIMEOUT):
             client_kwargs["connect_timeout"] = float(connect_timeout)
@@ -484,15 +570,10 @@ class PyArrowFileIO(FileIO):
         if request_timeout := self.properties.get(S3_REQUEST_TIMEOUT):
             client_kwargs["request_timeout"] = float(request_timeout)
 
-        if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
-            client_kwargs["role_arn"] = role_arn
-
-        if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
-            client_kwargs["session_name"] = session_name
-
         if self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING) is not None:
             client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, S3_FORCE_VIRTUAL_ADDRESSING, False)
 
+        # Handle retry strategy special case
         if (retry_strategy_impl := self.properties.get(S3_RETRY_STRATEGY_IMPL)) and (
             retry_instance := _import_retry_strategy(retry_strategy_impl)
         ):
@@ -512,59 +593,77 @@ class PyArrowFileIO(FileIO):
 
         from pyarrow.fs import AzureFileSystem
 
-        client_kwargs: Dict[str, str] = {}
+        # Mapping from PyIceberg properties to AzureFileSystem parameter names
+        property_mapping = {
+            ADLS_ACCOUNT_NAME: "account_name",
+            ADLS_ACCOUNT_KEY: "account_key",
+            ADLS_BLOB_STORAGE_AUTHORITY: "blob_storage_authority",
+            ADLS_DFS_STORAGE_AUTHORITY: "dfs_storage_authority",
+            ADLS_BLOB_STORAGE_SCHEME: "blob_storage_scheme",
+            ADLS_DFS_STORAGE_SCHEME: "dfs_storage_scheme",
+            ADLS_SAS_TOKEN: "sas_token",
+            ADLS_CLIENT_ID: "client_id",
+            ADLS_CLIENT_SECRET: "client_secret",
+            ADLS_TENANT_ID: "tenant_id",
+        }
 
-        if account_name := self.properties.get(ADLS_ACCOUNT_NAME):
-            client_kwargs["account_name"] = account_name
+        special_properties = {
+            ADLS_CONNECTION_STRING,
+            ADLS_ACCOUNT_HOST,
+        }
 
-        if account_key := self.properties.get(ADLS_ACCOUNT_KEY):
-            client_kwargs["account_key"] = account_key
-
-        if blob_storage_authority := self.properties.get(ADLS_BLOB_STORAGE_AUTHORITY):
-            client_kwargs["blob_storage_authority"] = blob_storage_authority
-
-        if dfs_storage_authority := self.properties.get(ADLS_DFS_STORAGE_AUTHORITY):
-            client_kwargs["dfs_storage_authority"] = dfs_storage_authority
-
-        if blob_storage_scheme := self.properties.get(ADLS_BLOB_STORAGE_SCHEME):
-            client_kwargs["blob_storage_scheme"] = blob_storage_scheme
-
-        if dfs_storage_scheme := self.properties.get(ADLS_DFS_STORAGE_SCHEME):
-            client_kwargs["dfs_storage_scheme"] = dfs_storage_scheme
-
-        if sas_token := self.properties.get(ADLS_SAS_TOKEN):
-            client_kwargs["sas_token"] = sas_token
-
+        client_kwargs = self._process_basic_properties(property_mapping, special_properties, "adls")
         return AzureFileSystem(**client_kwargs)
 
     def _initialize_hdfs_fs(self, scheme: str, netloc: Optional[str]) -> FileSystem:
         from pyarrow.fs import HadoopFileSystem
 
-        hdfs_kwargs: Dict[str, Any] = {}
         if netloc:
             return HadoopFileSystem.from_uri(f"{scheme}://{netloc}")
-        if host := self.properties.get(HDFS_HOST):
-            hdfs_kwargs["host"] = host
-        if port := self.properties.get(HDFS_PORT):
-            # port should be an integer type
-            hdfs_kwargs["port"] = int(port)
-        if user := self.properties.get(HDFS_USER):
-            hdfs_kwargs["user"] = user
-        if kerb_ticket := self.properties.get(HDFS_KERB_TICKET):
-            hdfs_kwargs["kerb_ticket"] = kerb_ticket
+
+        # Mapping from PyIceberg properties to HadoopFileSystem parameter names
+        property_mapping = {
+            HDFS_HOST: "host",
+            HDFS_PORT: "port",
+            HDFS_USER: "user",
+            HDFS_KERB_TICKET: "kerb_ticket",
+        }
+
+        hdfs_kwargs = self._process_basic_properties(property_mapping, set(), "hdfs")
+
+        # Handle port conversion to int
+        if "port" in hdfs_kwargs:
+            hdfs_kwargs["port"] = int(hdfs_kwargs["port"])
 
         return HadoopFileSystem(**hdfs_kwargs)
 
     def _initialize_gcs_fs(self) -> FileSystem:
         from pyarrow.fs import GcsFileSystem
 
-        gcs_kwargs: Dict[str, Any] = {}
-        if access_token := self.properties.get(GCS_TOKEN):
-            gcs_kwargs["access_token"] = access_token
+        # Mapping from PyIceberg properties to GcsFileSystem parameter names
+        property_mapping = {
+            GCS_TOKEN: "access_token",
+            GCS_DEFAULT_LOCATION: "default_bucket_location",
+            GCS_PROJECT_ID: "project_id",
+        }
+
+        # Properties that need special handling
+        special_properties = {
+            GCS_TOKEN_EXPIRES_AT_MS,
+            GCS_SERVICE_HOST,
+            GCS_ACCESS,
+            GCS_CONSISTENCY,
+            GCS_CACHE_TIMEOUT,
+            GCS_REQUESTER_PAYS,
+            GCS_SESSION_KWARGS,
+            GCS_VERSION_AWARE,
+        }
+
+        gcs_kwargs = self._process_basic_properties(property_mapping, special_properties, "gcs")
+
         if expiration := self.properties.get(GCS_TOKEN_EXPIRES_AT_MS):
             gcs_kwargs["credential_token_expiration"] = millis_to_datetime(int(expiration))
-        if bucket_location := self.properties.get(GCS_DEFAULT_LOCATION):
-            gcs_kwargs["default_bucket_location"] = bucket_location
+
         if endpoint := self.properties.get(GCS_SERVICE_HOST):
             url_parts = urlparse(endpoint)
             gcs_kwargs["scheme"] = url_parts.scheme
@@ -573,7 +672,8 @@ class PyArrowFileIO(FileIO):
         return GcsFileSystem(**gcs_kwargs)
 
     def _initialize_local_fs(self) -> FileSystem:
-        return PyArrowLocalFileSystem()
+        local_kwargs = self._process_basic_properties({}, set(), "file")
+        return PyArrowLocalFileSystem(**local_kwargs)
 
     def new_input(self, location: str) -> PyArrowFile:
         """Get a PyArrowFile instance to read bytes from the file at the given location.

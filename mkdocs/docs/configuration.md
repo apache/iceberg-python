@@ -105,6 +105,33 @@ You can also set the FileIO explicitly:
 
 For the FileIO there are several configuration options available:
 
+### PyArrow FileSystem Extra Properties
+
+When using `PyArrowFileIO`, any properties with filesystem specific prefixes that are not explicitly handled by PyIceberg will be passed to the underlying PyArrow filesystem implementations.
+
+To use these properties, follow the format:
+
+```txt
+{fs_scheme}.{parameter_name}
+```
+
+- {fs_scheme} is the filesystem scheme (e.g., s3, hdfs, gcs).
+- {parameter_name} must match the name expected by the PyArrow filesystem.
+- Property values must use the correct type expected by the underlying filesystem (e.g., string, integer, boolean).
+
+Below are examples of supported prefixes and how the properties are passed through:
+
+<!-- markdown-link-check-disable -->
+
+| Property Prefix | FileSystem                                                                                           | Example                     | Description                                         |
+|-----------------|------------------------------------------------------------------------------------------------------|-----------------------------|-----------------------------------------------------|
+| `s3.`           | [S3FileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.S3FileSystem.html)          | `s3.load_frequency=900`     | Passed as `load_frequency=900` to S3FileSystem      |
+| `hdfs.`         | [HadoopFileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.HadoopFileSystem.html)  | `hdfs.replication=3`        | Passed as `replication=3` to HadoopFileSystem       |
+| `gcs.`          | [GcsFileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.GcsFileSystem.html)        | `gcs.project_id=test`       | Passed as `project_id='test'` to GcsFileSystem      |
+| `adls.`         | [AzureFileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.AzureFileSystem.html)    | `adls.blob_cache-size=1024` | Passed as `blob_cache_size=1024` to AzureFileSystem |
+| `oss.`          | [S3FileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.S3FileSystem.html)          | `oss.connect_timeout=30.0`  | Passed as `connect_timeout=30.0` to S3FileSystem    |
+| `file.`         | [LocalFileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.LocalFileSystem.html)    | `file.use_mmap=true`        | Passed as `use_mmap=True` to LocalFileSystem        |
+
 ### S3
 
 <!-- markdown-link-check-disable -->
