@@ -40,7 +40,6 @@ WORKDIR ${SPARK_HOME}
 ENV SPARK_VERSION=3.5.6
 ENV ICEBERG_SPARK_RUNTIME_VERSION=3.5_2.12
 ENV ICEBERG_VERSION=1.9.1
-ENV PYICEBERG_VERSION=0.9.1
 
 RUN curl --retry 5 -s -C - https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz -o spark-${SPARK_VERSION}-bin-hadoop3.tgz \
  && tar xzf spark-${SPARK_VERSION}-bin-hadoop3.tgz --directory /opt/spark --strip-components 1 \
@@ -55,7 +54,7 @@ RUN curl --retry 5 -s https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-
 RUN curl --retry 5 -s https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-aws-bundle/${ICEBERG_VERSION}/iceberg-aws-bundle-${ICEBERG_VERSION}.jar \
       -Lo /opt/spark/jars/iceberg-aws-bundle-${ICEBERG_VERSION}.jar
 
-COPY spark-defaults.conf /opt/spark/conf
+COPY dev/spark-defaults.conf /opt/spark/conf
 ENV PATH="/opt/spark/sbin:/opt/spark/bin:${PATH}"
 
 RUN chmod u+x /opt/spark/sbin/* && \
@@ -63,10 +62,22 @@ RUN chmod u+x /opt/spark/sbin/* && \
 
 RUN pip3 install -q ipython
 
-RUN pip3 install "pyiceberg[s3fs,hive,pyarrow]==${PYICEBERG_VERSION}"
+# Copy the local pyiceberg source code and install locally
+COPY pyiceberg/ /tmp/pyiceberg/pyiceberg
+COPY pyproject.toml /tmp/pyiceberg/
+COPY build-module.py /tmp/pyiceberg/
+COPY vendor/ /tmp/pyiceberg/vendor
+COPY README.md /tmp/pyiceberg/
+COPY NOTICE /tmp/pyiceberg/
 
-COPY entrypoint.sh .
-COPY provision.py .
+# Install pyiceberg from the copied source
+RUN cd /tmp/pyiceberg && pip3 install ".[s3fs,hive,pyarrow]"
+
+# Clean up
+RUN rm -rf /tmp/pyiceberg
+
+COPY dev/entrypoint.sh ${SPARK_HOME}/
+COPY dev/provision.py ${SPARK_HOME}/
 
 ENTRYPOINT ["./entrypoint.sh"]
 CMD ["notebook"]
