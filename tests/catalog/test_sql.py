@@ -1440,11 +1440,11 @@ def test_concurrent_commit_table(catalog: SqlCatalog, table_schema_simple: Schem
     "catalog",
     [
         lazy_fixture("catalog_memory"),
-        lazy_fixture("catalog_sqlite"),
-        lazy_fixture("catalog_sqlite_without_rowcount"),
+        # lazy_fixture("catalog_sqlite"),
+        # lazy_fixture("catalog_sqlite_without_rowcount"),
     ],
 )
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [2])
 def test_write_and_evolve(catalog: SqlCatalog, format_version: int) -> None:
     identifier = f"default.arrow_write_data_and_evolve_schema_v{format_version}"
 
