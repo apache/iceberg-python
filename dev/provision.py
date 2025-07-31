@@ -409,3 +409,28 @@ for catalog_name, catalog in catalogs.items():
     )
     spark.sql(f"ALTER TABLE {catalog_name}.default.test_empty_scan_ordered_str WRITE ORDERED BY id")
     spark.sql(f"INSERT INTO {catalog_name}.default.test_empty_scan_ordered_str VALUES 'a', 'c'")
+
+    spark.sql(
+        f"""
+    CREATE TABLE {catalog_name}.default.test_read_orc (
+        dt     date,
+        ts     timestamp,
+        number integer,
+        letter string
+    )
+    USING iceberg
+    TBLPROPERTIES (
+        'format-version'='2',
+        'write.format.default'='orc'
+    );
+    """
+    )
+
+    spark.sql(f"""INSERT INTO {catalog_name}.default.test_read_orc
+            VALUES
+            (CAST('2022-03-01' AS date), CAST('2022-03-01 01:22:00' AS timestamp), 1, 'a'),
+            (CAST('2022-03-02' AS date), CAST('2022-03-02 02:22:00' AS timestamp), 2, 'b'),
+            (CAST('2022-03-03' AS date), CAST('2022-03-02 02:22:00' AS timestamp), 3, 'c')
+            """)
+
+    spark.sql(f"DELETE FROM {catalog_name}.default.test_read_orc WHERE number = 3")
