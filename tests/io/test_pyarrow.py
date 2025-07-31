@@ -1552,13 +1552,24 @@ def test_projection_filter_on_unknown_field(schema_int_str: Schema, file_int_str
     assert "Could not find field with name unknown_field, case_sensitive=True" in str(exc_info.value)
 
 
-@pytest.fixture
-def deletes_file(tmp_path: str, example_task: FileScanTask) -> str:
+@pytest.fixture(params=["parquet", "orc"])
+def deletes_file(tmp_path: str, request: pytest.FixtureRequest) -> str:
+    if request.param == "parquet":
+        example_task = request.getfixturevalue("example_task")
+        import pyarrow.parquet as pq
+        write_func = pq.write_table
+        file_ext = "parquet"
+    else:  # orc
+        example_task = request.getfixturevalue("example_task_orc")
+        import pyarrow.orc as orc
+        write_func = orc.write_table
+        file_ext = "orc"
+    
     path = example_task.file.file_path
     table = pa.table({"file_path": [path, path, path], "pos": [1, 3, 5]})
 
-    deletes_file_path = f"{tmp_path}/deletes.parquet"
-    pq.write_table(table, deletes_file_path)
+    deletes_file_path = f"{tmp_path}/deletes.{file_ext}"
+    write_func(table, deletes_file_path)
 
     return deletes_file_path
 
