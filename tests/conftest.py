@@ -73,7 +73,7 @@ from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
 from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2
-from pyiceberg.transforms import IdentityTransform
+from pyiceberg.transforms import IdentityTransform, DayTransform
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -1869,7 +1869,7 @@ def test_schema() -> Schema:
 def test_partition_spec() -> Schema:
     return PartitionSpec(
         PartitionField(1, 1000, IdentityTransform(), "VendorID"),
-        PartitionField(2, 1001, IdentityTransform(), "tpep_pickup_datetime"),
+        PartitionField(2, 1001, DayTransform(), "tpep_pickup_datetime"),
     )
 
 
