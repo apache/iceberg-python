@@ -38,10 +38,9 @@ from pyiceberg.manifest import (
     write_manifest,
     write_manifest_list,
 )
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Operation, Snapshot, Summary
-from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Record, TableVersion
 from pyiceberg.types import IntegerType, NestedField
 
@@ -363,6 +362,8 @@ def test_write_manifest(
     generated_manifest_file_file_v1: str,
     generated_manifest_file_file_v2: str,
     format_version: TableVersion,
+    test_schema: Schema,
+    test_partition_spec: PartitionSpec,
     compression: AvroCompressionCodec,
 ) -> None:
     io = load_file_io()
@@ -376,20 +377,12 @@ def test_write_manifest(
     )
     demo_manifest_file = snapshot.manifests(io)[0]
     manifest_entries = demo_manifest_file.fetch_manifest_entry(io)
-    test_schema = Schema(
-        NestedField(1, "VendorID", IntegerType(), False), NestedField(2, "tpep_pickup_datetime", IntegerType(), False)
-    )
-    test_spec = PartitionSpec(
-        PartitionField(source_id=1, field_id=1, transform=IdentityTransform(), name="VendorID"),
-        PartitionField(source_id=2, field_id=2, transform=IdentityTransform(), name="tpep_pickup_datetime"),
-        spec_id=demo_manifest_file.partition_spec_id,
-    )
     with TemporaryDirectory() as tmpdir:
         tmp_avro_file = tmpdir + "/test_write_manifest.avro"
         output = io.new_output(tmp_avro_file)
         with write_manifest(
             format_version=format_version,
-            spec=test_spec,
+            spec=test_partition_spec,
             schema=test_schema,
             output_file=output,
             snapshot_id=8744736658442914487,
@@ -404,7 +397,7 @@ def test_write_manifest(
 
         expected_metadata = {
             "schema": test_schema.model_dump_json(),
-            "partition-spec": """[{"source-id":1,"field-id":1,"transform":"identity","name":"VendorID"},{"source-id":2,"field-id":2,"transform":"identity","name":"tpep_pickup_datetime"}]""",
+            "partition-spec": """[{"source-id":1,"field-id":1000,"transform":"identity","name":"VendorID"},{"source-id":2,"field-id":1001,"transform":"day","name":"tpep_pickup_datetime"}]""",
             "partition-spec-id": str(demo_manifest_file.partition_spec_id),
             "format-version": str(format_version),
         }
