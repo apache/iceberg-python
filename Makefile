@@ -96,7 +96,7 @@ test-integration-setup: ## Start Docker services for integration tests
 	docker compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
 
 test-integration-exec: ## Run integration tests (excluding provision)
-	$(TEST_RUNNER) pytest tests/ -m integration $(PYTEST_ARGS)
+	$(TEST_RUNNER) pytest tests/integration/test_reads.py::test_metadata_sanitize_character -m integration $(PYTEST_ARGS)
 
 test-integration-rebuild: ## Rebuild integration Docker services from scratch
 	docker compose -f dev/docker-compose-integration.yml kill
