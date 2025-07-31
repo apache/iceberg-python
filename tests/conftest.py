@@ -73,7 +73,7 @@ from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
 from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2
-from pyiceberg.transforms import IdentityTransform, DayTransform
+from pyiceberg.transforms import DayTransform, IdentityTransform
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
