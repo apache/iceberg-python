@@ -315,6 +315,27 @@ for catalog_name, catalog in catalogs.items():
     """
     )
 
+    # avro sanitization test
+    spark.sql(
+        f"""
+    CREATE TABLE {catalog_name}.default.test_table_metadata_sanitized_character (
+        name STRING NOT NULL,
+        `😎` STRING
+    )
+    USING ICEBERG
+    PARTITIONED BY (`😎`);
+    """
+    )
+
+    spark.sql(
+        f"""
+    INSERT INTO {catalog_name}.default.test_table_metadata_sanitized_character
+    VALUES
+        ('Foo', 'Cool Foo'),
+        ('Bar', 'Cool Bar')
+    """
+    )
+
     spark.sql(
         f"""
     CREATE TABLE {catalog_name}.default.test_table_add_column (

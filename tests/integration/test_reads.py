@@ -762,6 +762,17 @@ def test_sanitize_character(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_metadata_sanitize_character(catalog: Catalog) -> None:
+    avro_sanitized_character_table = catalog.load_table("default.test_table_metadata_sanitized_character")
+    arrow_table = avro_sanitized_character_table.scan().to_arrow()
+    assert len(arrow_table.schema.names) == 2
+    assert len(avro_sanitized_character_table.inspect.files()) == 2
+    assert [field.name for field in avro_sanitized_character_table.schema().fields] == ["name", "😎"]
+    assert [field.name for field in avro_sanitized_character_table.spec().fields] == ["😎"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_null_list_and_map(catalog: Catalog) -> None:
     table_test_empty_list_and_map = catalog.load_table("default.test_table_empty_list_and_map")
     arrow_table = table_test_empty_list_and_map.scan().to_arrow()
