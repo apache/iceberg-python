@@ -1089,7 +1089,7 @@ Iceberg tables accumulate snapshots over time. Retaining too many can waste stor
 from pyiceberg.table.maintenance import MaintenanceTable
 
 maintenance = MaintenanceTable(table)
-maintenance.retain_last_n_snapshots(5)
+maintenance.expire_snapshots().retain_last_n(5)
 ```
 
 #### Example: Expire snapshots older than 30 days, but keep at least 3
@@ -1100,7 +1100,7 @@ from pyiceberg.table.maintenance import MaintenanceTable
 
 maintenance = MaintenanceTable(table)
 thirty_days_ago = int((time.time() - 30 * 24 * 60 * 60) * 1000)
-maintenance.expire_snapshots_with_retention_policy(
+maintenance.expire_snapshots().with_retention_policy(
     timestamp_ms=thirty_days_ago,
     min_snapshots_to_keep=3
 )
@@ -1209,7 +1209,7 @@ PyIceberg makes it easy to filter out data from a huge table and pull it into a 
 
 ```python
 # Expire old snapshots, but always keep last 10 and at least 5 total
-maintenance.expire_snapshots_with_retention_policy(
+maintenance.expire_snapshots().with_retention_policy(
     timestamp_ms=thirty_days_ago,
     retain_last_n=10,
     min_snapshots_to_keep=5

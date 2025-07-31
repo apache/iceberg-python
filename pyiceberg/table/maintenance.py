@@ -36,6 +36,14 @@ class MaintenanceTable:
     def __init__(self, tbl: Table) -> None:
         self.tbl = tbl
 
+    def expire_snapshots(self) -> "ExpireSnapshots":
+        """Return an ExpireSnapshots builder for snapshot expiration operations.
+
+        Returns:
+            ExpireSnapshots builder for configuring and executing snapshot expiration.
+        """
+        return ExpireSnapshots(self.tbl)
+
     def expire_snapshot_by_id(self, snapshot_id: int) -> None:
         """Expire a single snapshot by its ID.
 
@@ -332,3 +340,107 @@ class MaintenanceTable:
         max_ref_age_ms = int(max_ref_age) if max_ref_age is not None else None
 
         return max_snapshot_age, min_snapshots_to_keep, max_ref_age_ms
+
+
+class ExpireSnapshots:
+    """Builder for snapshot expiration operations."""
+
+    def __init__(self, tbl: Table) -> None:
+        self.tbl = tbl
+        self.maintenance = MaintenanceTable(tbl)
+
+    def by_id(self, snapshot_id: int) -> None:
+        """Expire a single snapshot by its ID.
+
+        Args:
+            snapshot_id: The ID of the snapshot to expire.
+
+        Raises:
+            ValueError: If the snapshot does not exist or is protected.
+        """
+        self.maintenance.expire_snapshot_by_id(snapshot_id)
+
+    def by_ids(self, snapshot_ids: List[int]) -> None:
+        """Expire multiple snapshots by their IDs.
+
+        Args:
+            snapshot_ids: List of snapshot IDs to expire.
+
+        Raises:
+            ValueError: If any snapshot does not exist or is protected.
+        """
+        self.maintenance._expire_snapshots_by_ids(snapshot_ids)
+
+    def older_than(self, timestamp_ms: int) -> None:
+        """Expire all unprotected snapshots with a timestamp older than a given value.
+
+        Args:
+            timestamp_ms: Only snapshots with timestamp_ms < this value will be expired.
+        """
+        self.maintenance.expire_snapshots_older_than(timestamp_ms)
+
+    def older_than_with_retention(
+        self, timestamp_ms: int, retain_last_n: Optional[int] = None, min_snapshots_to_keep: Optional[int] = None
+    ) -> None:
+        """Expire all unprotected snapshots with a timestamp older than a given value, with retention strategies.
+
+        Args:
+            timestamp_ms: Only snapshots with timestamp_ms < this value will be expired.
+            retain_last_n: Always keep the last N snapshots regardless of age.
+            min_snapshots_to_keep: Minimum number of snapshots to keep in total.
+        """
+        self.maintenance.expire_snapshots_older_than_with_retention(
+            timestamp_ms=timestamp_ms, retain_last_n=retain_last_n, min_snapshots_to_keep=min_snapshots_to_keep
+        )
+
+    def with_retention_policy(
+        self, timestamp_ms: Optional[int] = None, retain_last_n: Optional[int] = None, min_snapshots_to_keep: Optional[int] = None
+    ) -> None:
+        """Comprehensive snapshot expiration with multiple retention strategies.
+
+        This method provides a unified interface for snapshot expiration with various
+        retention policies to ensure operational resilience while allowing space reclamation.
+
+        The method will use table properties as defaults if they are set:
+        - history.expire.max-snapshot-age-ms: Default for timestamp_ms if not provided
+        - history.expire.min-snapshots-to-keep: Default for min_snapshots_to_keep if not provided
+        - history.expire.max-ref-age-ms: Used for ref expiration (branches/tags)
+
+        Args:
+            timestamp_ms: Only snapshots with timestamp_ms < this value will be considered for expiration.
+                         If None, will use history.expire.max-snapshot-age-ms table property if set.
+            retain_last_n: Always keep the last N snapshots regardless of age.
+                          Useful when regular snapshot creation occurs and users want to keep
+                          the last few for rollback purposes.
+            min_snapshots_to_keep: Minimum number of snapshots to keep in total.
+                                 Acts as a guardrail to prevent aggressive expiration logic.
+                                 If None, will use history.expire.min-snapshots-to-keep table property if set.
+
+        Raises:
+            ValueError: If retain_last_n or min_snapshots_to_keep is less than 1.
+
+        Examples:
+            # Use table property defaults
+            table.maintenance().expire_snapshots().with_retention_policy()
+
+            # Override defaults with explicit values
+            table.maintenance().expire_snapshots().with_retention_policy(
+                timestamp_ms=1234567890000,
+                retain_last_n=10,
+                min_snapshots_to_keep=5
+            )
+        """
+        self.maintenance.expire_snapshots_with_retention_policy(
+            timestamp_ms=timestamp_ms, retain_last_n=retain_last_n, min_snapshots_to_keep=min_snapshots_to_keep
+        )
+
+    def retain_last_n(self, n: int) -> None:
+        """Keep only the last N snapshots, expiring all others.
+
+        Args:
+            n: Number of most recent snapshots to keep.
+
+        Raises:
+            ValueError: If n is less than 1.
+        """
+        self.maintenance.retain_last_n_snapshots(n)
