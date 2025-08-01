@@ -1871,7 +1871,7 @@ def test_schema() -> Schema:
 def test_partition_spec() -> Schema:
     return PartitionSpec(
         PartitionField(1, 1000, IdentityTransform(), "VendorID"),
-        PartitionField(2, 1001, DayTransform(), "tpep_pickup_datetime"),
+        PartitionField(2, 1001, DayTransform(), "tpep_pickup_day"),
     )
 
 
