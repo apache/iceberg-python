@@ -405,7 +405,7 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         def _copy_with_new_status(entry: ManifestEntry, status: ManifestEntryStatus) -> ManifestEntry:
             return ManifestEntry.from_args(
                 status=status,
-                snapshot_id=entry.snapshot_id,
+                snapshot_id=self.snapshot_id if status != ManifestEntryStatus.EXISTING else entry.snapshot_id,
                 sequence_number=entry.sequence_number,
                 file_sequence_number=entry.file_sequence_number,
                 data_file=entry.data_file,
