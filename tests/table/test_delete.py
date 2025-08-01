@@ -23,7 +23,7 @@ from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.memory import InMemoryCatalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.expressions import LessThanOrEqual
-from pyiceberg.manifest import ManifestContent, ManifestEntryStatus
+from pyiceberg.manifest import ManifestEntryStatus
 
 
 @pytest.fixture
