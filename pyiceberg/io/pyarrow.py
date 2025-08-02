@@ -411,6 +411,29 @@ class PyArrowFileIO(FileIO):
         else:
             return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
 
+    def _initialize_fs(self, scheme: str, netloc: Optional[str] = None) -> FileSystem:
+        """Initialize FileSystem for different scheme."""
+        if scheme in {"oss"}:
+            return self._initialize_oss_fs()
+
+        elif scheme in {"s3", "s3a", "s3n"}:
+            return self._initialize_s3_fs(netloc)
+
+        elif scheme in {"hdfs", "viewfs"}:
+            return self._initialize_hdfs_fs(scheme, netloc)
+
+        elif scheme in {"gs", "gcs"}:
+            return self._initialize_gcs_fs()
+
+        elif scheme in {"abfs", "abfss", "wasb", "wasbs"}:
+            return self._initialize_azure_fs()
+
+        elif scheme in {"file"}:
+            return self._initialize_local_fs()
+
+        else:
+            raise ValueError(f"Unrecognized filesystem type in URI: {scheme}")
+
     def _process_basic_properties(
         self, property_mapping: Dict[str, str], special_properties: Set[str], prefix: str
     ) -> Dict[str, Any]:
@@ -436,29 +459,6 @@ class PyArrowFileIO(FileIO):
                 client_kwargs[param_name] = prop_value
 
         return client_kwargs
-
-    def _initialize_fs(self, scheme: str, netloc: Optional[str] = None) -> FileSystem:
-        """Initialize FileSystem for different scheme."""
-        if scheme in {"oss"}:
-            return self._initialize_oss_fs()
-
-        elif scheme in {"s3", "s3a", "s3n"}:
-            return self._initialize_s3_fs(netloc)
-
-        elif scheme in {"hdfs", "viewfs"}:
-            return self._initialize_hdfs_fs(scheme, netloc)
-
-        elif scheme in {"gs", "gcs"}:
-            return self._initialize_gcs_fs()
-
-        elif scheme in {"abfs", "abfss", "wasb", "wasbs"}:
-            return self._initialize_azure_fs()
-
-        elif scheme in {"file"}:
-            return self._initialize_local_fs()
-
-        else:
-            raise ValueError(f"Unrecognized filesystem type in URI: {scheme}")
 
     def _initialize_oss_fs(self) -> FileSystem:
         from pyarrow.fs import S3FileSystem
