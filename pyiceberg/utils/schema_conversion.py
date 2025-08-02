@@ -31,7 +31,6 @@ from pyiceberg.schema import (
     ICEBERG_FIELD_NAME_PROP,
     Schema,
     SchemaVisitorPerPrimitiveType,
-    _valid_avro_name,
     make_compatible_name,
     visit,
 )
@@ -541,7 +540,7 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
             "type": field_result if field.required else ["null", field_result],
         }
 
-        if not is_valid_field_name:
+        if orig_field_name != field_name:
             result[ICEBERG_FIELD_NAME_PROP] = orig_field_name
 
         if field.write_default is not None:
