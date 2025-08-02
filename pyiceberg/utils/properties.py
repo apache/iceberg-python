@@ -17,6 +17,7 @@
 
 from typing import (
     Any,
+    Callable,
     Dict,
     Optional,
 )
@@ -83,3 +84,55 @@ def get_header_properties(
 ) -> Properties:
     header_prefix_len = len(HEADER_PREFIX)
     return {key[header_prefix_len:]: value for key, value in properties.items() if key.startswith(HEADER_PREFIX)}
+
+
+def properties_with_prefix(
+    properties: Properties,
+    prefix: str,
+) -> Properties:
+    """
+    Returns subset of provided map with keys matching the provided prefix. Matching is
+    case-sensitive and the matching prefix is removed from the keys in returned map.
+
+    Args:
+        properties: input map
+        prefix: prefix to choose keys from input map
+
+    Returns:
+        subset of input map with keys starting with provided prefix and prefix trimmed out
+    """
+    if not properties:
+        return {}
+
+    return {
+        key[len(prefix):]: value
+        for key, value in properties.items()
+        if key.startswith(prefix)
+    }
+
+
+def filter_properties(
+    properties: Properties,
+    key_predicate: Callable[[str], bool],
+) -> Properties:
+    """
+    Filter the properties map by the provided key predicate.
+
+    Args:
+        properties: input map
+        key_predicate: predicate to choose keys from input map
+
+    Returns:
+        subset of input map with keys satisfying the predicate
+    """
+    if not properties:
+        return {}
+
+    if key_predicate is None:
+        raise ValueError("Invalid key predicate: None")
+
+    return {
+        key: value
+        for key, value in properties.items()
+        if key_predicate(key)
+    }
