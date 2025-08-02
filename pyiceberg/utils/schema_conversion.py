@@ -533,8 +533,7 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
             field_result["name"] = f"r{field.field_id}"
 
         orig_field_name = field.name
-        is_valid_field_name = _valid_avro_name(orig_field_name)
-        field_name = orig_field_name if is_valid_field_name else make_compatible_name(orig_field_name)
+        field_name = make_compatible_name(orig_field_name)
 
         result = {
             "name": field_name,
