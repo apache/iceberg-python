@@ -1202,6 +1202,49 @@ def test_sanitize_character_partitioned(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog")])
+def test_sanitize_character_partitioned_avro_bug(catalog: Catalog) -> None:
+    table_name = "default.test_table_partitioned_sanitized_character_avro"
+    try:
+        catalog.drop_table(table_name)
+    except NoSuchTableError:
+        pass
+
+    schema = Schema(
+        NestedField(id=1, name="😎", field_type=StringType(), required=False),
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(
+            source_id=1,
+            field_id=1001,
+            transform=IdentityTransform(),
+            name="😎",
+        )
+    )
+
+    tbl = _create_table(
+        session_catalog=catalog,
+        identifier=table_name,
+        schema=schema,
+        partition_spec=partition_spec,
+        data=[
+            pa.Table.from_arrays(
+                [pa.array([str(i) for i in range(22)])], schema=pa.schema([pa.field("😎", pa.string(), nullable=False)])
+            )
+        ],
+    )
+
+    assert len(tbl.scan().to_arrow()) == 22
+
+    con = tbl.scan().to_duckdb("table_test_debug")
+    result = con.query("SELECT * FROM table_test_debug").fetchall()
+    assert len(result) == 22
+
+    assert con.query("SHOW table_test_debug").fetchone() == ("😎", "VARCHAR", "YES", None, None, None)
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
     identifier = "default.test_table_write_subset_of_schema"
