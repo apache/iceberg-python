@@ -186,6 +186,7 @@ from pyiceberg.utils.decimal import unscaled_to_decimal
 from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import (
     filter_properties,
+    properties_with_prefix,
     property_as_bool,
     property_as_int,
 )
@@ -508,9 +509,8 @@ class PyArrowFileIO(FileIO):
         if session_name := get(S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME, "oss.session_name"):
             client_kwargs["session_name"] = session_name
 
-        remaining_oss_props = {
-            k.removeprefix("oss."): v for k, v in self.properties.items() if k.startswith("oss.") and k not in used_keys
-        }
+        # get the rest of the properties with the `oss.` prefix that are not already evaluated
+        remaining_oss_props = properties_with_prefix({k: v for k, v in self.properties.items() if k not in used_keys}, "oss.")
         client_kwargs = {**remaining_oss_props, **client_kwargs}
         return S3FileSystem(**client_kwargs)
 
@@ -555,9 +555,8 @@ class PyArrowFileIO(FileIO):
             if retry_instance := _import_retry_strategy(retry_strategy_impl):
                 client_kwargs["retry_strategy"] = retry_instance
 
-        remaining_s3_props = {
-            k.removeprefix("s3."): v for k, v in self.properties.items() if k.startswith("s3.") and k not in used_keys
-        }
+        # get the rest of the properties with the `s3.` prefix that are not already evaluated
+        remaining_s3_props = properties_with_prefix({k: v for k, v in self.properties.items() if k not in used_keys}, "s3.")
         client_kwargs = {**remaining_s3_props, **client_kwargs}
         return S3FileSystem(**client_kwargs)
 
@@ -599,9 +598,8 @@ class PyArrowFileIO(FileIO):
         if sas_token := get(ADLS_SAS_TOKEN, "adls.sas_token"):
             client_kwargs["sas_token"] = sas_token
 
-        remaining_adls_props = {
-            k.removeprefix("adls."): v for k, v in self.properties.items() if k.startswith("adls.") and k not in used_keys
-        }
+        # get the rest of the properties with the `adls.` prefix that are not already evaluated
+        remaining_adls_props = properties_with_prefix({k: v for k, v in self.properties.items() if k not in used_keys}, "adls.")
         client_kwargs = {**remaining_adls_props, **client_kwargs}
         return AzureFileSystem(**client_kwargs)
 
@@ -626,9 +624,8 @@ class PyArrowFileIO(FileIO):
         if kerb_ticket := get(HDFS_KERB_TICKET, "hdfs.kerb_ticket"):
             client_kwargs["kerb_ticket"] = kerb_ticket
 
-        remaining_hdfs_props = {
-            k.removeprefix("hdfs."): v for k, v in self.properties.items() if k.startswith("hdfs.") and k not in used_keys
-        }
+        # get the rest of the properties with the `hdfs.` prefix that are not already evaluated
+        remaining_hdfs_props = properties_with_prefix({k: v for k, v in self.properties.items() if k not in used_keys}, "hdfs.")
         client_kwargs = {**remaining_hdfs_props, **client_kwargs}
         return HadoopFileSystem(**client_kwargs)
 
@@ -660,14 +657,13 @@ class PyArrowFileIO(FileIO):
         if project_id := get(GCS_PROJECT_ID, "gcs.project_id"):
             client_kwargs["project_id"] = project_id
 
-        remaining_gcs_props = {
-            k.removeprefix("gcs."): v for k, v in self.properties.items() if k.startswith("gcs.") and k not in used_keys
-        }
+        # get the rest of the properties with the `gcs.` prefix that are not already evaluated
+        remaining_gcs_props = properties_with_prefix({k: v for k, v in self.properties.items() if k not in used_keys}, "gcs.")
         client_kwargs = {**remaining_gcs_props, **client_kwargs}
         return GcsFileSystem(**client_kwargs)
 
     def _initialize_local_fs(self) -> FileSystem:
-        client_kwargs = {k.removeprefix("file."): v for k, v in self.properties.items() if k.startswith("file.")}
+        client_kwargs = properties_with_prefix(self.properties, "file.")
         return PyArrowLocalFileSystem(**client_kwargs)
 
     def new_input(self, location: str) -> PyArrowFile:
