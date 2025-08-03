@@ -83,35 +83,24 @@ from pyiceberg.expressions.visitors import (
 )
 from pyiceberg.expressions.visitors import visit as boolean_expression_visit
 from pyiceberg.io import (
-    ADLS_ACCOUNT_HOST,
     ADLS_ACCOUNT_KEY,
     ADLS_ACCOUNT_NAME,
     ADLS_BLOB_STORAGE_AUTHORITY,
     ADLS_BLOB_STORAGE_SCHEME,
-    ADLS_CLIENT_ID,
-    ADLS_CLIENT_SECRET,
-    ADLS_CONNECTION_STRING,
     ADLS_DFS_STORAGE_AUTHORITY,
     ADLS_DFS_STORAGE_SCHEME,
     ADLS_SAS_TOKEN,
-    ADLS_TENANT_ID,
     AWS_ACCESS_KEY_ID,
     AWS_REGION,
     AWS_ROLE_ARN,
     AWS_ROLE_SESSION_NAME,
     AWS_SECRET_ACCESS_KEY,
     AWS_SESSION_TOKEN,
-    GCS_ACCESS,
-    GCS_CACHE_TIMEOUT,
-    GCS_CONSISTENCY,
     GCS_DEFAULT_LOCATION,
     GCS_PROJECT_ID,
-    GCS_REQUESTER_PAYS,
     GCS_SERVICE_HOST,
-    GCS_SESSION_KWARGS,
     GCS_TOKEN,
     GCS_TOKEN_EXPIRES_AT_MS,
-    GCS_VERSION_AWARE,
     HDFS_HOST,
     HDFS_KERB_TICKET,
     HDFS_PORT,
@@ -516,9 +505,8 @@ class PyArrowFileIO(FileIO):
 
         properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith(("s3.", "client.", "oss.")))
         used_keys: set[str] = set()
-        client_kwargs = {}
-
         get = lambda *keys: self._get_first_property_value_with_tracking(properties, used_keys, *keys)  # noqa: E731
+        client_kwargs = {}
 
         if endpoint := get(S3_ENDPOINT, "oss.endpoint_override"):
             client_kwargs["endpoint_override"] = endpoint
@@ -557,9 +545,8 @@ class PyArrowFileIO(FileIO):
 
         properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith(("s3.", "client.")))
         used_keys: set[str] = set()
-        client_kwargs = {}
-
         get = lambda *keys: self._get_first_property_value_with_tracking(properties, used_keys, *keys)  # noqa: E731
+        client_kwargs = {}
 
         if endpoint := get(S3_ENDPOINT, "s3.endpoint_override"):
             client_kwargs["endpoint_override"] = endpoint
@@ -612,26 +599,36 @@ class PyArrowFileIO(FileIO):
 
         from pyarrow.fs import AzureFileSystem
 
-        # Mapping from PyIceberg properties to AzureFileSystem parameter names
-        property_mapping = {
-            ADLS_ACCOUNT_NAME: "account_name",
-            ADLS_ACCOUNT_KEY: "account_key",
-            ADLS_BLOB_STORAGE_AUTHORITY: "blob_storage_authority",
-            ADLS_DFS_STORAGE_AUTHORITY: "dfs_storage_authority",
-            ADLS_BLOB_STORAGE_SCHEME: "blob_storage_scheme",
-            ADLS_DFS_STORAGE_SCHEME: "dfs_storage_scheme",
-            ADLS_SAS_TOKEN: "sas_token",
-            ADLS_CLIENT_ID: "client_id",
-            ADLS_CLIENT_SECRET: "client_secret",
-            ADLS_TENANT_ID: "tenant_id",
-        }
+        properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith("adls."))
+        used_keys: set[str] = set()
+        get = lambda *keys: self._get_first_property_value_with_tracking(properties, used_keys, *keys)  # noqa: E731
+        client_kwargs = {}
 
-        special_properties = {
-            ADLS_CONNECTION_STRING,
-            ADLS_ACCOUNT_HOST,
-        }
+        if account_name := get(ADLS_ACCOUNT_NAME, "adls.account_name"):
+            client_kwargs["account_name"] = account_name
 
-        client_kwargs = self._process_basic_properties(property_mapping, special_properties, "adls")
+        if account_key := get(ADLS_ACCOUNT_KEY, "adls.account_key"):
+            client_kwargs["account_key"] = account_key
+
+        if blob_storage_authority := get(ADLS_BLOB_STORAGE_AUTHORITY, "adls.blob_storage_authority"):
+            client_kwargs["blob_storage_authority"] = blob_storage_authority
+
+        if dfs_storage_authority := get(ADLS_DFS_STORAGE_AUTHORITY, "adls.dfs_storage_authority"):
+            client_kwargs["dfs_storage_authority"] = dfs_storage_authority
+
+        if blob_storage_scheme := get(ADLS_BLOB_STORAGE_SCHEME, "adls.blob_storage_scheme"):
+            client_kwargs["blob_storage_scheme"] = blob_storage_scheme
+
+        if dfs_storage_scheme := get(ADLS_DFS_STORAGE_SCHEME, "adls.dfs_storage_scheme"):
+            client_kwargs["dfs_storage_scheme"] = dfs_storage_scheme
+
+        if sas_token := get(ADLS_SAS_TOKEN, "adls.sas_token"):
+            client_kwargs["sas_token"] = sas_token
+
+        remaining_adls_props = {
+            k.removeprefix("adls."): v for k, v in self.properties.items() if k.startswith("adls.") and k not in used_keys
+        }
+        client_kwargs = {**remaining_adls_props, **client_kwargs}
         return AzureFileSystem(**client_kwargs)
 
     def _initialize_hdfs_fs(self, scheme: str, netloc: Optional[str]) -> FileSystem:
@@ -640,59 +637,62 @@ class PyArrowFileIO(FileIO):
         if netloc:
             return HadoopFileSystem.from_uri(f"{scheme}://{netloc}")
 
-        # Mapping from PyIceberg properties to HadoopFileSystem parameter names
-        property_mapping = {
-            HDFS_HOST: "host",
-            HDFS_PORT: "port",
-            HDFS_USER: "user",
-            HDFS_KERB_TICKET: "kerb_ticket",
+        properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith("hdfs."))
+        used_keys: set[str] = set()
+        get = lambda *keys: self._get_first_property_value_with_tracking(properties, used_keys, *keys)  # noqa: E731
+        client_kwargs = {}
+
+        if host := get(HDFS_HOST):
+            client_kwargs["host"] = host
+        if port := get(HDFS_PORT):
+            # port should be an integer type
+            client_kwargs["port"] = int(port)
+        if user := get(HDFS_USER):
+            client_kwargs["user"] = user
+        if kerb_ticket := get(HDFS_KERB_TICKET, "hdfs.kerb_ticket"):
+            client_kwargs["kerb_ticket"] = kerb_ticket
+
+        remaining_hdfs_props = {
+            k.removeprefix("hdfs."): v for k, v in self.properties.items() if k.startswith("hdfs.") and k not in used_keys
         }
-
-        hdfs_kwargs = self._process_basic_properties(property_mapping, set(), "hdfs")
-
-        # Handle port conversion to int
-        if "port" in hdfs_kwargs:
-            hdfs_kwargs["port"] = int(hdfs_kwargs["port"])
-
-        return HadoopFileSystem(**hdfs_kwargs)
+        client_kwargs = {**remaining_hdfs_props, **client_kwargs}
+        return HadoopFileSystem(**client_kwargs)
 
     def _initialize_gcs_fs(self) -> FileSystem:
         from pyarrow.fs import GcsFileSystem
 
-        # Mapping from PyIceberg properties to GcsFileSystem parameter names
-        property_mapping = {
-            GCS_TOKEN: "access_token",
-            GCS_DEFAULT_LOCATION: "default_bucket_location",
-            GCS_PROJECT_ID: "project_id",
-        }
+        properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith("gcs."))
+        used_keys: set[str] = set()
+        get = lambda *keys: self._get_first_property_value_with_tracking(properties, used_keys, *keys)  # noqa: E731
+        client_kwargs = {}
 
-        # Properties that need special handling
-        special_properties = {
-            GCS_TOKEN_EXPIRES_AT_MS,
-            GCS_SERVICE_HOST,
-            GCS_ACCESS,
-            GCS_CONSISTENCY,
-            GCS_CACHE_TIMEOUT,
-            GCS_REQUESTER_PAYS,
-            GCS_SESSION_KWARGS,
-            GCS_VERSION_AWARE,
-        }
-
-        gcs_kwargs = self._process_basic_properties(property_mapping, special_properties, "gcs")
-
-        if expiration := self.properties.get(GCS_TOKEN_EXPIRES_AT_MS):
-            gcs_kwargs["credential_token_expiration"] = millis_to_datetime(int(expiration))
-
-        if endpoint := self.properties.get(GCS_SERVICE_HOST):
+        if access_token := get(GCS_TOKEN, "gcs.access_token"):
+            client_kwargs["access_token"] = access_token
+        if expiration := get(GCS_TOKEN_EXPIRES_AT_MS, "gcs.credential_token_expiration"):
+            client_kwargs["credential_token_expiration"] = millis_to_datetime(int(expiration))
+        if bucket_location := get(GCS_DEFAULT_LOCATION, "gcs.default_bucket_location"):
+            client_kwargs["default_bucket_location"] = bucket_location
+        if endpoint := get(GCS_SERVICE_HOST):
             url_parts = urlparse(endpoint)
-            gcs_kwargs["scheme"] = url_parts.scheme
-            gcs_kwargs["endpoint_override"] = url_parts.netloc
+            client_kwargs["scheme"] = url_parts.scheme
+            client_kwargs["endpoint_override"] = url_parts.netloc
+        if scheme := get("gcs.scheme") and "scheme" not in client_kwargs:
+            client_kwargs["scheme"] = scheme
+        if endpoint_override := get("gcs.endpoint_override") and "endpoint_override" not in client_kwargs:
+            client_kwargs["endpoint_override"] = endpoint_override
 
-        return GcsFileSystem(**gcs_kwargs)
+        if project_id := get(GCS_PROJECT_ID, "gcs.project_id"):
+            client_kwargs["project_id"] = project_id
+
+        remaining_gcs_props = {
+            k.removeprefix("gcs."): v for k, v in self.properties.items() if k.startswith("gcs.") and k not in used_keys
+        }
+        client_kwargs = {**remaining_gcs_props, **client_kwargs}
+        return GcsFileSystem(**client_kwargs)
 
     def _initialize_local_fs(self) -> FileSystem:
-        local_kwargs = self._process_basic_properties({}, set(), "file")
-        return PyArrowLocalFileSystem(**local_kwargs)
+        client_kwargs = {k.removeprefix("file."): v for k, v in self.properties.items() if k.startswith("file.")}
+        return PyArrowLocalFileSystem(**client_kwargs)
 
     def new_input(self, location: str) -> PyArrowFile:
         """Get a PyArrowFile instance to read bytes from the file at the given location.
