@@ -426,32 +426,6 @@ class PyArrowFileIO(FileIO):
         else:
             raise ValueError(f"Unrecognized filesystem type in URI: {scheme}")
 
-    def _process_basic_properties(
-        self, property_mapping: Dict[str, str], special_properties: Set[str], prefix: str
-    ) -> Dict[str, Any]:
-        """Process basic property mappings and prefix passthrough logic."""
-        client_kwargs: Dict[str, Any] = {}
-
-        for prop_name, prop_value in self.properties.items():
-            if prop_value is None:
-                continue
-
-            # Skip properties that need special handling
-            if prop_name in special_properties:
-                continue
-
-            # Map known property names to filesystem parameter names
-            if prop_name in property_mapping:
-                param_name = property_mapping[prop_name]
-                client_kwargs[param_name] = prop_value
-
-            # Pass through any other {prefix}.* properties
-            elif prop_name.startswith(f"{prefix}."):
-                param_name = prop_name.split(".", 1)[1]
-                client_kwargs[param_name] = prop_value
-
-        return client_kwargs
-
     def _get_first_property_value_with_tracking(self, props: Properties, used_keys: set[str], *keys: str) -> Optional[Any]:
         """Tracks all candidate keys and returns the first value found."""
         used_keys.update(keys)
@@ -676,9 +650,11 @@ class PyArrowFileIO(FileIO):
             url_parts = urlparse(endpoint)
             client_kwargs["scheme"] = url_parts.scheme
             client_kwargs["endpoint_override"] = url_parts.netloc
-        if scheme := get("gcs.scheme") and "scheme" not in client_kwargs:
+        if scheme := get("gcs.scheme") and "scheme" not in client_kwargs:  # GCS_SERVICE_HOST takes precedence
             client_kwargs["scheme"] = scheme
-        if endpoint_override := get("gcs.endpoint_override") and "endpoint_override" not in client_kwargs:
+        if (
+            endpoint_override := get("gcs.endpoint_override") and "endpoint_override" not in client_kwargs
+        ):  # GCS_SERVICE_HOST takes precedence
             client_kwargs["endpoint_override"] = endpoint_override
 
         if project_id := get(GCS_PROJECT_ID, "gcs.project_id"):

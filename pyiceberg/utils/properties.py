@@ -86,26 +86,6 @@ def get_header_properties(
     return {key[header_prefix_len:]: value for key, value in properties.items() if key.startswith(HEADER_PREFIX)}
 
 
-def properties_with_prefix(
-    properties: Properties,
-    prefix: str,
-) -> Properties:
-    """
-    Return subset of provided map with keys matching the provided prefix. Matching is case-sensitive and the matching prefix is removed from the keys in returned map.
-
-    Args:
-        properties: input map
-        prefix: prefix to choose keys from input map
-
-    Returns:
-        subset of input map with keys starting with provided prefix and prefix trimmed out
-    """
-    if not properties:
-        return {}
-
-    return {key[len(prefix) :]: value for key, value in properties.items() if key.startswith(prefix)}
-
-
 def filter_properties(
     properties: Properties,
     key_predicate: Callable[[str], bool],
