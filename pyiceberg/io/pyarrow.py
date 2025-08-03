@@ -481,7 +481,7 @@ class PyArrowFileIO(FileIO):
         properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith(("s3.", "client.", "oss.")))
         used_keys: set[str] = set()
         get = lambda *keys: self._get_first_property_value_with_tracking(properties, used_keys, *keys)  # noqa: E731
-        client_kwargs = {}
+        client_kwargs: Properties = {}
 
         if endpoint := get(S3_ENDPOINT, "oss.endpoint_override"):
             client_kwargs["endpoint_override"] = endpoint
@@ -520,7 +520,12 @@ class PyArrowFileIO(FileIO):
         properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith(("s3.", "client.")))
         used_keys: set[str] = set()
         get = lambda *keys: self._get_first_property_value_with_tracking(properties, used_keys, *keys)  # noqa: E731
-        client_kwargs = {}
+        client_kwargs: Properties = {}
+
+        # Handle S3 region configuration with optional auto-resolution
+        client_kwargs["region"] = self._resolve_s3_region(
+            provided_region=get(S3_REGION, AWS_REGION), resolve_region_override=get(S3_RESOLVE_REGION), bucket=netloc
+        )
 
         if endpoint := get(S3_ENDPOINT, "s3.endpoint_override"):
             client_kwargs["endpoint_override"] = endpoint
@@ -530,15 +535,6 @@ class PyArrowFileIO(FileIO):
             client_kwargs["secret_key"] = secret_key
         if session_token := get(S3_SESSION_TOKEN, AWS_SESSION_TOKEN, "s3.session_token"):
             client_kwargs["session_token"] = session_token
-
-        # Handle S3 region configuration with optional auto-resolution
-        client_kwargs["region"] = self._resolve_s3_region(
-            provided_region=get(S3_REGION, AWS_REGION), resolve_region_override=get(S3_RESOLVE_REGION), bucket=netloc
-        )
-
-        if force_virtual_addressing := get(S3_FORCE_VIRTUAL_ADDRESSING, "s3.force_virtual_addressing"):
-            client_kwargs["force_virtual_addressing"] = self._convert_str_to_bool(force_virtual_addressing)
-
         if proxy_uri := get(S3_PROXY_URI, "s3.proxy_options"):
             client_kwargs["proxy_options"] = proxy_uri
         if connect_timeout := get(S3_CONNECT_TIMEOUT, "s3.connect_timeout"):
@@ -550,6 +546,8 @@ class PyArrowFileIO(FileIO):
         if session_name := get(S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME, "s3.session_name"):
             client_kwargs["session_name"] = session_name
 
+        if force_virtual_addressing := get(S3_FORCE_VIRTUAL_ADDRESSING, "s3.force_virtual_addressing"):
+            client_kwargs["force_virtual_addressing"] = self._convert_str_to_bool(force_virtual_addressing)
         # Handle retry strategy special case
         if retry_strategy_impl := get(S3_RETRY_STRATEGY_IMPL, "s3.retry_strategy"):
             if retry_instance := _import_retry_strategy(retry_strategy_impl):
@@ -575,7 +573,7 @@ class PyArrowFileIO(FileIO):
         properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith("adls."))
         used_keys: set[str] = set()
         get = lambda *keys: self._get_first_property_value_with_tracking(properties, used_keys, *keys)  # noqa: E731
-        client_kwargs = {}
+        client_kwargs: Properties = {}
 
         if account_name := get(ADLS_ACCOUNT_NAME, "adls.account_name"):
             client_kwargs["account_name"] = account_name
@@ -612,7 +610,7 @@ class PyArrowFileIO(FileIO):
         properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith("hdfs."))
         used_keys: set[str] = set()
         get = lambda *keys: self._get_first_property_value_with_tracking(properties, used_keys, *keys)  # noqa: E731
-        client_kwargs = {}
+        client_kwargs: Properties = {}
 
         if host := get(HDFS_HOST):
             client_kwargs["host"] = host
@@ -635,7 +633,7 @@ class PyArrowFileIO(FileIO):
         properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith("gcs."))
         used_keys: set[str] = set()
         get = lambda *keys: self._get_first_property_value_with_tracking(properties, used_keys, *keys)  # noqa: E731
-        client_kwargs = {}
+        client_kwargs: Properties = {}
 
         if access_token := get(GCS_TOKEN, "gcs.access_token"):
             client_kwargs["access_token"] = access_token
