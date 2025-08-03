@@ -190,13 +190,14 @@ from pyiceberg.types import (
     TimeType,
     UnknownType,
     UUIDType,
+    strtobool,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
 from pyiceberg.utils.decimal import unscaled_to_decimal
 from pyiceberg.utils.deprecated import deprecation_message
-from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int
+from pyiceberg.utils.properties import get_first_property_value, properties_with_prefix, property_as_bool, property_as_int
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
 
@@ -463,43 +464,41 @@ class PyArrowFileIO(FileIO):
     def _initialize_oss_fs(self) -> FileSystem:
         from pyarrow.fs import S3FileSystem
 
-        # Mapping from PyIceberg properties to S3FileSystem parameter names
-        property_mapping = {
-            S3_ENDPOINT: "endpoint_override",
-            S3_PROXY_URI: "proxy_options",
-            S3_CONNECT_TIMEOUT: "connect_timeout",
-            S3_REQUEST_TIMEOUT: "request_timeout",
-        }
+        client_kwargs = {}
+        if endpoint := get_first_property_value(self.properties, S3_ENDPOINT, "oss.endpoint_override"):
+            client_kwargs["endpoint_override"] = endpoint
+        if access_key := get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID, "oss.access_key"):
+            client_kwargs["access_key"] = access_key
+        if secret_key := get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY, "oss.secret_key"):
+            client_kwargs["secret_key"] = secret_key
+        if session_token := get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN, "oss.session_token"):
+            client_kwargs["session_token"] = session_token
+        if region := get_first_property_value(self.properties, S3_REGION, AWS_REGION, "oss.region"):
+            client_kwargs["region"] = region
+        # Check for force_virtual_addressing in order of preference, defaulting to True if not found
+        if force_virtual_addressing := get_first_property_value(
+            self.properties, S3_FORCE_VIRTUAL_ADDRESSING, "oss.force_virtual_addressing"
+        ):
+            if isinstance(force_virtual_addressing, str):  # S3_FORCE_VIRTUAL_ADDRESSING's value can be a string
+                force_virtual_addressing = strtobool(force_virtual_addressing)
+            client_kwargs["force_virtual_addressing"] = force_virtual_addressing
+        else:
+            client_kwargs["force_virtual_addressing"] = True
+        if proxy_uri := get_first_property_value(self.properties, S3_PROXY_URI, "oss.proxy_options"):
+            client_kwargs["proxy_options"] = proxy_uri
+        if connect_timeout := get_first_property_value(self.properties, S3_CONNECT_TIMEOUT, "oss.connect_timeout"):
+            client_kwargs["connect_timeout"] = float(connect_timeout)
+        if request_timeout := get_first_property_value(self.properties, S3_REQUEST_TIMEOUT, "oss.request_timeout"):
+            client_kwargs["request_timeout"] = float(request_timeout)
+        if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN, "oss.role_arn"):
+            client_kwargs["role_arn"] = role_arn
+        if session_name := get_first_property_value(
+            self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME, "oss.session_name"
+        ):
+            client_kwargs["session_name"] = session_name
 
-        # Properties that need special handling
-        special_properties = {
-            S3_ACCESS_KEY_ID,
-            S3_SECRET_ACCESS_KEY,
-            S3_SESSION_TOKEN,
-            S3_CONNECT_TIMEOUT,
-            S3_REQUEST_TIMEOUT,
-            S3_FORCE_VIRTUAL_ADDRESSING,
-            S3_ROLE_SESSION_NAME,
-            S3_RESOLVE_REGION,
-            S3_REGION,
-        }
-
-        client_kwargs = self._process_basic_properties(property_mapping, special_properties, "s3")
-
-        if S3_ACCESS_KEY_ID in self.properties or AWS_ACCESS_KEY_ID in self.properties:
-            client_kwargs["access_key"] = get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID)
-
-        if S3_SECRET_ACCESS_KEY in self.properties or AWS_SECRET_ACCESS_KEY in self.properties:
-            client_kwargs["secret_key"] = get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY)
-
-        if S3_SESSION_TOKEN in self.properties or AWS_SESSION_TOKEN in self.properties:
-            client_kwargs["session_token"] = get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN)
-
-        if S3_REGION in self.properties or AWS_REGION in self.properties:
-            client_kwargs["region"] = get_first_property_value(self.properties, S3_REGION, AWS_REGION)
-
-        client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, S3_FORCE_VIRTUAL_ADDRESSING, True)
-
+        oss_properties = properties_with_prefix(self.properties, prefix="oss.")
+        client_kwargs = {**oss_properties, **client_kwargs}
         return S3FileSystem(**client_kwargs)
 
     def _initialize_s3_fs(self, netloc: Optional[str]) -> FileSystem:

@@ -91,8 +91,7 @@ def properties_with_prefix(
     prefix: str,
 ) -> Properties:
     """
-    Returns subset of provided map with keys matching the provided prefix. Matching is
-    case-sensitive and the matching prefix is removed from the keys in returned map.
+    Return subset of provided map with keys matching the provided prefix. Matching is case-sensitive and the matching prefix is removed from the keys in returned map.
 
     Args:
         properties: input map
@@ -104,11 +103,7 @@ def properties_with_prefix(
     if not properties:
         return {}
 
-    return {
-        key[len(prefix):]: value
-        for key, value in properties.items()
-        if key.startswith(prefix)
-    }
+    return {key[len(prefix) :]: value for key, value in properties.items() if key.startswith(prefix)}
 
 
 def filter_properties(
@@ -131,8 +126,4 @@ def filter_properties(
     if key_predicate is None:
         raise ValueError("Invalid key predicate: None")
 
-    return {
-        key: value
-        for key, value in properties.items()
-        if key_predicate(key)
-    }
+    return {key: value for key, value in properties.items() if key_predicate(key)}
