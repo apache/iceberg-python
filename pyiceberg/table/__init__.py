@@ -432,7 +432,9 @@ class Transaction:
             name_mapping=self.table_metadata.name_mapping(),
         )
 
-    def update_snapshot(self, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = None) -> UpdateSnapshot:
+    def update_snapshot(
+        self, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = None, stage_only: bool = False
+    ) -> UpdateSnapshot:
         """Create a new UpdateSnapshot to produce a new snapshot for the table.
 
         Returns:
@@ -441,7 +443,9 @@ class Transaction:
         if branch is None:
             branch = MAIN_BRANCH
 
-        return UpdateSnapshot(self, io=self._table.io, branch=branch, snapshot_properties=snapshot_properties)
+        return UpdateSnapshot(
+            self, io=self._table.io, branch=branch, snapshot_properties=snapshot_properties, stage_only=stage_only
+        )
 
     def update_statistics(self) -> UpdateStatistics:
         """
