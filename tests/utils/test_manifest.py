@@ -153,8 +153,8 @@ def test_read_manifest_entry(generated_manifest_entry_file: str) -> None:
     }
     assert data_file.nan_value_counts == {16: 0, 17: 0, 18: 0, 19: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0}
     assert data_file.lower_bounds == {
-        2: b"2020-04-01 00:00",
-        3: b"2020-04-01 00:12",
+        2: b"\x01\x00\x00\x00",
+        3: b"\x01\x00\x00\x00",
         7: b"\x03\x00\x00\x00",
         8: b"\x01\x00\x00\x00",
         10: b"\xf6(\\\x8f\xc2\x05S\xc0",
@@ -168,8 +168,8 @@ def test_read_manifest_entry(generated_manifest_entry_file: str) -> None:
         19: b"\x00\x00\x00\x00\x00\x00\x04\xc0",
     }
     assert data_file.upper_bounds == {
-        2: b"2020-04-30 23:5:",
-        3: b"2020-05-01 00:41",
+        2: b"\x06\x00\x00\x00",
+        3: b"\x06\x00\x00\x00",
         7: b"\t\x01\x00\x00",
         8: b"\t\x01\x00\x00",
         10: b"\xcd\xcc\xcc\xcc\xcc,_@",
@@ -397,7 +397,7 @@ def test_write_manifest(
 
         expected_metadata = {
             "schema": test_schema.model_dump_json(),
-            "partition-spec": """[{"source-id":1,"field-id":1000,"transform":"identity","name":"VendorID"},{"source-id":2,"field-id":1001,"transform":"day","name":"tpep_pickup_datetime"}]""",
+            "partition-spec": """[{"source-id":1,"field-id":1000,"transform":"identity","name":"VendorID"},{"source-id":2,"field-id":1001,"transform":"day","name":"tpep_pickup_day"}]""",
             "partition-spec-id": str(demo_manifest_file.partition_spec_id),
             "format-version": str(format_version),
         }
@@ -490,8 +490,8 @@ def test_write_manifest(
         }
         assert data_file.nan_value_counts == {16: 0, 17: 0, 18: 0, 19: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0}
         assert data_file.lower_bounds == {
-            2: b"2020-04-01 00:00",
-            3: b"2020-04-01 00:12",
+            2: b"\x01\x00\x00\x00",
+            3: b"\x01\x00\x00\x00",
             7: b"\x03\x00\x00\x00",
             8: b"\x01\x00\x00\x00",
             10: b"\xf6(\\\x8f\xc2\x05S\xc0",
@@ -505,8 +505,8 @@ def test_write_manifest(
             19: b"\x00\x00\x00\x00\x00\x00\x04\xc0",
         }
         assert data_file.upper_bounds == {
-            2: b"2020-04-30 23:5:",
-            3: b"2020-05-01 00:41",
+            2: b"\x06\x00\x00\x00",
+            3: b"\x06\x00\x00\x00",
             7: b"\t\x01\x00\x00",
             8: b"\t\x01\x00\x00",
             10: b"\xcd\xcc\xcc\xcc\xcc,_@",
