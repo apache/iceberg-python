@@ -63,7 +63,7 @@ jobs:
     - name: Run linters
       run: make lint
     - name: Run unit tests with coverage
-      run: make test
+      run: COVERAGE=1 make test
     - name: Generate coverage report (85%) # Coverage threshold should only increase over time — never decrease it!
       run: COVERAGE_FAIL_UNDER=85 make coverage-report
 
