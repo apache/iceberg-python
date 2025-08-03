@@ -471,10 +471,50 @@ class PyArrowFileIO(FileIO):
                 return props[key]
         return None
 
+    def _convert_str_to_bool(self, value: Any) -> bool:
+        """Convert string or other value to boolean, handling string representations properly."""
+        if isinstance(value, str):
+            return strtobool(value)
+        return bool(value)
+
+    def _resolve_s3_region(
+        self, provided_region: Optional[str], resolve_region_override: Any, bucket: Optional[str]
+    ) -> Optional[str]:
+        """
+        Resolve S3 region based on configuration and optional bucket-based resolution.
+
+        Args:
+            provided_region: Region explicitly provided in configuration
+            resolve_region_override: Whether to resolve region from bucket (can be string or bool)
+            bucket: Bucket name for region resolution
+
+        Returns:
+            The resolved region string, or None if no region could be determined
+        """
+        # Handle resolve_region_override conversion
+        should_resolve_region = False
+        if resolve_region_override is not None:
+            should_resolve_region = self._convert_str_to_bool(resolve_region_override)
+
+        # If no region provided or explicit resolve requested, try to resolve from bucket
+        if provided_region is None or should_resolve_region:
+            resolved_region = _cached_resolve_s3_region(bucket=bucket)
+
+            # Warn if resolved region differs from provided region
+            if provided_region is not None and resolved_region and resolved_region != provided_region:
+                logger.warning(
+                    f"PyArrow FileIO overriding S3 bucket region for bucket {bucket}: "
+                    f"provided region {provided_region}, actual region {resolved_region}"
+                )
+
+            return resolved_region or provided_region
+
+        return provided_region
+
     def _initialize_oss_fs(self) -> FileSystem:
         from pyarrow.fs import S3FileSystem
 
-        properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith(("oss.", "client.")))
+        properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith(("s3.", "client.", "oss.")))
         used_keys: set[str] = set()
         client_kwargs = {}
 
@@ -490,12 +530,10 @@ class PyArrowFileIO(FileIO):
             client_kwargs["session_token"] = session_token
         if region := get(S3_REGION, AWS_REGION, "oss.region"):
             client_kwargs["region"] = region
-        # Check for force_virtual_addressing in order of preference. For oss FS, defaulting to True if not found
         if force_virtual_addressing := get(S3_FORCE_VIRTUAL_ADDRESSING, "oss.force_virtual_addressing"):
-            if isinstance(force_virtual_addressing, str):  # S3_FORCE_VIRTUAL_ADDRESSING's value can be a string
-                force_virtual_addressing = strtobool(force_virtual_addressing)
-            client_kwargs["force_virtual_addressing"] = force_virtual_addressing
+            client_kwargs["force_virtual_addressing"] = self._convert_str_to_bool(force_virtual_addressing)
         else:
+            # For OSS FS, default to True
             client_kwargs["force_virtual_addressing"] = True
         if proxy_uri := get(S3_PROXY_URI, "oss.proxy_options"):
             client_kwargs["proxy_options"] = proxy_uri
@@ -532,26 +570,13 @@ class PyArrowFileIO(FileIO):
         if session_token := get(S3_SESSION_TOKEN, AWS_SESSION_TOKEN, "s3.session_token"):
             client_kwargs["session_token"] = session_token
 
-        provided_region = get(S3_REGION, AWS_REGION)
-        # Do this when we don't provide the region at all, or when we explicitly enable it
-        if provided_region is None or property_as_bool(self.properties, S3_RESOLVE_REGION, False) is True:
-            # Resolve region from netloc(bucket), fallback to user-provided region
-            # Only supported by buckets hosted by S3
-            bucket_region = _cached_resolve_s3_region(bucket=netloc) or provided_region
-            if provided_region is not None and bucket_region != provided_region:
-                logger.warning(
-                    f"PyArrow FileIO overriding S3 bucket region for bucket {netloc}: "
-                    f"provided region {provided_region}, actual region {bucket_region}"
-                )
-        else:
-            bucket_region = provided_region
-        client_kwargs["region"] = bucket_region
-        used_keys.add(S3_RESOLVE_REGION)
+        # Handle S3 region configuration with optional auto-resolution
+        client_kwargs["region"] = self._resolve_s3_region(
+            provided_region=get(S3_REGION, AWS_REGION), resolve_region_override=get(S3_RESOLVE_REGION), bucket=netloc
+        )
 
         if force_virtual_addressing := get(S3_FORCE_VIRTUAL_ADDRESSING, "s3.force_virtual_addressing"):
-            if isinstance(force_virtual_addressing, str):  # S3_FORCE_VIRTUAL_ADDRESSING's value can be a string
-                force_virtual_addressing = strtobool(force_virtual_addressing)
-            client_kwargs["force_virtual_addressing"] = force_virtual_addressing
+            client_kwargs["force_virtual_addressing"] = self._convert_str_to_bool(force_virtual_addressing)
 
         if proxy_uri := get(S3_PROXY_URI, "s3.proxy_options"):
             client_kwargs["proxy_options"] = proxy_uri
