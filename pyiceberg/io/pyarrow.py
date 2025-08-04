@@ -645,10 +645,10 @@ class PyArrowFileIO(FileIO):
             url_parts = urlparse(endpoint)
             client_kwargs["scheme"] = url_parts.scheme
             client_kwargs["endpoint_override"] = url_parts.netloc
-        if scheme := get("gcs.scheme") and "scheme" not in client_kwargs:  # GCS_SERVICE_HOST takes precedence
+        if (scheme := get("gcs.scheme")) and "scheme" not in client_kwargs:  # GCS_SERVICE_HOST takes precedence
             client_kwargs["scheme"] = scheme
         if (
-            endpoint_override := get("gcs.endpoint_override") and "endpoint_override" not in client_kwargs
+            (endpoint_override := get("gcs.endpoint_override")) and "endpoint_override" not in client_kwargs
         ):  # GCS_SERVICE_HOST takes precedence
             client_kwargs["endpoint_override"] = endpoint_override
 
