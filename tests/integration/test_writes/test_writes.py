@@ -1804,6 +1804,23 @@ def test_write_optional_list(session_catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
+def test_double_commit_transaction(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = "default.arrow_data_files"
+    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, [])
+
+    assert len(tbl.metadata.metadata_log) == 0
+
+    with tbl.transaction() as tx:
+        tx.append(arrow_table_with_null)
+        tx.commit_transaction()
+
+    assert len(tbl.metadata.metadata_log) == 1
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
 def test_evolve_and_write(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
