@@ -1259,7 +1259,7 @@ manifest_entry_records = [
             ],
             "lower_bounds": [
                 {"key": 2, "value": b"\x01\x00\x00\x00\x00\x00\x00\x00"},
-                {"key": 2, "value": b"\x01\x00\x00\x00\x00\x00\x00\x00"},
+                {"key": 3, "value": b"\x01\x00\x00\x00\x00\x00\x00\x00"},
                 {"key": 7, "value": b"\x03\x00\x00\x00"},
                 {"key": 8, "value": b"\x01\x00\x00\x00"},
                 {"key": 10, "value": b"\xf6(\\\x8f\xc2\x05S\xc0"},
@@ -1380,7 +1380,7 @@ manifest_entry_records = [
             "lower_bounds": [
                 {"key": 1, "value": b"\x01\x00\x00\x00"},
                 {"key": 2, "value": b"\x01\x00\x00\x00\x00\x00\x00\x00"},
-                {"key": 2, "value": b"\x01\x00\x00\x00\x00\x00\x00\x00"},
+                {"key": 3, "value": b"\x01\x00\x00\x00\x00\x00\x00\x00"},
                 {"key": 4, "value": b"\x00\x00\x00\x00"},
                 {"key": 5, "value": b"\x01\x00\x00\x00"},
                 {"key": 6, "value": b"N"},
