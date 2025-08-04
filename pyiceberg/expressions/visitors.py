@@ -874,7 +874,7 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
     projected_field_values: Dict[str, Any]
 
     def __init__(
-        self, file_schema: Schema, case_sensitive: bool, projected_field_values: Optional[Dict[str, Any]] = None
+        self, file_schema: Schema, case_sensitive: bool, projected_field_values: Dict[str, Any] = EMPTY_DICT
     ) -> None:
         self.file_schema = file_schema
         self.case_sensitive = case_sensitive
