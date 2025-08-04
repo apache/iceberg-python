@@ -239,7 +239,7 @@ Use this format for additional properties:
 
 Where:
 
-- `{fs_scheme}` is the filesystem scheme (e.g., `s3`, `hdfs`, `gcs`, `adls`, `oss`, `file`)
+- `{fs_scheme}` is the filesystem scheme (e.g., `s3`, `hdfs`, `gcs`, `adls`, `file`)
 - `{parameter_name}` must match the exact parameter name expected by the PyArrow filesystem constructor
 - `{value}` must be the correct type expected by the underlying filesystem (string, integer, boolean, etc.)
 
@@ -251,7 +251,6 @@ Where:
 | `hdfs.`         | [HadoopFileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.HadoopFileSystem.html)  | `hdfs.replication=3`        | Passed as `replication=3` to HadoopFileSystem       |
 | `gcs.`          | [GcsFileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.GcsFileSystem.html)        | `gcs.project_id=test`       | Passed as `project_id='test'` to GcsFileSystem      |
 | `adls.`         | [AzureFileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.AzureFileSystem.html)    | `adls.account_name=foo` | Passed as `account_name=foo` to AzureFileSystem |
-| `oss.`          | [S3FileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.S3FileSystem.html)          | `oss.connect_timeout=30.0`  | Passed as `connect_timeout=30.0` to S3FileSystem    |
 | `file.`         | [LocalFileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.LocalFileSystem.html)    | `file.use_mmap=true`        | Passed as `use_mmap=True` to LocalFileSystem        |
 
 **Note:** Refer to the PyArrow documentation for each filesystem to understand the available parameters and their expected types. Property values are passed directly to PyArrow, so they must match the exact parameter names and types expected by the filesystem constructors.

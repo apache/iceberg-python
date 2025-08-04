@@ -478,40 +478,40 @@ class PyArrowFileIO(FileIO):
     def _initialize_oss_fs(self) -> FileSystem:
         from pyarrow.fs import S3FileSystem
 
-        properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith(("s3.", "client.", "oss.")))
+        properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith(("s3.", "client.")))
         used_keys: set[str] = set()
         get = lambda *keys: self._get_first_property_value_with_tracking(properties, used_keys, *keys)  # noqa: E731
         client_kwargs: Properties = {}
 
-        if endpoint := get(S3_ENDPOINT, "oss.endpoint_override"):
+        if endpoint := get(S3_ENDPOINT, "s3.endpoint_override"):
             client_kwargs["endpoint_override"] = endpoint
-        if access_key := get(S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID, "oss.access_key"):
+        if access_key := get(S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID, "s3.access_key"):
             client_kwargs["access_key"] = access_key
-        if secret_key := get(S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY, "oss.secret_key"):
+        if secret_key := get(S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY, "s3.secret_key"):
             client_kwargs["secret_key"] = secret_key
-        if session_token := get(S3_SESSION_TOKEN, AWS_SESSION_TOKEN, "oss.session_token"):
+        if session_token := get(S3_SESSION_TOKEN, AWS_SESSION_TOKEN, "s3.session_token"):
             client_kwargs["session_token"] = session_token
-        if region := get(S3_REGION, AWS_REGION, "oss.region"):
+        if region := get(S3_REGION, AWS_REGION):
             client_kwargs["region"] = region
-        if force_virtual_addressing := get(S3_FORCE_VIRTUAL_ADDRESSING, "oss.force_virtual_addressing"):
+        if force_virtual_addressing := get(S3_FORCE_VIRTUAL_ADDRESSING, "s3.force_virtual_addressing"):
             client_kwargs["force_virtual_addressing"] = self._convert_str_to_bool(force_virtual_addressing)
         else:
-            # For OSS FS, default to True
+            # For Alibaba OSS protocol, default to True
             client_kwargs["force_virtual_addressing"] = True
-        if proxy_uri := get(S3_PROXY_URI, "oss.proxy_options"):
+        if proxy_uri := get(S3_PROXY_URI, "s3.proxy_options"):
             client_kwargs["proxy_options"] = proxy_uri
-        if connect_timeout := get(S3_CONNECT_TIMEOUT, "oss.connect_timeout"):
+        if connect_timeout := get(S3_CONNECT_TIMEOUT, "s3.connect_timeout"):
             client_kwargs["connect_timeout"] = float(connect_timeout)
-        if request_timeout := get(S3_REQUEST_TIMEOUT, "oss.request_timeout"):
+        if request_timeout := get(S3_REQUEST_TIMEOUT, "s3.request_timeout"):
             client_kwargs["request_timeout"] = float(request_timeout)
-        if role_arn := get(S3_ROLE_ARN, AWS_ROLE_ARN, "oss.role_arn"):
+        if role_arn := get(S3_ROLE_ARN, AWS_ROLE_ARN, "s3.role_arn"):
             client_kwargs["role_arn"] = role_arn
-        if session_name := get(S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME, "oss.session_name"):
+        if session_name := get(S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME, "s3.session_name"):
             client_kwargs["session_name"] = session_name
 
-        # get the rest of the properties with the `oss.` prefix that are not already evaluated
-        remaining_oss_props = properties_with_prefix({k: v for k, v in self.properties.items() if k not in used_keys}, "oss.")
-        client_kwargs = {**remaining_oss_props, **client_kwargs}
+        # get the rest of the properties with the `s3.` prefix that are not already evaluated
+        remaining_s3_props = properties_with_prefix({k: v for k, v in self.properties.items() if k not in used_keys}, "s3.")
+        client_kwargs = {**remaining_s3_props, **client_kwargs}
         return S3FileSystem(**client_kwargs)
 
     def _initialize_s3_fs(self, netloc: Optional[str]) -> FileSystem:
