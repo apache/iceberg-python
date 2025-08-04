@@ -989,10 +989,9 @@ class CreateTableTransaction(Transaction):
             The table with the updates applied.
         """
         if len(self._updates) > 0:
-            self._requirements += (AssertCreate(),)
             self._table._do_commit(  # pylint: disable=W0212
                 updates=self._updates,
-                requirements=self._requirements,
+                requirements=(AssertCreate(),),
             )
 
         self._updates = ()
