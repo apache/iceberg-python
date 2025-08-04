@@ -215,13 +215,10 @@ PyIceberg uses [S3FileSystem](https://arrow.apache.org/docs/python/generated/pya
 
 #### PyArrow Specific Properties
 
-<!-- markdown-link-check-disable -->
-
 | Key                             | Example | Description                                                                                                                                                                                                                                                                                                                                                     |
 | ------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | pyarrow.use-large-types-on-read | True    | Use large PyArrow types i.e. [large_string](https://arrow.apache.org/docs/python/generated/pyarrow.large_string.html), [large_binary](https://arrow.apache.org/docs/python/generated/pyarrow.large_binary.html) and [large_list](https://arrow.apache.org/docs/python/generated/pyarrow.large_list.html) field types on table scans. The default value is True. |
 
-<!-- markdown-link-check-enable-->
 #### Advanced FileSystem Configuration
 
 When using `PyArrowFileIO`, you can **pass additional configuration properties directly to the underlying PyArrow filesystem implementations**. This feature enables you to use any PyArrow filesystem option without requiring explicit PyIceberg support.
@@ -248,8 +245,6 @@ Where:
 
 ##### Supported Prefixes and FileSystems
 
-<!-- markdown-link-check-disable -->
-
 | Property Prefix | FileSystem                                                                                           | Example                     | Description                                         |
 |-----------------|------------------------------------------------------------------------------------------------------|-----------------------------|-----------------------------------------------------|
 | `s3.`           | [S3FileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.S3FileSystem.html)          | `s3.load_frequency=900`     | Passed as `load_frequency=900` to S3FileSystem      |
@@ -258,8 +253,6 @@ Where:
 | `adls.`         | [AzureFileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.AzureFileSystem.html)    | `adls.account_name=foo` | Passed as `account_name=foo` to AzureFileSystem |
 | `oss.`          | [S3FileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.S3FileSystem.html)          | `oss.connect_timeout=30.0`  | Passed as `connect_timeout=30.0` to S3FileSystem    |
 | `file.`         | [LocalFileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.LocalFileSystem.html)    | `file.use_mmap=true`        | Passed as `use_mmap=True` to LocalFileSystem        |
-
-<!-- markdown-link-check-enable -->
 
 **Note:** Refer to the PyArrow documentation for each filesystem to understand the available parameters and their expected types. Property values are passed directly to PyArrow, so they must match the exact parameter names and types expected by the filesystem constructors.
 
