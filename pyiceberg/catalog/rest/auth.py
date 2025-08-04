@@ -42,11 +42,15 @@ class AuthManager(ABC):
 
 
 class NoopAuthManager(AuthManager):
+    """Auth Manager implementation with no auth."""
+
     def auth_header(self) -> Optional[str]:
         return None
 
 
 class BasicAuthManager(AuthManager):
+    """AuthManager implementation that supports basic password auth."""
+
     def __init__(self, username: str, password: str):
         credentials = f"{username}:{password}"
         self._token = base64.b64encode(credentials.encode()).decode()
@@ -56,6 +60,12 @@ class BasicAuthManager(AuthManager):
 
 
 class LegacyOAuth2AuthManager(AuthManager):
+    """Legacy OAuth2 AuthManager implementation.
+
+    This class exists for backward compatibility, and will be removed in
+    PyIceberg 1.0.0 in favor of OAuth2AuthManager.
+    """
+
     _session: Session
     _auth_url: Optional[str]
     _token: Optional[str]

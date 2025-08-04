@@ -134,6 +134,8 @@ SIGV4_REGION = "rest.signing-region"
 SIGV4_SERVICE = "rest.signing-name"
 OAUTH2_SERVER_URI = "oauth2-server-uri"
 SNAPSHOT_LOADING_MODE = "snapshot-loading-mode"
+AUTH = "auth"
+CUSTOM = "custom"
 
 NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
 
@@ -247,7 +249,23 @@ class RestCatalog(Catalog):
                 elif ssl_client_cert := ssl_client.get(CERT):
                     session.cert = ssl_client_cert
 
-        session.auth = AuthManagerAdapter(self._create_legacy_oauth2_auth_manager(session))
+        if auth_config := self.properties.get(AUTH):
+            auth_type = auth_config.get("type")
+            if auth_type is None:
+                raise ValueError("auth.type must be defined")
+            auth_type_config = auth_config.get(auth_type, {})
+            auth_impl = auth_config.get("impl")
+
+            if auth_type == CUSTOM and not auth_impl:
+                raise ValueError("auth.impl must be specified when using custom auth.type")
+
+            if auth_type != CUSTOM and auth_impl:
+                raise ValueError("auth.impl can only be specified when using custom auth.type")
+
+            session.auth = AuthManagerAdapter(AuthManagerFactory.create(auth_impl or auth_type, auth_type_config))
+        else:
+            session.auth = AuthManagerAdapter(self._create_legacy_oauth2_auth_manager(session))
+
         # Set HTTP headers
         self._config_headers(session)
 
@@ -505,7 +523,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {409: TableAlreadyExistsError})
+            _handle_non_200_response(exc, {409: TableAlreadyExistsError, 404: NoSuchNamespaceError})
         return TableResponse.model_validate_json(response.text)
 
     @retry(**_RETRY_ARGS)

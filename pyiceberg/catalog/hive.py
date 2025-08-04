@@ -800,7 +800,7 @@ class HiveCatalog(MetastoreCatalog):
             if removals:
                 for key in removals:
                     if key in parameters:
-                        parameters[key] = None
+                        parameters.pop(key)
                         removed.add(key)
             if updates:
                 for key, value in updates.items():

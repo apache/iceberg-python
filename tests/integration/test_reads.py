@@ -342,7 +342,11 @@ def test_daft_nan_rewritten(catalog: Catalog) -> None:
 @pytest.mark.integration
 @pytest.mark.filterwarnings("ignore")
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_bodo_nan(catalog: Catalog) -> None:
+def test_bodo_nan(catalog: Catalog, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Avoid local Mac issues (see https://github.com/apache/iceberg-python/issues/2225)
+    monkeypatch.setenv("BODO_DATAFRAME_LIBRARY_RUN_PARALLEL", "0")
+    monkeypatch.setenv("FI_PROVIDER", "tcp")
+
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     df = table_test_null_nan_rewritten.to_bodo()
     assert len(df) == 3
