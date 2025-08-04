@@ -648,8 +648,8 @@ class PyArrowFileIO(FileIO):
         if (scheme := get("gcs.scheme")) and "scheme" not in client_kwargs:  # GCS_SERVICE_HOST takes precedence
             client_kwargs["scheme"] = scheme
         if (
-            (endpoint_override := get("gcs.endpoint_override")) and "endpoint_override" not in client_kwargs
-        ):  # GCS_SERVICE_HOST takes precedence
+            endpoint_override := get("gcs.endpoint_override")
+        ) and "endpoint_override" not in client_kwargs:  # GCS_SERVICE_HOST takes precedence
             client_kwargs["endpoint_override"] = endpoint_override
 
         if project_id := get(GCS_PROJECT_ID, "gcs.project_id"):
