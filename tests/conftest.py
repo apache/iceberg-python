@@ -1258,8 +1258,8 @@ manifest_entry_records = [
                 {"key": 15, "value": 0},
             ],
             "lower_bounds": [
-                {"key": 2, "value": b"\x01\x00\x00\x00"},
-                {"key": 3, "value": b"\x01\x00\x00\x00"},
+                {"key": 2, "value": b"\x01\x00\x00\x00\x00\x00\x00\x00"},
+                {"key": 2, "value": b"\x01\x00\x00\x00\x00\x00\x00\x00"},
                 {"key": 7, "value": b"\x03\x00\x00\x00"},
                 {"key": 8, "value": b"\x01\x00\x00\x00"},
                 {"key": 10, "value": b"\xf6(\\\x8f\xc2\x05S\xc0"},
@@ -1273,8 +1273,8 @@ manifest_entry_records = [
                 {"key": 19, "value": b"\x00\x00\x00\x00\x00\x00\x04\xc0"},
             ],
             "upper_bounds": [
-                {"key": 2, "value": b"\x06\x00\x00\x00"},
-                {"key": 3, "value": b"\x06\x00\x00\x00"},
+                {"key": 2, "value": b"\x06\x00\x00\x00\x00\x00\x00\x00"},
+                {"key": 3, "value": b"\x06\x00\x00\x00\x00\x00\x00\x00"},
                 {"key": 7, "value": b"\t\x01\x00\x00"},
                 {"key": 8, "value": b"\t\x01\x00\x00"},
                 {"key": 10, "value": b"\xcd\xcc\xcc\xcc\xcc,_@"},
@@ -1379,8 +1379,8 @@ manifest_entry_records = [
             ],
             "lower_bounds": [
                 {"key": 1, "value": b"\x01\x00\x00\x00"},
-                {"key": 2, "value": b"\x01\x00\x00\x00"},
-                {"key": 3, "value": b"\x01\x00\x00\x00"},
+                {"key": 2, "value": b"\x01\x00\x00\x00\x00\x00\x00\x00"},
+                {"key": 2, "value": b"\x01\x00\x00\x00\x00\x00\x00\x00"},
                 {"key": 4, "value": b"\x00\x00\x00\x00"},
                 {"key": 5, "value": b"\x01\x00\x00\x00"},
                 {"key": 6, "value": b"N"},
@@ -1399,8 +1399,8 @@ manifest_entry_records = [
             ],
             "upper_bounds": [
                 {"key": 1, "value": b"\x01\x00\x00\x00"},
-                {"key": 2, "value": b"\x06\x00\x00\x00"},
-                {"key": 3, "value": b"\x06\x00\x00\x00"},
+                {"key": 2, "value": b"\x06\x00\x00\x00\x00\x00\x00\x00"},
+                {"key": 3, "value": b"\x06\x00\x00\x00\x00\x00\x00\x00"},
                 {"key": 4, "value": b"\x06\x00\x00\x00"},
                 {"key": 5, "value": b"c\x00\x00\x00"},
                 {"key": 6, "value": b"Y"},
