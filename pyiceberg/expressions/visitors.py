@@ -23,7 +23,6 @@ from typing import (
     Dict,
     Generic,
     List,
-    Optional,
     Set,
     SupportsFloat,
     Tuple,
@@ -873,9 +872,7 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
     case_sensitive: bool
     projected_field_values: Dict[str, Any]
 
-    def __init__(
-        self, file_schema: Schema, case_sensitive: bool, projected_field_values: Dict[str, Any] = EMPTY_DICT
-    ) -> None:
+    def __init__(self, file_schema: Schema, case_sensitive: bool, projected_field_values: Dict[str, Any] = EMPTY_DICT) -> None:
         self.file_schema = file_schema
         self.case_sensitive = case_sensitive
         self.projected_field_values = projected_field_values or {}
@@ -940,7 +937,7 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
 
 
 def translate_column_names(
-    expr: BooleanExpression, file_schema: Schema, case_sensitive: bool, projected_field_values: Optional[Dict[str, Any]] = None
+    expr: BooleanExpression, file_schema: Schema, case_sensitive: bool, projected_field_values: Dict[str, Any] = EMPTY_DICT
 ) -> BooleanExpression:
     return visit(expr, _ColumnNameTranslator(file_schema, case_sensitive, projected_field_values))
 
