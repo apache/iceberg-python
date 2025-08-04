@@ -75,7 +75,7 @@ Iceberg tables support table properties to configure table behavior.
 | Key                                  | Options             | Default       | Description                                                 |
 | ------------------------------------ | ------------------- | ------------- | ----------------------------------------------------------- |
 | `commit.manifest.target-size-bytes`  | Size in bytes       | 8388608 (8MB) | Target size when merging manifest files                     |
-| `commit.manifest.min-count-to-merge` | Number of manifests | 100           | Target size when merging manifest files                     |
+| `commit.manifest.min-count-to-merge` | Number of manifests | 100           | Minimum number of manifests to accumulate before merging    |
 | `commit.manifest-merge.enabled`      | Boolean             | False         | Controls whether to automatically merge manifests on writes |
 
 <!-- prettier-ignore-start -->
@@ -109,23 +109,24 @@ For the FileIO there are several configuration options available:
 
 <!-- markdown-link-check-disable -->
 
-| Key                         | Example                    | Description                                                                                                                                                                                                                                                             |
-|-----------------------------|----------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| s3.endpoint                 | <https://10.0.19.25/>      | Configure an alternative endpoint of the S3 service for the FileIO to access. This could be used to use S3FileIO with any s3-compatible object storage service that has a different endpoint, or access a private S3 endpoint in a virtual private cloud.               |
-| s3.access-key-id            | admin                      | Configure the static access key id used to access the FileIO.                                                                                                                                                                                                           |
-| s3.secret-access-key        | password                   | Configure the static secret access key used to access the FileIO.                                                                                                                                                                                                       |
-| s3.session-token            | AQoDYXdzEJr...             | Configure the static session token used to access the FileIO.                                                                                                                                                                                                           |
-| s3.role-session-name        | session                    | An optional identifier for the assumed role session.                                                                                                                                                                                                                    |
-| s3.role-arn                 | arn:aws:...                | AWS Role ARN. If provided instead of access_key and secret_key, temporary credentials will be fetched by assuming this role.                                                                                                                                            |
-| s3.signer                   | bearer                     | Configure the signature version of the FileIO.                                                                                                                                                                                                                          |
-| s3.signer.uri               | <http://my.signer:8080/s3> | Configure the remote signing uri if it differs from the catalog uri. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.signer.uri>/<s3.signer.endpoint>`.                                                                        |
-| s3.signer.endpoint          | v1/main/s3-sign            | Configure the remote signing endpoint. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.signer.uri>/<s3.signer.endpoint>`. (default : v1/aws/s3/sign).                                                                          |
-| s3.region                   | us-west-2                  | Configure the default region used to initialize an `S3FileSystem`. `PyArrowFileIO` attempts to automatically tries to resolve the region if this isn't set (only supported for AWS S3 Buckets).                                                                         |
-| s3.resolve-region           | False                      | Only supported for `PyArrowFileIO`, when enabled, it will always try to resolve the location of the bucket (only supported for AWS S3 Buckets).                                                                                                                         |
-| s3.proxy-uri                | <http://my.proxy.com:8080> | Configure the proxy server to be used by the FileIO.                                                                                                                                                                                                                    |
-| s3.connect-timeout          | 60.0                       | Configure socket connection timeout, in seconds.                                                                                                                                                                                                                        |
-| s3.request-timeout          | 60.0                       | Configure socket read timeouts on Windows and macOS, in seconds.                                                                                                                                                                                                        |
+| Key                         | Example                    | Description                                                                                                                                                                                                                                                 |
+|-----------------------------|----------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| s3.endpoint                 | <https://10.0.19.25/>      | Configure an alternative endpoint of the S3 service for the FileIO to access. This could be used to use S3FileIO with any s3-compatible object storage service that has a different endpoint, or access a private S3 endpoint in a virtual private cloud.   |
+| s3.access-key-id            | admin                      | Configure the static access key id used to access the FileIO.                                                                                                                                                                                               |
+| s3.secret-access-key        | password                   | Configure the static secret access key used to access the FileIO.                                                                                                                                                                                           |
+| s3.session-token            | AQoDYXdzEJr...             | Configure the static session token used to access the FileIO.                                                                                                                                                                                               |
+| s3.role-session-name        | session                    | An optional identifier for the assumed role session.                                                                                                                                                                                                        |
+| s3.role-arn                 | arn:aws:...                | AWS Role ARN. If provided instead of access_key and secret_key, temporary credentials will be fetched by assuming this role.                                                                                                                                |
+| s3.signer                   | bearer                     | Configure the signature version of the FileIO.                                                                                                                                                                                                              |
+| s3.signer.uri               | <http://my.signer:8080/s3> | Configure the remote signing uri if it differs from the catalog uri. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.signer.uri>/<s3.signer.endpoint>`.                                                            |
+| s3.signer.endpoint          | v1/main/s3-sign            | Configure the remote signing endpoint. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.signer.uri>/<s3.signer.endpoint>`. (default : v1/aws/s3/sign).                                                              |
+| s3.region                   | us-west-2                  | Configure the default region used to initialize an `S3FileSystem`. `PyArrowFileIO` attempts to automatically tries to resolve the region if this isn't set (only supported for AWS S3 Buckets).                                                             |
+| s3.resolve-region           | False                      | Only supported for `PyArrowFileIO`, when enabled, it will always try to resolve the location of the bucket (only supported for AWS S3 Buckets).                                                                                                             |
+| s3.proxy-uri                | <http://my.proxy.com:8080> | Configure the proxy server to be used by the FileIO.                                                                                                                                                                                                        |
+| s3.connect-timeout          | 60.0                       | Configure socket connection timeout, in seconds.                                                                                                                                                                                                            |
+| s3.request-timeout          | 60.0                       | Configure socket read timeouts on Windows and macOS, in seconds.                                                                                                                                                                                            |
 | s3.force-virtual-addressing | False                      | Whether to use virtual addressing of buckets. If true, then virtual addressing is always enabled. If false, then virtual addressing is only enabled if endpoint_override is empty. This can be used for non-AWS backends that only support virtual hosted-style access. |
+| s3.retry-strategy-impl      | None                       | Ability to set a custom S3 retry strategy. A full path to a class needs to be given that extends the [S3RetryStrategy](https://github.com/apache/arrow/blob/639201bfa412db26ce45e73851432018af6c945e/python/pyarrow/_s3fs.pyx#L110) base class.            |
 
 <!-- markdown-link-check-enable-->
 
@@ -146,16 +147,20 @@ For the FileIO there are several configuration options available:
 
 <!-- markdown-link-check-disable -->
 
-| Key                    | Example                                                                                   | Description                                                                                                                                                                                                                                                                            |
-| ---------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| adls.connection-string | AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqF...;BlobEndpoint=<http://localhost/> | A [connection string](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string). This could be used to use FileIO with any adls-compatible object storage service that has a different endpoint (like [azurite](https://github.com/azure/azurite)). |
-| adls.account-name      | devstoreaccount1                                                                          | The account that you want to connect to                                                                                                                                                                                                                                                |
-| adls.account-key       | Eby8vdM02xNOcqF...                                                                        | The key to authentication against the account.                                                                                                                                                                                                                                         |
-| adls.sas-token         | NuHOuuzdQN7VRM%2FOpOeqBlawRCA845IY05h9eu1Yte4%3D                                          | The shared access signature                                                                                                                                                                                                                                                            |
-| adls.tenant-id         | ad667be4-b811-11ed-afa1-0242ac120002                                                      | The tenant-id                                                                                                                                                                                                                                                                          |
-| adls.client-id         | ad667be4-b811-11ed-afa1-0242ac120002                                                      | The client-id                                                                                                                                                                                                                                                                          |
-| adls.client-secret     | oCA3R6P\*ka#oa1Sms2J74z...                                                                | The client-secret                                                                                                                                                                                                                                                                      |
-| adls.account-host      | accountname1.blob.core.windows.net                                                        | The storage account host. See [AzureBlobFileSystem](https://github.com/fsspec/adlfs/blob/adb9c53b74a0d420625b86dd00fbe615b43201d2/adlfs/spec.py#L125) for reference                                                                                                                   |
+| Key                          | Example                                                                                     | Description                                                                                                                                                                                                                                                                           |
+|------------------------------|---------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| adls.connection-string       | AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqF...;BlobEndpoint=<http://localhost/> | A [connection string](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string). This could be used to use FileIO with any adls-compatible object storage service that has a different endpoint (like [azurite](https://github.com/azure/azurite)). |
+| adls.account-name            | devstoreaccount1                                                                            | The account that you want to connect to                                                                                                                                                                                                                                               |
+| adls.account-key             | Eby8vdM02xNOcqF...                                                                          | The key to authentication against the account.                                                                                                                                                                                                                                        |
+| adls.sas-token               | NuHOuuzdQN7VRM%2FOpOeqBlawRCA845IY05h9eu1Yte4%3D                                            | The shared access signature                                                                                                                                                                                                                                                           |
+| adls.tenant-id               | ad667be4-b811-11ed-afa1-0242ac120002                                                        | The tenant-id                                                                                                                                                                                                                                                                         |
+| adls.client-id               | ad667be4-b811-11ed-afa1-0242ac120002                                                        | The client-id                                                                                                                                                                                                                                                                         |
+| adls.client-secret           | oCA3R6P\*ka#oa1Sms2J74z...                                                                  | The client-secret                                                                                                                                                                                                                                                                     |
+| adls.account-host            | accountname1.blob.core.windows.net                                                          | The storage account host. See [AzureBlobFileSystem](https://github.com/fsspec/adlfs/blob/adb9c53b74a0d420625b86dd00fbe615b43201d2/adlfs/spec.py#L125) for reference                                                                                                                   |
+| adls.blob-storage-authority  | .blob.core.windows.net                                                                      | The hostname[:port] of the Blob Service. Defaults to `.blob.core.windows.net`. Useful for connecting to a local emulator, like [azurite](https://github.com/azure/azurite). See [AzureFileSystem](https://arrow.apache.org/docs/python/filesystems.html#azure-storage-file-system) for reference                          |
+| adls.dfs-storage-authority   | .dfs.core.windows.net                                                                       | The hostname[:port] of the Data Lake Gen 2 Service. Defaults to `.dfs.core.windows.net`. Useful for connecting to a local emulator, like [azurite](https://github.com/azure/azurite). See [AzureFileSystem](https://arrow.apache.org/docs/python/filesystems.html#azure-storage-file-system) for reference                |
+| adls.blob-storage-scheme     | https                                                                                       | Either `http` or `https`. Defaults to `https`. Useful for connecting to a local emulator, like [azurite](https://github.com/azure/azurite). See [AzureFileSystem](https://arrow.apache.org/docs/python/filesystems.html#azure-storage-file-system) for reference                                                      |
+| adls.dfs-storage-scheme      | https                                                                                       | Either `http` or `https`. Defaults to `https`. Useful for connecting to a local emulator, like [azurite](https://github.com/azure/azurite). See [AzureFileSystem](https://arrow.apache.org/docs/python/filesystems.html#azure-storage-file-system) for reference                                                          |
 
 <!-- markdown-link-check-enable-->
 
@@ -334,24 +339,14 @@ catalog:
 
 | Key                 | Example                          | Description                                                                                        |
 | ------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
-| uri                 | <https://rest-catalog/ws>          | URI identifying the REST Server                                                                    |
-| ugi                 | t-1234:secret                    | Hadoop UGI for Hive client.                                                                        |
-| credential          | t-1234:secret                    | Credential to use for OAuth2 credential flow when initializing the catalog                         |
-| token               | FEW23.DFSDF.FSDF                 | Bearer token value to use for `Authorization` header                                               |
-| scope               | openid offline corpds:ds:profile | Desired scope of the requested security token (default : catalog)                                  |
-| resource            | rest_catalog.iceberg.com         | URI for the target resource or service                                                             |
-| audience            | rest_catalog                     | Logical name of target resource or service                                                         |
-| rest.sigv4-enabled  | true                             | Sign requests to the REST Server using AWS SigV4 protocol                                          |
-| rest.signing-region | us-east-1                        | The region to use when SigV4 signing a request                                                     |
-| rest.signing-name   | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
-| oauth2-server-uri   | <https://auth-service/cc>          | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
-| snapshot-loading-mode | refs                             | The snapshots to return in the body of the metadata. Setting the value to `all` would return the full set of snapshots currently valid for the table. Setting the value to `refs` would load all snapshots referenced by branches or tags. |
+| uri                 | <https://rest-catalog/ws>        | URI identifying the REST Server                                                                    |
+| warehouse           | myWarehouse                      | Warehouse location or identifier to request from the catalog service. May be used to determine server-side overrides, such as the warehouse location. |
+| snapshot-loading-mode | refs                           | The snapshots to return in the body of the metadata. Setting the value to `all` would return the full set of snapshots currently valid for the table. Setting the value to `refs` would load all snapshots referenced by branches or tags. |
+| `header.X-Iceberg-Access-Delegation` | `vended-credentials` | Signal to the server that the client supports delegated access via a comma-separated list of access mechanisms. The server may choose to supply access via any or none of the requested mechanisms. When using `vended-credentials`, the server provides temporary credentials to the client. When using `remote-signing`, the server signs requests on behalf of the client. (default: `vended-credentials`) |
 
-<!-- markdown-link-check-enable-->
+#### Headers in REST Catalog
 
-#### Headers in RESTCatalog
-
-To configure custom headers in RESTCatalog, include them in the catalog properties with the prefix `header.`. This
+To configure custom headers in REST Catalog, include them in the catalog properties with `header.<Header-Name>`. This
 ensures that all HTTP requests to the REST service include the specified headers.
 
 ```yaml
@@ -362,11 +357,166 @@ catalog:
     header.content-type: application/vnd.api+json
 ```
 
-Specific headers defined by the RESTCatalog spec include:
+#### Authentication Options
 
-| Key                                  | Options                               | Default              | Description                                                                                                                                                                                        |
-| ------------------------------------ | ------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `header.X-Iceberg-Access-Delegation` | `{vended-credentials,remote-signing}` | `vended-credentials` | Signal to the server that the client supports delegated access via a comma-separated list of access mechanisms. The server may choose to supply access via any or none of the requested mechanisms |
+##### Legacy OAuth2
+
+Legacy OAuth2 Properties will be removed in PyIceberg 1.0 in place of pluggable AuthManager properties below
+
+| Key                 | Example                          | Description                                                                                        |
+| ------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
+| oauth2-server-uri   | <https://auth-service/cc>        | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
+| token               | FEW23.DFSDF.FSDF                 | Bearer token value to use for `Authorization` header |
+| credential          | client_id:client_secret          | Credential to use for OAuth2 credential flow when initializing the catalog                         |
+| scope               | openid offline corpds:ds:profile | Desired scope of the requested security token (default : catalog)                                  |
+| resource            | rest_catalog.iceberg.com         | URI for the target resource or service                                                             |
+| audience            | rest_catalog                     | Logical name of target resource or service                                                         |
+
+##### SigV4
+
+| Key                 | Example                          | Description                                                                                        |
+| ------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
+| rest.sigv4-enabled  | true                             | Sign requests to the REST Server using AWS SigV4 protocol                                          |
+| rest.signing-region | us-east-1                        | The region to use when SigV4 signing a request                                                     |
+| rest.signing-name   | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
+
+##### Pluggable Authentication via AuthManager
+
+The RESTCatalog supports pluggable authentication via the `auth` configuration block. This allows you to specify which how the access token will be fetched and managed for use with the HTTP requests to the RESTCatalog server. The authentication method is selected by setting the `auth.type` property, and additional configuration can be provided as needed for each method.
+
+###### Supported Authentication Types
+
+- `noop`: No authentication (no Authorization header sent).
+- `basic`: HTTP Basic authentication.
+- `custom`: Custom authentication manager (requires `auth.impl`).
+
+###### Configuration Properties
+
+The `auth` block is structured as follows:
+
+```yaml
+catalog:
+  default:
+    type: rest
+    uri: http://rest-catalog/ws/
+    auth:
+      type: <auth_type>
+      <auth_type>:
+        # Type-specific configuration
+      impl: <custom_class_path>  # Only for custom auth
+```
+
+###### Property Reference
+
+| Property         | Required | Description                                                                                     |
+|------------------|----------|-------------------------------------------------------------------------------------------------|
+| `auth.type`      | Yes      | The authentication type to use (`noop`, `basic`, or `custom`).                       |
+| `auth.impl`      | Conditionally | The fully qualified class path for a custom AuthManager. Required if `auth.type` is `custom`. |
+| `auth.basic`     | If type is `basic` | Block containing `username` and `password` for HTTP Basic authentication.           |
+| `auth.custom`    | If type is `custom` | Block containing configuration for the custom AuthManager.                          |
+
+###### Examples
+
+No Authentication:
+
+```yaml
+auth:
+  type: noop
+```
+
+Basic Authentication:
+
+```yaml
+auth:
+  type: basic
+  basic:
+    username: myuser
+    password: mypass
+```
+
+Custom Authentication:
+
+```yaml
+auth:
+  type: custom
+  impl: mypackage.module.MyAuthManager
+  custom:
+    property1: value1
+    property2: value2
+```
+
+###### Notes
+
+- If `auth.type` is `custom`, you **must** specify `auth.impl` with the full class path to your custom AuthManager.
+- If `auth.type` is not `custom`, specifying `auth.impl` is not allowed.
+- The configuration block under each type (e.g., `basic`, `custom`) is passed as keyword arguments to the corresponding AuthManager.
+
+<!-- markdown-link-check-enable-->
+
+#### Common Integrations & Examples
+
+##### AWS Glue
+
+```yaml
+catalog:
+  s3_tables_catalog:
+    type: rest
+    uri: https://glue.<region>.amazonaws.com/iceberg
+    warehouse: <account-id>:s3tablescatalog/<table-bucket-name>
+    rest.sigv4-enabled: true
+    rest.signing-name: glue
+    rest.signing-region: <region>
+```
+
+##### Unity Catalog
+
+```yaml
+catalog:
+  unity_catalog:
+    type: rest
+    uri: https://<workspace-url>/api/2.1/unity-catalog/iceberg-rest
+    warehouse: <uc-catalog-name>
+    token: <databricks-pat-token>
+```
+
+##### R2 Data Catalog
+
+```yaml
+catalog:
+  r2_catalog:
+    type: rest
+    uri: <r2-catalog-uri>
+    warehouse: <r2-warehouse-name>
+    token: <r2-token>
+```
+
+##### Lakekeeper
+
+```yaml
+catalog:
+  lakekeeper_catalog:
+    type: rest
+    uri: <lakekeeper-catalog-uri>
+    warehouse: <lakekeeper-warehouse-name>
+    credential: <client-id>:<client-secret>
+    oauth2-server-uri: http://localhost:30080/realms/<keycloak-realm-name>/protocol/openid-connect/token
+    scope: lakekeeper
+```
+
+##### Apache Polaris
+
+```yaml
+catalog:
+  polaris_catalog:
+    type: rest
+    uri: https://<account>.snowflakecomputing.com/polaris/api/catalog
+    warehouse: <polaris-catalog-name>
+    credential: <client-id>:<client-secret>
+    header.X-Iceberg-Access-Delegation: vended-credentials
+    scope: PRINCIPAL_ROLE:ALL
+    token-refresh-enabled: true
+    py-io-impl: pyiceberg.io.fsspec.FsspecFileIO
+```
 
 ### SQL Catalog
 
@@ -433,10 +583,12 @@ catalog:
     s3.secret-access-key: password
 ```
 
-| Key                          | Example | Description                       |
-|------------------------------| ------- | --------------------------------- |
-| hive.hive2-compatible        | true    | Using Hive 2.x compatibility mode |
-| hive.kerberos-authentication | true    | Using authentication via Kerberos |
+| Key                          | Example | Description                          |
+|------------------------------| ------- | ------------------------------------ |
+| hive.hive2-compatible        | true    | Using Hive 2.x compatibility mode    |
+| hive.kerberos-authentication | true    | Using authentication via Kerberos    |
+| hive.kerberos-service-name   | hive    | Kerberos service name (default hive) |
+| ugi                 | t-1234:secret                    | Hadoop UGI for Hive client.                                                                        |
 
 When using Hive 2.x, make sure to set the compatibility flag:
 

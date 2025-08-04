@@ -15,6 +15,7 @@
 #  specific language governing permissions and limitations
 #  under the License.
 # pylint: disable=redefined-outer-name,unused-argument
+import base64
 import os
 from typing import Any, Callable, Dict, cast
 from unittest import mock
@@ -323,19 +324,19 @@ def test_properties_sets_headers(requests_mock: Mocker) -> None:
         **{"header.Content-Type": "application/vnd.api+json", "header.Customized-Header": "some/value"},
     )
 
-    assert (
-        catalog._session.headers.get("Content-type") == "application/json"
-    ), "Expected 'Content-Type' default header not to be overwritten"
-    assert (
-        requests_mock.last_request.headers["Content-type"] == "application/json"
-    ), "Config request did not include expected 'Content-Type' header"
+    assert catalog._session.headers.get("Content-type") == "application/json", (
+        "Expected 'Content-Type' default header not to be overwritten"
+    )
+    assert requests_mock.last_request.headers["Content-type"] == "application/json", (
+        "Config request did not include expected 'Content-Type' header"
+    )
 
-    assert (
-        catalog._session.headers.get("Customized-Header") == "some/value"
-    ), "Expected 'Customized-Header' header to be 'some/value'"
-    assert (
-        requests_mock.last_request.headers["Customized-Header"] == "some/value"
-    ), "Config request did not include expected 'Customized-Header' header"
+    assert catalog._session.headers.get("Customized-Header") == "some/value", (
+        "Expected 'Customized-Header' header to be 'some/value'"
+    )
+    assert requests_mock.last_request.headers["Customized-Header"] == "some/value", (
+        "Config request did not include expected 'Customized-Header' header"
+    )
 
 
 def test_config_sets_headers(requests_mock: Mocker) -> None:
@@ -352,19 +353,19 @@ def test_config_sets_headers(requests_mock: Mocker) -> None:
     catalog = RestCatalog("rest", uri=TEST_URI, warehouse="s3://some-bucket")
     catalog.create_namespace(namespace)
 
-    assert (
-        catalog._session.headers.get("Content-type") == "application/json"
-    ), "Expected 'Content-Type' default header not to be overwritten"
-    assert (
-        requests_mock.last_request.headers["Content-type"] == "application/json"
-    ), "Create namespace request did not include expected 'Content-Type' header"
+    assert catalog._session.headers.get("Content-type") == "application/json", (
+        "Expected 'Content-Type' default header not to be overwritten"
+    )
+    assert requests_mock.last_request.headers["Content-type"] == "application/json", (
+        "Create namespace request did not include expected 'Content-Type' header"
+    )
 
-    assert (
-        catalog._session.headers.get("Customized-Header") == "some/value"
-    ), "Expected 'Customized-Header' header to be 'some/value'"
-    assert (
-        requests_mock.last_request.headers["Customized-Header"] == "some/value"
-    ), "Create namespace request did not include expected 'Customized-Header' header"
+    assert catalog._session.headers.get("Customized-Header") == "some/value", (
+        "Expected 'Customized-Header' header to be 'some/value'"
+    )
+    assert requests_mock.last_request.headers["Customized-Header"] == "some/value", (
+        "Create namespace request did not include expected 'Customized-Header' header"
+    )
 
 
 @pytest.mark.filterwarnings(
@@ -1517,6 +1518,132 @@ def test_request_session_with_ssl_client_cert() -> None:
         # Missing namespace
         RestCatalog("rest", **catalog_properties)  # type: ignore
     assert "Could not find the TLS certificate file, invalid path: path_to_client_cert" in str(e.value)
+
+
+def test_rest_catalog_with_basic_auth_type(rest_mock: Mocker) -> None:
+    # Given
+    rest_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "basic",
+            "basic": {
+                "username": "one",
+                "password": "two",
+            },
+        },
+    }
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert catalog.uri == TEST_URI
+
+    encoded_user_pass = base64.b64encode(b"one:two").decode()
+    expected_auth_header = f"Basic {encoded_user_pass}"
+    assert rest_mock.last_request.headers["Authorization"] == expected_auth_header
+
+
+def test_rest_catalog_with_custom_auth_type() -> None:
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "custom",
+            "impl": "dummy.nonexistent.package",
+            "custom": {
+                "property1": "one",
+                "property2": "two",
+            },
+        },
+    }
+    with pytest.raises(ValueError) as e:
+        # Missing namespace
+        RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert "Could not load AuthManager class for 'dummy.nonexistent.package'" in str(e.value)
+
+
+def test_rest_catalog_with_custom_basic_auth_type(rest_mock: Mocker) -> None:
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "custom",
+            "impl": "pyiceberg.catalog.rest.auth.BasicAuthManager",
+            "custom": {
+                "username": "one",
+                "password": "two",
+            },
+        },
+    }
+    rest_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert catalog.uri == TEST_URI
+
+    encoded_user_pass = base64.b64encode(b"one:two").decode()
+    expected_auth_header = f"Basic {encoded_user_pass}"
+    assert rest_mock.last_request.headers["Authorization"] == expected_auth_header
+
+
+def test_rest_catalog_with_custom_auth_type_no_impl() -> None:
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "custom",
+            "custom": {
+                "property1": "one",
+                "property2": "two",
+            },
+        },
+    }
+    with pytest.raises(ValueError) as e:
+        # Missing namespace
+        RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert "auth.impl must be specified when using custom auth.type" in str(e.value)
+
+
+def test_rest_catalog_with_non_custom_auth_type_impl() -> None:
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "basic",
+            "impl": "basic.package",
+            "basic": {
+                "username": "one",
+                "password": "two",
+            },
+        },
+    }
+    with pytest.raises(ValueError) as e:
+        # Missing namespace
+        RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert "auth.impl can only be specified when using custom auth.type" in str(e.value)
+
+
+def test_rest_catalog_with_unsupported_auth_type() -> None:
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "unsupported",
+            "unsupported": {
+                "property1": "one",
+                "property2": "two",
+            },
+        },
+    }
+    with pytest.raises(ValueError) as e:
+        # Missing namespace
+        RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert "Could not load AuthManager class for 'unsupported'" in str(e.value)
 
 
 EXAMPLE_ENV = {"PYICEBERG_CATALOG__PRODUCTION__URI": TEST_URI}

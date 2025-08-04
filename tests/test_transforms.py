@@ -16,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=eval-used,protected-access,redefined-outer-name
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 from typing import Annotated, Any, Callable, Optional, Union
 from uuid import UUID
@@ -24,14 +24,15 @@ from uuid import UUID
 import mmh3 as mmh3
 import pyarrow as pa
 import pytest
-import pytz
 from pydantic import (
     BeforeValidator,
     PlainSerializer,
     RootModel,
     WithJsonSchema,
 )
+from pytest_mock import MockFixture
 
+from pyiceberg.exceptions import NotInstalledError
 from pyiceberg.expressions import (
     AlwaysFalse,
     BooleanExpression,
@@ -1654,38 +1655,6 @@ def test_bucket_pyarrow_transforms(
     assert expected == transform.pyarrow_transform(source_type)(input_arr)
 
 
-# pyiceberg_core currently does not support bucket transform on timestamp_ns and timestamptz_ns
-# https://github.com/apache/iceberg-rust/issues/1110
-@pytest.mark.parametrize(
-    "source_type, input_arr, num_buckets",
-    [
-        (
-            TimestampNanoType(),
-            pa.array([datetime(1970, 1, 1, 0, 0, 0), datetime(2025, 2, 26, 1, 2, 3)], type=pa.timestamp(unit="ns")),
-            10,
-        ),
-        (
-            TimestamptzNanoType(),
-            pa.array(
-                [datetime(1970, 1, 1, 0, 0, 0), datetime(2025, 2, 26, 1, 2, 3)],
-                type=pa.timestamp(unit="ns", tz=pytz.timezone("Etc/GMT+10")),
-            ),
-            10,
-        ),
-    ],
-)
-def test_unsupported_bucket_pyarrow_transform(
-    source_type: PrimitiveType,
-    input_arr: Union[pa.Array, pa.ChunkedArray],
-    num_buckets: int,
-) -> None:
-    transform: Transform[Any, Any] = BucketTransform(num_buckets=num_buckets)
-    with pytest.raises(ValueError) as exc_info:
-        transform.pyarrow_transform(source_type)(input_arr)
-
-    assert "FeatureUnsupported => Unsupported data type for bucket transform" in str(exc_info.value)
-
-
 @pytest.mark.parametrize(
     "source_type, input_arr, expected, width",
     [
@@ -1701,3 +1670,15 @@ def test_truncate_pyarrow_transforms(
 ) -> None:
     transform: Transform[Any, Any] = TruncateTransform(width=width)
     assert expected == transform.pyarrow_transform(source_type)(input_arr)
+
+
+@pytest.mark.parametrize(
+    "transform", [BucketTransform(num_buckets=5), TruncateTransform(width=5), YearTransform(), MonthTransform(), DayTransform()]
+)
+def test_calling_pyarrow_transform_without_pyiceberg_core_installed_correctly_raises_not_imported_error(
+    transform, mocker: MockFixture
+) -> None:
+    mocker.patch.dict("sys.modules", {"pyiceberg_core": None})
+
+    with pytest.raises(NotInstalledError):
+        transform.pyarrow_transform(StringType())

@@ -219,3 +219,19 @@ Or output in JSON for automation:
   }
 }
 ```
+
+You can also add, update or remove properties on tables or namespaces:
+
+```sh
+➜  pyiceberg properties set table nyc.taxis write.metadata.delete-after-commit.enabled true
+Set write.metadata.delete-after-commit.enabled=true on nyc.taxis
+
+➜  pyiceberg properties get table nyc.taxis
+write.metadata.delete-after-commit.enabled  true
+
+➜  pyiceberg properties remove table nyc.taxis write.metadata.delete-after-commit.enabled
+Property write.metadata.delete-after-commit.enabled removed from nyc.taxis
+
+➜  pyiceberg properties get table nyc.taxis write.metadata.delete-after-commit.enabled
+Could not find property write.metadata.delete-after-commit.enabled on nyc.taxis
+```
