@@ -389,6 +389,7 @@ The RESTCatalog supports pluggable authentication via the `auth` configuration b
 - `noop`: No authentication (no Authorization header sent).
 - `basic`: HTTP Basic authentication.
 - `custom`: Custom authentication manager (requires `auth.impl`).
+- `google`: Google Authentication support
 
 ###### Configuration Properties
 
@@ -414,6 +415,7 @@ catalog:
 | `auth.impl`      | Conditionally | The fully qualified class path for a custom AuthManager. Required if `auth.type` is `custom`. |
 | `auth.basic`     | If type is `basic` | Block containing `username` and `password` for HTTP Basic authentication.           |
 | `auth.custom`    | If type is `custom` | Block containing configuration for the custom AuthManager.                          |
+| `auth.google`    | If type is `google` | Block containing `credentials_path` to a service account file (if using). Will default to using Application Default Credentials. |
 
 ###### Examples
 
