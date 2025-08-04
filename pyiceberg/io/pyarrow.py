@@ -493,6 +493,9 @@ class PyArrowFileIO(FileIO):
             client_kwargs["session_token"] = session_token
         if region := get(S3_REGION, AWS_REGION):
             client_kwargs["region"] = region
+        _ = get(
+            S3_RESOLVE_REGION
+        )  # this feature is only available for S3. Use `get` here so it does not get passed down to the S3FileSystem constructor
         if force_virtual_addressing := get(S3_FORCE_VIRTUAL_ADDRESSING, "s3.force_virtual_addressing"):
             client_kwargs["force_virtual_addressing"] = self._convert_str_to_bool(force_virtual_addressing)
         else:
