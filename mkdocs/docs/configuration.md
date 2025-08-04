@@ -105,33 +105,6 @@ You can also set the FileIO explicitly:
 
 For the FileIO there are several configuration options available:
 
-### PyArrow FileSystem Extra Properties
-
-When using `PyArrowFileIO`, any properties with filesystem specific prefixes that are not explicitly handled by PyIceberg will be passed to the underlying PyArrow filesystem implementations.
-
-To use these properties, follow the format:
-
-```txt
-{fs_scheme}.{parameter_name}
-```
-
-- {fs_scheme} is the filesystem scheme (e.g., s3, hdfs, gcs).
-- {parameter_name} must match the name expected by the PyArrow filesystem.
-- Property values must use the correct type expected by the underlying filesystem (e.g., string, integer, boolean).
-
-Below are examples of supported prefixes and how the properties are passed through:
-
-<!-- markdown-link-check-disable -->
-
-| Property Prefix | FileSystem                                                                                           | Example                     | Description                                         |
-|-----------------|------------------------------------------------------------------------------------------------------|-----------------------------|-----------------------------------------------------|
-| `s3.`           | [S3FileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.S3FileSystem.html)          | `s3.load_frequency=900`     | Passed as `load_frequency=900` to S3FileSystem      |
-| `hdfs.`         | [HadoopFileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.HadoopFileSystem.html)  | `hdfs.replication=3`        | Passed as `replication=3` to HadoopFileSystem       |
-| `gcs.`          | [GcsFileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.GcsFileSystem.html)        | `gcs.project_id=test`       | Passed as `project_id='test'` to GcsFileSystem      |
-| `adls.`         | [AzureFileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.AzureFileSystem.html)    | `adls.account_name=foo` | Passed as `account_name=foo` to AzureFileSystem |
-| `oss.`          | [S3FileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.S3FileSystem.html)          | `oss.connect_timeout=30.0`  | Passed as `connect_timeout=30.0` to S3FileSystem    |
-| `file.`         | [LocalFileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.LocalFileSystem.html)    | `file.use_mmap=true`        | Passed as `use_mmap=True` to LocalFileSystem        |
-
 ### S3
 
 <!-- markdown-link-check-disable -->
@@ -240,6 +213,8 @@ PyIceberg uses [S3FileSystem](https://arrow.apache.org/docs/python/generated/pya
 
 ### PyArrow
 
+#### PyArrow Specific Properties
+
 <!-- markdown-link-check-disable -->
 
 | Key                             | Example | Description                                                                                                                                                                                                                                                                                                                                                     |
@@ -247,6 +222,46 @@ PyIceberg uses [S3FileSystem](https://arrow.apache.org/docs/python/generated/pya
 | pyarrow.use-large-types-on-read | True    | Use large PyArrow types i.e. [large_string](https://arrow.apache.org/docs/python/generated/pyarrow.large_string.html), [large_binary](https://arrow.apache.org/docs/python/generated/pyarrow.large_binary.html) and [large_list](https://arrow.apache.org/docs/python/generated/pyarrow.large_list.html) field types on table scans. The default value is True. |
 
 <!-- markdown-link-check-enable-->
+#### Advanced FileSystem Configuration
+
+When using `PyArrowFileIO`, you can **pass additional configuration properties directly to the underlying PyArrow filesystem implementations**. This feature enables you to use any PyArrow filesystem option without requiring explicit PyIceberg support.
+
+PyIceberg first processes its own supported properties for each filesystem, then passes any remaining properties with the appropriate prefix directly to the PyArrow filesystem constructor. This approach ensures:
+
+1. PyIceberg's built-in properties take precedence
+2. Advanced PyArrow options are automatically supported
+3. New PyArrow features become available immediately
+
+##### Configuration Format
+
+Use this format for additional properties:
+
+```txt
+{fs_scheme}.{parameter_name}={value}
+```
+
+Where:
+
+- `{fs_scheme}` is the filesystem scheme (e.g., `s3`, `hdfs`, `gcs`, `adls`, `oss`, `file`)
+- `{parameter_name}` must match the exact parameter name expected by the PyArrow filesystem constructor
+- `{value}` must be the correct type expected by the underlying filesystem (string, integer, boolean, etc.)
+
+##### Supported Prefixes and FileSystems
+
+<!-- markdown-link-check-disable -->
+
+| Property Prefix | FileSystem                                                                                           | Example                     | Description                                         |
+|-----------------|------------------------------------------------------------------------------------------------------|-----------------------------|-----------------------------------------------------|
+| `s3.`           | [S3FileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.S3FileSystem.html)          | `s3.load_frequency=900`     | Passed as `load_frequency=900` to S3FileSystem      |
+| `hdfs.`         | [HadoopFileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.HadoopFileSystem.html)  | `hdfs.replication=3`        | Passed as `replication=3` to HadoopFileSystem       |
+| `gcs.`          | [GcsFileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.GcsFileSystem.html)        | `gcs.project_id=test`       | Passed as `project_id='test'` to GcsFileSystem      |
+| `adls.`         | [AzureFileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.AzureFileSystem.html)    | `adls.account_name=foo` | Passed as `account_name=foo` to AzureFileSystem |
+| `oss.`          | [S3FileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.S3FileSystem.html)          | `oss.connect_timeout=30.0`  | Passed as `connect_timeout=30.0` to S3FileSystem    |
+| `file.`         | [LocalFileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.LocalFileSystem.html)    | `file.use_mmap=true`        | Passed as `use_mmap=True` to LocalFileSystem        |
+
+<!-- markdown-link-check-enable -->
+
+**Note:** Refer to the PyArrow documentation for each filesystem to understand the available parameters and their expected types. Property values are passed directly to PyArrow, so they must match the exact parameter names and types expected by the filesystem constructors.
 
 ## Location Providers
 
