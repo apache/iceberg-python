@@ -43,10 +43,10 @@ from pyiceberg.utils.config import Config
 if TYPE_CHECKING:
     import pyarrow as pa
 
-GCP_PROJECT_ID = "gcp.project-id"
-GCP_LOCATION = "gcp.location"
-GCP_CREDENTIALS_LOCATION = "gcp.credentials-location"
-GCP_CREDENTIALS_INFO = "gcp.credentials-info"
+GCP_PROJECT_ID = "gcp.bigquery.project-id"
+GCP_LOCATION = "gcp.bigquery.location"
+GCP_CREDENTIALS_FILE = "gcp.bigquery.credential-file"
+GCP_CREDENTIALS_INFO = "gcp.bigquery.credentials-info"
 
 METADATA_LOCATION_PROP = "metadata_location"
 PREVIOUS_METADATA_LOCATION_PROP = "previous_metadata_location"
@@ -64,7 +64,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
 
         project_id: Optional[str] = self.properties.get(GCP_PROJECT_ID)
         location: Optional[str] = self.properties.get(GCP_LOCATION)
-        credentials_location: Optional[str] = self.properties.get(GCP_CREDENTIALS_LOCATION)
+        credentials_file: Optional[str] = self.properties.get(GCP_CREDENTIALS_FILE)
         credentials_info_str: Optional[str] = self.properties.get(GCP_CREDENTIALS_INFO)
 
         if not project_id:
@@ -74,9 +74,12 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         if not Config().get_bool("legacy-current-snapshot-id"):
             raise ValueError("legacy-current-snapshot-id must be enabled to work with BigQuery.")
 
+        if credentials_file and credentials_info_str:
+            raise ValueError("Cannot specify both `gcp.bigquery.credentials-file` and `gcp.bigquery.credentials-info`")
+
         gcp_credentials = None
-        if credentials_location:
-            gcp_credentials = service_account.Credentials.from_service_account_file(credentials_location)
+        if credentials_file:
+            gcp_credentials = service_account.Credentials.from_service_account_file(credentials_file)
         elif credentials_info_str:
             try:
                 credentials_info_dict = json.loads(credentials_info_str)
