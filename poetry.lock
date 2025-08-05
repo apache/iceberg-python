@@ -59,7 +59,7 @@ description = "Happy Eyeballs for asyncio"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""
+markers = "extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""
 files = [
     {file = "aiohappyeyeballs-2.6.1-py3-none-any.whl", hash = "sha256:f349ba8f4b75cb25c99c5c2d84e997e485204d2902a9597802b0371f09331fb8"},
     {file = "aiohappyeyeballs-2.6.1.tar.gz", hash = "sha256:c3f9d0113123803ccadfdf3f0faa505bc78e6a72d1cc4806cbd719826e943558"},
@@ -72,7 +72,7 @@ description = "Async http client/server framework (asyncio)"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""
+markers = "extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""
 files = [
     {file = "aiohttp-3.12.15-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:b6fc902bff74d9b1879ad55f5404153e2b33a82e72a95c89cec5eb6cc9e92fbc"},
     {file = "aiohttp-3.12.15-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:098e92835b8119b54c693f2f88a1dec690e20798ca5f5fe5f0520245253ee0af"},
@@ -202,7 +202,7 @@ description = "aiosignal: a list of registered asynchronous callbacks"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "python_version == \"3.9\" and extra == \"ray\" or (extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\") and python_version < \"3.10\" or python_version >= \"3.10\" and (extra == \"ray\" or extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\")"
+markers = "(extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\") and (extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\" or extra == \"ray\")"
 files = [
     {file = "aiosignal-1.4.0-py3-none-any.whl", hash = "sha256:053243f8b92b990551949e63930a839ff0cf0b0ebbe0597b0f3fb19e1a0fe82e"},
     {file = "aiosignal-1.4.0.tar.gz", hash = "sha256:f47eecd9468083c2029cc99945502cb7708b082c232f9aca65da147157b251c7"},
@@ -219,23 +219,9 @@ description = "A light, configurable Sphinx theme"
 optional = false
 python-versions = ">=3.9"
 groups = ["dev"]
-markers = "python_version < \"3.10\""
 files = [
     {file = "alabaster-0.7.16-py3-none-any.whl", hash = "sha256:b46733c07dce03ae4e150330b975c75737fa60f0a7c591b6c8bf4928a28e2c92"},
     {file = "alabaster-0.7.16.tar.gz", hash = "sha256:75a8b99c28a5dad50dd7f8ccdd447a121ddb3892da9e53d1ca5cca3106d58d65"},
-]
-
-[[package]]
-name = "alabaster"
-version = "1.0.0"
-description = "A light, configurable Sphinx theme"
-optional = false
-python-versions = ">=3.10"
-groups = ["dev"]
-markers = "python_version >= \"3.10\""
-files = [
-    {file = "alabaster-1.0.0-py3-none-any.whl", hash = "sha256:fc6786402dc3fcb2de3cabd5fe455a2db534b371124f1f21de8731783dec828b"},
-    {file = "alabaster-1.0.0.tar.gz", hash = "sha256:c00dca57bca26fa62a6d7d0a9fcce65f3e026e9bfe33e9c538fd3fbb2144fd9e"},
 ]
 
 [[package]]
@@ -269,7 +255,7 @@ description = "Timeout context manager for asyncio programs"
 optional = true
 python-versions = ">=3.8"
 groups = ["main"]
-markers = "(extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\") and python_version <= \"3.10\""
+markers = "(extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\") and python_version <= \"3.10\""
 files = [
     {file = "async_timeout-5.0.1-py3-none-any.whl", hash = "sha256:39e3809566ff85354557ec2398b55e096c8364bacac9405a7a1fa429e77fe76c"},
     {file = "async_timeout-5.0.1.tar.gz", hash = "sha256:d9321a7a3d5a6a5e187e824d2fa0793ce379a202935782d555d6e9d2735677d3"},
@@ -286,7 +272,7 @@ files = [
     {file = "attrs-25.3.0-py3-none-any.whl", hash = "sha256:427318ce031701fea540783410126f03899a97ffc6f61596ad581ac2e40e3bc3"},
     {file = "attrs-25.3.0.tar.gz", hash = "sha256:75d7cefc7fb576747b2c81b4442d4d4a1ce0900973527c011d1030fd3bf4af1b"},
 ]
-markers = {main = "python_version == \"3.9\" and extra == \"ray\" or (extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\") and python_version < \"3.10\" or python_version >= \"3.10\" and (extra == \"ray\" or extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\")"}
+markers = {main = "(extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\") and (extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\" or extra == \"ray\")"}
 
 [package.extras]
 benchmark = ["cloudpickle ; platform_python_implementation == \"CPython\"", "hypothesis", "mypy (>=1.11.1) ; platform_python_implementation == \"CPython\" and python_version >= \"3.10\"", "pympler", "pytest (>=4.3.0)", "pytest-codspeed", "pytest-mypy-plugins ; platform_python_implementation == \"CPython\" and python_version >= \"3.10\"", "pytest-xdist[psutil]"]
@@ -545,7 +531,7 @@ files = [
     {file = "boto3-1.39.8-py3-none-any.whl", hash = "sha256:dcea5270ccced0b4b962eb5874cb71b6232ccfc6203e05bf834a314442e4a79c"},
     {file = "boto3-1.39.8.tar.gz", hash = "sha256:456ea6baef037eb6205d64e012259d14f0c9300c9b30603890746c1a0882fa01"},
 ]
-markers = {main = "extra == \"glue\" or extra == \"dynamodb\" or extra == \"rest-sigv4\""}
+markers = {main = "extra == \"dynamodb\" or extra == \"glue\" or extra == \"rest-sigv4\""}
 
 [package.dependencies]
 botocore = ">=1.39.8,<1.40.0"
@@ -566,7 +552,7 @@ files = [
     {file = "botocore-1.39.8-py3-none-any.whl", hash = "sha256:ab43f79c6893271934faba7ae1987a313d59576361c544c70a5391ade560891d"},
     {file = "botocore-1.39.8.tar.gz", hash = "sha256:3848bd9057ea8dbc059e7764eda63bda575727ad1101dbd03636ab4a6f283fa5"},
 ]
-markers = {main = "extra == \"glue\" or extra == \"dynamodb\" or extra == \"rest-sigv4\" or extra == \"s3fs\""}
+markers = {main = "extra == \"dynamodb\" or extra == \"glue\" or extra == \"rest-sigv4\" or extra == \"s3fs\""}
 
 [package.dependencies]
 jmespath = ">=0.7.1,<2.0.0"
@@ -859,26 +845,9 @@ description = "Composable command line interface toolkit"
 optional = false
 python-versions = ">=3.7"
 groups = ["main", "dev", "docs"]
-markers = "python_version < \"3.10\""
 files = [
     {file = "click-8.1.8-py3-none-any.whl", hash = "sha256:63c132bbbed01578a06712a2d1f497bb62d9c1c0d329b7903a866228027263b2"},
     {file = "click-8.1.8.tar.gz", hash = "sha256:ed53c9d8990d83c2a27deae68e4ee337473f6330c040a31d4225c9574d16096a"},
-]
-
-[package.dependencies]
-colorama = {version = "*", markers = "platform_system == \"Windows\""}
-
-[[package]]
-name = "click"
-version = "8.2.1"
-description = "Composable command line interface toolkit"
-optional = false
-python-versions = ">=3.10"
-groups = ["main", "dev", "docs"]
-markers = "python_version >= \"3.10\""
-files = [
-    {file = "click-8.2.1-py3-none-any.whl", hash = "sha256:61a3265b914e850b85317d0b3109c7f8cd35a670f963866005d6ef1d5175a12b"},
-    {file = "click-8.2.1.tar.gz", hash = "sha256:27c491cc05d968d271d5a1db13e3b5a184636d9d930f148c50b038f0d0646202"},
 ]
 
 [package.dependencies]
@@ -1435,14 +1404,14 @@ websockets = ["websocket-client (>=1.3.0)"]
 
 [[package]]
 name = "docutils"
-version = "0.21.2"
+version = "0.22"
 description = "Docutils -- Python Documentation Utilities"
 optional = false
 python-versions = ">=3.9"
 groups = ["dev"]
 files = [
-    {file = "docutils-0.21.2-py3-none-any.whl", hash = "sha256:dafca5b9e384f0e419294eb4d2ff9fa826435bf15f15b7bd45723e8ad76811b2"},
-    {file = "docutils-0.21.2.tar.gz", hash = "sha256:3a6b18732edf182daa3cd12775bbb338cf5691468f91eeeb109deff6ebfa986f"},
+    {file = "docutils-0.22-py3-none-any.whl", hash = "sha256:4ed966a0e96a0477d852f7af31bdcb3adc049fbb35ccba358c2ea8a03287615e"},
+    {file = "docutils-0.22.tar.gz", hash = "sha256:ba9d57750e92331ebe7c08a1bbf7a7f8143b86c476acd51528b042216a6aad0f"},
 ]
 
 [[package]]
@@ -1594,7 +1563,7 @@ files = [
     {file = "filelock-3.18.0-py3-none-any.whl", hash = "sha256:c401f4f8377c4464e6db25fff06205fd89bdd83b65eb0488ed1b160f780e21de"},
     {file = "filelock-3.18.0.tar.gz", hash = "sha256:adbc88eabb99d2fec8c9c1b229b171f18afa655400173ddc653d5d01501fb9f2"},
 ]
-markers = {main = "python_version == \"3.9\" and (extra == \"ray\" or extra == \"hf\") or extra == \"hf\" or extra == \"ray\""}
+markers = {main = "extra == \"ray\" or extra == \"hf\""}
 
 [package.extras]
 docs = ["furo (>=2024.8.6)", "sphinx (>=8.1.3)", "sphinx-autodoc-typehints (>=3)"]
@@ -1649,7 +1618,7 @@ description = "A list-like structure which implements collections.abc.MutableSeq
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "python_version == \"3.9\" and extra == \"ray\" or (extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\") and python_version < \"3.10\" or python_version >= \"3.10\" and (extra == \"ray\" or extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\")"
+markers = "(extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\") and (extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\" or extra == \"ray\")"
 files = [
     {file = "frozenlist-1.7.0-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:cc4df77d638aa2ed703b878dd093725b72a824c3c546c076e8fdf276f78ee84a"},
     {file = "frozenlist-1.7.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:716a9973a2cc963160394f701964fe25012600f3d311f60c790400b00e568b61"},
@@ -2398,7 +2367,7 @@ files = [
     {file = "jmespath-1.0.1-py3-none-any.whl", hash = "sha256:02e2e4cc71b5bcab88332eebf907519190dd9e6e82107fa7f83b1003a6252980"},
     {file = "jmespath-1.0.1.tar.gz", hash = "sha256:90261b206d6defd58fdd5e85f478bf633a2901798906be2ad389150c5c60edbe"},
 ]
-markers = {main = "extra == \"glue\" or extra == \"dynamodb\" or extra == \"rest-sigv4\" or extra == \"s3fs\""}
+markers = {main = "extra == \"dynamodb\" or extra == \"glue\" or extra == \"rest-sigv4\" or extra == \"s3fs\""}
 
 [[package]]
 name = "joserfc"
@@ -3292,7 +3261,7 @@ description = "multidict implementation"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""
+markers = "extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""
 files = [
     {file = "multidict-6.6.3-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:a2be5b7b35271f7fff1397204ba6708365e3d773579fe2a30625e16c4b4ce817"},
     {file = "multidict-6.6.3-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:12f4581d2930840295c461764b9a65732ec01250b46c6b2c510d7ee68872b140"},
@@ -3609,7 +3578,7 @@ description = "Fundamental package for array computing in Python"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "python_version < \"3.10\" and (extra == \"pandas\" or extra == \"ray\" or extra == \"bodo\")"
+markers = "python_version < \"3.10\" and (extra == \"bodo\" or extra == \"pandas\" or extra == \"ray\")"
 files = [
     {file = "numpy-2.0.2-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:51129a29dbe56f9ca83438b706e2e69a39892b5eda6cedcb6b0c9fdc9b0d3ece"},
     {file = "numpy-2.0.2-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:f15975dfec0cf2239224d80e32c3170b1d168335eaedee69da84fbe9f1f9cd04"},
@@ -3665,7 +3634,7 @@ description = "Fundamental package for array computing in Python"
 optional = true
 python-versions = ">=3.10"
 groups = ["main"]
-markers = "python_version >= \"3.10\" and (extra == \"pandas\" or extra == \"ray\" or extra == \"bodo\")"
+markers = "python_version >= \"3.10\" and (extra == \"bodo\" or extra == \"pandas\" or extra == \"ray\")"
 files = [
     {file = "numpy-2.2.6-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:b412caa66f72040e6d268491a59f2c43bf03eb6c96dd8f0307829feb7fa2b6fb"},
     {file = "numpy-2.2.6-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:8e41fd67c52b86603a91c1a505ebaef50b3314de0213461c7a6e99c9a3beff90"},
@@ -3788,7 +3757,7 @@ files = [
     {file = "packaging-25.0-py3-none-any.whl", hash = "sha256:29572ef2b1f17581046b3a2227d5c611fb25ec70ca1ba8554b24b0e69331a484"},
     {file = "packaging-25.0.tar.gz", hash = "sha256:d443872c98d677bf60f6a1f2f8c1cb748e8fe762d2bf9d3148b5599295b0fc4f"},
 ]
-markers = {main = "python_version == \"3.9\" and (extra == \"ray\" or extra == \"hf\") or extra == \"hf\" or extra == \"ray\""}
+markers = {main = "extra == \"ray\" or extra == \"hf\""}
 
 [[package]]
 name = "paginate"
@@ -3813,7 +3782,7 @@ description = "Powerful data structures for data analysis, time series, and stat
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"pandas\" or extra == \"ray\" or extra == \"bodo\""
+markers = "extra == \"bodo\" or extra == \"pandas\" or extra == \"ray\""
 files = [
     {file = "pandas-2.3.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:22c2e866f7209ebc3a8f08d75766566aae02bcc91d196935a1d9e59c7b990ac9"},
     {file = "pandas-2.3.1-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:3583d348546201aff730c8c47e49bc159833f971c2899d6097bce68b9112a4f1"},
@@ -3862,8 +3831,8 @@ files = [
 [package.dependencies]
 numpy = [
     {version = ">=1.22.4", markers = "python_version < \"3.11\""},
-    {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
     {version = ">=1.23.2", markers = "python_version == \"3.11\""},
+    {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
 ]
 python-dateutil = ">=2.8.2"
 pytz = ">=2020.1"
@@ -4034,7 +4003,7 @@ description = "Accelerated property cache"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""
+markers = "extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""
 files = [
     {file = "propcache-0.3.2-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:22d9962a358aedbb7a2e36187ff273adeaab9743373a272976d2e348d08c7770"},
     {file = "propcache-0.3.2-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:0d0fda578d1dc3f77b6b5a5dce3b9ad69a8250a891760a548df850a5e8da87f3"},
@@ -4162,7 +4131,7 @@ description = ""
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "python_version == \"3.9\" and (extra == \"ray\" or extra == \"gcsfs\") or extra == \"gcsfs\" or extra == \"ray\""
+markers = "extra == \"ray\" or extra == \"gcsfs\""
 files = [
     {file = "protobuf-6.31.1-cp310-abi3-win32.whl", hash = "sha256:7fa17d5a29c2e04b7d90e5e32388b8bfd0e7107cd8e616feef7ed3fa6bdab5c9"},
     {file = "protobuf-6.31.1-cp310-abi3-win_amd64.whl", hash = "sha256:426f59d2964864a1a366254fa703b8632dcec0790d8862d30034d8245e1cd447"},
@@ -4329,7 +4298,7 @@ description = "Python library for Apache Arrow"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"pyarrow\" or extra == \"pandas\" or extra == \"duckdb\" or extra == \"ray\" or extra == \"bodo\" or extra == \"daft\" or extra == \"datafusion\""
+markers = "extra == \"bodo\" or extra == \"daft\" or extra == \"datafusion\" or extra == \"duckdb\" or extra == \"pandas\" or extra == \"pyarrow\" or extra == \"ray\""
 files = [
     {file = "pyarrow-19.0.1-cp310-cp310-macosx_12_0_arm64.whl", hash = "sha256:fc28912a2dc924dddc2087679cc8b7263accc71b9ff025a1362b004711661a69"},
     {file = "pyarrow-19.0.1-cp310-cp310-macosx_12_0_x86_64.whl", hash = "sha256:fca15aabbe9b8355800d923cc2e82c8ef514af321e18b437c3d782aa884eaeec"},
@@ -4883,7 +4852,7 @@ description = "World timezone definitions, modern and historical"
 optional = true
 python-versions = "*"
 groups = ["main"]
-markers = "extra == \"pandas\" or extra == \"ray\" or extra == \"bodo\""
+markers = "extra == \"bodo\" or extra == \"pandas\" or extra == \"ray\""
 files = [
     {file = "pytz-2025.2-py2.py3-none-any.whl", hash = "sha256:5ddf76296dd8c44c26eb8f4b6f35488f3ccbf6fbbd7adee0b7262d43f0ec2f00"},
     {file = "pytz-2025.2.tar.gz", hash = "sha256:360b9e3dbb49a209c21ad61809c7fb453643e048b38924c765813546746e81c3"},
@@ -4982,7 +4951,7 @@ files = [
     {file = "PyYAML-6.0.2-cp39-cp39-win_amd64.whl", hash = "sha256:39693e1f8320ae4f43943590b49779ffb98acb81f788220ea932a6b6c51004d8"},
     {file = "pyyaml-6.0.2.tar.gz", hash = "sha256:d584d9ec91ad65861cc08d42e834324ef890a082e591037abe114850ff7bbc3e"},
 ]
-markers = {main = "python_version == \"3.9\" and (extra == \"ray\" or extra == \"hf\") or extra == \"hf\" or extra == \"ray\""}
+markers = {main = "extra == \"ray\" or extra == \"hf\""}
 
 [[package]]
 name = "pyyaml-env-tag"
@@ -5305,23 +5274,6 @@ pygments = ">=2.13.0,<3.0.0"
 jupyter = ["ipywidgets (>=7.5.1,<9)"]
 
 [[package]]
-name = "roman-numerals-py"
-version = "3.1.0"
-description = "Manipulate well-formed Roman numerals"
-optional = false
-python-versions = ">=3.9"
-groups = ["dev"]
-markers = "python_version >= \"3.11\""
-files = [
-    {file = "roman_numerals_py-3.1.0-py3-none-any.whl", hash = "sha256:9da2ad2fb670bcf24e81070ceb3be72f6c11c440d73bd579fbeca1e9f330954c"},
-    {file = "roman_numerals_py-3.1.0.tar.gz", hash = "sha256:be4bf804f083a4ce001b5eb7e3c0862479d10f94c936f6c4e5f250aa5ff5bd2d"},
-]
-
-[package.extras]
-lint = ["mypy (==1.15.0)", "pyright (==1.1.394)", "ruff (==0.9.7)"]
-test = ["pytest (>=8)"]
-
-[[package]]
 name = "rpds-py"
 version = "0.26.0"
 description = "Python bindings to Rust's persistent data structures (rpds)"
@@ -5525,7 +5477,7 @@ files = [
     {file = "s3transfer-0.13.1-py3-none-any.whl", hash = "sha256:a981aa7429be23fe6dfc13e80e4020057cbab622b08c0315288758d67cabc724"},
     {file = "s3transfer-0.13.1.tar.gz", hash = "sha256:c3fdba22ba1bd367922f27ec8032d6a1cf5f10c934fb5d68cf60fd5a23d936cf"},
 ]
-markers = {main = "extra == \"glue\" or extra == \"dynamodb\" or extra == \"rest-sigv4\""}
+markers = {main = "extra == \"dynamodb\" or extra == \"glue\" or extra == \"rest-sigv4\""}
 
 [package.dependencies]
 botocore = ">=1.37.4,<2.0a.0"
@@ -5592,115 +5544,39 @@ files = [
 
 [[package]]
 name = "sphinx"
-version = "7.4.7"
+version = "3.5.3"
 description = "Python documentation generator"
 optional = false
-python-versions = ">=3.9"
+python-versions = ">=3.5"
 groups = ["dev"]
-markers = "python_version < \"3.10\""
 files = [
-    {file = "sphinx-7.4.7-py3-none-any.whl", hash = "sha256:c2419e2135d11f1951cd994d6eb18a1835bd8fdd8429f9ca375dc1f3281bd239"},
-    {file = "sphinx-7.4.7.tar.gz", hash = "sha256:242f92a7ea7e6c5b406fdc2615413890ba9f699114a9c09192d7dfead2ee9cfe"},
+    {file = "Sphinx-3.5.3-py3-none-any.whl", hash = "sha256:3f01732296465648da43dec8fb40dc451ba79eb3e2cc5c6d79005fd98197107d"},
+    {file = "Sphinx-3.5.3.tar.gz", hash = "sha256:ce9c228456131bab09a3d7d10ae58474de562a6f79abb3dc811ae401cf8c1abc"},
 ]
 
 [package.dependencies]
-alabaster = ">=0.7.14,<0.8.0"
-babel = ">=2.13"
-colorama = {version = ">=0.4.6", markers = "sys_platform == \"win32\""}
-docutils = ">=0.20,<0.22"
-imagesize = ">=1.3"
-importlib-metadata = {version = ">=6.0", markers = "python_version < \"3.10\""}
-Jinja2 = ">=3.1"
-packaging = ">=23.0"
-Pygments = ">=2.17"
-requests = ">=2.30.0"
-snowballstemmer = ">=2.2"
+alabaster = ">=0.7,<0.8"
+babel = ">=1.3"
+colorama = {version = ">=0.3.5", markers = "sys_platform == \"win32\""}
+docutils = ">=0.12"
+imagesize = "*"
+Jinja2 = ">=2.3"
+packaging = "*"
+Pygments = ">=2.0"
+requests = ">=2.5.0"
+setuptools = "*"
+snowballstemmer = ">=1.1"
 sphinxcontrib-applehelp = "*"
 sphinxcontrib-devhelp = "*"
-sphinxcontrib-htmlhelp = ">=2.0.0"
+sphinxcontrib-htmlhelp = "*"
 sphinxcontrib-jsmath = "*"
 sphinxcontrib-qthelp = "*"
-sphinxcontrib-serializinghtml = ">=1.1.9"
-tomli = {version = ">=2", markers = "python_version < \"3.11\""}
+sphinxcontrib-serializinghtml = "*"
 
 [package.extras]
 docs = ["sphinxcontrib-websupport"]
-lint = ["flake8 (>=6.0)", "importlib-metadata (>=6.0)", "mypy (==1.10.1)", "pytest (>=6.0)", "ruff (==0.5.2)", "sphinx-lint (>=0.9)", "tomli (>=2)", "types-docutils (==0.21.0.20240711)", "types-requests (>=2.30.0)"]
-test = ["cython (>=3.0)", "defusedxml (>=0.7.1)", "pytest (>=8.0)", "setuptools (>=70.0)", "typing_extensions (>=4.9)"]
-
-[[package]]
-name = "sphinx"
-version = "8.1.3"
-description = "Python documentation generator"
-optional = false
-python-versions = ">=3.10"
-groups = ["dev"]
-markers = "python_version == \"3.10\""
-files = [
-    {file = "sphinx-8.1.3-py3-none-any.whl", hash = "sha256:09719015511837b76bf6e03e42eb7595ac8c2e41eeb9c29c5b755c6b677992a2"},
-    {file = "sphinx-8.1.3.tar.gz", hash = "sha256:43c1911eecb0d3e161ad78611bc905d1ad0e523e4ddc202a58a821773dc4c927"},
-]
-
-[package.dependencies]
-alabaster = ">=0.7.14"
-babel = ">=2.13"
-colorama = {version = ">=0.4.6", markers = "sys_platform == \"win32\""}
-docutils = ">=0.20,<0.22"
-imagesize = ">=1.3"
-Jinja2 = ">=3.1"
-packaging = ">=23.0"
-Pygments = ">=2.17"
-requests = ">=2.30.0"
-snowballstemmer = ">=2.2"
-sphinxcontrib-applehelp = ">=1.0.7"
-sphinxcontrib-devhelp = ">=1.0.6"
-sphinxcontrib-htmlhelp = ">=2.0.6"
-sphinxcontrib-jsmath = ">=1.0.1"
-sphinxcontrib-qthelp = ">=1.0.6"
-sphinxcontrib-serializinghtml = ">=1.1.9"
-tomli = {version = ">=2", markers = "python_version < \"3.11\""}
-
-[package.extras]
-docs = ["sphinxcontrib-websupport"]
-lint = ["flake8 (>=6.0)", "mypy (==1.11.1)", "pyright (==1.1.384)", "pytest (>=6.0)", "ruff (==0.6.9)", "sphinx-lint (>=0.9)", "tomli (>=2)", "types-Pillow (==10.2.0.20240822)", "types-Pygments (==2.18.0.20240506)", "types-colorama (==0.4.15.20240311)", "types-defusedxml (==0.7.0.20240218)", "types-docutils (==0.21.0.20241005)", "types-requests (==2.32.0.20240914)", "types-urllib3 (==1.26.25.14)"]
-test = ["cython (>=3.0)", "defusedxml (>=0.7.1)", "pytest (>=8.0)", "setuptools (>=70.0)", "typing_extensions (>=4.9)"]
-
-[[package]]
-name = "sphinx"
-version = "8.2.3"
-description = "Python documentation generator"
-optional = false
-python-versions = ">=3.11"
-groups = ["dev"]
-markers = "python_version >= \"3.11\""
-files = [
-    {file = "sphinx-8.2.3-py3-none-any.whl", hash = "sha256:4405915165f13521d875a8c29c8970800a0141c14cc5416a38feca4ea5d9b9c3"},
-    {file = "sphinx-8.2.3.tar.gz", hash = "sha256:398ad29dee7f63a75888314e9424d40f52ce5a6a87ae88e7071e80af296ec348"},
-]
-
-[package.dependencies]
-alabaster = ">=0.7.14"
-babel = ">=2.13"
-colorama = {version = ">=0.4.6", markers = "sys_platform == \"win32\""}
-docutils = ">=0.20,<0.22"
-imagesize = ">=1.3"
-Jinja2 = ">=3.1"
-packaging = ">=23.0"
-Pygments = ">=2.17"
-requests = ">=2.30.0"
-roman-numerals-py = ">=1.0.0"
-snowballstemmer = ">=2.2"
-sphinxcontrib-applehelp = ">=1.0.7"
-sphinxcontrib-devhelp = ">=1.0.6"
-sphinxcontrib-htmlhelp = ">=2.0.6"
-sphinxcontrib-jsmath = ">=1.0.1"
-sphinxcontrib-qthelp = ">=1.0.6"
-sphinxcontrib-serializinghtml = ">=1.1.9"
-
-[package.extras]
-docs = ["sphinxcontrib-websupport"]
-lint = ["betterproto (==2.0.0b6)", "mypy (==1.15.0)", "pypi-attestations (==0.0.21)", "pyright (==1.1.395)", "pytest (>=8.0)", "ruff (==0.9.9)", "sphinx-lint (>=0.9)", "types-Pillow (==10.2.0.20240822)", "types-Pygments (==2.19.0.20250219)", "types-colorama (==0.4.15.20240311)", "types-defusedxml (==0.7.0.20240218)", "types-docutils (==0.21.0.20241128)", "types-requests (==2.32.0.20241016)", "types-urllib3 (==1.26.25.14)"]
-test = ["cython (>=3.0)", "defusedxml (>=0.7.1)", "pytest (>=8.0)", "pytest-xdist[psutil] (>=3.4)", "setuptools (>=70.0)", "typing_extensions (>=4.9)"]
+lint = ["docutils-stubs", "flake8 (>=3.5.0)", "isort", "mypy (>=0.800)"]
+test = ["cython", "html5lib", "pytest", "pytest-cov", "typed-ast ; python_version < \"3.8\""]
 
 [[package]]
 name = "sphinxcontrib-applehelp"
@@ -6033,7 +5909,7 @@ description = "Fast, Extensible Progress Meter"
 optional = true
 python-versions = ">=3.7"
 groups = ["main"]
-markers = "extra == \"hf\" or extra == \"daft\""
+markers = "extra == \"daft\" or extra == \"hf\""
 files = [
     {file = "tqdm-4.67.1-py3-none-any.whl", hash = "sha256:26445eca388f82e72884e0d580d5464cd801a3ea01e63e5601bdff9ba6a48de2"},
     {file = "tqdm-4.67.1.tar.gz", hash = "sha256:f8aef9c52c08c13a65f30ea34f4e5aac3fd1a34959879d7e59e63027286627f2"},
@@ -6084,7 +5960,7 @@ description = "Provider of IANA time zone data"
 optional = true
 python-versions = ">=2"
 groups = ["main"]
-markers = "extra == \"pandas\" or extra == \"ray\" or extra == \"bodo\""
+markers = "extra == \"bodo\" or extra == \"pandas\" or extra == \"ray\""
 files = [
     {file = "tzdata-2025.2-py2.py3-none-any.whl", hash = "sha256:1a403fada01ff9221ca8044d701868fa132215d84beb92242d9acd2147f667a8"},
     {file = "tzdata-2025.2.tar.gz", hash = "sha256:b60a638fcc0daffadf82fe0f57e53d06bdec2f36c4df66280ae79bce6bd6f2b9"},
@@ -6318,7 +6194,7 @@ description = "Yet another URL library"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""
+markers = "extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""
 files = [
     {file = "yarl-1.20.1-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:6032e6da6abd41e4acda34d75a816012717000fa6839f37124a47fcefc49bec4"},
     {file = "yarl-1.20.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:2c7b34d804b8cf9b214f05015c4fee2ebe7ed05cf581e7192c06555c71f4446a"},
