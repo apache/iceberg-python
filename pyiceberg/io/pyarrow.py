@@ -468,38 +468,38 @@ class PyArrowFileIO(FileIO):
         properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith(("s3.", "client.")))
         used_keys: set[str] = set()
 
-        def get(*keys: str) -> str | None:
+        def get_property_with_tracking(*keys: str) -> str | None:
             return get_first_property_value_with_tracking(properties, used_keys, *keys)
 
         client_kwargs: Properties = {}
 
-        if endpoint := get(S3_ENDPOINT, "s3.endpoint_override"):
+        if endpoint := get_property_with_tracking(S3_ENDPOINT, "s3.endpoint_override"):
             client_kwargs["endpoint_override"] = endpoint
-        if access_key := get(S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID, "s3.access_key"):
+        if access_key := get_property_with_tracking(S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID, "s3.access_key"):
             client_kwargs["access_key"] = access_key
-        if secret_key := get(S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY, "s3.secret_key"):
+        if secret_key := get_property_with_tracking(S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY, "s3.secret_key"):
             client_kwargs["secret_key"] = secret_key
-        if session_token := get(S3_SESSION_TOKEN, AWS_SESSION_TOKEN, "s3.session_token"):
+        if session_token := get_property_with_tracking(S3_SESSION_TOKEN, AWS_SESSION_TOKEN, "s3.session_token"):
             client_kwargs["session_token"] = session_token
-        if region := get(S3_REGION, AWS_REGION):
+        if region := get_property_with_tracking(S3_REGION, AWS_REGION):
             client_kwargs["region"] = region
-        _ = get(
+        _ = get_property_with_tracking(
             S3_RESOLVE_REGION
         )  # this feature is only available for S3. Use `get` here so it does not get passed down to the S3FileSystem constructor
-        if force_virtual_addressing := get(S3_FORCE_VIRTUAL_ADDRESSING, "s3.force_virtual_addressing"):
+        if force_virtual_addressing := get_property_with_tracking(S3_FORCE_VIRTUAL_ADDRESSING, "s3.force_virtual_addressing"):
             client_kwargs["force_virtual_addressing"] = convert_str_to_bool(force_virtual_addressing)
         else:
             # For Alibaba OSS protocol, default to True
             client_kwargs["force_virtual_addressing"] = True
-        if proxy_uri := get(S3_PROXY_URI, "s3.proxy_options"):
+        if proxy_uri := get_property_with_tracking(S3_PROXY_URI, "s3.proxy_options"):
             client_kwargs["proxy_options"] = proxy_uri
-        if connect_timeout := get(S3_CONNECT_TIMEOUT, "s3.connect_timeout"):
+        if connect_timeout := get_property_with_tracking(S3_CONNECT_TIMEOUT, "s3.connect_timeout"):
             client_kwargs["connect_timeout"] = float(connect_timeout)
-        if request_timeout := get(S3_REQUEST_TIMEOUT, "s3.request_timeout"):
+        if request_timeout := get_property_with_tracking(S3_REQUEST_TIMEOUT, "s3.request_timeout"):
             client_kwargs["request_timeout"] = float(request_timeout)
-        if role_arn := get(S3_ROLE_ARN, AWS_ROLE_ARN, "s3.role_arn"):
+        if role_arn := get_property_with_tracking(S3_ROLE_ARN, AWS_ROLE_ARN, "s3.role_arn"):
             client_kwargs["role_arn"] = role_arn
-        if session_name := get(S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME, "s3.session_name"):
+        if session_name := get_property_with_tracking(S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME, "s3.session_name"):
             client_kwargs["session_name"] = session_name
 
         # get the rest of the properties with the `s3.` prefix that are not already evaluated
@@ -513,39 +513,41 @@ class PyArrowFileIO(FileIO):
         properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith(("s3.", "client.")))
         used_keys: set[str] = set()
 
-        def get(*keys: str) -> str | None:
+        def get_property_with_tracking(*keys: str) -> str | None:
             return get_first_property_value_with_tracking(properties, used_keys, *keys)
 
         client_kwargs: Properties = {}
 
         # Handle S3 region configuration with optional auto-resolution
         client_kwargs["region"] = self._resolve_s3_region(
-            provided_region=get(S3_REGION, AWS_REGION), resolve_region_override=get(S3_RESOLVE_REGION), bucket=netloc
+            provided_region=get_property_with_tracking(S3_REGION, AWS_REGION),
+            resolve_region_override=get_property_with_tracking(S3_RESOLVE_REGION),
+            bucket=netloc,
         )
 
-        if endpoint := get(S3_ENDPOINT, "s3.endpoint_override"):
+        if endpoint := get_property_with_tracking(S3_ENDPOINT, "s3.endpoint_override"):
             client_kwargs["endpoint_override"] = endpoint
-        if access_key := get(S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID, "s3.access_key"):
+        if access_key := get_property_with_tracking(S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID, "s3.access_key"):
             client_kwargs["access_key"] = access_key
-        if secret_key := get(S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY, "s3.secret_key"):
+        if secret_key := get_property_with_tracking(S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY, "s3.secret_key"):
             client_kwargs["secret_key"] = secret_key
-        if session_token := get(S3_SESSION_TOKEN, AWS_SESSION_TOKEN, "s3.session_token"):
+        if session_token := get_property_with_tracking(S3_SESSION_TOKEN, AWS_SESSION_TOKEN, "s3.session_token"):
             client_kwargs["session_token"] = session_token
-        if proxy_uri := get(S3_PROXY_URI, "s3.proxy_options"):
+        if proxy_uri := get_property_with_tracking(S3_PROXY_URI, "s3.proxy_options"):
             client_kwargs["proxy_options"] = proxy_uri
-        if connect_timeout := get(S3_CONNECT_TIMEOUT, "s3.connect_timeout"):
+        if connect_timeout := get_property_with_tracking(S3_CONNECT_TIMEOUT, "s3.connect_timeout"):
             client_kwargs["connect_timeout"] = float(connect_timeout)
-        if request_timeout := get(S3_REQUEST_TIMEOUT, "s3.request_timeout"):
+        if request_timeout := get_property_with_tracking(S3_REQUEST_TIMEOUT, "s3.request_timeout"):
             client_kwargs["request_timeout"] = float(request_timeout)
-        if role_arn := get(S3_ROLE_ARN, AWS_ROLE_ARN, "s3.role_arn"):
+        if role_arn := get_property_with_tracking(S3_ROLE_ARN, AWS_ROLE_ARN, "s3.role_arn"):
             client_kwargs["role_arn"] = role_arn
-        if session_name := get(S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME, "s3.session_name"):
+        if session_name := get_property_with_tracking(S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME, "s3.session_name"):
             client_kwargs["session_name"] = session_name
 
-        if force_virtual_addressing := get(S3_FORCE_VIRTUAL_ADDRESSING, "s3.force_virtual_addressing"):
+        if force_virtual_addressing := get_property_with_tracking(S3_FORCE_VIRTUAL_ADDRESSING, "s3.force_virtual_addressing"):
             client_kwargs["force_virtual_addressing"] = convert_str_to_bool(force_virtual_addressing)
         # Handle retry strategy special case
-        if retry_strategy_impl := get(S3_RETRY_STRATEGY_IMPL, "s3.retry_strategy"):
+        if retry_strategy_impl := get_property_with_tracking(S3_RETRY_STRATEGY_IMPL, "s3.retry_strategy"):
             if retry_instance := _import_retry_strategy(retry_strategy_impl):
                 client_kwargs["retry_strategy"] = retry_instance
 
@@ -569,30 +571,30 @@ class PyArrowFileIO(FileIO):
         properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith("adls."))
         used_keys: set[str] = set()
 
-        def get(*keys: str) -> str | None:
+        def get_property_with_tracking(*keys: str) -> str | None:
             return get_first_property_value_with_tracking(properties, used_keys, *keys)
 
         client_kwargs: Properties = {}
 
-        if account_name := get(ADLS_ACCOUNT_NAME, "adls.account_name"):
+        if account_name := get_property_with_tracking(ADLS_ACCOUNT_NAME, "adls.account_name"):
             client_kwargs["account_name"] = account_name
 
-        if account_key := get(ADLS_ACCOUNT_KEY, "adls.account_key"):
+        if account_key := get_property_with_tracking(ADLS_ACCOUNT_KEY, "adls.account_key"):
             client_kwargs["account_key"] = account_key
 
-        if blob_storage_authority := get(ADLS_BLOB_STORAGE_AUTHORITY, "adls.blob_storage_authority"):
+        if blob_storage_authority := get_property_with_tracking(ADLS_BLOB_STORAGE_AUTHORITY, "adls.blob_storage_authority"):
             client_kwargs["blob_storage_authority"] = blob_storage_authority
 
-        if dfs_storage_authority := get(ADLS_DFS_STORAGE_AUTHORITY, "adls.dfs_storage_authority"):
+        if dfs_storage_authority := get_property_with_tracking(ADLS_DFS_STORAGE_AUTHORITY, "adls.dfs_storage_authority"):
             client_kwargs["dfs_storage_authority"] = dfs_storage_authority
 
-        if blob_storage_scheme := get(ADLS_BLOB_STORAGE_SCHEME, "adls.blob_storage_scheme"):
+        if blob_storage_scheme := get_property_with_tracking(ADLS_BLOB_STORAGE_SCHEME, "adls.blob_storage_scheme"):
             client_kwargs["blob_storage_scheme"] = blob_storage_scheme
 
-        if dfs_storage_scheme := get(ADLS_DFS_STORAGE_SCHEME, "adls.dfs_storage_scheme"):
+        if dfs_storage_scheme := get_property_with_tracking(ADLS_DFS_STORAGE_SCHEME, "adls.dfs_storage_scheme"):
             client_kwargs["dfs_storage_scheme"] = dfs_storage_scheme
 
-        if sas_token := get(ADLS_SAS_TOKEN, "adls.sas_token"):
+        if sas_token := get_property_with_tracking(ADLS_SAS_TOKEN, "adls.sas_token"):
             client_kwargs["sas_token"] = sas_token
 
         # get the rest of the properties with the `adls.` prefix that are not already evaluated
@@ -609,19 +611,19 @@ class PyArrowFileIO(FileIO):
         properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith("hdfs."))
         used_keys: set[str] = set()
 
-        def get(*keys: str) -> str | None:
+        def get_property_with_tracking(*keys: str) -> str | None:
             return get_first_property_value_with_tracking(properties, used_keys, *keys)
 
         client_kwargs: Properties = {}
 
-        if host := get(HDFS_HOST):
+        if host := get_property_with_tracking(HDFS_HOST):
             client_kwargs["host"] = host
-        if port := get(HDFS_PORT):
+        if port := get_property_with_tracking(HDFS_PORT):
             # port should be an integer type
             client_kwargs["port"] = int(port)
-        if user := get(HDFS_USER):
+        if user := get_property_with_tracking(HDFS_USER):
             client_kwargs["user"] = user
-        if kerb_ticket := get(HDFS_KERB_TICKET, "hdfs.kerb_ticket"):
+        if kerb_ticket := get_property_with_tracking(HDFS_KERB_TICKET, "hdfs.kerb_ticket"):
             client_kwargs["kerb_ticket"] = kerb_ticket
 
         # get the rest of the properties with the `hdfs.` prefix that are not already evaluated
@@ -635,29 +637,31 @@ class PyArrowFileIO(FileIO):
         properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith("gcs."))
         used_keys: set[str] = set()
 
-        def get(*keys: str) -> str | None:
+        def get_property_with_tracking(*keys: str) -> str | None:
             return get_first_property_value_with_tracking(properties, used_keys, *keys)
 
         client_kwargs: Properties = {}
 
-        if access_token := get(GCS_TOKEN, "gcs.access_token"):
+        if access_token := get_property_with_tracking(GCS_TOKEN, "gcs.access_token"):
             client_kwargs["access_token"] = access_token
-        if expiration := get(GCS_TOKEN_EXPIRES_AT_MS, "gcs.credential_token_expiration"):
+        if expiration := get_property_with_tracking(GCS_TOKEN_EXPIRES_AT_MS, "gcs.credential_token_expiration"):
             client_kwargs["credential_token_expiration"] = millis_to_datetime(int(expiration))
-        if bucket_location := get(GCS_DEFAULT_LOCATION, "gcs.default_bucket_location"):
+        if bucket_location := get_property_with_tracking(GCS_DEFAULT_LOCATION, "gcs.default_bucket_location"):
             client_kwargs["default_bucket_location"] = bucket_location
-        if endpoint := get(GCS_SERVICE_HOST):
+        if endpoint := get_property_with_tracking(GCS_SERVICE_HOST):
             url_parts = urlparse(endpoint)
             client_kwargs["scheme"] = url_parts.scheme
             client_kwargs["endpoint_override"] = url_parts.netloc
-        if (scheme := get("gcs.scheme")) and "scheme" not in client_kwargs:  # GCS_SERVICE_HOST takes precedence
+        if (
+            scheme := get_property_with_tracking("gcs.scheme")
+        ) and "scheme" not in client_kwargs:  # GCS_SERVICE_HOST takes precedence
             client_kwargs["scheme"] = scheme
         if (
-            endpoint_override := get("gcs.endpoint_override")
+            endpoint_override := get_property_with_tracking("gcs.endpoint_override")
         ) and "endpoint_override" not in client_kwargs:  # GCS_SERVICE_HOST takes precedence
             client_kwargs["endpoint_override"] = endpoint_override
 
-        if project_id := get(GCS_PROJECT_ID, "gcs.project_id"):
+        if project_id := get_property_with_tracking(GCS_PROJECT_ID, "gcs.project_id"):
             client_kwargs["project_id"] = project_id
 
         # get the rest of the properties with the `gcs.` prefix that are not already evaluated
