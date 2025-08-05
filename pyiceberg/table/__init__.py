@@ -2096,14 +2096,6 @@ class WriteTask:
         return f"00000-{self.task_id}-{self.write_uuid}.{extension}"
 
 
-@dataclass(frozen=True)
-class AddFileTask:
-    """Task with the parameters for adding a Parquet file as a DataFile."""
-
-    file_path: str
-    partition_field_value: Record
-
-
 def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], io: FileIO) -> Iterable[DataFile]:
     """Convert a list files into DataFiles.
 
