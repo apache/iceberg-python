@@ -19,7 +19,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 from functools import reduce
-from typing import TYPE_CHECKING, Optional, Set
+from typing import TYPE_CHECKING, Optional, Set, cast
+from urllib.parse import urlparse
 
 from pyiceberg.utils.concurrent import ExecutorFactory
 
@@ -51,32 +52,40 @@ class MaintenanceTable:
         Returns:
             A set of orphaned file paths.
         """
-        try:
-            import pyarrow as pa  # noqa: F401
-        except ModuleNotFoundError as e:
-            raise ModuleNotFoundError("For deleting orphaned files PyArrow needs to be installed") from e
+        from pyiceberg.io.fsspec import FsspecFileIO
 
-        from pyarrow.fs import FileSelector, FileType
-
-        from pyiceberg.io.pyarrow import PyArrowFileIO
-
-        if not isinstance(self.tbl.io, PyArrowFileIO):
-            raise TypeError("MaintenanceTable can only be used with PyArrowFileIO")
-
-        all_known_files = self.tbl.inspect._all_known_files()
-        flat_known_files: set[str] = reduce(set.union, all_known_files.values(), set())
-
-        scheme, _, _ = self.tbl.io.parse_location(location)
-        fs = self.tbl.io.fs_by_scheme(scheme, None)
-
-        _, _, path = self.tbl.io.parse_location(location)
-        selector = FileSelector(path, recursive=True)
-
-        # filter to just files as it may return directories, and filter on time
         if older_than is None:
             older_than = timedelta(0)
         as_of = datetime.now(timezone.utc) - older_than
-        all_files = [f.path for f in fs.get_file_info(selector) if f.type == FileType.File and f.mtime < as_of]
+
+        if isinstance(self.tbl.io, FsspecFileIO):
+            logger.info("Determined io to be FsspecFileIO.")
+            uri = urlparse(location)
+            fs = self.tbl.io.get_fs(uri.scheme)
+            all_files = [f for f in fs.glob(f"{location}/**") if fs.isfile(f) and fs.modified(f) < as_of]
+        else:
+            logger.info("Determined io to be PyArrowFileIO.")
+            try:
+                import pyarrow as pa  # noqa: F401
+            except ModuleNotFoundError as e:
+                raise ModuleNotFoundError(
+                    "For deleting orphaned files with a PyArrowFileIO, PyArrow needs to be installed"
+                ) from e
+
+            from pyarrow.fs import FileSelector, FileType
+
+            from pyiceberg.io.pyarrow import PyArrowFileIO
+
+            self.tbl.io = cast(PyArrowFileIO, self.tbl.io)
+
+            scheme, _, _ = PyArrowFileIO.parse_location(location)
+            fs = self.tbl.io.fs_by_scheme(scheme, None)
+            _, _, path = self.tbl.io.parse_location(location)
+            selector = FileSelector(path, recursive=True)
+            all_files = [f.path for f in fs.get_file_info(selector) if f.type == FileType.File and f.mtime < as_of]
+
+        all_known_files = self.tbl.inspect._all_known_files()
+        flat_known_files: set[str] = reduce(set.union, all_known_files.values(), set())
 
         orphaned_files = set(all_files).difference(flat_known_files)
 
