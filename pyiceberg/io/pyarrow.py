@@ -177,7 +177,6 @@ from pyiceberg.types import (
     TimeType,
     UnknownType,
     UUIDType,
-    strtobool,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
@@ -185,6 +184,7 @@ from pyiceberg.utils.datetime import millis_to_datetime
 from pyiceberg.utils.decimal import unscaled_to_decimal
 from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import (
+    convert_str_to_bool,
     filter_properties,
     get_first_property_value_with_tracking,
     properties_with_prefix,
@@ -428,12 +428,6 @@ class PyArrowFileIO(FileIO):
         else:
             raise ValueError(f"Unrecognized filesystem type in URI: {scheme}")
 
-    def _convert_str_to_bool(self, value: Any) -> bool:
-        """Convert string or other value to boolean, handling string representations properly."""
-        if isinstance(value, str):
-            return strtobool(value)
-        return bool(value)
-
     def _resolve_s3_region(
         self, provided_region: Optional[str], resolve_region_override: Any, bucket: Optional[str]
     ) -> Optional[str]:
@@ -451,7 +445,7 @@ class PyArrowFileIO(FileIO):
         # Handle resolve_region_override conversion
         should_resolve_region = False
         if resolve_region_override is not None:
-            should_resolve_region = self._convert_str_to_bool(resolve_region_override)
+            should_resolve_region = convert_str_to_bool(resolve_region_override)
 
         # If no region provided or explicit resolve requested, try to resolve from bucket
         if provided_region is None or should_resolve_region:
@@ -493,7 +487,7 @@ class PyArrowFileIO(FileIO):
             S3_RESOLVE_REGION
         )  # this feature is only available for S3. Use `get` here so it does not get passed down to the S3FileSystem constructor
         if force_virtual_addressing := get(S3_FORCE_VIRTUAL_ADDRESSING, "s3.force_virtual_addressing"):
-            client_kwargs["force_virtual_addressing"] = self._convert_str_to_bool(force_virtual_addressing)
+            client_kwargs["force_virtual_addressing"] = convert_str_to_bool(force_virtual_addressing)
         else:
             # For Alibaba OSS protocol, default to True
             client_kwargs["force_virtual_addressing"] = True
@@ -549,7 +543,7 @@ class PyArrowFileIO(FileIO):
             client_kwargs["session_name"] = session_name
 
         if force_virtual_addressing := get(S3_FORCE_VIRTUAL_ADDRESSING, "s3.force_virtual_addressing"):
-            client_kwargs["force_virtual_addressing"] = self._convert_str_to_bool(force_virtual_addressing)
+            client_kwargs["force_virtual_addressing"] = convert_str_to_bool(force_virtual_addressing)
         # Handle retry strategy special case
         if retry_strategy_impl := get(S3_RETRY_STRATEGY_IMPL, "s3.retry_strategy"):
             if retry_instance := _import_retry_strategy(retry_strategy_impl):

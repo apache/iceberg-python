@@ -69,6 +69,13 @@ def property_as_bool(
     return default
 
 
+def convert_str_to_bool(value: Any) -> bool:
+    """Convert string or other value to boolean, handling string representations properly."""
+    if isinstance(value, str):
+        return strtobool(value)
+    return bool(value)
+
+
 def get_first_property_value(
     properties: Properties,
     *property_names: str,
