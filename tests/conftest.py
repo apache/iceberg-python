@@ -47,6 +47,7 @@ from typing import (
 import boto3
 import pytest
 from moto import mock_aws
+from pydantic_core import to_json
 
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.noop import NoopCatalog
@@ -67,10 +68,12 @@ from pyiceberg.io import (
 )
 from pyiceberg.io.fsspec import FsspecFileIO
 from pyiceberg.manifest import DataFile, FileFormat
+from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
 from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2
+from pyiceberg.transforms import DayTransform, IdentityTransform
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -1255,8 +1258,8 @@ manifest_entry_records = [
                 {"key": 15, "value": 0},
             ],
             "lower_bounds": [
-                {"key": 2, "value": b"2020-04-01 00:00"},
-                {"key": 3, "value": b"2020-04-01 00:12"},
+                {"key": 2, "value": b"\x01\x00\x00\x00\x00\x00\x00\x00"},
+                {"key": 3, "value": b"\x01\x00\x00\x00\x00\x00\x00\x00"},
                 {"key": 7, "value": b"\x03\x00\x00\x00"},
                 {"key": 8, "value": b"\x01\x00\x00\x00"},
                 {"key": 10, "value": b"\xf6(\\\x8f\xc2\x05S\xc0"},
@@ -1270,8 +1273,8 @@ manifest_entry_records = [
                 {"key": 19, "value": b"\x00\x00\x00\x00\x00\x00\x04\xc0"},
             ],
             "upper_bounds": [
-                {"key": 2, "value": b"2020-04-30 23:5:"},
-                {"key": 3, "value": b"2020-05-01 00:41"},
+                {"key": 2, "value": b"\x06\x00\x00\x00\x00\x00\x00\x00"},
+                {"key": 3, "value": b"\x06\x00\x00\x00\x00\x00\x00\x00"},
                 {"key": 7, "value": b"\t\x01\x00\x00"},
                 {"key": 8, "value": b"\t\x01\x00\x00"},
                 {"key": 10, "value": b"\xcd\xcc\xcc\xcc\xcc,_@"},
@@ -1376,8 +1379,8 @@ manifest_entry_records = [
             ],
             "lower_bounds": [
                 {"key": 1, "value": b"\x01\x00\x00\x00"},
-                {"key": 2, "value": b"2020-04-01 00:00"},
-                {"key": 3, "value": b"2020-04-01 00:03"},
+                {"key": 2, "value": b"\x01\x00\x00\x00\x00\x00\x00\x00"},
+                {"key": 3, "value": b"\x01\x00\x00\x00\x00\x00\x00\x00"},
                 {"key": 4, "value": b"\x00\x00\x00\x00"},
                 {"key": 5, "value": b"\x01\x00\x00\x00"},
                 {"key": 6, "value": b"N"},
@@ -1396,8 +1399,8 @@ manifest_entry_records = [
             ],
             "upper_bounds": [
                 {"key": 1, "value": b"\x01\x00\x00\x00"},
-                {"key": 2, "value": b"2020-04-30 23:5:"},
-                {"key": 3, "value": b"2020-05-01 00:1:"},
+                {"key": 2, "value": b"\x06\x00\x00\x00\x00\x00\x00\x00"},
+                {"key": 3, "value": b"\x06\x00\x00\x00\x00\x00\x00\x00"},
                 {"key": 4, "value": b"\x06\x00\x00\x00"},
                 {"key": 5, "value": b"c\x00\x00\x00"},
                 {"key": 6, "value": b"Y"},
@@ -1858,7 +1861,24 @@ def simple_map() -> MapType:
 
 
 @pytest.fixture(scope="session")
-def generated_manifest_entry_file(avro_schema_manifest_entry: Dict[str, Any]) -> Generator[str, None, None]:
+def test_schema() -> Schema:
+    return Schema(
+        NestedField(1, "VendorID", IntegerType(), False), NestedField(2, "tpep_pickup_datetime", TimestampType(), False)
+    )
+
+
+@pytest.fixture(scope="session")
+def test_partition_spec() -> Schema:
+    return PartitionSpec(
+        PartitionField(1, 1000, IdentityTransform(), "VendorID"),
+        PartitionField(2, 1001, DayTransform(), "tpep_pickup_day"),
+    )
+
+
+@pytest.fixture(scope="session")
+def generated_manifest_entry_file(
+    avro_schema_manifest_entry: Dict[str, Any], test_schema: Schema, test_partition_spec: PartitionSpec
+) -> Generator[str, None, None]:
     from fastavro import parse_schema, writer
 
     parsed_schema = parse_schema(avro_schema_manifest_entry)
@@ -1866,7 +1886,15 @@ def generated_manifest_entry_file(avro_schema_manifest_entry: Dict[str, Any]) ->
     with TemporaryDirectory() as tmpdir:
         tmp_avro_file = tmpdir + "/manifest.avro"
         with open(tmp_avro_file, "wb") as out:
-            writer(out, parsed_schema, manifest_entry_records)
+            writer(
+                out,
+                parsed_schema,
+                manifest_entry_records,
+                metadata={
+                    "schema": test_schema.model_dump_json(),
+                    "partition-spec": to_json(test_partition_spec.fields).decode("utf-8"),
+                },
+            )
         yield tmp_avro_file
 
 
@@ -2324,7 +2352,7 @@ def clean_up(test_catalog: Catalog) -> None:
         database_name = database_tuple[0]
         if "my_iceberg_database-" in database_name:
             for identifier in test_catalog.list_tables(database_name):
-                test_catalog.purge_table(identifier)
+                test_catalog.drop_table(identifier)
             test_catalog.drop_namespace(database_name)
 
 

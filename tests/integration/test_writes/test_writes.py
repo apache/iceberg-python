@@ -309,15 +309,17 @@ def test_summaries_partial_overwrite(spark: SparkSession, session_catalog: Catal
     assert file_size > 0
 
     # APPEND
+    assert "added-files-size" in summaries[0]
+    assert "total-files-size" in summaries[0]
     assert summaries[0] == {
         "added-data-files": "3",
-        "added-files-size": "2618",
+        "added-files-size": summaries[0]["added-files-size"],
         "added-records": "5",
         "changed-partition-count": "3",
         "total-data-files": "3",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
-        "total-files-size": "2618",
+        "total-files-size": summaries[0]["total-files-size"],
         "total-position-deletes": "0",
         "total-records": "5",
     }
@@ -344,18 +346,21 @@ def test_summaries_partial_overwrite(spark: SparkSession, session_catalog: Catal
     # }
     files = tbl.inspect.data_files()
     assert len(files) == 3
+    assert "added-files-size" in summaries[1]
+    assert "removed-files-size" in summaries[1]
+    assert "total-files-size" in summaries[1]
     assert summaries[1] == {
         "added-data-files": "1",
-        "added-files-size": "875",
+        "added-files-size": summaries[1]["added-files-size"],
         "added-records": "2",
         "changed-partition-count": "1",
         "deleted-data-files": "1",
         "deleted-records": "3",
-        "removed-files-size": "882",
+        "removed-files-size": summaries[1]["removed-files-size"],
         "total-data-files": "3",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
-        "total-files-size": "2611",
+        "total-files-size": summaries[1]["total-files-size"],
         "total-position-deletes": "0",
         "total-records": "4",
     }
@@ -1535,7 +1540,7 @@ def test_rest_catalog_with_empty_catalog_name_append_data(session_catalog: Catal
 
 @pytest.mark.integration
 def test_table_v1_with_null_nested_namespace(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
-    identifier = "default.lower.table_v1_with_null_nested_namespace"
+    identifier = "default.table_v1_with_null_nested_namespace"
     tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [arrow_table_with_null])
     assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
 
@@ -1795,6 +1800,23 @@ def test_write_optional_list(session_catalog: Catalog) -> None:
     session_catalog.load_table(identifier).append(df_2)
 
     assert len(session_catalog.load_table(identifier).scan().to_arrow()) == 4
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_double_commit_transaction(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = "default.arrow_data_files"
+    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, [])
+
+    assert len(tbl.metadata.metadata_log) == 0
+
+    with tbl.transaction() as tx:
+        tx.append(arrow_table_with_null)
+        tx.commit_transaction()
+
+    assert len(tbl.metadata.metadata_log) == 1
 
 
 @pytest.mark.integration

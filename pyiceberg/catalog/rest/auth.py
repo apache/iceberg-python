@@ -17,8 +17,9 @@
 
 import base64
 import importlib
+import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, List, Optional, Type
 
 from requests import HTTPError, PreparedRequest, Session
 from requests.auth import AuthBase
@@ -27,6 +28,7 @@ from pyiceberg.catalog.rest.response import TokenResponse, _handle_non_200_respo
 from pyiceberg.exceptions import OAuthError
 
 COLON = ":"
+logger = logging.getLogger(__name__)
 
 
 class AuthManager(ABC):
@@ -42,11 +44,15 @@ class AuthManager(ABC):
 
 
 class NoopAuthManager(AuthManager):
+    """Auth Manager implementation with no auth."""
+
     def auth_header(self) -> Optional[str]:
         return None
 
 
 class BasicAuthManager(AuthManager):
+    """AuthManager implementation that supports basic password auth."""
+
     def __init__(self, username: str, password: str):
         credentials = f"{username}:{password}"
         self._token = base64.b64encode(credentials.encode()).decode()
@@ -56,6 +62,12 @@ class BasicAuthManager(AuthManager):
 
 
 class LegacyOAuth2AuthManager(AuthManager):
+    """Legacy OAuth2 AuthManager implementation.
+
+    This class exists for backward compatibility, and will be removed in
+    PyIceberg 1.0.0 in favor of OAuth2AuthManager.
+    """
+
     _session: Session
     _auth_url: Optional[str]
     _token: Optional[str]
@@ -107,6 +119,35 @@ class LegacyOAuth2AuthManager(AuthManager):
 
     def auth_header(self) -> str:
         return f"Bearer {self._token}"
+
+
+class GoogleAuthManager(AuthManager):
+    """An auth manager that is responsible for handling Google credentials."""
+
+    def __init__(self, credentials_path: Optional[str] = None, scopes: Optional[List[str]] = None):
+        """
+        Initialize GoogleAuthManager.
+
+        Args:
+            credentials_path: Optional path to Google credentials JSON file.
+            scopes: Optional list of OAuth2 scopes.
+        """
+        try:
+            import google.auth
+            import google.auth.transport.requests
+        except ImportError as e:
+            raise ImportError("Google Auth libraries not found. Please install 'google-auth'.") from e
+
+        if credentials_path:
+            self.credentials, _ = google.auth.load_credentials_from_file(credentials_path, scopes=scopes)
+        else:
+            logger.info("Using Google Default Application Credentials")
+            self.credentials, _ = google.auth.default(scopes=scopes)
+        self._auth_request = google.auth.transport.requests.Request()
+
+    def auth_header(self) -> str:
+        self.credentials.refresh(self._auth_request)
+        return f"Bearer {self.credentials.token}"
 
 
 class AuthManagerAdapter(AuthBase):
@@ -187,3 +228,4 @@ class AuthManagerFactory:
 AuthManagerFactory.register("noop", NoopAuthManager)
 AuthManagerFactory.register("basic", BasicAuthManager)
 AuthManagerFactory.register("legacyoauth2", LegacyOAuth2AuthManager)
+AuthManagerFactory.register("google", GoogleAuthManager)
