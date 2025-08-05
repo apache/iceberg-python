@@ -79,6 +79,15 @@ def get_first_property_value(
     return None
 
 
+def get_first_property_value_with_tracking(props: Properties, used_keys: set[str], *keys: str) -> Optional[Any]:
+    """Tracks all candidate keys and returns the first value found."""
+    used_keys.update(keys)
+    for key in keys:
+        if key in props:
+            return props[key]
+    return None
+
+
 def get_header_properties(
     properties: Properties,
 ) -> Properties:

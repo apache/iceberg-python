@@ -186,6 +186,7 @@ from pyiceberg.utils.decimal import unscaled_to_decimal
 from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import (
     filter_properties,
+    get_first_property_value_with_tracking,
     properties_with_prefix,
     property_as_bool,
     property_as_int,
@@ -427,14 +428,6 @@ class PyArrowFileIO(FileIO):
         else:
             raise ValueError(f"Unrecognized filesystem type in URI: {scheme}")
 
-    def _get_first_property_value_with_tracking(self, props: Properties, used_keys: set[str], *keys: str) -> Optional[Any]:
-        """Tracks all candidate keys and returns the first value found."""
-        used_keys.update(keys)
-        for key in keys:
-            if key in props:
-                return props[key]
-        return None
-
     def _convert_str_to_bool(self, value: Any) -> bool:
         """Convert string or other value to boolean, handling string representations properly."""
         if isinstance(value, str):
@@ -480,7 +473,10 @@ class PyArrowFileIO(FileIO):
 
         properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith(("s3.", "client.")))
         used_keys: set[str] = set()
-        get = lambda *keys: self._get_first_property_value_with_tracking(properties, used_keys, *keys)  # noqa: E731
+
+        def get(*keys: str) -> str | None:
+            return get_first_property_value_with_tracking(properties, used_keys, *keys)
+
         client_kwargs: Properties = {}
 
         if endpoint := get(S3_ENDPOINT, "s3.endpoint_override"):
@@ -522,7 +518,10 @@ class PyArrowFileIO(FileIO):
 
         properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith(("s3.", "client.")))
         used_keys: set[str] = set()
-        get = lambda *keys: self._get_first_property_value_with_tracking(properties, used_keys, *keys)  # noqa: E731
+
+        def get(*keys: str) -> str | None:
+            return get_first_property_value_with_tracking(properties, used_keys, *keys)
+
         client_kwargs: Properties = {}
 
         # Handle S3 region configuration with optional auto-resolution
@@ -575,7 +574,10 @@ class PyArrowFileIO(FileIO):
 
         properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith("adls."))
         used_keys: set[str] = set()
-        get = lambda *keys: self._get_first_property_value_with_tracking(properties, used_keys, *keys)  # noqa: E731
+
+        def get(*keys: str) -> str | None:
+            return get_first_property_value_with_tracking(properties, used_keys, *keys)
+
         client_kwargs: Properties = {}
 
         if account_name := get(ADLS_ACCOUNT_NAME, "adls.account_name"):
@@ -612,7 +614,10 @@ class PyArrowFileIO(FileIO):
 
         properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith("hdfs."))
         used_keys: set[str] = set()
-        get = lambda *keys: self._get_first_property_value_with_tracking(properties, used_keys, *keys)  # noqa: E731
+
+        def get(*keys: str) -> str | None:
+            return get_first_property_value_with_tracking(properties, used_keys, *keys)
+
         client_kwargs: Properties = {}
 
         if host := get(HDFS_HOST):
@@ -635,7 +640,10 @@ class PyArrowFileIO(FileIO):
 
         properties = filter_properties(self.properties, key_predicate=lambda k: k.startswith("gcs."))
         used_keys: set[str] = set()
-        get = lambda *keys: self._get_first_property_value_with_tracking(properties, used_keys, *keys)  # noqa: E731
+
+        def get(*keys: str) -> str | None:
+            return get_first_property_value_with_tracking(properties, used_keys, *keys)
+
         client_kwargs: Properties = {}
 
         if access_token := get(GCS_TOKEN, "gcs.access_token"):
