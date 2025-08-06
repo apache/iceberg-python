@@ -2734,7 +2734,6 @@ def test_retry_strategy_not_found() -> None:
     with pytest.warns(UserWarning, match="Could not initialize S3 retry strategy: pyiceberg.DoesNotExist"):
         io.new_input("s3://bucket/path/to/file")
 
-
 @pytest.mark.parametrize("format_version", [1, 2, 3])
 def test_task_to_record_batches_nanos(format_version: TableVersion, tmpdir: str) -> None:
     arrow_table = pa.table(
@@ -2785,3 +2784,39 @@ def test_task_to_record_batches_nanos(format_version: TableVersion, tmpdir: str)
         )
 
     assert _expected_batch("ns" if format_version > 2 else "us").equals(actual_result)
+
+def test_parse_location_environment_defaults():
+    """Test that parse_location uses environment variables for defaults."""
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+    import os
+    
+    # Test with default environment (no env vars set)
+    scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar")
+    assert scheme == "file"
+    assert netloc == ""
+    assert path == "/foo/bar"
+    
+    try:
+        # Test with environment variables set
+        os.environ["DEFAULT_SCHEME"] = "scheme"
+        os.environ["DEFAULT_NETLOC"] = "netloc:8000"
+        
+        scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar")
+        assert scheme == "scheme"
+        assert netloc == "netloc:8000"
+        assert path == "netloc:8000/foo/bar"
+
+        # Set environment variables
+        os.environ["DEFAULT_SCHEME"] = "hdfs"
+        os.environ["DEFAULT_NETLOC"] = "netloc:8000"
+
+        scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar")
+        assert scheme == "hdfs"
+        assert netloc == "netloc:8000"
+        assert path == "/foo/bar"
+    finally:
+        # Clean up environment variables
+        if "DEFAULT_SCHEME" in os.environ:
+            del os.environ["DEFAULT_SCHEME"]
+        if "DEFAULT_NETLOC" in os.environ:
+            del os.environ["DEFAULT_NETLOC"]
