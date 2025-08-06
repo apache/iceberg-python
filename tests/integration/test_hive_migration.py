@@ -67,6 +67,7 @@ def test_migrate_table(
         VALUES (4), (5), (6)
     """)
 
+# Docs: https://iceberg.apache.org/docs/latest/hive-migration/#snapshot-hive-table-to-iceberg
     spark.sql(f"""
         CALL hive.system.snapshot('{src_table_identifier}', 'hive.{dst_table_identifier}')
     """)
