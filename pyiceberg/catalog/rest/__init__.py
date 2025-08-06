@@ -500,7 +500,8 @@ class RestCatalog(Catalog):
         stage_create: bool = False,
     ) -> TableResponse:
         iceberg_schema = self._convert_schema_if_needed(
-            schema, int(properties.get(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION))
+            schema,
+            int(properties.get(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION)),  # type: ignore
         )
         fresh_schema = assign_fresh_schema_ids(iceberg_schema)
         fresh_partition_spec = assign_fresh_partition_spec_ids(partition_spec, iceberg_schema, fresh_schema)

@@ -219,7 +219,7 @@ class TableProperties:
 
     DEFAULT_NAME_MAPPING = "schema.name-mapping.default"
     FORMAT_VERSION = "format-version"
-    DEFAULT_FORMAT_VERSION = 2
+    DEFAULT_FORMAT_VERSION: TableVersion = 2
 
     MANIFEST_TARGET_SIZE_BYTES = "commit.manifest.target-size-bytes"
     MANIFEST_TARGET_SIZE_BYTES_DEFAULT = 8 * 1024 * 1024  # 8 MB

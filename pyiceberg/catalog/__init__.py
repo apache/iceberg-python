@@ -853,9 +853,10 @@ class MetastoreCatalog(Catalog, ABC):
         Returns:
             StagedTable: the created staged table instance.
         """
-        schema: Schema = self._convert_schema_if_needed(
-            schema, int(properties.get(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION))
-        )  # type: ignore
+        schema: Schema = self._convert_schema_if_needed(  # type: ignore
+            schema,
+            int(properties.get(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION)),  # type: ignore
+        )
 
         database_name, table_name = self.identifier_to_database_and_table(identifier)
 
