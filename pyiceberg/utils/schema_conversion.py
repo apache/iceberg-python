@@ -531,17 +531,17 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
         if isinstance(field_result, dict) and field_result.get("type") == "record":
             field_result["name"] = f"r{field.field_id}"
 
-        orig_field_name = field.name
-        field_name = make_compatible_name(orig_field_name)
+        original_name = field.name
+        sanitized_name = make_compatible_name(original_name)
 
         result = {
-            "name": field_name,
+            "name": sanitized_name,
             FIELD_ID_PROP: field.field_id,
             "type": field_result if field.required else ["null", field_result],
         }
 
-        if orig_field_name != field_name:
-            result[ICEBERG_FIELD_NAME_PROP] = orig_field_name
+        if original_name != sanitized_name:
+            result[ICEBERG_FIELD_NAME_PROP] = original_name
 
         if field.write_default is not None:
             result["default"] = field.write_default
