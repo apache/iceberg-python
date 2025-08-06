@@ -2502,9 +2502,13 @@ def spark() -> "SparkSession":
     spark_version = ".".join(importlib.metadata.version("pyspark").split(".")[:2])
     scala_version = "2.12"
     iceberg_version = "1.9.2"
+    hadoop_version = "3.3.4"
+    aws_sdk_version = "1.12.753"
 
     os.environ["PYSPARK_SUBMIT_ARGS"] = (
         f"--packages org.apache.iceberg:iceberg-spark-runtime-{spark_version}_{scala_version}:{iceberg_version},"
+        f"org.apache.hadoop:hadoop-aws:{hadoop_version},"
+        f"com.amazonaws:aws-java-sdk-bundle:{aws_sdk_version},"
         f"org.apache.iceberg:iceberg-aws-bundle:{iceberg_version} pyspark-shell"
     )
     os.environ["AWS_REGION"] = "us-east-1"
@@ -2526,7 +2530,6 @@ def spark() -> "SparkSession":
         .config("spark.sql.catalog.integration.warehouse", "s3://warehouse/wh/")
         .config("spark.sql.catalog.integration.s3.endpoint", "http://localhost:9000")
         .config("spark.sql.catalog.integration.s3.path-style-access", "true")
-        .config("spark.sql.defaultCatalog", "integration")
         .config("spark.sql.catalog.hive", "org.apache.iceberg.spark.SparkCatalog")
         .config("spark.sql.catalog.hive.type", "hive")
         .config("spark.sql.catalog.hive.uri", "http://localhost:9083")
@@ -2534,6 +2537,14 @@ def spark() -> "SparkSession":
         .config("spark.sql.catalog.hive.warehouse", "s3://warehouse/hive/")
         .config("spark.sql.catalog.hive.s3.endpoint", "http://localhost:9000")
         .config("spark.sql.catalog.hive.s3.path-style-access", "true")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.iceberg.spark.SparkSessionCatalog")
+        .config("spark.sql.catalog.spark_catalog.type", "hive")
+        .config("spark.sql.catalog.spark_catalog.uri", "http://localhost:9083")
+        .config("spark.sql.catalog.spark_catalog.warehouse", "s3://warehouse/hive/")
+        .config("spark.hadoop.fs.s3a.endpoint", "http://localhost:9000")
+        .config("spark.hadoop.fs.s3a.path.style.access", "true")
+        .config("spark.sql.catalogImplementation", "hive")
+        .config("spark.sql.defaultCatalog", "integration")
         .config("spark.sql.execution.arrow.pyspark.enabled", "true")
         .getOrCreate()
     )
