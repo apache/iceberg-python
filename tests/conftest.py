@@ -2502,7 +2502,6 @@ def spark() -> "SparkSession":
     spark_version = ".".join(importlib.metadata.version("pyspark").split(".")[:2])
     scala_version = "2.12"
     iceberg_version = "1.9.2"
-    # Should match with Spark:
     hadoop_version = "3.3.4"
     aws_sdk_version = "1.12.753"
 
