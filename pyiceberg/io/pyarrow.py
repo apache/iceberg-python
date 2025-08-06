@@ -196,6 +196,8 @@ BUFFER_SIZE = "buffer-size"
 ICEBERG_SCHEMA = b"iceberg.schema"
 # The PARQUET: in front means that it is Parquet specific, in this case the field_id
 PYARROW_PARQUET_FIELD_ID_KEY = b"PARQUET:field_id"
+# ORC stores IDs as string metadata
+ORC_FIELD_ID_KEY = b"iceberg.id"
 PYARROW_FIELD_DOC_KEY = b"doc"
 LIST_ELEMENT_NAME = "element"
 MAP_KEY_NAME = "key"
@@ -388,14 +390,28 @@ class PyArrowFileIO(FileIO):
 
     @staticmethod
     def parse_location(location: str) -> Tuple[str, str, str]:
-        """Return the path without the scheme."""
+        """Return (scheme, netloc, path) for the given location.
+        Uses environment variables DEFAULT_SCHEME and DEFAULT_NETLOC
+        if scheme/netloc are missing.
+        """
         uri = urlparse(location)
-        if not uri.scheme:
-            return "file", uri.netloc, os.path.abspath(location)
-        elif uri.scheme in ("hdfs", "viewfs"):
-            return uri.scheme, uri.netloc, uri.path
+
+        # Load defaults from environment
+        default_scheme = os.getenv("DEFAULT_SCHEME", "file")
+        default_netloc = os.getenv("DEFAULT_NETLOC", "")
+
+        # Apply logic
+        scheme = uri.scheme or default_scheme
+        netloc = uri.netloc or default_netloc
+
+        if scheme in ("hdfs", "viewfs"):
+            return scheme, netloc, uri.path
         else:
-            return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
+            # For non-HDFS URIs, include netloc in the path if present
+            path = uri.path if uri.scheme else os.path.abspath(location)
+            if netloc and not path.startswith(netloc):
+                path = f"{netloc}{path}"
+            return scheme, netloc, path
 
     def _initialize_fs(self, scheme: str, netloc: Optional[str] = None) -> FileSystem:
         """Initialize FileSystem for different scheme."""
@@ -575,7 +591,7 @@ class PyArrowFileIO(FileIO):
     def _initialize_local_fs(self) -> FileSystem:
         return PyArrowLocalFileSystem()
 
-    def new_input(self, location: str) -> PyArrowFile:
+    def new_input(self, location: str, fs: Optional[FileIO] = None) -> PyArrowFile:
         """Get a PyArrowFile instance to read bytes from the file at the given location.
 
         Args:
@@ -585,8 +601,11 @@ class PyArrowFileIO(FileIO):
             PyArrowFile: A PyArrowFile instance for the given location.
         """
         scheme, netloc, path = self.parse_location(location)
+        logger.warning(f"Scheme: {scheme}, Netloc: {netloc}, Path: {path}")
+        if not fs:
+            fs = self.fs_by_scheme(scheme, netloc)
         return PyArrowFile(
-            fs=self.fs_by_scheme(scheme, netloc),
+            fs=fs,
             location=location,
             path=path,
             buffer_size=int(self.properties.get(BUFFER_SIZE, ONE_MEGABYTE)),
@@ -1022,7 +1041,11 @@ def _combine_positional_deletes(positional_deletes: List[pa.ChunkedArray], start
 def pyarrow_to_schema(
     schema: pa.Schema, name_mapping: Optional[NameMapping] = None, downcast_ns_timestamp_to_us: bool = False
 ) -> Schema:
-    has_ids = visit_pyarrow(schema, _HasIds())
+    logger.warning(f"schema {schema}")
+    hids = _HasIds()
+    logger.warning("hasIds")
+    has_ids = visit_pyarrow(schema, hids)
+    logger.warning(f"has_ids is {has_ids}, name_mapping is {name_mapping}")
     if has_ids:
         return visit_pyarrow(schema, _ConvertToIceberg(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us))
     elif name_mapping is not None:
@@ -1179,11 +1202,22 @@ class PyArrowSchemaVisitor(Generic[T], ABC):
 
 
 def _get_field_id(field: pa.Field) -> Optional[int]:
-    return (
-        int(field_id_str.decode())
-        if (field.metadata and (field_id_str := field.metadata.get(PYARROW_PARQUET_FIELD_ID_KEY)))
-        else None
-    )
+    """Return the Iceberg field ID from Parquet or ORC metadata if available."""
+    if not field.metadata:
+        return None
+
+    # Try Parquet field ID first
+    field_id_bytes = field.metadata.get(PYARROW_PARQUET_FIELD_ID_KEY)
+    if field_id_bytes:
+        return int(field_id_bytes.decode())
+
+    # Fallback: try ORC field ID
+    field_id_bytes = field.metadata.get(ORC_FIELD_ID_KEY)
+    if field_id_bytes:
+        return int(field_id_bytes.decode())
+
+    return None
+
 
 
 class _HasIds(PyArrowSchemaVisitor[bool]):
@@ -1434,6 +1468,7 @@ def _task_to_record_batches(
     name_mapping: Optional[NameMapping] = None,
     partition_spec: Optional[PartitionSpec] = None,
 ) -> Iterator[pa.RecordBatch]:
+    logger.warning(f"file format is {task.file.file_format}")
     if task.file.file_format == FileFormat.PARQUET:
         arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
     elif task.file.file_format == FileFormat.ORC:
@@ -1443,6 +1478,7 @@ def _task_to_record_batches(
     with io.new_input(task.file.file_path).open() as fin:
         fragment = arrow_format.make_fragment(fin)
         physical_schema = fragment.physical_schema
+        logger.warning(f"formats: filepath {task.file.file_path}, fragment {fragment}, physical_schema {physical_schema}")
         # In V1 and V2 table formats, we only support Timestamp 'us' in Iceberg Schema
         # Hence it is reasonable to always cast 'ns' timestamp to 'us' on read.
         # When V3 support is introduced, we will update `downcast_ns_timestamp_to_us` flag based on
