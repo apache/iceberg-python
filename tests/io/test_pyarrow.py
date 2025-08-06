@@ -1189,7 +1189,7 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
         with transaction.update_snapshot().overwrite() as update:
             update.append_data_file(unpartitioned_file)
 
-    schema = pa.schema([("other_field", pa.string()), ("partition_id", pa.int64())])
+    schema = pa.schema([("other_field", pa.string()), ("partition_id", pa.int32())])
     assert table.scan().to_arrow() == pa.table(
         {
             "other_field": ["foo", "bar", "baz"],
@@ -1264,8 +1264,8 @@ def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryC
         str(table.scan().to_arrow())
         == """pyarrow.Table
 field_1: string
-field_2: int64
-field_3: int64
+field_2: int32
+field_3: int32
 ----
 field_1: [["foo"]]
 field_2: [[2]]
