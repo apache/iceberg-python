@@ -2639,22 +2639,24 @@ def test_retry_strategy_not_found() -> None:
     with pytest.warns(UserWarning, match="Could not initialize S3 retry strategy: pyiceberg.DoesNotExist"):
         io.new_input("s3://bucket/path/to/file")
 
-def test_parse_location_environment_defaults():
+
+def test_parse_location_environment_defaults() -> None:
     """Test that parse_location uses environment variables for defaults."""
-    from pyiceberg.io.pyarrow import PyArrowFileIO
     import os
-    
+
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
     # Test with default environment (no env vars set)
     scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar")
     assert scheme == "file"
     assert netloc == ""
     assert path == "/foo/bar"
-    
+
     try:
         # Test with environment variables set
         os.environ["DEFAULT_SCHEME"] = "scheme"
         os.environ["DEFAULT_NETLOC"] = "netloc:8000"
-        
+
         scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar")
         assert scheme == "scheme"
         assert netloc == "netloc:8000"
