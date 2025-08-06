@@ -2519,7 +2519,7 @@ def spark() -> "SparkSession":
         .config("spark.default.parallelism", "1")
         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
         .config("spark.sql.catalog.integration", "org.apache.iceberg.spark.SparkCatalog")
-        .config("spark.sql.catalog.integration.catalog-impl", "org.apache.iceberg.rest.RESTCatalog")
+        .config("spark.sql.catalog.integration.type", "rest")
         .config("spark.sql.catalog.integration.cache-enabled", "false")
         .config("spark.sql.catalog.integration.uri", "http://localhost:8181")
         .config("spark.sql.catalog.integration.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
