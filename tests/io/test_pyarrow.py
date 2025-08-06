@@ -970,6 +970,10 @@ def file_map(schema_map: Schema, tmpdir: str) -> str:
 def project(
     schema: Schema, files: List[str], expr: Optional[BooleanExpression] = None, table_schema: Optional[Schema] = None
 ) -> pa.Table:
+    def _set_spec_id(datafile: DataFile) -> DataFile:
+        datafile.spec_id = 0
+        return datafile
+
     return ArrowScan(
         table_metadata=TableMetadataV2(
             location="file://a/b/",
@@ -985,13 +989,15 @@ def project(
     ).to_table(
         tasks=[
             FileScanTask(
-                DataFile.from_args(
-                    content=DataFileContent.DATA,
-                    file_path=file,
-                    file_format=FileFormat.PARQUET,
-                    partition={},
-                    record_count=3,
-                    file_size_in_bytes=3,
+                _set_spec_id(
+                    DataFile.from_args(
+                        content=DataFileContent.DATA,
+                        file_path=file,
+                        file_format=FileFormat.PARQUET,
+                        partition={},
+                        record_count=3,
+                        file_size_in_bytes=3,
+                    )
                 )
             )
             for file in files
