@@ -1400,11 +1400,11 @@ class _ConvertToIcebergWithoutIDs(_ConvertToIceberg):
 
 
 def _get_column_projection_values(
-    file: DataFile, projected_schema: Schema, partition_spec: PartitionSpec, file_project_field_ids: Set[int]
+    file: DataFile, projected_schema: Schema, partition_spec: Optional[PartitionSpec], file_project_field_ids: Set[int]
 ) -> Dict[int, Any]:
     """Apply Column Projection rules to File Schema."""
     project_schema_diff = projected_schema.field_ids.difference(file_project_field_ids)
-    if len(project_schema_diff) == 0:
+    if len(project_schema_diff) == 0 or partition_spec is None:
         return EMPTY_DICT
 
     partition_schema = partition_spec.partition_type(projected_schema)
@@ -1428,8 +1428,8 @@ def _task_to_record_batches(
     projected_field_ids: Set[int],
     positional_deletes: Optional[List[ChunkedArray]],
     case_sensitive: bool,
-    partition_spec: PartitionSpec,
     name_mapping: Optional[NameMapping] = None,
+    partition_spec: Optional[PartitionSpec] = None,
 ) -> Iterator[pa.RecordBatch]:
     arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
     with io.new_input(task.file.file_path).open() as fin:
@@ -1668,8 +1668,8 @@ class ArrowScan:
                 self._projected_field_ids,
                 deletes_per_file.get(task.file.file_path),
                 self._case_sensitive,
-                self._table_metadata.spec(),
                 self._table_metadata.name_mapping(),
+                self._table_metadata.specs().get(task.file.spec_id),
             )
             for batch in batches:
                 if self._limit is not None:
@@ -1801,7 +1801,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                 # When an optional field is added, or when a required field with a non-null initial default is added
                 arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)
                 if projected_value := self._projected_missing_fields.get(field.field_id):
-                    field_arrays.append(pa.repeat(projected_value, len(struct_array)).cast(arrow_type))
+                    field_arrays.append(pa.repeat(pa.scalar(projected_value, type=arrow_type), len(struct_array)))
                 elif field.initial_default is None:
                     field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))
                 else:
