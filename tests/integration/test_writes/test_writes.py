@@ -2246,3 +2246,174 @@ def test_branch_py_write_spark_read(session_catalog: Catalog, spark: SparkSessio
     )
     assert main_df.count() == 3
     assert branch_df.count() == 2
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_stage_only_delete(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = f"default.test_stage_only_delete_files_v{format_version}"
+    iceberg_spec = PartitionSpec(
+        *[PartitionField(source_id=4, field_id=1001, transform=IdentityTransform(), name="integer_partition")]
+    )
+    tbl = _create_table(
+        session_catalog, identifier, {"format-version": str(format_version)}, [arrow_table_with_null], iceberg_spec
+    )
+
+    current_snapshot = tbl.metadata.current_snapshot_id
+    assert current_snapshot is not None
+
+    original_count = len(tbl.scan().to_arrow())
+    assert original_count == 3
+
+    files_to_delete = []
+    for file_task in tbl.scan().plan_files():
+        files_to_delete.append(file_task.file)
+    assert len(files_to_delete) > 0
+
+    with tbl.transaction() as txn:
+        with txn.update_snapshot(stage_only=True).delete() as delete:
+            delete.delete_by_predicate(EqualTo("int", 9))
+
+    # a new delete snapshot is added
+    snapshots = tbl.snapshots()
+    assert len(snapshots) == 2
+
+    rows = spark.sql(
+        f"""
+                    SELECT operation, summary
+                    FROM {identifier}.snapshots
+                    ORDER BY committed_at ASC
+                """
+    ).collect()
+    operations = [row.operation for row in rows]
+    assert operations == ["append", "delete"]
+
+    # snapshot main ref has not changed
+    assert current_snapshot == tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == original_count
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_stage_only_fast_append(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = f"default.test_stage_only_fast_append_files_v{format_version}"
+    tbl = _create_table(session_catalog, identifier, {"format-version": str(format_version)}, [arrow_table_with_null])
+
+    current_snapshot = tbl.metadata.current_snapshot_id
+    assert current_snapshot is not None
+
+    original_count = len(tbl.scan().to_arrow())
+    assert original_count == 3
+
+    with tbl.transaction() as txn:
+        with txn.update_snapshot(stage_only=True).fast_append() as fast_append:
+            for data_file in _dataframe_to_data_files(
+                table_metadata=txn.table_metadata, df=arrow_table_with_null, io=txn._table.io
+            ):
+                fast_append.append_data_file(data_file=data_file)
+
+    # Main ref has not changed and data is not yet appended
+    assert current_snapshot == tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == original_count
+
+    # There should be a new staged snapshot
+    snapshots = tbl.snapshots()
+    assert len(snapshots) == 2
+
+    rows = spark.sql(
+        f"""
+            SELECT operation, summary
+            FROM {identifier}.snapshots
+            ORDER BY committed_at ASC
+        """
+    ).collect()
+    operations = [row.operation for row in rows]
+    assert operations == ["append", "append"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_stage_only_merge_append(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = f"default.test_stage_only_merge_append_files_v{format_version}"
+    tbl = _create_table(session_catalog, identifier, {"format-version": str(format_version)}, [arrow_table_with_null])
+
+    current_snapshot = tbl.metadata.current_snapshot_id
+    assert current_snapshot is not None
+
+    original_count = len(tbl.scan().to_arrow())
+    assert original_count == 3
+
+    with tbl.transaction() as txn:
+        with txn.update_snapshot(stage_only=True).merge_append() as merge_append:
+            for data_file in _dataframe_to_data_files(
+                table_metadata=txn.table_metadata, df=arrow_table_with_null, io=txn._table.io
+            ):
+                merge_append.append_data_file(data_file=data_file)
+
+    # Main ref has not changed and data is not yet appended
+    assert current_snapshot == tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == original_count
+
+    # There should be a new staged snapshot
+    snapshots = tbl.snapshots()
+    assert len(snapshots) == 2
+
+    rows = spark.sql(
+        f"""
+            SELECT operation, summary
+            FROM {identifier}.snapshots
+            ORDER BY committed_at ASC
+        """
+    ).collect()
+    operations = [row.operation for row in rows]
+    assert operations == ["append", "append"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_stage_only_overwrite_files(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = f"default.test_stage_only_overwrite_files_v{format_version}"
+    tbl = _create_table(session_catalog, identifier, {"format-version": str(format_version)}, [arrow_table_with_null])
+
+    current_snapshot = tbl.metadata.current_snapshot_id
+    assert current_snapshot is not None
+
+    original_count = len(tbl.scan().to_arrow())
+    assert original_count == 3
+
+    files_to_delete = []
+    for file_task in tbl.scan().plan_files():
+        files_to_delete.append(file_task.file)
+    assert len(files_to_delete) > 0
+
+    with tbl.transaction() as txn:
+        with txn.update_snapshot(stage_only=True).overwrite() as overwrite:
+            for data_file in _dataframe_to_data_files(
+                table_metadata=txn.table_metadata, df=arrow_table_with_null, io=txn._table.io
+            ):
+                overwrite.append_data_file(data_file=data_file)
+            overwrite.delete_data_file(files_to_delete[0])
+
+    assert current_snapshot == tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == original_count
+
+    snapshots = tbl.snapshots()
+    assert len(snapshots) == 2
+
+    rows = spark.sql(
+        f"""
+            SELECT operation, summary
+            FROM {identifier}.snapshots
+            ORDER BY committed_at ASC
+        """
+    ).collect()
+    operations = [row.operation for row in rows]
+    assert operations == ["append", "overwrite"]
