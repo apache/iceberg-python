@@ -70,6 +70,7 @@ from pyiceberg.typedef import (
     Identifier,
     Properties,
     RecursiveDict,
+    TableVersion,
 )
 from pyiceberg.utils.config import Config, merge_config
 from pyiceberg.utils.properties import property_as_bool
@@ -743,7 +744,7 @@ class Catalog(ABC):
         return load_file_io({**self.properties, **properties}, location)
 
     @staticmethod
-    def _convert_schema_if_needed(schema: Union[Schema, "pa.Schema"]) -> Schema:
+    def _convert_schema_if_needed(schema: Union[Schema, "pa.Schema"], format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION) -> Schema:
         if isinstance(schema, Schema):
             return schema
         try:
@@ -754,7 +755,7 @@ class Catalog(ABC):
             downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
             if isinstance(schema, pa.Schema):
                 schema: Schema = visit_pyarrow(  # type: ignore
-                    schema, _ConvertToIcebergWithoutIDs(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
+                    schema, _ConvertToIcebergWithoutIDs(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version)
                 )
                 return schema
         except ModuleNotFoundError:
@@ -847,7 +848,7 @@ class MetastoreCatalog(Catalog, ABC):
         Returns:
             StagedTable: the created staged table instance.
         """
-        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
+        schema: Schema = self._convert_schema_if_needed(schema, properties.get(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION))  # type: ignore
 
         database_name, table_name = self.identifier_to_database_and_table(identifier)
 

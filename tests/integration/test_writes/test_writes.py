@@ -1355,7 +1355,6 @@ def test_write_all_timestamp_precision(
                 # and supports upto microsecond precision
                 assert left.timestamp() == right.timestamp(), f"Difference in column {column}: {left} != {right}"
 
-
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_merge_manifests(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:

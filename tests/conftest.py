@@ -2810,6 +2810,27 @@ def arrow_table_schema_with_all_microseconds_timestamp_precisions() -> "pa.Schem
 
 
 @pytest.fixture(scope="session")
+def arrow_table_schema_with_nanoseconds_timestamp_precisions() -> "pa.Schema":
+    """Pyarrow Schema with all microseconds timestamp."""
+    import pyarrow as pa
+
+    return pa.schema(
+        [
+            ("timestamp_s", pa.timestamp(unit="us")),
+            ("timestamptz_s", pa.timestamp(unit="us", tz="UTC")),
+            ("timestamp_ms", pa.timestamp(unit="us")),
+            ("timestamptz_ms", pa.timestamp(unit="us", tz="UTC")),
+            ("timestamp_us", pa.timestamp(unit="us")),
+            ("timestamptz_us", pa.timestamp(unit="us", tz="UTC")),
+            ("timestamp_ns", pa.timestamp(unit="us")),
+            ("timestamptz_ns", pa.timestamp(unit="ns", tz="UTC")),
+            ("timestamptz_us_etc_utc", pa.timestamp(unit="us", tz="UTC")),
+            ("timestamptz_ns_z", pa.timestamp(unit="ns", tz="UTC")),
+            ("timestamptz_s_0000", pa.timestamp(unit="us", tz="UTC")),
+        ]
+    )
+
+@pytest.fixture(scope="session")
 def table_schema_with_all_microseconds_timestamp_precision() -> Schema:
     """Iceberg table Schema with only date, timestamp and timestamptz values."""
     return Schema(
