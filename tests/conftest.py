@@ -2830,6 +2830,7 @@ def arrow_table_schema_with_nanoseconds_timestamp_precisions() -> "pa.Schema":
         ]
     )
 
+
 @pytest.fixture(scope="session")
 def table_schema_with_all_microseconds_timestamp_precision() -> Schema:
     """Iceberg table Schema with only date, timestamp and timestamptz values."""

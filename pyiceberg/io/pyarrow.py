@@ -1019,13 +1019,20 @@ def _combine_positional_deletes(positional_deletes: List[pa.ChunkedArray], start
 
 
 def pyarrow_to_schema(
-    schema: pa.Schema, name_mapping: Optional[NameMapping] = None, downcast_ns_timestamp_to_us: bool = False, format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION
+    schema: pa.Schema,
+    name_mapping: Optional[NameMapping] = None,
+    downcast_ns_timestamp_to_us: bool = False,
+    format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
 ) -> Schema:
     has_ids = visit_pyarrow(schema, _HasIds())
     if has_ids:
-        return visit_pyarrow(schema, _ConvertToIceberg(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version))
+        return visit_pyarrow(
+            schema, _ConvertToIceberg(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version)
+        )
     elif name_mapping is not None:
-        schema_without_ids = _pyarrow_to_schema_without_ids(schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version)
+        schema_without_ids = _pyarrow_to_schema_without_ids(
+            schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version
+        )
         return apply_name_mapping(schema_without_ids, name_mapping)
     else:
         raise ValueError(
@@ -1033,8 +1040,15 @@ def pyarrow_to_schema(
         )
 
 
-def _pyarrow_to_schema_without_ids(schema: pa.Schema, downcast_ns_timestamp_to_us: bool = False, format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION) -> Schema:
-    return visit_pyarrow(schema, _ConvertToIcebergWithoutIDs(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version))
+def _pyarrow_to_schema_without_ids(
+    schema: pa.Schema,
+    downcast_ns_timestamp_to_us: bool = False,
+    format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
+) -> Schema:
+    return visit_pyarrow(
+        schema,
+        _ConvertToIcebergWithoutIDs(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version),
+    )
 
 
 def _pyarrow_schema_ensure_large_types(schema: pa.Schema) -> pa.Schema:
@@ -1113,7 +1127,7 @@ def _(obj: pa.Field, visitor: PyArrowSchemaVisitor[T]) -> T:
     visitor.before_field(obj)
     try:
         if obj.name == "timestamp_ns":
-            print('alexstephen')
+            print("alexstephen")
         result = visit_pyarrow(field_type, visitor)
     except TypeError as e:
         raise UnsupportedPyArrowTypeException(obj, f"Column '{obj.name}' has an unsupported type: {field_type}") from e
@@ -1218,7 +1232,9 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
 
     _field_names: List[str]
 
-    def __init__(self, downcast_ns_timestamp_to_us: bool = False, format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION) -> None:  # noqa: F821
+    def __init__(
+        self, downcast_ns_timestamp_to_us: bool = False, format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION
+    ) -> None:  # noqa: F821
         self._field_names = []
         self._downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
         self._format_version = format_version
@@ -2549,8 +2565,10 @@ def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[List[
 
 
 def _check_pyarrow_schema_compatible(
-    requested_schema: Schema, provided_schema: pa.Schema, downcast_ns_timestamp_to_us: bool = False,
-    format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION
+    requested_schema: Schema,
+    provided_schema: pa.Schema,
+    downcast_ns_timestamp_to_us: bool = False,
+    format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
 ) -> None:
     """
     Check if the `requested_schema` is compatible with `provided_schema`.
@@ -2563,10 +2581,15 @@ def _check_pyarrow_schema_compatible(
     name_mapping = requested_schema.name_mapping
     try:
         provided_schema = pyarrow_to_schema(
-            provided_schema, name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version
+            provided_schema,
+            name_mapping=name_mapping,
+            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+            format_version=format_version,
         )
     except ValueError as e:
-        provided_schema = _pyarrow_to_schema_without_ids(provided_schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version)
+        provided_schema = _pyarrow_to_schema_without_ids(
+            provided_schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version
+        )
         additional_names = set(provided_schema._name_to_id.keys()) - set(requested_schema._name_to_id.keys())
         raise ValueError(
             f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. Update the schema first (hint, use union_by_name)."
@@ -2683,7 +2706,12 @@ def _dataframe_to_data_files(
     )
     name_mapping = table_metadata.schema().name_mapping
     downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
-    task_schema = pyarrow_to_schema(df.schema, name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=table_metadata.format_version)
+    task_schema = pyarrow_to_schema(
+        df.schema,
+        name_mapping=name_mapping,
+        downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+        format_version=table_metadata.format_version,
+    )
 
     if table_metadata.spec().is_unpartitioned():
         yield from write_file(
