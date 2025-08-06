@@ -393,14 +393,28 @@ class PyArrowFileIO(FileIO):
 
     @staticmethod
     def parse_location(location: str) -> Tuple[str, str, str]:
-        """Return the path without the scheme."""
+        """Return (scheme, netloc, path) for the given location.
+        Uses environment variables DEFAULT_SCHEME and DEFAULT_NETLOC
+        if scheme/netloc are missing.
+        """
         uri = urlparse(location)
-        if not uri.scheme:
-            return "file", uri.netloc, os.path.abspath(location)
-        elif uri.scheme in ("hdfs", "viewfs"):
-            return uri.scheme, uri.netloc, uri.path
+
+        # Load defaults from environment
+        default_scheme = os.getenv("DEFAULT_SCHEME", "file")
+        default_netloc = os.getenv("DEFAULT_NETLOC", "")
+
+        # Apply logic
+        scheme = uri.scheme or default_scheme
+        netloc = uri.netloc or default_netloc
+
+        if scheme in ("hdfs", "viewfs"):
+            return scheme, netloc, uri.path
         else:
-            return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
+            # For non-HDFS URIs, include netloc in the path if present
+            path = uri.path if uri.scheme else os.path.abspath(location)
+            if netloc and not path.startswith(netloc):
+                path = f"{netloc}{path}"
+            return scheme, netloc, path
 
     def _initialize_fs(self, scheme: str, netloc: Optional[str] = None) -> FileSystem:
         """Initialize FileSystem for different scheme."""
