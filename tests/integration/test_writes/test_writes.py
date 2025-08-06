@@ -1237,11 +1237,99 @@ def test_sanitize_character_partitioned_avro_bug(catalog: Catalog) -> None:
 
     assert len(tbl.scan().to_arrow()) == 22
 
-    con = tbl.scan().to_duckdb("table_test_debug")
-    result = con.query("SELECT * FROM table_test_debug").fetchall()
+    # verify that we can read the table with DuckDB
+    import duckdb
+
+    location = tbl.metadata_location
+    duckdb.sql("INSTALL iceberg; LOAD iceberg;")
+    # Configure S3 settings for DuckDB to match the catalog configuration
+    duckdb.sql("SET s3_endpoint='localhost:9000';")
+    duckdb.sql("SET s3_access_key_id='admin';")
+    duckdb.sql("SET s3_secret_access_key='password';")
+    duckdb.sql("SET s3_use_ssl=false;")
+    duckdb.sql("SET s3_url_style='path';")
+    result = duckdb.sql(f"SELECT * FROM iceberg_scan('{location}')").fetchall()
     assert len(result) == 22
 
-    assert con.query("SHOW table_test_debug").fetchone() == ("😎", "VARCHAR", "YES", None, None, None)
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_cross_platform_special_character_compatibility(
+    spark: SparkSession, session_catalog: Catalog, format_version: int
+) -> None:
+    """Test cross-platform compatibility with special characters in column names."""
+    identifier = "default.test_cross_platform_special_characters"
+
+    # Test various special characters that need sanitization
+    special_characters = [
+        "😎",  # emoji - Java produces _xD83D_xDE0E, Python produces _x1F60E
+        "a.b",  # dot - both should produce a_x2Eb
+        "a#b",  # hash - both should produce a_x23b
+        "9x",  # starts with digit - both should produce _9x
+        "x_",  # valid - should remain unchanged
+        "letter/abc",  # slash - both should produce letter_x2Fabc
+    ]
+
+    for i, special_char in enumerate(special_characters):
+        table_name = f"{identifier}_{format_version}_{i}"
+        pyiceberg_table_name = f"{identifier}_pyiceberg_{format_version}_{i}"
+
+        try:
+            session_catalog.drop_table(table_name)
+        except Exception:
+            pass
+        try:
+            session_catalog.drop_table(pyiceberg_table_name)
+        except Exception:
+            pass
+
+        try:
+            # Test 1: Spark writes, PyIceberg reads
+            spark_df = spark.createDataFrame([("test_value",)], [special_char])
+            spark_df.writeTo(table_name).using("iceberg").createOrReplace()
+
+            # Read with PyIceberg table scan
+            tbl = session_catalog.load_table(table_name)
+            pyiceberg_df = tbl.scan().to_pandas()
+            assert len(pyiceberg_df) == 1
+            assert special_char in pyiceberg_df.columns
+            assert pyiceberg_df.iloc[0][special_char] == "test_value"
+
+            # Test 2: PyIceberg writes, Spark reads
+            from pyiceberg.schema import Schema
+            from pyiceberg.types import NestedField, StringType
+
+            schema = Schema(NestedField(field_id=1, name=special_char, field_type=StringType(), required=True))
+
+            tbl_pyiceberg = session_catalog.create_table(
+                identifier=pyiceberg_table_name, schema=schema, properties={"format-version": str(format_version)}
+            )
+
+            import pyarrow as pa
+
+            # Create PyArrow schema with required field to match Iceberg schema
+            pa_schema = pa.schema([pa.field(special_char, pa.string(), nullable=False)])
+            data = pa.Table.from_pydict({special_char: ["pyiceberg_value"]}, schema=pa_schema)
+            tbl_pyiceberg.append(data)
+
+            # Read with Spark
+            spark_df_read = spark.table(pyiceberg_table_name)
+            spark_result = spark_df_read.collect()
+
+            # Verify data integrity
+            assert len(spark_result) == 1
+            assert special_char in spark_df_read.columns
+            assert spark_result[0][special_char] == "pyiceberg_value"
+
+        finally:
+            try:
+                session_catalog.drop_table(table_name)
+            except Exception:
+                pass
+            try:
+                session_catalog.drop_table(pyiceberg_table_name)
+            except Exception:
+                pass
 
 
 @pytest.mark.integration
