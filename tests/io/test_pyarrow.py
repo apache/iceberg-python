@@ -2786,21 +2786,23 @@ def test_task_to_record_batches_nanos(format_version: TableVersion, tmpdir: str)
     assert _expected_batch("ns" if format_version > 2 else "us").equals(actual_result)
 
 def test_parse_location_environment_defaults():
+
     """Test that parse_location uses environment variables for defaults."""
-    from pyiceberg.io.pyarrow import PyArrowFileIO
     import os
-    
+
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
     # Test with default environment (no env vars set)
     scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar")
     assert scheme == "file"
     assert netloc == ""
     assert path == "/foo/bar"
-    
+
     try:
         # Test with environment variables set
         os.environ["DEFAULT_SCHEME"] = "scheme"
         os.environ["DEFAULT_NETLOC"] = "netloc:8000"
-        
+
         scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar")
         assert scheme == "scheme"
         assert netloc == "netloc:8000"

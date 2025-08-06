@@ -394,6 +394,7 @@ class PyArrowFileIO(FileIO):
     @staticmethod
     def parse_location(location: str) -> Tuple[str, str, str]:
         """Return (scheme, netloc, path) for the given location.
+
         Uses environment variables DEFAULT_SCHEME and DEFAULT_NETLOC
         if scheme/netloc are missing.
         """
