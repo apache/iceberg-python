@@ -2246,3 +2246,18 @@ def test_branch_py_write_spark_read(session_catalog: Catalog, spark: SparkSessio
     )
     assert main_df.count() == 3
     assert branch_df.count() == 2
+
+
+@pytest.mark.integration
+def test_nanosecond_support_on_catalog(session_catalog: Catalog) -> None:
+    identifier = "default.test_nanosecond_support_on_catalog"
+    # Create a pyarrow table with a nanosecond timestamp column
+    table = pa.Table.from_arrays(
+        [
+            pa.array([datetime.now()], type=pa.timestamp("ns")),
+            pa.array([datetime.now()], type=pa.timestamp("ns", tz="America/New_York")),
+        ],
+        names=["timestamp_ns", "timestamptz_ns"],
+    )
+
+    _create_table(session_catalog, identifier, {"format-version": "3"}, schema=table.schema)
