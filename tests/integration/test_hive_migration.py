@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import time
+from datetime import date
 
 import pytest
 from pyspark.sql import SparkSession
@@ -75,12 +76,8 @@ def test_migrate_table(
     tbl = session_catalog_hive.load_table(dst_table_identifier)
     assert tbl.schema().column_names == ["number", "dt"]
 
-    # TODO: Returns the primitive type (int), rather than the logical type
-    # assert set(tbl.scan().to_arrow().column(1).combine_chunks().tolist()) == {'2022-01-01', '2023-01-01'}
-
+    assert set(tbl.scan().to_arrow().column(1).combine_chunks().tolist()) == {date(2023, 1, 1), date(2022, 1, 1)}
     assert tbl.scan(row_filter="number > 3").to_arrow().column(0).combine_chunks().tolist() == [4, 5, 6]
-
     assert tbl.scan(row_filter="dt == '2023-01-01'").to_arrow().column(0).combine_chunks().tolist() == [4, 5, 6]
-
-    # TODO: Issue with filtering the projected column
-    # assert tbl.scan(row_filter="dt == '2022-01-01'").to_arrow().column(0).combine_chunks().tolist() == [1, 2, 3]
+    assert tbl.scan(row_filter="dt == '2022-01-01'").to_arrow().column(0).combine_chunks().tolist() == [1, 2, 3]
+    assert tbl.scan(row_filter="dt < '2022-02-01'").to_arrow().column(0).combine_chunks().tolist() == [1, 2, 3]
