@@ -1074,3 +1074,186 @@ def test_filter_after_arrow_scan(catalog: Catalog) -> None:
 
     scan = scan.filter("ts >= '2023-03-05T00:00:00+00:00'")
     assert len(scan.to_arrow()) > 0
+    
+import pytest
+import pyarrow as pa
+from pyarrow import orc
+from pyiceberg.io.pyarrow import PyArrowFileIO
+from pyiceberg.schema import Schema
+from pyiceberg.types import (
+    BooleanType,
+    IntegerType,
+    LongType,
+    FloatType,
+    DoubleType,
+    StringType,
+    TimestampType,
+    DateType,
+    BinaryType,
+    DecimalType,
+    NestedField,
+)
+
+
+# Basic ORC Read Tests
+
+@pytest.mark.skipif(not hasattr(pa, 'orc'), reason="ORC not available in PyArrow")
+def test_orc_read_simple_table(tmp_path):
+    """Test basic ORC file reading with simple data types"""
+    file_io = PyArrowFileIO()
+    
+    # Create simple test data
+    data = pa.table([
+        pa.array([1, 2, 3, 4, 5], type=pa.int64()),
+        pa.array(["Alice", "Bob", "Charlie", "David", "Eve"], type=pa.string()),
+        pa.array([1.1, 2.2, 3.3, 4.4, 5.5], type=pa.float64()),
+    ], names=["id", "name", "value"])
+    
+    # Write ORC file
+    file_path = tmp_path / "test_simple.orc"
+    with file_io.new_output(str(file_path)) as output_file:
+        orc.write_table(data, output_file)
+    
+    # Read ORC file back
+    with file_io.new_input(str(file_path)) as input_file:
+        result = orc.read_table(input_file)
+    
+    assert result.num_rows == 5
+    assert result.num_columns == 3
+    assert result.column_names == ["id", "name", "value"]
+    assert result.equals(data)
+
+
+@pytest.mark.skipif(not hasattr(pa, 'orc'), reason="ORC not available in PyArrow")
+def test_orc_read_with_nulls(tmp_path):
+    """Test ORC file reading with null values"""
+    file_io = PyArrowFileIO()
+    
+    # Create data with nulls
+    data = pa.table([
+        pa.array([1, None, 3, None, 5], type=pa.int64()),
+        pa.array([None, "hello", None, "world", None], type=pa.string()),
+        pa.array([1.1, 2.2, None, 4.4, None], type=pa.float64()),
+    ], names=["nullable_int", "nullable_string", "nullable_double"])
+    
+    file_path = tmp_path / "test_nulls.orc"
+    with file_io.new_output(str(file_path)) as output_file:
+        orc.write_table(data, output_file)
+    
+    # Read back
+    with file_io.new_input(str(file_path)) as input_file:
+        result = orc.read_table(input_file)
+    
+    assert result.equals(data)
+    
+    # Verify null counts
+    assert result.column("nullable_int").null_count == 2
+    assert result.column("nullable_string").null_count == 3
+    assert result.column("nullable_double").null_count == 2
+
+
+@pytest.mark.skipif(not hasattr(pa, 'orc'), reason="ORC not available in PyArrow")
+def test_orc_read_basic_types(tmp_path):
+    """Test ORC reading with various basic data types"""
+    file_io = PyArrowFileIO()
+    
+    # Create data with different basic types
+    data = pa.table([
+        pa.array([True, False, True, False], type=pa.bool_()),
+        pa.array([10, 20, 30, 40], type=pa.int32()),
+        pa.array([100, 200, 300, 400], type=pa.int64()),
+        pa.array([1.5, 2.5, 3.5, 4.5], type=pa.float32()),
+        pa.array([10.15, 20.25, 30.35, 40.45], type=pa.float64()),
+        pa.array(["test1", "test2", "test3", "test4"], type=pa.string()),
+        pa.array([b"binary1", b"binary2", b"binary3", b"binary4"], type=pa.binary()),
+    ], names=["bool_col", "int32_col", "int64_col", "float32_col", "float64_col", "string_col", "binary_col"])
+    
+    file_path = tmp_path / "test_types.orc"
+    with file_io.new_output(str(file_path)) as output_file:
+        orc.write_table(data, output_file)
+    
+    # Read back
+    with file_io.new_input(str(file_path)) as input_file:
+        result = orc.read_table(input_file)
+    
+    assert result.num_rows == 4
+    assert result.num_columns == 7
+    assert result.equals(data)
+
+
+@pytest.mark.skipif(not hasattr(pa, 'orc'), reason="ORC not available in PyArrow")
+def test_orc_read_empty_table(tmp_path):
+    """Test reading empty ORC file"""
+    file_io = PyArrowFileIO()
+    
+    # Create empty table with schema
+    schema = pa.schema([
+        pa.field("id", pa.int64()),
+        pa.field("name", pa.string()),
+    ])
+    data = pa.table([], schema=schema)
+    
+    file_path = tmp_path / "test_empty.orc"
+    with file_io.new_output(str(file_path)) as output_file:
+        orc.write_table(data, output_file)
+    
+    # Read back
+    with file_io.new_input(str(file_path)) as input_file:
+        result = orc.read_table(input_file)
+    
+    assert result.num_rows == 0
+    assert result.num_columns == 2
+    assert result.schema.equals(schema)
+
+
+@pytest.mark.skipif(not hasattr(pa, 'orc'), reason="ORC not available in PyArrow")
+def test_orc_read_single_row(tmp_path):
+    """Test reading ORC file with single row"""
+    file_io = PyArrowFileIO()
+    
+    data = pa.table([
+        pa.array([42], type=pa.int64()),
+        pa.array(["single"], type=pa.string()),
+        pa.array([3.14], type=pa.float64()),
+    ], names=["id", "name", "value"])
+    
+    file_path = tmp_path / "test_single.orc"
+    with file_io.new_output(str(file_path)) as output_file:
+        orc.write_table(data, output_file)
+    
+    # Read back
+    with file_io.new_input(str(file_path)) as input_file:
+        result = orc.read_table(input_file)
+    
+    assert result.num_rows == 1
+    assert result.equals(data)
+    assert result["id"].to_pylist() == [42]
+    assert result["name"].to_pylist() == ["single"]
+    assert result["value"].to_pylist() == [3.14]
+
+
+@pytest.mark.skipif(not hasattr(pa, 'orc'), reason="ORC not available in PyArrow")
+def test_orc_read_column_subset(tmp_path):
+    """Test reading only specific columns from ORC file"""
+    file_io = PyArrowFileIO()
+    
+    # Create table with multiple columns
+    data = pa.table([
+        pa.array([1, 2, 3], type=pa.int64()),
+        pa.array(["a", "b", "c"], type=pa.string()),
+        pa.array([1.0, 2.0, 3.0], type=pa.float64()),
+        pa.array([True, False, True], type=pa.bool_()),
+    ], names=["id", "name", "value", "flag"])
+    
+    file_path = tmp_path / "test_columns.orc"
+    with file_io.new_output(str(file_path)) as output_file:
+        orc.write_table(data, output_file)
+    
+    # Read only specific columns
+    with file_io.new_input(str(file_path)) as input_file:
+        result = orc.read_table(input_file, columns=["id", "name"])
+    
+    assert result.num_columns == 2
+    assert result.column_names == ["id", "name"]
+    expected = data.select(["id", "name"])
+    assert result.equals(expected)

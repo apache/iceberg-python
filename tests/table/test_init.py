@@ -265,8 +265,34 @@ def test_history(table_v2: Table) -> None:
     ]
 
 
-def test_table_scan_select(table_v2: Table) -> None:
-    scan = table_v2.scan()
+def test_table_bad_file_format() -> None:
+    from conftest import EXAMPLE_TABLE_METADATA_V2
+    table_metadata = EXAMPLE_TABLE_METADATA_V2
+    table_metadata["properties"] = {}
+    table_metadata["properties"]["write.format.default"] = "bad"
+    table_metadata = TableMetadataV2(**table_metadata)
+    with pytest.raises(ValueError):  # replace with the actual exception
+        table = Table(
+            identifier=("database", "table_orc"),
+            metadata=table_metadata,
+            metadata_location=f"{table_metadata.location}/uuid.metadata.json",
+            io=load_file_io(),
+            catalog=NoopCatalog("NoopCatalog"),
+        )
+
+
+@pytest.mark.parametrize(
+    "table_fixture",
+    [
+        pytest.param(pytest.lazy_fixture("table_v2"), id="parquet"),
+        pytest.param(pytest.lazy_fixture("table_v2_orc"), id="orc"),
+    ],
+)
+def test_table_scan_select(table_fixture: Table) -> None:
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.debug(table_fixture.metadata)
+    scan = table_fixture.scan()
     assert scan.selected_fields == ("*",)
     assert scan.select("a", "b").selected_fields == ("a", "b")
     assert scan.select("a", "c").select("a").selected_fields == ("a",)
