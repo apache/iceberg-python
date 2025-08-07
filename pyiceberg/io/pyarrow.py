@@ -131,7 +131,6 @@ from pyiceberg.manifest import (
 )
 from pyiceberg.partitioning import PartitionField, PartitionFieldValue, PartitionKey, PartitionSpec, partition_record_value
 from pyiceberg.schema import (
-    Accessor,
     PartnerAccessor,
     PreOrderSchemaVisitor,
     Schema,
@@ -1402,41 +1401,23 @@ class _ConvertToIcebergWithoutIDs(_ConvertToIceberg):
 
 def _get_column_projection_values(
     file: DataFile, projected_schema: Schema, partition_spec: Optional[PartitionSpec], file_project_field_ids: Set[int]
-) -> Tuple[bool, Dict[str, Any]]:
+) -> Dict[int, Any]:
     """Apply Column Projection rules to File Schema."""
     project_schema_diff = projected_schema.field_ids.difference(file_project_field_ids)
-    should_project_columns = len(project_schema_diff) > 0
-    projected_missing_fields: Dict[str, Any] = {}
+    if len(project_schema_diff) == 0 or partition_spec is None:
+        return EMPTY_DICT
 
-    if not should_project_columns:
-        return False, {}
+    partition_schema = partition_spec.partition_type(projected_schema)
+    accessors = build_position_accessors(partition_schema)
 
-    partition_schema: StructType
-    accessors: Dict[int, Accessor]
-
-    if partition_spec is not None:
-        partition_schema = partition_spec.partition_type(projected_schema)
-        accessors = build_position_accessors(partition_schema)
-    else:
-        return False, {}
-
+    projected_missing_fields = {}
     for field_id in project_schema_diff:
         for partition_field in partition_spec.fields_by_source_id(field_id):
             if isinstance(partition_field.transform, IdentityTransform):
-                accessor = accessors.get(partition_field.field_id)
+                if partition_value := accessors[partition_field.field_id].get(file.partition):
+                    projected_missing_fields[field_id] = partition_value
 
-                if accessor is None:
-                    continue
-
-                # The partition field may not exist in the partition record of the data file.
-                # This can happen when new partition fields are introduced after the file was written.
-                try:
-                    if partition_value := accessor.get(file.partition):
-                        projected_missing_fields[partition_field.name] = partition_value
-                except IndexError:
-                    continue
-
-    return True, projected_missing_fields
+    return projected_missing_fields
 
 
 def _task_to_record_batches(
@@ -1460,17 +1441,18 @@ def _task_to_record_batches(
         # the table format version.
         file_schema = pyarrow_to_schema(physical_schema, name_mapping, downcast_ns_timestamp_to_us=True)
 
-        pyarrow_filter = None
-        if bound_row_filter is not AlwaysTrue():
-            translated_row_filter = translate_column_names(bound_row_filter, file_schema, case_sensitive=case_sensitive)
-            bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
-            pyarrow_filter = expression_to_pyarrow(bound_file_filter)
-
-        # Apply column projection rules
-        # https://iceberg.apache.org/spec/#column-projection
-        should_project_columns, projected_missing_fields = _get_column_projection_values(
+        # Apply column projection rules: https://iceberg.apache.org/spec/#column-projection
+        projected_missing_fields = _get_column_projection_values(
             task.file, projected_schema, partition_spec, file_schema.field_ids
         )
+
+        pyarrow_filter = None
+        if bound_row_filter is not AlwaysTrue():
+            translated_row_filter = translate_column_names(
+                bound_row_filter, file_schema, case_sensitive=case_sensitive, projected_field_values=projected_missing_fields
+            )
+            bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
+            pyarrow_filter = expression_to_pyarrow(bound_file_filter)
 
         file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
 
@@ -1510,22 +1492,13 @@ def _task_to_record_batches(
 
                 current_batch = table.combine_chunks().to_batches()[0]
 
-            result_batch = _to_requested_schema(
+            yield _to_requested_schema(
                 projected_schema,
                 file_project_schema,
                 current_batch,
                 downcast_ns_timestamp_to_us=True,
+                projected_missing_fields=projected_missing_fields,
             )
-
-            # Inject projected column values if available
-            if should_project_columns:
-                for name, value in projected_missing_fields.items():
-                    index = result_batch.schema.get_field_index(name)
-                    if index != -1:
-                        arr = pa.repeat(value.value(), result_batch.num_rows)
-                        result_batch = result_batch.set_column(index, name, arr)
-
-            yield result_batch
 
 
 def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
@@ -1694,7 +1667,7 @@ class ArrowScan:
                 deletes_per_file.get(task.file.file_path),
                 self._case_sensitive,
                 self._table_metadata.name_mapping(),
-                self._table_metadata.spec(),
+                self._table_metadata.specs().get(task.file.spec_id),
             )
             for batch in batches:
                 if self._limit is not None:
@@ -1712,12 +1685,15 @@ def _to_requested_schema(
     batch: pa.RecordBatch,
     downcast_ns_timestamp_to_us: bool = False,
     include_field_ids: bool = False,
+    projected_missing_fields: Dict[int, Any] = EMPTY_DICT,
 ) -> pa.RecordBatch:
     # We could reuse some of these visitors
     struct_array = visit_with_partner(
         requested_schema,
         batch,
-        ArrowProjectionVisitor(file_schema, downcast_ns_timestamp_to_us, include_field_ids),
+        ArrowProjectionVisitor(
+            file_schema, downcast_ns_timestamp_to_us, include_field_ids, projected_missing_fields=projected_missing_fields
+        ),
         ArrowAccessor(file_schema),
     )
     return pa.RecordBatch.from_struct_array(struct_array)
@@ -1728,6 +1704,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
     _include_field_ids: bool
     _downcast_ns_timestamp_to_us: bool
     _use_large_types: Optional[bool]
+    _projected_missing_fields: Dict[int, Any]
 
     def __init__(
         self,
@@ -1735,11 +1712,13 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
         downcast_ns_timestamp_to_us: bool = False,
         include_field_ids: bool = False,
         use_large_types: Optional[bool] = None,
+        projected_missing_fields: Dict[int, Any] = EMPTY_DICT,
     ) -> None:
         self._file_schema = file_schema
         self._include_field_ids = include_field_ids
         self._downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
         self._use_large_types = use_large_types
+        self._projected_missing_fields = projected_missing_fields
 
         if use_large_types is not None:
             deprecation_message(
@@ -1819,10 +1798,12 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
             elif field.optional or field.initial_default is not None:
                 # When an optional field is added, or when a required field with a non-null initial default is added
                 arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)
-                if field.initial_default is None:
+                if projected_value := self._projected_missing_fields.get(field.field_id):
+                    field_arrays.append(pa.repeat(pa.scalar(projected_value, type=arrow_type), len(struct_array)))
+                elif field.initial_default is None:
                     field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))
                 else:
-                    field_arrays.append(pa.repeat(field.initial_default, len(struct_array)))
+                    field_arrays.append(pa.repeat(pa.scalar(field.initial_default, type=arrow_type), len(struct_array)))
                 fields.append(self._construct_field(field, arrow_type))
             else:
                 raise ResolveError(f"Field is required, and could not be found in the file: {field}")

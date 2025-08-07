@@ -970,6 +970,10 @@ def file_map(schema_map: Schema, tmpdir: str) -> str:
 def project(
     schema: Schema, files: List[str], expr: Optional[BooleanExpression] = None, table_schema: Optional[Schema] = None
 ) -> pa.Table:
+    def _set_spec_id(datafile: DataFile) -> DataFile:
+        datafile.spec_id = 0
+        return datafile
+
     return ArrowScan(
         table_metadata=TableMetadataV2(
             location="file://a/b/",
@@ -985,13 +989,15 @@ def project(
     ).to_table(
         tasks=[
             FileScanTask(
-                DataFile.from_args(
-                    content=DataFileContent.DATA,
-                    file_path=file,
-                    file_format=FileFormat.PARQUET,
-                    partition={},
-                    record_count=3,
-                    file_size_in_bytes=3,
+                _set_spec_id(
+                    DataFile.from_args(
+                        content=DataFileContent.DATA,
+                        file_path=file,
+                        file_format=FileFormat.PARQUET,
+                        partition={},
+                        record_count=3,
+                        file_size_in_bytes=3,
+                    )
                 )
             )
             for file in files
@@ -1189,7 +1195,7 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
         with transaction.update_snapshot().overwrite() as update:
             update.append_data_file(unpartitioned_file)
 
-    schema = pa.schema([("other_field", pa.string()), ("partition_id", pa.int64())])
+    schema = pa.schema([("other_field", pa.string()), ("partition_id", pa.int32())])
     assert table.scan().to_arrow() == pa.table(
         {
             "other_field": ["foo", "bar", "baz"],
@@ -1197,6 +1203,16 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
         },
         schema=schema,
     )
+    # Test that row filter works with partition value projection
+    assert table.scan(row_filter="partition_id = 1").to_arrow() == pa.table(
+        {
+            "other_field": ["foo", "bar", "baz"],
+            "partition_id": [1, 1, 1],
+        },
+        schema=schema,
+    )
+    # Test that row filter does not return any rows for a non-existing partition value
+    assert len(table.scan(row_filter="partition_id = -1").to_arrow()) == 0
 
 
 def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryCatalog) -> None:
@@ -1254,8 +1270,8 @@ def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryC
         str(table.scan().to_arrow())
         == """pyarrow.Table
 field_1: string
-field_2: int64
-field_3: int64
+field_2: int32
+field_3: int32
 ----
 field_1: [["foo"]]
 field_2: [[2]]

@@ -711,8 +711,10 @@ def test_dynamic_partition_overwrite_evolve_partition(spark: SparkSession, sessi
     )
 
     identifier = f"default.partitioned_{format_version}_test_dynamic_partition_overwrite_evolve_partition"
-    with pytest.raises(NoSuchTableError):
+    try:
         session_catalog.drop_table(identifier)
+    except NoSuchTableError:
+        pass
 
     tbl = session_catalog.create_table(
         identifier=identifier,
