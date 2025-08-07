@@ -525,6 +525,21 @@ def test_repr_decimal() -> None:
     assert repr(DecimalType(19, 25)) == "DecimalType(precision=19, scale=25)"
 
 
+def test_repr_nested_field_default_nones_should_not_appear() -> None:
+    assert (
+        repr(NestedField(1, "required_field", StringType(), required=False, initial_default=None, write_default=None))
+        == "NestedField(field_id=1, name='required_field', field_type=StringType(), required=False)"
+    )
+    assert (
+        repr(NestedField(1, "required_field", StringType(), required=False, initial_default="hello", write_default=None))
+        == "NestedField(field_id=1, name='required_field', field_type=StringType(), required=False, initial_default='hello')"
+    )
+    assert (
+        repr(NestedField(1, "required_field", StringType(), required=False, initial_default="hello", write_default="bye"))
+        == "NestedField(field_id=1, name='required_field', field_type=StringType(), required=False, initial_default='hello', write_default='bye')"
+    )
+
+
 def test_serialization_nestedfield() -> None:
     expected = '{"id":1,"name":"required_field","type":"string","required":true,"doc":"this is a doc"}'
     actual = NestedField(1, "required_field", StringType(), True, "this is a doc").model_dump_json()
