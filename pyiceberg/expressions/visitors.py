@@ -915,17 +915,13 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
 
             # In the order described by the "Column Projection" section of the Iceberg spec:
             # https://iceberg.apache.org/spec/#column-projection
-            # Evaluate column projection first if it exists
-            if field_id in self.projected_field_values:
-                if expression_evaluator(Schema(field), pred, case_sensitive=self.case_sensitive)(
-                    Record(self.projected_field_values[field_id])
-                ):
-                    return AlwaysTrue()
-
-            # Evaluate initial_default value
+            # Evaluate column projection first if it exists, otherwise default to the initial-default-value
+            field_value = (
+                self.projected_field_values[field_id] if field.field_id in self.projected_field_values else field.initial_default
+            )
             return (
                 AlwaysTrue()
-                if expression_evaluator(Schema(field), pred, case_sensitive=self.case_sensitive)(Record(field.initial_default))
+                if expression_evaluator(Schema(field), pred, case_sensitive=self.case_sensitive)(Record(field_value))
                 else AlwaysFalse()
             )
 
@@ -940,7 +936,7 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
 
 
 def translate_column_names(
-    expr: BooleanExpression, file_schema: Schema, case_sensitive: bool, projected_field_values: Dict[int, Any] = EMPTY_DICT
+    expr: BooleanExpression, file_schema: Schema, case_sensitive: bool = True, projected_field_values: Dict[int, Any] = EMPTY_DICT
 ) -> BooleanExpression:
     return visit(expr, _ColumnNameTranslator(file_schema, case_sensitive, projected_field_values))
 

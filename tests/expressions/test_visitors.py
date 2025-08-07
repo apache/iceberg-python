@@ -1750,7 +1750,7 @@ def test_translate_column_names_missing_column_match_explicit_null() -> None:
     )
 
     # Translate column names
-    translated_expr = translate_column_names(bound_expr, file_schema, case_sensitive=True, projected_field_values={2: None})
+    translated_expr = translate_column_names(bound_expr, file_schema, projected_field_values={2: None})
 
     # Should evaluate to AlwaysTrue because the missing column is treated as null
     # missing_col's default initial_default (None) satisfies the IsNull predicate
@@ -1828,12 +1828,7 @@ def test_translate_column_names_missing_column_with_projected_field_matches() ->
     )
 
     # Projected column that is missing in the file schema
-    projected_field_values = {2: 42}
-
-    # Translate column names
-    translated_expr = translate_column_names(
-        bound_expr, file_schema, case_sensitive=True, projected_field_values=projected_field_values
-    )
+    translated_expr = translate_column_names(bound_expr, file_schema, projected_field_values={2: 42})
 
     # Should evaluate to AlwaysTrue since projected field value matches the expression literal
     # even though the field is missing in the file schema
@@ -1860,12 +1855,7 @@ def test_translate_column_names_missing_column_with_projected_field_mismatch() -
     )
 
     # Projected column that is missing in the file schema
-    projected_field_values = {2: 1}
-
-    # Translate column names
-    translated_expr = translate_column_names(
-        bound_expr, file_schema, case_sensitive=True, projected_field_values=projected_field_values
-    )
+    translated_expr = translate_column_names(bound_expr, file_schema, projected_field_values={2: 1})
 
     # Should evaluate to AlwaysFalse since projected field value does not match the expression literal
     assert translated_expr == AlwaysFalse()
@@ -1891,15 +1881,14 @@ def test_translate_column_names_missing_column_projected_field_fallbacks_to_init
     )
 
     # Projected field value that differs from both the expression literal and initial_default
-    projected_field_values = {2: 10}  # This doesn't match expression literal (42)
-
-    # Translate column names
     translated_expr = translate_column_names(
-        bound_expr, file_schema, case_sensitive=True, projected_field_values=projected_field_values
+        bound_expr,
+        file_schema,
+        projected_field_values={2: 10},  # This doesn't match expression literal (42)
     )
 
-    # Should evaluate to AlwaysTrue since projected field value doesn't match but initial_default does
-    assert translated_expr == AlwaysTrue()
+    # Should evaluate to AlwaysFalse since projected field value doesn't
+    assert translated_expr == AlwaysFalse()
 
 
 def test_translate_column_names_missing_column_projected_field_matches_initial_default_mismatch() -> None:
@@ -1922,11 +1911,10 @@ def test_translate_column_names_missing_column_projected_field_matches_initial_d
     )
 
     # Projected field value that matches the expression literal
-    projected_field_values = {2: 10}  # This doesn't match expression literal (42)
-
-    # Translate column names
     translated_expr = translate_column_names(
-        bound_expr, file_schema, case_sensitive=True, projected_field_values=projected_field_values
+        bound_expr,
+        file_schema,
+        projected_field_values={2: 10},  # This doesn't match expression literal (42)
     )
 
     # Should evaluate to AlwaysFalse since both projected field value and initial_default does not match
