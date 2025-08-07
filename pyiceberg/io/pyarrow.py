@@ -1126,8 +1126,6 @@ def _(obj: pa.Field, visitor: PyArrowSchemaVisitor[T]) -> T:
 
     visitor.before_field(obj)
     try:
-        if obj.name == "timestamp_ns":
-            print("alexstephen")
         result = visit_pyarrow(field_type, visitor)
     except TypeError as e:
         raise UnsupportedPyArrowTypeException(obj, f"Column '{obj.name}' has an unsupported type: {field_type}") from e
