@@ -170,7 +170,6 @@ def test_output_file_to_input_file() -> None:
 @pytest.mark.parametrize(
     "string_uri",
     [
-        "foo/bar/baz.parquet",
         "file:/foo/bar/baz.parquet",
         "file:/foo/bar/baz.parquet",
     ],
@@ -184,6 +183,16 @@ def test_custom_file_io_locations(string_uri: str) -> None:
 
     output_file = file_io.new_output(location=string_uri)
     assert output_file.location == string_uri
+
+def test_custom_file_io_location_relative_path() -> None:
+    string_uri = "foo/bar/baz.parquet"
+    # Instantiate the file-io and create a new input and output file
+    file_io = PyArrowFileIO()
+    with pytest.raises(ValueError) as exc_info:
+        file_io.new_input(location=string_uri)
+
+    assert "FileIO implementation for local files requires absolute paths" in str(exc_info.value)
+
 
 
 def test_deleting_local_file_using_file_io() -> None:
