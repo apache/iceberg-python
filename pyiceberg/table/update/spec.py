@@ -174,16 +174,21 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
         return updates, requirements
 
     def _apply(self) -> PartitionSpec:
-        def _check_and_add_partition_name(schema: Schema, name: str, source_id: int, partition_names: Set[str]) -> None:
+        def _check_and_add_partition_name(
+            schema: Schema, name: str, source_id: int, transform: Transform[Any, Any], partition_names: Set[str]
+        ) -> None:
             try:
                 field = schema.find_field(name)
             except ValueError:
                 field = None
 
-            if source_id is not None and field is not None and field.field_id != source_id:
-                raise ValueError(f"Cannot create identity partition from a different field in the schema {name}")
-            elif field is not None and source_id != field.field_id:
-                raise ValueError(f"Cannot create partition from name that exists in schema {name}")
+            if field is not None:
+                if isinstance(transform, (IdentityTransform, VoidTransform)):
+                    # For identity transforms allow name conflict only if sourced from the same schema field
+                    if field.field_id != source_id:
+                        raise ValueError(f"Cannot create identity partition from a different field in the schema: {name}")
+                else:
+                    raise ValueError(f"Cannot create partition from name that exists in schema: {name}")
             if not name:
                 raise ValueError("Undefined name")
             if name in partition_names:
@@ -193,7 +198,7 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
         def _add_new_field(
             schema: Schema, source_id: int, field_id: int, name: str, transform: Transform[Any, Any], partition_names: Set[str]
         ) -> PartitionField:
-            _check_and_add_partition_name(schema, name, source_id, partition_names)
+            _check_and_add_partition_name(schema, name, source_id, transform, partition_names)
             return PartitionField(source_id, field_id, transform, name)
 
         partition_fields = []
@@ -244,6 +249,13 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
                 partition_fields.append(new_field)
 
         for added_field in self._adds:
+            _check_and_add_partition_name(
+                self._transaction.table_metadata.schema(),
+                added_field.name,
+                added_field.source_id,
+                added_field.transform,
+                partition_names,
+            )
             new_field = PartitionField(
                 source_id=added_field.source_id,
                 field_id=added_field.field_id,

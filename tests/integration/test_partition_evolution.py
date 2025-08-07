@@ -564,3 +564,28 @@ def _validate_new_partition_fields(
     assert len(spec.fields) == len(expected_partition_fields)
     for i in range(len(spec.fields)):
         assert spec.fields[i] == expected_partition_fields[i]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_partition_schema_field_name_conflict(catalog: Catalog) -> None:
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "event_ts", TimestampType(), required=False),
+        NestedField(3, "another_ts", TimestampType(), required=False),
+        NestedField(4, "str", StringType(), required=False),
+    )
+    table = _create_table_with_schema(catalog, schema, "2")
+
+    with pytest.raises(ValueError, match="Cannot create partition from name that exists in schema: another_ts"):
+        table.update_spec().add_field("event_ts", YearTransform(), "another_ts").commit()
+    with pytest.raises(ValueError, match="Cannot create partition from name that exists in schema: id"):
+        table.update_spec().add_field("event_ts", DayTransform(), "id").commit()
+
+    with pytest.raises(ValueError, match="Cannot create identity partition from a different field in the schema: another_ts"):
+        table.update_spec().add_field("event_ts", IdentityTransform(), "another_ts").commit()
+    with pytest.raises(ValueError, match="Cannot create identity partition from a different field in the schema: str"):
+        table.update_spec().add_field("id", IdentityTransform(), "str").commit()
+
+    table.update_spec().add_field("id", IdentityTransform(), "id").commit()
+    table.update_spec().add_field("event_ts", YearTransform(), "event_year").commit()
