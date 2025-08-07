@@ -381,13 +381,15 @@ class PyArrowFile(InputFile, OutputFile):
 
 class PyArrowFileIO(FileIO):
     fs_by_scheme: Callable[[str, Optional[str]], FileSystem]
+    config: Config
 
     def __init__(self, properties: Properties = EMPTY_DICT):
         self.fs_by_scheme: Callable[[str, Optional[str]], FileSystem] = lru_cache(self._initialize_fs)
+        self.config = Config()
         super().__init__(properties=properties)
 
     @staticmethod
-    def parse_location(location: str) -> Tuple[str, str, str]:
+    def parse_location(location: str, config: Config) -> Tuple[str, str, str]:
         """Return (scheme, netloc, path) for the given location.
 
         Uses environment variables DEFAULT_SCHEME and DEFAULT_NETLOC
@@ -396,8 +398,8 @@ class PyArrowFileIO(FileIO):
         uri = urlparse(location)
 
         # Load defaults from environment
-        default_scheme = os.getenv("DEFAULT_SCHEME", "file")
-        default_netloc = os.getenv("DEFAULT_NETLOC", "")
+        default_scheme = config.get_str("default-scheme") or "file"
+        default_netloc = config.get_str("default-netloc") or ""
 
         # Apply logic
         scheme = uri.scheme or default_scheme
@@ -599,7 +601,7 @@ class PyArrowFileIO(FileIO):
         Returns:
             PyArrowFile: A PyArrowFile instance for the given location.
         """
-        scheme, netloc, path = self.parse_location(location)
+        scheme, netloc, path = self.parse_location(location, self.config)
         return PyArrowFile(
             fs=self.fs_by_scheme(scheme, netloc),
             location=location,
@@ -616,7 +618,7 @@ class PyArrowFileIO(FileIO):
         Returns:
             PyArrowFile: A PyArrowFile instance for the given location.
         """
-        scheme, netloc, path = self.parse_location(location)
+        scheme, netloc, path = self.parse_location(location, self.config)
         return PyArrowFile(
             fs=self.fs_by_scheme(scheme, netloc),
             location=location,
@@ -637,7 +639,7 @@ class PyArrowFileIO(FileIO):
                 an AWS error code 15.
         """
         str_location = location.location if isinstance(location, (InputFile, OutputFile)) else location
-        scheme, netloc, path = self.parse_location(str_location)
+        scheme, netloc, path = self.parse_location(str_location, self.config)
         fs = self.fs_by_scheme(scheme, netloc)
 
         try:
