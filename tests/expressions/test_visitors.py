@@ -1887,7 +1887,7 @@ def test_translate_column_names_missing_column_projected_field_fallbacks_to_init
         projected_field_values={2: 10},  # This doesn't match expression literal (42)
     )
 
-    # Should evaluate to AlwaysFalse since projected field value doesn't
+    # Should evaluate to AlwaysFalse since projected field value doesn't match the expression literal
     assert translated_expr == AlwaysFalse()
 
 
