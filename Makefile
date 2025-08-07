@@ -28,7 +28,7 @@ else
   TEST_RUNNER = poetry run
 endif
 
-POETRY_VERSION = 2.1.3
+POETRY_VERSION = 2.1.4
 
 # ============
 # Help Section
