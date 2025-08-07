@@ -525,12 +525,9 @@ def test_write_manifest(
         assert data_file.sort_order_id == 0
 
 
-# @pytest.mark.parametrize("format_version", [1, 2])
-@pytest.mark.parametrize("format_version", [2])
-# @pytest.mark.parametrize("parent_snapshot_id", [19, None])
-@pytest.mark.parametrize("parent_snapshot_id", [19,])
-# @pytest.mark.parametrize("compression", ["null", "deflate"])
-@pytest.mark.parametrize("compression", ["null"])
+@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("parent_snapshot_id", [19, None])
+@pytest.mark.parametrize("compression", ["null", "deflate"])
 def test_write_manifest_list(
     generated_manifest_file_file_v1: str,
     generated_manifest_file_file_v2: str,

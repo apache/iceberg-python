@@ -22,7 +22,6 @@ from copy import copy
 from enum import Enum
 from types import TracebackType
 from typing import (
-    TYPE_CHECKING,
     Any,
     Dict,
     Iterator,
@@ -58,9 +57,6 @@ from pyiceberg.types import (
     StringType,
     StructType,
 )
-
-if TYPE_CHECKING:
-    pass
 
 UNASSIGNED_SEQ = -1
 DEFAULT_BLOCK_SIZE = 67108864  # 64 * 1024 * 1024
@@ -989,12 +985,12 @@ def _inherit_from_manifest(entry: ManifestEntry, manifest: ManifestFile) -> Mani
 
     # in v1 tables, the sequence number is not persisted and can be safely defaulted to 0
     # in v2 tables, the sequence number should be inherited iff the entry status is ADDED
-    if entry.sequence_number is None:
+    if entry.sequence_number is None and (manifest.sequence_number == 0 or entry.status == ManifestEntryStatus.ADDED):
         entry.sequence_number = manifest.sequence_number
 
     # in v1 tables, the file sequence number is not persisted and can be safely defaulted to 0
     # in v2 tables, the file sequence number should be inherited iff the entry status is ADDED
-    if entry.file_sequence_number is None:
+    if entry.file_sequence_number is None and (manifest.sequence_number == 0 or entry.status == ManifestEntryStatus.ADDED):
         # Only available in V2, always 0 in V1
         entry.file_sequence_number = manifest.sequence_number
 
