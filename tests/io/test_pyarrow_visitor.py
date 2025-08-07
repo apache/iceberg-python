@@ -34,6 +34,7 @@ from pyiceberg.expressions import (
 from pyiceberg.expressions.literals import literal
 from pyiceberg.io.pyarrow import (
     UnsupportedPyArrowTypeException,
+    _check_pyarrow_schema_compatible,
     _ConvertToArrowSchema,
     _ConvertToIceberg,
     _ConvertToIcebergWithoutIDs,
@@ -311,6 +312,28 @@ def test_pyarrow_map_to_iceberg() -> None:
 def test_pyarrow_dictionary_encoded_type_to_iceberg(value_type: pa.DataType, expected_result: IcebergType) -> None:
     pyarrow_dict = pa.dictionary(pa.int32(), value_type)
     assert visit_pyarrow(pyarrow_dict, _ConvertToIceberg()) == expected_result
+
+
+def test_schema_check_null_column(table_schema_simple: Schema) -> None:
+    pyarrow_schema: pa.Schema = schema_to_pyarrow(table_schema_simple)
+    new_field = pyarrow_schema.field(0).with_type(pa.null())  # Make the optional string field null for testing
+    pyarrow_schema = pyarrow_schema.set(0, new_field)
+    assert pyarrow_schema.field(0).type == pa.null()
+    _check_pyarrow_schema_compatible(table_schema_simple, pyarrow_schema)
+
+
+def test_schema_conversion_null_column(table_schema_simple: Schema) -> None:
+    pyarrow_schema: pa.Schema = schema_to_pyarrow(table_schema_simple)
+    new_field = pyarrow_schema.field(2).with_type(pa.null())  # Make the optional boolean field null for testing
+    pyarrow_schema = pyarrow_schema.set(2, new_field)
+    assert pyarrow_schema.field(2).type == pa.null()
+    actual = str(pyarrow_to_schema(pyarrow_schema))
+    expected = """table {
+  1: foo: optional string
+  2: bar: required int
+  3: baz: optional unknown
+}"""
+    assert actual == expected
 
 
 def test_round_schema_conversion_simple(table_schema_simple: Schema) -> None:
