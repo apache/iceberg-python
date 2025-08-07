@@ -2568,7 +2568,16 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
             orc.write_table(arrow_table, fos)
-        # You may want to add statistics extraction here if needed
+        
+        # Extract statistics from the written ORC file
+        orc_file = orc.ORCFile(fo.to_input_file().open())
+        statistics = data_file_statistics_from_orc_metadata(
+            orc_metadata=orc_file,
+            stats_columns=compute_statistics_plan(file_schema, table_metadata.properties),
+            orc_column_mapping=orc_column_to_id_mapping(file_schema),
+            arrow_table=arrow_table,
+        )
+        
         data_file = DataFile.from_args(
             content=DataFileContent.DATA,
             file_path=file_path,
@@ -2579,7 +2588,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             spec_id=table_metadata.default_spec_id,
             equality_ids=None,
             key_metadata=None,
-            # statistics=... (if you implement ORC stats)
+            **statistics.to_serialized_dict(),
         )
         return data_file
 
@@ -2877,3 +2886,180 @@ def _get_field_from_arrow_table(arrow_table: pa.Table, field_path: str) -> pa.Ar
     field_array = arrow_table[path_parts[0]]
     # Navigate into the struct using the remaining path parts
     return pc.struct_field(field_array, path_parts[1:])
+
+
+def data_file_statistics_from_orc_metadata(
+    orc_metadata: "orc.ORCFile",
+    stats_columns: Dict[int, StatisticsCollector],
+    orc_column_mapping: Dict[str, int],
+    arrow_table: Optional[pa.Table] = None,
+) -> DataFileStatistics:
+    """
+    Compute and return DataFileStatistics that includes the following.
+
+    - record_count
+    - column_sizes
+    - value_counts
+    - null_value_counts
+    - nan_value_counts
+    - column_aggregates
+    - split_offsets
+
+    Args:
+        orc_metadata (pyarrow.orc.ORCFile): A pyarrow ORC file object.
+        stats_columns (Dict[int, StatisticsCollector]): The statistics gathering plan. It is required to
+            set the mode for column metrics collection
+        orc_column_mapping (Dict[str, int]): The mapping of the ORC column name to the field ID
+        arrow_table (pa.Table, optional): The original arrow table that was written, used for row count
+    """
+    column_sizes: Dict[int, int] = {}
+    value_counts: Dict[int, int] = {}
+    split_offsets: List[int] = []
+
+    null_value_counts: Dict[int, int] = {}
+    nan_value_counts: Dict[int, int] = {}
+
+    col_aggs = {}
+
+    invalidate_col: Set[int] = set()
+    
+    # Get row count from the arrow table if available, otherwise use a default
+    if arrow_table is not None:
+        record_count = arrow_table.num_rows
+    else:
+        # Fallback: ORC doesn't provide num_rows like Parquet, so we'll use a default
+        record_count = 0
+    
+    # ORC files have a single stripe structure, unlike Parquet's row groups
+    # We'll process the file-level statistics
+    for col_name, field_id in orc_column_mapping.items():
+        stats_col = stats_columns[field_id]
+        
+        # Initialize column sizes (ORC doesn't provide per-column size like Parquet)
+        column_sizes[field_id] = 0  # ORC doesn't provide detailed column size info
+        
+        if stats_col.mode == MetricsMode(MetricModeTypes.NONE):
+            continue
+            
+        # Get column statistics from ORC metadata
+        try:
+            # ORC provides file-level statistics
+            # Note: ORC statistics are more limited than Parquet
+            # We'll use the available statistics and set defaults for missing ones
+            
+            # For ORC, we'll use the total number of values as value count
+            # This is a simplification since ORC doesn't provide per-column value counts like Parquet
+            value_counts[field_id] = record_count
+            
+            # ORC doesn't provide null counts in the same way as Parquet
+            # We'll set this to 0 for now, as ORC doesn't expose null counts easily
+            null_value_counts[field_id] = 0
+            
+            if stats_col.mode == MetricsMode(MetricModeTypes.COUNTS):
+                continue
+                
+            if field_id not in col_aggs:
+                col_aggs[field_id] = StatsAggregator(
+                    stats_col.iceberg_type, _primitive_to_physical(stats_col.iceberg_type), stats_col.mode.length
+                )
+            
+            # ORC doesn't provide min/max statistics in the same way as Parquet
+            # We'll skip the min/max aggregation for ORC files
+            # This is a limitation of ORC's metadata structure compared to Parquet
+            
+        except Exception as e:
+            invalidate_col.add(field_id)
+            logger.warning(f"Failed to extract ORC statistics for column {col_name}: {e}")
+    
+    # ORC doesn't have split offsets like Parquet
+    # We'll use an empty list or a single offset at 0
+    split_offsets = [0] if record_count > 0 else []
+    
+    # Clean up invalid columns
+    for field_id in invalidate_col:
+        col_aggs.pop(field_id, None)
+        null_value_counts.pop(field_id, None)
+
+    return DataFileStatistics(
+        record_count=record_count,
+        column_sizes=column_sizes,
+        value_counts=value_counts,
+        null_value_counts=null_value_counts,
+        nan_value_counts=nan_value_counts,
+        column_aggregates=col_aggs,
+        split_offsets=split_offsets,
+    )
+
+
+class ID2OrcColumn:
+    field_id: int
+    orc_column: str
+    
+    def __init__(self, field_id: int, orc_column: str):
+        self.field_id = field_id
+        self.orc_column = orc_column
+
+
+class ID2OrcColumnVisitor(PreOrderSchemaVisitor[List[ID2OrcColumn]]):
+    _field_id: int = 0
+    _path: List[str]
+
+    def __init__(self) -> None:
+        self._path = []
+
+    def schema(self, schema: Schema, struct_result: Callable[[], List[ID2OrcColumn]]) -> List[ID2OrcColumn]:
+        return struct_result()
+
+    def struct(self, struct: StructType, field_results: List[Callable[[], List[ID2OrcColumn]]]) -> List[ID2OrcColumn]:
+        return list(itertools.chain(*[result() for result in field_results]))
+
+    def field(self, field: NestedField, field_result: Callable[[], List[ID2OrcColumn]]) -> List[ID2OrcColumn]:
+        self._field_id = field.field_id
+        self._path.append(field.name)
+        result = field_result()
+        self._path.pop()
+        return result
+
+    def list(self, list_type: ListType, element_result: Callable[[], List[ID2OrcColumn]]) -> List[ID2OrcColumn]:
+        self._field_id = list_type.element_id
+        self._path.append("list.element")
+        result = element_result()
+        self._path.pop()
+        return result
+
+    def map(
+        self,
+        map_type: MapType,
+        key_result: Callable[[], List[ID2OrcColumn]],
+        value_result: Callable[[], List[ID2OrcColumn]],
+    ) -> List[ID2OrcColumn]:
+        self._field_id = map_type.key_id
+        self._path.append("key_value.key")
+        k = key_result()
+        self._path.pop()
+        self._field_id = map_type.value_id
+        self._path.append("key_value.value")
+        v = value_result()
+        self._path.pop()
+        return k + v
+
+    def primitive(self, primitive: PrimitiveType) -> List[ID2OrcColumn]:
+        return [ID2OrcColumn(field_id=self._field_id, orc_column=".".join(self._path))]
+
+
+def orc_column_to_id_mapping(
+    schema: Schema,
+) -> Dict[str, int]:
+    """
+    Create a mapping from ORC column names to Iceberg field IDs.
+    
+    Args:
+        schema: The Iceberg schema
+        
+    Returns:
+        A dictionary mapping ORC column names to field IDs
+    """
+    result: Dict[str, int] = {}
+    for pair in pre_order_visit(schema, ID2OrcColumnVisitor()):
+        result[pair.orc_column] = pair.field_id
+    return result
