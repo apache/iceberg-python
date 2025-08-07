@@ -1492,15 +1492,13 @@ def _task_to_record_batches(
 
                 current_batch = table.combine_chunks().to_batches()[0]
 
-            result_batch = _to_requested_schema(
+            yield _to_requested_schema(
                 projected_schema,
                 file_project_schema,
                 current_batch,
                 downcast_ns_timestamp_to_us=True,
                 projected_missing_fields=projected_missing_fields,
             )
-
-            yield result_batch
 
 
 def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
