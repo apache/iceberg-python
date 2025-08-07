@@ -1306,7 +1306,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
             elif primitive.unit == "ns":
                 if self._downcast_ns_timestamp_to_us:
                     logger.warning("Iceberg does not yet support 'ns' timestamp precision. Downcasting to 'us'.")
-                elif self._format_version == 3:
+                elif self._format_version >= 3:
                     if primitive.tz in UTC_ALIASES:
                         return TimestamptzNanoType()
                     else:
