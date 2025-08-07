@@ -1347,7 +1347,6 @@ class ManifestListWriterV2(ManifestListWriter):
                 "parent-snapshot-id": str(parent_snapshot_id) if parent_snapshot_id is not None else "null",
                 "sequence-number": str(sequence_number),
                 "format-version": "2",
-                "content": "data",
                 AVRO_CODEC_KEY: compression,
             },
         )
