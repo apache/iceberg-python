@@ -106,6 +106,7 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
 )
+from pyiceberg.utils.config import Config
 from tests.catalog.test_base import InMemoryCatalog
 from tests.conftest import UNIFIED_AWS_SESSION_PROPERTIES
 
@@ -2040,7 +2041,7 @@ def test_writing_avro_file_adls(generated_manifest_entry_file: str, pyarrow_file
 
 def test_parse_location() -> None:
     def check_results(location: str, expected_schema: str, expected_netloc: str, expected_uri: str) -> None:
-        schema, netloc, uri = PyArrowFileIO.parse_location(location)
+        schema, netloc, uri = PyArrowFileIO.parse_location(location, Config())
         assert schema == expected_schema
         assert netloc == expected_netloc
         assert uri == expected_uri
@@ -2654,3 +2655,41 @@ def test_retry_strategy_not_found() -> None:
     io = PyArrowFileIO(properties={S3_RETRY_STRATEGY_IMPL: "pyiceberg.DoesNotExist"})
     with pytest.warns(UserWarning, match="Could not initialize S3 retry strategy: pyiceberg.DoesNotExist"):
         io.new_input("s3://bucket/path/to/file")
+
+
+def test_parse_location_environment_defaults() -> None:
+    """Test that parse_location uses environment variables for defaults."""
+    import os
+
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
+    # Test with default environment (no env vars set)
+    scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar", Config())
+    assert scheme == "file"
+    assert netloc == ""
+    assert path == "/foo/bar"
+
+    try:
+        # Test with environment variables set
+        os.environ["PYICEBERG_DEFAULT_SCHEME"] = "scheme"
+        os.environ["PYICEBERG_DEFAULT_NETLOC"] = "netloc:8000"
+
+        scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar", Config())
+        assert scheme == "scheme"
+        assert netloc == "netloc:8000"
+        assert path == "netloc:8000/foo/bar"
+
+        # Set environment variables
+        os.environ["PYICEBERG_DEFAULT_SCHEME"] = "hdfs"
+        os.environ["PYICEBERG_DEFAULT_NETLOC"] = "netloc:8000"
+
+        scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar", Config())
+        assert scheme == "hdfs"
+        assert netloc == "netloc:8000"
+        assert path == "/foo/bar"
+    finally:
+        # Clean up environment variables
+        if "PYICEBERG_DEFAULT_SCHEME" in os.environ:
+            del os.environ["PYICEBERG_DEFAULT_SCHEME"]
+        if "PYICEBERG_DEFAULT_NETLOC" in os.environ:
+            del os.environ["PYICEBERG_DEFAULT_NETLOC"]
