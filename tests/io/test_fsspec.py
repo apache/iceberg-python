@@ -20,6 +20,7 @@ import pickle
 import tempfile
 import uuid
 from unittest import mock
+from unittest.mock import Mock
 
 import pytest
 from botocore.awsrequest import AWSRequest
@@ -287,6 +288,34 @@ def test_fsspec_unified_session_properties() -> None:
                 "aws_session_token": "client.session-token",
             },
             config_kwargs={},
+        )
+
+
+def test_fsspec_s3_storage_options_session() -> None:
+    mock_session = Mock()
+
+    session_properties: Properties = {
+        "s3.endpoint": "http://localhost:9000",
+        "storage_options": {"session": mock_session},
+        **UNIFIED_AWS_SESSION_PROPERTIES,
+    }
+
+    with mock.patch("s3fs.S3FileSystem") as mock_s3fs:
+        s3_fileio = FsspecFileIO(properties=session_properties)
+        filename = str(uuid.uuid4())
+
+        s3_fileio.new_input(location=f"s3://warehouse/{filename}")
+
+        mock_s3fs.assert_called_with(
+            client_kwargs={
+                "endpoint_url": "http://localhost:9000",
+                "aws_access_key_id": "client.access-key-id",
+                "aws_secret_access_key": "client.secret-access-key",
+                "region_name": "client.region",
+                "aws_session_token": "client.session-token",
+            },
+            config_kwargs={},
+            session=mock_session,
         )
 
 
