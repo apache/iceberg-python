@@ -213,13 +213,47 @@ PyIceberg uses [S3FileSystem](https://arrow.apache.org/docs/python/generated/pya
 
 ### PyArrow
 
-<!-- markdown-link-check-disable -->
+#### PyArrow Specific Properties
 
 | Key                             | Example | Description                                                                                                                                                                                                                                                                                                                                                     |
 | ------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | pyarrow.use-large-types-on-read | True    | Use large PyArrow types i.e. [large_string](https://arrow.apache.org/docs/python/generated/pyarrow.large_string.html), [large_binary](https://arrow.apache.org/docs/python/generated/pyarrow.large_binary.html) and [large_list](https://arrow.apache.org/docs/python/generated/pyarrow.large_list.html) field types on table scans. The default value is True. |
 
-<!-- markdown-link-check-enable-->
+#### Advanced FileSystem Configuration
+
+When using `PyArrowFileIO`, you can **pass additional configuration properties directly to the underlying PyArrow filesystem implementations**. This feature enables you to use any PyArrow filesystem option without requiring explicit PyIceberg support.
+
+PyIceberg first processes its own supported properties for each filesystem, then passes any remaining properties with the appropriate prefix directly to the PyArrow filesystem constructor. This approach ensures:
+
+1. PyIceberg's built-in properties take precedence
+2. Advanced PyArrow options are automatically supported
+3. New PyArrow features become available immediately
+
+##### Configuration Format
+
+Use this format for additional properties:
+
+```txt
+{fs_scheme}.{parameter_name}={value}
+```
+
+Where:
+
+- `{fs_scheme}` is the filesystem scheme (e.g., `s3`, `hdfs`, `gcs`, `adls`, `file`)
+- `{parameter_name}` must match the exact parameter name expected by the PyArrow filesystem constructor
+- `{value}` must be the correct type expected by the underlying filesystem (string, integer, boolean, etc.)
+
+##### Supported Prefixes and FileSystems
+
+| Property Prefix | FileSystem                                                                                           | Example                     | Description                                         |
+|-----------------|------------------------------------------------------------------------------------------------------|-----------------------------|-----------------------------------------------------|
+| `s3.`           | [S3FileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.S3FileSystem.html)          | `s3.load_frequency=900`     | Passed as `load_frequency=900` to S3FileSystem      |
+| `hdfs.`         | [HadoopFileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.HadoopFileSystem.html)  | `hdfs.replication=3`        | Passed as `replication=3` to HadoopFileSystem       |
+| `gcs.`          | [GcsFileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.GcsFileSystem.html)        | `gcs.project_id=test`       | Passed as `project_id='test'` to GcsFileSystem      |
+| `adls.`         | [AzureFileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.AzureFileSystem.html)    | `adls.account_name=foo` | Passed as `account_name=foo` to AzureFileSystem |
+| `file.`         | [LocalFileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.LocalFileSystem.html)    | `file.use_mmap=true`        | Passed as `use_mmap=True` to LocalFileSystem        |
+
+**Note:** Refer to the PyArrow documentation for each filesystem to understand the available parameters and their expected types. Property values are passed directly to PyArrow, so they must match the exact parameter names and types expected by the filesystem constructors.
 
 ## Location Providers
 
