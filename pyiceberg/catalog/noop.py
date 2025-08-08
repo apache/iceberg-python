@@ -37,6 +37,8 @@ from pyiceberg.table.update import (
     TableUpdate,
 )
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
+from pyiceberg.view import View
+from pyiceberg.view.metadata import ViewVersion
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -124,6 +126,16 @@ class NoopCatalog(Catalog):
         raise NotImplementedError
 
     def view_exists(self, identifier: Union[str, Identifier]) -> bool:
+        raise NotImplementedError
+
+    def create_view(
+        self,
+        identifier: Union[str, Identifier],
+        schema: Union[Schema, "pa.Schema"],
+        view_version: ViewVersion,
+        location: Optional[str] = None,
+        properties: Properties = EMPTY_DICT,
+    ) -> View:
         raise NotImplementedError
 
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
