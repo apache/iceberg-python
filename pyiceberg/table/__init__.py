@@ -80,6 +80,7 @@ from pyiceberg.partitioning import (
 from pyiceberg.schema import Schema
 from pyiceberg.table.inspect import InspectTable
 from pyiceberg.table.locations import LocationProvider, load_location_provider
+from pyiceberg.table.maintenance import MaintenanceTable
 from pyiceberg.table.metadata import (
     INITIAL_SEQUENCE_NUMBER,
     TableMetadata,
@@ -115,7 +116,7 @@ from pyiceberg.table.update import (
     update_table_metadata,
 )
 from pyiceberg.table.update.schema import UpdateSchema
-from pyiceberg.table.update.snapshot import ExpireSnapshots, ManageSnapshots, UpdateSnapshot, _FastAppendFiles
+from pyiceberg.table.update.snapshot import ManageSnapshots, UpdateSnapshot, _FastAppendFiles
 from pyiceberg.table.update.spec import UpdateSpec
 from pyiceberg.table.update.statistics import UpdateStatistics
 from pyiceberg.transforms import IdentityTransform
@@ -1086,6 +1087,15 @@ class Table:
         """
         return InspectTable(self)
 
+    @property
+    def maintenance(self) -> MaintenanceTable:
+        """Return the MaintenanceTable object for maintenance.
+
+        Returns:
+            MaintenanceTable object based on this Table.
+        """
+        return MaintenanceTable(self)
+
     def refresh(self) -> Table:
         """Refresh the current table metadata.
 
@@ -1257,10 +1267,6 @@ class Table:
            ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
         """
         return ManageSnapshots(transaction=Transaction(self, autocommit=True))
-
-    def expire_snapshots(self) -> ExpireSnapshots:
-        """Shorthand to run expire snapshots by id or by a timestamp."""
-        return ExpireSnapshots(transaction=Transaction(self, autocommit=True))
 
     def update_statistics(self) -> UpdateStatistics:
         """
