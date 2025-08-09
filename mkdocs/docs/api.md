@@ -1334,6 +1334,67 @@ with table.manage_snapshots() as ms:
     ms.create_branch(snapshot_id1, "Branch_A").create_tag(snapshot_id2, "tag789")
 ```
 
+## Table Maintenance
+
+PyIceberg provides table maintenance operations through the `table.maintenance` API. This provides a clean interface for performing maintenance tasks like snapshot expiration.
+
+### Snapshot Expiration
+
+Expire old snapshots to clean up table metadata and reduce storage costs:
+
+```python
+# Basic usage - expire a specific snapshot by ID
+table.maintenance.expire_snapshots().expire_snapshot_by_id(12345).commit()
+
+# Context manager usage (recommended for multiple operations)
+with table.maintenance.expire_snapshots() as expire:
+    expire.expire_snapshot_by_id(12345)
+    expire.expire_snapshot_by_id(67890)
+    # Automatically commits when exiting the context
+
+# Method chaining
+table.maintenance.expire_snapshots().expire_snapshot_by_id(12345).commit()
+```
+
+#### Real-world Example
+
+```python
+def cleanup_old_snapshots(table_name: str, snapshot_ids: list[int]):
+    """Remove specific snapshots from a table."""
+    catalog = load_catalog("production")
+    table = catalog.load_table(table_name)
+    
+    # Use context manager for safe transaction handling
+    with table.maintenance.expire_snapshots() as expire:
+        for snapshot_id in snapshot_ids:
+            expire.expire_snapshot_by_id(snapshot_id)
+    
+    print(f"Expired {len(snapshot_ids)} snapshots from {table_name}")
+
+# Usage
+cleanup_old_snapshots("analytics.user_events", [12345, 67890, 11111])
+```
+
+#### Transaction Semantics
+
+The maintenance API leverages Iceberg's transaction system:
+
+- **Context Manager**: Automatically commits changes when exiting the `with` block
+- **Manual Commit**: Call `.commit()` explicitly to apply changes
+- **Rollback**: If an error occurs in a context manager, changes are automatically rolled back
+- **Atomic Operations**: All operations within a single transaction are applied atomically
+
+<!-- prettier-ignore-start -->
+
+!!! note "Future Maintenance Operations"
+    The maintenance API is designed to be extensible. Future versions may include additional maintenance operations such as:
+    
+    * `table.maintenance.compact_data()` - Data file compaction
+    * `table.maintenance.optimize_metadata()` - Metadata optimization
+    * `table.maintenance.rewrite_manifests()` - Manifest rewriting
+
+<!-- prettier-ignore-end -->
+
 ## Views
 
 PyIceberg supports view operations.
