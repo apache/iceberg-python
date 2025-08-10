@@ -504,6 +504,7 @@ class PyArrowFileIO(FileIO):
         return S3FileSystem(**client_kwargs)
 
     def _initialize_azure_fs(self) -> FileSystem:
+        # https://arrow.apache.org/docs/python/generated/pyarrow.fs.AzureFileSystem.html
         from packaging import version
 
         MIN_PYARROW_VERSION_SUPPORTING_AZURE_FS = "20.0.0"
