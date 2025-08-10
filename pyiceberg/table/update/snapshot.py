@@ -947,7 +947,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
 
         return protected_ids
 
-    def expire_snapshot_by_id(self, snapshot_id: int) -> ExpireSnapshots:
+    def by_id(self, snapshot_id: int) -> ExpireSnapshots:
         """Expire a snapshot by its ID.
 
         Args:

@@ -1344,16 +1344,16 @@ Expire old snapshots to clean up table metadata and reduce storage costs:
 
 ```python
 # Basic usage - expire a specific snapshot by ID
-table.maintenance.expire_snapshots().expire_snapshot_by_id(12345).commit()
+table.maintenance.expire_snapshots().by_id(12345).commit()
 
 # Context manager usage (recommended for multiple operations)
 with table.maintenance.expire_snapshots() as expire:
-    expire.expire_snapshot_by_id(12345)
-    expire.expire_snapshot_by_id(67890)
+    expire.by_id(12345)
+    expire.by_id(67890)
     # Automatically commits when exiting the context
 
 # Method chaining
-table.maintenance.expire_snapshots().expire_snapshot_by_id(12345).commit()
+table.maintenance.expire_snapshots().by_id(12345).commit()
 ```
 
 #### Real-world Example
@@ -1367,7 +1367,7 @@ def cleanup_old_snapshots(table_name: str, snapshot_ids: list[int]):
     # Use context manager for safe transaction handling
     with table.maintenance.expire_snapshots() as expire:
         for snapshot_id in snapshot_ids:
-            expire.expire_snapshot_by_id(snapshot_id)
+            expire.by_id(snapshot_id)
     
     print(f"Expired {len(snapshot_ids)} snapshots from {table_name}")
 

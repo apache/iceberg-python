@@ -153,7 +153,7 @@ def test_real_world_cleanup_pattern(table_v2: Table) -> None:
         try:
             with tbl.maintenance.expire_snapshots() as expire:
                 for snapshot_id in snapshot_ids:
-                    expire.expire_snapshot_by_id(snapshot_id)
+                    expire.by_id(snapshot_id)
                     count += 1
         except (ValueError, NotImplementedError):
             # Expected for test scenarios
