@@ -87,9 +87,12 @@ from pyiceberg.io import (
     ADLS_ACCOUNT_NAME,
     ADLS_BLOB_STORAGE_AUTHORITY,
     ADLS_BLOB_STORAGE_SCHEME,
+    ADLS_CLIENT_ID,
+    ADLS_CLIENT_SECRET,
     ADLS_DFS_STORAGE_AUTHORITY,
     ADLS_DFS_STORAGE_SCHEME,
     ADLS_SAS_TOKEN,
+    ADLS_TENANT_ID,
     AWS_ACCESS_KEY_ID,
     AWS_REGION,
     AWS_ROLE_ARN,
@@ -534,6 +537,13 @@ class PyArrowFileIO(FileIO):
 
         if sas_token := self.properties.get(ADLS_SAS_TOKEN):
             client_kwargs["sas_token"] = sas_token
+
+        if client_id := self.properties.get(ADLS_CLIENT_ID):
+            client_kwargs["client_id"] = client_id
+        if client_secret := self.properties.get(ADLS_CLIENT_SECRET):
+            client_kwargs["client_secret"] = client_secret
+        if tenant_id := self.properties.get(ADLS_TENANT_ID):
+            client_kwargs["tenant_id"] = tenant_id
 
         return AzureFileSystem(**client_kwargs)
 
