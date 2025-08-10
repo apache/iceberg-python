@@ -45,6 +45,7 @@ from pyiceberg.io import (
     ADLS_CLIENT_ID,
     ADLS_CLIENT_SECRET,
     ADLS_CONNECTION_STRING,
+    ADLS_CREDENTIAL,
     ADLS_SAS_TOKEN,
     ADLS_TENANT_ID,
     AWS_ACCESS_KEY_ID,
@@ -203,6 +204,7 @@ def _adls(properties: Properties) -> AbstractFileSystem:
 
     return AzureBlobFileSystem(
         connection_string=properties.get(ADLS_CONNECTION_STRING),
+        credential=properties.get(ADLS_CREDENTIAL),
         account_name=properties.get(ADLS_ACCOUNT_NAME),
         account_key=properties.get(ADLS_ACCOUNT_KEY),
         sas_token=properties.get(ADLS_SAS_TOKEN),
