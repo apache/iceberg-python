@@ -42,7 +42,7 @@ def test_cannot_expire_protected_head_snapshot(table_v2: Table) -> None:
     assert any(ref.snapshot_id == HEAD_SNAPSHOT for ref in table_v2.metadata.refs.values())
 
     # Attempt to expire the HEAD snapshot and expect a ValueError
-    with pytest.raises(ValueError, match=f"Cannot expire snapshot {HEAD_SNAPSHOT} as it is referenced by a branch or tag."):
+    with pytest.raises(ValueError, match=f"Snapshot with ID {HEAD_SNAPSHOT} is protected and cannot be expired."):
         table_v2.maintenance.expire_snapshots().by_id(HEAD_SNAPSHOT).commit()
 
     table_v2.catalog.commit_table.assert_not_called()
@@ -65,7 +65,7 @@ def test_cannot_expire_tagged_snapshot(table_v2: Table) -> None:
     )
     assert any(ref.snapshot_id == TAGGED_SNAPSHOT for ref in table_v2.metadata.refs.values())
 
-    with pytest.raises(ValueError, match=f"Cannot expire snapshot {TAGGED_SNAPSHOT} as it is referenced by a branch or tag."):
+    with pytest.raises(ValueError, match=f"Snapshot with ID {TAGGED_SNAPSHOT} is protected and cannot be expired."):
         table_v2.maintenance.expire_snapshots().by_id(TAGGED_SNAPSHOT).commit()
 
     table_v2.catalog.commit_table.assert_not_called()
