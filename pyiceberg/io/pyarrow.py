@@ -546,6 +546,17 @@ class PyArrowFileIO(FileIO):
         if tenant_id := self.properties.get(ADLS_TENANT_ID):
             client_kwargs["tenant_id"] = tenant_id
 
+        # Validate that all three are provided together for ClientSecretCredential
+        credential_keys = ["client_id", "client_secret", "tenant_id"]
+        provided_keys = [key for key in credential_keys if key in client_kwargs]
+        if provided_keys and len(provided_keys) != len(credential_keys):
+            missing_keys = [key for key in credential_keys if key not in client_kwargs]
+            raise ValueError(
+                f"client_id, client_secret, and tenant_id must all be provided together "
+                f"to use ClientSecretCredential for Azure authentication. "
+                f"Provided: {provided_keys}, Missing: {missing_keys}"
+            )
+
         return AzureFileSystem(**client_kwargs)
 
     def _initialize_hdfs_fs(self, scheme: str, netloc: Optional[str]) -> FileSystem:
