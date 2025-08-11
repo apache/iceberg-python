@@ -927,8 +927,12 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
             Tuple of updates and requirements to be committed,
             as required by the calling parent apply functions.
         """
+        # Remove any protected snapshot IDs from the set to expire, just in case
+        protected_ids = self._get_protected_snapshot_ids()
+        self._snapshot_ids_to_expire -= protected_ids
         update = RemoveSnapshotsUpdate(snapshot_ids=self._snapshot_ids_to_expire)
-        return (update,), ()
+        self._updates += (update,)
+        return self._updates, self._requirements
 
     def _get_protected_snapshot_ids(self) -> Set[int]:
         """Get the IDs of protected snapshots.
