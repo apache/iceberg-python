@@ -2445,8 +2445,12 @@ def data_file_statistics_from_parquet_metadata(
 
                     if isinstance(stats_col.iceberg_type, DecimalType) and statistics.physical_type != "FIXED_LEN_BYTE_ARRAY":
                         scale = stats_col.iceberg_type.scale
-                        col_aggs[field_id].update_min(unscaled_to_decimal(statistics.min_raw, scale))
-                        col_aggs[field_id].update_max(unscaled_to_decimal(statistics.max_raw, scale))
+                        col_aggs[field_id].update_min(
+                            unscaled_to_decimal(statistics.min_raw, scale)
+                        ) if statistics.min_raw else None
+                        col_aggs[field_id].update_max(
+                            unscaled_to_decimal(statistics.max_raw, scale)
+                        ) if statistics.max_raw else None
                     else:
                         col_aggs[field_id].update_min(statistics.min)
                         col_aggs[field_id].update_max(statistics.max)
