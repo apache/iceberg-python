@@ -1935,8 +1935,8 @@ def test_file_tell_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) ->
 
 @pytest.mark.adls
 @skip_if_pyarrow_too_old
-def test_read_specified_bytes_for_file_adls(pyarrow_fileio_adls: PyArrowFileIO) -> None:
-    location = f"abfss://warehouse/{uuid4()}"
+def test_read_specified_bytes_for_file_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
+    location = f"{adls_scheme}://warehouse/{uuid4()}"
 
     output_file = pyarrow_fileio_adls.new_output(location=location)
     with output_file.create() as write_file:
