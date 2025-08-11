@@ -919,9 +919,10 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
     _requirements: Tuple[TableRequirement, ...] = ()
 
     def _commit(self) -> UpdatesAndRequirements:
-        """Commit the staged updates and requirements.
+        """
+        Commit the staged updates and requirements.
 
-        This will remove the snapshots with the given IDs.
+        This will remove the snapshots with the given IDs, but will always skip protected snapshots (branch/tag heads).
 
         Returns:
             Tuple of updates and requirements to be committed,
@@ -935,15 +936,15 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         return self._updates, self._requirements
 
     def _get_protected_snapshot_ids(self) -> Set[int]:
-        """Get the IDs of protected snapshots.
+        """
+        Get the IDs of protected snapshots.
 
-        These are the HEAD snapshots of all branches and all tagged snapshots.
-        These ids are to be excluded from expiration.
+        These are the HEAD snapshots of all branches and all tagged snapshots.  These ids are to be excluded from expiration.
 
         Returns:
             Set of protected snapshot IDs to exclude from expiration.
         """
-        protected_ids = set()
+        protected_ids: Set[int] = set()
 
         for ref in self._transaction.table_metadata.refs.values():
             if ref.snapshot_ref_type in [SnapshotRefType.TAG, SnapshotRefType.BRANCH]:
@@ -951,21 +952,54 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
 
         return protected_ids
 
-    def by_id(self, snapshot_id: int) -> ExpireSnapshots:
-        """Expire a snapshot by its ID.
+    def expire_snapshot_by_id(self, snapshot_id: int) -> ExpireSnapshots:
+        """
+        Expire a snapshot by its ID.
+
+        This will mark the snapshot for expiration.
 
         Args:
             snapshot_id (int): The ID of the snapshot to expire.
-
         Returns:
             This for method chaining.
         """
         if self._transaction.table_metadata.snapshot_by_id(snapshot_id) is None:
             raise ValueError(f"Snapshot with ID {snapshot_id} does not exist.")
 
-        protected_ids = self._get_protected_snapshot_ids()
-        if snapshot_id in protected_ids:
-            raise ValueError(f"Cannot expire snapshot {snapshot_id} as it is referenced by a branch or tag.")
+        if snapshot_id in self._get_protected_snapshot_ids():
+            raise ValueError(f"Snapshot with ID {snapshot_id} is protected and cannot be expired.")
 
         self._snapshot_ids_to_expire.add(snapshot_id)
+
+        return self
+
+    def expire_snapshots_by_ids(self, snapshot_ids: List[int]) -> "ExpireSnapshots":
+        """
+        Expire multiple snapshots by their IDs.
+
+        This will mark the snapshots for expiration.
+
+        Args:
+            snapshot_ids (List[int]): List of snapshot IDs to expire.
+        Returns:
+            This for method chaining.
+        """
+        for snapshot_id in snapshot_ids:
+            self.expire_snapshot_by_id(snapshot_id)
+        return self
+
+    def expire_snapshots_older_than(self, timestamp_ms: int) -> "ExpireSnapshots":
+        """
+        Expire all unprotected snapshots with a timestamp older than a given value.
+
+        Args:
+            timestamp_ms (int): Only snapshots with timestamp_ms < this value will be expired.
+
+        Returns:
+            This for method chaining.
+        """
+        protected_ids = self._get_protected_snapshot_ids()
+        for snapshot in self._transaction.table_metadata.snapshots:
+            if snapshot.timestamp_ms < timestamp_ms and snapshot.snapshot_id not in protected_ids:
+                self._snapshot_ids_to_expire.add(snapshot.snapshot_id)
         return self
