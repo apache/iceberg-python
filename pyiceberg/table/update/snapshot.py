@@ -985,7 +985,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
             This for method chaining.
         """
         for snapshot_id in snapshot_ids:
-            self.expire_snapshot_by_id(snapshot_id)
+            self.by_id(snapshot_id)
         return self
 
     def older_than(self, timestamp_ms: int) -> "ExpireSnapshots":

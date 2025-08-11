@@ -42,8 +42,8 @@ def test_cannot_expire_protected_head_snapshot(table_v2: Table) -> None:
     assert any(ref.snapshot_id == HEAD_SNAPSHOT for ref in table_v2.metadata.refs.values())
 
     # Attempt to expire the HEAD snapshot and expect a ValueError
-    with pytest.raises(ValueError, match=f"Snapshot with ID {HEAD_SNAPSHOT} is protected and cannot be expired."):
-        table_v2.expire_snapshots().expire_snapshot_by_id(HEAD_SNAPSHOT).commit()
+    with pytest.raises(ValueError, match=f"Cannot expire snapshot {HEAD_SNAPSHOT} as it is referenced by a branch or tag."):
+        table_v2.maintenance.expire_snapshots().by_id(HEAD_SNAPSHOT).commit()
 
     table_v2.catalog.commit_table.assert_not_called()
 
@@ -65,8 +65,8 @@ def test_cannot_expire_tagged_snapshot(table_v2: Table) -> None:
     )
     assert any(ref.snapshot_id == TAGGED_SNAPSHOT for ref in table_v2.metadata.refs.values())
 
-    with pytest.raises(ValueError, match=f"Snapshot with ID {TAGGED_SNAPSHOT} is protected and cannot be expired."):
-        table_v2.expire_snapshots().expire_snapshot_by_id(TAGGED_SNAPSHOT).commit()
+    with pytest.raises(ValueError, match=f"Cannot expire snapshot {TAGGED_SNAPSHOT} as it is referenced by a branch or tag."):
+        table_v2.maintenance.expire_snapshots().by_id(TAGGED_SNAPSHOT).commit()
 
     table_v2.catalog.commit_table.assert_not_called()
 
@@ -98,7 +98,7 @@ def test_expire_unprotected_snapshot(table_v2: Table) -> None:
     assert all(ref.snapshot_id != EXPIRE_SNAPSHOT for ref in table_v2.metadata.refs.values())
 
     # Expire the snapshot
-    table_v2.expire_snapshots().expire_snapshot_by_id(EXPIRE_SNAPSHOT).commit()
+    table_v2.maintenance.expire_snapshots().by_id(EXPIRE_SNAPSHOT).commit()
 
     table_v2.catalog.commit_table.assert_called_once()
     remaining_snapshots = table_v2.metadata.snapshots
@@ -114,7 +114,7 @@ def test_expire_nonexistent_snapshot_raises(table_v2: Table) -> None:
     table_v2.metadata = table_v2.metadata.model_copy(update={"refs": {}})
 
     with pytest.raises(ValueError, match=f"Snapshot with ID {NONEXISTENT_SNAPSHOT} does not exist."):
-        table_v2.expire_snapshots().expire_snapshot_by_id(NONEXISTENT_SNAPSHOT).commit()
+        table_v2.maintenance.expire_snapshots().by_id(NONEXISTENT_SNAPSHOT).commit()
 
     table_v2.catalog.commit_table.assert_not_called()
 
@@ -152,7 +152,7 @@ def test_expire_snapshots_by_timestamp_skips_protected(table_v2: Table) -> None:
     )
     table_v2.catalog.commit_table.return_value = mock_response
 
-    table_v2.expire_snapshots().expire_snapshots_older_than(future_timestamp).commit()
+    table_v2.maintenance.expire_snapshots().older_than(future_timestamp).commit()
     # Update metadata to reflect the commit (as in other tests)
     table_v2.metadata = mock_response.metadata
 
@@ -215,7 +215,7 @@ def test_expire_snapshots_by_ids(table_v2: Table) -> None:
     assert all(ref.snapshot_id not in (EXPIRE_SNAPSHOT_1, EXPIRE_SNAPSHOT_2) for ref in table_v2.metadata.refs.values())
 
     # Expire the snapshots
-    table_v2.expire_snapshots().expire_snapshots_by_ids([EXPIRE_SNAPSHOT_1, EXPIRE_SNAPSHOT_2]).commit()
+    table_v2.maintenance.expire_snapshots().by_ids([EXPIRE_SNAPSHOT_1, EXPIRE_SNAPSHOT_2]).commit()
 
     table_v2.catalog.commit_table.assert_called_once()
     remaining_snapshots = table_v2.metadata.snapshots

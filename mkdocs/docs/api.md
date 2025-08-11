@@ -1363,12 +1363,12 @@ def cleanup_old_snapshots(table_name: str, snapshot_ids: list[int]):
     """Remove specific snapshots from a table."""
     catalog = load_catalog("production")
     table = catalog.load_table(table_name)
-    
+
     # Use context manager for safe transaction handling
     with table.maintenance.expire_snapshots() as expire:
         for snapshot_id in snapshot_ids:
             expire.by_id(snapshot_id)
-    
+
     print(f"Expired {len(snapshot_ids)} snapshots from {table_name}")
 
 # Usage
@@ -1383,17 +1383,6 @@ The maintenance API leverages Iceberg's transaction system:
 - **Manual Commit**: Call `.commit()` explicitly to apply changes
 - **Rollback**: If an error occurs in a context manager, changes are automatically rolled back
 - **Atomic Operations**: All operations within a single transaction are applied atomically
-
-<!-- prettier-ignore-start -->
-
-!!! note "Future Maintenance Operations"
-    The maintenance API is designed to be extensible. Future versions may include additional maintenance operations such as:
-    
-    * `table.maintenance.compact_data()` - Data file compaction
-    * `table.maintenance.optimize_metadata()` - Metadata optimization
-    * `table.maintenance.rewrite_manifests()` - Manifest rewriting
-
-<!-- prettier-ignore-end -->
 
 ## Views
 
