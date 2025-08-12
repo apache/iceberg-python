@@ -177,18 +177,9 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
         def _check_and_add_partition_name(
             schema: Schema, name: str, source_id: int, transform: Transform[Any, Any], partition_names: Set[str]
         ) -> None:
-            try:
-                field = schema.find_field(name)
-            except ValueError:
-                field = None
+            from pyiceberg.partitioning import validate_partition_name
 
-            if field is not None:
-                if isinstance(transform, (IdentityTransform, VoidTransform)):
-                    # For identity transforms allow name conflict only if sourced from the same schema field
-                    if field.field_id != source_id:
-                        raise ValueError(f"Cannot create identity partition from a different field in the schema: {name}")
-                else:
-                    raise ValueError(f"Cannot create partition from name that exists in schema: {name}")
+            validate_partition_name(name, transform, source_id, schema)
             if not name:
                 raise ValueError("Undefined name")
             if name in partition_names:

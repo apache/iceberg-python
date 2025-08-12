@@ -249,6 +249,26 @@ class PartitionSpec(IcebergBaseModel):
 UNPARTITIONED_PARTITION_SPEC = PartitionSpec(spec_id=0)
 
 
+def validate_partition_name(
+    field_name: str,
+    partition_transform: Transform[Any, Any],
+    source_id: int,
+    schema: Schema,
+) -> None:
+    """Validate that a partition field name doesn't conflict with schema field names."""
+    try:
+        schema_field = schema.find_field(field_name)
+    except ValueError:
+        return  # No conflict if field doesn't exist in schema
+
+    if isinstance(partition_transform, (IdentityTransform, VoidTransform)):
+        # For identity transforms, allow conflict only if sourced from the same schema field
+        if schema_field.field_id != source_id:
+            raise ValueError(f"Cannot create identity partition from a different source field in the schema: {field_name}")
+    else:
+        raise ValueError(f"Cannot create partition from name that exists in schema: {field_name}")
+
+
 def assign_fresh_partition_spec_ids(spec: PartitionSpec, old_schema: Schema, fresh_schema: Schema) -> PartitionSpec:
     partition_fields = []
     for pos, field in enumerate(spec.fields):
@@ -258,6 +278,9 @@ def assign_fresh_partition_spec_ids(spec: PartitionSpec, old_schema: Schema, fre
         fresh_field = fresh_schema.find_field(original_column_name)
         if fresh_field is None:
             raise ValueError(f"Could not find field in fresh schema: {original_column_name}")
+
+        validate_partition_name(field.name, field.transform, fresh_field.field_id, fresh_schema)
+
         partition_fields.append(
             PartitionField(
                 name=field.name,

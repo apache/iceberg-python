@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
+from typing import Optional
 
 import pytest
 
@@ -63,12 +64,19 @@ def _table_v2(catalog: Catalog) -> Table:
     return _create_table_with_schema(catalog, schema_with_timestamp, "2")
 
 
-def _create_table_with_schema(catalog: Catalog, schema: Schema, format_version: str) -> Table:
+def _create_table_with_schema(
+    catalog: Catalog, schema: Schema, format_version: str, partition_spec: Optional[PartitionSpec] = None
+) -> Table:
     tbl_name = "default.test_schema_evolution"
     try:
         catalog.drop_table(tbl_name)
     except NoSuchTableError:
         pass
+
+    if partition_spec:
+        return catalog.create_table(
+            identifier=tbl_name, schema=schema, partition_spec=partition_spec, properties={"format-version": format_version}
+        )
     return catalog.create_table(identifier=tbl_name, schema=schema, properties={"format-version": format_version})
 
 
@@ -582,10 +590,68 @@ def test_partition_schema_field_name_conflict(catalog: Catalog) -> None:
     with pytest.raises(ValueError, match="Cannot create partition from name that exists in schema: id"):
         table.update_spec().add_field("event_ts", DayTransform(), "id").commit()
 
-    with pytest.raises(ValueError, match="Cannot create identity partition from a different field in the schema: another_ts"):
+    with pytest.raises(
+        ValueError, match="Cannot create identity partition from a different source field in the schema: another_ts"
+    ):
         table.update_spec().add_field("event_ts", IdentityTransform(), "another_ts").commit()
-    with pytest.raises(ValueError, match="Cannot create identity partition from a different field in the schema: str"):
+    with pytest.raises(ValueError, match="Cannot create identity partition from a different source field in the schema: str"):
         table.update_spec().add_field("id", IdentityTransform(), "str").commit()
 
     table.update_spec().add_field("id", IdentityTransform(), "id").commit()
     table.update_spec().add_field("event_ts", YearTransform(), "event_year").commit()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_partition_validation_during_table_creation(catalog: Catalog) -> None:
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "event_ts", TimestampType(), required=False),
+        NestedField(3, "another_ts", TimestampType(), required=False),
+        NestedField(4, "str", StringType(), required=False),
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=2, field_id=1000, transform=YearTransform(), name="another_ts"), spec_id=1
+    )
+    with pytest.raises(ValueError, match="Cannot create partition from name that exists in schema: another_ts"):
+        _create_table_with_schema(catalog, schema, "2", partition_spec)
+
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="id"), spec_id=1
+    )
+    _create_table_with_schema(catalog, schema, "2", partition_spec)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_schema_evolution_partition_conflict(catalog: Catalog) -> None:
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "event_ts", TimestampType(), required=False),
+    )
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=2, field_id=1000, transform=YearTransform(), name="event_year"),
+        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="first_name"),
+        PartitionField(source_id=1, field_id=1002, transform=IdentityTransform(), name="id"),
+        spec_id=1,
+    )
+    table = _create_table_with_schema(catalog, schema, "2", partition_spec)
+
+    with pytest.raises(ValueError, match="Cannot create partition from name that exists in schema: event_year"):
+        table.update_schema().add_column("event_year", StringType()).commit()
+    with pytest.raises(
+        ValueError, match="Cannot create identity partition from a different source field in the schema: first_name"
+    ):
+        table.update_schema().add_column("first_name", StringType()).commit()
+
+    table.update_schema().add_column("other_field", StringType()).commit()
+
+    with pytest.raises(ValueError, match="Cannot create partition from name that exists in schema: event_year"):
+        table.update_schema().rename_column("other_field", "event_year").commit()
+    with pytest.raises(
+        ValueError, match="Cannot create identity partition from a different source field in the schema: first_name"
+    ):
+        table.update_schema().rename_column("other_field", "first_name").commit()
+
+    table.update_schema().rename_column("other_field", "valid_name").commit()
