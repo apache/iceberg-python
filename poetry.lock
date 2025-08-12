@@ -1235,19 +1235,19 @@ files = [
 
 [[package]]
 name = "daft"
-version = "0.5.16"
+version = "0.5.18"
 description = "Distributed Dataframes for Multimodal Data"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
 markers = "extra == \"daft\""
 files = [
-    {file = "daft-0.5.16-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:3869046d58f828d68025b75426c0fbc9114466db72b369fda5e4f53da3a8e275"},
-    {file = "daft-0.5.16-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:007a3c2719e1048f3b0d2ac22dfd69fcb94b1ff2d142000d71b1622c7eba109f"},
-    {file = "daft-0.5.16-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:204aa41fcab26505ee72d2a76c32a860dc31ed1c89e661775d32d23a8c56c821"},
-    {file = "daft-0.5.16-cp39-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:a64c78708de81f003380a189c051fbb470b1b5981070b4b39cc2029312bed539"},
-    {file = "daft-0.5.16-cp39-abi3-win_amd64.whl", hash = "sha256:2be90db04cdcbbb48bf5f03de33460456770b97d8f85277ce30ca59a622988d0"},
-    {file = "daft-0.5.16.tar.gz", hash = "sha256:da1a1fb5087b476ccf3a93795f9c2ff1bd44f8f899fbafb6dfb7a86d9e449522"},
+    {file = "daft-0.5.18-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:13d52a0416b178ef860e66a0bc437b9ca386e9918846e94d759fc785c9a32d8f"},
+    {file = "daft-0.5.18-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:f4e27c1b3c4b85bcf4e9bbae1de3165680ca7b8d47dd3ed78fc93d116d53be21"},
+    {file = "daft-0.5.18-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:f948990300f3d88ea505af49a2dc70d60720d510c5f28a05f88469ed6969efcd"},
+    {file = "daft-0.5.18-cp39-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:7b6d78fc45af586dcbcbe2734b4fb628d47604b56f1a0e9be606fa63166a0ce4"},
+    {file = "daft-0.5.18-cp39-abi3-win_amd64.whl", hash = "sha256:46657067776be7058b59b870faed3468e842f07a1dfb1901485edbcf7ac68cf3"},
+    {file = "daft-0.5.18.tar.gz", hash = "sha256:c903847583700dd98f37a914029f88ed7915e3aa65f2b97fea832293e5814306"},
 ]
 
 [package.dependencies]
