@@ -84,7 +84,7 @@ from pyiceberg.io import (
     OutputStream,
 )
 from pyiceberg.typedef import Properties
-from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool
+from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool, strtobool
 
 logger = logging.getLogger(__name__)
 
@@ -164,9 +164,9 @@ def _s3(properties: Properties) -> AbstractFileSystem:
 
     if request_timeout := properties.get(S3_REQUEST_TIMEOUT):
         config_kwargs["read_timeout"] = float(request_timeout)
-    
+
     if s3_anonymous := properties.get(S3_ANONYMOUS):
-        config_kwargs["anon"] = bool(s3_anonymous)
+        config_kwargs["anon"] = strtobool(s3_anonymous)
 
     fs = S3FileSystem(client_kwargs=client_kwargs, config_kwargs=config_kwargs)
 

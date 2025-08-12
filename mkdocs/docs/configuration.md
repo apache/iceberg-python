@@ -127,6 +127,7 @@ For the FileIO there are several configuration options available:
 | s3.request-timeout          | 60.0                       | Configure socket read timeouts on Windows and macOS, in seconds.                                                                                                                                                                                            |
 | s3.force-virtual-addressing | False                      | Whether to use virtual addressing of buckets. If true, then virtual addressing is always enabled. If false, then virtual addressing is only enabled if endpoint_override is empty. This can be used for non-AWS backends that only support virtual hosted-style access. |
 | s3.retry-strategy-impl      | None                       | Ability to set a custom S3 retry strategy. A full path to a class needs to be given that extends the [S3RetryStrategy](https://github.com/apache/arrow/blob/639201bfa412db26ce45e73851432018af6c945e/python/pyarrow/_s3fs.pyx#L110) base class.            |
+| s3.anonymous                | True                       | Configure whether to use anonymous connection. If False (default), uses key/secret if configured or boto's credential resolver. |
 
 <!-- markdown-link-check-enable-->
 
@@ -197,6 +198,8 @@ PyIceberg uses [S3FileSystem](https://arrow.apache.org/docs/python/generated/pya
 | s3.secret-access-key | password                   | Configure the static secret access key used to access the FileIO.                                                                                                                                                                                         |
 | s3.session-token     | AQoDYXdzEJr...             | Configure the static session token used to access the FileIO.                                                                                                                                                                                             |
 | s3.force-virtual-addressing   | True                       | Whether to use virtual addressing of buckets. This is set to `True` by default as OSS can only be accessed with virtual hosted style address.                                                                                                                                                                                                        |
+| s3.anonymous                | True                       | Configure whether to use anonymous connection. If False (default), uses key/secret if configured or standard AWS configuration methods. |
+
 
 <!-- markdown-link-check-enable-->
 

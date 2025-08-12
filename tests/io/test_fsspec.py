@@ -265,7 +265,8 @@ def test_fsspec_s3_session_properties() -> None:
             config_kwargs={},
         )
 
-def test_fsspec_s3_session_properties_anon_config() -> None:
+
+def test_fsspec_s3_session_properties_with_anonymous() -> None:
     session_properties: Properties = {
         "s3.anonymous": "true",
         "s3.endpoint": "http://localhost:9000",
