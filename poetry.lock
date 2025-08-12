@@ -467,33 +467,33 @@ files = [
 
 [[package]]
 name = "bodo"
-version = "2025.7.5"
+version = "2025.8.1"
 description = "High-Performance Python Compute Engine for Data and AI"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
 markers = "extra == \"bodo\""
 files = [
-    {file = "bodo-2025.7.5-cp310-cp310-macosx_11_0_x86_64.whl", hash = "sha256:63ff0918ec16e45fdabbd565468d3abfe448b89b8b42062fcf07ac1ad27d04c9"},
-    {file = "bodo-2025.7.5-cp310-cp310-macosx_12_0_arm64.whl", hash = "sha256:a61a64719dd0cb3efc921ecaa82e067016efbde47d653584b1df8f44d58a471e"},
-    {file = "bodo-2025.7.5-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:fc7c42ca15208fd03d14e6997a0d5501154f49d500ce47e0e0fb8caaf4e876e5"},
-    {file = "bodo-2025.7.5-cp310-cp310-win_amd64.whl", hash = "sha256:816565bed635b83fac8312146f43ebdffd46f3a5a227283eb27969554fe85426"},
-    {file = "bodo-2025.7.5-cp311-cp311-macosx_11_0_x86_64.whl", hash = "sha256:95e219a8b26ac4a070461442aacd46ecfde2877a1cb76b4077e4007c0a27acd3"},
-    {file = "bodo-2025.7.5-cp311-cp311-macosx_12_0_arm64.whl", hash = "sha256:4742e7cbc6ebdbf53a4a797269dab7e902e7d79842a2472f64598217c130d620"},
-    {file = "bodo-2025.7.5-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:705c2d9b07cbfad6c1c782a7336e3188bf9c73234d78a7fc86edcbfacd79fcba"},
-    {file = "bodo-2025.7.5-cp311-cp311-win_amd64.whl", hash = "sha256:9a60eb4e6f072094b1e373eb3f9f19344e845a2f740ca1e06da867c04f5d88fb"},
-    {file = "bodo-2025.7.5-cp312-cp312-macosx_11_0_x86_64.whl", hash = "sha256:0b5151d2a72d4a85ed6629ac8703a11b0f7faa4a303f59aaeee208900b31a1a4"},
-    {file = "bodo-2025.7.5-cp312-cp312-macosx_12_0_arm64.whl", hash = "sha256:1966cad69bc74d7d28cb8843f00d1214e1e8b7caa99ed19ece7666e50525c0ea"},
-    {file = "bodo-2025.7.5-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:d959e4a862c5f243b868384bd38832053b2f155832f0129acec9570c9c68b13b"},
-    {file = "bodo-2025.7.5-cp312-cp312-win_amd64.whl", hash = "sha256:a89ce258329e0093444983e3a956a4d39e2aeb4de8d85e1039cc5300f023a448"},
-    {file = "bodo-2025.7.5-cp313-cp313-macosx_11_0_x86_64.whl", hash = "sha256:94f2ab0aa40167414a76b46e04f8e6c07a003b67dca39bb2778c680d57bf0d25"},
-    {file = "bodo-2025.7.5-cp313-cp313-macosx_12_0_arm64.whl", hash = "sha256:674c7da529e48bf86575407ba8e80b45ebf8bafba4bbf64ee005d27d18391842"},
-    {file = "bodo-2025.7.5-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:d8cbef1214e720776e4267bd2d82260a8f6ba19ae7d52a38946f852456a118e9"},
-    {file = "bodo-2025.7.5-cp313-cp313-win_amd64.whl", hash = "sha256:26bb51eeac527f7b25800ed84315155ea696a22aa5a5d0309653924be3bc6620"},
-    {file = "bodo-2025.7.5-cp39-cp39-macosx_11_0_x86_64.whl", hash = "sha256:19fe336baf70d9ac4fc66021047004268cd24efaf9486e4ae51a84c5b6437651"},
-    {file = "bodo-2025.7.5-cp39-cp39-macosx_12_0_arm64.whl", hash = "sha256:9c704205ad73b4358c409811c56c22bd816bddbcef43e14ae6452cbaca36220c"},
-    {file = "bodo-2025.7.5-cp39-cp39-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:b98ccc6037f978811761017ec4d8370ef590bf5c2f2bed73e29ce5cbd3fa34ba"},
-    {file = "bodo-2025.7.5-cp39-cp39-win_amd64.whl", hash = "sha256:49db466143b936fdbb2a0ba5cf68ad049118513449da6480468ebc6a54866232"},
+    {file = "bodo-2025.8.1-cp310-cp310-macosx_11_0_x86_64.whl", hash = "sha256:fecf784bc216c7d691a73be6e0f3607d3d577ab7b9fd7bafbe3d330e12a99baf"},
+    {file = "bodo-2025.8.1-cp310-cp310-macosx_12_0_arm64.whl", hash = "sha256:a0bdfff8f2586aa8c7292f734478a4deadc813a30e4a28338f3fec9e550b6204"},
+    {file = "bodo-2025.8.1-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:bd0f052355146d13db48102a3120b3d8c6a9234af01c1f5386148e7f3b5860c5"},
+    {file = "bodo-2025.8.1-cp310-cp310-win_amd64.whl", hash = "sha256:5ae3f1f71ba306f8c6b32b14467e40710cdaaf21e549c08d8a7f187d3e41c3d6"},
+    {file = "bodo-2025.8.1-cp311-cp311-macosx_11_0_x86_64.whl", hash = "sha256:f69bcfbbb53a2adb35b6a20a8f64e872ca46a37e6131c7770c7c7dbbc2d3a95c"},
+    {file = "bodo-2025.8.1-cp311-cp311-macosx_12_0_arm64.whl", hash = "sha256:34e05ec454bd90c51da4eb4134f52556afc695b45f94c069118ea5d49bd0e589"},
+    {file = "bodo-2025.8.1-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:7cf9eb866ff71f18451840ba85adc1954a937fcac8b1aa202510058b90d04ef6"},
+    {file = "bodo-2025.8.1-cp311-cp311-win_amd64.whl", hash = "sha256:67a2135c57e5ef8ba465f5236eecaf39b71687f99d54ef5f1a582a0fc7a65cbf"},
+    {file = "bodo-2025.8.1-cp312-cp312-macosx_11_0_x86_64.whl", hash = "sha256:0f9c9fcd66f020639d21dd258d5fd9d1d106e7291d037c3cb00e83a829ca2748"},
+    {file = "bodo-2025.8.1-cp312-cp312-macosx_12_0_arm64.whl", hash = "sha256:19ec80985c6d05dcad4a5920c40da25af24d1bf5e206d2c6306f95beacc259da"},
+    {file = "bodo-2025.8.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:0dca0c2a983f5e53085b722e20b28a39b67a1e417589a6182a396e5799bde643"},
+    {file = "bodo-2025.8.1-cp312-cp312-win_amd64.whl", hash = "sha256:97b3c8aab165918779f04a70aeebdd2b389032b230c0982ff1b8b1cc234628d5"},
+    {file = "bodo-2025.8.1-cp313-cp313-macosx_11_0_x86_64.whl", hash = "sha256:75a3e5b41543d399e84e380701346df23212409910d3da9dc09eff03790e74e9"},
+    {file = "bodo-2025.8.1-cp313-cp313-macosx_12_0_arm64.whl", hash = "sha256:837dabf34814707f1225d3f879c7e7c0f3c6113e890b57161f934b9ee24a7183"},
+    {file = "bodo-2025.8.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:ee7f7a7937b91ce8bfa7e8442981e2e7367a0cdb1d364c2ba6cb5ed9bd811d40"},
+    {file = "bodo-2025.8.1-cp313-cp313-win_amd64.whl", hash = "sha256:3767a06b91f9105c03cf9b797b2a032013da02679ff3a0f029e7903973646c16"},
+    {file = "bodo-2025.8.1-cp39-cp39-macosx_11_0_x86_64.whl", hash = "sha256:644ef16d4bdf7b00ccacbe0f9605f0e3b5411d07e6079d332d34cbed3c037646"},
+    {file = "bodo-2025.8.1-cp39-cp39-macosx_12_0_arm64.whl", hash = "sha256:fc4125d5b9048bcd41444795820f974e6d8b44b4e6be3f923e7ef380af32360e"},
+    {file = "bodo-2025.8.1-cp39-cp39-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:1b8df8f4599501348c8f739a274ef005ca150856b7cf078c17f04d8edd89d32d"},
+    {file = "bodo-2025.8.1-cp39-cp39-win_amd64.whl", hash = "sha256:447e04d079e7f513f9866152f8357899e0e9abf023d075b0091f4437bb825551"},
 ]
 
 [package.dependencies]
@@ -513,6 +513,7 @@ hdf5 = ["h5py"]
 huggingface-hub = ["huggingface_hub"]
 iceberg = ["pyiceberg[glue] (>=0.9)"]
 mysql = ["PyMySQL", "sqlalchemy"]
+openai = ["openai"]
 oracle = ["cx-Oracle", "libaio", "sqlalchemy"]
 plot = ["matplotlib"]
 postgres = ["psycopg2", "sqlalchemy"]
