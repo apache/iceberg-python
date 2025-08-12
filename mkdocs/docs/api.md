@@ -1296,7 +1296,13 @@ PyIceberg provides table maintenance operations through the `table.maintenance` 
 Expire old snapshots to clean up table metadata and reduce storage costs:
 
 ```python
-# Basic usage - expire a specific snapshot by ID
+# Expire snapshots older than three days
+from datetime import datetime, timedelta
+table.maintenance.expire_snapshots().older_than(
+    datetime.now() - timedelta(days=3)
+).commit()
+
+# Expire a specific snapshot by ID
 table.maintenance.expire_snapshots().by_id(12345).commit()
 
 # Context manager usage (recommended for multiple operations)
@@ -1304,9 +1310,6 @@ with table.maintenance.expire_snapshots() as expire:
     expire.by_id(12345)
     expire.by_id(67890)
     # Automatically commits when exiting the context
-
-# Method chaining
-table.maintenance.expire_snapshots().by_id(12345).commit()
 ```
 
 #### Real-world Example
