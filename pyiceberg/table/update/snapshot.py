@@ -907,8 +907,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
 
 
 class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
-    """
-    Expire snapshots by ID.
+    """Expire snapshots by ID.
 
     Use table.expire_snapshots().<operation>().commit() to run a specific operation.
     Use table.expire_snapshots().<operation-one>().<operation-two>().commit() to run multiple operations.
@@ -953,7 +952,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
 
         return protected_ids
 
-    def expire_snapshot_by_id(self, snapshot_id: int) -> ExpireSnapshots:
+    def by_id(self, snapshot_id: int) -> ExpireSnapshots:
         """
         Expire a snapshot by its ID.
 
@@ -974,7 +973,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
 
         return self
 
-    def expire_snapshots_by_ids(self, snapshot_ids: List[int]) -> "ExpireSnapshots":
+    def by_ids(self, snapshot_ids: List[int]) -> "ExpireSnapshots":
         """
         Expire multiple snapshots by their IDs.
 
@@ -986,10 +985,10 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
             This for method chaining.
         """
         for snapshot_id in snapshot_ids:
-            self.expire_snapshot_by_id(snapshot_id)
+            self.by_id(snapshot_id)
         return self
 
-    def expire_snapshots_older_than(self, timestamp_ms: int) -> "ExpireSnapshots":
+    def older_than(self, timestamp_ms: int) -> "ExpireSnapshots":
         """
         Expire all unprotected snapshots with a timestamp older than a given value.
 

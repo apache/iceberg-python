@@ -1287,6 +1287,47 @@ with table.manage_snapshots() as ms:
     ms.create_branch(snapshot_id1, "Branch_A").create_tag(snapshot_id2, "tag789")
 ```
 
+## Table Maintenance
+
+PyIceberg provides table maintenance operations through the `table.maintenance` API. This provides a clean interface for performing maintenance tasks like snapshot expiration.
+
+### Snapshot Expiration
+
+Expire old snapshots to clean up table metadata and reduce storage costs:
+
+```python
+# Basic usage - expire a specific snapshot by ID
+table.maintenance.expire_snapshots().by_id(12345).commit()
+
+# Context manager usage (recommended for multiple operations)
+with table.maintenance.expire_snapshots() as expire:
+    expire.by_id(12345)
+    expire.by_id(67890)
+    # Automatically commits when exiting the context
+
+# Method chaining
+table.maintenance.expire_snapshots().by_id(12345).commit()
+```
+
+#### Real-world Example
+
+```python
+def cleanup_old_snapshots(table_name: str, snapshot_ids: list[int]):
+    """Remove specific snapshots from a table."""
+    catalog = load_catalog("production")
+    table = catalog.load_table(table_name)
+
+    # Use context manager for safe transaction handling
+    with table.maintenance.expire_snapshots() as expire:
+        for snapshot_id in snapshot_ids:
+            expire.by_id(snapshot_id)
+
+    print(f"Expired {len(snapshot_ids)} snapshots from {table_name}")
+
+# Usage
+cleanup_old_snapshots("analytics.user_events", [12345, 67890, 11111])
+```
+
 ## Views
 
 PyIceberg supports view operations.
