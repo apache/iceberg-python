@@ -65,6 +65,7 @@ from pyiceberg.io import (
     HF_ENDPOINT,
     HF_TOKEN,
     S3_ACCESS_KEY_ID,
+    S3_ANONYMOUS,
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
     S3_PROXY_URI,
@@ -163,6 +164,9 @@ def _s3(properties: Properties) -> AbstractFileSystem:
 
     if request_timeout := properties.get(S3_REQUEST_TIMEOUT):
         config_kwargs["read_timeout"] = float(request_timeout)
+    
+    if s3_anonymous := properties.get(S3_ANONYMOUS):
+        config_kwargs["anon"] = bool(s3_anonymous)
 
     fs = S3FileSystem(client_kwargs=client_kwargs, config_kwargs=config_kwargs)
 
