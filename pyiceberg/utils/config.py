@@ -183,5 +183,8 @@ class Config:
 
     def get_str(self, key: str) -> Optional[str]:
         if (val := self.config.get(key)) is not None:
-            return val
+            if isinstance(val, str):
+                return val
+            else:
+                raise ValueError(f"{key} should be a string or left unset. Current value: {val}")
         return None
