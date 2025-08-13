@@ -194,6 +194,13 @@ def _gs(properties: Properties) -> AbstractFileSystem:
 def _adls(properties: Properties) -> AbstractFileSystem:
     from adlfs import AzureBlobFileSystem
 
+    if ADLS_ACCOUNT_NAME not in properties:
+        netloc = properties.get("netloc")
+        if netloc:
+            # https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-introduction-abfs-uri#uri-syntax
+            properties[ADLS_ACCOUNT_NAME] = netloc.split("@")[1].split(".")[0]
+
+    # Fixes https://github.com/apache/iceberg-python/issues/1146
     sas_tokens = {}
     for key, value in properties.items():
         if key.startswith(ADLS_SAS_TOKEN):
