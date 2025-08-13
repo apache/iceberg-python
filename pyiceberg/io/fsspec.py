@@ -27,6 +27,7 @@ from typing import (
     Any,
     Callable,
     Dict,
+    Optional,
     Union,
 )
 from urllib.parse import urlparse
@@ -343,7 +344,7 @@ class FsspecFileIO(FileIO):
     def __init__(self, properties: Properties):
         self._scheme_to_fs = {}
         self._scheme_to_fs.update(SCHEME_TO_FS)
-        self.get_fs: Callable[[str, str], AbstractFileSystem] = lru_cache(self._get_fs)
+        self.get_fs: Callable[[str, Optional[str]], AbstractFileSystem] = lru_cache(self._get_fs)
         super().__init__(properties=properties)
 
     def new_input(self, location: str) -> FsspecInputFile:
@@ -389,11 +390,12 @@ class FsspecFileIO(FileIO):
         fs = fs = self.get_fs(uri.scheme, uri.netloc)
         fs.rm(str_location)
 
-    def _get_fs(self, scheme: str, netloc: str) -> AbstractFileSystem:
-        """Get a filesystem for a specific scheme."""
+    def _get_fs(self, scheme: str, netloc: Optional[str] = None) -> AbstractFileSystem:
         if scheme not in self._scheme_to_fs:
             raise ValueError(f"No registered filesystem for scheme: {scheme}")
-        properties = {**self.properties, "netloc": netloc}
+        properties = self.properties.copy()
+        if netloc:
+            properties["netloc"] = netloc
         return self._scheme_to_fs[scheme](properties)
 
     def __getstate__(self) -> Dict[str, Any]:
