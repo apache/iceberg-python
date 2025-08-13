@@ -902,9 +902,12 @@ def test_table_scan_keep_types(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.10.0, will be removed in 0.11.0. Property `pyarrow.use-large-types-on-read` will be removed.:DeprecationWarning"
+)
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_table_scan_override_with_small_types(catalog: Catalog) -> None:
-    identifier = "default.test_table_scan_override_with_small_types"
+def test_table_scan_override_with_large_types(catalog: Catalog) -> None:
+    identifier = "default.test_table_scan_override_with_large_types"
     arrow_table = pa.Table.from_arrays(
         [
             pa.array(["a", "b", "c"]),
@@ -930,15 +933,15 @@ def test_table_scan_override_with_small_types(catalog: Catalog) -> None:
     with tbl.update_schema() as update_schema:
         update_schema.update_column("string-to-binary", BinaryType())
 
-    tbl.io.properties[PYARROW_USE_LARGE_TYPES_ON_READ] = "False"
+    tbl.io.properties[PYARROW_USE_LARGE_TYPES_ON_READ] = "True"
     result_table = tbl.scan().to_arrow()
 
     expected_schema = pa.schema(
         [
-            pa.field("string", pa.string()),
+            pa.field("string", pa.large_string()),
             pa.field("string-to-binary", pa.large_binary()),
-            pa.field("binary", pa.binary()),
-            pa.field("list", pa.list_(pa.string())),
+            pa.field("binary", pa.large_binary()),
+            pa.field("list", pa.large_list(pa.large_string())),
         ]
     )
     assert result_table.schema.equals(expected_schema)

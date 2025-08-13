@@ -2591,8 +2591,8 @@ def pa_schema() -> "pa.Schema":
     return pa.schema(
         [
             ("bool", pa.bool_()),
-            ("string", pa.large_string()),
-            ("string_long", pa.large_string()),
+            ("string", pa.string()),
+            ("string_long", pa.string()),
             ("int", pa.int32()),
             ("long", pa.int64()),
             ("float", pa.float32()),
@@ -2606,7 +2606,7 @@ def pa_schema() -> "pa.Schema":
             # ("time", pa.time64("us")),
             # Not natively supported by Arrow
             # ("uuid", pa.fixed(16)),
-            ("binary", pa.large_binary()),
+            ("binary", pa.binary()),
             ("fixed", pa.binary(16)),
         ]
     )

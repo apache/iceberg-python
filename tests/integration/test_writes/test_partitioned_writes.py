@@ -897,7 +897,7 @@ def test_unsupported_transform(
 
     with pytest.raises(
         ValueError,
-        match="FeatureUnsupported => Unsupported data type for truncate transform: LargeBinary",
+        match="FeatureUnsupported => Unsupported data type for truncate transform: Binary",
     ):
         tbl.append(arrow_table_with_null)
 

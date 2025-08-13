@@ -414,7 +414,7 @@ def test_pyarrow_unified_session_properties() -> None:
 
 def test_schema_to_pyarrow_schema_include_field_ids(table_schema_nested: Schema) -> None:
     actual = schema_to_pyarrow(table_schema_nested)
-    expected = """foo: large_string
+    expected = """foo: string
   -- field metadata --
   PARQUET:field_id: '1'
 bar: int32 not null
@@ -423,20 +423,20 @@ bar: int32 not null
 baz: bool
   -- field metadata --
   PARQUET:field_id: '3'
-qux: large_list<element: large_string not null> not null
-  child 0, element: large_string not null
+qux: list<element: string not null> not null
+  child 0, element: string not null
     -- field metadata --
     PARQUET:field_id: '5'
   -- field metadata --
   PARQUET:field_id: '4'
-quux: map<large_string, map<large_string, int32>> not null
-  child 0, entries: struct<key: large_string not null, value: map<large_string, int32> not null> not null
-      child 0, key: large_string not null
+quux: map<string, map<string, int32>> not null
+  child 0, entries: struct<key: string not null, value: map<string, int32> not null> not null
+      child 0, key: string not null
       -- field metadata --
       PARQUET:field_id: '7'
-      child 1, value: map<large_string, int32> not null
-          child 0, entries: struct<key: large_string not null, value: int32 not null> not null
-              child 0, key: large_string not null
+      child 1, value: map<string, int32> not null
+          child 0, entries: struct<key: string not null, value: int32 not null> not null
+              child 0, key: string not null
           -- field metadata --
           PARQUET:field_id: '9'
               child 1, value: int32 not null
@@ -446,7 +446,7 @@ quux: map<large_string, map<large_string, int32>> not null
       PARQUET:field_id: '8'
   -- field metadata --
   PARQUET:field_id: '6'
-location: large_list<element: struct<latitude: float, longitude: float> not null> not null
+location: list<element: struct<latitude: float, longitude: float> not null> not null
   child 0, element: struct<latitude: float, longitude: float> not null
       child 0, latitude: float
       -- field metadata --
@@ -458,8 +458,8 @@ location: large_list<element: struct<latitude: float, longitude: float> not null
     PARQUET:field_id: '12'
   -- field metadata --
   PARQUET:field_id: '11'
-person: struct<name: large_string, age: int32 not null>
-  child 0, name: large_string
+person: struct<name: string, age: int32 not null>
+  child 0, name: string
     -- field metadata --
     PARQUET:field_id: '16'
   child 1, age: int32 not null
@@ -472,24 +472,24 @@ person: struct<name: large_string, age: int32 not null>
 
 def test_schema_to_pyarrow_schema_exclude_field_ids(table_schema_nested: Schema) -> None:
     actual = schema_to_pyarrow(table_schema_nested, include_field_ids=False)
-    expected = """foo: large_string
+    expected = """foo: string
 bar: int32 not null
 baz: bool
-qux: large_list<element: large_string not null> not null
-  child 0, element: large_string not null
-quux: map<large_string, map<large_string, int32>> not null
-  child 0, entries: struct<key: large_string not null, value: map<large_string, int32> not null> not null
-      child 0, key: large_string not null
-      child 1, value: map<large_string, int32> not null
-          child 0, entries: struct<key: large_string not null, value: int32 not null> not null
-              child 0, key: large_string not null
+qux: list<element: string not null> not null
+  child 0, element: string not null
+quux: map<string, map<string, int32>> not null
+  child 0, entries: struct<key: string not null, value: map<string, int32> not null> not null
+      child 0, key: string not null
+      child 1, value: map<string, int32> not null
+          child 0, entries: struct<key: string not null, value: int32 not null> not null
+              child 0, key: string not null
               child 1, value: int32 not null
-location: large_list<element: struct<latitude: float, longitude: float> not null> not null
+location: list<element: struct<latitude: float, longitude: float> not null> not null
   child 0, element: struct<latitude: float, longitude: float> not null
       child 0, latitude: float
       child 1, longitude: float
-person: struct<name: large_string, age: int32 not null>
-  child 0, name: large_string
+person: struct<name: string, age: int32 not null>
+  child 0, name: string
   child 1, age: int32 not null"""
     assert repr(actual) == expected
 
@@ -554,18 +554,18 @@ def test_timestamptz_type_to_pyarrow() -> None:
 
 def test_string_type_to_pyarrow() -> None:
     iceberg_type = StringType()
-    assert visit(iceberg_type, _ConvertToArrowSchema()) == pa.large_string()
+    assert visit(iceberg_type, _ConvertToArrowSchema()) == pa.string()
 
 
 def test_binary_type_to_pyarrow() -> None:
     iceberg_type = BinaryType()
-    assert visit(iceberg_type, _ConvertToArrowSchema()) == pa.large_binary()
+    assert visit(iceberg_type, _ConvertToArrowSchema()) == pa.binary()
 
 
 def test_struct_type_to_pyarrow(table_schema_simple: Schema) -> None:
     expected = pa.struct(
         [
-            pa.field("foo", pa.large_string(), nullable=True, metadata={"field_id": "1"}),
+            pa.field("foo", pa.string(), nullable=True, metadata={"field_id": "1"}),
             pa.field("bar", pa.int32(), nullable=False, metadata={"field_id": "2"}),
             pa.field("baz", pa.bool_(), nullable=True, metadata={"field_id": "3"}),
         ]
@@ -583,7 +583,7 @@ def test_map_type_to_pyarrow() -> None:
     )
     assert visit(iceberg_map, _ConvertToArrowSchema()) == pa.map_(
         pa.field("key", pa.int32(), nullable=False, metadata={"field_id": "1"}),
-        pa.field("value", pa.large_string(), nullable=False, metadata={"field_id": "2"}),
+        pa.field("value", pa.string(), nullable=False, metadata={"field_id": "2"}),
     )
 
 
@@ -593,7 +593,7 @@ def test_list_type_to_pyarrow() -> None:
         element_type=IntegerType(),
         element_required=True,
     )
-    assert visit(iceberg_map, _ConvertToArrowSchema()) == pa.large_list(
+    assert visit(iceberg_map, _ConvertToArrowSchema()) == pa.list_(
         pa.field("element", pa.int32(), nullable=False, metadata={"field_id": "1"})
     )
 
@@ -676,11 +676,11 @@ def test_expr_less_than_or_equal_to_pyarrow(bound_reference: BoundReference[str]
 
 def test_expr_in_to_pyarrow(bound_reference: BoundReference[str]) -> None:
     assert repr(expression_to_pyarrow(BoundIn(bound_reference, {literal("hello"), literal("world")}))) in (
-        """<pyarrow.compute.Expression is_in(foo, {value_set=large_string:[
+        """<pyarrow.compute.Expression is_in(foo, {value_set=string:[
   "hello",
   "world"
 ], null_matching_behavior=MATCH})>""",
-        """<pyarrow.compute.Expression is_in(foo, {value_set=large_string:[
+        """<pyarrow.compute.Expression is_in(foo, {value_set=string:[
   "world",
   "hello"
 ], null_matching_behavior=MATCH})>""",
@@ -689,11 +689,11 @@ def test_expr_in_to_pyarrow(bound_reference: BoundReference[str]) -> None:
 
 def test_expr_not_in_to_pyarrow(bound_reference: BoundReference[str]) -> None:
     assert repr(expression_to_pyarrow(BoundNotIn(bound_reference, {literal("hello"), literal("world")}))) in (
-        """<pyarrow.compute.Expression invert(is_in(foo, {value_set=large_string:[
+        """<pyarrow.compute.Expression invert(is_in(foo, {value_set=string:[
   "hello",
   "world"
 ], null_matching_behavior=MATCH}))>""",
-        """<pyarrow.compute.Expression invert(is_in(foo, {value_set=large_string:[
+        """<pyarrow.compute.Expression invert(is_in(foo, {value_set=string:[
   "world",
   "hello"
 ], null_matching_behavior=MATCH}))>""",
@@ -1044,12 +1044,12 @@ def test_projection_add_column(file_int: str) -> None:
     assert (
         repr(result_table.schema)
         == """id: int32
-list: large_list<element: int32>
+list: list<element: int32>
   child 0, element: int32
-map: map<int32, large_string>
-  child 0, entries: struct<key: int32 not null, value: large_string> not null
+map: map<int32, string>
+  child 0, entries: struct<key: int32 not null, value: string> not null
       child 0, key: int32 not null
-      child 1, value: large_string
+      child 1, value: string
 location: struct<lat: double, lon: double>
   child 0, lat: double
   child 1, lon: double"""
@@ -1065,7 +1065,7 @@ def test_read_list(schema_list: Schema, file_list: str) -> None:
 
     assert (
         repr(result_table.schema)
-        == """ids: large_list<element: int32>
+        == """ids: list<element: int32>
   child 0, element: int32"""
     )
 
@@ -1102,10 +1102,10 @@ def test_projection_add_column_struct(schema_int: Schema, file_int: str) -> None
         assert r.as_py() is None
     assert (
         repr(result_table.schema)
-        == """id: map<int32, large_string>
-  child 0, entries: struct<key: int32 not null, value: large_string> not null
+        == """id: map<int32, string>
+  child 0, entries: struct<key: int32 not null, value: string> not null
       child 0, key: int32 not null
-      child 1, value: large_string"""
+      child 1, value: string"""
     )
 
 
@@ -1446,7 +1446,7 @@ def test_projection_list_of_structs(schema_list_of_structs: Schema, file_list_of
     ]
     assert (
         repr(result_table.schema)
-        == """locations: large_list<element: struct<latitude: double not null, longitude: double not null, altitude: double>>
+        == """locations: list<element: struct<latitude: double not null, longitude: double not null, altitude: double>>
   child 0, element: struct<latitude: double not null, longitude: double not null, altitude: double>
       child 0, latitude: double not null
       child 1, longitude: double not null
@@ -1593,7 +1593,7 @@ def test_delete(deletes_file: str, example_task: FileScanTask, table_schema_simp
     assert (
         str(with_deletes)
         == """pyarrow.Table
-foo: large_string
+foo: string
 bar: int32 not null
 baz: bool
 ----
@@ -1630,7 +1630,7 @@ def test_delete_duplicates(deletes_file: str, example_task: FileScanTask, table_
     assert (
         str(with_deletes)
         == """pyarrow.Table
-foo: large_string
+foo: string
 bar: int32 not null
 baz: bool
 ----
@@ -1661,7 +1661,7 @@ def test_pyarrow_wrap_fsspec(example_task: FileScanTask, table_schema_simple: Sc
     assert (
         str(projection)
         == """pyarrow.Table
-foo: large_string
+foo: string
 bar: int32 not null
 baz: bool
 ----
