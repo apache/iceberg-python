@@ -357,7 +357,7 @@ class FsspecFileIO(FileIO):
             FsspecInputFile: An FsspecInputFile instance for the given location.
         """
         uri = urlparse(location)
-        fs = fs = self.get_fs(uri.scheme, uri.netloc)
+        fs = self.get_fs(uri.scheme, uri.netloc)
         return FsspecInputFile(location=location, fs=fs)
 
     def new_output(self, location: str) -> FsspecOutputFile:
@@ -370,7 +370,7 @@ class FsspecFileIO(FileIO):
             FsspecOutputFile: An FsspecOutputFile instance for the given location.
         """
         uri = urlparse(location)
-        fs = fs = self.get_fs(uri.scheme, uri.netloc)
+        fs = self.get_fs(uri.scheme, uri.netloc)
         return FsspecOutputFile(location=location, fs=fs)
 
     def delete(self, location: Union[str, InputFile, OutputFile]) -> None:
