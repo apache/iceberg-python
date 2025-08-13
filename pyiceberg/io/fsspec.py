@@ -344,7 +344,7 @@ class FsspecFileIO(FileIO):
     def __init__(self, properties: Properties):
         self._scheme_to_fs = {}
         self._scheme_to_fs.update(SCHEME_TO_FS)
-        self.get_fs: Callable[[str], AbstractFileSystem] = lru_cache(self._get_fs)
+        self.get_fs: Callable[[str, str], AbstractFileSystem] = lru_cache(self._get_fs)
         super().__init__(properties=properties)
 
     def new_input(self, location: str) -> FsspecInputFile:
@@ -357,7 +357,7 @@ class FsspecFileIO(FileIO):
             FsspecInputFile: An FsspecInputFile instance for the given location.
         """
         uri = urlparse(location)
-        fs = self.get_fs(uri.scheme)
+        fs = fs = self.get_fs(uri.scheme, uri.netloc)
         return FsspecInputFile(location=location, fs=fs)
 
     def new_output(self, location: str) -> FsspecOutputFile:
@@ -370,7 +370,7 @@ class FsspecFileIO(FileIO):
             FsspecOutputFile: An FsspecOutputFile instance for the given location.
         """
         uri = urlparse(location)
-        fs = self.get_fs(uri.scheme)
+        fs = fs = self.get_fs(uri.scheme, uri.netloc)
         return FsspecOutputFile(location=location, fs=fs)
 
     def delete(self, location: Union[str, InputFile, OutputFile]) -> None:
@@ -387,14 +387,15 @@ class FsspecFileIO(FileIO):
             str_location = location
 
         uri = urlparse(str_location)
-        fs = self.get_fs(uri.scheme)
+        fs = fs = self.get_fs(uri.scheme, uri.netloc)
         fs.rm(str_location)
 
-    def _get_fs(self, scheme: str) -> AbstractFileSystem:
+    def _get_fs(self, scheme: str, netloc: str) -> AbstractFileSystem:
         """Get a filesystem for a specific scheme."""
         if scheme not in self._scheme_to_fs:
             raise ValueError(f"No registered filesystem for scheme: {scheme}")
-        return self._scheme_to_fs[scheme](self.properties)
+        properties = {**self.properties, "netloc": netloc}
+        return self._scheme_to_fs[scheme](properties)
 
     def __getstate__(self) -> Dict[str, Any]:
         """Create a dictionary of the FsSpecFileIO fields used when pickling."""
