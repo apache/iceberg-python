@@ -194,11 +194,15 @@ def _gs(properties: Properties) -> AbstractFileSystem:
 def _adls(properties: Properties) -> AbstractFileSystem:
     from adlfs import AzureBlobFileSystem
 
-    for key, sas_token in {
-        key.replace(f"{ADLS_SAS_TOKEN}.", ""): value for key, value in properties.items() if key.startswith(ADLS_SAS_TOKEN)
-    }.items():
+    sas_tokens = {}
+    for key, value in properties.items():
+        if key.startswith(ADLS_SAS_TOKEN):
+            clean_key = key.replace(f"{ADLS_SAS_TOKEN}.", "")
+            sas_tokens[clean_key] = value
+
+    for account, sas_token in sas_tokens.items():
         if ADLS_ACCOUNT_NAME not in properties:
-            properties[ADLS_ACCOUNT_NAME] = key.split(".")[0]
+            properties[ADLS_ACCOUNT_NAME] = account.split(".")[0]
         if ADLS_SAS_TOKEN not in properties:
             properties[ADLS_SAS_TOKEN] = sas_token
 
