@@ -387,7 +387,7 @@ class FsspecFileIO(FileIO):
             str_location = location
 
         uri = urlparse(str_location)
-        fs = fs = self.get_fs(uri.scheme, uri.netloc)
+        fs = self.get_fs(uri.scheme, uri.netloc)
         fs.rm(str_location)
 
     def _get_fs(self, scheme: str, netloc: Optional[str] = None) -> AbstractFileSystem:
