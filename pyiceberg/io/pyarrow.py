@@ -2800,11 +2800,9 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
             functools.reduce(
                 operator.and_,
                 [
-                    (
-                        pc.field(partition_field_name) == unique_partition[partition_field_name]
-                        if unique_partition[partition_field_name] is not None
-                        else pc.field(partition_field_name).is_null()
-                    )
+                    pc.field(partition_field_name) == unique_partition[partition_field_name]
+                    if unique_partition[partition_field_name] is not None
+                    else pc.field(partition_field_name).is_null()
                     for field, partition_field_name in zip(spec.fields, partition_fields)
                 ],
             )
