@@ -22,6 +22,7 @@ import uuid
 from abc import abstractmethod
 from collections import defaultdict
 from concurrent.futures import Future
+from datetime import datetime
 from functools import cached_property
 from typing import TYPE_CHECKING, Callable, Dict, Generic, List, Optional, Set, Tuple
 
@@ -82,6 +83,7 @@ from pyiceberg.typedef import (
 )
 from pyiceberg.utils.bin_packing import ListPacker
 from pyiceberg.utils.concurrent import ExecutorFactory
+from pyiceberg.utils.datetime import datetime_to_millis
 from pyiceberg.utils.properties import property_as_bool, property_as_int
 
 if TYPE_CHECKING:
@@ -944,13 +946,11 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         Returns:
             Set of protected snapshot IDs to exclude from expiration.
         """
-        protected_ids: Set[int] = set()
-
-        for ref in self._transaction.table_metadata.refs.values():
-            if ref.snapshot_ref_type in [SnapshotRefType.TAG, SnapshotRefType.BRANCH]:
-                protected_ids.add(ref.snapshot_id)
-
-        return protected_ids
+        return {
+            ref.snapshot_id
+            for ref in self._transaction.table_metadata.refs.values()
+            if ref.snapshot_ref_type in [SnapshotRefType.TAG, SnapshotRefType.BRANCH]
+        }
 
     def by_id(self, snapshot_id: int) -> ExpireSnapshots:
         """
@@ -988,18 +988,19 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
             self.by_id(snapshot_id)
         return self
 
-    def older_than(self, timestamp_ms: int) -> "ExpireSnapshots":
+    def older_than(self, dt: datetime) -> "ExpireSnapshots":
         """
         Expire all unprotected snapshots with a timestamp older than a given value.
 
         Args:
-            timestamp_ms (int): Only snapshots with timestamp_ms < this value will be expired.
+            dt (datetime): Only snapshots with datetime < this value will be expired.
 
         Returns:
             This for method chaining.
         """
         protected_ids = self._get_protected_snapshot_ids()
+        expire_from = datetime_to_millis(dt)
         for snapshot in self._transaction.table_metadata.snapshots:
-            if snapshot.timestamp_ms < timestamp_ms and snapshot.snapshot_id not in protected_ids:
+            if snapshot.timestamp_ms < expire_from and snapshot.snapshot_id not in protected_ids:
                 self._snapshot_ids_to_expire.add(snapshot.snapshot_id)
         return self
