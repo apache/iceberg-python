@@ -84,7 +84,8 @@ from pyiceberg.io import (
     OutputStream,
 )
 from pyiceberg.typedef import Properties
-from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool, strtobool
+from pyiceberg.types import strtobool
+from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool
 
 logger = logging.getLogger(__name__)
 

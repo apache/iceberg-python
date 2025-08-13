@@ -200,7 +200,6 @@ PyIceberg uses [S3FileSystem](https://arrow.apache.org/docs/python/generated/pya
 | s3.force-virtual-addressing   | True                       | Whether to use virtual addressing of buckets. This is set to `True` by default as OSS can only be accessed with virtual hosted style address.                                                                                                                                                                                                        |
 | s3.anonymous                | True                       | Configure whether to use anonymous connection. If False (default), uses key/secret if configured or standard AWS configuration methods. |
 
-
 <!-- markdown-link-check-enable-->
 
 ### Hugging Face

@@ -180,13 +180,14 @@ from pyiceberg.types import (
     TimeType,
     UnknownType,
     UUIDType,
+    strtobool,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
 from pyiceberg.utils.decimal import unscaled_to_decimal
 from pyiceberg.utils.deprecated import deprecation_message
-from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int, strtobool
+from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
 
@@ -2800,9 +2801,11 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
             functools.reduce(
                 operator.and_,
                 [
-                    pc.field(partition_field_name) == unique_partition[partition_field_name]
-                    if unique_partition[partition_field_name] is not None
-                    else pc.field(partition_field_name).is_null()
+                    (
+                        pc.field(partition_field_name) == unique_partition[partition_field_name]
+                        if unique_partition[partition_field_name] is not None
+                        else pc.field(partition_field_name).is_null()
+                    )
                     for field, partition_field_name in zip(spec.fields, partition_fields)
                 ],
             )
