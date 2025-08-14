@@ -53,7 +53,11 @@ from hive_metastore.v4.ttypes import (
     SerDeInfo,
     StorageDescriptor,
     UnlockRequest,
+)
+from hive_metastore.v4.ttypes import (
     Database as HiveDatabase,
+)
+from hive_metastore.v4.ttypes import (
     Table as HiveTable,
 )
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -169,13 +173,13 @@ class _HiveClient:
         self._kerberos_service_name = kerberos_service_name
         self._ugi = ugi.split(":") if ugi else None
         self._transport = self._init_thrift_transport()
-        self.hms_v3 = importlib.import_module('hive_metastore.v3.ThriftHiveMetastore')
-        self.hms_v4 = importlib.import_module('hive_metastore.v4.ThriftHiveMetastore')
+        self.hms_v3 = importlib.import_module("hive_metastore.v3.ThriftHiveMetastore")
+        self.hms_v4 = importlib.import_module("hive_metastore.v4.ThriftHiveMetastore")
         self._hive_version = self._get_hive_version()
 
     def _get_hive_version(self) -> int:
         with self as open_client:
-            major, *_ = open_client.getVersion().split('.')
+            major, *_ = open_client.getVersion().split(".")
             return int(major)
 
     def _init_thrift_transport(self) -> TTransport:
@@ -188,10 +192,8 @@ class _HiveClient:
 
     def _client(self) -> Client:
         protocol = TBinaryProtocol.TBinaryProtocol(self._transport)
-        if self._hive_version < 4:
-            client: Client = self.hms_v3.Client(protocol)
-        else:
-            client: Client = self.hms_v4.Client(protocol)
+        hms = self.hms_v3 if self._hive_version < 4 else self.hms_v4
+        client: Client = hms.Client(protocol)
         if self._ugi:
             client.set_ugi(*self._ugi)
         return client
@@ -404,12 +406,12 @@ class HiveCatalog(MetastoreCatalog):
         except AlreadyExistsException as e:
             raise TableAlreadyExistsError(f"Table {hive_table.dbName}.{hive_table.tableName} already exists") from e
 
-    def _get_hive_table(self, open_client, *, dbname, tbl_name) -> HiveTable:
+    def _get_hive_table(self, open_client: Client, *, dbname: str, tbl_name: str) -> HiveTable:
         if open_client._hive_version < 4:
             return open_client.get_table(dbname=dbname, tbl_name=tbl_name)
         return open_client.get_table_req(GetTableRequest(dbName=dbname, tblName=tbl_name)).table
 
-    def _get_table_objects_by_name(self, open_client, *, dbname, tbl_names) -> list[HiveTable]:
+    def _get_table_objects_by_name(self, open_client: Client, *, dbname: str, tbl_names: list[str]) -> list[HiveTable]:
         if open_client._hive_version < 4:
             return open_client.get_table_objects_by_name(dbname=dbname, tbl_names=tbl_names)
         return open_client.get_table_objects_by_name_req(GetTablesRequest(dbName=dbname, tblNames=tbl_names)).tables
@@ -755,8 +757,7 @@ class HiveCatalog(MetastoreCatalog):
             return [
                 (database_name, table.tableName)
                 for table in self._get_table_objects_by_name(
-                    open_client, dbname=database_name,
-                    tbl_names=open_client.get_all_tables(db_name=database_name)
+                    open_client, dbname=database_name, tbl_names=open_client.get_all_tables(db_name=database_name)
                 )
                 if table.parameters.get(TABLE_TYPE, "").lower() == ICEBERG
             ]

@@ -1175,7 +1175,7 @@ def test_hive_catalog_storage_descriptor_has_changed(
             schema.update_column("binary", doc="this is binary")
 
     with session_catalog_hive._client as open_client:
-        hive_table = session_catalog_hive._get_hive_table(open_client, "default", "test_storage_descriptor")
+        hive_table = session_catalog_hive._get_hive_table(open_client, dbname="default", tbl_name="test_storage_descriptor")
         assert "this is string_long" in str(hive_table.sd)
         assert "this is binary" in str(hive_table.sd)
 
