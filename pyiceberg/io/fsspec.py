@@ -212,11 +212,11 @@ def _adls(properties: Properties) -> AbstractFileSystem:
 
         def __init__(self, token_string: str) -> None:
             self._token = token_string
-            # Set expiration 1 hour from now
-            self._expires_on = int(time.time()) + self._DEFAULT_EXPIRY_SECONDS
 
         async def get_token(self, *scopes: str, **kwargs: Any) -> AccessToken:
-            return AccessToken(self._token, self._expires_on)
+            # Set expiration 1 hour from now
+            expires_on = int(time.time()) + self._DEFAULT_EXPIRY_SECONDS
+            return AccessToken(self._token, expires_on)
 
     if token := properties.get(ADLS_TOKEN):
         credential = StaticTokenCredential(token)
