@@ -73,6 +73,7 @@ from pyiceberg.io import (
     S3_SECRET_ACCESS_KEY,
     S3_SESSION_TOKEN,
     S3_SIGNER,
+    STORAGE_OPTIONS,
     S3_SIGNER_ENDPOINT,
     S3_SIGNER_ENDPOINT_DEFAULT,
     S3_SIGNER_URI,
@@ -164,7 +165,13 @@ def _s3(properties: Properties) -> AbstractFileSystem:
     if request_timeout := properties.get(S3_REQUEST_TIMEOUT):
         config_kwargs["read_timeout"] = float(request_timeout)
 
-    fs = S3FileSystem(client_kwargs=client_kwargs, config_kwargs=config_kwargs)
+    s3_kwargs = {"client_kwargs": client_kwargs, "config_kwargs": config_kwargs}
+
+    if storage_options := properties.get(STORAGE_OPTIONS):
+        if isinstance(storage_options, dict):
+            s3_kwargs.update(storage_options)
+
+    fs = S3FileSystem(**s3_kwargs)
 
     for event_name, event_function in register_events.items():
         fs.s3.meta.events.unregister(event_name, unique_id=1925)
