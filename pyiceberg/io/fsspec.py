@@ -197,9 +197,12 @@ def _adls(properties: Properties) -> AbstractFileSystem:
     from adlfs import AzureBlobFileSystem
 
     # https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-introduction-abfs-uri#uri-syntax
-    account_uri = None
-    if not properties.get(ADLS_ACCOUNT_NAME) and (netloc := properties.get("netloc")):
+    if netloc := properties.get("netloc"):
         account_uri = netloc.split("@")[-1]
+    else:
+        account_uri = None
+
+    if not properties.get(ADLS_ACCOUNT_NAME) and account_uri:
         properties[ADLS_ACCOUNT_NAME] = account_uri.split(".")[0]
 
     # Fixes https://github.com/apache/iceberg-python/issues/1146
