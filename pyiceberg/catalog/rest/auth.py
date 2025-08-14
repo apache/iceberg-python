@@ -17,10 +17,11 @@
 
 import base64
 import importlib
+import logging
 import threading
 import time
-import logging
 from abc import ABC, abstractmethod
+from functools import cached_property
 from typing import Any, Dict, List, Optional, Type
 
 import requests
@@ -158,16 +159,19 @@ class OAuth2TokenProvider:
         self._expires_at = 0
         self._lock = threading.Lock()
 
+    @cached_property
+    def _client_secret_header(self) -> str:
+        creds = f"{self.client_id}:{self.client_secret}"
+        creds_bytes = creds.encode("utf-8")
+        b64_creds = base64.b64encode(creds_bytes).decode("utf-8")
+        return f"Basic {b64_creds}"
+
     def _refresh_token(self) -> None:
-        data = {
-            "grant_type": "client_credentials",
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
-        }
+        data = {}
         if self.scope:
             data["scope"] = self.scope
 
-        response = requests.post(self.token_url, data=data)
+        response = requests.post(self.token_url, data=data, headers={"Authorization": self._client_secret_header})
         response.raise_for_status()
         result = response.json()
 
@@ -177,11 +181,11 @@ class OAuth2TokenProvider:
             raise ValueError(
                 "The expiration time of the Token must be provided by the Server in the Access Token Response in `expires_in` field, or by the PyIceberg Client."
             )
-        self._expires_at = time.time() + expires_in - self.refresh_margin
+        self._expires_at = time.monotonic() + expires_in - self.refresh_margin
 
     def get_token(self) -> str:
         with self._lock:
-            if not self._token or time.time() >= self._expires_at:
+            if not self._token or time.monotonic() >= self._expires_at:
                 self._refresh_token()
             if self._token is None:
                 raise ValueError("Authorization token is None after refresh")
@@ -211,6 +215,8 @@ class OAuth2AuthManager(AuthManager):
 
     def auth_header(self) -> str:
         return f"Bearer {self.token_provider.get_token()}"
+
+
 class GoogleAuthManager(AuthManager):
     """An auth manager that is responsible for handling Google credentials."""
 

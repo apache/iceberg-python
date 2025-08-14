@@ -21,6 +21,7 @@ from typing import Any, Callable, Dict, cast
 from unittest import mock
 
 import pytest
+from requests.exceptions import HTTPError
 from requests_mock import Mocker
 
 import pyiceberg
@@ -1678,6 +1679,29 @@ def test_rest_catalog_with_oauth2_auth_type(requests_mock: Mocker) -> None:
     }
     catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
     assert catalog.uri == TEST_URI
+
+
+def test_rest_catalog_oauth2_non_200_token_response(requests_mock: Mocker) -> None:
+    requests_mock.post(
+        f"{TEST_URI}oauth2/token",
+        json={"error": "invalid_client"},
+        status_code=401,
+    )
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "oauth2",
+            "oauth2": {
+                "client_id": "bad_client_id",
+                "client_secret": "bad_client_secret",
+                "token_url": f"{TEST_URI}oauth2/token",
+                "scope": "read",
+            },
+        },
+    }
+
+    with pytest.raises(HTTPError):
+        RestCatalog("rest", **catalog_properties)  # type: ignore
 
 
 EXAMPLE_ENV = {"PYICEBERG_CATALOG__PRODUCTION__URI": TEST_URI}
