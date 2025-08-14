@@ -193,7 +193,7 @@ def _gs(properties: Properties) -> AbstractFileSystem:
 
 
 def _adls(properties: Properties) -> AbstractFileSystem:
-    import time
+    # https://fsspec.github.io/adlfs/api/
 
     from adlfs import AzureBlobFileSystem
     from azure.core.credentials import AccessToken
@@ -214,6 +214,8 @@ def _adls(properties: Properties) -> AbstractFileSystem:
             self._token = token_string
 
         async def get_token(self, *scopes: str, **kwargs: Any) -> AccessToken:
+            import time
+
             # Set expiration 1 hour from now
             expires_on = int(time.time()) + self._DEFAULT_EXPIRY_SECONDS
             return AccessToken(self._token, expires_on)
