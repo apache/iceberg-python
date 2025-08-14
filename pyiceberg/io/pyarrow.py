@@ -2447,10 +2447,10 @@ def data_file_statistics_from_parquet_metadata(
                         scale = stats_col.iceberg_type.scale
                         col_aggs[field_id].update_min(
                             unscaled_to_decimal(statistics.min_raw, scale)
-                        ) if statistics.min_raw else None
+                        ) if statistics.min_raw is not None else None
                         col_aggs[field_id].update_max(
                             unscaled_to_decimal(statistics.max_raw, scale)
-                        ) if statistics.max_raw else None
+                        ) if statistics.max_raw is not None else None
                     else:
                         col_aggs[field_id].update_min(statistics.min)
                         col_aggs[field_id].update_max(statistics.max)
