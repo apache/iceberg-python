@@ -69,7 +69,8 @@ from pyiceberg.io.pyarrow import (
     _ConvertToArrowSchema,
     _determine_partitions,
     _primitive_to_physical,
-    _read_deletes,
+    _read_eq_deletes,
+    _read_pos_deletes,
     _to_requested_schema,
     bin_pack_arrow_table,
     compute_statistics_plan,
@@ -1546,8 +1547,8 @@ def deletes_file(tmp_path: str, example_task: FileScanTask) -> str:
     return deletes_file_path
 
 
-def test_read_deletes(deletes_file: str, example_task: FileScanTask) -> None:
-    deletes = _read_deletes(
+def test_read_pos_deletes(deletes_file: str, example_task: FileScanTask) -> None:
+    deletes = _read_pos_deletes(
         PyArrowFileIO(),
         DataFile.from_args(file_path=deletes_file, file_format=FileFormat.PARQUET, content=DataFileContent.POSITION_DELETES),
     )
@@ -2661,7 +2662,7 @@ def write_equality_delete_file(tmp_path: str, table_schema_simple: Schema) -> st
 
 
 def test_read_equality_deletes_file(write_equality_delete_file: str) -> None:
-    deletes = _read_deletes(
+    deletes = _read_eq_deletes(
         PyArrowFileIO(),
         DataFile.from_args(
             file_path=write_equality_delete_file,

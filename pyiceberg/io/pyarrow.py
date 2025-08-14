@@ -979,30 +979,33 @@ def _get_file_format(file_format: FileFormat, **kwargs: Dict[str, Any]) -> ds.Fi
         raise ValueError(f"Unsupported file format: {file_format}")
 
 
-def _read_deletes(io: FileIO, data_file: DataFile) -> Union[Dict[str, pa.ChunkedArray], pa.Table]:
+def _read_pos_deletes(io: FileIO, data_file: DataFile) -> Dict[str, pa.ChunkedArray]:
     if data_file.file_format == FileFormat.PARQUET:
         with io.new_input(data_file.file_path).open() as fi:
             delete_fragment = _get_file_format(
                 data_file.file_format, dictionary_columns=("file_path",), pre_buffer=True, buffer_size=ONE_MEGABYTE
             ).make_fragment(fi)
             table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
-        if data_file.content == DataFileContent.POSITION_DELETES:
-            table = table.unify_dictionaries()
-            return {
-                file.as_py(): table.filter(pc.field("file_path") == file).column("pos")
-                for file in table.column("file_path").chunks[0].dictionary
-            }
-        elif data_file.content == DataFileContent.EQUALITY_DELETES:
-            return table
-        else:
-            raise ValueError(f"Unsupported delete file content: {data_file.content}")
+        table = table.unify_dictionaries()
+        return {
+            file.as_py(): table.filter(pc.field("file_path") == file).column("pos")
+            for file in table.column("file_path").chunks[0].dictionary
+        }
     elif data_file.file_format == FileFormat.PUFFIN:
         with io.new_input(data_file.file_path).open() as fi:
             payload = fi.read()
-
         return PuffinFile(payload).to_vector()
     else:
         raise ValueError(f"Delete file format not supported: {data_file.file_format}")
+
+
+def _read_eq_deletes(io: FileIO, data_file: DataFile) -> pa.Table:
+    with io.new_input(data_file.file_path).open() as fi:
+        delete_fragment = _get_file_format(
+            data_file.file_format, dictionary_columns=("file_path",), pre_buffer=True, buffer_size=ONE_MEGABYTE
+        ).make_fragment(fi)
+        table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
+    return table
 
 
 def _combine_positional_deletes(positional_deletes: List[pa.ChunkedArray], start_index: int, end_index: int) -> pa.Array:
@@ -1556,7 +1559,7 @@ def _task_to_record_batches(
             yield result_batch
 
 
-def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Union[Dict[str, pa.ChunkedArray], pa.Table]:
+def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Dict[str, List[Union[pa.ChunkedArray, pa.Table]]]:
     deletes_per_file: Dict[str, List[Union[pa.ChunkedArray, pa.Table]]] = {}
 
     positional_deletes = {
@@ -1568,7 +1571,7 @@ def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Union[D
     if positional_deletes:
         executor = ExecutorFactory.get_or_create()
         deletes_per_files: Iterator[Dict[str, ChunkedArray]] = executor.map(
-            lambda args: _read_deletes(*args),
+            lambda args: _read_pos_deletes(*args),
             [(io, delete_file) for delete_file in positional_deletes],
         )
         for delete in deletes_per_files:
@@ -1586,7 +1589,7 @@ def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Union[D
     if deletion_vectors:
         executor = ExecutorFactory.get_or_create()
         dv_results: Iterator[Dict[str, ChunkedArray]] = executor.map(
-            lambda args: _read_deletes(*args),
+            lambda args: _read_pos_deletes(*args),
             [(io, delete_file) for delete_file in deletion_vectors],
         )
         for delete in dv_results:
@@ -1606,7 +1609,7 @@ def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Union[D
         executor = ExecutorFactory.get_or_create()
         # Processing equality delete tasks in parallel like position deletes
         equality_delete_results = executor.map(
-            lambda args: (args[0], _read_deletes(io, args[1])),
+            lambda args: (args[0], _read_eq_deletes(io, args[1])),
             equality_delete_tasks,
         )
 
@@ -1749,7 +1752,7 @@ class ArrowScan:
                 break
 
     def _record_batches_from_scan_tasks_and_deletes(
-        self, tasks: Iterable[FileScanTask], deletes_per_file: Union[Dict[str, pa.ChunkedArray], pa.Table]
+        self, tasks: Iterable[FileScanTask], deletes_per_file: Dict[str, List[Union[pa.ChunkedArray, pa.Table]]]
     ) -> Iterator[pa.RecordBatch]:
         total_row_count = 0
         for task in tasks:
