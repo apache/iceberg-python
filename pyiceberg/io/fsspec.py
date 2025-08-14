@@ -390,6 +390,7 @@ class FsspecFileIO(FileIO):
         fs.rm(str_location)
 
     def _get_fs(self, scheme: str, netloc: Optional[str] = None) -> AbstractFileSystem:
+        """Get a filesystem for a specific scheme and netloc."""
         if scheme not in self._scheme_to_fs:
             raise ValueError(f"No registered filesystem for scheme: {scheme}")
         properties = self.properties.copy()
