@@ -1104,7 +1104,6 @@ def _read_deletes(io: FileIO, data_file: DataFile) -> dict[str, pa.ChunkedArray]
     elif data_file.file_format == FileFormat.PUFFIN:
         with io.new_input(data_file.file_path).open() as fi:
             payload = fi.read()
-
         return PuffinFile(payload).to_vector()
     else:
         raise ValueError(f"Delete file format not supported: {data_file.file_format}")
@@ -1705,7 +1704,7 @@ def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> dict[st
     }
     if deletion_vectors:
         executor = ExecutorFactory.get_or_create()
-        dv_results: Iterator[Dict[str, ChunkedArray]] = executor.map(
+        dv_results: Iterator[dict[str, ChunkedArray]] = executor.map(
             lambda args: _read_deletes(*args),
             [(io, delete_file) for delete_file in deletion_vectors],
         )

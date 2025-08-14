@@ -4722,7 +4722,7 @@ def write_equality_delete_file(tmp_path: str, table_schema_simple: Schema) -> st
 
 
 def test_read_equality_deletes_file(write_equality_delete_file: str) -> None:
-    deletes = _read_deletes(
+    deletes = _read_eq_deletes(
         PyArrowFileIO(),
         DataFile.from_args(
             file_path=write_equality_delete_file,
