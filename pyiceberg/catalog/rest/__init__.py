@@ -64,6 +64,7 @@ from pyiceberg.table import (
     StagedTable,
     Table,
     TableIdentifier,
+    TableProperties,
 )
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
@@ -256,10 +257,10 @@ class RestCatalog(Catalog):
             auth_type_config = auth_config.get(auth_type, {})
             auth_impl = auth_config.get("impl")
 
-            if auth_type is CUSTOM and not auth_impl:
+            if auth_type == CUSTOM and not auth_impl:
                 raise ValueError("auth.impl must be specified when using custom auth.type")
 
-            if auth_type is not CUSTOM and auth_impl:
+            if auth_type != CUSTOM and auth_impl:
                 raise ValueError("auth.impl can only be specified when using custom auth.type")
 
             session.auth = AuthManagerAdapter(AuthManagerFactory.create(auth_impl or auth_type, auth_type_config))
@@ -498,7 +499,10 @@ class RestCatalog(Catalog):
         properties: Properties = EMPTY_DICT,
         stage_create: bool = False,
     ) -> TableResponse:
-        iceberg_schema = self._convert_schema_if_needed(schema)
+        iceberg_schema = self._convert_schema_if_needed(
+            schema,
+            int(properties.get(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION)),  # type: ignore
+        )
         fresh_schema = assign_fresh_schema_ids(iceberg_schema)
         fresh_partition_spec = assign_fresh_partition_spec_ids(partition_spec, iceberg_schema, fresh_schema)
         fresh_sort_order = assign_fresh_sort_order_ids(sort_order, iceberg_schema, fresh_schema)
@@ -523,7 +527,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {409: TableAlreadyExistsError})
+            _handle_non_200_response(exc, {409: TableAlreadyExistsError, 404: NoSuchNamespaceError})
         return TableResponse.model_validate_json(response.text)
 
     @retry(**_RETRY_ARGS)

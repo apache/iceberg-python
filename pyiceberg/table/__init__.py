@@ -80,6 +80,7 @@ from pyiceberg.partitioning import (
 from pyiceberg.schema import Schema
 from pyiceberg.table.inspect import InspectTable
 from pyiceberg.table.locations import LocationProvider, load_location_provider
+from pyiceberg.table.maintenance import MaintenanceTable
 from pyiceberg.table.metadata import (
     INITIAL_SEQUENCE_NUMBER,
     TableMetadata,
@@ -115,7 +116,7 @@ from pyiceberg.table.update import (
     update_table_metadata,
 )
 from pyiceberg.table.update.schema import UpdateSchema
-from pyiceberg.table.update.snapshot import ExpireSnapshots, ManageSnapshots, UpdateSnapshot, _FastAppendFiles
+from pyiceberg.table.update.snapshot import ManageSnapshots, UpdateSnapshot, _FastAppendFiles
 from pyiceberg.table.update.spec import UpdateSpec
 from pyiceberg.table.update.statistics import UpdateStatistics
 from pyiceberg.transforms import IdentityTransform
@@ -137,12 +138,14 @@ from pyiceberg.utils.config import Config
 from pyiceberg.utils.properties import property_as_bool
 
 if TYPE_CHECKING:
+    import bodo.pandas as bd
     import daft
     import pandas as pd
     import polars as pl
     import pyarrow as pa
     import ray
     from duckdb import DuckDBPyConnection
+    from pyiceberg_core.datafusion import IcebergDataFusionTable
 
     from pyiceberg.catalog import Catalog
 
@@ -217,7 +220,7 @@ class TableProperties:
 
     DEFAULT_NAME_MAPPING = "schema.name-mapping.default"
     FORMAT_VERSION = "format-version"
-    DEFAULT_FORMAT_VERSION = 2
+    DEFAULT_FORMAT_VERSION: TableVersion = 2
 
     MANIFEST_TARGET_SIZE_BYTES = "commit.manifest.target-size-bytes"
     MANIFEST_TARGET_SIZE_BYTES_DEFAULT = 8 * 1024 * 1024  # 8 MB
@@ -290,8 +293,6 @@ class Transaction:
 
         if self._autocommit:
             self.commit_transaction()
-            self._updates = ()
-            self._requirements = ()
 
         return self
 
@@ -477,7 +478,10 @@ class Transaction:
             )
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
         _check_pyarrow_schema_compatible(
-            self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+            self.table_metadata.schema(),
+            provided_schema=df.schema,
+            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+            format_version=self.table_metadata.format_version,
         )
 
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
@@ -527,7 +531,10 @@ class Transaction:
 
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
         _check_pyarrow_schema_compatible(
-            self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+            self.table_metadata.schema(),
+            provided_schema=df.schema,
+            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+            format_version=self.table_metadata.format_version,
         )
 
         # If dataframe does not have data, there is no need to overwrite
@@ -593,7 +600,10 @@ class Transaction:
             )
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
         _check_pyarrow_schema_compatible(
-            self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+            self.table_metadata.schema(),
+            provided_schema=df.schema,
+            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+            format_version=self.table_metadata.format_version,
         )
 
         if overwrite_filter != AlwaysFalse():
@@ -789,7 +799,10 @@ class Transaction:
 
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
         _check_pyarrow_schema_compatible(
-            self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+            self.table_metadata.schema(),
+            provided_schema=df.schema,
+            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+            format_version=self.table_metadata.format_version,
         )
 
         # get list of rows that exist so we don't have to load the entire target table
@@ -935,13 +948,15 @@ class Transaction:
                 updates=self._updates,
                 requirements=self._requirements,
             )
-            return self._table
-        else:
-            return self._table
+
+        self._updates = ()
+        self._requirements = ()
+
+        return self._table
 
 
 class CreateTableTransaction(Transaction):
-    """A transaction that involves the creation of a a new table."""
+    """A transaction that involves the creation of a new table."""
 
     def _initial_changes(self, table_metadata: TableMetadata) -> None:
         """Set the initial changes that can reconstruct the initial table metadata when creating the CreateTableTransaction."""
@@ -986,11 +1001,15 @@ class CreateTableTransaction(Transaction):
         Returns:
             The table with the updates applied.
         """
-        self._requirements = (AssertCreate(),)
-        self._table._do_commit(  # pylint: disable=W0212
-            updates=self._updates,
-            requirements=self._requirements,
-        )
+        if len(self._updates) > 0:
+            self._table._do_commit(  # pylint: disable=W0212
+                updates=self._updates,
+                requirements=(AssertCreate(),),
+            )
+
+        self._updates = ()
+        self._requirements = ()
+
         return self._table
 
 
@@ -1067,6 +1086,15 @@ class Table:
             InspectTable object based on this Table.
         """
         return InspectTable(self)
+
+    @property
+    def maintenance(self) -> MaintenanceTable:
+        """Return the MaintenanceTable object for maintenance.
+
+        Returns:
+            MaintenanceTable object based on this Table.
+        """
+        return MaintenanceTable(self)
 
     def refresh(self) -> Table:
         """Refresh the current table metadata.
@@ -1239,10 +1267,6 @@ class Table:
            ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
         """
         return ManageSnapshots(transaction=Transaction(self, autocommit=True))
-
-    def expire_snapshots(self) -> ExpireSnapshots:
-        """Shorthand to run expire snapshots by id or by a timestamp."""
-        return ExpireSnapshots(transaction=Transaction(self, autocommit=True))
 
     def update_statistics(self) -> UpdateStatistics:
         """
@@ -1484,6 +1508,16 @@ class Table:
 
         return daft.read_iceberg(self)
 
+    def to_bodo(self) -> bd.DataFrame:
+        """Read a bodo DataFrame lazily from this Iceberg table.
+
+        Returns:
+            bd.DataFrame: Unmaterialized Bodo Dataframe created from the Iceberg table
+        """
+        import bodo.pandas as bd
+
+        return bd.read_iceberg_table(self)
+
     def to_polars(self) -> pl.LazyFrame:
         """Lazily read from this Apache Iceberg table.
 
@@ -1493,6 +1527,51 @@ class Table:
         import polars as pl
 
         return pl.scan_iceberg(self)
+
+    def __datafusion_table_provider__(self) -> "IcebergDataFusionTable":
+        """Return the DataFusion table provider PyCapsule interface.
+
+        To support DataFusion features such as push down filtering, this function will return a PyCapsule
+        interface that conforms to the FFI Table Provider required by DataFusion. From an end user perspective
+        you should not need to call this function directly. Instead you can use ``register_table_provider`` in
+        the DataFusion SessionContext.
+
+        Returns:
+            A PyCapsule DataFusion TableProvider interface.
+
+        Example:
+            ```python
+            from datafusion import SessionContext
+            from pyiceberg.catalog import load_catalog
+            import pyarrow as pa
+            catalog = load_catalog("catalog", type="in-memory")
+            catalog.create_namespace_if_not_exists("default")
+            data = pa.table({"x": [1, 2, 3], "y": [4, 5, 6]})
+            iceberg_table = catalog.create_table("default.test", schema=data.schema)
+            iceberg_table.append(data)
+            ctx = SessionContext()
+            ctx.register_table_provider("test", iceberg_table)
+            ctx.table("test").show()
+            ```
+            Results in
+            ```
+            DataFrame()
+            +---+---+
+            | x | y |
+            +---+---+
+            | 1 | 4 |
+            | 2 | 5 |
+            | 3 | 6 |
+            +---+---+
+            ```
+        """
+        from pyiceberg_core.datafusion import IcebergDataFusionTable
+
+        return IcebergDataFusionTable(
+            identifier=self.name(),
+            metadata_location=self.metadata_location,
+            file_io_properties=self.io.properties,
+        ).__datafusion_table_provider__()
 
 
 class StaticTable(Table):
@@ -1645,7 +1724,14 @@ class TableScan(ABC):
 
     def update(self: S, **overrides: Any) -> S:
         """Create a copy of this table scan with updated fields."""
-        return type(self)(**{**self.__dict__, **overrides})
+        from inspect import signature
+
+        # Extract those attributes that are constructor parameters. We don't use self.__dict__ as the kwargs to the
+        # constructors because it may contain additional attributes that are not part of the constructor signature.
+        params = signature(type(self).__init__).parameters.keys() - {"self"}  # Skip "self" parameter
+        kwargs = {param: getattr(self, param) for param in params}  # Assume parameters are attributes
+
+        return type(self)(**{**kwargs, **overrides})
 
     def use_ref(self: S, name: str) -> S:
         if self.snapshot_id:
@@ -1795,13 +1881,11 @@ class DataScan(TableScan):
     def _build_residual_evaluator(self, spec_id: int) -> Callable[[DataFile], ResidualEvaluator]:
         spec = self.table_metadata.specs()[spec_id]
 
+        from pyiceberg.expressions.visitors import residual_evaluator_of
+
         # The lambda created here is run in multiple threads.
         # So we avoid creating _EvaluatorExpression methods bound to a single
         # shared instance across multiple threads.
-        # return lambda data_file: (partition_schema, partition_expr, self.case_sensitive)(data_file.partition)
-        from pyiceberg.expressions.visitors import residual_evaluator_of
-
-        # assert self.row_filter == False
         return lambda datafile: (
             residual_evaluator_of(
                 spec=spec,
@@ -1811,7 +1895,8 @@ class DataScan(TableScan):
             )
         )
 
-    def _check_sequence_number(self, min_sequence_number: int, manifest: ManifestFile) -> bool:
+    @staticmethod
+    def _check_sequence_number(min_sequence_number: int, manifest: ManifestFile) -> bool:
         """Ensure that no manifests are loaded that contain deletes that are older than the data.
 
         Args:
@@ -2027,14 +2112,6 @@ class WriteTask:
         # Mimics the behavior in the Java API:
         # https://github.com/apache/iceberg/blob/a582968975dd30ff4917fbbe999f1be903efac02/core/src/main/java/org/apache/iceberg/io/OutputFileFactory.java#L92-L101
         return f"00000-{self.task_id}-{self.write_uuid}.{extension}"
-
-
-@dataclass(frozen=True)
-class AddFileTask:
-    """Task with the parameters for adding a Parquet file as a DataFile."""
-
-    file_path: str
-    partition_field_value: Record
 
 
 def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], io: FileIO) -> Iterable[DataFile]:

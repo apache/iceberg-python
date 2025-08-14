@@ -15,6 +15,7 @@
 #  specific language governing permissions and limitations
 #  under the License.
 # pylint: disable=redefined-outer-name,unused-argument
+import base64
 import os
 from typing import Any, Callable, Dict, cast
 from unittest import mock
@@ -1519,7 +1520,13 @@ def test_request_session_with_ssl_client_cert() -> None:
     assert "Could not find the TLS certificate file, invalid path: path_to_client_cert" in str(e.value)
 
 
-def test_rest_catalog_with_basic_auth_type() -> None:
+def test_rest_catalog_with_basic_auth_type(rest_mock: Mocker) -> None:
+    # Given
+    rest_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
     # Given
     catalog_properties = {
         "uri": TEST_URI,
@@ -1527,13 +1534,16 @@ def test_rest_catalog_with_basic_auth_type() -> None:
             "type": "basic",
             "basic": {
                 "username": "one",
+                "password": "two",
             },
         },
     }
-    with pytest.raises(TypeError) as e:
-        # Missing namespace
-        RestCatalog("rest", **catalog_properties)  # type: ignore
-    assert "__init__() missing 1 required positional argument: 'password'" in str(e.value)
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert catalog.uri == TEST_URI
+
+    encoded_user_pass = base64.b64encode(b"one:two").decode()
+    expected_auth_header = f"Basic {encoded_user_pass}"
+    assert rest_mock.last_request.headers["Authorization"] == expected_auth_header
 
 
 def test_rest_catalog_with_custom_auth_type() -> None:
@@ -1553,6 +1563,32 @@ def test_rest_catalog_with_custom_auth_type() -> None:
         # Missing namespace
         RestCatalog("rest", **catalog_properties)  # type: ignore
     assert "Could not load AuthManager class for 'dummy.nonexistent.package'" in str(e.value)
+
+
+def test_rest_catalog_with_custom_basic_auth_type(rest_mock: Mocker) -> None:
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "custom",
+            "impl": "pyiceberg.catalog.rest.auth.BasicAuthManager",
+            "custom": {
+                "username": "one",
+                "password": "two",
+            },
+        },
+    }
+    rest_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert catalog.uri == TEST_URI
+
+    encoded_user_pass = base64.b64encode(b"one:two").decode()
+    expected_auth_header = f"Basic {encoded_user_pass}"
+    assert rest_mock.last_request.headers["Authorization"] == expected_auth_header
 
 
 def test_rest_catalog_with_custom_auth_type_no_impl() -> None:
@@ -1578,11 +1614,11 @@ def test_rest_catalog_with_non_custom_auth_type_impl() -> None:
     catalog_properties = {
         "uri": TEST_URI,
         "auth": {
-            "type": "oauth2",
-            "impl": "oauth2.package",
-            "oauth2": {
-                "property1": "one",
-                "property2": "two",
+            "type": "basic",
+            "impl": "basic.package",
+            "basic": {
+                "username": "one",
+                "password": "two",
             },
         },
     }
@@ -1746,3 +1782,42 @@ def test_drop_view_204(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
     RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_view(("some_namespace", "some_view"))
+
+
+@mock.patch("google.auth.transport.requests.Request")
+@mock.patch("google.auth.load_credentials_from_file")
+def test_rest_catalog_with_google_credentials_path(
+    mock_load_creds: mock.MagicMock, mock_google_request: mock.MagicMock, rest_mock: Mocker
+) -> None:
+    mock_credentials = mock.MagicMock()
+    mock_credentials.token = "file_token"
+    mock_load_creds.return_value = (mock_credentials, "test_project_file")
+
+    # Given
+    rest_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "google",
+            "google": {
+                "credentials_path": "/fake/path.json",
+            },
+        },
+    }
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert catalog.uri == TEST_URI
+
+    expected_auth_header = "Bearer file_token"
+    assert rest_mock.last_request.headers["Authorization"] == expected_auth_header
+
+    mock_load_creds.assert_called_with("/fake/path.json", scopes=None)
+    mock_credentials.refresh.assert_called_once_with(mock_google_request.return_value)
+    history = rest_mock.request_history
+    assert len(history) == 1
+    actual_headers = history[0].headers
+    assert actual_headers["Authorization"] == expected_auth_header

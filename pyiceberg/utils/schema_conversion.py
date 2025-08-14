@@ -26,7 +26,14 @@ from typing import (
     Union,
 )
 
-from pyiceberg.schema import Schema, SchemaVisitorPerPrimitiveType, visit
+from pyiceberg.schema import (
+    FIELD_ID_PROP,
+    ICEBERG_FIELD_NAME_PROP,
+    Schema,
+    SchemaVisitorPerPrimitiveType,
+    make_compatible_name,
+    visit,
+)
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -71,6 +78,7 @@ LOGICAL_FIELD_TYPE_MAPPING: Dict[Tuple[str, str], PrimitiveType] = {
     ("time-micros", "long"): TimeType(),
     ("timestamp-micros", "long"): TimestampType(),
     ("uuid", "fixed"): UUIDType(),
+    ("uuid", "string"): UUIDType(),
 }
 
 AvroType = Union[str, Any]
@@ -224,13 +232,13 @@ class AvroSchemaConversion:
         Returns:
             The Iceberg equivalent field.
         """
-        if "field-id" not in field:
-            raise ValueError(f"Cannot convert field, missing field-id: {field}")
+        if FIELD_ID_PROP not in field:
+            raise ValueError(f"Cannot convert field, missing {FIELD_ID_PROP}: {field}")
 
         plain_type, required = self._resolve_union(field["type"])
 
         return NestedField(
-            field_id=field["field-id"],
+            field_id=field[FIELD_ID_PROP],
             name=field["name"],
             field_type=self._convert_schema(plain_type),
             required=required,
@@ -523,11 +531,17 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
         if isinstance(field_result, dict) and field_result.get("type") == "record":
             field_result["name"] = f"r{field.field_id}"
 
+        original_name = field.name
+        sanitized_name = make_compatible_name(original_name)
+
         result = {
-            "name": field.name,
-            "field-id": field.field_id,
+            "name": sanitized_name,
+            FIELD_ID_PROP: field.field_id,
             "type": field_result if field.required else ["null", field_result],
         }
+
+        if original_name != sanitized_name:
+            result[ICEBERG_FIELD_NAME_PROP] = original_name
 
         if field.write_default is not None:
             result["default"] = field.write_default
@@ -563,8 +577,8 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
                     "type": "record",
                     "name": f"k{self.last_map_key_field_id}_v{self.last_map_value_field_id}",
                     "fields": [
-                        {"name": "key", "type": key_result, "field-id": self.last_map_key_field_id},
-                        {"name": "value", "type": value_result, "field-id": self.last_map_value_field_id},
+                        {"name": "key", "type": key_result, FIELD_ID_PROP: self.last_map_key_field_id},
+                        {"name": "value", "type": value_result, FIELD_ID_PROP: self.last_map_value_field_id},
                     ],
                 },
                 "logicalType": "map",
