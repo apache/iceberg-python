@@ -193,7 +193,6 @@ def _gs(properties: Properties) -> AbstractFileSystem:
 
 
 def _adls(properties: Properties) -> AbstractFileSystem:
-    # https://fsspec.github.io/adlfs/api/
     from adlfs import AzureBlobFileSystem
 
     # https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-introduction-abfs-uri#uri-syntax
