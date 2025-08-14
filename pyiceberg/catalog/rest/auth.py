@@ -175,7 +175,7 @@ class OAuth2TokenProvider:
         expires_in = result.get("expires_in", self.expires_in)
         if expires_in is None:
             raise ValueError(
-                "The expiration time of the Token must be provided by the Server in the Access Token Response in `expired_in` field, or by the PyIceberg Client."
+                "The expiration time of the Token must be provided by the Server in the Access Token Response in `expires_in` field, or by the PyIceberg Client."
             )
         self._expires_at = time.time() + expires_in - self.refresh_margin
 
