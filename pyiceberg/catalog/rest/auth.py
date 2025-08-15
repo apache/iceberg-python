@@ -167,7 +167,9 @@ class OAuth2TokenProvider:
         return f"Basic {b64_creds}"
 
     def _refresh_token(self) -> None:
-        data = {}
+        data = {
+            "grant_type": "client_credentials"
+        }
         if self.scope:
             data["scope"] = self.scope
 
