@@ -389,7 +389,6 @@ The RESTCatalog supports pluggable authentication via the `auth` configuration b
 - `noop`: No authentication (no Authorization header sent).
 - `basic`: HTTP Basic authentication.
 - `oauth2`: OAuth2 client credentials flow.
-- `legacyoauth2`: Legacy OAuth2 client credentials flow (Deprecated and will be removed in PyIceberg 1.0.0)
 - `custom`: Custom authentication manager (requires `auth.impl`).
 - `google`: Google Authentication support
 
