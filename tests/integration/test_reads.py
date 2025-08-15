@@ -26,7 +26,7 @@ from urllib.parse import urlparse
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
-from hive_metastore.ttypes import LockRequest, LockResponse, LockState, UnlockRequest
+from hive_metastore.v4.ttypes import LockRequest, LockResponse, LockState, UnlockRequest
 from pyarrow.fs import S3FileSystem
 from pydantic_core import ValidationError
 from pyspark.sql import SparkSession
