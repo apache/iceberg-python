@@ -2251,13 +2251,19 @@ def test_branch_py_write_spark_read(session_catalog: Catalog, spark: SparkSessio
 @pytest.mark.integration
 def test_nanosecond_support_on_catalog(session_catalog: Catalog) -> None:
     identifier = "default.test_nanosecond_support_on_catalog"
-    # Create a pyarrow table with a nanosecond timestamp column
-    table = pa.Table.from_arrays(
-        [
-            pa.array([datetime.now()], type=pa.timestamp("ns")),
-            pa.array([datetime.now()], type=pa.timestamp("ns", tz="America/New_York")),
-        ],
-        names=["timestamp_ns", "timestamptz_ns"],
+
+    catalog = load_catalog("default", type="in-memory")
+    catalog.create_namespace("ns")
+
+    table = pa.Table.from_arrays([pa.array([datetime.now()], type=pa.timestamp("ns"))], names=["timestamps"])
+    table2 = pa.Table.from_arrays(
+        [pa.array([datetime.now()], type=pa.timestamp("ns", tz="America/New_York"))], names=["timestamps"]
     )
 
     _create_table(session_catalog, identifier, {"format-version": "3"}, schema=table.schema)
+
+    with pytest.raises(NotImplementedError, match="Writing V3 is not yet supported"):
+        catalog.create_table("ns.table1", schema=table.schema, properties={"format-version": "3"})
+
+    with pytest.raises(NotImplementedError, match="Writing V3 is not yet supported"):
+        catalog.create_table("ns.table2", schema=table2.schema, properties={"format-version": "3"})

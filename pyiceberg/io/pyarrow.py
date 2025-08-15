@@ -1483,6 +1483,7 @@ def _task_to_record_batches(
     case_sensitive: bool,
     name_mapping: Optional[NameMapping] = None,
     partition_spec: Optional[PartitionSpec] = None,
+    format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
 ) -> Iterator[pa.RecordBatch]:
     arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
     with io.new_input(task.file.file_path).open() as fin:
@@ -1492,7 +1493,9 @@ def _task_to_record_batches(
         # Hence it is reasonable to always cast 'ns' timestamp to 'us' on read.
         # When V3 support is introduced, we will update `downcast_ns_timestamp_to_us` flag based on
         # the table format version.
-        file_schema = pyarrow_to_schema(physical_schema, name_mapping, downcast_ns_timestamp_to_us=True)
+        file_schema = pyarrow_to_schema(
+            physical_schema, name_mapping, downcast_ns_timestamp_to_us=True, format_version=format_version
+        )
 
         # Apply column projection rules: https://iceberg.apache.org/spec/#column-projection
         projected_missing_fields = _get_column_projection_values(
@@ -1721,6 +1724,7 @@ class ArrowScan:
                 self._case_sensitive,
                 self._table_metadata.name_mapping(),
                 self._table_metadata.specs().get(task.file.spec_id),
+                self._table_metadata.format_version,
             )
             for batch in batches:
                 if self._limit is not None:
