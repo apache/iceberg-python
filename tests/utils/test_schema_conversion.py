@@ -26,6 +26,8 @@ from pyiceberg.types import (
     DateType,
     DecimalType,
     FixedType,
+    GeographyType,
+    GeometryType,
     IntegerType,
     ListType,
     LongType,
@@ -345,6 +347,18 @@ def test_convert_timestamp_micros_type() -> None:
     avro_logical_type = {"type": "int", "logicalType": "timestamp-micros"}
     actual = AvroSchemaConversion()._convert_logical_type(avro_logical_type)
     assert actual == TimestampType()
+
+
+def test_convert_geography_type() -> None:
+    avro_logical_type = {"type": "bytes", "logicalType": "geography", "crs": "OGC:CRS84", "edge_algorithm": None}
+    actual = AvroSchemaConversion()._convert_logical_type(avro_logical_type)
+    assert actual == GeographyType()
+
+
+def test_convert_geometry_type() -> None:
+    avro_logical_type = {"type": "string", "logicalType": "geometry", "crs": "OGC:CRS84"}
+    actual = AvroSchemaConversion()._convert_logical_type(avro_logical_type)
+    assert actual == GeometryType()
 
 
 def test_unknown_logical_type() -> None:
