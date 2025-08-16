@@ -18,9 +18,13 @@
 import base64
 import importlib
 import logging
+import threading
+import time
 from abc import ABC, abstractmethod
+from functools import cached_property
 from typing import Any, Dict, List, Optional, Type
 
+import requests
 from requests import HTTPError, PreparedRequest, Session
 from requests.auth import AuthBase
 
@@ -119,6 +123,98 @@ class LegacyOAuth2AuthManager(AuthManager):
 
     def auth_header(self) -> str:
         return f"Bearer {self._token}"
+
+
+class OAuth2TokenProvider:
+    """Thread-safe OAuth2 token provider with token refresh support."""
+
+    client_id: str
+    client_secret: str
+    token_url: str
+    scope: Optional[str]
+    refresh_margin: int
+    expires_in: Optional[int]
+
+    _token: Optional[str]
+    _expires_at: int
+    _lock: threading.Lock
+
+    def __init__(
+        self,
+        client_id: str,
+        client_secret: str,
+        token_url: str,
+        scope: Optional[str] = None,
+        refresh_margin: int = 60,
+        expires_in: Optional[int] = None,
+    ):
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.token_url = token_url
+        self.scope = scope
+        self.refresh_margin = refresh_margin
+        self.expires_in = expires_in
+
+        self._token = None
+        self._expires_at = 0
+        self._lock = threading.Lock()
+
+    @cached_property
+    def _client_secret_header(self) -> str:
+        creds = f"{self.client_id}:{self.client_secret}"
+        creds_bytes = creds.encode("utf-8")
+        b64_creds = base64.b64encode(creds_bytes).decode("utf-8")
+        return f"Basic {b64_creds}"
+
+    def _refresh_token(self) -> None:
+        data = {"grant_type": "client_credentials"}
+        if self.scope:
+            data["scope"] = self.scope
+
+        response = requests.post(self.token_url, data=data, headers={"Authorization": self._client_secret_header})
+        response.raise_for_status()
+        result = response.json()
+
+        self._token = result["access_token"]
+        expires_in = result.get("expires_in", self.expires_in)
+        if expires_in is None:
+            raise ValueError(
+                "The expiration time of the Token must be provided by the Server in the Access Token Response in `expires_in` field, or by the PyIceberg Client."
+            )
+        self._expires_at = time.monotonic() + expires_in - self.refresh_margin
+
+    def get_token(self) -> str:
+        with self._lock:
+            if not self._token or time.monotonic() >= self._expires_at:
+                self._refresh_token()
+            if self._token is None:
+                raise ValueError("Authorization token is None after refresh")
+            return self._token
+
+
+class OAuth2AuthManager(AuthManager):
+    """Auth Manager implementation that supports OAuth2 as defined in IETF RFC6749."""
+
+    def __init__(
+        self,
+        client_id: str,
+        client_secret: str,
+        token_url: str,
+        scope: Optional[str] = None,
+        refresh_margin: int = 60,
+        expires_in: Optional[int] = None,
+    ):
+        self.token_provider = OAuth2TokenProvider(
+            client_id,
+            client_secret,
+            token_url,
+            scope,
+            refresh_margin,
+            expires_in,
+        )
+
+    def auth_header(self) -> str:
+        return f"Bearer {self.token_provider.get_token()}"
 
 
 class GoogleAuthManager(AuthManager):
@@ -228,4 +324,5 @@ class AuthManagerFactory:
 AuthManagerFactory.register("noop", NoopAuthManager)
 AuthManagerFactory.register("basic", BasicAuthManager)
 AuthManagerFactory.register("legacyoauth2", LegacyOAuth2AuthManager)
+AuthManagerFactory.register("oauth2", OAuth2AuthManager)
 AuthManagerFactory.register("google", GoogleAuthManager)

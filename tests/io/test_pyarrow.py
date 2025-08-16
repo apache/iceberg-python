@@ -390,6 +390,35 @@ def test_pyarrow_s3_session_properties() -> None:
         )
 
 
+def test_pyarrow_s3_session_properties_with_anonymous() -> None:
+    session_properties: Properties = {
+        "s3.anonymous": "true",
+        "s3.endpoint": "http://localhost:9000",
+        "s3.access-key-id": "admin",
+        "s3.secret-access-key": "password",
+        "s3.region": "us-east-1",
+        "s3.session-token": "s3.session-token",
+        **UNIFIED_AWS_SESSION_PROPERTIES,
+    }
+
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs, patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
+        s3_fileio = PyArrowFileIO(properties=session_properties)
+        filename = str(uuid.uuid4())
+
+        # Mock `resolve_s3_region` to prevent from the location used resolving to a different s3 region
+        mock_s3_region_resolver.side_effect = OSError("S3 bucket is not found")
+        s3_fileio.new_input(location=f"s3://warehouse/{filename}")
+
+        mock_s3fs.assert_called_with(
+            anonymous=True,
+            endpoint_override="http://localhost:9000",
+            access_key="admin",
+            secret_key="password",
+            region="us-east-1",
+            session_token="s3.session-token",
+        )
+
+
 def test_pyarrow_unified_session_properties() -> None:
     session_properties: Properties = {
         "s3.endpoint": "http://localhost:9000",
