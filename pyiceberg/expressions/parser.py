@@ -156,10 +156,8 @@ between = column + BETWEEN + number + AND + number
 
 @between.set_parse_action
 def _(result: ParseResults) -> BooleanExpression:
-    return And(
-        GreaterThanOrEqual(result.column, result[2]),
-        LessThanOrEqual(result.column, result[4])
-    )
+    return And(GreaterThanOrEqual(result.column, result[2]), LessThanOrEqual(result.column, result[4]))
+
 
 @left_ref.set_parse_action
 def _(result: ParseResults) -> BooleanExpression:
