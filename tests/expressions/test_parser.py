@@ -39,7 +39,8 @@ from pyiceberg.expressions import (
     NotNull,
     NotStartsWith,
     Or,
-    StartsWith, Reference,
+    Reference,
+    StartsWith,
 )
 from pyiceberg.expressions.literals import DecimalLiteral, LongLiteral
 
@@ -239,10 +240,22 @@ def test_quoted_column_with_dots() -> None:
 def test_quoted_column_with_spaces() -> None:
     assert EqualTo("Foo Bar", "data") == parser.parse("\"Foo Bar\" = 'data'")
 
+
 def test_valid_between() -> None:
-    assert And(left=GreaterThanOrEqual(Reference(name="foo"), LongLiteral(1)), right=LessThanOrEqual(Reference(name="foo"), LongLiteral(3))) == parser.parse("foo between 1 and 3")
-    assert And(left=GreaterThanOrEqual(Reference(name="foo"), LongLiteral(1)), right=LessThanOrEqual(Reference(name="foo"), LongLiteral(1))) == parser.parse("foo between 1 and 1")
-    assert And(left=GreaterThanOrEqual(Reference(name="foo"), DecimalLiteral(Decimal(1.0))), right=LessThanOrEqual(Reference(name="foo"), DecimalLiteral(Decimal(4.0)))) == parser.parse("foo between 1.0 and 4.0")
+    assert And(
+        left=GreaterThanOrEqual(Reference(name="foo"), LongLiteral(1)),
+        right=LessThanOrEqual(Reference(name="foo"), LongLiteral(3)),
+    ) == parser.parse("foo between 1 and 3")
+    assert And(
+        left=GreaterThanOrEqual(Reference(name="foo"), LongLiteral(1)),
+        right=LessThanOrEqual(Reference(name="foo"), LongLiteral(1)),
+    ) == parser.parse("foo between 1 and 1")
+    assert And(
+        left=GreaterThanOrEqual(Reference(name="foo"), DecimalLiteral(Decimal(1.0))),
+        right=LessThanOrEqual(Reference(name="foo"), DecimalLiteral(Decimal(4.0))),
+    ) == parser.parse("foo between 1.0 and 4.0")
+    assert parser.parse("foo between 1 and 3") == parser.parse("1 <= foo and foo <= 3")
+
 
 def test_invalid_between() -> None:
     # boolean
@@ -253,4 +266,4 @@ def test_invalid_between() -> None:
     # string
     with pytest.raises(ParseException) as exc_info:
         parser.parse("foo between 'a' and 'b'")
-    assert "Expected number, found \"\'\"" in str(exc_info)
+    assert 'Expected number, found "\'"' in str(exc_info)
