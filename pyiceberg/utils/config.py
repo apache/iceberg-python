@@ -180,3 +180,11 @@ class Config:
             except ValueError as err:
                 raise ValueError(f"{key} should be a boolean or left unset. Current value: {val}") from err
         return None
+
+    def get_str(self, key: str) -> Optional[str]:
+        if (val := self.config.get(key)) is not None:
+            if isinstance(val, str):
+                return val
+            else:
+                raise ValueError(f"{key} should be a string or left unset. Current value: {val}")
+        return None
