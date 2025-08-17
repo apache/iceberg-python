@@ -1031,6 +1031,7 @@ Expert Iceberg users may choose to commit existing parquet files to the Iceberg 
 ### Example
 
 Add files to Iceberg table:
+
 ```python
 # Given that these parquet files have schema consistent with the Iceberg table
 
@@ -1047,6 +1048,7 @@ tbl.add_files(file_paths=file_paths)
 ```
 
 Add files to Iceberg table with custom snapshot properties:
+
 ```python
 # Assume an existing Iceberg table object `tbl`
 
