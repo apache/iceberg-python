@@ -976,9 +976,10 @@ def test_rename_table_to_table_already_exists(hive_table: HiveTable) -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
     catalog.load_table = MagicMock(return_value=hive_table)  # type: ignore[method-assign]
 
-    with pytest.raises(TableAlreadyExistsError):
+    with pytest.raises(TableAlreadyExistsError) as exc_info:
         catalog.rename_table(("default", "some_table"), ("default", "new_tabl2e"))
 
+    assert "Table already exists: new_tabl2e" in str(exc_info.value)
 
 def test_drop_database_does_not_empty() -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
