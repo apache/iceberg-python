@@ -657,7 +657,7 @@ class HiveCatalog(MetastoreCatalog):
         to_database_name, to_table_name = self.identifier_to_database_and_table(to_identifier)
 
         if self.table_exists(to_identifier):
-            raise TableAlreadyExistsError(f"Table already exist: {to_table_name}")
+            raise TableAlreadyExistsError(f"Table already exists: {to_table_name}")
 
         try:
             with self._client as open_client:
