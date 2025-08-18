@@ -179,11 +179,7 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
         ) -> None:
             from pyiceberg.partitioning import validate_partition_name
 
-            validate_partition_name(name, transform, source_id, schema)
-            if not name:
-                raise ValueError("Undefined name")
-            if name in partition_names:
-                raise ValueError(f"Partition name has to be unique: {name}")
+            validate_partition_name(name, transform, source_id, schema, partition_names)
             partition_names.add(name)
 
         def _add_new_field(
