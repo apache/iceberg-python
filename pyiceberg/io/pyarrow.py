@@ -109,6 +109,7 @@ from pyiceberg.io import (
     HDFS_USER,
     PYARROW_USE_LARGE_TYPES_ON_READ,
     S3_ACCESS_KEY_ID,
+    S3_ANONYMOUS,
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
     S3_FORCE_VIRTUAL_ADDRESSING,
@@ -179,6 +180,7 @@ from pyiceberg.types import (
     TimeType,
     UnknownType,
     UUIDType,
+    strtobool,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
@@ -450,6 +452,9 @@ class PyArrowFileIO(FileIO):
         if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
             client_kwargs["session_name"] = session_name
 
+        if s3_anonymous := self.properties.get(S3_ANONYMOUS):
+            client_kwargs["anonymous"] = strtobool(s3_anonymous)
+
         return S3FileSystem(**client_kwargs)
 
     def _initialize_s3_fs(self, netloc: Optional[str]) -> FileSystem:
@@ -500,6 +505,9 @@ class PyArrowFileIO(FileIO):
             retry_instance := _import_retry_strategy(retry_strategy_impl)
         ):
             client_kwargs["retry_strategy"] = retry_instance
+
+        if s3_anonymous := self.properties.get(S3_ANONYMOUS):
+            client_kwargs["anonymous"] = strtobool(s3_anonymous)
 
         return S3FileSystem(**client_kwargs)
 
@@ -2445,8 +2453,12 @@ def data_file_statistics_from_parquet_metadata(
 
                     if isinstance(stats_col.iceberg_type, DecimalType) and statistics.physical_type != "FIXED_LEN_BYTE_ARRAY":
                         scale = stats_col.iceberg_type.scale
-                        col_aggs[field_id].update_min(unscaled_to_decimal(statistics.min_raw, scale))
-                        col_aggs[field_id].update_max(unscaled_to_decimal(statistics.max_raw, scale))
+                        col_aggs[field_id].update_min(
+                            unscaled_to_decimal(statistics.min_raw, scale)
+                        ) if statistics.min_raw is not None else None
+                        col_aggs[field_id].update_max(
+                            unscaled_to_decimal(statistics.max_raw, scale)
+                        ) if statistics.max_raw is not None else None
                     else:
                         col_aggs[field_id].update_min(statistics.min)
                         col_aggs[field_id].update_max(statistics.max)
@@ -2793,9 +2805,11 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
             functools.reduce(
                 operator.and_,
                 [
-                    pc.field(partition_field_name) == unique_partition[partition_field_name]
-                    if unique_partition[partition_field_name] is not None
-                    else pc.field(partition_field_name).is_null()
+                    (
+                        pc.field(partition_field_name) == unique_partition[partition_field_name]
+                        if unique_partition[partition_field_name] is not None
+                        else pc.field(partition_field_name).is_null()
+                    )
                     for field, partition_field_name in zip(spec.fields, partition_fields)
                 ],
             )

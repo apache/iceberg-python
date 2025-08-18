@@ -651,9 +651,14 @@ class HiveCatalog(MetastoreCatalog):
             ValueError: When from table identifier is invalid.
             NoSuchTableError: When a table with the name does not exist.
             NoSuchNamespaceError: When the destination namespace doesn't exist.
+            TableAlreadyExistsError: When the destination table already exists.
         """
         from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier, NoSuchTableError)
         to_database_name, to_table_name = self.identifier_to_database_and_table(to_identifier)
+
+        if self.table_exists(to_identifier):
+            raise TableAlreadyExistsError(f"Table already exists: {to_table_name}")
+
         try:
             with self._client as open_client:
                 tbl = open_client.get_table(dbname=from_database_name, tbl_name=from_table_name)

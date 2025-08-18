@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import datetime
 from unittest.mock import MagicMock
 from uuid import uuid4
 
@@ -142,7 +143,7 @@ def test_expire_snapshots_by_timestamp_skips_protected(table_v2: Table) -> None:
     table_v2.catalog = MagicMock()
 
     # Attempt to expire all snapshots before a future timestamp (so both are candidates)
-    future_timestamp = 9999999999999  # Far in the future, after any real snapshot
+    future_datetime = datetime.datetime.now() + datetime.timedelta(days=1)
 
     # Mock the catalog's commit_table to return the current metadata (simulate no change)
     mock_response = CommitTableResponse(
@@ -152,7 +153,7 @@ def test_expire_snapshots_by_timestamp_skips_protected(table_v2: Table) -> None:
     )
     table_v2.catalog.commit_table.return_value = mock_response
 
-    table_v2.maintenance.expire_snapshots().older_than(future_timestamp).commit()
+    table_v2.maintenance.expire_snapshots().older_than(future_datetime).commit()
     # Update metadata to reflect the commit (as in other tests)
     table_v2.metadata = mock_response.metadata
 

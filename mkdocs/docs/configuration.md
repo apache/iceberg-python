@@ -127,6 +127,7 @@ For the FileIO there are several configuration options available:
 | s3.request-timeout          | 60.0                       | Configure socket read timeouts on Windows and macOS, in seconds.                                                                                                                                                                                            |
 | s3.force-virtual-addressing | False                      | Whether to use virtual addressing of buckets. If true, then virtual addressing is always enabled. If false, then virtual addressing is only enabled if endpoint_override is empty. This can be used for non-AWS backends that only support virtual hosted-style access. |
 | s3.retry-strategy-impl      | None                       | Ability to set a custom S3 retry strategy. A full path to a class needs to be given that extends the [S3RetryStrategy](https://github.com/apache/arrow/blob/639201bfa412db26ce45e73851432018af6c945e/python/pyarrow/_s3fs.pyx#L110) base class.            |
+| s3.anonymous                | True                       | Configure whether to use anonymous connection. If False (default), uses key/secret if configured or boto's credential resolver. |
 
 <!-- markdown-link-check-enable-->
 
@@ -161,6 +162,7 @@ For the FileIO there are several configuration options available:
 | adls.dfs-storage-authority   | .dfs.core.windows.net                                                                       | The hostname[:port] of the Data Lake Gen 2 Service. Defaults to `.dfs.core.windows.net`. Useful for connecting to a local emulator, like [azurite](https://github.com/azure/azurite). See [AzureFileSystem](https://arrow.apache.org/docs/python/filesystems.html#azure-storage-file-system) for reference                |
 | adls.blob-storage-scheme     | https                                                                                       | Either `http` or `https`. Defaults to `https`. Useful for connecting to a local emulator, like [azurite](https://github.com/azure/azurite). See [AzureFileSystem](https://arrow.apache.org/docs/python/filesystems.html#azure-storage-file-system) for reference                                                      |
 | adls.dfs-storage-scheme      | https                                                                                       | Either `http` or `https`. Defaults to `https`. Useful for connecting to a local emulator, like [azurite](https://github.com/azure/azurite). See [AzureFileSystem](https://arrow.apache.org/docs/python/filesystems.html#azure-storage-file-system) for reference                                                          |
+| adls.token                   | eyJ0eXAiOiJKV1QiLCJhbGci...                                                                 | Static access token for authenticating with ADLS. Used for OAuth2 flows.                                                                                                                                                                       |
 
 <!-- markdown-link-check-enable-->
 
@@ -197,6 +199,7 @@ PyIceberg uses [S3FileSystem](https://arrow.apache.org/docs/python/generated/pya
 | s3.secret-access-key | password                   | Configure the static secret access key used to access the FileIO.                                                                                                                                                                                         |
 | s3.session-token     | AQoDYXdzEJr...             | Configure the static session token used to access the FileIO.                                                                                                                                                                                             |
 | s3.force-virtual-addressing   | True                       | Whether to use virtual addressing of buckets. This is set to `True` by default as OSS can only be accessed with virtual hosted style address.                                                                                                                                                                                                        |
+| s3.anonymous                | True                       | Configure whether to use anonymous connection. If False (default), uses key/secret if configured or standard AWS configuration methods. |
 
 <!-- markdown-link-check-enable-->
 
@@ -388,6 +391,7 @@ The RESTCatalog supports pluggable authentication via the `auth` configuration b
 
 - `noop`: No authentication (no Authorization header sent).
 - `basic`: HTTP Basic authentication.
+- `oauth2`: OAuth2 client credentials flow.
 - `custom`: Custom authentication manager (requires `auth.impl`).
 - `google`: Google Authentication support
 
@@ -411,9 +415,10 @@ catalog:
 
 | Property         | Required | Description                                                                                     |
 |------------------|----------|-------------------------------------------------------------------------------------------------|
-| `auth.type`      | Yes      | The authentication type to use (`noop`, `basic`, or `custom`).                       |
+| `auth.type`      | Yes      | The authentication type to use (`noop`, `basic`, `oauth2`, or `custom`).                       |
 | `auth.impl`      | Conditionally | The fully qualified class path for a custom AuthManager. Required if `auth.type` is `custom`. |
 | `auth.basic`     | If type is `basic` | Block containing `username` and `password` for HTTP Basic authentication.           |
+| `auth.oauth2`    | If type is `oauth2` | Block containing OAuth2 configuration (see below).                                 |
 | `auth.custom`    | If type is `custom` | Block containing configuration for the custom AuthManager.                          |
 | `auth.google`    | If type is `google` | Block containing `credentials_path` to a service account file (if using). Will default to using Application Default Credentials. |
 
@@ -436,6 +441,20 @@ auth:
     password: mypass
 ```
 
+OAuth2 Authentication:
+
+```yaml
+auth:
+  type: oauth2
+  oauth2:
+    client_id: my-client-id
+    client_secret: my-client-secret
+    token_url: https://auth.example.com/oauth/token
+    scope: read
+    refresh_margin: 60         # (optional) seconds before expiry to refresh
+    expires_in: 3600           # (optional) fallback if server does not provide
+```
+
 Custom Authentication:
 
 ```yaml
@@ -451,7 +470,7 @@ auth:
 
 - If `auth.type` is `custom`, you **must** specify `auth.impl` with the full class path to your custom AuthManager.
 - If `auth.type` is not `custom`, specifying `auth.impl` is not allowed.
-- The configuration block under each type (e.g., `basic`, `custom`) is passed as keyword arguments to the corresponding AuthManager.
+- The configuration block under each type (e.g., `basic`, `oauth2`, `custom`) is passed as keyword arguments to the corresponding AuthManager.
 
 <!-- markdown-link-check-enable-->
 
