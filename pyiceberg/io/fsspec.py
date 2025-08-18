@@ -48,6 +48,7 @@ from pyiceberg.io import (
     ADLS_CREDENTIAL,
     ADLS_SAS_TOKEN,
     ADLS_TENANT_ID,
+    ADLS_TOKEN,
     AWS_ACCESS_KEY_ID,
     AWS_REGION,
     AWS_SECRET_ACCESS_KEY,
@@ -197,7 +198,11 @@ def _gs(properties: Properties) -> AbstractFileSystem:
 
 
 def _adls(properties: Properties) -> AbstractFileSystem:
+    # https://fsspec.github.io/adlfs/api/
+
     from adlfs import AzureBlobFileSystem
+    from azure.core.credentials import AccessToken
+    from azure.core.credentials_async import AsyncTokenCredential
 
     for key, sas_token in {
         key.replace(f"{ADLS_SAS_TOKEN}.", ""): value for key, value in properties.items() if key.startswith(ADLS_SAS_TOKEN)
@@ -207,9 +212,27 @@ def _adls(properties: Properties) -> AbstractFileSystem:
         if ADLS_SAS_TOKEN not in properties:
             properties[ADLS_SAS_TOKEN] = sas_token
 
+    class StaticTokenCredential(AsyncTokenCredential):
+        _DEFAULT_EXPIRY_SECONDS = 3600
+
+        def __init__(self, token_string: str) -> None:
+            self._token = token_string
+
+        async def get_token(self, *scopes: str, **kwargs: Any) -> AccessToken:
+            import time
+
+            # Set expiration 1 hour from now
+            expires_on = int(time.time()) + self._DEFAULT_EXPIRY_SECONDS
+            return AccessToken(self._token, expires_on)
+
+    if token := properties.get(ADLS_TOKEN):
+        credential = StaticTokenCredential(token)
+    else:
+        credential = properties.get(ADLS_CREDENTIAL)  # type: ignore
+
     return AzureBlobFileSystem(
         connection_string=properties.get(ADLS_CONNECTION_STRING),
-        credential=properties.get(ADLS_CREDENTIAL),
+        credential=credential,
         account_name=properties.get(ADLS_ACCOUNT_NAME),
         account_key=properties.get(ADLS_ACCOUNT_KEY),
         sas_token=properties.get(ADLS_SAS_TOKEN),
