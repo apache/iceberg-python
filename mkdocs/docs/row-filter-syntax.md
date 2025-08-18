@@ -100,6 +100,15 @@ column NOT LIKE 'prefix%'
 !!! important
     The `%` wildcard is only supported at the end of the pattern. Using it in the middle or beginning of the pattern will raise an error.
 
+## BETWEEN
+
+The BETWEEN operator filters a numeric value against an inclusive range, e.g. `a between 1 and 2` is equivalent to `a >= 1 and a <= 2`.
+
+```sql
+column BETWEEN 1 AND 2
+column BETWEEN 1.0 AND 2.0
+```
+
 ## Logical Operations
 
 Combine multiple conditions using logical operators:
