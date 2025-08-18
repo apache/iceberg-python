@@ -736,7 +736,7 @@ class AssertRefSnapshotId(ValidatableTableRequirement):
 
     type: Literal["assert-ref-snapshot-id"] = Field(default="assert-ref-snapshot-id")
     ref: str = Field(...)
-    snapshot_id: Optional[int] = Field(default=None, alias="snapshot-id")
+    snapshot_id: Optional[int] = Field(default=None, alias="snapshot-id", exclude=False)
 
     def validate(self, base_metadata: Optional[TableMetadata]) -> None:
         if base_metadata is None:
@@ -756,6 +756,13 @@ class AssertRefSnapshotId(ValidatableTableRequirement):
         elif self.snapshot_id is not None:
             raise CommitFailedException(f"Requirement failed: branch or tag {self.ref} is missing, expected {self.snapshot_id}")
 
+    # override the override method, allowing None to serialize to `null` instead of being omitted.
+    def model_dump_json(
+        self, exclude_none: bool = False, exclude: Optional[Set[str]] = None, by_alias: bool = True, **kwargs: Any
+    ) -> str:
+        return super().model_dump_json(
+            exclude_none=exclude_none, exclude=self._exclude_private_properties(exclude), by_alias=by_alias, **kwargs
+        )
 
 class AssertLastAssignedFieldId(ValidatableTableRequirement):
     """The table's last assigned column id must match the requirement's `last-assigned-field-id`."""

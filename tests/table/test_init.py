@@ -1039,6 +1039,11 @@ def test_assert_ref_snapshot_id(table_v2: Table) -> None:
     ):
         AssertRefSnapshotId(ref="test", snapshot_id=3055729675574597004).validate(base_metadata)
 
+    expected_json = """{"type":"assert-ref-snapshot-id","ref":"main","snapshot-id":null}"""
+    assert_json = AssertRefSnapshotId(ref="main").model_dump_json()
+    print(assert_json)
+    assert assert_json == expected_json
+
 
 def test_assert_last_assigned_field_id(table_v2: Table) -> None:
     base_metadata = table_v2.metadata
