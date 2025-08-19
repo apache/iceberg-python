@@ -48,7 +48,7 @@ from pyiceberg.table.update import (
     UpdatesAndRequirements,
     UpdateTableMetadata,
 )
-from pyiceberg.typedef import L
+from pyiceberg.typedef import L, TableVersion
 from pyiceberg.types import IcebergType, ListType, MapType, NestedField, PrimitiveType, StructType
 
 if TYPE_CHECKING:
@@ -142,11 +142,16 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         self._case_sensitive = case_sensitive
         return self
 
-    def union_by_name(self, new_schema: Union[Schema, "pa.Schema"]) -> UpdateSchema:
+    def union_by_name(
+        # TODO: Move TableProperties.DEFAULT_FORMAT_VERSION to separate file and set that as format_version default.
+        self,
+        new_schema: Union[Schema, "pa.Schema"],
+        format_version: TableVersion = 2,
+    ) -> UpdateSchema:
         from pyiceberg.catalog import Catalog
 
         visit_with_partner(
-            Catalog._convert_schema_if_needed(new_schema),
+            Catalog._convert_schema_if_needed(new_schema, format_version=format_version),
             -1,
             _UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),
             # type: ignore
