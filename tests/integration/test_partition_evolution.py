@@ -72,10 +72,6 @@ def _create_table_with_schema(
     except NoSuchTableError:
         pass
 
-    if partition_spec:
-        return catalog.create_table(
-            identifier=tbl_name, schema=schema, partition_spec=partition_spec, properties={"format-version": format_version}
-        )
     return catalog.create_table(
         identifier=tbl_name, schema=schema, partition_spec=partition_spec, properties={"format-version": format_version}
     )
