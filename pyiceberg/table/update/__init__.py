@@ -21,7 +21,7 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
 from functools import singledispatch
-from typing import TYPE_CHECKING, Annotated, Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Annotated, Any, Dict, Generic, List, Literal, Optional, Set, Tuple, TypeVar, Union, cast
 
 from pydantic import Field, field_validator, model_validator
 
@@ -760,8 +760,9 @@ class AssertRefSnapshotId(ValidatableTableRequirement):
     def model_dump_json(
         self, exclude_none: bool = False, exclude: Optional[Set[str]] = None, by_alias: bool = True, **kwargs: Any
     ) -> str:
-        # `snapshot-id` is required in json response, even if null 
+        # `snapshot-id` is required in json response, even if null
         return super().model_dump_json(exclude_none=False)
+
 
 class AssertLastAssignedFieldId(ValidatableTableRequirement):
     """The table's last assigned column id must match the requirement's `last-assigned-field-id`."""
