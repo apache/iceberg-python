@@ -109,7 +109,7 @@ mypy-boto3-dynamodb = ">=1.28.18"
 [tool.poetry.group.docs.dependencies]
 # for mkdocs
 mkdocs = "1.6.1"
-griffe = "1.11.1"
+griffe = "1.12.1"
 jinja2 = "3.1.6"
 mkdocstrings = "0.30.0"
 mkdocstrings-python = "1.16.12"
