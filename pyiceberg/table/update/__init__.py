@@ -760,9 +760,8 @@ class AssertRefSnapshotId(ValidatableTableRequirement):
     def model_dump_json(
         self, exclude_none: bool = False, exclude: Optional[Set[str]] = None, by_alias: bool = True, **kwargs: Any
     ) -> str:
-        return super().model_dump_json(
-            exclude_none=exclude_none, exclude=self._exclude_private_properties(exclude), by_alias=by_alias, **kwargs
-        )
+        # `snapshot-id` is required in json response, even if null 
+        return super().model_dump_json(exclude_none=False)
 
 class AssertLastAssignedFieldId(ValidatableTableRequirement):
     """The table's last assigned column id must match the requirement's `last-assigned-field-id`."""
