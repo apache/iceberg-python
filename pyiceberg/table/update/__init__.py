@@ -49,7 +49,6 @@ from pyiceberg.types import (
     transform_dict_value_to_str,
 )
 from pyiceberg.utils.datetime import datetime_to_millis
-from pyiceberg.utils.deprecated import deprecation_notice
 from pyiceberg.utils.properties import property_as_int
 
 if TYPE_CHECKING:
@@ -92,16 +91,6 @@ class UpgradeFormatVersionUpdate(IcebergBaseModel):
 class AddSchemaUpdate(IcebergBaseModel):
     action: Literal["add-schema"] = Field(default="add-schema")
     schema_: Schema = Field(alias="schema")
-    # This field is required: https://github.com/apache/iceberg/pull/7445
-    last_column_id: Optional[int] = Field(
-        alias="last-column-id",
-        default=None,
-        deprecated=deprecation_notice(
-            deprecated_in="0.9.0",
-            removed_in="0.10.0",
-            help_message="last-field-id is handled internally, and should not be part of the update.",
-        ),
-    )
 
 
 class SetCurrentSchemaUpdate(IcebergBaseModel):
