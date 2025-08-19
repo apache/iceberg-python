@@ -80,8 +80,6 @@ from pyiceberg.utils.properties import get_first_property_value, get_header_prop
 if TYPE_CHECKING:
     import pyarrow as pa
 
-ICEBERG_REST_SPEC_VERSION = "0.14.1"
-
 
 class Endpoints:
     get_config: str = "config"
@@ -485,7 +483,6 @@ class RestCatalog(Catalog):
         header_properties = get_header_properties(self.properties)
         session.headers.update(header_properties)
         session.headers["Content-type"] = "application/json"
-        session.headers["X-Client-Version"] = ICEBERG_REST_SPEC_VERSION
         session.headers["User-Agent"] = f"PyIceberg/{__version__}"
         session.headers.setdefault("X-Iceberg-Access-Delegation", ACCESS_DELEGATION_DEFAULT)
 
