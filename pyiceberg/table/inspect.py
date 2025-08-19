@@ -330,9 +330,8 @@ class InspectTable:
             else:
                 raise ValueError(f"Unknown DataFileContent ({file.content})")
 
-        partitions_map: Dict[Tuple[str, Any], Any] = {}
-        snapshot = self._get_snapshot(snapshot_id)
-        for manifest in snapshot.manifests(self.tbl.io):
+        def process_manifest(manifest: ManifestFile) -> Dict[Tuple[str, Any], Any]:
+            local_partitions_map: Dict[Tuple[str, Any], Any] = {}
             for entry in manifest.fetch_manifest_entry(io=self.tbl.io):
                 partition = entry.data_file.partition
                 partition_record_dict = {
@@ -340,7 +339,33 @@ class InspectTable:
                     for pos, field in enumerate(self.tbl.metadata.specs()[manifest.partition_spec_id].fields)
                 }
                 entry_snapshot = self.tbl.snapshot_by_id(entry.snapshot_id) if entry.snapshot_id is not None else None
-                update_partitions_map(partitions_map, entry.data_file, partition_record_dict, entry_snapshot)
+                update_partitions_map(local_partitions_map, entry.data_file, partition_record_dict, entry_snapshot)
+            return local_partitions_map
+
+        snapshot = self._get_snapshot(snapshot_id)
+        executor = ExecutorFactory.get_or_create()
+        local_partitions_maps = list(executor.map(process_manifest, snapshot.manifests(self.tbl.io)))
+
+        partitions_map: Dict[Tuple[str, Any], Any] = {}
+        for local_map in local_partitions_maps:
+            for partition_record_key, partition_row in local_map.items():
+                if partition_record_key not in partitions_map:
+                    partitions_map[partition_record_key] = partition_row
+                else:
+                    existing = partitions_map[partition_record_key]
+                    existing["record_count"] += partition_row["record_count"]
+                    existing["file_count"] += partition_row["file_count"]
+                    existing["total_data_file_size_in_bytes"] += partition_row["total_data_file_size_in_bytes"]
+                    existing["position_delete_record_count"] += partition_row["position_delete_record_count"]
+                    existing["position_delete_file_count"] += partition_row["position_delete_file_count"]
+                    existing["equality_delete_record_count"] += partition_row["equality_delete_record_count"]
+                    existing["equality_delete_file_count"] += partition_row["equality_delete_file_count"]
+
+                    if partition_row["last_updated_at"] and (
+                        not existing["last_updated_at"] or partition_row["last_updated_at"] > existing["last_updated_at"]
+                    ):
+                        existing["last_updated_at"] = partition_row["last_updated_at"]
+                        existing["last_updated_snapshot_id"] = partition_row["last_updated_snapshot_id"]
 
         return pa.Table.from_pylist(
             partitions_map.values(),
