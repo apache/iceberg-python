@@ -3352,14 +3352,14 @@ typing-extensions = {version = ">=4.1.0", markers = "python_version < \"3.11\""}
 
 [[package]]
 name = "mypy-boto3-dynamodb"
-version = "1.40.0"
-description = "Type annotations for boto3 DynamoDB 1.40.0 service generated with mypy-boto3-builder 8.11.0"
+version = "1.40.10"
+description = "Type annotations for boto3 DynamoDB 1.40.10 service generated with mypy-boto3-builder 8.11.0"
 optional = false
 python-versions = ">=3.8"
 groups = ["dev"]
 files = [
-    {file = "mypy_boto3_dynamodb-1.40.0-py3-none-any.whl", hash = "sha256:b7b0c02e58d1c2323378a9c648c39c68bef867cf7da2721ea257e1c6aaa3d229"},
-    {file = "mypy_boto3_dynamodb-1.40.0.tar.gz", hash = "sha256:97f65006a1706f7cbdf53ad1c3a9914e10b53754194db4ad12004eca7c376b4e"},
+    {file = "mypy_boto3_dynamodb-1.40.10-py3-none-any.whl", hash = "sha256:3af4780754ae4de7182940263b62a0d3a66f28ac5aae8b95e92b24e9dbeae476"},
+    {file = "mypy_boto3_dynamodb-1.40.10.tar.gz", hash = "sha256:ea600c590e5a1328be4de27d9e8106e12c7928a36622e88118af5062fff123cb"},
 ]
 
 [package.dependencies]
