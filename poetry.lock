@@ -1236,26 +1236,26 @@ files = [
 
 [[package]]
 name = "daft"
-version = "0.5.18"
+version = "0.5.19"
 description = "Distributed Dataframes for Multimodal Data"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
 markers = "extra == \"daft\""
 files = [
-    {file = "daft-0.5.18-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:13d52a0416b178ef860e66a0bc437b9ca386e9918846e94d759fc785c9a32d8f"},
-    {file = "daft-0.5.18-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:f4e27c1b3c4b85bcf4e9bbae1de3165680ca7b8d47dd3ed78fc93d116d53be21"},
-    {file = "daft-0.5.18-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:f948990300f3d88ea505af49a2dc70d60720d510c5f28a05f88469ed6969efcd"},
-    {file = "daft-0.5.18-cp39-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:7b6d78fc45af586dcbcbe2734b4fb628d47604b56f1a0e9be606fa63166a0ce4"},
-    {file = "daft-0.5.18-cp39-abi3-win_amd64.whl", hash = "sha256:46657067776be7058b59b870faed3468e842f07a1dfb1901485edbcf7ac68cf3"},
-    {file = "daft-0.5.18.tar.gz", hash = "sha256:c903847583700dd98f37a914029f88ed7915e3aa65f2b97fea832293e5814306"},
+    {file = "daft-0.5.19-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:395186cae3f4c704deec6d0dae39f343f8b45c94a8b18f071e883ee1bab0ec87"},
+    {file = "daft-0.5.19-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:cf66966e583cf92052f04f30bfbb1c80202b9c2a997901f56e2007e15cd7f52a"},
+    {file = "daft-0.5.19-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:05761c57c6a1a4b47b0c797938ee0bc71b88f5a379c7120acf009b8fc3f5c32d"},
+    {file = "daft-0.5.19-cp39-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:2758424cc474097becaf07ca509fa1d84043ab0e07766a1620ca3551235a3289"},
+    {file = "daft-0.5.19-cp39-abi3-win_amd64.whl", hash = "sha256:d6e6a30ea1c7351eb7844d7de3c902624019ab8d0afe0061cbefb4b538452609"},
+    {file = "daft-0.5.19.tar.gz", hash = "sha256:1abff3cb1c9a01d7324e95a7748ceb96093c4e3d6fa6a0a6f4b4b014a47e6ab4"},
 ]
 
 [package.dependencies]
 fsspec = "*"
 pyarrow = ">=8.0.0"
 tqdm = "*"
-typing-extensions = {version = ">=4.0.0", markers = "python_full_version < \"3.10.0\""}
+typing-extensions = ">=4.0.0"
 
 [package.extras]
 all = ["daft[aws,azure,deltalake,gcp,iceberg,numpy,pandas,ray,spark,sql,unity]"]
