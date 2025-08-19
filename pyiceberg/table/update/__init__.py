@@ -736,7 +736,7 @@ class AssertRefSnapshotId(ValidatableTableRequirement):
 
     type: Literal["assert-ref-snapshot-id"] = Field(default="assert-ref-snapshot-id")
     ref: str = Field(...)
-    snapshot_id: Optional[int] = Field(default=None, alias="snapshot-id", exclude=False)
+    snapshot_id: Optional[int] = Field(default=None, alias="snapshot-id")
 
     def validate(self, base_metadata: Optional[TableMetadata]) -> None:
         if base_metadata is None:
