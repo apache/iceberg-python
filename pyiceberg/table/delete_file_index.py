@@ -418,7 +418,10 @@ class DeleteFileIndex:
             if delete_file.file_format == FileFormat.PUFFIN:
                 sequence_number = manifest_entry.sequence_number or 0
                 path = delete_file.file_path
-                self.dv[path] = (delete_file, sequence_number)
+                if path not in self.dv:
+                    self.dv[path] = (delete_file, sequence_number)
+                else:
+                    raise ValueError(f"Can't index multiple DVs for {path}: {self.dv[path]} and {(delete_file, sequence_number)}")
             else:
                 pos_wrapper = PositionalDeleteFileWrapper(manifest_entry)
 
