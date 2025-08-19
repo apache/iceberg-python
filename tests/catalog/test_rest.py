@@ -1122,7 +1122,6 @@ def test_create_staged_table_200(
                     "schema-id": 0,
                     "identifier-field-ids": [],
                 },
-                "last-column-id": 2,
             },
             {"action": "set-current-schema", "schema-id": -1},
             {"action": "add-spec", "spec": {"spec-id": 0, "fields": []}},

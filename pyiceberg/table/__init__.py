@@ -957,7 +957,7 @@ class CreateTableTransaction(Transaction):
 
         schema: Schema = table_metadata.schema()
         self._updates += (
-            AddSchemaUpdate(schema_=schema, last_column_id=schema.highest_field_id),
+            AddSchemaUpdate(schema_=schema),
             SetCurrentSchemaUpdate(schema_id=-1),
         )
 
