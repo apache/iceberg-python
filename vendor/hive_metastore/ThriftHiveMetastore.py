@@ -52,7 +52,6 @@ class Iface(fb303.FacebookService.Iface):
          - key
 
         """
-        pass
 
     def setMetaConf(self, key, value):
         """
@@ -61,7 +60,6 @@ class Iface(fb303.FacebookService.Iface):
          - value
 
         """
-        pass
 
     def create_catalog(self, catalog):
         """
@@ -69,7 +67,6 @@ class Iface(fb303.FacebookService.Iface):
          - catalog
 
         """
-        pass
 
     def alter_catalog(self, rqst):
         """
@@ -77,7 +74,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def get_catalog(self, catName):
         """
@@ -85,7 +81,6 @@ class Iface(fb303.FacebookService.Iface):
          - catName
 
         """
-        pass
 
     def get_catalogs(self):
         pass
@@ -96,7 +91,6 @@ class Iface(fb303.FacebookService.Iface):
          - catName
 
         """
-        pass
 
     def create_database(self, database):
         """
@@ -104,7 +98,6 @@ class Iface(fb303.FacebookService.Iface):
          - database
 
         """
-        pass
 
     def get_database(self, name):
         """
@@ -112,7 +105,6 @@ class Iface(fb303.FacebookService.Iface):
          - name
 
         """
-        pass
 
     def get_database_req(self, request):
         """
@@ -120,7 +112,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def drop_database(self, name, deleteData, cascade):
         """
@@ -130,7 +121,6 @@ class Iface(fb303.FacebookService.Iface):
          - cascade
 
         """
-        pass
 
     def drop_database_req(self, req):
         """
@@ -138,7 +128,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def get_databases(self, pattern):
         """
@@ -146,7 +135,6 @@ class Iface(fb303.FacebookService.Iface):
          - pattern
 
         """
-        pass
 
     def get_all_databases(self):
         pass
@@ -158,7 +146,6 @@ class Iface(fb303.FacebookService.Iface):
          - db
 
         """
-        pass
 
     def create_dataconnector(self, connector):
         """
@@ -166,7 +153,6 @@ class Iface(fb303.FacebookService.Iface):
          - connector
 
         """
-        pass
 
     def get_dataconnector_req(self, request):
         """
@@ -174,7 +160,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def drop_dataconnector(self, name, ifNotExists, checkReferences):
         """
@@ -184,7 +169,6 @@ class Iface(fb303.FacebookService.Iface):
          - checkReferences
 
         """
-        pass
 
     def get_dataconnectors(self):
         pass
@@ -196,7 +180,6 @@ class Iface(fb303.FacebookService.Iface):
          - connector
 
         """
-        pass
 
     def get_type(self, name):
         """
@@ -204,7 +187,6 @@ class Iface(fb303.FacebookService.Iface):
          - name
 
         """
-        pass
 
     def create_type(self, type):
         """
@@ -212,7 +194,6 @@ class Iface(fb303.FacebookService.Iface):
          - type
 
         """
-        pass
 
     def drop_type(self, type):
         """
@@ -220,7 +201,6 @@ class Iface(fb303.FacebookService.Iface):
          - type
 
         """
-        pass
 
     def get_type_all(self, name):
         """
@@ -228,7 +208,6 @@ class Iface(fb303.FacebookService.Iface):
          - name
 
         """
-        pass
 
     def get_fields(self, db_name, table_name):
         """
@@ -237,7 +216,6 @@ class Iface(fb303.FacebookService.Iface):
          - table_name
 
         """
-        pass
 
     def get_fields_with_environment_context(self, db_name, table_name, environment_context):
         """
@@ -247,7 +225,6 @@ class Iface(fb303.FacebookService.Iface):
          - environment_context
 
         """
-        pass
 
     def get_fields_req(self, req):
         """
@@ -255,7 +232,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def get_schema(self, db_name, table_name):
         """
@@ -264,7 +240,6 @@ class Iface(fb303.FacebookService.Iface):
          - table_name
 
         """
-        pass
 
     def get_schema_with_environment_context(self, db_name, table_name, environment_context):
         """
@@ -274,7 +249,6 @@ class Iface(fb303.FacebookService.Iface):
          - environment_context
 
         """
-        pass
 
     def get_schema_req(self, req):
         """
@@ -282,7 +256,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def create_table(self, tbl):
         """
@@ -290,7 +263,6 @@ class Iface(fb303.FacebookService.Iface):
          - tbl
 
         """
-        pass
 
     def create_table_with_environment_context(self, tbl, environment_context):
         """
@@ -299,7 +271,6 @@ class Iface(fb303.FacebookService.Iface):
          - environment_context
 
         """
-        pass
 
     def create_table_with_constraints(
         self, tbl, primaryKeys, foreignKeys, uniqueConstraints, notNullConstraints, defaultConstraints, checkConstraints
@@ -315,7 +286,6 @@ class Iface(fb303.FacebookService.Iface):
          - checkConstraints
 
         """
-        pass
 
     def create_table_req(self, request):
         """
@@ -323,7 +293,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def drop_constraint(self, req):
         """
@@ -331,7 +300,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def add_primary_key(self, req):
         """
@@ -339,7 +307,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def add_foreign_key(self, req):
         """
@@ -347,7 +314,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def add_unique_constraint(self, req):
         """
@@ -355,7 +321,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def add_not_null_constraint(self, req):
         """
@@ -363,7 +328,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def add_default_constraint(self, req):
         """
@@ -371,7 +335,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def add_check_constraint(self, req):
         """
@@ -379,7 +342,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def translate_table_dryrun(self, request):
         """
@@ -387,7 +349,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def drop_table(self, dbname, name, deleteData):
         """
@@ -397,7 +358,6 @@ class Iface(fb303.FacebookService.Iface):
          - deleteData
 
         """
-        pass
 
     def drop_table_with_environment_context(self, dbname, name, deleteData, environment_context):
         """
@@ -408,7 +368,6 @@ class Iface(fb303.FacebookService.Iface):
          - environment_context
 
         """
-        pass
 
     def truncate_table(self, dbName, tableName, partNames):
         """
@@ -418,7 +377,6 @@ class Iface(fb303.FacebookService.Iface):
          - partNames
 
         """
-        pass
 
     def truncate_table_req(self, req):
         """
@@ -426,7 +384,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def get_tables(self, db_name, pattern):
         """
@@ -435,7 +392,6 @@ class Iface(fb303.FacebookService.Iface):
          - pattern
 
         """
-        pass
 
     def get_tables_by_type(self, db_name, pattern, tableType):
         """
@@ -445,7 +401,6 @@ class Iface(fb303.FacebookService.Iface):
          - tableType
 
         """
-        pass
 
     def get_all_materialized_view_objects_for_rewriting(self):
         pass
@@ -456,7 +411,6 @@ class Iface(fb303.FacebookService.Iface):
          - db_name
 
         """
-        pass
 
     def get_table_meta(self, db_patterns, tbl_patterns, tbl_types):
         """
@@ -466,7 +420,6 @@ class Iface(fb303.FacebookService.Iface):
          - tbl_types
 
         """
-        pass
 
     def get_all_tables(self, db_name):
         """
@@ -474,7 +427,6 @@ class Iface(fb303.FacebookService.Iface):
          - db_name
 
         """
-        pass
 
     def get_table(self, dbname, tbl_name):
         """
@@ -483,7 +435,6 @@ class Iface(fb303.FacebookService.Iface):
          - tbl_name
 
         """
-        pass
 
     def get_table_objects_by_name(self, dbname, tbl_names):
         """
@@ -492,7 +443,6 @@ class Iface(fb303.FacebookService.Iface):
          - tbl_names
 
         """
-        pass
 
     def get_tables_ext(self, req):
         """
@@ -500,7 +450,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def get_table_req(self, req):
         """
@@ -508,7 +457,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def get_table_objects_by_name_req(self, req):
         """
@@ -516,7 +464,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def get_materialization_invalidation_info(self, creation_metadata, validTxnList):
         """
@@ -525,7 +472,6 @@ class Iface(fb303.FacebookService.Iface):
          - validTxnList
 
         """
-        pass
 
     def update_creation_metadata(self, catName, dbname, tbl_name, creation_metadata):
         """
@@ -536,7 +482,6 @@ class Iface(fb303.FacebookService.Iface):
          - creation_metadata
 
         """
-        pass
 
     def get_table_names_by_filter(self, dbname, filter, max_tables):
         """
@@ -546,7 +491,6 @@ class Iface(fb303.FacebookService.Iface):
          - max_tables
 
         """
-        pass
 
     def alter_table(self, dbname, tbl_name, new_tbl):
         """
@@ -556,7 +500,6 @@ class Iface(fb303.FacebookService.Iface):
          - new_tbl
 
         """
-        pass
 
     def alter_table_with_environment_context(self, dbname, tbl_name, new_tbl, environment_context):
         """
@@ -567,7 +510,6 @@ class Iface(fb303.FacebookService.Iface):
          - environment_context
 
         """
-        pass
 
     def alter_table_with_cascade(self, dbname, tbl_name, new_tbl, cascade):
         """
@@ -578,7 +520,6 @@ class Iface(fb303.FacebookService.Iface):
          - cascade
 
         """
-        pass
 
     def alter_table_req(self, req):
         """
@@ -586,7 +527,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def add_partition(self, new_part):
         """
@@ -594,7 +534,6 @@ class Iface(fb303.FacebookService.Iface):
          - new_part
 
         """
-        pass
 
     def add_partition_with_environment_context(self, new_part, environment_context):
         """
@@ -603,7 +542,6 @@ class Iface(fb303.FacebookService.Iface):
          - environment_context
 
         """
-        pass
 
     def add_partitions(self, new_parts):
         """
@@ -611,7 +549,6 @@ class Iface(fb303.FacebookService.Iface):
          - new_parts
 
         """
-        pass
 
     def add_partitions_pspec(self, new_parts):
         """
@@ -619,7 +556,6 @@ class Iface(fb303.FacebookService.Iface):
          - new_parts
 
         """
-        pass
 
     def append_partition(self, db_name, tbl_name, part_vals):
         """
@@ -629,7 +565,6 @@ class Iface(fb303.FacebookService.Iface):
          - part_vals
 
         """
-        pass
 
     def add_partitions_req(self, request):
         """
@@ -637,7 +572,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def append_partition_with_environment_context(self, db_name, tbl_name, part_vals, environment_context):
         """
@@ -648,7 +582,6 @@ class Iface(fb303.FacebookService.Iface):
          - environment_context
 
         """
-        pass
 
     def append_partition_by_name(self, db_name, tbl_name, part_name):
         """
@@ -658,7 +591,6 @@ class Iface(fb303.FacebookService.Iface):
          - part_name
 
         """
-        pass
 
     def append_partition_by_name_with_environment_context(self, db_name, tbl_name, part_name, environment_context):
         """
@@ -669,7 +601,6 @@ class Iface(fb303.FacebookService.Iface):
          - environment_context
 
         """
-        pass
 
     def drop_partition(self, db_name, tbl_name, part_vals, deleteData):
         """
@@ -680,7 +611,6 @@ class Iface(fb303.FacebookService.Iface):
          - deleteData
 
         """
-        pass
 
     def drop_partition_with_environment_context(self, db_name, tbl_name, part_vals, deleteData, environment_context):
         """
@@ -692,7 +622,6 @@ class Iface(fb303.FacebookService.Iface):
          - environment_context
 
         """
-        pass
 
     def drop_partition_by_name(self, db_name, tbl_name, part_name, deleteData):
         """
@@ -703,7 +632,6 @@ class Iface(fb303.FacebookService.Iface):
          - deleteData
 
         """
-        pass
 
     def drop_partition_by_name_with_environment_context(self, db_name, tbl_name, part_name, deleteData, environment_context):
         """
@@ -715,7 +643,6 @@ class Iface(fb303.FacebookService.Iface):
          - environment_context
 
         """
-        pass
 
     def drop_partitions_req(self, req):
         """
@@ -723,7 +650,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def get_partition(self, db_name, tbl_name, part_vals):
         """
@@ -733,7 +659,6 @@ class Iface(fb303.FacebookService.Iface):
          - part_vals
 
         """
-        pass
 
     def get_partition_req(self, req):
         """
@@ -741,7 +666,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def exchange_partition(self, partitionSpecs, source_db, source_table_name, dest_db, dest_table_name):
         """
@@ -753,7 +677,6 @@ class Iface(fb303.FacebookService.Iface):
          - dest_table_name
 
         """
-        pass
 
     def exchange_partitions(self, partitionSpecs, source_db, source_table_name, dest_db, dest_table_name):
         """
@@ -765,7 +688,6 @@ class Iface(fb303.FacebookService.Iface):
          - dest_table_name
 
         """
-        pass
 
     def get_partition_with_auth(self, db_name, tbl_name, part_vals, user_name, group_names):
         """
@@ -777,7 +699,6 @@ class Iface(fb303.FacebookService.Iface):
          - group_names
 
         """
-        pass
 
     def get_partition_by_name(self, db_name, tbl_name, part_name):
         """
@@ -787,7 +708,6 @@ class Iface(fb303.FacebookService.Iface):
          - part_name
 
         """
-        pass
 
     def get_partitions(self, db_name, tbl_name, max_parts):
         """
@@ -797,7 +717,6 @@ class Iface(fb303.FacebookService.Iface):
          - max_parts
 
         """
-        pass
 
     def get_partitions_req(self, req):
         """
@@ -805,7 +724,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def get_partitions_with_auth(self, db_name, tbl_name, max_parts, user_name, group_names):
         """
@@ -817,7 +735,6 @@ class Iface(fb303.FacebookService.Iface):
          - group_names
 
         """
-        pass
 
     def get_partitions_pspec(self, db_name, tbl_name, max_parts):
         """
@@ -827,7 +744,6 @@ class Iface(fb303.FacebookService.Iface):
          - max_parts
 
         """
-        pass
 
     def get_partition_names(self, db_name, tbl_name, max_parts):
         """
@@ -837,7 +753,6 @@ class Iface(fb303.FacebookService.Iface):
          - max_parts
 
         """
-        pass
 
     def get_partition_values(self, request):
         """
@@ -845,7 +760,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def get_partitions_ps(self, db_name, tbl_name, part_vals, max_parts):
         """
@@ -856,7 +770,6 @@ class Iface(fb303.FacebookService.Iface):
          - max_parts
 
         """
-        pass
 
     def get_partitions_ps_with_auth(self, db_name, tbl_name, part_vals, max_parts, user_name, group_names):
         """
@@ -869,7 +782,6 @@ class Iface(fb303.FacebookService.Iface):
          - group_names
 
         """
-        pass
 
     def get_partitions_ps_with_auth_req(self, req):
         """
@@ -877,7 +789,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def get_partition_names_ps(self, db_name, tbl_name, part_vals, max_parts):
         """
@@ -888,7 +799,6 @@ class Iface(fb303.FacebookService.Iface):
          - max_parts
 
         """
-        pass
 
     def get_partition_names_ps_req(self, req):
         """
@@ -896,7 +806,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def get_partition_names_req(self, req):
         """
@@ -904,7 +813,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def get_partitions_by_filter(self, db_name, tbl_name, filter, max_parts):
         """
@@ -915,7 +823,6 @@ class Iface(fb303.FacebookService.Iface):
          - max_parts
 
         """
-        pass
 
     def get_part_specs_by_filter(self, db_name, tbl_name, filter, max_parts):
         """
@@ -926,7 +833,6 @@ class Iface(fb303.FacebookService.Iface):
          - max_parts
 
         """
-        pass
 
     def get_partitions_by_expr(self, req):
         """
@@ -934,7 +840,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def get_partitions_spec_by_expr(self, req):
         """
@@ -942,7 +847,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def get_num_partitions_by_filter(self, db_name, tbl_name, filter):
         """
@@ -952,7 +856,6 @@ class Iface(fb303.FacebookService.Iface):
          - filter
 
         """
-        pass
 
     def get_partitions_by_names(self, db_name, tbl_name, names):
         """
@@ -962,7 +865,6 @@ class Iface(fb303.FacebookService.Iface):
          - names
 
         """
-        pass
 
     def get_partitions_by_names_req(self, req):
         """
@@ -970,7 +872,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def alter_partition(self, db_name, tbl_name, new_part):
         """
@@ -980,7 +881,6 @@ class Iface(fb303.FacebookService.Iface):
          - new_part
 
         """
-        pass
 
     def alter_partitions(self, db_name, tbl_name, new_parts):
         """
@@ -990,7 +890,6 @@ class Iface(fb303.FacebookService.Iface):
          - new_parts
 
         """
-        pass
 
     def alter_partitions_with_environment_context(self, db_name, tbl_name, new_parts, environment_context):
         """
@@ -1001,7 +900,6 @@ class Iface(fb303.FacebookService.Iface):
          - environment_context
 
         """
-        pass
 
     def alter_partitions_req(self, req):
         """
@@ -1009,7 +907,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def alter_partition_with_environment_context(self, db_name, tbl_name, new_part, environment_context):
         """
@@ -1020,7 +917,6 @@ class Iface(fb303.FacebookService.Iface):
          - environment_context
 
         """
-        pass
 
     def rename_partition(self, db_name, tbl_name, part_vals, new_part):
         """
@@ -1031,7 +927,6 @@ class Iface(fb303.FacebookService.Iface):
          - new_part
 
         """
-        pass
 
     def rename_partition_req(self, req):
         """
@@ -1039,7 +934,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def partition_name_has_valid_characters(self, part_vals, throw_exception):
         """
@@ -1048,7 +942,6 @@ class Iface(fb303.FacebookService.Iface):
          - throw_exception
 
         """
-        pass
 
     def get_config_value(self, name, defaultValue):
         """
@@ -1057,7 +950,6 @@ class Iface(fb303.FacebookService.Iface):
          - defaultValue
 
         """
-        pass
 
     def partition_name_to_vals(self, part_name):
         """
@@ -1065,7 +957,6 @@ class Iface(fb303.FacebookService.Iface):
          - part_name
 
         """
-        pass
 
     def partition_name_to_spec(self, part_name):
         """
@@ -1073,7 +964,6 @@ class Iface(fb303.FacebookService.Iface):
          - part_name
 
         """
-        pass
 
     def markPartitionForEvent(self, db_name, tbl_name, part_vals, eventType):
         """
@@ -1084,7 +974,6 @@ class Iface(fb303.FacebookService.Iface):
          - eventType
 
         """
-        pass
 
     def isPartitionMarkedForEvent(self, db_name, tbl_name, part_vals, eventType):
         """
@@ -1095,7 +984,6 @@ class Iface(fb303.FacebookService.Iface):
          - eventType
 
         """
-        pass
 
     def get_primary_keys(self, request):
         """
@@ -1103,7 +991,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def get_foreign_keys(self, request):
         """
@@ -1111,7 +998,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def get_unique_constraints(self, request):
         """
@@ -1119,7 +1005,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def get_not_null_constraints(self, request):
         """
@@ -1127,7 +1012,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def get_default_constraints(self, request):
         """
@@ -1135,7 +1019,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def get_check_constraints(self, request):
         """
@@ -1143,7 +1026,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def get_all_table_constraints(self, request):
         """
@@ -1151,7 +1033,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def update_table_column_statistics(self, stats_obj):
         """
@@ -1159,7 +1040,6 @@ class Iface(fb303.FacebookService.Iface):
          - stats_obj
 
         """
-        pass
 
     def update_partition_column_statistics(self, stats_obj):
         """
@@ -1167,7 +1047,6 @@ class Iface(fb303.FacebookService.Iface):
          - stats_obj
 
         """
-        pass
 
     def update_table_column_statistics_req(self, req):
         """
@@ -1175,7 +1054,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def update_partition_column_statistics_req(self, req):
         """
@@ -1183,7 +1061,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def update_transaction_statistics(self, req):
         """
@@ -1191,7 +1068,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def get_table_column_statistics(self, db_name, tbl_name, col_name):
         """
@@ -1201,7 +1077,6 @@ class Iface(fb303.FacebookService.Iface):
          - col_name
 
         """
-        pass
 
     def get_partition_column_statistics(self, db_name, tbl_name, part_name, col_name):
         """
@@ -1212,7 +1087,6 @@ class Iface(fb303.FacebookService.Iface):
          - col_name
 
         """
-        pass
 
     def get_table_statistics_req(self, request):
         """
@@ -1220,7 +1094,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def get_partitions_statistics_req(self, request):
         """
@@ -1228,7 +1101,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def get_aggr_stats_for(self, request):
         """
@@ -1236,7 +1108,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def set_aggr_stats_for(self, request):
         """
@@ -1244,7 +1115,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def delete_partition_column_statistics(self, db_name, tbl_name, part_name, col_name, engine):
         """
@@ -1256,7 +1126,6 @@ class Iface(fb303.FacebookService.Iface):
          - engine
 
         """
-        pass
 
     def delete_table_column_statistics(self, db_name, tbl_name, col_name, engine):
         """
@@ -1267,7 +1136,6 @@ class Iface(fb303.FacebookService.Iface):
          - engine
 
         """
-        pass
 
     def create_function(self, func):
         """
@@ -1275,7 +1143,6 @@ class Iface(fb303.FacebookService.Iface):
          - func
 
         """
-        pass
 
     def drop_function(self, dbName, funcName):
         """
@@ -1284,7 +1151,6 @@ class Iface(fb303.FacebookService.Iface):
          - funcName
 
         """
-        pass
 
     def alter_function(self, dbName, funcName, newFunc):
         """
@@ -1294,7 +1160,6 @@ class Iface(fb303.FacebookService.Iface):
          - newFunc
 
         """
-        pass
 
     def get_functions(self, dbName, pattern):
         """
@@ -1303,7 +1168,6 @@ class Iface(fb303.FacebookService.Iface):
          - pattern
 
         """
-        pass
 
     def get_function(self, dbName, funcName):
         """
@@ -1312,7 +1176,6 @@ class Iface(fb303.FacebookService.Iface):
          - funcName
 
         """
-        pass
 
     def get_all_functions(self):
         pass
@@ -1323,7 +1186,6 @@ class Iface(fb303.FacebookService.Iface):
          - role
 
         """
-        pass
 
     def drop_role(self, role_name):
         """
@@ -1331,7 +1193,6 @@ class Iface(fb303.FacebookService.Iface):
          - role_name
 
         """
-        pass
 
     def get_role_names(self):
         pass
@@ -1347,7 +1208,6 @@ class Iface(fb303.FacebookService.Iface):
          - grant_option
 
         """
-        pass
 
     def revoke_role(self, role_name, principal_name, principal_type):
         """
@@ -1357,7 +1217,6 @@ class Iface(fb303.FacebookService.Iface):
          - principal_type
 
         """
-        pass
 
     def list_roles(self, principal_name, principal_type):
         """
@@ -1366,7 +1225,6 @@ class Iface(fb303.FacebookService.Iface):
          - principal_type
 
         """
-        pass
 
     def grant_revoke_role(self, request):
         """
@@ -1374,7 +1232,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def get_principals_in_role(self, request):
         """
@@ -1382,7 +1239,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def get_role_grants_for_principal(self, request):
         """
@@ -1390,7 +1246,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def get_privilege_set(self, hiveObject, user_name, group_names):
         """
@@ -1400,7 +1255,6 @@ class Iface(fb303.FacebookService.Iface):
          - group_names
 
         """
-        pass
 
     def list_privileges(self, principal_name, principal_type, hiveObject):
         """
@@ -1410,7 +1264,6 @@ class Iface(fb303.FacebookService.Iface):
          - hiveObject
 
         """
-        pass
 
     def grant_privileges(self, privileges):
         """
@@ -1418,7 +1271,6 @@ class Iface(fb303.FacebookService.Iface):
          - privileges
 
         """
-        pass
 
     def revoke_privileges(self, privileges):
         """
@@ -1426,7 +1278,6 @@ class Iface(fb303.FacebookService.Iface):
          - privileges
 
         """
-        pass
 
     def grant_revoke_privileges(self, request):
         """
@@ -1434,7 +1285,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def refresh_privileges(self, objToRefresh, authorizer, grantRequest):
         """
@@ -1444,7 +1294,6 @@ class Iface(fb303.FacebookService.Iface):
          - grantRequest
 
         """
-        pass
 
     def set_ugi(self, user_name, group_names):
         """
@@ -1453,7 +1302,6 @@ class Iface(fb303.FacebookService.Iface):
          - group_names
 
         """
-        pass
 
     def get_delegation_token(self, token_owner, renewer_kerberos_principal_name):
         """
@@ -1462,7 +1310,6 @@ class Iface(fb303.FacebookService.Iface):
          - renewer_kerberos_principal_name
 
         """
-        pass
 
     def renew_delegation_token(self, token_str_form):
         """
@@ -1470,7 +1317,6 @@ class Iface(fb303.FacebookService.Iface):
          - token_str_form
 
         """
-        pass
 
     def cancel_delegation_token(self, token_str_form):
         """
@@ -1478,7 +1324,6 @@ class Iface(fb303.FacebookService.Iface):
          - token_str_form
 
         """
-        pass
 
     def add_token(self, token_identifier, delegation_token):
         """
@@ -1487,7 +1332,6 @@ class Iface(fb303.FacebookService.Iface):
          - delegation_token
 
         """
-        pass
 
     def remove_token(self, token_identifier):
         """
@@ -1495,7 +1339,6 @@ class Iface(fb303.FacebookService.Iface):
          - token_identifier
 
         """
-        pass
 
     def get_token(self, token_identifier):
         """
@@ -1503,7 +1346,6 @@ class Iface(fb303.FacebookService.Iface):
          - token_identifier
 
         """
-        pass
 
     def get_all_token_identifiers(self):
         pass
@@ -1514,7 +1356,6 @@ class Iface(fb303.FacebookService.Iface):
          - key
 
         """
-        pass
 
     def update_master_key(self, seq_number, key):
         """
@@ -1523,7 +1364,6 @@ class Iface(fb303.FacebookService.Iface):
          - key
 
         """
-        pass
 
     def remove_master_key(self, key_seq):
         """
@@ -1531,7 +1371,6 @@ class Iface(fb303.FacebookService.Iface):
          - key_seq
 
         """
-        pass
 
     def get_master_keys(self):
         pass
@@ -1548,7 +1387,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def abort_txn(self, rqst):
         """
@@ -1556,7 +1394,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def abort_txns(self, rqst):
         """
@@ -1564,7 +1401,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def commit_txn(self, rqst):
         """
@@ -1572,7 +1408,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def get_latest_txnid_in_conflict(self, txnId):
         """
@@ -1580,7 +1415,6 @@ class Iface(fb303.FacebookService.Iface):
          - txnId
 
         """
-        pass
 
     def repl_tbl_writeid_state(self, rqst):
         """
@@ -1588,7 +1422,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def get_valid_write_ids(self, rqst):
         """
@@ -1596,7 +1429,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def allocate_table_write_ids(self, rqst):
         """
@@ -1604,7 +1436,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def get_max_allocated_table_write_id(self, rqst):
         """
@@ -1612,7 +1443,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def seed_write_id(self, rqst):
         """
@@ -1620,7 +1450,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def seed_txn_id(self, rqst):
         """
@@ -1628,7 +1457,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def lock(self, rqst):
         """
@@ -1636,7 +1464,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def check_lock(self, rqst):
         """
@@ -1644,7 +1471,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def unlock(self, rqst):
         """
@@ -1652,7 +1478,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def show_locks(self, rqst):
         """
@@ -1660,7 +1485,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def heartbeat(self, ids):
         """
@@ -1668,7 +1492,6 @@ class Iface(fb303.FacebookService.Iface):
          - ids
 
         """
-        pass
 
     def heartbeat_txn_range(self, txns):
         """
@@ -1676,7 +1499,6 @@ class Iface(fb303.FacebookService.Iface):
          - txns
 
         """
-        pass
 
     def compact(self, rqst):
         """
@@ -1684,7 +1506,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def compact2(self, rqst):
         """
@@ -1692,7 +1513,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def show_compact(self, rqst):
         """
@@ -1700,7 +1520,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def add_dynamic_partitions(self, rqst):
         """
@@ -1708,7 +1527,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def find_next_compact(self, workerId):
         """
@@ -1716,7 +1534,6 @@ class Iface(fb303.FacebookService.Iface):
          - workerId
 
         """
-        pass
 
     def find_next_compact2(self, rqst):
         """
@@ -1724,7 +1541,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def update_compactor_state(self, cr, txn_id):
         """
@@ -1733,7 +1549,6 @@ class Iface(fb303.FacebookService.Iface):
          - txn_id
 
         """
-        pass
 
     def find_columns_with_stats(self, cr):
         """
@@ -1741,7 +1556,6 @@ class Iface(fb303.FacebookService.Iface):
          - cr
 
         """
-        pass
 
     def mark_cleaned(self, cr):
         """
@@ -1749,7 +1563,6 @@ class Iface(fb303.FacebookService.Iface):
          - cr
 
         """
-        pass
 
     def mark_compacted(self, cr):
         """
@@ -1757,7 +1570,6 @@ class Iface(fb303.FacebookService.Iface):
          - cr
 
         """
-        pass
 
     def mark_failed(self, cr):
         """
@@ -1765,7 +1577,6 @@ class Iface(fb303.FacebookService.Iface):
          - cr
 
         """
-        pass
 
     def mark_refused(self, cr):
         """
@@ -1773,7 +1584,6 @@ class Iface(fb303.FacebookService.Iface):
          - cr
 
         """
-        pass
 
     def update_compaction_metrics_data(self, data):
         """
@@ -1781,7 +1591,6 @@ class Iface(fb303.FacebookService.Iface):
          - data
 
         """
-        pass
 
     def remove_compaction_metrics_data(self, request):
         """
@@ -1789,7 +1598,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def set_hadoop_jobid(self, jobId, cq_id):
         """
@@ -1798,7 +1606,6 @@ class Iface(fb303.FacebookService.Iface):
          - cq_id
 
         """
-        pass
 
     def get_latest_committed_compaction_info(self, rqst):
         """
@@ -1806,7 +1613,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def get_next_notification(self, rqst):
         """
@@ -1814,7 +1620,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def get_current_notificationEventId(self):
         pass
@@ -1825,7 +1630,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def fire_listener_event(self, rqst):
         """
@@ -1833,7 +1637,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def flushCache(self):
         pass
@@ -1844,7 +1647,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def add_write_notification_log_in_batch(self, rqst):
         """
@@ -1852,7 +1654,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def cm_recycle(self, request):
         """
@@ -1860,7 +1661,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def get_file_metadata_by_expr(self, req):
         """
@@ -1868,7 +1668,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def get_file_metadata(self, req):
         """
@@ -1876,7 +1675,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def put_file_metadata(self, req):
         """
@@ -1884,7 +1682,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def clear_file_metadata(self, req):
         """
@@ -1892,7 +1689,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def cache_file_metadata(self, req):
         """
@@ -1900,7 +1696,6 @@ class Iface(fb303.FacebookService.Iface):
          - req
 
         """
-        pass
 
     def get_metastore_db_uuid(self):
         pass
@@ -1911,7 +1706,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def get_resource_plan(self, request):
         """
@@ -1919,7 +1713,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def get_active_resource_plan(self, request):
         """
@@ -1927,7 +1720,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def get_all_resource_plans(self, request):
         """
@@ -1935,7 +1727,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def alter_resource_plan(self, request):
         """
@@ -1943,7 +1734,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def validate_resource_plan(self, request):
         """
@@ -1951,7 +1741,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def drop_resource_plan(self, request):
         """
@@ -1959,7 +1748,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def create_wm_trigger(self, request):
         """
@@ -1967,7 +1755,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def alter_wm_trigger(self, request):
         """
@@ -1975,7 +1762,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def drop_wm_trigger(self, request):
         """
@@ -1983,7 +1769,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def get_triggers_for_resourceplan(self, request):
         """
@@ -1991,7 +1776,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def create_wm_pool(self, request):
         """
@@ -1999,7 +1783,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def alter_wm_pool(self, request):
         """
@@ -2007,7 +1790,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def drop_wm_pool(self, request):
         """
@@ -2015,7 +1797,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def create_or_update_wm_mapping(self, request):
         """
@@ -2023,7 +1804,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def drop_wm_mapping(self, request):
         """
@@ -2031,7 +1811,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def create_or_drop_wm_trigger_to_pool_mapping(self, request):
         """
@@ -2039,7 +1818,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def create_ischema(self, schema):
         """
@@ -2047,7 +1825,6 @@ class Iface(fb303.FacebookService.Iface):
          - schema
 
         """
-        pass
 
     def alter_ischema(self, rqst):
         """
@@ -2055,7 +1832,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def get_ischema(self, name):
         """
@@ -2063,7 +1839,6 @@ class Iface(fb303.FacebookService.Iface):
          - name
 
         """
-        pass
 
     def drop_ischema(self, name):
         """
@@ -2071,7 +1846,6 @@ class Iface(fb303.FacebookService.Iface):
          - name
 
         """
-        pass
 
     def add_schema_version(self, schemaVersion):
         """
@@ -2079,7 +1853,6 @@ class Iface(fb303.FacebookService.Iface):
          - schemaVersion
 
         """
-        pass
 
     def get_schema_version(self, schemaVersion):
         """
@@ -2087,7 +1860,6 @@ class Iface(fb303.FacebookService.Iface):
          - schemaVersion
 
         """
-        pass
 
     def get_schema_latest_version(self, schemaName):
         """
@@ -2095,7 +1867,6 @@ class Iface(fb303.FacebookService.Iface):
          - schemaName
 
         """
-        pass
 
     def get_schema_all_versions(self, schemaName):
         """
@@ -2103,7 +1874,6 @@ class Iface(fb303.FacebookService.Iface):
          - schemaName
 
         """
-        pass
 
     def drop_schema_version(self, schemaVersion):
         """
@@ -2111,7 +1881,6 @@ class Iface(fb303.FacebookService.Iface):
          - schemaVersion
 
         """
-        pass
 
     def get_schemas_by_cols(self, rqst):
         """
@@ -2119,7 +1888,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def map_schema_version_to_serde(self, rqst):
         """
@@ -2127,7 +1895,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def set_schema_version_state(self, rqst):
         """
@@ -2135,7 +1902,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def add_serde(self, serde):
         """
@@ -2143,7 +1909,6 @@ class Iface(fb303.FacebookService.Iface):
          - serde
 
         """
-        pass
 
     def get_serde(self, rqst):
         """
@@ -2151,7 +1916,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def get_lock_materialization_rebuild(self, dbName, tableName, txnId):
         """
@@ -2161,7 +1925,6 @@ class Iface(fb303.FacebookService.Iface):
          - txnId
 
         """
-        pass
 
     def heartbeat_lock_materialization_rebuild(self, dbName, tableName, txnId):
         """
@@ -2171,7 +1934,6 @@ class Iface(fb303.FacebookService.Iface):
          - txnId
 
         """
-        pass
 
     def add_runtime_stats(self, stat):
         """
@@ -2179,7 +1941,6 @@ class Iface(fb303.FacebookService.Iface):
          - stat
 
         """
-        pass
 
     def get_runtime_stats(self, rqst):
         """
@@ -2187,7 +1948,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def get_partitions_with_specs(self, request):
         """
@@ -2195,7 +1955,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def scheduled_query_poll(self, request):
         """
@@ -2203,7 +1962,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def scheduled_query_maintenance(self, request):
         """
@@ -2211,7 +1969,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def scheduled_query_progress(self, info):
         """
@@ -2219,7 +1976,6 @@ class Iface(fb303.FacebookService.Iface):
          - info
 
         """
-        pass
 
     def get_scheduled_query(self, scheduleKey):
         """
@@ -2227,7 +1983,6 @@ class Iface(fb303.FacebookService.Iface):
          - scheduleKey
 
         """
-        pass
 
     def add_replication_metrics(self, replicationMetricList):
         """
@@ -2235,7 +1990,6 @@ class Iface(fb303.FacebookService.Iface):
          - replicationMetricList
 
         """
-        pass
 
     def get_replication_metrics(self, rqst):
         """
@@ -2243,7 +1997,6 @@ class Iface(fb303.FacebookService.Iface):
          - rqst
 
         """
-        pass
 
     def get_open_txns_req(self, getOpenTxnsRequest):
         """
@@ -2251,7 +2004,6 @@ class Iface(fb303.FacebookService.Iface):
          - getOpenTxnsRequest
 
         """
-        pass
 
     def create_stored_procedure(self, proc):
         """
@@ -2259,7 +2011,6 @@ class Iface(fb303.FacebookService.Iface):
          - proc
 
         """
-        pass
 
     def get_stored_procedure(self, request):
         """
@@ -2267,7 +2018,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def drop_stored_procedure(self, request):
         """
@@ -2275,7 +2025,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def get_all_stored_procedures(self, request):
         """
@@ -2283,7 +2032,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def find_package(self, request):
         """
@@ -2291,7 +2039,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def add_package(self, request):
         """
@@ -2299,7 +2046,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def get_all_packages(self, request):
         """
@@ -2307,7 +2053,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def drop_package(self, request):
         """
@@ -2315,7 +2060,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
     def get_all_write_event_info(self, request):
         """
@@ -2323,7 +2067,6 @@ class Iface(fb303.FacebookService.Iface):
          - request
 
         """
-        pass
 
 
 class Client(fb303.FacebookService.Client, Iface):
@@ -12201,9 +11944,9 @@ class Processor(fb303.FacebookService.Processor, Iface, TProcessor):
         self._processMap["truncate_table_req"] = Processor.process_truncate_table_req
         self._processMap["get_tables"] = Processor.process_get_tables
         self._processMap["get_tables_by_type"] = Processor.process_get_tables_by_type
-        self._processMap[
-            "get_all_materialized_view_objects_for_rewriting"
-        ] = Processor.process_get_all_materialized_view_objects_for_rewriting
+        self._processMap["get_all_materialized_view_objects_for_rewriting"] = (
+            Processor.process_get_all_materialized_view_objects_for_rewriting
+        )
         self._processMap["get_materialized_views_for_rewriting"] = Processor.process_get_materialized_views_for_rewriting
         self._processMap["get_table_meta"] = Processor.process_get_table_meta
         self._processMap["get_all_tables"] = Processor.process_get_all_tables
@@ -12225,19 +11968,19 @@ class Processor(fb303.FacebookService.Processor, Iface, TProcessor):
         self._processMap["add_partitions_pspec"] = Processor.process_add_partitions_pspec
         self._processMap["append_partition"] = Processor.process_append_partition
         self._processMap["add_partitions_req"] = Processor.process_add_partitions_req
-        self._processMap[
-            "append_partition_with_environment_context"
-        ] = Processor.process_append_partition_with_environment_context
+        self._processMap["append_partition_with_environment_context"] = (
+            Processor.process_append_partition_with_environment_context
+        )
         self._processMap["append_partition_by_name"] = Processor.process_append_partition_by_name
-        self._processMap[
-            "append_partition_by_name_with_environment_context"
-        ] = Processor.process_append_partition_by_name_with_environment_context
+        self._processMap["append_partition_by_name_with_environment_context"] = (
+            Processor.process_append_partition_by_name_with_environment_context
+        )
         self._processMap["drop_partition"] = Processor.process_drop_partition
         self._processMap["drop_partition_with_environment_context"] = Processor.process_drop_partition_with_environment_context
         self._processMap["drop_partition_by_name"] = Processor.process_drop_partition_by_name
-        self._processMap[
-            "drop_partition_by_name_with_environment_context"
-        ] = Processor.process_drop_partition_by_name_with_environment_context
+        self._processMap["drop_partition_by_name_with_environment_context"] = (
+            Processor.process_drop_partition_by_name_with_environment_context
+        )
         self._processMap["drop_partitions_req"] = Processor.process_drop_partitions_req
         self._processMap["get_partition"] = Processor.process_get_partition
         self._processMap["get_partition_req"] = Processor.process_get_partition_req
@@ -12266,9 +12009,9 @@ class Processor(fb303.FacebookService.Processor, Iface, TProcessor):
         self._processMap["get_partitions_by_names_req"] = Processor.process_get_partitions_by_names_req
         self._processMap["alter_partition"] = Processor.process_alter_partition
         self._processMap["alter_partitions"] = Processor.process_alter_partitions
-        self._processMap[
-            "alter_partitions_with_environment_context"
-        ] = Processor.process_alter_partitions_with_environment_context
+        self._processMap["alter_partitions_with_environment_context"] = (
+            Processor.process_alter_partitions_with_environment_context
+        )
         self._processMap["alter_partitions_req"] = Processor.process_alter_partitions_req
         self._processMap["alter_partition_with_environment_context"] = Processor.process_alter_partition_with_environment_context
         self._processMap["rename_partition"] = Processor.process_rename_partition
@@ -12397,9 +12140,9 @@ class Processor(fb303.FacebookService.Processor, Iface, TProcessor):
         self._processMap["drop_wm_pool"] = Processor.process_drop_wm_pool
         self._processMap["create_or_update_wm_mapping"] = Processor.process_create_or_update_wm_mapping
         self._processMap["drop_wm_mapping"] = Processor.process_drop_wm_mapping
-        self._processMap[
-            "create_or_drop_wm_trigger_to_pool_mapping"
-        ] = Processor.process_create_or_drop_wm_trigger_to_pool_mapping
+        self._processMap["create_or_drop_wm_trigger_to_pool_mapping"] = (
+            Processor.process_create_or_drop_wm_trigger_to_pool_mapping
+        )
         self._processMap["create_ischema"] = Processor.process_create_ischema
         self._processMap["alter_ischema"] = Processor.process_alter_ischema
         self._processMap["get_ischema"] = Processor.process_get_ischema
@@ -12447,7 +12190,7 @@ class Processor(fb303.FacebookService.Processor, Iface, TProcessor):
         if name not in self._processMap:
             iprot.skip(TType.STRUCT)
             iprot.readMessageEnd()
-            x = TApplicationException(TApplicationException.UNKNOWN_METHOD, "Unknown function %s" % (name))
+            x = TApplicationException(TApplicationException.UNKNOWN_METHOD, f"Unknown function {name}")
             oprot.writeMessageBegin(name, TMessageType.EXCEPTION, seqid)
             x.write(oprot)
             oprot.writeMessageEnd()
@@ -20241,7 +19984,7 @@ class getMetaConf_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -20330,7 +20073,7 @@ class getMetaConf_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -20427,7 +20170,7 @@ class setMetaConf_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -20509,7 +20252,7 @@ class setMetaConf_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -20585,7 +20328,7 @@ class create_catalog_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -20684,7 +20427,7 @@ class create_catalog_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -20774,7 +20517,7 @@ class alter_catalog_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -20873,7 +20616,7 @@ class alter_catalog_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -20963,7 +20706,7 @@ class get_catalog_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -21063,7 +20806,7 @@ class get_catalog_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -21130,7 +20873,7 @@ class get_catalogs_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -21209,7 +20952,7 @@ class get_catalogs_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -21291,7 +21034,7 @@ class drop_catalog_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -21390,7 +21133,7 @@ class drop_catalog_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -21480,7 +21223,7 @@ class create_database_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -21579,7 +21322,7 @@ class create_database_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -21670,7 +21413,7 @@ class get_database_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -21770,7 +21513,7 @@ class get_database_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -21859,7 +21602,7 @@ class get_database_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -21959,7 +21702,7 @@ class get_database_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -22073,7 +21816,7 @@ class drop_database_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -22186,7 +21929,7 @@ class drop_database_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -22276,7 +22019,7 @@ class drop_database_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -22375,7 +22118,7 @@ class drop_database_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -22466,7 +22209,7 @@ class get_databases_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -22565,7 +22308,7 @@ class get_databases_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -22625,7 +22368,7 @@ class get_all_databases_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -22715,7 +22458,7 @@ class get_all_databases_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -22811,7 +22554,7 @@ class alter_database_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -22905,7 +22648,7 @@ class alter_database_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -22988,7 +22731,7 @@ class create_dataconnector_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -23087,7 +22830,7 @@ class create_dataconnector_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -23177,7 +22920,7 @@ class get_dataconnector_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -23277,7 +23020,7 @@ class get_dataconnector_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -23391,7 +23134,7 @@ class drop_dataconnector_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -23481,7 +23224,7 @@ class drop_dataconnector_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -23549,7 +23292,7 @@ class get_dataconnectors_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -23639,7 +23382,7 @@ class get_dataconnectors_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -23735,7 +23478,7 @@ class alter_dataconnector_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -23829,7 +23572,7 @@ class alter_dataconnector_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -23913,7 +23656,7 @@ class get_type_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24013,7 +23756,7 @@ class get_type_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24102,7 +23845,7 @@ class create_type_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24213,7 +23956,7 @@ class create_type_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24310,7 +24053,7 @@ class drop_type_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24409,7 +24152,7 @@ class drop_type_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24499,7 +24242,7 @@ class get_type_all_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24601,7 +24344,7 @@ class get_type_all_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24698,7 +24441,7 @@ class get_fields_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24825,7 +24568,7 @@ class get_fields_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24949,7 +24692,7 @@ class get_fields_with_environment_context_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25083,7 +24826,7 @@ class get_fields_with_environment_context_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25179,7 +24922,7 @@ class get_fields_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25291,7 +25034,7 @@ class get_fields_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25402,7 +25145,7 @@ class get_schema_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25529,7 +25272,7 @@ class get_schema_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25653,7 +25396,7 @@ class get_schema_with_environment_context_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25787,7 +25530,7 @@ class get_schema_with_environment_context_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25883,7 +25626,7 @@ class get_schema_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25995,7 +25738,7 @@ class get_schema_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -26091,7 +25834,7 @@ class create_table_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -26202,7 +25945,7 @@ class create_table_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -26312,7 +26055,7 @@ class create_table_with_environment_context_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -26430,7 +26173,7 @@ class create_table_with_environment_context_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -26653,7 +26396,7 @@ class create_table_with_constraints_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -26806,7 +26549,7 @@ class create_table_with_constraints_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -26903,7 +26646,7 @@ class create_table_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -27014,7 +26757,7 @@ class create_table_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -27111,7 +26854,7 @@ class drop_constraint_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -27198,7 +26941,7 @@ class drop_constraint_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -27281,7 +27024,7 @@ class add_primary_key_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -27368,7 +27111,7 @@ class add_primary_key_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -27451,7 +27194,7 @@ class add_foreign_key_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -27538,7 +27281,7 @@ class add_foreign_key_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -27621,7 +27364,7 @@ class add_unique_constraint_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -27708,7 +27451,7 @@ class add_unique_constraint_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -27791,7 +27534,7 @@ class add_not_null_constraint_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -27878,7 +27621,7 @@ class add_not_null_constraint_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -27961,7 +27704,7 @@ class add_default_constraint_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -28048,7 +27791,7 @@ class add_default_constraint_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -28131,7 +27874,7 @@ class add_check_constraint_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -28218,7 +27961,7 @@ class add_check_constraint_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -28301,7 +28044,7 @@ class translate_table_dryrun_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -28425,7 +28168,7 @@ class translate_table_dryrun_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -28555,7 +28298,7 @@ class drop_table_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -28656,7 +28399,7 @@ class drop_table_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -28779,7 +28522,7 @@ class drop_table_with_environment_context_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -28887,7 +28630,7 @@ class drop_table_with_environment_context_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -29009,7 +28752,7 @@ class truncate_table_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -29098,7 +28841,7 @@ class truncate_table_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -29174,7 +28917,7 @@ class truncate_table_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -29262,7 +29005,7 @@ class truncate_table_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -29359,7 +29102,7 @@ class get_tables_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -29465,7 +29208,7 @@ class get_tables_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -29576,7 +29319,7 @@ class get_tables_by_type_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -29689,7 +29432,7 @@ class get_tables_by_type_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -29749,7 +29492,7 @@ class get_all_materialized_view_objects_for_rewriting_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -29836,7 +29579,7 @@ class get_all_materialized_view_objects_for_rewriting_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -29919,7 +29662,7 @@ class get_materialized_views_for_rewriting_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -30018,7 +29761,7 @@ class get_materialized_views_for_rewriting_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -30139,7 +29882,7 @@ class get_table_meta_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -30249,7 +29992,7 @@ class get_table_meta_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -30332,7 +30075,7 @@ class get_all_tables_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -30431,7 +30174,7 @@ class get_all_tables_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -30528,7 +30271,7 @@ class get_table_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -30635,7 +30378,7 @@ class get_table_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -30749,7 +30492,7 @@ class get_table_objects_by_name_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -30840,7 +30583,7 @@ class get_table_objects_by_name_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -30915,7 +30658,7 @@ class get_tables_ext_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -31011,7 +30754,7 @@ class get_tables_ext_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -31093,7 +30836,7 @@ class get_table_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -31193,7 +30936,7 @@ class get_table_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -31282,7 +31025,7 @@ class get_table_objects_by_name_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -31394,7 +31137,7 @@ class get_table_objects_by_name_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -31504,7 +31247,7 @@ class get_materialization_invalidation_info_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -31623,7 +31366,7 @@ class get_materialization_invalidation_info_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -31761,7 +31504,7 @@ class update_creation_metadata_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -31881,7 +31624,7 @@ class update_creation_metadata_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -31998,7 +31741,7 @@ class get_table_names_by_filter_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -32135,7 +31878,7 @@ class get_table_names_by_filter_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -32259,7 +32002,7 @@ class alter_table_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -32360,7 +32103,7 @@ class alter_table_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -32484,7 +32227,7 @@ class alter_table_with_environment_context_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -32592,7 +32335,7 @@ class alter_table_with_environment_context_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -32715,7 +32458,7 @@ class alter_table_with_cascade_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -32823,7 +32566,7 @@ class alter_table_with_cascade_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -32906,7 +32649,7 @@ class alter_table_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -33006,7 +32749,7 @@ class alter_table_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -33095,7 +32838,7 @@ class add_partition_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -33207,7 +32950,7 @@ class add_partition_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -33316,7 +33059,7 @@ class add_partition_with_environment_context_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -33435,7 +33178,7 @@ class add_partition_with_environment_context_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -33539,7 +33282,7 @@ class add_partitions_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -33650,7 +33393,7 @@ class add_partitions_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -33754,7 +33497,7 @@ class add_partitions_pspec_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -33865,7 +33608,7 @@ class add_partitions_pspec_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -34000,7 +33743,7 @@ class append_partition_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -34126,7 +33869,7 @@ class append_partition_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -34222,7 +33965,7 @@ class add_partitions_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -34334,7 +34077,7 @@ class add_partitions_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -34482,7 +34225,7 @@ class append_partition_with_environment_context_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -34615,7 +34358,7 @@ class append_partition_with_environment_context_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -34740,7 +34483,7 @@ class append_partition_by_name_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -34866,7 +34609,7 @@ class append_partition_by_name_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -35004,7 +34747,7 @@ class append_partition_by_name_with_environment_context_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -35137,7 +34880,7 @@ class append_partition_by_name_with_environment_context_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -35284,7 +35027,7 @@ class drop_partition_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -35404,7 +35147,7 @@ class drop_partition_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -35557,7 +35300,7 @@ class drop_partition_with_environment_context_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -35684,7 +35427,7 @@ class drop_partition_with_environment_context_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -35814,7 +35557,7 @@ class drop_partition_by_name_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -35934,7 +35677,7 @@ class drop_partition_by_name_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -36077,7 +35820,7 @@ class drop_partition_by_name_with_environment_context_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -36204,7 +35947,7 @@ class drop_partition_by_name_with_environment_context_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -36293,7 +36036,7 @@ class drop_partitions_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -36393,7 +36136,7 @@ class drop_partitions_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -36521,7 +36264,7 @@ class get_partition_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -36635,7 +36378,7 @@ class get_partition_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -36724,7 +36467,7 @@ class get_partition_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -36824,7 +36567,7 @@ class get_partition_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -36986,7 +36729,7 @@ class exchange_partition_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -37138,7 +36881,7 @@ class exchange_partition_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -37314,7 +37057,7 @@ class exchange_partitions_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -37474,7 +37217,7 @@ class exchange_partitions_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -37654,7 +37397,7 @@ class get_partition_with_auth_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -37782,7 +37525,7 @@ class get_partition_with_auth_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -37900,7 +37643,7 @@ class get_partition_by_name_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -38014,7 +37757,7 @@ class get_partition_by_name_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -38130,7 +37873,7 @@ class get_partitions_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -38252,7 +37995,7 @@ class get_partitions_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -38341,7 +38084,7 @@ class get_partitions_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -38441,7 +38184,7 @@ class get_partitions_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -38595,7 +38338,7 @@ class get_partitions_with_auth_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -38731,7 +38474,7 @@ class get_partitions_with_auth_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -38847,7 +38590,7 @@ class get_partitions_pspec_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -38969,7 +38712,7 @@ class get_partitions_pspec_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -39085,7 +38828,7 @@ class get_partition_names_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -39210,7 +38953,7 @@ class get_partition_names_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -39299,7 +39042,7 @@ class get_partition_values_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -39399,7 +39142,7 @@ class get_partition_values_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -39539,7 +39282,7 @@ class get_partitions_ps_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -39668,7 +39411,7 @@ class get_partitions_ps_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -39846,7 +39589,7 @@ class get_partitions_ps_with_auth_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -39989,7 +39732,7 @@ class get_partitions_ps_with_auth_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -40078,7 +39821,7 @@ class get_partitions_ps_with_auth_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -40178,7 +39921,7 @@ class get_partitions_ps_with_auth_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -40318,7 +40061,7 @@ class get_partition_names_ps_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -40450,7 +40193,7 @@ class get_partition_names_ps_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -40539,7 +40282,7 @@ class get_partition_names_ps_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -40639,7 +40382,7 @@ class get_partition_names_ps_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -40728,7 +40471,7 @@ class get_partition_names_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -40839,7 +40582,7 @@ class get_partition_names_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -40969,7 +40712,7 @@ class get_partitions_by_filter_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -41098,7 +40841,7 @@ class get_partitions_by_filter_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -41228,7 +40971,7 @@ class get_part_specs_by_filter_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -41357,7 +41100,7 @@ class get_part_specs_by_filter_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -41446,7 +41189,7 @@ class get_partitions_by_expr_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -41546,7 +41289,7 @@ class get_partitions_by_expr_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -41635,7 +41378,7 @@ class get_partitions_spec_by_expr_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -41735,7 +41478,7 @@ class get_partitions_spec_by_expr_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -41853,7 +41596,7 @@ class get_num_partitions_by_filter_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -41966,7 +41709,7 @@ class get_num_partitions_by_filter_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -42094,7 +41837,7 @@ class get_partitions_by_names_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -42216,7 +41959,7 @@ class get_partitions_by_names_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -42305,7 +42048,7 @@ class get_partitions_by_names_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -42405,7 +42148,7 @@ class get_partitions_by_names_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -42522,7 +42265,7 @@ class alter_partition_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -42623,7 +42366,7 @@ class alter_partition_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -42742,7 +42485,7 @@ class alter_partitions_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -42843,7 +42586,7 @@ class alter_partitions_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -42975,7 +42718,7 @@ class alter_partitions_with_environment_context_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -43083,7 +42826,7 @@ class alter_partitions_with_environment_context_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -43166,7 +42909,7 @@ class alter_partitions_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -43266,7 +43009,7 @@ class alter_partitions_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -43396,7 +43139,7 @@ class alter_partition_with_environment_context_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -43504,7 +43247,7 @@ class alter_partition_with_environment_context_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -43639,7 +43382,7 @@ class rename_partition_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -43747,7 +43490,7 @@ class rename_partition_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -43830,7 +43573,7 @@ class rename_partition_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -43930,7 +43673,7 @@ class rename_partition_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -44042,7 +43785,7 @@ class partition_name_has_valid_characters_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -44136,7 +43879,7 @@ class partition_name_has_valid_characters_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -44233,7 +43976,7 @@ class get_config_value_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -44329,7 +44072,7 @@ class get_config_value_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -44412,7 +44155,7 @@ class partition_name_to_vals_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -44511,7 +44254,7 @@ class partition_name_to_vals_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -44594,7 +44337,7 @@ class partition_name_to_spec_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -44699,7 +44442,7 @@ class partition_name_to_spec_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -44838,7 +44581,7 @@ class markPartitionForEvent_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -44994,7 +44737,7 @@ class markPartitionForEvent_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -45162,7 +44905,7 @@ class isPartitionMarkedForEvent_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -45330,7 +45073,7 @@ class isPartitionMarkedForEvent_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -45447,7 +45190,7 @@ class get_primary_keys_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -45547,7 +45290,7 @@ class get_primary_keys_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -45636,7 +45379,7 @@ class get_foreign_keys_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -45736,7 +45479,7 @@ class get_foreign_keys_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -45825,7 +45568,7 @@ class get_unique_constraints_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -45925,7 +45668,7 @@ class get_unique_constraints_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -46014,7 +45757,7 @@ class get_not_null_constraints_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -46114,7 +45857,7 @@ class get_not_null_constraints_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -46203,7 +45946,7 @@ class get_default_constraints_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -46303,7 +46046,7 @@ class get_default_constraints_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -46392,7 +46135,7 @@ class get_check_constraints_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -46492,7 +46235,7 @@ class get_check_constraints_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -46581,7 +46324,7 @@ class get_all_table_constraints_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -46681,7 +46424,7 @@ class get_all_table_constraints_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -46770,7 +46513,7 @@ class update_table_column_statistics_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -46893,7 +46636,7 @@ class update_table_column_statistics_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -46996,7 +46739,7 @@ class update_partition_column_statistics_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -47119,7 +46862,7 @@ class update_partition_column_statistics_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -47222,7 +46965,7 @@ class update_table_column_statistics_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -47346,7 +47089,7 @@ class update_table_column_statistics_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -47449,7 +47192,7 @@ class update_partition_column_statistics_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -47573,7 +47316,7 @@ class update_partition_column_statistics_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -47676,7 +47419,7 @@ class update_transaction_statistics_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -47751,7 +47494,7 @@ class update_transaction_statistics_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -47856,7 +47599,7 @@ class get_table_column_statistics_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -47994,7 +47737,7 @@ class get_table_column_statistics_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -48140,7 +47883,7 @@ class get_partition_column_statistics_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -48285,7 +48028,7 @@ class get_partition_column_statistics_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -48388,7 +48131,7 @@ class get_table_statistics_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -48488,7 +48231,7 @@ class get_table_statistics_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -48577,7 +48320,7 @@ class get_partitions_statistics_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -48677,7 +48420,7 @@ class get_partitions_statistics_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -48766,7 +48509,7 @@ class get_aggr_stats_for_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -48866,7 +48609,7 @@ class get_aggr_stats_for_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -48955,7 +48698,7 @@ class set_aggr_stats_for_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -49078,7 +48821,7 @@ class set_aggr_stats_for_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -49238,7 +48981,7 @@ class delete_partition_column_statistics_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -49389,7 +49132,7 @@ class delete_partition_column_statistics_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -49535,7 +49278,7 @@ class delete_table_column_statistics_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -49679,7 +49422,7 @@ class delete_table_column_statistics_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -49782,7 +49525,7 @@ class create_function_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -49893,7 +49636,7 @@ class create_function_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -50005,7 +49748,7 @@ class drop_function_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -50099,7 +49842,7 @@ class drop_function_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -50210,7 +49953,7 @@ class alter_function_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -50311,7 +50054,7 @@ class alter_function_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -50409,7 +50152,7 @@ class get_functions_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -50515,7 +50258,7 @@ class get_functions_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -50612,7 +50355,7 @@ class get_function_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -50719,7 +50462,7 @@ class get_function_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -50786,7 +50529,7 @@ class get_all_functions_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -50865,7 +50608,7 @@ class get_all_functions_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -50947,7 +50690,7 @@ class create_role_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -51034,7 +50777,7 @@ class create_role_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -51117,7 +50860,7 @@ class drop_role_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -51204,7 +50947,7 @@ class drop_role_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -51264,7 +51007,7 @@ class get_role_names_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -51354,7 +51097,7 @@ class get_role_names_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -51501,7 +51244,7 @@ class grant_role_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -51623,7 +51366,7 @@ class grant_role_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -51732,7 +51475,7 @@ class revoke_role_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -51833,7 +51576,7 @@ class revoke_role_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -51928,7 +51671,7 @@ class list_roles_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -52031,7 +51774,7 @@ class list_roles_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -52113,7 +51856,7 @@ class grant_revoke_role_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -52201,7 +51944,7 @@ class grant_revoke_role_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -52283,7 +52026,7 @@ class get_principals_in_role_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -52371,7 +52114,7 @@ class get_principals_in_role_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -52453,7 +52196,7 @@ class get_role_grants_for_principal_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -52541,7 +52284,7 @@ class get_role_grants_for_principal_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -52661,7 +52404,7 @@ class get_privilege_set_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -52763,7 +52506,7 @@ class get_privilege_set_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -52871,7 +52614,7 @@ class list_privileges_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -52981,7 +52724,7 @@ class list_privileges_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -53063,7 +52806,7 @@ class grant_privileges_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -53150,7 +52893,7 @@ class grant_privileges_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -53232,7 +52975,7 @@ class revoke_privileges_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -53319,7 +53062,7 @@ class revoke_privileges_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -53401,7 +53144,7 @@ class grant_revoke_privileges_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -53489,7 +53232,7 @@ class grant_revoke_privileges_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -53598,7 +53341,7 @@ class refresh_privileges_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -53700,7 +53443,7 @@ class refresh_privileges_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -53807,7 +53550,7 @@ class set_ugi_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -53913,7 +53656,7 @@ class set_ugi_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -54014,7 +53757,7 @@ class get_delegation_token_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -54110,7 +53853,7 @@ class get_delegation_token_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -54193,7 +53936,7 @@ class renew_delegation_token_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -54280,7 +54023,7 @@ class renew_delegation_token_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -54363,7 +54106,7 @@ class cancel_delegation_token_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -54438,7 +54181,7 @@ class cancel_delegation_token_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -54529,7 +54272,7 @@ class add_token_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -54611,7 +54354,7 @@ class add_token_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -54687,7 +54430,7 @@ class remove_token_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -54762,7 +54505,7 @@ class remove_token_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -54838,7 +54581,7 @@ class get_token_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -54915,7 +54658,7 @@ class get_token_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -54968,7 +54711,7 @@ class get_all_token_identifiers_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -55046,7 +54789,7 @@ class get_all_token_identifiers_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -55122,7 +54865,7 @@ class add_master_key_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -55209,7 +54952,7 @@ class add_master_key_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -55304,7 +55047,7 @@ class update_master_key_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -55398,7 +55141,7 @@ class update_master_key_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -55480,7 +55223,7 @@ class remove_master_key_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -55555,7 +55298,7 @@ class remove_master_key_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -55608,7 +55351,7 @@ class get_master_keys_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -55686,7 +55429,7 @@ class get_master_keys_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -55739,7 +55482,7 @@ class get_open_txns_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -55806,7 +55549,7 @@ class get_open_txns_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -55859,7 +55602,7 @@ class get_open_txns_info_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -55926,7 +55669,7 @@ class get_open_txns_info_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -56001,7 +55744,7 @@ class open_txns_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -56077,7 +55820,7 @@ class open_txns_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -56152,7 +55895,7 @@ class abort_txn_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -56227,7 +55970,7 @@ class abort_txn_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -56303,7 +56046,7 @@ class abort_txns_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -56378,7 +56121,7 @@ class abort_txns_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -56454,7 +56197,7 @@ class commit_txn_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -56541,7 +56284,7 @@ class commit_txn_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -56623,7 +56366,7 @@ class get_latest_txnid_in_conflict_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -56710,7 +56453,7 @@ class get_latest_txnid_in_conflict_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -56792,7 +56535,7 @@ class repl_tbl_writeid_state_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -56846,7 +56589,7 @@ class repl_tbl_writeid_state_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -56913,7 +56656,7 @@ class get_valid_write_ids_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -57013,7 +56756,7 @@ class get_valid_write_ids_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -57102,7 +56845,7 @@ class allocate_table_write_ids_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -57214,7 +56957,7 @@ class allocate_table_write_ids_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -57310,7 +57053,7 @@ class get_max_allocated_table_write_id_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -57398,7 +57141,7 @@ class get_max_allocated_table_write_id_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -57480,7 +57223,7 @@ class seed_write_id_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -57555,7 +57298,7 @@ class seed_write_id_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -57631,7 +57374,7 @@ class seed_txn_id_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -57706,7 +57449,7 @@ class seed_txn_id_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -57782,7 +57525,7 @@ class lock_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -57882,7 +57625,7 @@ class lock_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -57971,7 +57714,7 @@ class check_lock_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -58083,7 +57826,7 @@ class check_lock_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -58179,7 +57922,7 @@ class unlock_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -58266,7 +58009,7 @@ class unlock_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -58349,7 +58092,7 @@ class show_locks_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -58425,7 +58168,7 @@ class show_locks_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -58500,7 +58243,7 @@ class heartbeat_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -58599,7 +58342,7 @@ class heartbeat_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -58689,7 +58432,7 @@ class heartbeat_txn_range_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -58765,7 +58508,7 @@ class heartbeat_txn_range_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -58840,7 +58583,7 @@ class compact_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -58894,7 +58637,7 @@ class compact_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -58961,7 +58704,7 @@ class compact2_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -59037,7 +58780,7 @@ class compact2_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -59112,7 +58855,7 @@ class show_compact_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -59188,7 +58931,7 @@ class show_compact_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -59263,7 +59006,7 @@ class add_dynamic_partitions_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -59350,7 +59093,7 @@ class add_dynamic_partitions_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -59434,7 +59177,7 @@ class find_next_compact_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -59522,7 +59265,7 @@ class find_next_compact_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -59604,7 +59347,7 @@ class find_next_compact2_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -59692,7 +59435,7 @@ class find_next_compact2_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -59786,7 +59529,7 @@ class update_compactor_state_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -59847,7 +59590,7 @@ class update_compactor_state_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -59914,7 +59657,7 @@ class find_columns_with_stats_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -60001,7 +59744,7 @@ class find_columns_with_stats_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -60076,7 +59819,7 @@ class mark_cleaned_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -60151,7 +59894,7 @@ class mark_cleaned_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -60227,7 +59970,7 @@ class mark_compacted_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -60302,7 +60045,7 @@ class mark_compacted_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -60378,7 +60121,7 @@ class mark_failed_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -60453,7 +60196,7 @@ class mark_failed_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -60529,7 +60272,7 @@ class mark_refused_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -60604,7 +60347,7 @@ class mark_refused_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -60680,7 +60423,7 @@ class update_compaction_metrics_data_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -60767,7 +60510,7 @@ class update_compaction_metrics_data_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -60849,7 +60592,7 @@ class remove_compaction_metrics_data_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -60924,7 +60667,7 @@ class remove_compaction_metrics_data_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -61013,7 +60756,7 @@ class set_hadoop_jobid_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -61074,7 +60817,7 @@ class set_hadoop_jobid_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -61141,7 +60884,7 @@ class get_latest_committed_compaction_info_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -61217,7 +60960,7 @@ class get_latest_committed_compaction_info_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -61292,7 +61035,7 @@ class get_next_notification_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -61368,7 +61111,7 @@ class get_next_notification_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -61421,7 +61164,7 @@ class get_current_notificationEventId_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -61488,7 +61231,7 @@ class get_current_notificationEventId_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -61563,7 +61306,7 @@ class get_notification_events_count_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -61639,7 +61382,7 @@ class get_notification_events_count_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -61714,7 +61457,7 @@ class fire_listener_event_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -61790,7 +61533,7 @@ class fire_listener_event_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -61843,7 +61586,7 @@ class flushCache_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -61888,7 +61631,7 @@ class flushCache_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -61955,7 +61698,7 @@ class add_write_notification_log_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -62031,7 +61774,7 @@ class add_write_notification_log_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -62106,7 +61849,7 @@ class add_write_notification_log_in_batch_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -62182,7 +61925,7 @@ class add_write_notification_log_in_batch_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -62257,7 +62000,7 @@ class cm_recycle_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -62345,7 +62088,7 @@ class cm_recycle_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -62427,7 +62170,7 @@ class get_file_metadata_by_expr_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -62503,7 +62246,7 @@ class get_file_metadata_by_expr_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -62578,7 +62321,7 @@ class get_file_metadata_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -62654,7 +62397,7 @@ class get_file_metadata_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -62729,7 +62472,7 @@ class put_file_metadata_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -62805,7 +62548,7 @@ class put_file_metadata_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -62880,7 +62623,7 @@ class clear_file_metadata_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -62956,7 +62699,7 @@ class clear_file_metadata_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -63031,7 +62774,7 @@ class cache_file_metadata_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -63107,7 +62850,7 @@ class cache_file_metadata_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -63160,7 +62903,7 @@ class get_metastore_db_uuid_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -63240,7 +62983,7 @@ class get_metastore_db_uuid_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -63322,7 +63065,7 @@ class create_resource_plan_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -63434,7 +63177,7 @@ class create_resource_plan_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -63530,7 +63273,7 @@ class get_resource_plan_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -63630,7 +63373,7 @@ class get_resource_plan_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -63719,7 +63462,7 @@ class get_active_resource_plan_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -63807,7 +63550,7 @@ class get_active_resource_plan_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -63889,7 +63632,7 @@ class get_all_resource_plans_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -63977,7 +63720,7 @@ class get_all_resource_plans_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -64059,7 +63802,7 @@ class alter_resource_plan_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -64171,7 +63914,7 @@ class alter_resource_plan_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -64267,7 +64010,7 @@ class validate_resource_plan_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -64367,7 +64110,7 @@ class validate_resource_plan_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -64456,7 +64199,7 @@ class drop_resource_plan_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -64568,7 +64311,7 @@ class drop_resource_plan_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -64664,7 +64407,7 @@ class create_wm_trigger_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -64788,7 +64531,7 @@ class create_wm_trigger_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -64891,7 +64634,7 @@ class alter_wm_trigger_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -65003,7 +64746,7 @@ class alter_wm_trigger_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -65099,7 +64842,7 @@ class drop_wm_trigger_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -65211,7 +64954,7 @@ class drop_wm_trigger_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -65307,7 +65050,7 @@ class get_triggers_for_resourceplan_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -65407,7 +65150,7 @@ class get_triggers_for_resourceplan_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -65496,7 +65239,7 @@ class create_wm_pool_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -65620,7 +65363,7 @@ class create_wm_pool_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -65723,7 +65466,7 @@ class alter_wm_pool_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -65847,7 +65590,7 @@ class alter_wm_pool_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -65950,7 +65693,7 @@ class drop_wm_pool_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -66062,7 +65805,7 @@ class drop_wm_pool_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -66158,7 +65901,7 @@ class create_or_update_wm_mapping_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -66282,7 +66025,7 @@ class create_or_update_wm_mapping_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -66385,7 +66128,7 @@ class drop_wm_mapping_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -66497,7 +66240,7 @@ class drop_wm_mapping_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -66593,7 +66336,7 @@ class create_or_drop_wm_trigger_to_pool_mapping_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -66717,7 +66460,7 @@ class create_or_drop_wm_trigger_to_pool_mapping_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -66820,7 +66563,7 @@ class create_ischema_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -66919,7 +66662,7 @@ class create_ischema_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -67009,7 +66752,7 @@ class alter_ischema_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -67096,7 +66839,7 @@ class alter_ischema_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -67179,7 +66922,7 @@ class get_ischema_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -67279,7 +67022,7 @@ class get_ischema_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -67368,7 +67111,7 @@ class drop_ischema_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -67467,7 +67210,7 @@ class drop_ischema_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -67557,7 +67300,7 @@ class add_schema_version_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -67656,7 +67399,7 @@ class add_schema_version_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -67746,7 +67489,7 @@ class get_schema_version_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -67846,7 +67589,7 @@ class get_schema_version_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -67935,7 +67678,7 @@ class get_schema_latest_version_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -68035,7 +67778,7 @@ class get_schema_latest_version_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -68124,7 +67867,7 @@ class get_schema_all_versions_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -68232,7 +67975,7 @@ class get_schema_all_versions_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -68321,7 +68064,7 @@ class drop_schema_version_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -68408,7 +68151,7 @@ class drop_schema_version_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -68491,7 +68234,7 @@ class get_schemas_by_cols_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -68579,7 +68322,7 @@ class get_schemas_by_cols_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -68661,7 +68404,7 @@ class map_schema_version_to_serde_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -68748,7 +68491,7 @@ class map_schema_version_to_serde_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -68831,7 +68574,7 @@ class set_schema_version_state_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -68930,7 +68673,7 @@ class set_schema_version_state_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -69020,7 +68763,7 @@ class add_serde_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -69107,7 +68850,7 @@ class add_serde_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -69190,7 +68933,7 @@ class get_serde_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -69290,7 +69033,7 @@ class get_serde_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -69406,7 +69149,7 @@ class get_lock_materialization_rebuild_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -69496,7 +69239,7 @@ class get_lock_materialization_rebuild_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -69598,7 +69341,7 @@ class heartbeat_lock_materialization_rebuild_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -69687,7 +69430,7 @@ class heartbeat_lock_materialization_rebuild_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -69762,7 +69505,7 @@ class add_runtime_stats_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -69837,7 +69580,7 @@ class add_runtime_stats_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -69913,7 +69656,7 @@ class get_runtime_stats_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -70009,7 +69752,7 @@ class get_runtime_stats_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -70091,7 +69834,7 @@ class get_partitions_with_specs_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -70179,7 +69922,7 @@ class get_partitions_with_specs_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -70261,7 +70004,7 @@ class scheduled_query_poll_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -70349,7 +70092,7 @@ class scheduled_query_poll_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -70431,7 +70174,7 @@ class scheduled_query_maintenance_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -70542,7 +70285,7 @@ class scheduled_query_maintenance_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -70639,7 +70382,7 @@ class scheduled_query_progress_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -70726,7 +70469,7 @@ class scheduled_query_progress_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -70809,7 +70552,7 @@ class get_scheduled_query_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -70909,7 +70652,7 @@ class get_scheduled_query_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -70998,7 +70741,7 @@ class add_replication_metrics_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -71073,7 +70816,7 @@ class add_replication_metrics_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -71149,7 +70892,7 @@ class get_replication_metrics_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -71237,7 +70980,7 @@ class get_replication_metrics_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -71319,7 +71062,7 @@ class get_open_txns_req_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -71395,7 +71138,7 @@ class get_open_txns_req_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -71470,7 +71213,7 @@ class create_stored_procedure_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -71557,7 +71300,7 @@ class create_stored_procedure_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -71640,7 +71383,7 @@ class get_stored_procedure_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -71740,7 +71483,7 @@ class get_stored_procedure_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -71829,7 +71572,7 @@ class drop_stored_procedure_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -71904,7 +71647,7 @@ class drop_stored_procedure_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -71980,7 +71723,7 @@ class get_all_stored_procedures_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -72079,7 +71822,7 @@ class get_all_stored_procedures_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -72161,7 +71904,7 @@ class find_package_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -72261,7 +72004,7 @@ class find_package_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -72350,7 +72093,7 @@ class add_package_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -72425,7 +72168,7 @@ class add_package_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -72501,7 +72244,7 @@ class get_all_packages_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -72600,7 +72343,7 @@ class get_all_packages_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -72682,7 +72425,7 @@ class drop_package_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -72757,7 +72500,7 @@ class drop_package_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -72833,7 +72576,7 @@ class get_all_write_event_info_args:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -72929,7 +72672,7 @@ class get_all_write_event_info_result:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):

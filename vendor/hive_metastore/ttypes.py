@@ -643,7 +643,7 @@ class Version:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -735,7 +735,7 @@ class FieldSchema:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -815,7 +815,7 @@ class EnvironmentContext:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -983,7 +983,7 @@ class SQLPrimaryKey:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -1231,7 +1231,7 @@ class SQLForeignKey:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -1399,7 +1399,7 @@ class SQLUniqueConstraint:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -1555,7 +1555,7 @@ class SQLNotNullConstraint:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -1725,7 +1725,7 @@ class SQLDefaultConstraint:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -1895,7 +1895,7 @@ class SQLCheckConstraint:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -2071,7 +2071,7 @@ class SQLAllTableConstraints:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -2184,7 +2184,7 @@ class Type:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -2326,7 +2326,7 @@ class HiveObjectRef:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -2440,7 +2440,7 @@ class PrivilegeGrantInfo:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -2556,7 +2556,7 @@ class HiveObjectPrivilege:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -2627,7 +2627,7 @@ class PrivilegeBag:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -2782,7 +2782,7 @@ class PrincipalPrivilegeSet:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -2869,7 +2869,7 @@ class GrantRevokePrivilegeRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -2931,7 +2931,7 @@ class GrantRevokePrivilegeResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -3076,7 +3076,7 @@ class TruncateTableRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -3117,7 +3117,7 @@ class TruncateTableResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -3207,7 +3207,7 @@ class Role:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -3347,7 +3347,7 @@ class RolePrincipalGrant:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -3427,7 +3427,7 @@ class GetRoleGrantsForPrincipalRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -3500,7 +3500,7 @@ class GetRoleGrantsForPrincipalResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -3566,7 +3566,7 @@ class GetPrincipalsInRoleRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -3639,7 +3639,7 @@ class GetPrincipalsInRoleResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -3779,7 +3779,7 @@ class GrantRevokeRoleRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -3841,7 +3841,7 @@ class GrantRevokeRoleResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -3945,7 +3945,7 @@ class Catalog:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -4008,7 +4008,7 @@ class CreateCatalogRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -4085,7 +4085,7 @@ class AlterCatalogRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -4149,7 +4149,7 @@ class GetCatalogRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -4212,7 +4212,7 @@ class GetCatalogResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -4286,7 +4286,7 @@ class GetCatalogsResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -4350,7 +4350,7 @@ class DropCatalogRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -4591,7 +4591,7 @@ class Database:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -4753,7 +4753,7 @@ class SerDeInfo:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -4829,7 +4829,7 @@ class Order:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -4973,7 +4973,7 @@ class SkewedInfo:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -5223,7 +5223,7 @@ class StorageDescriptor:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -5394,7 +5394,7 @@ class CreationMetadata:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -5498,7 +5498,7 @@ class BooleanColumnStatsData:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -5612,7 +5612,7 @@ class DoubleColumnStatsData:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -5726,7 +5726,7 @@ class LongColumnStatsData:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -5844,7 +5844,7 @@ class StringColumnStatsData:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -5948,7 +5948,7 @@ class BinaryColumnStatsData:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -6026,7 +6026,7 @@ class Decimal:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -6142,7 +6142,7 @@ class DecimalColumnStatsData:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -6206,7 +6206,7 @@ class Date:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -6322,7 +6322,7 @@ class DateColumnStatsData:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -6386,7 +6386,7 @@ class Timestamp:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -6502,7 +6502,7 @@ class TimestampColumnStatsData:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -6656,7 +6656,7 @@ class ColumnStatisticsData:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -6753,7 +6753,7 @@ class ColumnStatisticsObj:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -6889,7 +6889,7 @@ class ColumnStatisticsDesc:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -7003,7 +7003,7 @@ class ColumnStatistics:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -7097,7 +7097,7 @@ class FileMetadata:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -7183,7 +7183,7 @@ class ObjectDictionary:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -7640,7 +7640,7 @@ class Table:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -7747,7 +7747,7 @@ class SourceTable:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -7993,7 +7993,7 @@ class Partition:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -8148,7 +8148,7 @@ class PartitionWithoutSD:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -8232,7 +8232,7 @@ class PartitionSpecWithSharedSD:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -8303,7 +8303,7 @@ class PartitionListComposingSpec:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -8459,7 +8459,7 @@ class PartitionSpec:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -8558,7 +8558,7 @@ class AggrStats:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -8685,7 +8685,7 @@ class SetPartitionsStatsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -8749,7 +8749,7 @@ class SetPartitionsStatsResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -8850,7 +8850,7 @@ class Schema:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -8972,7 +8972,7 @@ class PrimaryKeysRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -9045,7 +9045,7 @@ class PrimaryKeysResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -9191,7 +9191,7 @@ class ForeignKeysRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -9264,7 +9264,7 @@ class ForeignKeysResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -9388,7 +9388,7 @@ class UniqueConstraintsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -9461,7 +9461,7 @@ class UniqueConstraintsResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -9585,7 +9585,7 @@ class NotNullConstraintsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -9658,7 +9658,7 @@ class NotNullConstraintsResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -9782,7 +9782,7 @@ class DefaultConstraintsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -9855,7 +9855,7 @@ class DefaultConstraintsResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -9979,7 +9979,7 @@ class CheckConstraintsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -10052,7 +10052,7 @@ class CheckConstraintsResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -10176,7 +10176,7 @@ class AllTableConstraintsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -10241,7 +10241,7 @@ class AllTableConstraintsResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -10353,7 +10353,7 @@ class DropConstraintRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -10426,7 +10426,7 @@ class AddPrimaryKeyRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -10499,7 +10499,7 @@ class AddForeignKeyRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -10572,7 +10572,7 @@ class AddUniqueConstraintRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -10645,7 +10645,7 @@ class AddNotNullConstraintRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -10718,7 +10718,7 @@ class AddDefaultConstraintRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -10791,7 +10791,7 @@ class AddCheckConstraintRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -10878,7 +10878,7 @@ class PartitionsByExprResult:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -10965,7 +10965,7 @@ class PartitionsSpecByExprResult:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -11143,7 +11143,7 @@ class PartitionsByExprRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -11228,7 +11228,7 @@ class TableStatsResult:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -11327,7 +11327,7 @@ class PartitionsStatsResult:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -11491,7 +11491,7 @@ class TableStatsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -11669,7 +11669,7 @@ class PartitionsStatsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -11752,7 +11752,7 @@ class AddPartitionsResult:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -11911,7 +11911,7 @@ class AddPartitionsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -11982,7 +11982,7 @@ class DropPartitionsResult:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -12058,7 +12058,7 @@ class DropPartitionsExpr:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -12153,7 +12153,7 @@ class RequestPartsSpec:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -12325,7 +12325,7 @@ class DropPartitionsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -12529,7 +12529,7 @@ class PartitionValuesRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -12605,7 +12605,7 @@ class PartitionValuesRow:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -12678,7 +12678,7 @@ class PartitionValuesResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -12886,7 +12886,7 @@ class GetPartitionsByNamesRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -12972,7 +12972,7 @@ class GetPartitionsByNamesResult:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -13146,7 +13146,7 @@ class DataConnector:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -13222,7 +13222,7 @@ class ResourceUri:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -13399,7 +13399,7 @@ class Function:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -13573,7 +13573,7 @@ class TxnInfo:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -13660,7 +13660,7 @@ class GetOpenTxnsInfoResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -13772,7 +13772,7 @@ class GetOpenTxnsResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -13928,7 +13928,7 @@ class OpenTxnRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -14000,7 +14000,7 @@ class OpenTxnsResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -14090,7 +14090,7 @@ class AbortTxnRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -14162,7 +14162,7 @@ class AbortTxnsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -14258,7 +14258,7 @@ class CommitTxnKeyValue:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -14412,7 +14412,7 @@ class WriteEventInfo:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -14544,7 +14544,7 @@ class ReplLastIdInfo:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -14650,7 +14650,7 @@ class UpdateTransactionalStatsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -14799,7 +14799,7 @@ class CommitTxnRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -14953,7 +14953,7 @@ class ReplTblWriteIdStateRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -15055,7 +15055,7 @@ class GetValidWriteIdsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -15183,7 +15183,7 @@ class TableValidWriteIds:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -15256,7 +15256,7 @@ class GetValidWriteIdsResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -15334,7 +15334,7 @@ class TxnToWriteId:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -15471,7 +15471,7 @@ class AllocateTableWriteIdsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -15544,7 +15544,7 @@ class AllocateTableWriteIdsResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -15626,7 +15626,7 @@ class MaxAllocatedTableWriteIdRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -15690,7 +15690,7 @@ class MaxAllocatedTableWriteIdResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -15786,7 +15786,7 @@ class SeedTableWriteIdsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -15850,7 +15850,7 @@ class SeedTxnIdRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -16008,7 +16008,7 @@ class LockComponent:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -16163,7 +16163,7 @@ class LockRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -16255,7 +16255,7 @@ class LockResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -16343,7 +16343,7 @@ class CheckLockRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -16407,7 +16407,7 @@ class UnlockRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -16523,7 +16523,7 @@ class ShowLocksRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -16791,7 +16791,7 @@ class ShowLocksResponseElement:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -16862,7 +16862,7 @@ class ShowLocksResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -16936,7 +16936,7 @@ class HeartbeatRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -17014,7 +17014,7 @@ class HeartbeatTxnRangeRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -17108,7 +17108,7 @@ class HeartbeatTxnRangeResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -17290,7 +17290,7 @@ class CompactionRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -17556,7 +17556,7 @@ class CompactionInfoStruct:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -17619,7 +17619,7 @@ class OptionalCompactionInfoStruct:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -17771,7 +17771,7 @@ class CompactionMetricsDataStruct:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -17834,7 +17834,7 @@ class CompactionMetricsDataResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -17944,7 +17944,7 @@ class CompactionMetricsDataRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -18052,7 +18052,7 @@ class CompactionResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -18093,7 +18093,7 @@ class ShowCompactRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -18403,7 +18403,7 @@ class ShowCompactResponseElement:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -18476,7 +18476,7 @@ class ShowCompactResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -18594,7 +18594,7 @@ class GetLatestCommittedCompactionInfoRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -18667,7 +18667,7 @@ class GetLatestCommittedCompactionInfoResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -18745,7 +18745,7 @@ class FindNextCompactRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -18893,7 +18893,7 @@ class AddDynamicPartitions:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -19023,7 +19023,7 @@ class BasicTxnInfo:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -19123,7 +19123,7 @@ class NotificationEventRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -19289,7 +19289,7 @@ class NotificationEvent:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -19362,7 +19362,7 @@ class NotificationEventResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -19426,7 +19426,7 @@ class CurrentNotificationEventId:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -19544,7 +19544,7 @@ class NotificationEventsCountRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -19608,7 +19608,7 @@ class NotificationEventsCountResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -19768,7 +19768,7 @@ class InsertEventRequestData:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -19852,7 +19852,7 @@ class FireEventRequestData:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -19997,7 +19997,7 @@ class FireEventRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -20067,7 +20067,7 @@ class FireEventResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -20216,7 +20216,7 @@ class WriteNotificationLogRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -20257,7 +20257,7 @@ class WriteNotificationLogResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -20378,7 +20378,7 @@ class WriteNotificationLogBatchRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -20419,7 +20419,7 @@ class WriteNotificationLogBatchResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -20493,7 +20493,7 @@ class MetadataPpdResult:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -20582,7 +20582,7 @@ class GetFileMetadataByExprResult:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -20692,7 +20692,7 @@ class GetFileMetadataByExprRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -20780,7 +20780,7 @@ class GetFileMetadataResult:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -20852,7 +20852,7 @@ class GetFileMetadataRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -20893,7 +20893,7 @@ class PutFileMetadataResult:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -20999,7 +20999,7 @@ class PutFileMetadataRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -21040,7 +21040,7 @@ class ClearFileMetadataResult:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -21112,7 +21112,7 @@ class ClearFileMetadataRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -21176,7 +21176,7 @@ class CacheFileMetadataResult:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -21284,7 +21284,7 @@ class CacheFileMetadataRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -21355,7 +21355,7 @@ class GetAllFunctionsResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -21427,7 +21427,7 @@ class ClientCapabilities:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -21533,7 +21533,7 @@ class GetProjectionsSpec:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -21732,7 +21732,7 @@ class GetTableRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -21809,7 +21809,7 @@ class GetTableResult:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -21991,7 +21991,7 @@ class GetTablesRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -22064,7 +22064,7 @@ class GetTablesResult:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -22226,7 +22226,7 @@ class GetTablesExtRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -22352,7 +22352,7 @@ class ExtendedTableInfo:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -22468,7 +22468,7 @@ class GetDatabaseRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -22626,7 +22626,7 @@ class DropDatabaseRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -22706,7 +22706,7 @@ class CmRecycleRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -22747,7 +22747,7 @@ class CmRecycleResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -22873,7 +22873,7 @@ class TableMeta:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -22951,7 +22951,7 @@ class Materialization:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -23069,7 +23069,7 @@ class WMResourcePlan:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -23209,7 +23209,7 @@ class WMNullableResourcePlan:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -23343,7 +23343,7 @@ class WMPool:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -23489,7 +23489,7 @@ class WMNullablePool:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -23625,7 +23625,7 @@ class WMTrigger:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -23763,7 +23763,7 @@ class WMMapping:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -23859,7 +23859,7 @@ class WMPoolTrigger:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24010,7 +24010,7 @@ class WMFullResourcePlan:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24087,7 +24087,7 @@ class WMCreateResourcePlanRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24128,7 +24128,7 @@ class WMCreateResourcePlanResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24192,7 +24192,7 @@ class WMGetActiveResourcePlanRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24255,7 +24255,7 @@ class WMGetActiveResourcePlanResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24333,7 +24333,7 @@ class WMGetResourcePlanRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24396,7 +24396,7 @@ class WMGetResourcePlanResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24460,7 +24460,7 @@ class WMGetAllResourcePlanRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24531,7 +24531,7 @@ class WMGetAllResourcePlanResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24658,7 +24658,7 @@ class WMAlterResourcePlanRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24721,7 +24721,7 @@ class WMAlterResourcePlanResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24799,7 +24799,7 @@ class WMValidateResourcePlanRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24897,7 +24897,7 @@ class WMValidateResourcePlanResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -24975,7 +24975,7 @@ class WMDropResourcePlanRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25016,7 +25016,7 @@ class WMDropResourcePlanResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25079,7 +25079,7 @@ class WMCreateTriggerRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25120,7 +25120,7 @@ class WMCreateTriggerResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25183,7 +25183,7 @@ class WMAlterTriggerRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25224,7 +25224,7 @@ class WMAlterTriggerResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25316,7 +25316,7 @@ class WMDropTriggerRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25357,7 +25357,7 @@ class WMDropTriggerResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25435,7 +25435,7 @@ class WMGetTriggersForResourePlanRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25506,7 +25506,7 @@ class WMGetTriggersForResourePlanResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25569,7 +25569,7 @@ class WMCreatePoolRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25610,7 +25610,7 @@ class WMCreatePoolResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25687,7 +25687,7 @@ class WMAlterPoolRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25728,7 +25728,7 @@ class WMAlterPoolResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25820,7 +25820,7 @@ class WMDropPoolRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25861,7 +25861,7 @@ class WMDropPoolResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25936,7 +25936,7 @@ class WMCreateOrUpdateMappingRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -25977,7 +25977,7 @@ class WMCreateOrUpdateMappingResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -26040,7 +26040,7 @@ class WMDropMappingRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -26081,7 +26081,7 @@ class WMDropMappingResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -26199,7 +26199,7 @@ class WMCreateOrDropTriggerToPoolMappingRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -26240,7 +26240,7 @@ class WMCreateOrDropTriggerToPoolMappingResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -26408,7 +26408,7 @@ class ISchema:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -26500,7 +26500,7 @@ class ISchemaName:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -26576,7 +26576,7 @@ class AlterISchemaRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -26765,7 +26765,7 @@ class SchemaVersion:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -26840,7 +26840,7 @@ class SchemaVersionDescriptor:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -26932,7 +26932,7 @@ class FindSchemasByColsRqst:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -27003,7 +27003,7 @@ class FindSchemasByColsResp:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -27080,7 +27080,7 @@ class MapSchemaVersionToSerdeRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -27155,7 +27155,7 @@ class SetSchemaVersionStateRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -27219,7 +27219,7 @@ class GetSerdeRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -27309,7 +27309,7 @@ class RuntimeStat:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -27387,7 +27387,7 @@ class GetRuntimeStatsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -27629,7 +27629,7 @@ class CreateTableRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -27860,7 +27860,7 @@ class CreateDatabaseRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -27923,7 +27923,7 @@ class CreateDataConnectorRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -27989,7 +27989,7 @@ class GetDataConnectorRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -28055,7 +28055,7 @@ class ScheduledQueryPollRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -28137,7 +28137,7 @@ class ScheduledQueryKey:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -28240,7 +28240,7 @@ class ScheduledQueryPollResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -28371,7 +28371,7 @@ class ScheduledQuery:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -28450,7 +28450,7 @@ class ScheduledQueryMaintenanceRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -28558,7 +28558,7 @@ class ScheduledQueryProgressInfo:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -28716,7 +28716,7 @@ class AlterPartitionsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -28757,7 +28757,7 @@ class AlterPartitionsResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -28932,7 +28932,7 @@ class RenamePartitionRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -28973,7 +28973,7 @@ class RenamePartitionResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -29161,7 +29161,7 @@ class AlterTableRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -29202,7 +29202,7 @@ class AlterTableResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -29288,7 +29288,7 @@ class GetPartitionsFilterSpec:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -29359,7 +29359,7 @@ class GetPartitionsResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -29579,7 +29579,7 @@ class GetPartitionsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -29714,7 +29714,7 @@ class GetFieldsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -29787,7 +29787,7 @@ class GetFieldsResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -29922,7 +29922,7 @@ class GetSchemaRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -29995,7 +29995,7 @@ class GetSchemaResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -30143,7 +30143,7 @@ class GetPartitionRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -30208,7 +30208,7 @@ class GetPartitionResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -30342,7 +30342,7 @@ class PartitionsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -30415,7 +30415,7 @@ class PartitionsResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -30573,7 +30573,7 @@ class GetPartitionNamesPsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -30649,7 +30649,7 @@ class GetPartitionNamesPsResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -30845,7 +30845,7 @@ class GetPartitionsPsWithAuthRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -30918,7 +30918,7 @@ class GetPartitionsPsWithAuthResponse:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -31054,7 +31054,7 @@ class ReplicationMetrics:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -31127,7 +31127,7 @@ class ReplicationMetricList:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -31215,7 +31215,7 @@ class GetReplicationMetricsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -31285,7 +31285,7 @@ class GetOpenTxnsRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -31383,7 +31383,7 @@ class StoredProcedureRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -31463,7 +31463,7 @@ class ListStoredProcedureRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -31583,7 +31583,7 @@ class StoredProcedure:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -31717,7 +31717,7 @@ class AddPackageRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -31815,7 +31815,7 @@ class GetPackageRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -31913,7 +31913,7 @@ class DropPackageRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -31993,7 +31993,7 @@ class ListPackageRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -32127,7 +32127,7 @@ class Package:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -32219,7 +32219,7 @@ class GetAllWriteEventInfoRequest:
         return
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -32299,7 +32299,7 @@ class MetaException(TException):
         return repr(self)
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -32379,7 +32379,7 @@ class UnknownTableException(TException):
         return repr(self)
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -32459,7 +32459,7 @@ class UnknownDBException(TException):
         return repr(self)
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -32539,7 +32539,7 @@ class AlreadyExistsException(TException):
         return repr(self)
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -32619,7 +32619,7 @@ class InvalidPartitionException(TException):
         return repr(self)
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -32699,7 +32699,7 @@ class UnknownPartitionException(TException):
         return repr(self)
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -32779,7 +32779,7 @@ class InvalidObjectException(TException):
         return repr(self)
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -32859,7 +32859,7 @@ class NoSuchObjectException(TException):
         return repr(self)
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -32939,7 +32939,7 @@ class InvalidOperationException(TException):
         return repr(self)
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -33019,7 +33019,7 @@ class ConfigValSecurityException(TException):
         return repr(self)
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -33099,7 +33099,7 @@ class InvalidInputException(TException):
         return repr(self)
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -33179,7 +33179,7 @@ class NoSuchTxnException(TException):
         return repr(self)
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -33259,7 +33259,7 @@ class TxnAbortedException(TException):
         return repr(self)
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -33339,7 +33339,7 @@ class TxnOpenException(TException):
         return repr(self)
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -33419,7 +33419,7 @@ class NoSuchLockException(TException):
         return repr(self)
 
     def __repr__(self):
-        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
+        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
