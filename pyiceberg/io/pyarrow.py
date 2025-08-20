@@ -779,6 +779,9 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.uuid()
 
     def visit_unknown(self, _: UnknownType) -> pa.DataType:
+        """
+        UnknownType can be promoted to any primitive type in V3+ tables per the Iceberg spec
+        """
         return pa.null()
 
     def visit_binary(self, _: BinaryType) -> pa.DataType:
@@ -1358,6 +1361,8 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
             primitive = cast(pa.FixedSizeBinaryType, primitive)
             return FixedType(primitive.byte_width)
         elif pa.types.is_null(primitive):
+            # PyArrow null type (pa.null()) is converted to Iceberg UnknownType
+            # UnknownType can be promoted to any primitive type in V3+ tables per the Iceberg spec
             return UnknownType()
         elif isinstance(primitive, pa.UuidType):
             return UUIDType()
