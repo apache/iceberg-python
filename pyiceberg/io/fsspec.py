@@ -49,6 +49,7 @@ from pyiceberg.io import (
     ADLS_CREDENTIAL,
     ADLS_SAS_TOKEN,
     ADLS_TENANT_ID,
+    ADLS_TOKEN,
     AWS_ACCESS_KEY_ID,
     AWS_REGION,
     AWS_SECRET_ACCESS_KEY,
@@ -66,6 +67,7 @@ from pyiceberg.io import (
     HF_ENDPOINT,
     HF_TOKEN,
     S3_ACCESS_KEY_ID,
+    S3_ANONYMOUS,
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
     S3_PROXY_URI,
@@ -84,6 +86,7 @@ from pyiceberg.io import (
     OutputStream,
 )
 from pyiceberg.typedef import Properties
+from pyiceberg.types import strtobool
 from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool
 
 logger = logging.getLogger(__name__)
@@ -165,6 +168,9 @@ def _s3(properties: Properties) -> AbstractFileSystem:
     if request_timeout := properties.get(S3_REQUEST_TIMEOUT):
         config_kwargs["read_timeout"] = float(request_timeout)
 
+    if s3_anonymous := properties.get(S3_ANONYMOUS):
+        config_kwargs["anon"] = strtobool(s3_anonymous)
+
     fs = S3FileSystem(client_kwargs=client_kwargs, config_kwargs=config_kwargs)
 
     for event_name, event_function in register_events.items():
@@ -193,7 +199,11 @@ def _gs(properties: Properties) -> AbstractFileSystem:
 
 
 def _adls(properties: Properties) -> AbstractFileSystem:
+    # https://fsspec.github.io/adlfs/api/
+
     from adlfs import AzureBlobFileSystem
+    from azure.core.credentials import AccessToken
+    from azure.core.credentials_async import AsyncTokenCredential
 
     # https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-introduction-abfs-uri#uri-syntax
     if netloc := properties.get("netloc"):
@@ -208,9 +218,27 @@ def _adls(properties: Properties) -> AbstractFileSystem:
     if not properties.get(ADLS_SAS_TOKEN) and account_uri:
         properties[ADLS_SAS_TOKEN] = properties.get(f"{ADLS_SAS_TOKEN}.{account_uri}")
 
+    class StaticTokenCredential(AsyncTokenCredential):
+        _DEFAULT_EXPIRY_SECONDS = 3600
+
+        def __init__(self, token_string: str) -> None:
+            self._token = token_string
+
+        async def get_token(self, *scopes: str, **kwargs: Any) -> AccessToken:
+            import time
+
+            # Set expiration 1 hour from now
+            expires_on = int(time.time()) + self._DEFAULT_EXPIRY_SECONDS
+            return AccessToken(self._token, expires_on)
+
+    if token := properties.get(ADLS_TOKEN):
+        credential = StaticTokenCredential(token)
+    else:
+        credential = properties.get(ADLS_CREDENTIAL)  # type: ignore
+
     return AzureBlobFileSystem(
         connection_string=properties.get(ADLS_CONNECTION_STRING),
-        credential=properties.get(ADLS_CREDENTIAL),
+        credential=credential,
         account_name=properties.get(ADLS_ACCOUNT_NAME),
         account_key=properties.get(ADLS_ACCOUNT_KEY),
         sas_token=properties.get(ADLS_SAS_TOKEN),

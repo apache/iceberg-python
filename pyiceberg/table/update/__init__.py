@@ -21,7 +21,7 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
 from functools import singledispatch
-from typing import TYPE_CHECKING, Annotated, Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Annotated, Any, Dict, Generic, List, Literal, Optional, Set, Tuple, TypeVar, Union, cast
 
 from pydantic import Field, field_validator, model_validator
 
@@ -49,7 +49,6 @@ from pyiceberg.types import (
     transform_dict_value_to_str,
 )
 from pyiceberg.utils.datetime import datetime_to_millis
-from pyiceberg.utils.deprecated import deprecation_notice
 from pyiceberg.utils.properties import property_as_int
 
 if TYPE_CHECKING:
@@ -92,16 +91,6 @@ class UpgradeFormatVersionUpdate(IcebergBaseModel):
 class AddSchemaUpdate(IcebergBaseModel):
     action: Literal["add-schema"] = Field(default="add-schema")
     schema_: Schema = Field(alias="schema")
-    # This field is required: https://github.com/apache/iceberg/pull/7445
-    last_column_id: Optional[int] = Field(
-        alias="last-column-id",
-        default=None,
-        deprecated=deprecation_notice(
-            deprecated_in="0.9.0",
-            removed_in="0.10.0",
-            help_message="last-field-id is handled internally, and should not be part of the update.",
-        ),
-    )
 
 
 class SetCurrentSchemaUpdate(IcebergBaseModel):
@@ -755,6 +744,13 @@ class AssertRefSnapshotId(ValidatableTableRequirement):
                 )
         elif self.snapshot_id is not None:
             raise CommitFailedException(f"Requirement failed: branch or tag {self.ref} is missing, expected {self.snapshot_id}")
+
+    # override the override method, allowing None to serialize to `null` instead of being omitted.
+    def model_dump_json(
+        self, exclude_none: bool = False, exclude: Optional[Set[str]] = None, by_alias: bool = True, **kwargs: Any
+    ) -> str:
+        # `snapshot-id` is required in json response, even if null
+        return super().model_dump_json(exclude_none=False)
 
 
 class AssertLastAssignedFieldId(ValidatableTableRequirement):

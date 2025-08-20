@@ -109,6 +109,7 @@ from pyiceberg.io import (
     HDFS_USER,
     PYARROW_USE_LARGE_TYPES_ON_READ,
     S3_ACCESS_KEY_ID,
+    S3_ANONYMOUS,
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
     S3_FORCE_VIRTUAL_ADDRESSING,
@@ -179,6 +180,7 @@ from pyiceberg.types import (
     TimeType,
     UnknownType,
     UUIDType,
+    strtobool,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
@@ -450,6 +452,9 @@ class PyArrowFileIO(FileIO):
         if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
             client_kwargs["session_name"] = session_name
 
+        if s3_anonymous := self.properties.get(S3_ANONYMOUS):
+            client_kwargs["anonymous"] = strtobool(s3_anonymous)
+
         return S3FileSystem(**client_kwargs)
 
     def _initialize_s3_fs(self, netloc: Optional[str]) -> FileSystem:
@@ -500,6 +505,9 @@ class PyArrowFileIO(FileIO):
             retry_instance := _import_retry_strategy(retry_strategy_impl)
         ):
             client_kwargs["retry_strategy"] = retry_instance
+
+        if s3_anonymous := self.properties.get(S3_ANONYMOUS):
+            client_kwargs["anonymous"] = strtobool(s3_anonymous)
 
         return S3FileSystem(**client_kwargs)
 
@@ -1475,6 +1483,7 @@ def _task_to_record_batches(
     case_sensitive: bool,
     name_mapping: Optional[NameMapping] = None,
     partition_spec: Optional[PartitionSpec] = None,
+    format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
 ) -> Iterator[pa.RecordBatch]:
     arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
     with io.new_input(task.file.file_path).open() as fin:
@@ -1484,7 +1493,9 @@ def _task_to_record_batches(
         # Hence it is reasonable to always cast 'ns' timestamp to 'us' on read.
         # When V3 support is introduced, we will update `downcast_ns_timestamp_to_us` flag based on
         # the table format version.
-        file_schema = pyarrow_to_schema(physical_schema, name_mapping, downcast_ns_timestamp_to_us=True)
+        file_schema = pyarrow_to_schema(
+            physical_schema, name_mapping, downcast_ns_timestamp_to_us=True, format_version=format_version
+        )
 
         # Apply column projection rules: https://iceberg.apache.org/spec/#column-projection
         projected_missing_fields = _get_column_projection_values(
@@ -1713,6 +1724,7 @@ class ArrowScan:
                 self._case_sensitive,
                 self._table_metadata.name_mapping(),
                 self._table_metadata.specs().get(task.file.spec_id),
+                self._table_metadata.format_version,
             )
             for batch in batches:
                 if self._limit is not None:
@@ -1776,14 +1788,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
         file_field = self._file_schema.find_field(field.field_id)
 
         if field.field_type.is_primitive:
-            if field.field_type != file_field.field_type:
-                target_schema = schema_to_pyarrow(
-                    promote(file_field.field_type, field.field_type), include_field_ids=self._include_field_ids
-                )
-                if self._use_large_types is False:
-                    target_schema = _pyarrow_schema_ensure_small_types(target_schema)
-                return values.cast(target_schema)
-            elif (target_type := schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)) != values.type:
+            if (target_type := schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)) != values.type:
                 if field.field_type == TimestampType():
                     # Downcasting of nanoseconds to microseconds
                     if (
@@ -1802,13 +1807,22 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                         pa.types.is_timestamp(target_type)
                         and target_type.tz == "UTC"
                         and pa.types.is_timestamp(values.type)
-                        and values.type.tz in UTC_ALIASES
+                        and (values.type.tz in UTC_ALIASES or values.type.tz is None)
                     ):
                         if target_type.unit == "us" and values.type.unit == "ns" and self._downcast_ns_timestamp_to_us:
                             return values.cast(target_type, safe=False)
                         elif target_type.unit == "us" and values.type.unit in {"s", "ms", "us"}:
                             return values.cast(target_type)
                     raise ValueError(f"Unsupported schema projection from {values.type} to {target_type}")
+
+            if field.field_type != file_field.field_type:
+                target_schema = schema_to_pyarrow(
+                    promote(file_field.field_type, field.field_type), include_field_ids=self._include_field_ids
+                )
+                if self._use_large_types is False:
+                    target_schema = _pyarrow_schema_ensure_small_types(target_schema)
+                return values.cast(target_schema)
+
         return values
 
     def _construct_field(self, field: NestedField, arrow_type: pa.DataType) -> pa.Field:
@@ -2445,8 +2459,12 @@ def data_file_statistics_from_parquet_metadata(
 
                     if isinstance(stats_col.iceberg_type, DecimalType) and statistics.physical_type != "FIXED_LEN_BYTE_ARRAY":
                         scale = stats_col.iceberg_type.scale
-                        col_aggs[field_id].update_min(unscaled_to_decimal(statistics.min_raw, scale))
-                        col_aggs[field_id].update_max(unscaled_to_decimal(statistics.max_raw, scale))
+                        col_aggs[field_id].update_min(
+                            unscaled_to_decimal(statistics.min_raw, scale)
+                        ) if statistics.min_raw is not None else None
+                        col_aggs[field_id].update_max(
+                            unscaled_to_decimal(statistics.max_raw, scale)
+                        ) if statistics.max_raw is not None else None
                     else:
                         col_aggs[field_id].update_min(statistics.min)
                         col_aggs[field_id].update_max(statistics.max)
@@ -2793,9 +2811,11 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
             functools.reduce(
                 operator.and_,
                 [
-                    pc.field(partition_field_name) == unique_partition[partition_field_name]
-                    if unique_partition[partition_field_name] is not None
-                    else pc.field(partition_field_name).is_null()
+                    (
+                        pc.field(partition_field_name) == unique_partition[partition_field_name]
+                        if unique_partition[partition_field_name] is not None
+                        else pc.field(partition_field_name).is_null()
+                    )
                     for field, partition_field_name in zip(spec.fields, partition_fields)
                 ],
             )

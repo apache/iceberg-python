@@ -21,6 +21,7 @@ from typing import Any, Callable, Dict, cast
 from unittest import mock
 
 import pytest
+from requests.exceptions import HTTPError
 from requests_mock import Mocker
 
 import pyiceberg
@@ -58,7 +59,6 @@ TEST_RESOURCE = "test_resource"
 
 TEST_HEADERS = {
     "Content-type": "application/json",
-    "X-Client-Version": "0.14.1",
     "User-Agent": f"PyIceberg/{pyiceberg.__version__}",
     "Authorization": f"Bearer {TEST_TOKEN}",
     "X-Iceberg-Access-Delegation": "vended-credentials",
@@ -1121,7 +1121,6 @@ def test_create_staged_table_200(
                     "schema-id": 0,
                     "identifier-field-ids": [],
                 },
-                "last-column-id": 2,
             },
             {"action": "set-current-schema", "schema-id": -1},
             {"action": "add-spec", "spec": {"spec-id": 0, "fields": []}},
@@ -1644,6 +1643,63 @@ def test_rest_catalog_with_unsupported_auth_type() -> None:
         # Missing namespace
         RestCatalog("rest", **catalog_properties)  # type: ignore
     assert "Could not load AuthManager class for 'unsupported'" in str(e.value)
+
+
+def test_rest_catalog_with_oauth2_auth_type(requests_mock: Mocker) -> None:
+    requests_mock.post(
+        f"{TEST_URI}oauth2/token",
+        json={
+            "access_token": "MTQ0NjJkZmQ5OTM2NDE1ZTZjNGZmZjI3",
+            "token_type": "Bearer",
+            "expires_in": 3600,
+            "refresh_token": "IwOGYzYTlmM2YxOTQ5MGE3YmNmMDFkNTVk",
+            "scope": "read",
+        },
+        status_code=200,
+    )
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "oauth2",
+            "oauth2": {
+                "client_id": "some_client_id",
+                "client_secret": "some_client_secret",
+                "token_url": f"{TEST_URI}oauth2/token",
+                "scope": "read",
+            },
+        },
+    }
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert catalog.uri == TEST_URI
+
+
+def test_rest_catalog_oauth2_non_200_token_response(requests_mock: Mocker) -> None:
+    requests_mock.post(
+        f"{TEST_URI}oauth2/token",
+        json={"error": "invalid_client"},
+        status_code=401,
+    )
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "oauth2",
+            "oauth2": {
+                "client_id": "bad_client_id",
+                "client_secret": "bad_client_secret",
+                "token_url": f"{TEST_URI}oauth2/token",
+                "scope": "read",
+            },
+        },
+    }
+
+    with pytest.raises(HTTPError):
+        RestCatalog("rest", **catalog_properties)  # type: ignore
 
 
 EXAMPLE_ENV = {"PYICEBERG_CATALOG__PRODUCTION__URI": TEST_URI}

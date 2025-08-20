@@ -18,6 +18,7 @@
 import math
 import os
 import random
+import re
 import time
 import uuid
 from datetime import date, datetime, timedelta
@@ -44,7 +45,7 @@ from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import CommitFailedException, NoSuchTableError
 from pyiceberg.expressions import And, EqualTo, GreaterThanOrEqual, In, LessThan, Not
-from pyiceberg.io.pyarrow import _dataframe_to_data_files
+from pyiceberg.io.pyarrow import UnsupportedPyArrowTypeException, _dataframe_to_data_files
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
@@ -2249,15 +2250,24 @@ def test_branch_py_write_spark_read(session_catalog: Catalog, spark: SparkSessio
 
 
 @pytest.mark.integration
-def test_nanosecond_support_on_catalog(session_catalog: Catalog) -> None:
+def test_nanosecond_support_on_catalog(
+    session_catalog: Catalog, arrow_table_schema_with_all_timestamp_precisions: pa.Schema
+) -> None:
     identifier = "default.test_nanosecond_support_on_catalog"
-    # Create a pyarrow table with a nanosecond timestamp column
-    table = pa.Table.from_arrays(
-        [
-            pa.array([datetime.now()], type=pa.timestamp("ns")),
-            pa.array([datetime.now()], type=pa.timestamp("ns", tz="America/New_York")),
-        ],
-        names=["timestamp_ns", "timestamptz_ns"],
-    )
 
-    _create_table(session_catalog, identifier, {"format-version": "3"}, schema=table.schema)
+    catalog = load_catalog("default", type="in-memory")
+    catalog.create_namespace("ns")
+
+    _create_table(session_catalog, identifier, {"format-version": "3"}, schema=arrow_table_schema_with_all_timestamp_precisions)
+
+    with pytest.raises(NotImplementedError, match="Writing V3 is not yet supported"):
+        catalog.create_table(
+            "ns.table1", schema=arrow_table_schema_with_all_timestamp_precisions, properties={"format-version": "3"}
+        )
+
+    with pytest.raises(
+        UnsupportedPyArrowTypeException, match=re.escape("Column 'timestamp_ns' has an unsupported type: timestamp[ns]")
+    ):
+        _create_table(
+            session_catalog, identifier, {"format-version": "2"}, schema=arrow_table_schema_with_all_timestamp_precisions
+        )
