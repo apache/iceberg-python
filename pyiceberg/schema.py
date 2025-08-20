@@ -1769,13 +1769,13 @@ class _SchemaCompatibilityVisitor(PreOrderSchemaVisitor[bool]):
                 promote(rhs.field_type, lhs.field_type)
                 self.rich_table.add_row("✅", str(lhs), str(rhs))
                 return True
-            except ResolveError as e:
+            except ResolveError:
                 # UnknownType can only be promoted to Primitive types
                 if isinstance(rhs.field_type, UnknownType):
-                    if isinstance(lhs.field_type, (ListType, MapType, StructType)):
-                        error_msg = f"PyArrow null type (UnknownType) cannot be promoted to non-primitive type {lhs.field_type}. UnknownType can only be promoted to primitive types (string, int, boolean, etc.) in V3+ tables."
+                    if not isinstance(lhs.field_type, PrimitiveType):
+                        error_msg = f"Null type (UnknownType) cannot be promoted to non-primitive type {lhs.field_type}. UnknownType can only be promoted to primitive types (string, int, boolean, etc.) in V3+ tables."
                     else:
-                        error_msg = f"PyArrow null type (UnknownType) cannot be promoted to {lhs.field_type}. This may be due to table format version limitations (V1/V2 tables don't support UnknownType promotion)."
+                        error_msg = f"Null type (UnknownType) cannot be promoted to {lhs.field_type}. This may be due to table format version limitations (V1/V2 tables don't support UnknownType promotion)."
                     self.rich_table.add_row("❌", str(lhs), f"{str(rhs)} - {error_msg}")
                 else:
                     self.rich_table.add_row("❌", str(lhs), str(rhs))

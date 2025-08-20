@@ -779,9 +779,7 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.uuid()
 
     def visit_unknown(self, _: UnknownType) -> pa.DataType:
-        """
-        UnknownType can be promoted to any primitive type in V3+ tables per the Iceberg spec
-        """
+        """Type `UnknownType` can be promoted to any primitive type in V3+ tables per the Iceberg spec."""
         return pa.null()
 
     def visit_binary(self, _: BinaryType) -> pa.DataType:
