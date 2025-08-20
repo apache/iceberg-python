@@ -290,7 +290,7 @@ class InspectTable:
 
         snapshot = self._get_snapshot(snapshot_id)
         executor = ExecutorFactory.get_or_create()
-        local_partitions_maps = list(executor.map(self._process_manifest, snapshot.manifests(self.tbl.io)))
+        local_partitions_maps = executor.map(self._process_manifest, snapshot.manifests(self.tbl.io))
 
         partitions_map: Dict[Tuple[str, Any], Any] = {}
         for local_map in local_partitions_maps:
