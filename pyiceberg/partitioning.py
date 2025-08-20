@@ -267,7 +267,7 @@ def validate_partition_name(
         if schema_field.field_id != source_id:
             raise ValueError(f"Cannot create identity partition sourced from different field in schema: {field_name}")
     else:
-        raise ValueError(f"Cannot create partition from name that exists in schema: {field_name}")
+        raise ValueError(f"Cannot create partition with a name that exists in schema: {field_name}")
     if not field_name:
         raise ValueError("Undefined name")
     if field_name in partition_names:
