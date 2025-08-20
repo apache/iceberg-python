@@ -980,8 +980,16 @@ def test_append_ymd_transform_partitioned(
     # Given
     identifier = f"default.arrow_table_v{format_version}_with_{str(transform)}_partition_on_col_{part_col}"
     nested_field = TABLE_SCHEMA.find_field(part_col)
+
+    if isinstance(transform, YearTransform):
+        partition_name = f"{part_col}_year"
+    elif isinstance(transform, MonthTransform):
+        partition_name = f"{part_col}_month"
+    elif isinstance(transform, DayTransform):
+        partition_name = f"{part_col}_day"
+
     partition_spec = PartitionSpec(
-        PartitionField(source_id=nested_field.field_id, field_id=1001, transform=transform, name=part_col)
+        PartitionField(source_id=nested_field.field_id, field_id=1001, transform=transform, name=partition_name)
     )
 
     # When
@@ -1037,8 +1045,18 @@ def test_append_transform_partition_verify_partitions_count(
     part_col = "timestamptz"
     identifier = f"default.arrow_table_v{format_version}_with_{str(transform)}_transform_partitioned_on_col_{part_col}"
     nested_field = table_date_timestamps_schema.find_field(part_col)
+
+    if isinstance(transform, YearTransform):
+        partition_name = f"{part_col}_year"
+    elif isinstance(transform, MonthTransform):
+        partition_name = f"{part_col}_month"
+    elif isinstance(transform, DayTransform):
+        partition_name = f"{part_col}_day"
+    elif isinstance(transform, HourTransform):
+        partition_name = f"{part_col}_hour"
+
     partition_spec = PartitionSpec(
-        PartitionField(source_id=nested_field.field_id, field_id=1001, transform=transform, name=part_col),
+        PartitionField(source_id=nested_field.field_id, field_id=1001, transform=transform, name=partition_name),
     )
 
     # When
@@ -1061,7 +1079,7 @@ def test_append_transform_partition_verify_partitions_count(
 
     partitions_table = tbl.inspect.partitions()
     assert partitions_table.num_rows == len(expected_partitions)
-    assert {part[part_col] for part in partitions_table["partition"].to_pylist()} == expected_partitions
+    assert {part[partition_name] for part in partitions_table["partition"].to_pylist()} == expected_partitions
     files_df = spark.sql(
         f"""
             SELECT *

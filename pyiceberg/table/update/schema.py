@@ -662,6 +662,13 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         # Check the field-ids
         new_schema = Schema(*struct.fields)
+        from pyiceberg.partitioning import validate_partition_name
+
+        for spec in self._transaction.table_metadata.partition_specs:
+            for partition_field in spec.fields:
+                validate_partition_name(
+                    partition_field.name, partition_field.transform, partition_field.source_id, new_schema, set()
+                )
         field_ids = set()
         for name in self._identifier_field_names:
             try:
