@@ -377,12 +377,12 @@ def test_list_namespaces(catalog: InMemoryCatalog) -> None:
     # Given
     catalog.create_namespace(TEST_TABLE_NAMESPACE, TEST_TABLE_PROPERTIES)
     # When
-    namespaces = catalog.list_namespaces()
+    namespaces = list(catalog.list_namespaces())
     # Then
     assert TEST_TABLE_NAMESPACE[:1] in namespaces
 
     # When
-    namespaces = catalog.list_namespaces(TEST_TABLE_NAMESPACE)
+    namespaces = list(catalog.list_namespaces(TEST_TABLE_NAMESPACE))
     # Then
     assert not namespaces
 
@@ -426,7 +426,7 @@ def test_list_tables_under_a_namespace(catalog: InMemoryCatalog) -> None:
     catalog.create_namespace(new_namespace)
     # When
     all_tables = catalog.list_tables(namespace=TEST_TABLE_NAMESPACE)
-    new_namespace_tables = catalog.list_tables(new_namespace)
+    new_namespace_tables = list(catalog.list_tables(new_namespace))
     # Then
     assert all_tables
     assert TEST_TABLE_IDENTIFIER in all_tables
