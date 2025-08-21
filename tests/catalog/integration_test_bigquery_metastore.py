@@ -30,6 +30,7 @@ from pyiceberg.table.sorting import UNSORTED_SORT_ORDER
 from tests.conftest import BQ_TABLE_METADATA_LOCATION_REGEX
 
 
+@pytest.mark.skipif(os.environ.get("GCP_CREDENTIALS") is None)
 def test_create_table_with_database_location(
     mocker: MockFixture, _bucket_initialize: None, table_schema_nested: Schema, gcp_dataset_name: str, table_name: str
 ) -> None:
@@ -38,7 +39,12 @@ def test_create_table_with_database_location(
     catalog_name = "test_ddb_catalog"
     identifier = (gcp_dataset_name, table_name)
     test_catalog = BigQueryMetastoreCatalog(
-        catalog_name, **{"gcp.project-id": "alexstephen-test-1", "warehouse": "gs://alexstephen-test-bq-bucket/"}
+        catalog_name,
+        **{
+            "gcp.bigquery.project-id": "alexstephen-test-1",
+            "warehouse": "gs://alexstephen-test-bq-bucket/",
+            "gcp.bigquery.credentials-info": os.environ["GCP_CREDENTIALS"],
+        },
     )
     test_catalog.create_namespace(namespace=gcp_dataset_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
@@ -49,6 +55,7 @@ def test_create_table_with_database_location(
     assert identifier in tables_in_namespace
 
 
+@pytest.mark.skipif(os.environ.get("GCP_CREDENTIALS") is None)
 def test_drop_table_with_database_location(
     mocker: MockFixture, _bucket_initialize: None, table_schema_nested: Schema, gcp_dataset_name: str, table_name: str
 ) -> None:
@@ -57,7 +64,12 @@ def test_drop_table_with_database_location(
     catalog_name = "test_ddb_catalog"
     identifier = (gcp_dataset_name, table_name)
     test_catalog = BigQueryMetastoreCatalog(
-        catalog_name, **{"gcp.project-id": "alexstephen-test-1", "warehouse": "gs://alexstephen-test-bq-bucket/"}
+        catalog_name,
+        **{
+            "gcp.bigquery.project-id": "alexstephen-test-1",
+            "warehouse": "gs://alexstephen-test-bq-bucket/",
+            "gcp.bigquery.credentials-info": os.environ["GCP_CREDENTIALS"],
+        },
     )
     test_catalog.create_namespace(namespace=gcp_dataset_name)
     test_catalog.create_table(identifier, table_schema_nested)
@@ -74,6 +86,7 @@ def test_drop_table_with_database_location(
         assert True
 
 
+@pytest.mark.skipif(os.environ.get("GCP_CREDENTIALS") is None)
 def test_create_and_drop_namespace(
     mocker: MockFixture, _bucket_initialize: None, table_schema_nested: Schema, gcp_dataset_name: str, table_name: str
 ) -> None:
@@ -82,7 +95,12 @@ def test_create_and_drop_namespace(
     # Create namespace.
     catalog_name = "test_ddb_catalog"
     test_catalog = BigQueryMetastoreCatalog(
-        catalog_name, **{"gcp.project-id": "alexstephen-test-1", "warehouse": "gs://alexstephen-test-bq-bucket/"}
+        catalog_name,
+        **{
+            "gcp.bigquery.project-id": "alexstephen-test-1",
+            "warehouse": "gs://alexstephen-test-bq-bucket/",
+            "gcp.bigquery.credentials-info": os.environ["GCP_CREDENTIALS"],
+        },
     )
     test_catalog.create_namespace(namespace=gcp_dataset_name)
 
@@ -100,6 +118,7 @@ def test_create_and_drop_namespace(
         test_catalog.load_namespace_properties(gcp_dataset_name)
 
 
+@pytest.mark.skipif(os.environ.get("GCP_CREDENTIALS") is None)
 def test_register_table(
     mocker: MockFixture, _bucket_initialize: None, table_schema_nested: Schema, gcp_dataset_name: str, table_name: str
 ) -> None:
@@ -108,9 +127,15 @@ def test_register_table(
     catalog_name = "test_bq_register_catalog"
     identifier = (gcp_dataset_name, table_name)
     warehouse_path = "gs://alexstephen-test-bq-bucket/"  # Matches conftest BUCKET_NAME for GCS interaction
-    gcp_project_id = "alexstephen-test-1"
 
-    test_catalog = BigQueryMetastoreCatalog(catalog_name, **{"gcp.project-id": gcp_project_id, "warehouse": warehouse_path})
+    test_catalog = BigQueryMetastoreCatalog(
+        catalog_name,
+        **{
+            "gcp.bigquery.project-id": "alexstephen-test-1",
+            "warehouse": "gs://alexstephen-test-bq-bucket/",
+            "gcp.bigquery.credentials-info": os.environ["GCP_CREDENTIALS"],
+        },
+    )
 
     test_catalog.create_namespace(namespace=gcp_dataset_name)
 

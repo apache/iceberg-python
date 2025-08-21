@@ -64,7 +64,7 @@ def test_create_table_with_database_location(
     catalog_name = "test_ddb_catalog"
     identifier = (gcp_dataset_name, table_name)
     test_catalog = BigQueryMetastoreCatalog(
-        catalog_name, **{"gcp.project-id": "alexstephen-test-1", "warehouse": "gs://alexstephen-test-bq-bucket/"}
+        catalog_name, **{"gcp.bigquery.project-id": "alexstephen-test-1", "warehouse": "gs://alexstephen-test-bq-bucket/"}
     )
     test_catalog.create_namespace(namespace=gcp_dataset_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
@@ -89,7 +89,7 @@ def test_drop_table_with_database_location(
     catalog_name = "test_ddb_catalog"
     identifier = (gcp_dataset_name, table_name)
     test_catalog = BigQueryMetastoreCatalog(
-        catalog_name, **{"gcp.project-id": "alexstephen-test-1", "warehouse": "gs://alexstephen-test-bq-bucket/"}
+        catalog_name, **{"gcp.bigquery.project-id": "alexstephen-test-1", "warehouse": "gs://alexstephen-test-bq-bucket/"}
     )
     test_catalog.create_namespace(namespace=gcp_dataset_name)
     test_catalog.create_table(identifier, table_schema_nested)
@@ -112,7 +112,7 @@ def test_drop_namespace(mocker: MockFixture, gcp_dataset_name: str) -> None:
     mocker.patch.dict(os.environ, values={"PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID": "True"})
 
     catalog_name = "test_catalog"
-    test_catalog = BigQueryMetastoreCatalog(catalog_name, **{"gcp.project-id": "alexstephen-test-1"})
+    test_catalog = BigQueryMetastoreCatalog(catalog_name, **{"gcp.bigquery.project-id": "alexstephen-test-1"})
 
     test_catalog.drop_namespace(gcp_dataset_name)
     client_mock.delete_dataset.assert_called_once()
@@ -147,7 +147,7 @@ def test_list_tables(mocker: MockFixture, gcp_dataset_name: str) -> None:
     mocker.patch.dict(os.environ, values={"PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID": "True"})
 
     catalog_name = "test_catalog"
-    test_catalog = BigQueryMetastoreCatalog(catalog_name, **{"gcp.project-id": "my-project"})
+    test_catalog = BigQueryMetastoreCatalog(catalog_name, **{"gcp.bigquery.project-id": "my-project"})
 
     tables = test_catalog.list_tables(gcp_dataset_name)
 
@@ -169,7 +169,7 @@ def test_list_namespaces(mocker: MockFixture) -> None:
     mocker.patch.dict(os.environ, values={"PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID": "True"})
 
     catalog_name = "test_catalog"
-    test_catalog = BigQueryMetastoreCatalog(catalog_name, **{"gcp.project-id": "my-project"})
+    test_catalog = BigQueryMetastoreCatalog(catalog_name, **{"gcp.bigquery.project-id": "my-project"})
 
     namespaces = test_catalog.list_namespaces()
     assert len(namespaces) == 2
