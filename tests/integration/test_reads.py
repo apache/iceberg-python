@@ -48,10 +48,8 @@ from pyiceberg.io import PYARROW_USE_LARGE_TYPES_ON_READ
 from pyiceberg.io.pyarrow import (
     pyarrow_to_schema,
 )
-from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
-from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
