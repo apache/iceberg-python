@@ -397,7 +397,7 @@ Ensure to update the `PYICEBERG_VERSION` in the [Dockerfile](https://github.com/
 
 ### Set up GPG key and Upload to Apache Iceberg KEYS file
 
-To set up GPG key locally, see the instructions [here](http://www.apache.org/dev/openpgp.html#key-gen-generate-key).
+To set up GPG key locally, see the [instructions](http://www.apache.org/dev/openpgp.html#key-gen-generate-key).
 
 To install gpg on a M1 based Mac, a couple of additional steps are required: <https://gist.github.com/phortuin/cf24b1cca3258720c71ad42977e1ba57>.
 
