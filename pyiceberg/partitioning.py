@@ -32,7 +32,7 @@ from pydantic import (
     model_validator,
 )
 
-from pyiceberg.schema import Schema
+from pyiceberg.schema import Schema, index_by_id
 from pyiceberg.transforms import (
     BucketTransform,
     DayTransform,
@@ -56,6 +56,7 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, time_to_micros
@@ -222,11 +223,14 @@ class PartitionSpec(IcebergBaseModel):
         :return: A StructType that represents the PartitionSpec, with a NestedField for each PartitionField.
         """
         nested_fields = []
+        schema_ids = index_by_id(schema)
         for field in self.fields:
-            source_type = schema.find_type(field.source_id)
-            result_type = field.transform.result_type(source_type)
-            required = schema.find_field(field.source_id).required
-            nested_fields.append(NestedField(field.field_id, field.name, result_type, required=required))
+            if field.source_id in schema_ids:
+                source_field = schema.find_field(field.source_id)
+                result_type = field.transform.result_type(source_field.field_type)
+                nested_fields.append(NestedField(field.field_id, field.name, result_type, required=source_field.required))
+            else:
+                nested_fields.append(NestedField(field.field_id, field.name, UnknownType()))
         return StructType(*nested_fields)
 
     def partition_to_path(self, data: Record, schema: Schema) -> str:
