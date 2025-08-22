@@ -21,9 +21,9 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
 from functools import singledispatch
-from typing import TYPE_CHECKING, Annotated, Any, Dict, Generic, List, Literal, Optional, Set, Tuple, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Annotated, Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar, Union, cast
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, field_serializer, field_validator, model_validator
 
 from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec
@@ -725,7 +725,17 @@ class AssertRefSnapshotId(ValidatableTableRequirement):
 
     type: Literal["assert-ref-snapshot-id"] = Field(default="assert-ref-snapshot-id")
     ref: str = Field(...)
-    snapshot_id: Optional[int] = Field(default=None, alias="snapshot-id")
+    snapshot_id: int = Field(default=-1, alias="snapshot-id")
+
+    # serialize -1 to null when serializing to json
+    # TODO: make more generic Field so this can be used on other models that need
+    #       an explicit null.
+    @field_serializer("snapshot_id", when_used="json")
+    def snapshot_id_can_be_null(self, snapshot_id: int) -> Optional[int]:
+        if snapshot_id == -1:
+            return None
+        else:
+            return snapshot_id
 
     def validate(self, base_metadata: Optional[TableMetadata]) -> None:
         if base_metadata is None:
@@ -744,13 +754,6 @@ class AssertRefSnapshotId(ValidatableTableRequirement):
                 )
         elif self.snapshot_id is not None:
             raise CommitFailedException(f"Requirement failed: branch or tag {self.ref} is missing, expected {self.snapshot_id}")
-
-    # override the override method, allowing None to serialize to `null` instead of being omitted.
-    def model_dump_json(
-        self, exclude_none: bool = False, exclude: Optional[Set[str]] = None, by_alias: bool = True, **kwargs: Any
-    ) -> str:
-        # `snapshot-id` is required in json response, even if null
-        return super().model_dump_json(exclude_none=False)
 
 
 class AssertLastAssignedFieldId(ValidatableTableRequirement):

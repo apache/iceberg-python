@@ -18,7 +18,7 @@
 import json
 import os
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 import pytest
 from pytest_mock import MockFixture
@@ -26,6 +26,8 @@ from pytest_mock import MockFixture
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import StaticTable
 from pyiceberg.table.metadata import TableMetadataV1
+from pyiceberg.table.update import AssertRefSnapshotId, TableRequirement
+from pyiceberg.typedef import IcebergBaseModel
 
 
 def test_legacy_current_snapshot_id(
@@ -48,3 +50,13 @@ def test_legacy_current_snapshot_id(
     backwards_compatible_static_table = StaticTable.from_metadata(metadata_location)
     assert backwards_compatible_static_table.metadata.current_snapshot_id is None
     assert backwards_compatible_static_table.metadata == static_table.metadata
+
+
+def test_null_serializer_field() -> None:
+    class ExampleRequest(IcebergBaseModel):
+        requirements: Tuple[TableRequirement, ...]
+
+    request = ExampleRequest(requirements=(AssertRefSnapshotId(ref="main"),))
+    dumped_json = request.model_dump_json()
+    expected_json = """{"type":"assert-ref-snapshot-id","ref":"main","snapshot-id":null}"""
+    assert expected_json in dumped_json
