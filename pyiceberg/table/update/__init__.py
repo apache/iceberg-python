@@ -732,7 +732,7 @@ class AssertRefSnapshotId(ValidatableTableRequirement):
         return {
             "type": self.type,
             "ref": self.ref,
-            "snapshot_id": self.snapshot_id,
+            "snapshot-id": self.snapshot_id,
         }
 
     def validate(self, base_metadata: Optional[TableMetadata]) -> None:
