@@ -19,7 +19,7 @@
 
 # Verifying a release
 
-Each Apache PyIceberg release is validated by the community by holding a vote. A community release manager will prepare a release candidate and call a vote on the Iceberg dev list. To validate the release candidate, community members will test it out in their downstream projects and environments.
+Each Apache Iceberg Python release is validated by the community by holding a vote. A community release manager will prepare a release candidate and call a vote on the Iceberg dev list. To validate the release candidate, community members will test it out in their downstream projects and environments.
 
 In addition to testing in downstream projects, community members also check the release’s signatures, checksums, and license documentation.
 
