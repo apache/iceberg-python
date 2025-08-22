@@ -60,6 +60,7 @@ def test_create_table_with_database_location(
     mocker.patch("pyiceberg.catalog.bigquery_metastore.Client", return_value=client_mock)
     mocker.patch("pyiceberg.catalog.bigquery_metastore.FromInputFile.table_metadata", return_value=file_mock)
     mocker.patch.dict(os.environ, values={"PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID": "True"})
+    mocker.patch("pyiceberg.catalog.ToOutputFile.table_metadata", return_value=None)
 
     catalog_name = "test_ddb_catalog"
     identifier = (gcp_dataset_name, table_name)
@@ -85,6 +86,7 @@ def test_drop_table_with_database_location(
     mocker.patch("pyiceberg.catalog.bigquery_metastore.Client", return_value=client_mock)
     mocker.patch("pyiceberg.catalog.bigquery_metastore.FromInputFile.table_metadata", return_value=file_mock)
     mocker.patch.dict(os.environ, values={"PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID": "True"})
+    mocker.patch("pyiceberg.catalog.ToOutputFile.table_metadata", return_value=None)
 
     catalog_name = "test_ddb_catalog"
     identifier = (gcp_dataset_name, table_name)
