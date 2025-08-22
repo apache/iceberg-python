@@ -23,7 +23,7 @@ from datetime import datetime
 from functools import singledispatch
 from typing import TYPE_CHECKING, Annotated, Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar, Union, cast
 
-from pydantic import Field, field_serializer, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator, model_serializer
 
 from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec
@@ -725,17 +725,15 @@ class AssertRefSnapshotId(ValidatableTableRequirement):
 
     type: Literal["assert-ref-snapshot-id"] = Field(default="assert-ref-snapshot-id")
     ref: str = Field(...)
-    snapshot_id: int = Field(default=-1, alias="snapshot-id")
+    snapshot_id: Optional[int] = Field(default=None, alias="snapshot-id")
 
-    # serialize -1 to null when serializing to json
-    # TODO: make more generic Field so this can be used on other models that need
-    #       an explicit null.
-    @field_serializer("snapshot_id", when_used="json")
-    def snapshot_id_can_be_null(self, snapshot_id: int) -> Optional[int]:
-        if snapshot_id == -1:
-            return None
-        else:
-            return snapshot_id
+    @model_serializer
+    def ser_model(self) -> dict[str, Any]:
+        return {
+            "type": self.type,
+            "ref": self.ref,
+            "snapshot_id": self.snapshot_id,
+        }
 
     def validate(self, base_metadata: Optional[TableMetadata]) -> None:
         if base_metadata is None:

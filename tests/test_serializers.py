@@ -56,7 +56,7 @@ def test_null_serializer_field() -> None:
     class ExampleRequest(IcebergBaseModel):
         requirements: Tuple[TableRequirement, ...]
 
-    request = ExampleRequest(requirements=(AssertRefSnapshotId(ref="main"),))
+    request = ExampleRequest(requirements=(AssertRefSnapshotId(ref="main", snapshot_id=None),))
     dumped_json = request.model_dump_json()
     expected_json = """{"type":"assert-ref-snapshot-id","ref":"main","snapshot-id":null}"""
     assert expected_json in dumped_json
