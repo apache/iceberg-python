@@ -55,6 +55,7 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 
@@ -918,6 +919,36 @@ def test_promotion(file_type: IcebergType, read_type: IcebergType) -> None:
     else:
         with pytest.raises(ResolveError):
             promote(file_type, read_type)
+
+
+def test_unknown_type_promotion_to_primitive() -> None:
+    """Test that UnknownType can be promoted to primitive types (V3+ behavior)"""
+    unknown_type = UnknownType()
+
+    assert promote(unknown_type, StringType()) == StringType()
+    assert promote(unknown_type, IntegerType()) == IntegerType()
+    assert promote(unknown_type, BooleanType()) == BooleanType()
+    assert promote(unknown_type, FloatType()) == FloatType()
+
+
+def test_unknown_type_promotion_to_non_primitive_raises_resolve_error() -> None:
+    """Test that UnknownType cannot be promoted to non-primitive types and raises ResolveError"""
+    unknown_type = UnknownType()
+
+    with pytest.raises(ResolveError) as exc_info:
+        promote(unknown_type, ListType(element_id=1, element_type=StringType(), element_required=False))
+
+    assert "Cannot promote unknown to list<string>" in str(exc_info.value)
+
+    with pytest.raises(ResolveError) as exc_info:
+        promote(unknown_type, MapType(key_id=1, key_type=StringType(), value_id=2, value_type=StringType(), value_required=False))
+
+    assert "Cannot promote unknown to map<string, string>" in str(exc_info.value)
+
+    with pytest.raises(ResolveError) as exc_info:
+        promote(unknown_type, StructType(NestedField(field_id=1, name="field", field_type=StringType(), required=False)))
+
+    assert "Cannot promote unknown to struct<1: field: optional string>" in str(exc_info.value)
 
 
 @pytest.fixture()
