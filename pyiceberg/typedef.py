@@ -208,3 +208,4 @@ class Record(StructProtocol):
 
 
 TableVersion: TypeAlias = Literal[1, 2, 3]
+ViewVersion: TypeAlias = Literal[1]
