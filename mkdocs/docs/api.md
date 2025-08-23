@@ -1376,6 +1376,61 @@ def cleanup_old_snapshots(table_name: str, snapshot_ids: list[int]):
 cleanup_old_snapshots("analytics.user_events", [12345, 67890, 11111])
 ```
 
+#### Advanced Retention Strategies
+
+PyIceberg provides additional retention helpers on `ExpireSnapshots` to balance safety and cleanup:
+
+Key table properties used as defaults (all optional):
+
+- `history.expire.max-snapshot-age-ms`: Default age threshold for `with_retention_policy`
+- `history.expire.min-snapshots-to-keep`: Minimum total snapshots to retain
+- `history.expire.max-ref-age-ms`: (Reserved for future protected ref/branch cleanup logic)
+
+Protected snapshots (referenced by branches or tags) are never expired by these APIs.
+
+Keep only the last N snapshots (plus protected):
+
+```python
+table.maintenance.expire_snapshots().retain_last_n(5).commit()
+```
+
+Expire older snapshots but always keep the most recent N and a safety floor:
+
+```python
+from datetime import datetime, timedelta
+
+cutoff = int((datetime.now() - timedelta(days=7)).timestamp() * 1000)
+table.maintenance.expire_snapshots().older_than_with_retention(
+    timestamp_ms=cutoff,
+    retain_last_n=3,
+    min_snapshots_to_keep=4,
+).commit()
+```
+
+Unified policy that also reads table property defaults:
+
+```python
+# Uses table properties if arguments omitted
+table.maintenance.expire_snapshots().with_retention_policy().commit()
+
+# Override selectively
+table.maintenance.expire_snapshots().with_retention_policy(
+    retain_last_n=2,          # keep 2 newest regardless of age
+    min_snapshots_to_keep=5,  # never go below 5 total
+    # timestamp_ms omitted -> falls back to history.expire.max-snapshot-age-ms if set
+).commit()
+```
+
+Parameter interaction rules:
+
+- `retain_last_n` snapshots are always kept (plus protected refs)
+- `timestamp_ms` filters candidates (older than only)
+- `min_snapshots_to_keep` stops expiration once the floor would be violated
+- If all of (`timestamp_ms`, `retain_last_n`, `min_snapshots_to_keep`) are None in `with_retention_policy`, nothing is expired
+- Passing invalid values (`< 1`) for counts raises `ValueError`
+
+Safety tip: Start with higher `min_snapshots_to_keep` when first enabling automated cleanup.
+
 ## Views
 
 PyIceberg supports view operations.
