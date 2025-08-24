@@ -2287,7 +2287,7 @@ def test_stage_only_delete(
     assert len(files_to_delete) > 0
 
     with tbl.transaction() as txn:
-        with txn.update_snapshot(stage_only=True).delete() as delete:
+        with txn.update_snapshot(branch=None).delete() as delete:
             delete.delete_by_predicate(EqualTo("int", 9))
 
     # a new delete snapshot is added
@@ -2324,7 +2324,7 @@ def test_stage_only_fast_append(
     assert original_count == 3
 
     with tbl.transaction() as txn:
-        with txn.update_snapshot(stage_only=True).fast_append() as fast_append:
+        with txn.update_snapshot(branch=None).fast_append() as fast_append:
             for data_file in _dataframe_to_data_files(
                 table_metadata=txn.table_metadata, df=arrow_table_with_null, io=txn._table.io
             ):
@@ -2364,7 +2364,7 @@ def test_stage_only_merge_append(
     assert original_count == 3
 
     with tbl.transaction() as txn:
-        with txn.update_snapshot(stage_only=True).merge_append() as merge_append:
+        with txn.update_snapshot(branch=None).merge_append() as merge_append:
             for data_file in _dataframe_to_data_files(
                 table_metadata=txn.table_metadata, df=arrow_table_with_null, io=txn._table.io
             ):
@@ -2409,7 +2409,7 @@ def test_stage_only_overwrite_files(
     assert len(files_to_delete) > 0
 
     with tbl.transaction() as txn:
-        with txn.update_snapshot(stage_only=True).overwrite() as overwrite:
+        with txn.update_snapshot(branch=None).overwrite() as overwrite:
             for data_file in _dataframe_to_data_files(
                 table_metadata=txn.table_metadata, df=arrow_table_with_null, io=txn._table.io
             ):
