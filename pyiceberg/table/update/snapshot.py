@@ -139,7 +139,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         )
 
     def _validate_target_branch(self, branch: Optional[str]) -> Optional[str]:
-        # Default is already set to MAIN_BRANCH. So branch name can't be None.
+        # if branch is none, write will be written into a staging snapshot
         if branch is not None:
             if branch in self._transaction.table_metadata.refs:
                 ref = self._transaction.table_metadata.refs[branch]

@@ -2293,20 +2293,36 @@ def test_stage_only_delete(
     # a new delete snapshot is added
     snapshots = tbl.snapshots()
     assert len(snapshots) == 2
-
-    rows = spark.sql(
-        f"""
-                    SELECT operation, summary
-                    FROM {identifier}.snapshots
-                    ORDER BY committed_at ASC
-                """
-    ).collect()
-    operations = [row.operation for row in rows]
-    assert operations == ["append", "delete"]
-
     # snapshot main ref has not changed
     assert current_snapshot == tbl.metadata.current_snapshot_id
     assert len(tbl.scan().to_arrow()) == original_count
+
+    # Write to main branch
+    with tbl.transaction() as txn:
+        with txn.update_snapshot().fast_append() as fast_append:
+            for data_file in _dataframe_to_data_files(
+                    table_metadata=txn.table_metadata, df=arrow_table_with_null, io=txn._table.io
+            ):
+                fast_append.append_data_file(data_file=data_file)
+
+    # Main ref has changed
+    assert current_snapshot != tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == 3
+    snapshots = tbl.snapshots()
+    assert len(snapshots) == 3
+
+    rows = spark.sql(
+        f"""
+                SELECT operation, parent_id
+                FROM {identifier}.snapshots
+                ORDER BY committed_at ASC
+            """
+    ).collect()
+    operations = [row.operation for row in rows]
+    parent_snapshot_id = [row.parent_id for row in rows]
+    assert operations == ["append", "delete", "append"]
+    # both subsequent parent id should be the first snapshot id
+    assert parent_snapshot_id == [None, current_snapshot, current_snapshot]
 
 
 @pytest.mark.integration
@@ -2323,6 +2339,7 @@ def test_stage_only_fast_append(
     original_count = len(tbl.scan().to_arrow())
     assert original_count == 3
 
+    # Write to staging branch
     with tbl.transaction() as txn:
         with txn.update_snapshot(branch=None).fast_append() as fast_append:
             for data_file in _dataframe_to_data_files(
@@ -2333,20 +2350,37 @@ def test_stage_only_fast_append(
     # Main ref has not changed and data is not yet appended
     assert current_snapshot == tbl.metadata.current_snapshot_id
     assert len(tbl.scan().to_arrow()) == original_count
-
     # There should be a new staged snapshot
     snapshots = tbl.snapshots()
     assert len(snapshots) == 2
 
+    # Write to main branch
+    with tbl.transaction() as txn:
+        with txn.update_snapshot().fast_append() as fast_append:
+            for data_file in _dataframe_to_data_files(
+                    table_metadata=txn.table_metadata, df=arrow_table_with_null, io=txn._table.io
+            ):
+                fast_append.append_data_file(data_file=data_file)
+
+    # Main ref has changed
+    assert current_snapshot != tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == 6
+    snapshots = tbl.snapshots()
+    assert len(snapshots) == 3
+
     rows = spark.sql(
         f"""
-            SELECT operation, summary
+            SELECT operation, parent_id
             FROM {identifier}.snapshots
             ORDER BY committed_at ASC
         """
     ).collect()
     operations = [row.operation for row in rows]
-    assert operations == ["append", "append"]
+    parent_snapshot_id = [row.parent_id for row in rows]
+    assert operations == ["append", "append", "append"]
+    # both subsequent parent id should be the first snapshot id
+    assert parent_snapshot_id == [None, current_snapshot, current_snapshot]
+
 
 
 @pytest.mark.integration
@@ -2378,15 +2412,32 @@ def test_stage_only_merge_append(
     snapshots = tbl.snapshots()
     assert len(snapshots) == 2
 
+    # Write to main branch
+    with tbl.transaction() as txn:
+        with txn.update_snapshot().fast_append() as fast_append:
+            for data_file in _dataframe_to_data_files(
+                    table_metadata=txn.table_metadata, df=arrow_table_with_null, io=txn._table.io
+            ):
+                fast_append.append_data_file(data_file=data_file)
+
+    # Main ref has changed
+    assert current_snapshot != tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == 6
+    snapshots = tbl.snapshots()
+    assert len(snapshots) == 3
+
     rows = spark.sql(
         f"""
-            SELECT operation, summary
-            FROM {identifier}.snapshots
-            ORDER BY committed_at ASC
-        """
+                    SELECT operation, parent_id
+                    FROM {identifier}.snapshots
+                    ORDER BY committed_at ASC
+                """
     ).collect()
     operations = [row.operation for row in rows]
-    assert operations == ["append", "append"]
+    parent_snapshot_id = [row.parent_id for row in rows]
+    assert operations == ["append", "append", "append"]
+    # both subsequent parent id should be the first snapshot id
+    assert parent_snapshot_id == [None, current_snapshot, current_snapshot]
 
 
 @pytest.mark.integration
@@ -2418,16 +2469,32 @@ def test_stage_only_overwrite_files(
 
     assert current_snapshot == tbl.metadata.current_snapshot_id
     assert len(tbl.scan().to_arrow()) == original_count
-
     snapshots = tbl.snapshots()
     assert len(snapshots) == 2
 
+    # Write to main branch
+    with tbl.transaction() as txn:
+        with txn.update_snapshot().fast_append() as fast_append:
+            for data_file in _dataframe_to_data_files(
+                    table_metadata=txn.table_metadata, df=arrow_table_with_null, io=txn._table.io
+            ):
+                fast_append.append_data_file(data_file=data_file)
+
+    # Main ref has changed
+    assert current_snapshot != tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == 6
+    snapshots = tbl.snapshots()
+    assert len(snapshots) == 3
+
     rows = spark.sql(
         f"""
-            SELECT operation, summary
-            FROM {identifier}.snapshots
-            ORDER BY committed_at ASC
-        """
+                    SELECT operation, parent_id
+                    FROM {identifier}.snapshots
+                    ORDER BY committed_at ASC
+                """
     ).collect()
     operations = [row.operation for row in rows]
-    assert operations == ["append", "overwrite"]
+    parent_snapshot_id = [row.parent_id for row in rows]
+    assert operations == ["append", "overwrite", "append"]
+    # both subsequent parent id should be the first snapshot id
+    assert parent_snapshot_id == [None, current_snapshot, current_snapshot]
