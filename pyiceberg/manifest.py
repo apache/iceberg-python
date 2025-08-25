@@ -875,7 +875,7 @@ class ManifestFile(Record):
         return hash(self.manifest_path)
 
 
-@cached(cache=LRUCache(maxsize=128), key=lambda io, manifest_list: hashkey(manifest_list))
+@cached(cache=LRUCache(maxsize=1), key=lambda io, manifest_list: hashkey(manifest_list))
 def _manifests(io: FileIO, manifest_list: str) -> Tuple[ManifestFile, ...]:
     """Read and cache manifests from the given manifest list, returning a tuple to prevent modification."""
     file = io.new_input(manifest_list)
@@ -890,6 +890,30 @@ def clear_manifest_cache() -> None:
 def get_manifest_cache_size() -> int:
     """Get the current size of the manifest cache."""
     return len(_manifests.cache)  # type: ignore
+
+
+def get_manifest_cache_info() -> dict[str, Any]:
+    """Get detailed information about the manifest cache."""
+    cache = _manifests.cache  # type: ignore
+    return {
+        "size": len(cache),
+        "keys": list(cache.keys()) if cache else [],
+        "values": [len(value) for value in cache.values()] if cache else [],
+        "total_manifest_files": sum(len(value) for value in cache.values()) if cache else 0,
+    }
+
+
+def print_manifest_cache_debug() -> None:
+    """Print debug information about the manifest cache."""
+    cache = _manifests.cache  # type: ignore
+    print("Manifest cache debug:")
+    print(f"  Cache size: {len(cache)}")
+    if cache:
+        print(f"  Cache keys: {list(cache.keys())}")
+        for i, (key, value) in enumerate(cache.items()):
+            print(f"  Entry {i}: {key} -> {len(value)} manifest files")
+    else:
+        print("  Cache is empty")
 
 
 def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
