@@ -882,6 +882,16 @@ def _manifests(io: FileIO, manifest_list: str) -> Tuple[ManifestFile, ...]:
     return tuple(read_manifest_list(file))
 
 
+def clear_manifest_cache() -> None:
+    """Clear the manifest cache to free memory."""
+    _manifests.cache.clear()  # type: ignore
+
+
+def get_manifest_cache_size() -> int:
+    """Get the current size of the manifest cache."""
+    return len(_manifests.cache)  # type: ignore
+
+
 def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
     """
     Read the manifests from the manifest list.

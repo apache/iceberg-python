@@ -190,6 +190,17 @@ class AvroFile(Generic[D]):
         self, exctype: Optional[Type[BaseException]], excinst: Optional[BaseException], exctb: Optional[TracebackType]
     ) -> None:
         """Perform cleanup when exiting the scope of a 'with' statement."""
+        # Clean up resources to prevent memory leaks
+        if hasattr(self, "decoder"):
+            self.decoder = None  # type: ignore
+        if hasattr(self, "block"):
+            self.block = None
+        if hasattr(self, "reader"):
+            self.reader = None  # type: ignore
+        if hasattr(self, "header"):
+            self.header = None  # type: ignore
+        if hasattr(self, "schema"):
+            self.schema = None  # type: ignore
 
     def __iter__(self) -> AvroFile[D]:
         """Return an iterator for the AvroFile class."""

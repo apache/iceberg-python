@@ -68,6 +68,10 @@ class UpdateTableMetadata(ABC, Generic[U]):
 
     def commit(self) -> None:
         self._transaction._apply(*self._commit())
+        # Clear manifest cache after commit
+        from pyiceberg.manifest import clear_manifest_cache
+
+        clear_manifest_cache()
 
     def __exit__(self, _: Any, value: Any, traceback: Any) -> None:
         """Close and commit the change."""
