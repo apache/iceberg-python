@@ -23,7 +23,8 @@ from datetime import datetime
 from functools import singledispatch
 from typing import TYPE_CHECKING, Annotated, Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar, Union, cast
 
-from pydantic import Field, field_validator, model_validator, model_serializer
+from pydantic import Field, field_validator, model_serializer, model_validator
+from pydantic.functional_serializers import ModelWrapSerializerWithoutInfo
 
 from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec
@@ -728,7 +729,7 @@ class AssertRefSnapshotId(ValidatableTableRequirement):
     snapshot_id: Optional[int] = Field(default=None, alias="snapshot-id")
 
     @model_serializer(mode="wrap")
-    def serialize_model(self, handler) -> dict[str, Any]:
+    def serialize_model(self, handler: ModelWrapSerializerWithoutInfo) -> dict[str, Any]:
         partial_result = handler(self)
         # Ensure "snapshot-id" is always present, even if value is None
         return {**partial_result, "snapshot-id": self.snapshot_id}
