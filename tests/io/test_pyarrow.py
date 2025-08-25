@@ -2798,27 +2798,21 @@ def test_parse_location_environment_defaults():
     assert netloc == ""
     assert path == "/foo/bar"
 
-    try:
-        # Test with environment variables set
-        os.environ["DEFAULT_SCHEME"] = "scheme"
-        os.environ["DEFAULT_NETLOC"] = "netloc:8000"
+    # Test with properties set
+    properties = dict()
+    properties["DEFAULT_SCHEME"] = "scheme"
+    properties["DEFAULT_NETLOC"] = "netloc:8000"
 
-        scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar")
-        assert scheme == "scheme"
-        assert netloc == "netloc:8000"
-        assert path == "netloc:8000/foo/bar"
+    scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar", properties=properties)
+    assert scheme == "scheme"
+    assert netloc == "netloc:8000"
+    assert path == "netloc:8000/foo/bar"
 
-        # Set environment variables
-        os.environ["DEFAULT_SCHEME"] = "hdfs"
-        os.environ["DEFAULT_NETLOC"] = "netloc:8000"
+    # Set properties
+    properties["DEFAULT_SCHEME"] = "hdfs"
+    properties["DEFAULT_NETLOC"] = "netloc:8000"
 
-        scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar")
-        assert scheme == "hdfs"
-        assert netloc == "netloc:8000"
-        assert path == "/foo/bar"
-    finally:
-        # Clean up environment variables
-        if "DEFAULT_SCHEME" in os.environ:
-            del os.environ["DEFAULT_SCHEME"]
-        if "DEFAULT_NETLOC" in os.environ:
-            del os.environ["DEFAULT_NETLOC"]
+    scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar", properties=properties)
+    assert scheme == "hdfs"
+    assert netloc == "netloc:8000"
+    assert path == "/foo/bar"

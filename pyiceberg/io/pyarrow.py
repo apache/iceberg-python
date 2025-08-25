@@ -392,7 +392,7 @@ class PyArrowFileIO(FileIO):
         super().__init__(properties=properties)
 
     @staticmethod
-    def parse_location(location: str) -> Tuple[str, str, str]:
+    def parse_location(location: str, properties: Properties=EMPTY_DICT) -> Tuple[str, str, str]:
         """Return (scheme, netloc, path) for the given location.
 
         Uses environment variables DEFAULT_SCHEME and DEFAULT_NETLOC
@@ -401,8 +401,8 @@ class PyArrowFileIO(FileIO):
         uri = urlparse(location)
 
         # Load defaults from environment
-        default_scheme = os.getenv("DEFAULT_SCHEME", "file")
-        default_netloc = os.getenv("DEFAULT_NETLOC", "")
+        default_scheme = properties.get("DEFAULT_SCHEME", "file")
+        default_netloc = properties.get("DEFAULT_NETLOC", "")
 
         # Apply logic
         scheme = uri.scheme or default_scheme
@@ -629,7 +629,7 @@ class PyArrowFileIO(FileIO):
         Returns:
             PyArrowFile: A PyArrowFile instance for the given location.
         """
-        scheme, netloc, path = self.parse_location(location)
+        scheme, netloc, path = self.parse_location(location, self.properties)
         return PyArrowFile(
             fs=self.fs_by_scheme(scheme, netloc),
             location=location,
@@ -646,7 +646,7 @@ class PyArrowFileIO(FileIO):
         Returns:
             PyArrowFile: A PyArrowFile instance for the given location.
         """
-        scheme, netloc, path = self.parse_location(location)
+        scheme, netloc, path = self.parse_location(location, self.properties)
         return PyArrowFile(
             fs=self.fs_by_scheme(scheme, netloc),
             location=location,
@@ -667,7 +667,7 @@ class PyArrowFileIO(FileIO):
                 an AWS error code 15.
         """
         str_location = location.location if isinstance(location, (InputFile, OutputFile)) else location
-        scheme, netloc, path = self.parse_location(str_location)
+        scheme, netloc, path = self.parse_location(str_location, self.properties)
         fs = self.fs_by_scheme(scheme, netloc)
 
         try:
