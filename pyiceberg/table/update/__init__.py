@@ -25,9 +25,6 @@ from typing import TYPE_CHECKING, Annotated, Any, Dict, Generic, List, Literal, 
 
 from pydantic import Field, field_validator, model_serializer, model_validator
 
-if TYPE_CHECKING:
-    from pydantic.functional_serializers import ModelWrapSerializerWithoutInfo
-
 from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec
 from pyiceberg.schema import Schema
@@ -55,6 +52,8 @@ from pyiceberg.utils.datetime import datetime_to_millis
 from pyiceberg.utils.properties import property_as_int
 
 if TYPE_CHECKING:
+    from pydantic.functional_serializers import ModelWrapSerializerWithoutInfo
+
     from pyiceberg.table import Transaction
 
 U = TypeVar("U")
