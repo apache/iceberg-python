@@ -392,15 +392,30 @@ class PyArrowFileIO(FileIO):
         super().__init__(properties=properties)
 
     @staticmethod
-    def parse_location(location: str) -> Tuple[str, str, str]:
-        """Return the path without the scheme."""
+    def parse_location(location: str, properties: Properties = EMPTY_DICT) -> Tuple[str, str, str]:
+        """Return (scheme, netloc, path) for the given location.
+
+        Uses environment variables DEFAULT_SCHEME and DEFAULT_NETLOC
+        if scheme/netloc are missing.
+        """
         uri = urlparse(location)
-        if not uri.scheme:
-            return "file", uri.netloc, os.path.abspath(location)
-        elif uri.scheme in ("hdfs", "viewfs"):
-            return uri.scheme, uri.netloc, uri.path
+
+        # Load defaults from environment
+        default_scheme = properties.get("DEFAULT_SCHEME", "file")
+        default_netloc = properties.get("DEFAULT_NETLOC", "")
+
+        # Apply logic
+        scheme = uri.scheme or default_scheme
+        netloc = uri.netloc or default_netloc
+
+        if scheme in ("hdfs", "viewfs"):
+            return scheme, netloc, uri.path
         else:
-            return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
+            # For non-HDFS URIs, include netloc in the path if present
+            path = uri.path if uri.scheme else os.path.abspath(location)
+            if netloc and not path.startswith(netloc):
+                path = f"{netloc}{path}"
+            return scheme, netloc, path
 
     def _initialize_fs(self, scheme: str, netloc: Optional[str] = None) -> FileSystem:
         """Initialize FileSystem for different scheme."""
@@ -614,7 +629,7 @@ class PyArrowFileIO(FileIO):
         Returns:
             PyArrowFile: A PyArrowFile instance for the given location.
         """
-        scheme, netloc, path = self.parse_location(location)
+        scheme, netloc, path = self.parse_location(location, self.properties)
         return PyArrowFile(
             fs=self.fs_by_scheme(scheme, netloc),
             location=location,
@@ -631,7 +646,7 @@ class PyArrowFileIO(FileIO):
         Returns:
             PyArrowFile: A PyArrowFile instance for the given location.
         """
-        scheme, netloc, path = self.parse_location(location)
+        scheme, netloc, path = self.parse_location(location, self.properties)
         return PyArrowFile(
             fs=self.fs_by_scheme(scheme, netloc),
             location=location,
@@ -652,7 +667,7 @@ class PyArrowFileIO(FileIO):
                 an AWS error code 15.
         """
         str_location = location.location if isinstance(location, (InputFile, OutputFile)) else location
-        scheme, netloc, path = self.parse_location(str_location)
+        scheme, netloc, path = self.parse_location(str_location, self.properties)
         fs = self.fs_by_scheme(scheme, netloc)
 
         try:
