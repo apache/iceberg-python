@@ -24,7 +24,9 @@ from functools import singledispatch
 from typing import TYPE_CHECKING, Annotated, Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar, Union, cast
 
 from pydantic import Field, field_validator, model_serializer, model_validator
-from pydantic.functional_serializers import ModelWrapSerializerWithoutInfo
+
+if TYPE_CHECKING:
+    from pydantic.functional_serializers import ModelWrapSerializerWithoutInfo
 
 from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec
