@@ -47,6 +47,7 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 
@@ -175,6 +176,19 @@ def test_partition_type(table_schema_simple: Schema) -> None:
     assert spec.partition_type(table_schema_simple) == StructType(
         NestedField(field_id=1000, name="str_truncate", field_type=StringType(), required=False),
         NestedField(field_id=1001, name="int_bucket", field_type=IntegerType(), required=True),
+    )
+
+
+def test_partition_type_missing_source_field(table_schema_simple: Schema) -> None:
+    spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate"),
+        PartitionField(source_id=10, field_id=1001, transform=BucketTransform(num_buckets=25), name="int_bucket"),
+        spec_id=3,
+    )
+
+    assert spec.partition_type(table_schema_simple) == StructType(
+        NestedField(field_id=1000, name="str_truncate", field_type=StringType(), required=False),
+        NestedField(field_id=1001, name="int_bucket", field_type=UnknownType(), required=False),
     )
 
 
