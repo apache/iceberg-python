@@ -2642,7 +2642,6 @@ def test_retry_strategy_not_found() -> None:
 
 def test_parse_location_environment_defaults() -> None:
     """Test that parse_location uses environment variables for defaults."""
-    import os
 
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
@@ -2653,7 +2652,7 @@ def test_parse_location_environment_defaults() -> None:
     assert path == "/foo/bar"
 
     # Test with properties set
-    properties = dict()
+    properties = {}
     properties["DEFAULT_SCHEME"] = "scheme"
     properties["DEFAULT_NETLOC"] = "netloc:8000"
 
