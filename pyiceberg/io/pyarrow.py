@@ -392,7 +392,7 @@ class PyArrowFileIO(FileIO):
         super().__init__(properties=properties)
 
     @staticmethod
-    def parse_location(location: str, properties: Properties=EMPTY_DICT) -> Tuple[str, str, str]:
+    def parse_location(location: str, properties: Properties = EMPTY_DICT) -> Tuple[str, str, str]:
         """Return (scheme, netloc, path) for the given location.
 
         Uses environment variables DEFAULT_SCHEME and DEFAULT_NETLOC

@@ -2788,7 +2788,6 @@ def test_task_to_record_batches_nanos(format_version: TableVersion, tmpdir: str)
 def test_parse_location_environment_defaults():
 
     """Test that parse_location uses environment variables for defaults."""
-    import os
 
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
@@ -2799,7 +2798,7 @@ def test_parse_location_environment_defaults():
     assert path == "/foo/bar"
 
     # Test with properties set
-    properties = dict()
+    properties = {}
     properties["DEFAULT_SCHEME"] = "scheme"
     properties["DEFAULT_NETLOC"] = "netloc:8000"
 
