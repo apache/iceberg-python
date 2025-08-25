@@ -24,6 +24,7 @@ from functools import singledispatch
 from typing import TYPE_CHECKING, Annotated, Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar, Union, cast
 
 from pydantic import Field, field_validator, model_validator, model_serializer
+from pydantic_core.core_schema import SerializerFunctionWrapHandler, SerializationInfo
 
 from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec
@@ -727,13 +728,10 @@ class AssertRefSnapshotId(ValidatableTableRequirement):
     ref: str = Field(...)
     snapshot_id: Optional[int] = Field(default=None, alias="snapshot-id")
 
-    @model_serializer
-    def ser_model(self) -> dict[str, Any]:
-        return {
-            "type": self.type,
-            "ref": self.ref,
-            "snapshot-id": self.snapshot_id,
-        }
+    @model_serializer(mode="wrap")
+    def serialize_model(self, handler) -> dict[str, Any]:
+        partial_result = handler(self)
+        return {**partial_result, "snapshot-id": self.snapshot_id}
 
     def validate(self, base_metadata: Optional[TableMetadata]) -> None:
         if base_metadata is None:
