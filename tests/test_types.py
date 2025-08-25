@@ -30,6 +30,8 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IcebergType,
     IntegerType,
     ListType,
@@ -497,6 +499,41 @@ def test_str_binary() -> None:
 
 def test_repr_binary() -> None:
     assert repr(BinaryType()) == "BinaryType()"
+
+
+def test_serialization_geography() -> None:
+    assert GeographyType().model_dump_json() == '"geography"'
+
+
+def test_deserialization_geography() -> None:
+    assert GeographyType.model_validate_json('"geography"') == GeographyType()
+    assert GeographyType.model_validate_json('"geography(OGC:CRS84, thomas)"') == GeographyType(crs="OGC:CRS84", edge_algorithm=GeographyType.EdgeAlgorithm.THOMAS)
+    assert GeographyType.model_validate_json('"geography(OGC:CRS84)"') == GeographyType(crs="OGC:CRS84", edge_algorithm=None)
+
+
+def test_str_geography() -> None:
+    assert str(GeographyType()) == "geography"
+
+
+def test_repr_geography() -> None:
+    assert repr(GeographyType()) == "GeographyType(crs=OGC:CRS84, edge_algorithm=spherical)"
+
+
+def test_serialization_geometry() -> None:
+    assert GeometryType().model_dump_json() == '"geometry"'
+
+
+def test_deserialization_geometry() -> None:
+    assert GeometryType.model_validate_json('"geometry"') == GeometryType()
+    assert GeometryType.model_validate_json('"geometry(OGC:CRS84)"') == GeometryType(crs="OGC:CRS84")
+
+
+def test_str_geometry() -> None:
+    assert str(GeometryType()) == "geometry"
+
+
+def test_repr_geometry() -> None:
+    assert repr(GeometryType()) == "GeometryType(crs=OGC:CRS84)"
 
 
 def test_serialization_decimal() -> None:
