@@ -18,6 +18,7 @@
 import math
 import os
 import random
+import re
 import time
 import uuid
 from datetime import date, datetime, timedelta
@@ -44,7 +45,7 @@ from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import CommitFailedException, NoSuchTableError
 from pyiceberg.expressions import And, EqualTo, GreaterThanOrEqual, In, LessThan, Not
-from pyiceberg.io.pyarrow import _dataframe_to_data_files
+from pyiceberg.io.pyarrow import _dataframe_to_data_files, UnsupportedPyArrowTypeException
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
@@ -2249,18 +2250,27 @@ def test_branch_py_write_spark_read(session_catalog: Catalog, spark: SparkSessio
 
 
 @pytest.mark.integration
-def test_nanosecond_support_on_catalog(session_catalog: Catalog) -> None:
+def test_nanosecond_support_on_catalog(
+    session_catalog: Catalog, arrow_table_schema_with_all_timestamp_precisions: pa.Schema
+) -> None:
     identifier = "default.test_nanosecond_support_on_catalog"
-    # Create a pyarrow table with a nanosecond timestamp column
-    table = pa.Table.from_arrays(
-        [
-            pa.array([datetime.now()], type=pa.timestamp("ns")),
-            pa.array([datetime.now()], type=pa.timestamp("ns", tz="America/New_York")),
-        ],
-        names=["timestamp_ns", "timestamptz_ns"],
-    )
 
-    _create_table(session_catalog, identifier, {"format-version": "3"}, schema=table.schema)
+    catalog = load_catalog("default", type="in-memory")
+    catalog.create_namespace("ns")
+
+    _create_table(session_catalog, identifier, {"format-version": "3"}, schema=arrow_table_schema_with_all_timestamp_precisions)
+
+    with pytest.raises(NotImplementedError, match="Writing V3 is not yet supported"):
+        catalog.create_table(
+            "ns.table1", schema=arrow_table_schema_with_all_timestamp_precisions, properties={"format-version": "3"}
+        )
+
+    with pytest.raises(
+        UnsupportedPyArrowTypeException, match=re.escape("Column 'timestamp_ns' has an unsupported type: timestamp[ns]")
+    ):
+        _create_table(
+            session_catalog, identifier, {"format-version": "2"}, schema=arrow_table_schema_with_all_timestamp_precisions
+        )
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
@@ -2281,14 +2291,7 @@ def test_stage_only_delete(
     original_count = len(tbl.scan().to_arrow())
     assert original_count == 3
 
-    files_to_delete = []
-    for file_task in tbl.scan().plan_files():
-        files_to_delete.append(file_task.file)
-    assert len(files_to_delete) > 0
-
-    with tbl.transaction() as txn:
-        with txn.update_snapshot(branch=None).delete() as delete:
-            delete.delete_by_predicate(EqualTo("int", 9))
+    tbl.delete("int = 9", branch=None)
 
     # a new delete snapshot is added
     snapshots = tbl.snapshots()
@@ -2298,16 +2301,11 @@ def test_stage_only_delete(
     assert len(tbl.scan().to_arrow()) == original_count
 
     # Write to main branch
-    with tbl.transaction() as txn:
-        with txn.update_snapshot().fast_append() as fast_append:
-            for data_file in _dataframe_to_data_files(
-                    table_metadata=txn.table_metadata, df=arrow_table_with_null, io=txn._table.io
-            ):
-                fast_append.append_data_file(data_file=data_file)
+    tbl.append(arrow_table_with_null)
 
     # Main ref has changed
     assert current_snapshot != tbl.metadata.current_snapshot_id
-    assert len(tbl.scan().to_arrow()) == 3
+    assert len(tbl.scan().to_arrow()) == 6
     snapshots = tbl.snapshots()
     assert len(snapshots) == 3
 
@@ -2327,7 +2325,7 @@ def test_stage_only_delete(
 
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_stage_only_fast_append(
+def test_stage_only_append(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
     identifier = f"default.test_stage_only_fast_append_files_v{format_version}"
@@ -2340,12 +2338,7 @@ def test_stage_only_fast_append(
     assert original_count == 3
 
     # Write to staging branch
-    with tbl.transaction() as txn:
-        with txn.update_snapshot(branch=None).fast_append() as fast_append:
-            for data_file in _dataframe_to_data_files(
-                table_metadata=txn.table_metadata, df=arrow_table_with_null, io=txn._table.io
-            ):
-                fast_append.append_data_file(data_file=data_file)
+    tbl.append(arrow_table_with_null, branch=None)
 
     # Main ref has not changed and data is not yet appended
     assert current_snapshot == tbl.metadata.current_snapshot_id
@@ -2355,12 +2348,7 @@ def test_stage_only_fast_append(
     assert len(snapshots) == 2
 
     # Write to main branch
-    with tbl.transaction() as txn:
-        with txn.update_snapshot().fast_append() as fast_append:
-            for data_file in _dataframe_to_data_files(
-                    table_metadata=txn.table_metadata, df=arrow_table_with_null, io=txn._table.io
-            ):
-                fast_append.append_data_file(data_file=data_file)
+    tbl.append(arrow_table_with_null)
 
     # Main ref has changed
     assert current_snapshot != tbl.metadata.current_snapshot_id
@@ -2382,64 +2370,6 @@ def test_stage_only_fast_append(
     assert parent_snapshot_id == [None, current_snapshot, current_snapshot]
 
 
-
-@pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
-def test_stage_only_merge_append(
-    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
-) -> None:
-    identifier = f"default.test_stage_only_merge_append_files_v{format_version}"
-    tbl = _create_table(session_catalog, identifier, {"format-version": str(format_version)}, [arrow_table_with_null])
-
-    current_snapshot = tbl.metadata.current_snapshot_id
-    assert current_snapshot is not None
-
-    original_count = len(tbl.scan().to_arrow())
-    assert original_count == 3
-
-    with tbl.transaction() as txn:
-        with txn.update_snapshot(branch=None).merge_append() as merge_append:
-            for data_file in _dataframe_to_data_files(
-                table_metadata=txn.table_metadata, df=arrow_table_with_null, io=txn._table.io
-            ):
-                merge_append.append_data_file(data_file=data_file)
-
-    # Main ref has not changed and data is not yet appended
-    assert current_snapshot == tbl.metadata.current_snapshot_id
-    assert len(tbl.scan().to_arrow()) == original_count
-
-    # There should be a new staged snapshot
-    snapshots = tbl.snapshots()
-    assert len(snapshots) == 2
-
-    # Write to main branch
-    with tbl.transaction() as txn:
-        with txn.update_snapshot().fast_append() as fast_append:
-            for data_file in _dataframe_to_data_files(
-                    table_metadata=txn.table_metadata, df=arrow_table_with_null, io=txn._table.io
-            ):
-                fast_append.append_data_file(data_file=data_file)
-
-    # Main ref has changed
-    assert current_snapshot != tbl.metadata.current_snapshot_id
-    assert len(tbl.scan().to_arrow()) == 6
-    snapshots = tbl.snapshots()
-    assert len(snapshots) == 3
-
-    rows = spark.sql(
-        f"""
-                    SELECT operation, parent_id
-                    FROM {identifier}.snapshots
-                    ORDER BY committed_at ASC
-                """
-    ).collect()
-    operations = [row.operation for row in rows]
-    parent_snapshot_id = [row.parent_id for row in rows]
-    assert operations == ["append", "append", "append"]
-    # both subsequent parent id should be the first snapshot id
-    assert parent_snapshot_id == [None, current_snapshot, current_snapshot]
-
-
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_stage_only_overwrite_files(
@@ -2447,54 +2377,42 @@ def test_stage_only_overwrite_files(
 ) -> None:
     identifier = f"default.test_stage_only_overwrite_files_v{format_version}"
     tbl = _create_table(session_catalog, identifier, {"format-version": str(format_version)}, [arrow_table_with_null])
+    first_snapshot = tbl.metadata.current_snapshot_id
 
-    current_snapshot = tbl.metadata.current_snapshot_id
-    assert current_snapshot is not None
+    # duplicate data with a new insert
+    tbl.append(arrow_table_with_null)
 
+    second_snapshot = tbl.metadata.current_snapshot_id
+    assert second_snapshot is not None
     original_count = len(tbl.scan().to_arrow())
-    assert original_count == 3
+    assert original_count == 6
 
-    files_to_delete = []
-    for file_task in tbl.scan().plan_files():
-        files_to_delete.append(file_task.file)
-    assert len(files_to_delete) > 0
-
-    with tbl.transaction() as txn:
-        with txn.update_snapshot(branch=None).overwrite() as overwrite:
-            for data_file in _dataframe_to_data_files(
-                table_metadata=txn.table_metadata, df=arrow_table_with_null, io=txn._table.io
-            ):
-                overwrite.append_data_file(data_file=data_file)
-            overwrite.delete_data_file(files_to_delete[0])
-
-    assert current_snapshot == tbl.metadata.current_snapshot_id
+    # write to non-main branch
+    tbl.overwrite(arrow_table_with_null, branch=None)
+    assert second_snapshot == tbl.metadata.current_snapshot_id
     assert len(tbl.scan().to_arrow()) == original_count
     snapshots = tbl.snapshots()
-    assert len(snapshots) == 2
+    # overwrite will create 2 snapshots
+    assert len(snapshots) == 4
 
-    # Write to main branch
-    with tbl.transaction() as txn:
-        with txn.update_snapshot().fast_append() as fast_append:
-            for data_file in _dataframe_to_data_files(
-                    table_metadata=txn.table_metadata, df=arrow_table_with_null, io=txn._table.io
-            ):
-                fast_append.append_data_file(data_file=data_file)
+    # Write to main branch again
+    tbl.append(arrow_table_with_null)
 
     # Main ref has changed
-    assert current_snapshot != tbl.metadata.current_snapshot_id
-    assert len(tbl.scan().to_arrow()) == 6
+    assert second_snapshot != tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == 9
     snapshots = tbl.snapshots()
-    assert len(snapshots) == 3
+    assert len(snapshots) == 5
 
     rows = spark.sql(
         f"""
-                    SELECT operation, parent_id
+                    SELECT operation, parent_id, snapshot_id
                     FROM {identifier}.snapshots
                     ORDER BY committed_at ASC
                 """
     ).collect()
     operations = [row.operation for row in rows]
     parent_snapshot_id = [row.parent_id for row in rows]
-    assert operations == ["append", "overwrite", "append"]
-    # both subsequent parent id should be the first snapshot id
-    assert parent_snapshot_id == [None, current_snapshot, current_snapshot]
+    assert operations == ["append", "append", "delete", "append", "append"]
+
+    assert parent_snapshot_id == [None, first_snapshot, second_snapshot, second_snapshot, second_snapshot]
