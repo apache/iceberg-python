@@ -68,12 +68,6 @@ class UpdateTableMetadata(ABC, Generic[U]):
 
     def commit(self) -> None:
         self._transaction._apply(*self._commit())
-        # Clear manifest cache after commit to prevent ManifestFile accumulation
-        # With fast append, each write creates a new manifest list with all previous manifests
-        # By clearing after commit, we ensure old ManifestFile objects are released
-        from pyiceberg.manifest import clear_manifest_cache
-
-        clear_manifest_cache()
 
     def __exit__(self, _: Any, value: Any, traceback: Any) -> None:
         """Close and commit the change."""

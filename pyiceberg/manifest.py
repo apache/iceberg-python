@@ -33,7 +33,7 @@ from typing import (
     Union,
 )
 
-from cachetools import LRUCache, cached
+from cachetools import LRUCache
 from cachetools.keys import hashkey
 from pydantic_core import to_json
 
@@ -875,45 +875,56 @@ class ManifestFile(Record):
         return hash(self.manifest_path)
 
 
-@cached(cache=LRUCache(maxsize=1), key=lambda io, manifest_list: hashkey(manifest_list))
+class ManifestCache:
+    def __init__(self, maxsize: int = 1):
+        self._cache: LRUCache = LRUCache(maxsize=maxsize)  # type: ignore
+
+    def _manifests(self, io: FileIO, manifest_list: str) -> Tuple[ManifestFile, ...]:
+        """Read and cache manifests from the given manifest list, returning a tuple to prevent modification."""
+        cache_key = hashkey(manifest_list)
+
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
+        file = io.new_input(manifest_list)
+        result = tuple(read_manifest_list(file))
+        self._cache[cache_key] = result
+
+        return result
+
+    def __del__(self) -> None:
+        """Clear the cache when the instance is deleted."""
+        if hasattr(self, "_cache"):
+            self._cache.clear()
+
+
+# Global instance that can be garbage collected
+_manifest_cache_instance = ManifestCache(maxsize=1)
+
+
 def _manifests(io: FileIO, manifest_list: str) -> Tuple[ManifestFile, ...]:
     """Read and cache manifests from the given manifest list, returning a tuple to prevent modification."""
-    file = io.new_input(manifest_list)
-    return tuple(read_manifest_list(file))
+    return _manifest_cache_instance._manifests(io, manifest_list)
 
 
-def clear_manifest_cache() -> None:
-    """Clear the manifest cache to free memory."""
-    _manifests.cache.clear()  # type: ignore
+# Add the cache attribute to maintain the same interface
+_manifests.cache = _manifest_cache_instance._cache  # type: ignore
 
 
-def get_manifest_cache_size() -> int:
-    """Get the current size of the manifest cache."""
-    return len(_manifests.cache)  # type: ignore
+# Add cache_clear method to maintain the same interface
+def _manifests_cache_clear() -> None:
+    """Clear the manifest cache."""
+    _manifest_cache_instance._cache.clear()
 
 
-def get_manifest_cache_info() -> dict[str, Any]:
-    """Get detailed information about the manifest cache."""
-    cache = _manifests.cache  # type: ignore
-    return {
-        "size": len(cache),
-        "keys": list(cache.keys()) if cache else [],
-        "values": [len(value) for value in cache.values()] if cache else [],
-        "total_manifest_files": sum(len(value) for value in cache.values()) if cache else 0,
-    }
+_manifests.cache_clear = _manifests_cache_clear  # type: ignore
 
 
 def print_manifest_cache_debug() -> None:
     """Print debug information about the manifest cache."""
-    cache = _manifests.cache  # type: ignore
     print("Manifest cache debug:")
-    print(f"  Cache size: {len(cache)}")
-    if cache:
-        print(f"  Cache keys: {list(cache.keys())}")
-        for i, (key, value) in enumerate(cache.items()):
-            print(f"  Entry {i}: {key} -> {len(value)} manifest files")
-    else:
-        print("  Cache is empty")
+    print(f"  Cache size: {len(_manifest_cache_instance._cache)}")
+    print(f"  Max size: {_manifest_cache_instance._cache.maxsize}")
 
 
 def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
