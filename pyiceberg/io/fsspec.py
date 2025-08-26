@@ -129,11 +129,11 @@ def s3v4_rest_signer(properties: Properties, request: "AWSRequest", **_: Any) ->
 SIGNERS: Dict[str, Callable[[Properties, "AWSRequest"], "AWSRequest"]] = {"S3V4RestSigner": s3v4_rest_signer}
 
 
-def _file(_: Properties) -> LocalFileSystem:
+def _file(properties: Properties, netloc: Optional[str]) -> LocalFileSystem:
     return LocalFileSystem(auto_mkdir=True)
 
 
-def _s3(properties: Properties) -> AbstractFileSystem:
+def _s3(properties: Properties, netloc: Optional[str]) -> AbstractFileSystem:
     from s3fs import S3FileSystem
 
     client_kwargs = {
@@ -180,7 +180,7 @@ def _s3(properties: Properties) -> AbstractFileSystem:
     return fs
 
 
-def _gs(properties: Properties) -> AbstractFileSystem:
+def _gs(properties: Properties, netloc: Optional[str]) -> AbstractFileSystem:
     # https://gcsfs.readthedocs.io/en/latest/api.html#gcsfs.core.GCSFileSystem
     from gcsfs import GCSFileSystem
 
@@ -198,7 +198,7 @@ def _gs(properties: Properties) -> AbstractFileSystem:
     )
 
 
-def _adls(properties: Properties) -> AbstractFileSystem:
+def _adls(properties: Properties, netloc: Optional[str]) -> AbstractFileSystem:
     # https://fsspec.github.io/adlfs/api/
 
     from adlfs import AzureBlobFileSystem
@@ -206,7 +206,7 @@ def _adls(properties: Properties) -> AbstractFileSystem:
     from azure.core.credentials_async import AsyncTokenCredential
 
     # https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-introduction-abfs-uri#uri-syntax
-    if netloc := properties.get("netloc"):
+    if netloc:
         account_uri = netloc.split("@")[-1]
     else:
         account_uri = None
@@ -249,7 +249,7 @@ def _adls(properties: Properties) -> AbstractFileSystem:
     )
 
 
-def _hf(properties: Properties) -> AbstractFileSystem:
+def _hf(properties: Properties, netloc: Optional[str]) -> AbstractFileSystem:
     from huggingface_hub import HfFileSystem
 
     return HfFileSystem(
@@ -424,10 +424,7 @@ class FsspecFileIO(FileIO):
         """Get a filesystem for a specific scheme and netloc."""
         if scheme not in self._scheme_to_fs:
             raise ValueError(f"No registered filesystem for scheme: {scheme}")
-        properties = self.properties.copy()
-        if netloc:
-            properties["netloc"] = netloc
-        return self._scheme_to_fs[scheme](properties)
+        return self._scheme_to_fs[scheme](self.properties, netloc)
 
     def __getstate__(self) -> Dict[str, Any]:
         """Create a dictionary of the FsSpecFileIO fields used when pickling."""
