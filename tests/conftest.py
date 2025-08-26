@@ -2487,20 +2487,21 @@ def simple_scan_task(table_schema_simple: Schema, tmp_path: str) -> FileScanTask
     file_path = f"{tmp_path}/equality-data.parquet"
     pq.write_table(table=table, where=file_path)
 
-    return FileScanTask(
-        data_file=DataFile.from_args(
-            file_path=file_path,
-            file_format=FileFormat.PARQUET,
-            record_count=4,
-            column_sizes={1: 10, 2: 10},
-            value_counts={1: 4, 2: 4},
-            null_value_counts={1: 0, 2: 0},
-            nan_value_counts={},
-            lower_bounds={1: b"a", 2: b"\x01\x00\x00\x00"},
-            upper_bounds={1: b"d", 2: b"\x04\x00\x00\x00"},
-            key_metadata=None,
-        ),
+    data_file = DataFile.from_args(
+        file_path=file_path,
+        file_format=FileFormat.PARQUET,
+        record_count=4,
+        column_sizes={1: 10, 2: 10},
+        value_counts={1: 4, 2: 4},
+        null_value_counts={1: 0, 2: 0},
+        nan_value_counts={},
+        lower_bounds={1: b"a", 2: b"\x01\x00\x00\x00"},
+        upper_bounds={1: b"d", 2: b"\x04\x00\x00\x00"},
+        key_metadata=None,
     )
+    data_file.spec_id = 0
+
+    return FileScanTask(data_file=data_file)
 
 
 @pytest.fixture(scope="session")

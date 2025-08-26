@@ -4851,6 +4851,7 @@ def test_mor_read_with_partitions_and_deletes(tmp_path: str, pa_schema: Any) -> 
         file_format=FileFormat.PARQUET,
         content=DataFileContent.DATA,
     )
+    datafile_a.spec_id = 0
 
     data_b = pa.table({"id": [4, 5, 6], "part": ["B", "B", "B"]}, schema=pa_schema)
     data_file_b = os.path.join(tmp_path, "data_b.parquet")
@@ -4860,6 +4861,7 @@ def test_mor_read_with_partitions_and_deletes(tmp_path: str, pa_schema: Any) -> 
         file_format=FileFormat.PARQUET,
         content=DataFileContent.DATA,
     )
+    datafile_b.spec_id = 0
 
     eq_delete_a_path = os.path.join(tmp_path, "eq_delete_a.parquet")
     eq_delete_a_table = pa.table({"id": pa.array([2], type=pa.int32())})
@@ -4870,6 +4872,7 @@ def test_mor_read_with_partitions_and_deletes(tmp_path: str, pa_schema: Any) -> 
         content=DataFileContent.EQUALITY_DELETES,
         equality_ids=[1],
     )
+    eq_delete_file_a.spec_id = 0
 
     pos_delete_b_path = os.path.join(tmp_path, "pos_delete_b.parquet")
     pos_delete_b_table = pa.table({"file_path": [data_file_b], "pos": [0]})
@@ -4879,6 +4882,7 @@ def test_mor_read_with_partitions_and_deletes(tmp_path: str, pa_schema: Any) -> 
         file_format=FileFormat.PARQUET,
         content=DataFileContent.POSITION_DELETES,
     )
+    pos_delete_file_b.spec_id = 0
 
     task_a = FileScanTask(
         data_file=datafile_a,
