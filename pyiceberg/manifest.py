@@ -920,13 +920,6 @@ def _manifests_cache_clear() -> None:
 _manifests.cache_clear = _manifests_cache_clear  # type: ignore
 
 
-def print_manifest_cache_debug() -> None:
-    """Print debug information about the manifest cache."""
-    print("Manifest cache debug:")
-    print(f"  Cache size: {len(_manifest_cache_instance._cache)}")
-    print(f"  Max size: {_manifest_cache_instance._cache.maxsize}")
-
-
 def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
     """
     Read the manifests from the manifest list.
