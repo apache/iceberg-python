@@ -395,18 +395,17 @@ class PyArrowFileIO(FileIO):
     def parse_location(location: str, properties: Properties = EMPTY_DICT) -> Tuple[str, str, str]:
         """Return (scheme, netloc, path) for the given location.
 
-        Uses environment variables DEFAULT_SCHEME and DEFAULT_NETLOC
-        if scheme/netloc are missing.
+        Uses DEFAULT_SCHEME and DEFAULT_NETLOC if scheme/netloc are missing.
         """
         uri = urlparse(location)
 
-        # Load defaults from environment
         default_scheme = properties.get("DEFAULT_SCHEME", "file")
         default_netloc = properties.get("DEFAULT_NETLOC", "")
 
-        # Apply logic
-        scheme = uri.scheme or default_scheme
-        netloc = uri.netloc or default_netloc
+        if not uri.scheme:
+            scheme = default_scheme
+        if not uri.netloc:
+            netloc = default_netloc
 
         if scheme in ("hdfs", "viewfs"):
             return scheme, netloc, uri.path
