@@ -46,6 +46,7 @@ You can mix and match optional dependencies depending on your needs:
 | hive-kerberos | Support for Hive metastore in Kerberos environment                       |
 | glue          | Support for AWS Glue                                                      |
 | dynamodb      | Support for AWS DynamoDB                                                  |
+| bigquery      | Support for Google Cloud BigQuery                                        |
 | sql-postgres  | Support for SQL Catalog backed by Postgresql                              |
 | sql-sqlite    | Support for SQL Catalog backed by SQLite                                  |
 | pyarrow       | PyArrow as a FileIO implementation to interact with the object store      |
