@@ -129,7 +129,7 @@ def s3v4_rest_signer(properties: Properties, request: "AWSRequest", **_: Any) ->
 SIGNERS: Dict[str, Callable[[Properties, "AWSRequest"], "AWSRequest"]] = {"S3V4RestSigner": s3v4_rest_signer}
 
 
-def _file(_properties: Properties, _netloc: Optional[str]) -> LocalFileSystem:
+def _file(_: Properties, __: Optional[str]) -> LocalFileSystem:
     return LocalFileSystem(auto_mkdir=True)
 
 
