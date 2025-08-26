@@ -1254,32 +1254,34 @@ files = [
 
 [[package]]
 name = "daft"
-version = "0.5.13"
+version = "0.5.21"
 description = "Distributed Dataframes for Multimodal Data"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
 markers = "extra == \"daft\""
 files = [
-    {file = "daft-0.5.13-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:3c94e71f6ffe2346f8c2bedd184a790f92d753f33669bfe6e59f0376a0fd3538"},
-    {file = "daft-0.5.13-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:7de36fb49ea50ea756a2cfd59b97eb7ca8699e3a9e123c2b698b665095360ffe"},
-    {file = "daft-0.5.13-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:66851e625a4e2dd68d3e77778edfe7b314253411d0359608419a584efa2d8746"},
-    {file = "daft-0.5.13-cp39-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:84f375c8ea528cac5dfa74ee3d1e1a2ed16a452af7626482acce951c8e386341"},
-    {file = "daft-0.5.13-cp39-abi3-win_amd64.whl", hash = "sha256:1f7542d20b0c7e30e0b51a1e7e6b1a8307b940d93569ea057da876dfdce414a5"},
-    {file = "daft-0.5.13.tar.gz", hash = "sha256:817ee406ad27bb857ddf30259122e5a8a4f68585904088983d6075a539762936"},
+    {file = "daft-0.5.21-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:87dca076939993177e881d6915308e2977661644b450924296667a96aeeb82d9"},
+    {file = "daft-0.5.21-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:ebe5239210f1aa8e25bc556a584db2d7849bed9aa3ce447ba19d19f3e6dd5e5c"},
+    {file = "daft-0.5.21-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:8c22d7ddc489bee4ffa7bd40fba6d909e9232bfd74f44978de3331704cb93132"},
+    {file = "daft-0.5.21-cp39-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:59cac11866d708b6f11f23f122be53d9ca96c403b6e9adef59f093b9c48850c3"},
+    {file = "daft-0.5.21-cp39-abi3-win_amd64.whl", hash = "sha256:4bdd7417f55ee044cf7b0e1ea163a2441a75d380dd0d55d7f796570ebea98cc0"},
+    {file = "daft-0.5.21.tar.gz", hash = "sha256:0cd8c10d1002ed3dd18c8f60bbddcd5e0b679546e47b48344e78ff7519c1c0fe"},
 ]
 
 [package.dependencies]
 fsspec = "*"
 pyarrow = ">=8.0.0"
 tqdm = "*"
-typing-extensions = {version = ">=4.0.0", markers = "python_full_version < \"3.10.0\""}
+typing-extensions = ">=4.0.0"
 
 [package.extras]
-all = ["daft[aws,azure,deltalake,gcp,iceberg,numpy,pandas,ray,spark,sql,unity]"]
+all = ["daft[aws,azure,clickhouse,deltalake,gcp,huggingface,iceberg,numpy,pandas,ray,spark,sql,unity]"]
 aws = ["boto3"]
+clickhouse = ["clickhouse-connect"]
 deltalake = ["deltalake", "packaging"]
 hudi = ["pyarrow (>=8.0.0)"]
+huggingface = ["huggingface-hub"]
 iceberg = ["packaging", "pyiceberg (>=0.7.0)"]
 lance = ["pylance"]
 numpy = ["numpy"]
@@ -4186,7 +4188,7 @@ description = "Beautiful, Pythonic protocol buffers"
 optional = true
 python-versions = ">=3.7"
 groups = ["main"]
-markers = "python_version >= \"3.13\" and (extra == \"gcsfs\" or extra == \"bigquery\") or extra == \"bigquery\" or extra == \"gcsfs\""
+markers = "(python_version < \"3.12\" or python_version >= \"3.13\" or extra == \"bigquery\" or extra == \"gcsfs\") and (extra == \"gcsfs\" or extra == \"bigquery\")"
 files = [
     {file = "proto_plus-1.26.1-py3-none-any.whl", hash = "sha256:13285478c2dcf2abb829db158e1047e2f1e8d63a077d94263c2b88b043c75a66"},
     {file = "proto_plus-1.26.1.tar.gz", hash = "sha256:21a515a4c4c0088a773899e23c7bbade3d18f9c66c73edd4c7ee3816bc96a012"},
