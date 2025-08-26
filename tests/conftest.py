@@ -79,8 +79,8 @@ from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
 from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2
-from pyiceberg.typedef import Record
 from pyiceberg.transforms import DayTransform, IdentityTransform
+from pyiceberg.typedef import Record
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -2432,7 +2432,6 @@ def simple_scan_task(table_schema_simple: Schema, tmp_path: str) -> FileScanTask
             upper_bounds={1: b"d", 2: b"\x04\x00\x00\x00"},
             key_metadata=None,
         ),
-        data_file=datafile,
     )
 
 
