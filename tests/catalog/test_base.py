@@ -486,7 +486,7 @@ def test_commit_table(catalog: InMemoryCatalog) -> None:
     response = given_table.catalog.commit_table(
         given_table,
         updates=(
-            AddSchemaUpdate(schema=new_schema, last_column_id=new_schema.highest_field_id),
+            AddSchemaUpdate(schema=new_schema),
             SetCurrentSchemaUpdate(schema_id=-1),
         ),
         requirements=(),

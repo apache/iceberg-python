@@ -1655,6 +1655,12 @@ def test_bucket_pyarrow_transforms(
     assert expected == transform.pyarrow_transform(source_type)(input_arr)
 
 
+def test_bucket_pyarrow_void_transform() -> None:
+    input_arr = pa.chunked_array([pa.array([1, 2], type=pa.int32()), pa.array([3, 4], type=pa.int32())])
+    output_arr = pa.array([None, None, None, None], type=pa.int32())
+    assert output_arr == VoidTransform().pyarrow_transform(IntegerType())(input_arr)
+
+
 @pytest.mark.parametrize(
     "source_type, input_arr, expected, width",
     [

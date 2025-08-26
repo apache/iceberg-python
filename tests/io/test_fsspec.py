@@ -266,6 +266,37 @@ def test_fsspec_s3_session_properties() -> None:
         )
 
 
+def test_fsspec_s3_session_properties_with_anonymous() -> None:
+    session_properties: Properties = {
+        "s3.anonymous": "true",
+        "s3.endpoint": "http://localhost:9000",
+        "s3.access-key-id": "admin",
+        "s3.secret-access-key": "password",
+        "s3.region": "us-east-1",
+        "s3.session-token": "s3.session-token",
+        **UNIFIED_AWS_SESSION_PROPERTIES,
+    }
+
+    with mock.patch("s3fs.S3FileSystem") as mock_s3fs:
+        s3_fileio = FsspecFileIO(properties=session_properties)
+        filename = str(uuid.uuid4())
+
+        s3_fileio.new_input(location=f"s3://warehouse/{filename}")
+
+        mock_s3fs.assert_called_with(
+            client_kwargs={
+                "endpoint_url": "http://localhost:9000",
+                "aws_access_key_id": "admin",
+                "aws_secret_access_key": "password",
+                "region_name": "us-east-1",
+                "aws_session_token": "s3.session-token",
+            },
+            config_kwargs={
+                "anon": True,
+            },
+        )
+
+
 def test_fsspec_unified_session_properties() -> None:
     session_properties: Properties = {
         "s3.endpoint": "http://localhost:9000",

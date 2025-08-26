@@ -21,6 +21,6 @@ PyIceberg is a Python library for programmatic access to Iceberg table metadata 
 
 The documentation is available at [https://py.iceberg.apache.org/](https://py.iceberg.apache.org/).
 
-# Get in Touch
+## Get in Touch
 
 - [Iceberg community](https://iceberg.apache.org/community/)

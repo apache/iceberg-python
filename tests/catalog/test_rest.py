@@ -21,6 +21,7 @@ from typing import Any, Callable, Dict, cast
 from unittest import mock
 
 import pytest
+from requests.exceptions import HTTPError
 from requests_mock import Mocker
 
 import pyiceberg
@@ -58,7 +59,6 @@ TEST_RESOURCE = "test_resource"
 
 TEST_HEADERS = {
     "Content-type": "application/json",
-    "X-Client-Version": "0.14.1",
     "User-Agent": f"PyIceberg/{pyiceberg.__version__}",
     "Authorization": f"Bearer {TEST_TOKEN}",
     "X-Iceberg-Access-Delegation": "vended-credentials",
@@ -1121,7 +1121,6 @@ def test_create_staged_table_200(
                     "schema-id": 0,
                     "identifier-field-ids": [],
                 },
-                "last-column-id": 2,
             },
             {"action": "set-current-schema", "schema-id": -1},
             {"action": "add-spec", "spec": {"spec-id": 0, "fields": []}},
@@ -1646,6 +1645,63 @@ def test_rest_catalog_with_unsupported_auth_type() -> None:
     assert "Could not load AuthManager class for 'unsupported'" in str(e.value)
 
 
+def test_rest_catalog_with_oauth2_auth_type(requests_mock: Mocker) -> None:
+    requests_mock.post(
+        f"{TEST_URI}oauth2/token",
+        json={
+            "access_token": "MTQ0NjJkZmQ5OTM2NDE1ZTZjNGZmZjI3",
+            "token_type": "Bearer",
+            "expires_in": 3600,
+            "refresh_token": "IwOGYzYTlmM2YxOTQ5MGE3YmNmMDFkNTVk",
+            "scope": "read",
+        },
+        status_code=200,
+    )
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "oauth2",
+            "oauth2": {
+                "client_id": "some_client_id",
+                "client_secret": "some_client_secret",
+                "token_url": f"{TEST_URI}oauth2/token",
+                "scope": "read",
+            },
+        },
+    }
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert catalog.uri == TEST_URI
+
+
+def test_rest_catalog_oauth2_non_200_token_response(requests_mock: Mocker) -> None:
+    requests_mock.post(
+        f"{TEST_URI}oauth2/token",
+        json={"error": "invalid_client"},
+        status_code=401,
+    )
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "oauth2",
+            "oauth2": {
+                "client_id": "bad_client_id",
+                "client_secret": "bad_client_secret",
+                "token_url": f"{TEST_URI}oauth2/token",
+                "scope": "read",
+            },
+        },
+    }
+
+    with pytest.raises(HTTPError):
+        RestCatalog("rest", **catalog_properties)  # type: ignore
+
+
 EXAMPLE_ENV = {"PYICEBERG_CATALOG__PRODUCTION__URI": TEST_URI}
 
 
@@ -1748,3 +1804,42 @@ def test_drop_view_204(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
     RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_view(("some_namespace", "some_view"))
+
+
+@mock.patch("google.auth.transport.requests.Request")
+@mock.patch("google.auth.load_credentials_from_file")
+def test_rest_catalog_with_google_credentials_path(
+    mock_load_creds: mock.MagicMock, mock_google_request: mock.MagicMock, rest_mock: Mocker
+) -> None:
+    mock_credentials = mock.MagicMock()
+    mock_credentials.token = "file_token"
+    mock_load_creds.return_value = (mock_credentials, "test_project_file")
+
+    # Given
+    rest_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "google",
+            "google": {
+                "credentials_path": "/fake/path.json",
+            },
+        },
+    }
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert catalog.uri == TEST_URI
+
+    expected_auth_header = "Bearer file_token"
+    assert rest_mock.last_request.headers["Authorization"] == expected_auth_header
+
+    mock_load_creds.assert_called_with("/fake/path.json", scopes=None)
+    mock_credentials.refresh.assert_called_once_with(mock_google_request.return_value)
+    history = rest_mock.request_history
+    assert len(history) == 1
+    actual_headers = history[0].headers
+    assert actual_headers["Authorization"] == expected_auth_header

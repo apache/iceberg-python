@@ -450,6 +450,9 @@ def construct_test_table_primitive_types() -> Tuple[pq.FileMetaData, Union[Table
                     {"id": 13, "name": "decimal8", "required": False, "type": "decimal(5, 2)"},
                     {"id": 14, "name": "decimal16", "required": False, "type": "decimal(16, 6)"},
                     {"id": 15, "name": "decimal32", "required": False, "type": "decimal(19, 6)"},
+                    {"id": 16, "name": "empty_decimal8", "required": False, "type": "decimal(5, 2)"},
+                    {"id": 17, "name": "empty_decimal16", "required": False, "type": "decimal(16, 6)"},
+                    {"id": 18, "name": "empty_decimal32", "required": False, "type": "decimal(19, 6)"},
                 ],
             },
         ],
@@ -477,6 +480,9 @@ def construct_test_table_primitive_types() -> Tuple[pq.FileMetaData, Union[Table
     decimal8 = pa.array([Decimal("123.45"), Decimal("678.91")], pa.decimal128(8, 2))
     decimal16 = pa.array([Decimal("12345679.123456"), Decimal("67891234.678912")], pa.decimal128(16, 6))
     decimal32 = pa.array([Decimal("1234567890123.123456"), Decimal("9876543210703.654321")], pa.decimal128(19, 6))
+    empty_decimal8 = pa.array([None, None], pa.decimal128(8, 2))
+    empty_decimal16 = pa.array([None, None], pa.decimal128(16, 6))
+    empty_decimal32 = pa.array([None, None], pa.decimal128(19, 6))
 
     table = pa.Table.from_pydict(
         {
@@ -495,6 +501,9 @@ def construct_test_table_primitive_types() -> Tuple[pq.FileMetaData, Union[Table
             "decimal8": decimal8,
             "decimal16": decimal16,
             "decimal32": decimal32,
+            "empty_decimal8": empty_decimal8,
+            "empty_decimal16": empty_decimal16,
+            "empty_decimal32": empty_decimal32,
         },
         schema=arrow_schema,
     )
@@ -520,8 +529,14 @@ def test_metrics_primitive_types() -> None:
     )
     datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
-    assert len(datafile.value_counts) == 15
-    assert len(datafile.null_value_counts) == 15
+    assert len(datafile.value_counts) == 18
+    assert len(datafile.null_value_counts) == 18
+    assert datafile.null_value_counts[13] != datafile.value_counts[13]
+    assert datafile.null_value_counts[14] != datafile.value_counts[14]
+    assert datafile.null_value_counts[15] != datafile.value_counts[15]
+    assert datafile.null_value_counts[16] == datafile.value_counts[16]
+    assert datafile.null_value_counts[17] == datafile.value_counts[17]
+    assert datafile.null_value_counts[18] == datafile.value_counts[18]
     assert len(datafile.nan_value_counts) == 0
 
     tz = timezone(timedelta(seconds=19800))
@@ -542,6 +557,7 @@ def test_metrics_primitive_types() -> None:
     assert datafile.lower_bounds[13][::-1].ljust(4, b"\x00") == STRUCT_INT32.pack(12345)
     assert datafile.lower_bounds[14][::-1].ljust(8, b"\x00") == STRUCT_INT64.pack(12345679123456)
     assert str(int.from_bytes(datafile.lower_bounds[15], byteorder="big", signed=True)).encode("utf-8") == b"1234567890123123456"
+    assert not any(key in datafile.lower_bounds.keys() for key in [16, 17, 18])
 
     assert len(datafile.upper_bounds) == 15
     assert datafile.upper_bounds[1] == STRUCT_BOOL.pack(True)
@@ -559,6 +575,7 @@ def test_metrics_primitive_types() -> None:
     assert datafile.upper_bounds[13][::-1].ljust(4, b"\x00") == STRUCT_INT32.pack(67891)
     assert datafile.upper_bounds[14][::-1].ljust(8, b"\x00") == STRUCT_INT64.pack(67891234678912)
     assert str(int.from_bytes(datafile.upper_bounds[15], byteorder="big", signed=True)).encode("utf-8") == b"9876543210703654321"
+    assert not any(key in datafile.upper_bounds.keys() for key in [16, 17, 18])
 
 
 def construct_test_table_invalid_upper_bound() -> Tuple[pq.FileMetaData, Union[TableMetadataV1, TableMetadataV2]]:

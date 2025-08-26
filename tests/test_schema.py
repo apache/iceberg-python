@@ -32,6 +32,7 @@ from pyiceberg.schema import (
     prune_columns,
     sanitize_column_names,
 )
+from pyiceberg.table import Table, Transaction
 from pyiceberg.table.update.schema import UpdateSchema
 from pyiceberg.typedef import EMPTY_DICT, StructProtocol
 from pyiceberg.types import (
@@ -54,6 +55,7 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 
@@ -919,6 +921,36 @@ def test_promotion(file_type: IcebergType, read_type: IcebergType) -> None:
             promote(file_type, read_type)
 
 
+def test_unknown_type_promotion_to_primitive() -> None:
+    """Test that UnknownType can be promoted to primitive types (V3+ behavior)"""
+    unknown_type = UnknownType()
+
+    assert promote(unknown_type, StringType()) == StringType()
+    assert promote(unknown_type, IntegerType()) == IntegerType()
+    assert promote(unknown_type, BooleanType()) == BooleanType()
+    assert promote(unknown_type, FloatType()) == FloatType()
+
+
+def test_unknown_type_promotion_to_non_primitive_raises_resolve_error() -> None:
+    """Test that UnknownType cannot be promoted to non-primitive types and raises ResolveError"""
+    unknown_type = UnknownType()
+
+    with pytest.raises(ResolveError) as exc_info:
+        promote(unknown_type, ListType(element_id=1, element_type=StringType(), element_required=False))
+
+    assert "Cannot promote unknown to list<string>" in str(exc_info.value)
+
+    with pytest.raises(ResolveError) as exc_info:
+        promote(unknown_type, MapType(key_id=1, key_type=StringType(), value_id=2, value_type=StringType(), value_required=False))
+
+    assert "Cannot promote unknown to map<string, string>" in str(exc_info.value)
+
+    with pytest.raises(ResolveError) as exc_info:
+        promote(unknown_type, StructType(NestedField(field_id=1, name="field", field_type=StringType(), required=False)))
+
+    assert "Cannot promote unknown to struct<1: field: optional string>" in str(exc_info.value)
+
+
 @pytest.fixture()
 def primitive_fields() -> List[NestedField]:
     return [
@@ -927,14 +959,14 @@ def primitive_fields() -> List[NestedField]:
     ]
 
 
-def test_add_top_level_primitives(primitive_fields: List[NestedField]) -> None:
+def test_add_top_level_primitives(primitive_fields: List[NestedField], table_v2: Table) -> None:
     for primitive_field in primitive_fields:
         new_schema = Schema(primitive_field)
-        applied = UpdateSchema(transaction=None, schema=Schema()).union_by_name(new_schema)._apply()  # type: ignore
+        applied = UpdateSchema(transaction=Transaction(table_v2), schema=Schema()).union_by_name(new_schema)._apply()
         assert applied == new_schema
 
 
-def test_add_top_level_list_of_primitives(primitive_fields: NestedField) -> None:
+def test_add_top_level_list_of_primitives(primitive_fields: NestedField, table_v2: Table) -> None:
     for primitive_type in TEST_PRIMITIVE_TYPES:
         new_schema = Schema(
             NestedField(
@@ -944,11 +976,11 @@ def test_add_top_level_list_of_primitives(primitive_fields: NestedField) -> None
                 required=False,
             )
         )
-        applied = UpdateSchema(transaction=None, schema=Schema()).union_by_name(new_schema)._apply()  # type: ignore
+        applied = UpdateSchema(transaction=Transaction(table_v2), schema=Schema()).union_by_name(new_schema)._apply()
         assert applied.as_struct() == new_schema.as_struct()
 
 
-def test_add_top_level_map_of_primitives(primitive_fields: NestedField) -> None:
+def test_add_top_level_map_of_primitives(primitive_fields: NestedField, table_v2: Table) -> None:
     for primitive_type in TEST_PRIMITIVE_TYPES:
         new_schema = Schema(
             NestedField(
@@ -960,11 +992,11 @@ def test_add_top_level_map_of_primitives(primitive_fields: NestedField) -> None:
                 required=False,
             )
         )
-        applied = UpdateSchema(transaction=None, schema=Schema()).union_by_name(new_schema)._apply()  # type: ignore
+        applied = UpdateSchema(transaction=Transaction(table_v2), schema=Schema()).union_by_name(new_schema)._apply()
         assert applied.as_struct() == new_schema.as_struct()
 
 
-def test_add_top_struct_of_primitives(primitive_fields: NestedField) -> None:
+def test_add_top_struct_of_primitives(primitive_fields: NestedField, table_v2: Table) -> None:
     for primitive_type in TEST_PRIMITIVE_TYPES:
         new_schema = Schema(
             NestedField(
@@ -974,11 +1006,11 @@ def test_add_top_struct_of_primitives(primitive_fields: NestedField) -> None:
                 required=False,
             )
         )
-        applied = UpdateSchema(transaction=None, schema=Schema()).union_by_name(new_schema)._apply()  # type: ignore
+        applied = UpdateSchema(transaction=Transaction(table_v2), schema=Schema()).union_by_name(new_schema)._apply()
         assert applied.as_struct() == new_schema.as_struct()
 
 
-def test_add_nested_primitive(primitive_fields: NestedField) -> None:
+def test_add_nested_primitive(primitive_fields: NestedField, table_v2: Table) -> None:
     for primitive_type in TEST_PRIMITIVE_TYPES:
         current_schema = Schema(NestedField(field_id=1, name="aStruct", field_type=StructType(), required=False))
         new_schema = Schema(
@@ -989,7 +1021,7 @@ def test_add_nested_primitive(primitive_fields: NestedField) -> None:
                 required=False,
             )
         )
-        applied = UpdateSchema(None, None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
+        applied = UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).union_by_name(new_schema)._apply()
         assert applied.as_struct() == new_schema.as_struct()
 
 
@@ -1002,18 +1034,18 @@ def _primitive_fields(types: List[PrimitiveType], start_id: int = 0) -> List[Nes
     return fields
 
 
-def test_add_nested_primitives(primitive_fields: NestedField) -> None:
+def test_add_nested_primitives(primitive_fields: NestedField, table_v2: Table) -> None:
     current_schema = Schema(NestedField(field_id=1, name="aStruct", field_type=StructType(), required=False))
     new_schema = Schema(
         NestedField(
             field_id=1, name="aStruct", field_type=StructType(*_primitive_fields(TEST_PRIMITIVE_TYPES, 2)), required=False
         )
     )
-    applied = UpdateSchema(transaction=None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
+    applied = UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).union_by_name(new_schema)._apply()
     assert applied.as_struct() == new_schema.as_struct()
 
 
-def test_add_nested_lists(primitive_fields: NestedField) -> None:
+def test_add_nested_lists(primitive_fields: NestedField, table_v2: Table) -> None:
     new_schema = Schema(
         NestedField(
             field_id=1,
@@ -1050,11 +1082,11 @@ def test_add_nested_lists(primitive_fields: NestedField) -> None:
             required=False,
         )
     )
-    applied = UpdateSchema(transaction=None, schema=Schema()).union_by_name(new_schema)._apply()  # type: ignore
+    applied = UpdateSchema(transaction=Transaction(table_v2), schema=Schema()).union_by_name(new_schema)._apply()
     assert applied.as_struct() == new_schema.as_struct()
 
 
-def test_add_nested_struct(primitive_fields: NestedField) -> None:
+def test_add_nested_struct(primitive_fields: NestedField, table_v2: Table) -> None:
     new_schema = Schema(
         NestedField(
             field_id=1,
@@ -1100,11 +1132,11 @@ def test_add_nested_struct(primitive_fields: NestedField) -> None:
             required=False,
         )
     )
-    applied = UpdateSchema(transaction=None, schema=Schema()).union_by_name(new_schema)._apply()  # type: ignore
+    applied = UpdateSchema(transaction=Transaction(table_v2), schema=Schema()).union_by_name(new_schema)._apply()
     assert applied.as_struct() == new_schema.as_struct()
 
 
-def test_add_nested_maps(primitive_fields: NestedField) -> None:
+def test_add_nested_maps(primitive_fields: NestedField, table_v2: Table) -> None:
     new_schema = Schema(
         NestedField(
             field_id=1,
@@ -1143,11 +1175,11 @@ def test_add_nested_maps(primitive_fields: NestedField) -> None:
             required=False,
         )
     )
-    applied = UpdateSchema(transaction=None, schema=Schema()).union_by_name(new_schema)._apply()  # type: ignore
+    applied = UpdateSchema(transaction=Transaction(table_v2), schema=Schema()).union_by_name(new_schema)._apply()
     assert applied.as_struct() == new_schema.as_struct()
 
 
-def test_detect_invalid_top_level_list() -> None:
+def test_detect_invalid_top_level_list(table_v2: Table) -> None:
     current_schema = Schema(
         NestedField(
             field_id=1,
@@ -1166,10 +1198,10 @@ def test_detect_invalid_top_level_list() -> None:
     )
 
     with pytest.raises(ValidationError, match="Cannot change column type: aList.element: string -> double"):
-        _ = UpdateSchema(transaction=None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
+        _ = UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).union_by_name(new_schema)._apply()
 
 
-def test_detect_invalid_top_level_maps() -> None:
+def test_detect_invalid_top_level_maps(table_v2: Table) -> None:
     current_schema = Schema(
         NestedField(
             field_id=1,
@@ -1188,68 +1220,68 @@ def test_detect_invalid_top_level_maps() -> None:
     )
 
     with pytest.raises(ValidationError, match="Cannot change column type: aMap.key: string -> uuid"):
-        _ = UpdateSchema(transaction=None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
+        _ = UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).union_by_name(new_schema)._apply()
 
 
-def test_allow_double_to_float() -> None:
+def test_allow_double_to_float(table_v2: Table) -> None:
     current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=DoubleType(), required=False))
     new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=FloatType(), required=False))
 
-    applied = UpdateSchema(transaction=None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
+    applied = UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).union_by_name(new_schema)._apply()
 
     assert applied.as_struct() == current_schema.as_struct()
     assert len(applied.fields) == 1
     assert isinstance(applied.fields[0].field_type, DoubleType)
 
 
-def test_promote_float_to_double() -> None:
+def test_promote_float_to_double(table_v2: Table) -> None:
     current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=FloatType(), required=False))
     new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=DoubleType(), required=False))
 
-    applied = UpdateSchema(transaction=None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
+    applied = UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).union_by_name(new_schema)._apply()
 
     assert applied.as_struct() == new_schema.as_struct()
     assert len(applied.fields) == 1
     assert isinstance(applied.fields[0].field_type, DoubleType)
 
 
-def test_allow_long_to_int() -> None:
+def test_allow_long_to_int(table_v2: Table) -> None:
     current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=LongType(), required=False))
     new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=IntegerType(), required=False))
 
-    applied = UpdateSchema(transaction=None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
+    applied = UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).union_by_name(new_schema)._apply()
 
     assert applied.as_struct() == current_schema.as_struct()
     assert len(applied.fields) == 1
     assert isinstance(applied.fields[0].field_type, LongType)
 
 
-def test_promote_int_to_long() -> None:
+def test_promote_int_to_long(table_v2: Table) -> None:
     current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=IntegerType(), required=False))
     new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=LongType(), required=False))
 
-    applied = UpdateSchema(transaction=None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
+    applied = UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).union_by_name(new_schema)._apply()
 
     assert applied.as_struct() == new_schema.as_struct()
     assert len(applied.fields) == 1
     assert isinstance(applied.fields[0].field_type, LongType)
 
 
-def test_detect_invalid_promotion_string_to_float() -> None:
+def test_detect_invalid_promotion_string_to_float(table_v2: Table) -> None:
     current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=StringType(), required=False))
     new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=FloatType(), required=False))
 
     with pytest.raises(ValidationError, match="Cannot change column type: aCol: string -> float"):
-        _ = UpdateSchema(transaction=None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
+        _ = UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).union_by_name(new_schema)._apply()
 
 
 # decimal(P,S) Fixed-point decimal; precision P, scale S -> Scale is fixed [1],
 # precision must be 38 or less
-def test_type_promote_decimal_to_fixed_scale_with_wider_precision() -> None:
+def test_type_promote_decimal_to_fixed_scale_with_wider_precision(table_v2: Table) -> None:
     current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=DecimalType(precision=20, scale=1), required=False))
     new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=DecimalType(precision=22, scale=1), required=False))
 
-    applied = UpdateSchema(transaction=None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
+    applied = UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).union_by_name(new_schema)._apply()
 
     assert applied.as_struct() == new_schema.as_struct()
     assert len(applied.fields) == 1
@@ -1260,7 +1292,7 @@ def test_type_promote_decimal_to_fixed_scale_with_wider_precision() -> None:
     assert decimal_type.scale == 1
 
 
-def test_add_nested_structs(primitive_fields: NestedField) -> None:
+def test_add_nested_structs(primitive_fields: NestedField, table_v2: Table) -> None:
     schema = Schema(
         NestedField(
             field_id=1,
@@ -1317,7 +1349,7 @@ def test_add_nested_structs(primitive_fields: NestedField) -> None:
             required=False,
         )
     )
-    applied = UpdateSchema(transaction=None, schema=schema).union_by_name(new_schema)._apply()  # type: ignore
+    applied = UpdateSchema(transaction=Transaction(table_v2), schema=schema).union_by_name(new_schema)._apply()
 
     expected = Schema(
         NestedField(
@@ -1352,15 +1384,15 @@ def test_add_nested_structs(primitive_fields: NestedField) -> None:
     assert applied.as_struct() == expected.as_struct()
 
 
-def test_replace_list_with_primitive() -> None:
+def test_replace_list_with_primitive(table_v2: Table) -> None:
     current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=ListType(element_id=2, element_type=StringType())))
     new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=StringType()))
 
     with pytest.raises(ValidationError, match="Cannot change column type: list<string> is not a primitive"):
-        _ = UpdateSchema(transaction=None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
+        _ = UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).union_by_name(new_schema)._apply()
 
 
-def test_mirrored_schemas() -> None:
+def test_mirrored_schemas(table_v2: Table) -> None:
     current_schema = Schema(
         NestedField(9, "struct1", StructType(NestedField(8, "string1", StringType(), required=False)), required=False),
         NestedField(6, "list1", ListType(element_id=7, element_type=StringType(), element_required=False), required=False),
@@ -1380,12 +1412,12 @@ def test_mirrored_schemas() -> None:
         NestedField(9, "string6", StringType(), required=False),
     )
 
-    applied = UpdateSchema(transaction=None, schema=current_schema).union_by_name(mirrored_schema)._apply()  # type: ignore
+    applied = UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).union_by_name(mirrored_schema)._apply()
 
     assert applied.as_struct() == current_schema.as_struct()
 
 
-def test_add_new_top_level_struct() -> None:
+def test_add_new_top_level_struct(table_v2: Table) -> None:
     current_schema = Schema(
         NestedField(
             1,
@@ -1432,12 +1464,12 @@ def test_add_new_top_level_struct() -> None:
         ),
     )
 
-    applied = UpdateSchema(transaction=None, schema=current_schema).union_by_name(observed_schema)._apply()  # type: ignore
+    applied = UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).union_by_name(observed_schema)._apply()
 
     assert applied.as_struct() == observed_schema.as_struct()
 
 
-def test_append_nested_struct() -> None:
+def test_append_nested_struct(table_v2: Table) -> None:
     current_schema = Schema(
         NestedField(
             field_id=1,
@@ -1511,12 +1543,12 @@ def test_append_nested_struct() -> None:
         )
     )
 
-    applied = UpdateSchema(transaction=None, schema=current_schema).union_by_name(observed_schema)._apply()  # type: ignore
+    applied = UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).union_by_name(observed_schema)._apply()
 
     assert applied.as_struct() == observed_schema.as_struct()
 
 
-def test_append_nested_lists() -> None:
+def test_append_nested_lists(table_v2: Table) -> None:
     current_schema = Schema(
         NestedField(
             field_id=1,
@@ -1576,7 +1608,7 @@ def test_append_nested_lists() -> None:
             required=False,
         )
     )
-    union = UpdateSchema(transaction=None, schema=current_schema).union_by_name(observed_schema)._apply()  # type: ignore
+    union = UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).union_by_name(observed_schema)._apply()
 
     expected = Schema(
         NestedField(
@@ -1617,7 +1649,7 @@ def test_append_nested_lists() -> None:
     assert union.as_struct() == expected.as_struct()
 
 
-def test_union_with_pa_schema(primitive_fields: NestedField) -> None:
+def test_union_with_pa_schema(primitive_fields: NestedField, table_v2: Table) -> None:
     base_schema = Schema(NestedField(field_id=1, name="foo", field_type=StringType(), required=True))
 
     pa_schema = pa.schema(
@@ -1628,7 +1660,7 @@ def test_union_with_pa_schema(primitive_fields: NestedField) -> None:
         ]
     )
 
-    new_schema = UpdateSchema(transaction=None, schema=base_schema).union_by_name(pa_schema)._apply()  # type: ignore
+    new_schema = UpdateSchema(transaction=Transaction(table_v2), schema=base_schema).union_by_name(pa_schema)._apply()
 
     expected_schema = Schema(
         NestedField(field_id=1, name="foo", field_type=StringType(), required=True),

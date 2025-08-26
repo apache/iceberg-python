@@ -340,8 +340,8 @@ class NestedField(IcebergType):
     field_type: SerializeAsAny[IcebergType] = Field(alias="type")
     required: bool = Field(default=False)
     doc: Optional[str] = Field(default=None, repr=False)
-    initial_default: Optional[DefaultValue] = Field(alias="initial-default", default=None, repr=False)  # type: ignore
-    write_default: Optional[DefaultValue] = Field(alias="write-default", default=None, repr=False)  # type: ignore
+    initial_default: Optional[DefaultValue] = Field(alias="initial-default", default=None, repr=True)  # type: ignore
+    write_default: Optional[DefaultValue] = Field(alias="write-default", default=None, repr=True)  # type: ignore
 
     @field_validator("field_type", mode="before")
     def convert_field_type(cls, v: Any) -> IcebergType:
@@ -400,6 +400,21 @@ class NestedField(IcebergType):
         doc = "" if not self.doc else f" ({self.doc})"
         req = "required" if self.required else "optional"
         return f"{self.field_id}: {self.name}: {req} {self.field_type}{doc}"
+
+    def __repr__(self) -> str:
+        """Return the string representation of the NestedField class."""
+        parts = [
+            f"field_id={self.field_id}",
+            f"name={self.name!r}",
+            f"field_type={self.field_type!r}",
+            f"required={self.required}",
+        ]
+        if self.initial_default is not None:
+            parts.append(f"initial_default={self.initial_default!r}")
+        if self.write_default is not None:
+            parts.append(f"write_default={self.write_default!r}")
+
+        return f"NestedField({', '.join(parts)})"
 
     def __getnewargs__(self) -> Tuple[int, str, IcebergType, bool, Optional[str]]:
         """Pickle the NestedField class."""

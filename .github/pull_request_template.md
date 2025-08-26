@@ -7,8 +7,8 @@ Thanks for opening a pull request!
 
 # Rationale for this change
 
-# Are these changes tested?
+## Are these changes tested?
 
-# Are there any user-facing changes?
+## Are there any user-facing changes?
 
 <!-- In the case of user-facing changes, please add the changelog label. -->

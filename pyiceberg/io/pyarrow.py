@@ -88,9 +88,12 @@ from pyiceberg.io import (
     ADLS_ACCOUNT_NAME,
     ADLS_BLOB_STORAGE_AUTHORITY,
     ADLS_BLOB_STORAGE_SCHEME,
+    ADLS_CLIENT_ID,
+    ADLS_CLIENT_SECRET,
     ADLS_DFS_STORAGE_AUTHORITY,
     ADLS_DFS_STORAGE_SCHEME,
     ADLS_SAS_TOKEN,
+    ADLS_TENANT_ID,
     AWS_ACCESS_KEY_ID,
     AWS_REGION,
     AWS_ROLE_ARN,
@@ -107,6 +110,7 @@ from pyiceberg.io import (
     HDFS_USER,
     PYARROW_USE_LARGE_TYPES_ON_READ,
     S3_ACCESS_KEY_ID,
+    S3_ANONYMOUS,
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
     S3_FORCE_VIRTUAL_ADDRESSING,
@@ -132,7 +136,6 @@ from pyiceberg.manifest import (
 )
 from pyiceberg.partitioning import PartitionField, PartitionFieldValue, PartitionKey, PartitionSpec, partition_record_value
 from pyiceberg.schema import (
-    Accessor,
     PartnerAccessor,
     PreOrderSchemaVisitor,
     Schema,
@@ -147,12 +150,13 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
+from pyiceberg.table import TableProperties
 from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
 from pyiceberg.table.puffin import PuffinFile
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
-from pyiceberg.typedef import EMPTY_DICT, Properties, Record
+from pyiceberg.typedef import EMPTY_DICT, Properties, Record, TableVersion
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -177,6 +181,7 @@ from pyiceberg.types import (
     TimeType,
     UnknownType,
     UUIDType,
+    strtobool,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
@@ -448,6 +453,9 @@ class PyArrowFileIO(FileIO):
         if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
             client_kwargs["session_name"] = session_name
 
+        if s3_anonymous := self.properties.get(S3_ANONYMOUS):
+            client_kwargs["anonymous"] = strtobool(s3_anonymous)
+
         return S3FileSystem(**client_kwargs)
 
     def _initialize_s3_fs(self, netloc: Optional[str]) -> FileSystem:
@@ -499,9 +507,13 @@ class PyArrowFileIO(FileIO):
         ):
             client_kwargs["retry_strategy"] = retry_instance
 
+        if s3_anonymous := self.properties.get(S3_ANONYMOUS):
+            client_kwargs["anonymous"] = strtobool(s3_anonymous)
+
         return S3FileSystem(**client_kwargs)
 
     def _initialize_azure_fs(self) -> FileSystem:
+        # https://arrow.apache.org/docs/python/generated/pyarrow.fs.AzureFileSystem.html
         from packaging import version
 
         MIN_PYARROW_VERSION_SUPPORTING_AZURE_FS = "20.0.0"
@@ -535,6 +547,24 @@ class PyArrowFileIO(FileIO):
 
         if sas_token := self.properties.get(ADLS_SAS_TOKEN):
             client_kwargs["sas_token"] = sas_token
+
+        if client_id := self.properties.get(ADLS_CLIENT_ID):
+            client_kwargs["client_id"] = client_id
+        if client_secret := self.properties.get(ADLS_CLIENT_SECRET):
+            client_kwargs["client_secret"] = client_secret
+        if tenant_id := self.properties.get(ADLS_TENANT_ID):
+            client_kwargs["tenant_id"] = tenant_id
+
+        # Validate that all three are provided together for ClientSecretCredential
+        credential_keys = ["client_id", "client_secret", "tenant_id"]
+        provided_keys = [key for key in credential_keys if key in client_kwargs]
+        if provided_keys and len(provided_keys) != len(credential_keys):
+            missing_keys = [key for key in credential_keys if key not in client_kwargs]
+            raise ValueError(
+                f"client_id, client_secret, and tenant_id must all be provided together "
+                f"to use ClientSecretCredential for Azure authentication. "
+                f"Provided: {provided_keys}, Missing: {missing_keys}"
+            )
 
         return AzureFileSystem(**client_kwargs)
 
@@ -750,6 +780,7 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.uuid()
 
     def visit_unknown(self, _: UnknownType) -> pa.DataType:
+        """Type `UnknownType` can be promoted to any primitive type in V3+ tables per the Iceberg spec."""
         return pa.null()
 
     def visit_binary(self, _: BinaryType) -> pa.DataType:
@@ -1027,13 +1058,20 @@ def _combine_positional_deletes(positional_deletes: List[pa.ChunkedArray], start
 
 
 def pyarrow_to_schema(
-    schema: pa.Schema, name_mapping: Optional[NameMapping] = None, downcast_ns_timestamp_to_us: bool = False
+    schema: pa.Schema,
+    name_mapping: Optional[NameMapping] = None,
+    downcast_ns_timestamp_to_us: bool = False,
+    format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
 ) -> Schema:
     has_ids = visit_pyarrow(schema, _HasIds())
     if has_ids:
-        return visit_pyarrow(schema, _ConvertToIceberg(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us))
+        return visit_pyarrow(
+            schema, _ConvertToIceberg(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version)
+        )
     elif name_mapping is not None:
-        schema_without_ids = _pyarrow_to_schema_without_ids(schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
+        schema_without_ids = _pyarrow_to_schema_without_ids(
+            schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version
+        )
         return apply_name_mapping(schema_without_ids, name_mapping)
     else:
         raise ValueError(
@@ -1041,8 +1079,15 @@ def pyarrow_to_schema(
         )
 
 
-def _pyarrow_to_schema_without_ids(schema: pa.Schema, downcast_ns_timestamp_to_us: bool = False) -> Schema:
-    return visit_pyarrow(schema, _ConvertToIcebergWithoutIDs(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us))
+def _pyarrow_to_schema_without_ids(
+    schema: pa.Schema,
+    downcast_ns_timestamp_to_us: bool = False,
+    format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
+) -> Schema:
+    return visit_pyarrow(
+        schema,
+        _ConvertToIcebergWithoutIDs(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version),
+    )
 
 
 def _pyarrow_schema_ensure_large_types(schema: pa.Schema) -> pa.Schema:
@@ -1224,9 +1269,12 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
 
     _field_names: List[str]
 
-    def __init__(self, downcast_ns_timestamp_to_us: bool = False) -> None:
+    def __init__(
+        self, downcast_ns_timestamp_to_us: bool = False, format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION
+    ) -> None:  # noqa: F821
         self._field_names = []
         self._downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
+        self._format_version = format_version
 
     def _field_id(self, field: pa.Field) -> int:
         if (field_id := _get_field_id(field)) is not None:
@@ -1297,6 +1345,11 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
             elif primitive.unit == "ns":
                 if self._downcast_ns_timestamp_to_us:
                     logger.warning("Iceberg does not yet support 'ns' timestamp precision. Downcasting to 'us'.")
+                elif self._format_version >= 3:
+                    if primitive.tz in UTC_ALIASES:
+                        return TimestamptzNanoType()
+                    else:
+                        return TimestampNanoType()
                 else:
                     raise TypeError(
                         "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write.",
@@ -1315,6 +1368,8 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
             primitive = cast(pa.FixedSizeBinaryType, primitive)
             return FixedType(primitive.byte_width)
         elif pa.types.is_null(primitive):
+            # PyArrow null type (pa.null()) is converted to Iceberg UnknownType
+            # UnknownType can be promoted to any primitive type in V3+ tables per the Iceberg spec
             return UnknownType()
         elif isinstance(primitive, pa.UuidType):
             return UUIDType()
@@ -1411,41 +1466,23 @@ class _ConvertToIcebergWithoutIDs(_ConvertToIceberg):
 
 def _get_column_projection_values(
     file: DataFile, projected_schema: Schema, partition_spec: Optional[PartitionSpec], file_project_field_ids: Set[int]
-) -> Tuple[bool, Dict[str, Any]]:
+) -> Dict[int, Any]:
     """Apply Column Projection rules to File Schema."""
     project_schema_diff = projected_schema.field_ids.difference(file_project_field_ids)
-    should_project_columns = len(project_schema_diff) > 0
-    projected_missing_fields: Dict[str, Any] = {}
+    if len(project_schema_diff) == 0 or partition_spec is None:
+        return EMPTY_DICT
 
-    if not should_project_columns:
-        return False, {}
+    partition_schema = partition_spec.partition_type(projected_schema)
+    accessors = build_position_accessors(partition_schema)
 
-    partition_schema: StructType
-    accessors: Dict[int, Accessor]
-
-    if partition_spec is not None:
-        partition_schema = partition_spec.partition_type(projected_schema)
-        accessors = build_position_accessors(partition_schema)
-    else:
-        return False, {}
-
+    projected_missing_fields = {}
     for field_id in project_schema_diff:
         for partition_field in partition_spec.fields_by_source_id(field_id):
             if isinstance(partition_field.transform, IdentityTransform):
-                accessor = accessors.get(partition_field.field_id)
+                if partition_value := accessors[partition_field.field_id].get(file.partition):
+                    projected_missing_fields[field_id] = partition_value
 
-                if accessor is None:
-                    continue
-
-                # The partition field may not exist in the partition record of the data file.
-                # This can happen when new partition fields are introduced after the file was written.
-                try:
-                    if partition_value := accessor.get(file.partition):
-                        projected_missing_fields[partition_field.name] = partition_value
-                except IndexError:
-                    continue
-
-    return True, projected_missing_fields
+    return projected_missing_fields
 
 
 def _task_to_record_batches(
@@ -1458,6 +1495,7 @@ def _task_to_record_batches(
     case_sensitive: bool,
     name_mapping: Optional[NameMapping] = None,
     partition_spec: Optional[PartitionSpec] = None,
+    format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
 ) -> Iterator[pa.RecordBatch]:
     arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
     with io.new_input(task.file.file_path).open() as fin:
@@ -1467,19 +1505,22 @@ def _task_to_record_batches(
         # Hence it is reasonable to always cast 'ns' timestamp to 'us' on read.
         # When V3 support is introduced, we will update `downcast_ns_timestamp_to_us` flag based on
         # the table format version.
-        file_schema = pyarrow_to_schema(physical_schema, name_mapping, downcast_ns_timestamp_to_us=True)
+        file_schema = pyarrow_to_schema(
+            physical_schema, name_mapping, downcast_ns_timestamp_to_us=True, format_version=format_version
+        )
+
+        # Apply column projection rules: https://iceberg.apache.org/spec/#column-projection
+        projected_missing_fields = _get_column_projection_values(
+            task.file, projected_schema, partition_spec, file_schema.field_ids
+        )
 
         pyarrow_filter = None
         if bound_row_filter is not AlwaysTrue():
-            translated_row_filter = translate_column_names(bound_row_filter, file_schema, case_sensitive=case_sensitive)
+            translated_row_filter = translate_column_names(
+                bound_row_filter, file_schema, case_sensitive=case_sensitive, projected_field_values=projected_missing_fields
+            )
             bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
             pyarrow_filter = expression_to_pyarrow(bound_file_filter)
-
-        # Apply column projection rules
-        # https://iceberg.apache.org/spec/#column-projection
-        should_project_columns, projected_missing_fields = _get_column_projection_values(
-            task.file, projected_schema, partition_spec, file_schema.field_ids
-        )
 
         file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
 
@@ -1541,22 +1582,13 @@ def _task_to_record_batches(
 
                 current_batch = table.combine_chunks().to_batches()[0]
 
-            result_batch = _to_requested_schema(
+            yield _to_requested_schema(
                 projected_schema,
                 file_project_schema,
                 current_batch,
                 downcast_ns_timestamp_to_us=True,
+                projected_missing_fields=projected_missing_fields,
             )
-
-            # Inject projected column values if available
-            if should_project_columns:
-                for name, value in projected_missing_fields.items():
-                    index = result_batch.schema.get_field_index(name)
-                    if index != -1:
-                        arr = pa.repeat(value, result_batch.num_rows)
-                        result_batch = result_batch.set_column(index, name, arr)
-
-            yield result_batch
 
 
 def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Dict[str, List[Union[pa.ChunkedArray, pa.Table]]]:
@@ -1767,7 +1799,8 @@ class ArrowScan:
                 deletes_per_file.get(task.file.file_path),
                 self._case_sensitive,
                 self._table_metadata.name_mapping(),
-                self._table_metadata.spec(),
+                self._table_metadata.specs().get(task.file.spec_id),
+                self._table_metadata.format_version,
             )
             for batch in batches:
                 if self._limit is not None:
@@ -1785,12 +1818,15 @@ def _to_requested_schema(
     batch: pa.RecordBatch,
     downcast_ns_timestamp_to_us: bool = False,
     include_field_ids: bool = False,
+    projected_missing_fields: Dict[int, Any] = EMPTY_DICT,
 ) -> pa.RecordBatch:
     # We could reuse some of these visitors
     struct_array = visit_with_partner(
         requested_schema,
         batch,
-        ArrowProjectionVisitor(file_schema, downcast_ns_timestamp_to_us, include_field_ids),
+        ArrowProjectionVisitor(
+            file_schema, downcast_ns_timestamp_to_us, include_field_ids, projected_missing_fields=projected_missing_fields
+        ),
         ArrowAccessor(file_schema),
     )
     return pa.RecordBatch.from_struct_array(struct_array)
@@ -1801,6 +1837,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
     _include_field_ids: bool
     _downcast_ns_timestamp_to_us: bool
     _use_large_types: Optional[bool]
+    _projected_missing_fields: Dict[int, Any]
 
     def __init__(
         self,
@@ -1808,11 +1845,13 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
         downcast_ns_timestamp_to_us: bool = False,
         include_field_ids: bool = False,
         use_large_types: Optional[bool] = None,
+        projected_missing_fields: Dict[int, Any] = EMPTY_DICT,
     ) -> None:
         self._file_schema = file_schema
         self._include_field_ids = include_field_ids
         self._downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
         self._use_large_types = use_large_types
+        self._projected_missing_fields = projected_missing_fields
 
         if use_large_types is not None:
             deprecation_message(
@@ -1825,14 +1864,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
         file_field = self._file_schema.find_field(field.field_id)
 
         if field.field_type.is_primitive:
-            if field.field_type != file_field.field_type:
-                target_schema = schema_to_pyarrow(
-                    promote(file_field.field_type, field.field_type), include_field_ids=self._include_field_ids
-                )
-                if self._use_large_types is False:
-                    target_schema = _pyarrow_schema_ensure_small_types(target_schema)
-                return values.cast(target_schema)
-            elif (target_type := schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)) != values.type:
+            if (target_type := schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)) != values.type:
                 if field.field_type == TimestampType():
                     # Downcasting of nanoseconds to microseconds
                     if (
@@ -1851,13 +1883,22 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                         pa.types.is_timestamp(target_type)
                         and target_type.tz == "UTC"
                         and pa.types.is_timestamp(values.type)
-                        and values.type.tz in UTC_ALIASES
+                        and (values.type.tz in UTC_ALIASES or values.type.tz is None)
                     ):
                         if target_type.unit == "us" and values.type.unit == "ns" and self._downcast_ns_timestamp_to_us:
                             return values.cast(target_type, safe=False)
                         elif target_type.unit == "us" and values.type.unit in {"s", "ms", "us"}:
                             return values.cast(target_type)
                     raise ValueError(f"Unsupported schema projection from {values.type} to {target_type}")
+
+            if field.field_type != file_field.field_type:
+                target_schema = schema_to_pyarrow(
+                    promote(file_field.field_type, field.field_type), include_field_ids=self._include_field_ids
+                )
+                if self._use_large_types is False:
+                    target_schema = _pyarrow_schema_ensure_small_types(target_schema)
+                return values.cast(target_schema)
+
         return values
 
     def _construct_field(self, field: NestedField, arrow_type: pa.DataType) -> pa.Field:
@@ -1892,10 +1933,12 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
             elif field.optional or field.initial_default is not None:
                 # When an optional field is added, or when a required field with a non-null initial default is added
                 arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)
-                if field.initial_default is None:
+                if projected_value := self._projected_missing_fields.get(field.field_id):
+                    field_arrays.append(pa.repeat(pa.scalar(projected_value, type=arrow_type), len(struct_array)))
+                elif field.initial_default is None:
                     field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))
                 else:
-                    field_arrays.append(pa.repeat(field.initial_default, len(struct_array)))
+                    field_arrays.append(pa.repeat(pa.scalar(field.initial_default, type=arrow_type), len(struct_array)))
                 fields.append(self._construct_field(field, arrow_type))
             else:
                 raise ResolveError(f"Field is required, and could not be found in the file: {field}")
@@ -2492,8 +2535,12 @@ def data_file_statistics_from_parquet_metadata(
 
                     if isinstance(stats_col.iceberg_type, DecimalType) and statistics.physical_type != "FIXED_LEN_BYTE_ARRAY":
                         scale = stats_col.iceberg_type.scale
-                        col_aggs[field_id].update_min(unscaled_to_decimal(statistics.min_raw, scale))
-                        col_aggs[field_id].update_max(unscaled_to_decimal(statistics.max_raw, scale))
+                        col_aggs[field_id].update_min(
+                            unscaled_to_decimal(statistics.min_raw, scale)
+                        ) if statistics.min_raw is not None else None
+                        col_aggs[field_id].update_max(
+                            unscaled_to_decimal(statistics.max_raw, scale)
+                        ) if statistics.max_raw is not None else None
                     else:
                         col_aggs[field_id].update_min(statistics.min)
                         col_aggs[field_id].update_max(statistics.max)
@@ -2611,7 +2658,10 @@ def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[List[
 
 
 def _check_pyarrow_schema_compatible(
-    requested_schema: Schema, provided_schema: pa.Schema, downcast_ns_timestamp_to_us: bool = False
+    requested_schema: Schema,
+    provided_schema: pa.Schema,
+    downcast_ns_timestamp_to_us: bool = False,
+    format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
 ) -> None:
     """
     Check if the `requested_schema` is compatible with `provided_schema`.
@@ -2624,10 +2674,15 @@ def _check_pyarrow_schema_compatible(
     name_mapping = requested_schema.name_mapping
     try:
         provided_schema = pyarrow_to_schema(
-            provided_schema, name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+            provided_schema,
+            name_mapping=name_mapping,
+            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+            format_version=format_version,
         )
     except ValueError as e:
-        provided_schema = _pyarrow_to_schema_without_ids(provided_schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
+        provided_schema = _pyarrow_to_schema_without_ids(
+            provided_schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version
+        )
         additional_names = set(provided_schema._name_to_id.keys()) - set(requested_schema._name_to_id.keys())
         raise ValueError(
             f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. Update the schema first (hint, use union_by_name)."
@@ -2653,7 +2708,7 @@ def parquet_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_pa
         )
 
     schema = table_metadata.schema()
-    _check_pyarrow_schema_compatible(schema, arrow_schema)
+    _check_pyarrow_schema_compatible(schema, arrow_schema, format_version=table_metadata.format_version)
 
     statistics = data_file_statistics_from_parquet_metadata(
         parquet_metadata=parquet_metadata,
@@ -2744,7 +2799,12 @@ def _dataframe_to_data_files(
     )
     name_mapping = table_metadata.schema().name_mapping
     downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
-    task_schema = pyarrow_to_schema(df.schema, name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
+    task_schema = pyarrow_to_schema(
+        df.schema,
+        name_mapping=name_mapping,
+        downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+        format_version=table_metadata.format_version,
+    )
 
     if table_metadata.spec().is_unpartitioned():
         yield from write_file(
@@ -2827,9 +2887,11 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
             functools.reduce(
                 operator.and_,
                 [
-                    pc.field(partition_field_name) == unique_partition[partition_field_name]
-                    if unique_partition[partition_field_name] is not None
-                    else pc.field(partition_field_name).is_null()
+                    (
+                        pc.field(partition_field_name) == unique_partition[partition_field_name]
+                        if unique_partition[partition_field_name] is not None
+                        else pc.field(partition_field_name).is_null()
+                    )
                     for field, partition_field_name in zip(spec.fields, partition_fields)
                 ],
             )

@@ -113,7 +113,7 @@ make test-coverage
 
 This will spin up Docker containers to facilitate running test coverage.
 
-# Cast the vote
+## Cast the vote
 
 Votes are cast by replying to the release candidate announcement email on the dev mailing list with either `+1`, `0`, or `-1`. For example :
 

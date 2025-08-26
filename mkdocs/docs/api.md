@@ -1004,6 +1004,34 @@ To show only data files or delete files in the current snapshot, use `table.insp
 
 Expert Iceberg users may choose to commit existing parquet files to the Iceberg table as data files, without rewriting them.
 
+<!-- prettier-ignore-start -->
+
+!!! note "Name Mapping"
+    Because `add_files` uses existing files without writing new parquet files that are aware of the Iceberg's schema, it requires the Iceberg's table to have a [Name Mapping](https://iceberg.apache.org/spec/?h=name+mapping#name-mapping-serialization) (The Name mapping maps the field names within the parquet files to the Iceberg field IDs). Hence, `add_files` requires that there are no field IDs in the parquet file's metadata, and creates a new Name Mapping based on the table's current schema if the table doesn't already have one.
+
+!!! note "Partitions"
+    `add_files` only requires the client to read the existing parquet files' metadata footer to infer the partition value of each file. This implementation also supports adding files to Iceberg tables with partition transforms like `MonthTransform`, and `TruncateTransform` which preserve the order of the values after the transformation (Any Transform that has the `preserves_order` property set to True is supported). Please note that if the column statistics of the `PartitionField`'s source column are not present in the parquet metadata, the partition value is inferred as `None`.
+
+!!! warning "Maintenance Operations"
+    Because `add_files` commits the existing parquet files to the Iceberg Table as any other data file, destructive maintenance operations like expiring snapshots will remove them.
+
+!!! warning "Check Duplicate Files"
+    The `check_duplicate_files` parameter determines whether the method validates that the specified `file_paths` do not already exist in the Iceberg table. When set to True (the default), the method performs a validation against the table’s current data files to prevent accidental duplication, helping to maintain data consistency by ensuring the same file is not added multiple times. While this check is important for data integrity, it can introduce performance overhead for tables with a large number of files. Setting check_duplicate_files=False can improve performance but increases the risk of duplicate files, which may lead to data inconsistencies or table corruption. It is strongly recommended to keep this parameter enabled unless duplicate file handling is strictly enforced elsewhere.
+
+<!-- prettier-ignore-end -->
+
+### Usage
+
+| Parameter                 | Required? | Type           | Description                                                             |
+| ------------------------- | --------- | -------------- | ----------------------------------------------------------------------- |
+| `file_paths`            | ✔️      | List[str]      | The list of full file paths to be added as data files to the table      |
+| `snapshot_properties`   |           | Dict[str, str] | Properties to set for the new snapshot. Defaults to an empty dictionary |
+| `check_duplicate_files` |           | bool           | Whether to check for duplicate files. Defaults to `True`             |
+
+### Example
+
+Add files to Iceberg table:
+
 ```python
 # Given that these parquet files have schema consistent with the Iceberg table
 
@@ -1019,18 +1047,35 @@ tbl.add_files(file_paths=file_paths)
 # A new snapshot is committed to the table with manifests pointing to the existing parquet files
 ```
 
-<!-- prettier-ignore-start -->
+Add files to Iceberg table with custom snapshot properties:
 
-!!! note "Name Mapping"
-    Because `add_files` uses existing files without writing new parquet files that are aware of the Iceberg's schema, it requires the Iceberg's table to have a [Name Mapping](https://iceberg.apache.org/spec/?h=name+mapping#name-mapping-serialization) (The Name mapping maps the field names within the parquet files to the Iceberg field IDs). Hence, `add_files` requires that there are no field IDs in the parquet file's metadata, and creates a new Name Mapping based on the table's current schema if the table doesn't already have one.
+```python
+# Assume an existing Iceberg table object `tbl`
 
-!!! note "Partitions"
-    `add_files` only requires the client to read the existing parquet files' metadata footer to infer the partition value of each file. This implementation also supports adding files to Iceberg tables with partition transforms like `MonthTransform`, and `TruncateTransform` which preserve the order of the values after the transformation (Any Transform that has the `preserves_order` property set to True is supported). Please note that if the column statistics of the `PartitionField`'s source column are not present in the parquet metadata, the partition value is inferred as `None`.
+file_paths = [
+    "s3a://warehouse/default/existing-1.parquet",
+    "s3a://warehouse/default/existing-2.parquet",
+]
 
-!!! warning "Maintenance Operations"
-    Because `add_files` commits the existing parquet files to the Iceberg Table as any other data file, destructive maintenance operations like expiring snapshots will remove them.
+# Custom snapshot properties
+snapshot_properties = {"abc": "def"}
 
-<!-- prettier-ignore-end -->
+# Enable duplicate file checking
+check_duplicate_files = True
+
+# Add the Parquet files to the Iceberg table without rewriting
+tbl.add_files(
+    file_paths=file_paths,
+    snapshot_properties=snapshot_properties,
+    check_duplicate_files=check_duplicate_files
+)
+
+# NameMapping must have been set to enable reads
+assert tbl.name_mapping() is not None
+
+# Verify that the snapshot property was set correctly
+assert tbl.metadata.snapshots[-1].summary["abc"] == "def"
+```
 
 ## Schema evolution
 
@@ -1285,6 +1330,50 @@ You can also use context managers to make more changes:
 ```python
 with table.manage_snapshots() as ms:
     ms.create_branch(snapshot_id1, "Branch_A").create_tag(snapshot_id2, "tag789")
+```
+
+## Table Maintenance
+
+PyIceberg provides table maintenance operations through the `table.maintenance` API. This provides a clean interface for performing maintenance tasks like snapshot expiration.
+
+### Snapshot Expiration
+
+Expire old snapshots to clean up table metadata and reduce storage costs:
+
+```python
+# Expire snapshots older than three days
+from datetime import datetime, timedelta
+table.maintenance.expire_snapshots().older_than(
+    datetime.now() - timedelta(days=3)
+).commit()
+
+# Expire a specific snapshot by ID
+table.maintenance.expire_snapshots().by_id(12345).commit()
+
+# Context manager usage (recommended for multiple operations)
+with table.maintenance.expire_snapshots() as expire:
+    expire.by_id(12345)
+    expire.by_id(67890)
+    # Automatically commits when exiting the context
+```
+
+#### Real-world Example
+
+```python
+def cleanup_old_snapshots(table_name: str, snapshot_ids: list[int]):
+    """Remove specific snapshots from a table."""
+    catalog = load_catalog("production")
+    table = catalog.load_table(table_name)
+
+    # Use context manager for safe transaction handling
+    with table.maintenance.expire_snapshots() as expire:
+        for snapshot_id in snapshot_ids:
+            expire.by_id(snapshot_id)
+
+    print(f"Expired {len(snapshot_ids)} snapshots from {table_name}")
+
+# Usage
+cleanup_old_snapshots("analytics.user_events", [12345, 67890, 11111])
 ```
 
 ## Views

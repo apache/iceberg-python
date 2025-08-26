@@ -78,6 +78,9 @@ P = TypeVar("P")
 
 INITIAL_SCHEMA_ID = 0
 
+FIELD_ID_PROP = "field-id"
+ICEBERG_FIELD_NAME_PROP = "iceberg-field-name"
+
 
 class Schema(IcebergBaseModel):
     """A table Schema.
@@ -1356,6 +1359,21 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
 
 # Implementation copied from Apache Iceberg repo.
 def make_compatible_name(name: str) -> str:
+    """Make a field name compatible with Avro specification.
+
+    This function sanitizes field names to comply with Avro naming rules:
+    - Names must start with [A-Za-z_]
+    - Subsequent characters must be [A-Za-z0-9_]
+
+    Invalid characters are replaced with _xHHHH where HHHH is the hex code.
+    Names starting with digits get a leading underscore.
+
+    Args:
+        name: The original field name
+
+    Returns:
+        A sanitized name that complies with Avro specification
+    """
     if not _valid_avro_name(name):
         return _sanitize_name(name)
     return name
@@ -1391,7 +1409,9 @@ def _sanitize_name(name: str) -> str:
 
 
 def _sanitize_char(character: str) -> str:
-    return "_" + character if character.isdigit() else "_x" + hex(ord(character))[2:].upper()
+    if character.isdigit():
+        return "_" + character
+    return "_x" + hex(ord(character))[2:].upper()
 
 
 def sanitize_column_names(schema: Schema) -> Schema:
@@ -1672,6 +1692,15 @@ def _(file_type: FixedType, read_type: IcebergType) -> IcebergType:
         raise ResolveError(f"Cannot promote {file_type} to {read_type}")
 
 
+@promote.register(UnknownType)
+def _(file_type: UnknownType, read_type: IcebergType) -> IcebergType:
+    # Per V3 Spec, "Unknown" can be promoted to any Primitive type
+    if isinstance(read_type, PrimitiveType):
+        return read_type
+    else:
+        raise ResolveError(f"Cannot promote {file_type} to {read_type}")
+
+
 def _check_schema_compatible(requested_schema: Schema, provided_schema: Schema) -> None:
     """
     Check if the `provided_schema` is compatible with `requested_schema`.
@@ -1741,7 +1770,15 @@ class _SchemaCompatibilityVisitor(PreOrderSchemaVisitor[bool]):
                 self.rich_table.add_row("✅", str(lhs), str(rhs))
                 return True
             except ResolveError:
-                self.rich_table.add_row("❌", str(lhs), str(rhs))
+                # UnknownType can only be promoted to Primitive types
+                if isinstance(rhs.field_type, UnknownType):
+                    if not isinstance(lhs.field_type, PrimitiveType):
+                        error_msg = f"Null type (UnknownType) cannot be promoted to non-primitive type {lhs.field_type}. UnknownType can only be promoted to primitive types (string, int, boolean, etc.) in V3+ tables."
+                    else:
+                        error_msg = f"Null type (UnknownType) cannot be promoted to {lhs.field_type}. This may be due to table format version limitations (V1/V2 tables don't support UnknownType promotion)."
+                    self.rich_table.add_row("❌", str(lhs), f"{str(rhs)} - {error_msg}")
+                else:
+                    self.rich_table.add_row("❌", str(lhs), str(rhs))
                 return False
 
     def schema(self, schema: Schema, struct_result: Callable[[], bool]) -> bool:

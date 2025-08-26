@@ -391,6 +391,35 @@ def test_pyarrow_s3_session_properties() -> None:
         )
 
 
+def test_pyarrow_s3_session_properties_with_anonymous() -> None:
+    session_properties: Properties = {
+        "s3.anonymous": "true",
+        "s3.endpoint": "http://localhost:9000",
+        "s3.access-key-id": "admin",
+        "s3.secret-access-key": "password",
+        "s3.region": "us-east-1",
+        "s3.session-token": "s3.session-token",
+        **UNIFIED_AWS_SESSION_PROPERTIES,
+    }
+
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs, patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
+        s3_fileio = PyArrowFileIO(properties=session_properties)
+        filename = str(uuid.uuid4())
+
+        # Mock `resolve_s3_region` to prevent from the location used resolving to a different s3 region
+        mock_s3_region_resolver.side_effect = OSError("S3 bucket is not found")
+        s3_fileio.new_input(location=f"s3://warehouse/{filename}")
+
+        mock_s3fs.assert_called_with(
+            anonymous=True,
+            endpoint_override="http://localhost:9000",
+            access_key="admin",
+            secret_key="password",
+            region="us-east-1",
+            session_token="s3.session-token",
+        )
+
+
 def test_pyarrow_unified_session_properties() -> None:
     session_properties: Properties = {
         "s3.endpoint": "http://localhost:9000",
@@ -971,6 +1000,10 @@ def file_map(schema_map: Schema, tmpdir: str) -> str:
 def project(
     schema: Schema, files: List[str], expr: Optional[BooleanExpression] = None, table_schema: Optional[Schema] = None
 ) -> pa.Table:
+    def _set_spec_id(datafile: DataFile) -> DataFile:
+        datafile.spec_id = 0
+        return datafile
+
     return ArrowScan(
         table_metadata=TableMetadataV2(
             location="file://a/b/",
@@ -986,13 +1019,15 @@ def project(
     ).to_table(
         tasks=[
             FileScanTask(
-                DataFile.from_args(
-                    content=DataFileContent.DATA,
-                    file_path=file,
-                    file_format=FileFormat.PARQUET,
-                    partition={},
-                    record_count=3,
-                    file_size_in_bytes=3,
+                _set_spec_id(
+                    DataFile.from_args(
+                        content=DataFileContent.DATA,
+                        file_path=file,
+                        file_format=FileFormat.PARQUET,
+                        partition={},
+                        record_count=3,
+                        file_size_in_bytes=3,
+                    )
                 )
             )
             for file in files
@@ -1190,7 +1225,7 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
         with transaction.update_snapshot().overwrite() as update:
             update.append_data_file(unpartitioned_file)
 
-    schema = pa.schema([("other_field", pa.string()), ("partition_id", pa.int64())])
+    schema = pa.schema([("other_field", pa.string()), ("partition_id", pa.int32())])
     assert table.scan().to_arrow() == pa.table(
         {
             "other_field": ["foo", "bar", "baz"],
@@ -1198,6 +1233,16 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
         },
         schema=schema,
     )
+    # Test that row filter works with partition value projection
+    assert table.scan(row_filter="partition_id = 1").to_arrow() == pa.table(
+        {
+            "other_field": ["foo", "bar", "baz"],
+            "partition_id": [1, 1, 1],
+        },
+        schema=schema,
+    )
+    # Test that row filter does not return any rows for a non-existing partition value
+    assert len(table.scan(row_filter="partition_id = -1").to_arrow()) == 0
 
 
 def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryCatalog) -> None:
@@ -1255,8 +1300,8 @@ def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryC
         str(table.scan().to_arrow())
         == """pyarrow.Table
 field_1: string
-field_2: int64
-field_3: int64
+field_2: int32
+field_3: int32
 ----
 field_1: [["foo"]]
 field_2: [[2]]
@@ -2507,6 +2552,45 @@ def test_initial_value() -> None:
     assert result.column_names == ["we-love-22"]
     for val in result[0]:
         assert val.as_py() == 22
+
+
+def test__to_requested_schema_timestamp_to_timestamptz_projection() -> None:
+    from datetime import datetime, timezone
+
+    # file is written with timestamp without timezone
+    file_schema = Schema(NestedField(1, "ts_field", TimestampType(), required=False))
+    batch = pa.record_batch(
+        [
+            pa.array(
+                [
+                    datetime(2025, 8, 14, 12, 0, 0),
+                    datetime(2025, 8, 14, 13, 0, 0),
+                ],
+                type=pa.timestamp("us"),
+            )
+        ],
+        names=["ts_field"],
+    )
+
+    # table is written with timestamp with timezone
+    table_schema = Schema(NestedField(1, "ts_field", TimestamptzType(), required=False))
+
+    actual_result = _to_requested_schema(table_schema, file_schema, batch, downcast_ns_timestamp_to_us=True)
+    expected = pa.record_batch(
+        [
+            pa.array(
+                [
+                    datetime(2025, 8, 14, 12, 0, 0),
+                    datetime(2025, 8, 14, 13, 0, 0),
+                ],
+                type=pa.timestamp("us", tz=timezone.utc),
+            )
+        ],
+        names=["ts_field"],
+    )
+
+    # expect actual_result to have timezone
+    assert expected.equals(actual_result)
 
 
 def test__to_requested_schema_timestamps(
