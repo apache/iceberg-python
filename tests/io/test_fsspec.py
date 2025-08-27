@@ -284,6 +284,7 @@ def test_fsspec_s3_session_properties_with_anonymous() -> None:
         s3_fileio.new_input(location=f"s3://warehouse/{filename}")
 
         mock_s3fs.assert_called_with(
+            anon=True,
             client_kwargs={
                 "endpoint_url": "http://localhost:9000",
                 "aws_access_key_id": "admin",
@@ -291,9 +292,7 @@ def test_fsspec_s3_session_properties_with_anonymous() -> None:
                 "region_name": "us-east-1",
                 "aws_session_token": "s3.session-token",
             },
-            config_kwargs={
-                "anon": True,
-            },
+            config_kwargs={},
         )
 
 
