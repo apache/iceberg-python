@@ -2790,6 +2790,7 @@ def test_parse_location_defaults() -> None:
 
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
+    # if no default scheme or netloc is provided, use file scheme and empty netloc
     scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar")
     assert scheme == "file"
     assert netloc == ""
