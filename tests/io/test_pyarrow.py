@@ -2785,33 +2785,26 @@ def test_task_to_record_batches_nanos(format_version: TableVersion, tmpdir: str)
 
     assert _expected_batch("ns" if format_version > 2 else "us").equals(actual_result)
 
-def test_parse_location_environment_defaults():
-
-    """Test that parse_location uses environment variables for defaults."""
+def test_parse_location_defaults() -> None:
+    """Test that parse_location uses defaults."""
 
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
-    # Test with default environment (no env vars set)
     scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar")
     assert scheme == "file"
     assert netloc == ""
     assert path == "/foo/bar"
 
-    # Test with properties set
-    properties = {}
-    properties["DEFAULT_SCHEME"] = "scheme"
-    properties["DEFAULT_NETLOC"] = "netloc:8000"
-
-    scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar", properties=properties)
+    scheme, netloc, path = PyArrowFileIO.parse_location(
+        "/foo/bar", properties={"DEFAULT_SCHEME": "scheme", "DEFAULT_NETLOC": "netloc:8000"}
+    )
     assert scheme == "scheme"
     assert netloc == "netloc:8000"
     assert path == "netloc:8000/foo/bar"
 
-    # Set properties
-    properties["DEFAULT_SCHEME"] = "hdfs"
-    properties["DEFAULT_NETLOC"] = "netloc:8000"
-
-    scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar", properties=properties)
+    scheme, netloc, path = PyArrowFileIO.parse_location(
+        "/foo/bar", properties={"DEFAULT_SCHEME": "hdfs", "DEFAULT_NETLOC": "netloc:8000"}
+    )
     assert scheme == "hdfs"
     assert netloc == "netloc:8000"
     assert path == "/foo/bar"
