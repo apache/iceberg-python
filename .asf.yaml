@@ -21,7 +21,7 @@
 # https://cwiki.apache.org/confluence/display/INFRA/Git+-+.asf.yaml+features
 
 github:
-  description: "Apache Iceberg Python"
+  description: "PyIceberg"
   homepage: https://py.iceberg.apache.org/
   labels:
     - iceberg
