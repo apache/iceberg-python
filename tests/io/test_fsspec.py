@@ -255,6 +255,7 @@ def test_fsspec_s3_session_properties() -> None:
         s3_fileio.new_input(location=f"s3://warehouse/{filename}")
 
         mock_s3fs.assert_called_with(
+            anon=False,
             client_kwargs={
                 "endpoint_url": "http://localhost:9000",
                 "aws_access_key_id": "admin",
@@ -309,6 +310,7 @@ def test_fsspec_unified_session_properties() -> None:
         s3_fileio.new_input(location=f"s3://warehouse/{filename}")
 
         mock_s3fs.assert_called_with(
+            anon=False,
             client_kwargs={
                 "endpoint_url": "http://localhost:9000",
                 "aws_access_key_id": "client.access-key-id",
