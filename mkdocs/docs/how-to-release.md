@@ -232,7 +232,7 @@ export LAST_COMMIT_ID=$(git rev-list ${GIT_TAG} 2> /dev/null | head -n 1)
 
 cat << EOF > release-announcement-email.txt
 To: dev@iceberg.apache.org
-Subject: [VOTE] Release Apache PyIceberg $VERSION_WITH_RC
+Subject: [VOTE] PyIceberg $VERSION_WITH_RC
 Hi Everyone,
 
 I propose that we release the following RC as the official PyIceberg $VERSION release.
@@ -351,9 +351,9 @@ Send out an announcement on the dev mail list:
 
 ```text
 To: dev@iceberg.apache.org
-Subject: [ANNOUNCE] Apache PyIceberg release <VERSION>
+Subject: [ANNOUNCE] PyIceberg <VERSION>
 
-I'm pleased to announce the release of Apache PyIceberg <VERSION>!
+I'm pleased to announce the release of PyIceberg <VERSION>!
 
 Apache Iceberg is an open table format for huge analytic datasets. Iceberg
 delivers high query performance for tables with tens of petabytes of data,
