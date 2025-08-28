@@ -1486,7 +1486,7 @@ def test_update_namespace_properties_invalid_namespace(rest_mock: Mocker) -> Non
     assert "Empty namespace identifier" in str(e.value)
 
 
-def test_request_session_with_ssl_ca_bundle() -> None:
+def test_request_session_with_ssl_ca_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
     # Given
     catalog_properties = {
         "uri": TEST_URI,
@@ -1496,6 +1496,8 @@ def test_request_session_with_ssl_ca_bundle() -> None:
         },
     }
     with pytest.raises(OSError) as e:
+        monkeypatch.delenv("REQUESTS_CA_BUNDLE", raising=False)
+        monkeypatch.delenv("CURL_CA_BUNDLE", raising=False)
         # Missing namespace
         RestCatalog("rest", **catalog_properties)  # type: ignore
     assert "Could not find a suitable TLS CA certificate bundle, invalid path: path_to_ca_bundle" in str(e.value)
