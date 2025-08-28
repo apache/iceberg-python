@@ -14,6 +14,8 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+from decimal import Decimal
+
 import pytest
 from pyparsing import ParseException
 
@@ -37,8 +39,10 @@ from pyiceberg.expressions import (
     NotNull,
     NotStartsWith,
     Or,
+    Reference,
     StartsWith,
 )
+from pyiceberg.expressions.literals import DecimalLiteral, LongLiteral
 
 
 def test_always_true() -> None:
@@ -216,3 +220,50 @@ def test_with_function() -> None:
         parser.parse("foo = 1 and lower(bar) = '2'")
 
     assert "Expected end of text, found 'and'" in str(exc_info)
+
+
+def test_nested_fields() -> None:
+    assert EqualTo("foo.bar", "data") == parser.parse("foo.bar = 'data'")
+    assert LessThan("location.x", DecimalLiteral(Decimal(52.00))) == parser.parse("location.x < 52.00")
+
+
+def test_quoted_column_with_dots() -> None:
+    with pytest.raises(ParseException) as exc_info:
+        parser.parse("\"foo.bar\".baz = 'data'")
+
+    with pytest.raises(ParseException) as exc_info:
+        parser.parse("'foo.bar'.baz = 'data'")
+
+    assert "Expected <= | <> | < | >= | > | == | = | !=, found '.'" in str(exc_info.value)
+
+
+def test_quoted_column_with_spaces() -> None:
+    assert EqualTo("Foo Bar", "data") == parser.parse("\"Foo Bar\" = 'data'")
+
+
+def test_valid_between() -> None:
+    assert And(
+        left=GreaterThanOrEqual(Reference(name="foo"), LongLiteral(1)),
+        right=LessThanOrEqual(Reference(name="foo"), LongLiteral(3)),
+    ) == parser.parse("foo between 1 and 3")
+    assert And(
+        left=GreaterThanOrEqual(Reference(name="foo"), LongLiteral(1)),
+        right=LessThanOrEqual(Reference(name="foo"), LongLiteral(1)),
+    ) == parser.parse("foo between 1 and 1")
+    assert And(
+        left=GreaterThanOrEqual(Reference(name="foo"), DecimalLiteral(Decimal(1.0))),
+        right=LessThanOrEqual(Reference(name="foo"), DecimalLiteral(Decimal(4.0))),
+    ) == parser.parse("foo between 1.0 and 4.0")
+    assert parser.parse("foo between 1 and 3") == parser.parse("1 <= foo and foo <= 3")
+
+
+def test_invalid_between() -> None:
+    # boolean
+    with pytest.raises(ParseException) as exc_info:
+        parser.parse("foo between true and false")
+    assert "Expected number, found 'true'" in str(exc_info)
+
+    # string
+    with pytest.raises(ParseException) as exc_info:
+        parser.parse("foo between 'a' and 'b'")
+    assert 'Expected number, found "\'"' in str(exc_info)

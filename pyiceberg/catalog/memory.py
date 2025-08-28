@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from pyiceberg.catalog import URI
 from pyiceberg.catalog.sql import SqlCatalog
 
 
@@ -27,6 +28,6 @@ class InMemoryCatalog(SqlCatalog):
 
     def __init__(self, name: str, warehouse: str = "file:///tmp/iceberg/warehouse", **kwargs: str) -> None:
         self._warehouse_location = warehouse
-        if "uri" not in kwargs:
-            kwargs["uri"] = "sqlite:///:memory:"
+        if URI not in kwargs:
+            kwargs[URI] = "sqlite:///:memory:"
         super().__init__(name=name, warehouse=warehouse, **kwargs)

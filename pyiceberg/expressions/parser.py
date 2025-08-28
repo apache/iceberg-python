@@ -22,8 +22,10 @@ from pyparsing import (
     DelimitedList,
     Group,
     MatchFirst,
+    ParseException,
     ParserElement,
     ParseResults,
+    QuotedString,
     Suppress,
     Word,
     alphanums,
@@ -66,7 +68,6 @@ from pyiceberg.expressions.literals import (
 )
 from pyiceberg.typedef import L
 from pyiceberg.types import strtobool
-from pyiceberg.utils.deprecated import deprecation_message
 
 ParserElement.enablePackrat()
 
@@ -78,9 +79,19 @@ IN = CaselessKeyword("in")
 NULL = CaselessKeyword("null")
 NAN = CaselessKeyword("nan")
 LIKE = CaselessKeyword("like")
+BETWEEN = CaselessKeyword("between")
 
 unquoted_identifier = Word(alphas + "_", alphanums + "_$")
-quoted_identifier = Suppress('"') + unquoted_identifier + Suppress('"')
+quoted_identifier = QuotedString('"', escChar="\\", unquoteResults=True)
+
+
+@quoted_identifier.set_parse_action
+def validate_quoted_identifier(result: ParseResults) -> str:
+    if "." in result[0]:
+        raise ParseException("Expected '\"', found '.'")
+    return result[0]
+
+
 identifier = MatchFirst([unquoted_identifier, quoted_identifier]).set_results_name("identifier")
 column = DelimitedList(identifier, delim=".", combine=False).set_results_name("column")
 
@@ -89,21 +100,14 @@ like_regex = r"(?P<valid_wildcard>(?<!\\)%$)|(?P<invalid_wildcard>(?<!\\)%)"
 
 @column.set_parse_action
 def _(result: ParseResults) -> Reference:
-    if len(result.column) > 1:
-        deprecation_message(
-            deprecated_in="0.8.0",
-            removed_in="0.9.0",
-            help_message="Parsing expressions with table name is deprecated. Only provide field names in the row_filter.",
-        )
-    # TODO: Once this is removed, we will no longer take just the last index of parsed column result
-    # And introduce support for parsing filter expressions with nested fields.
-    return Reference(result.column[-1])
+    return Reference(".".join(result.column))
 
 
 boolean = one_of(["true", "false"], caseless=True).set_results_name("boolean")
 string = sgl_quoted_string.set_results_name("raw_quoted_string")
 decimal = common.real().set_results_name("decimal")
 integer = common.signed_integer().set_results_name("integer")
+number = common.number().set_results_name("number")
 literal = Group(string | decimal | integer | boolean).set_results_name("literal")
 literal_set = Group(
     DelimitedList(string) | DelimitedList(decimal) | DelimitedList(integer) | DelimitedList(boolean)
@@ -147,6 +151,12 @@ comparison_op = one_of(["<", "<=", ">", ">=", "=", "==", "!=", "<>"], caseless=T
 left_ref = column + comparison_op + literal
 right_ref = literal + comparison_op + column
 comparison = left_ref | right_ref
+between = column + BETWEEN + number + AND + number
+
+
+@between.set_parse_action
+def _(result: ParseResults) -> BooleanExpression:
+    return And(GreaterThanOrEqual(result.column, result[2]), LessThanOrEqual(result.column, result[4]))
 
 
 @left_ref.set_parse_action
@@ -256,7 +266,7 @@ def _evaluate_like_statement(result: ParseResults) -> BooleanExpression:
         return EqualTo(result.column, StringLiteral(literal_like.value.replace("\\%", "%")))
 
 
-predicate = (comparison | in_check | null_check | nan_check | starts_check | boolean).set_results_name("predicate")
+predicate = (between | comparison | in_check | null_check | nan_check | starts_check | boolean).set_results_name("predicate")
 
 
 def handle_not(result: ParseResults) -> Not:

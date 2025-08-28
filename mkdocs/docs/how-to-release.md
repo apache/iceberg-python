@@ -232,7 +232,7 @@ export LAST_COMMIT_ID=$(git rev-list ${GIT_TAG} 2> /dev/null | head -n 1)
 
 cat << EOF > release-announcement-email.txt
 To: dev@iceberg.apache.org
-Subject: [VOTE] Release Apache PyIceberg $VERSION_WITH_RC
+Subject: [VOTE] PyIceberg $VERSION_WITH_RC
 Hi Everyone,
 
 I propose that we release the following RC as the official PyIceberg $VERSION release.
@@ -351,9 +351,9 @@ Send out an announcement on the dev mail list:
 
 ```text
 To: dev@iceberg.apache.org
-Subject: [ANNOUNCE] Apache PyIceberg release <VERSION>
+Subject: [ANNOUNCE] PyIceberg <VERSION>
 
-I'm pleased to announce the release of Apache PyIceberg <VERSION>!
+I'm pleased to announce the release of PyIceberg <VERSION>!
 
 Apache Iceberg is an open table format for huge analytic datasets. Iceberg
 delivers high query performance for tables with tens of petabytes of data,
@@ -379,6 +379,8 @@ Then, select the previous release version as the **Previous tag** to use the dif
 
 **Set as the latest release** and **Publish**.
 
+Make sure to check the `changelog` label on GitHub to see if anything needs to be highlighted.
+
 ### Release the docs
 
 Run the [`Release Docs` Github Action](https://github.com/apache/iceberg-python/actions/workflows/python-release-docs.yml).
@@ -395,7 +397,7 @@ Ensure to update the `PYICEBERG_VERSION` in the [Dockerfile](https://github.com/
 
 ### Set up GPG key and Upload to Apache Iceberg KEYS file
 
-To set up GPG key locally, see the instructions [here](http://www.apache.org/dev/openpgp.html#key-gen-generate-key).
+To set up GPG key locally, see the [instructions](http://www.apache.org/dev/openpgp.html#key-gen-generate-key).
 
 To install gpg on a M1 based Mac, a couple of additional steps are required: <https://gist.github.com/phortuin/cf24b1cca3258720c71ad42977e1ba57>.
 

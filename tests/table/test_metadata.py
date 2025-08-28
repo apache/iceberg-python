@@ -48,8 +48,12 @@ from pyiceberg.types import (
     LongType,
     MapType,
     NestedField,
+    PrimitiveType,
     StringType,
     StructType,
+    TimestampNanoType,
+    TimestamptzNanoType,
+    UnknownType,
 )
 
 
@@ -169,13 +173,13 @@ def test_updating_metadata(example_table_metadata_v2: Dict[str, Any]) -> None:
 def test_serialize_v1(example_table_metadata_v1: Dict[str, Any]) -> None:
     table_metadata = TableMetadataV1(**example_table_metadata_v1)
     table_metadata_json = table_metadata.model_dump_json()
-    expected = """{"location":"s3://bucket/test/location","table-uuid":"d20125c8-7284-442c-9aea-15fee620737c","last-updated-ms":1602638573874,"last-column-id":3,"schemas":[{"type":"struct","fields":[{"id":1,"name":"x","type":"long","required":true},{"id":2,"name":"y","type":"long","required":true,"doc":"comment"},{"id":3,"name":"z","type":"long","required":true}],"schema-id":0,"identifier-field-ids":[]}],"current-schema-id":0,"partition-specs":[{"spec-id":0,"fields":[{"source-id":1,"field-id":1000,"transform":"identity","name":"x"}]}],"default-spec-id":0,"last-partition-id":1000,"properties":{},"snapshots":[{"snapshot-id":1925,"timestamp-ms":1602638573822,"manifest-list":"s3://bucket/test/manifest-list"}],"snapshot-log":[],"metadata-log":[],"sort-orders":[{"order-id":0,"fields":[]}],"default-sort-order-id":0,"refs":{},"statistics":[],"format-version":1,"schema":{"type":"struct","fields":[{"id":1,"name":"x","type":"long","required":true},{"id":2,"name":"y","type":"long","required":true,"doc":"comment"},{"id":3,"name":"z","type":"long","required":true}],"schema-id":0,"identifier-field-ids":[]},"partition-spec":[{"name":"x","transform":"identity","source-id":1,"field-id":1000}]}"""
+    expected = """{"location":"s3://bucket/test/location","table-uuid":"d20125c8-7284-442c-9aea-15fee620737c","last-updated-ms":1602638573874,"last-column-id":3,"schemas":[{"type":"struct","fields":[{"id":1,"name":"x","type":"long","required":true},{"id":2,"name":"y","type":"long","required":true,"doc":"comment"},{"id":3,"name":"z","type":"long","required":true}],"schema-id":0,"identifier-field-ids":[]}],"current-schema-id":0,"partition-specs":[{"spec-id":0,"fields":[{"source-id":1,"field-id":1000,"transform":"identity","name":"x"}]}],"default-spec-id":0,"last-partition-id":1000,"properties":{},"snapshots":[{"snapshot-id":1925,"timestamp-ms":1602638573822,"manifest-list":"s3://bucket/test/manifest-list"}],"snapshot-log":[],"metadata-log":[],"sort-orders":[{"order-id":0,"fields":[]}],"default-sort-order-id":0,"refs":{},"statistics":[],"partition-statistics":[],"format-version":1,"schema":{"type":"struct","fields":[{"id":1,"name":"x","type":"long","required":true},{"id":2,"name":"y","type":"long","required":true,"doc":"comment"},{"id":3,"name":"z","type":"long","required":true}],"schema-id":0,"identifier-field-ids":[]},"partition-spec":[{"name":"x","transform":"identity","source-id":1,"field-id":1000}]}"""
     assert table_metadata_json == expected
 
 
 def test_serialize_v2(example_table_metadata_v2: Dict[str, Any]) -> None:
     table_metadata = TableMetadataV2(**example_table_metadata_v2).model_dump_json()
-    expected = """{"location":"s3://bucket/test/location","table-uuid":"9c12d441-03fe-4693-9a96-a0705ddf69c1","last-updated-ms":1602638573590,"last-column-id":3,"schemas":[{"type":"struct","fields":[{"id":1,"name":"x","type":"long","required":true}],"schema-id":0,"identifier-field-ids":[]},{"type":"struct","fields":[{"id":1,"name":"x","type":"long","required":true},{"id":2,"name":"y","type":"long","required":true,"doc":"comment"},{"id":3,"name":"z","type":"long","required":true}],"schema-id":1,"identifier-field-ids":[1,2]}],"current-schema-id":1,"partition-specs":[{"spec-id":0,"fields":[{"source-id":1,"field-id":1000,"transform":"identity","name":"x"}]}],"default-spec-id":0,"last-partition-id":1000,"properties":{"read.split.target.size":"134217728"},"current-snapshot-id":3055729675574597004,"snapshots":[{"snapshot-id":3051729675574597004,"sequence-number":0,"timestamp-ms":1515100955770,"manifest-list":"s3://a/b/1.avro","summary":{"operation":"append"}},{"snapshot-id":3055729675574597004,"parent-snapshot-id":3051729675574597004,"sequence-number":1,"timestamp-ms":1555100955770,"manifest-list":"s3://a/b/2.avro","summary":{"operation":"append"},"schema-id":1}],"snapshot-log":[{"snapshot-id":3051729675574597004,"timestamp-ms":1515100955770},{"snapshot-id":3055729675574597004,"timestamp-ms":1555100955770}],"metadata-log":[{"metadata-file":"s3://bucket/.../v1.json","timestamp-ms":1515100}],"sort-orders":[{"order-id":3,"fields":[{"source-id":2,"transform":"identity","direction":"asc","null-order":"nulls-first"},{"source-id":3,"transform":"bucket[4]","direction":"desc","null-order":"nulls-last"}]}],"default-sort-order-id":3,"refs":{"test":{"snapshot-id":3051729675574597004,"type":"tag","max-ref-age-ms":10000000},"main":{"snapshot-id":3055729675574597004,"type":"branch"}},"statistics":[],"format-version":2,"last-sequence-number":34}"""
+    expected = """{"location":"s3://bucket/test/location","table-uuid":"9c12d441-03fe-4693-9a96-a0705ddf69c1","last-updated-ms":1602638573590,"last-column-id":3,"schemas":[{"type":"struct","fields":[{"id":1,"name":"x","type":"long","required":true}],"schema-id":0,"identifier-field-ids":[]},{"type":"struct","fields":[{"id":1,"name":"x","type":"long","required":true},{"id":2,"name":"y","type":"long","required":true,"doc":"comment"},{"id":3,"name":"z","type":"long","required":true}],"schema-id":1,"identifier-field-ids":[1,2]}],"current-schema-id":1,"partition-specs":[{"spec-id":0,"fields":[{"source-id":1,"field-id":1000,"transform":"identity","name":"x"}]}],"default-spec-id":0,"last-partition-id":1000,"properties":{"read.split.target.size":"134217728"},"current-snapshot-id":3055729675574597004,"snapshots":[{"snapshot-id":3051729675574597004,"sequence-number":0,"timestamp-ms":1515100955770,"manifest-list":"s3://a/b/1.avro","summary":{"operation":"append"}},{"snapshot-id":3055729675574597004,"parent-snapshot-id":3051729675574597004,"sequence-number":1,"timestamp-ms":1555100955770,"manifest-list":"s3://a/b/2.avro","summary":{"operation":"append"},"schema-id":1}],"snapshot-log":[{"snapshot-id":3051729675574597004,"timestamp-ms":1515100955770},{"snapshot-id":3055729675574597004,"timestamp-ms":1555100955770}],"metadata-log":[{"metadata-file":"s3://bucket/.../v1.json","timestamp-ms":1515100}],"sort-orders":[{"order-id":3,"fields":[{"source-id":2,"transform":"identity","direction":"asc","null-order":"nulls-first"},{"source-id":3,"transform":"bucket[4]","direction":"desc","null-order":"nulls-last"}]}],"default-sort-order-id":3,"refs":{"test":{"snapshot-id":3051729675574597004,"type":"tag","max-ref-age-ms":10000000},"main":{"snapshot-id":3055729675574597004,"type":"branch"}},"statistics":[],"partition-statistics":[],"format-version":2,"last-sequence-number":34}"""
     assert table_metadata == expected
 
 
@@ -765,3 +769,110 @@ def test_make_metadata_fresh() -> None:
     )
 
     assert actual.model_dump() == expected.model_dump()
+
+
+def test_new_table_metadata_with_v3_schema() -> None:
+    schema = Schema(
+        NestedField(field_id=10, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=22, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=33, name="baz", field_type=BooleanType(), required=False),
+        NestedField(field_id=34, name="qux", field_type=TimestampNanoType(), required=False),
+        NestedField(field_id=35, name="quux", field_type=TimestamptzNanoType(), required=False),
+        schema_id=10,
+        identifier_field_ids=[22],
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=22, field_id=1022, transform=IdentityTransform(), name="bar"), spec_id=10
+    )
+
+    sort_order = SortOrder(
+        SortField(source_id=10, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_LAST),
+        order_id=10,
+    )
+
+    actual = new_table_metadata(
+        schema=schema,
+        partition_spec=partition_spec,
+        sort_order=sort_order,
+        location="s3://some_v1_location/",
+        properties={"format-version": "3"},
+    )
+
+    expected_schema = Schema(
+        NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
+        NestedField(field_id=4, name="qux", field_type=TimestampNanoType(), required=False),
+        NestedField(field_id=5, name="quux", field_type=TimestamptzNanoType(), required=False),
+        schema_id=0,
+        identifier_field_ids=[2],
+    )
+
+    expected_spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="bar"))
+
+    expected_sort_order = SortOrder(
+        SortField(source_id=1, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_LAST),
+        order_id=1,
+    )
+
+    expected = TableMetadataV3(
+        location="s3://some_v1_location/",
+        table_uuid=actual.table_uuid,
+        last_updated_ms=actual.last_updated_ms,
+        last_column_id=5,
+        schemas=[expected_schema],
+        schema_=expected_schema,
+        current_schema_id=0,
+        partition_spec=[field.model_dump() for field in expected_spec.fields],
+        partition_specs=[expected_spec],
+        default_spec_id=0,
+        last_partition_id=1000,
+        properties={},
+        current_snapshot_id=None,
+        snapshots=[],
+        snapshot_log=[],
+        metadata_log=[],
+        sort_orders=[expected_sort_order],
+        default_sort_order_id=1,
+        refs={},
+        format_version=3,
+    )
+
+    assert actual.model_dump() == expected.model_dump()
+    assert actual.schemas == [expected_schema]
+    assert actual.partition_specs == [expected_spec]
+    assert actual.sort_orders == [expected_sort_order]
+
+
+@pytest.mark.parametrize(
+    "field_type",
+    [
+        TimestampNanoType(),
+        TimestamptzNanoType(),
+        UnknownType(),
+    ],
+)
+def test_new_table_metadata_format_v2_with_v3_schema_fails(field_type: PrimitiveType) -> None:
+    schema = Schema(
+        NestedField(field_id=34, name="qux", field_type=field_type, required=False),
+        schema_id=10,
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=34, field_id=1022, transform=IdentityTransform(), name="qux"), spec_id=10
+    )
+
+    sort_order = SortOrder(
+        SortField(source_id=34, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_LAST),
+        order_id=34,
+    )
+
+    with pytest.raises(ValueError, match=f"{field_type} is only supported in 3 or higher. Current format version is: 2"):
+        new_table_metadata(
+            schema=schema,
+            partition_spec=partition_spec,
+            sort_order=sort_order,
+            location="s3://some_v1_location/",
+            properties={"format-version": "2"},
+        )

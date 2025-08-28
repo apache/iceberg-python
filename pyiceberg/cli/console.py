@@ -29,11 +29,11 @@ import click
 from click import Context
 
 from pyiceberg import __version__
-from pyiceberg.catalog import Catalog, load_catalog
+from pyiceberg.catalog import URI, Catalog, load_catalog
 from pyiceberg.cli.output import ConsoleOutput, JsonOutput, Output
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchPropertyException, NoSuchTableError
 from pyiceberg.table import TableProperties
-from pyiceberg.table.refs import SnapshotRef
+from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
 from pyiceberg.utils.properties import property_as_int
 
 
@@ -75,7 +75,7 @@ def run(
     if ugi:
         properties["ugi"] = ugi
     if uri:
-        properties["uri"] = uri
+        properties[URI] = uri
     if credential:
         properties["credential"] = credential
 
@@ -300,7 +300,6 @@ def get_namespace(ctx: Context, identifier: str, property_name: str) -> None:
     identifier_tuple = Catalog.identifier_to_tuple(identifier)
 
     namespace_properties = catalog.load_namespace_properties(identifier_tuple)
-    assert namespace_properties
 
     if property_name:
         if property_value := namespace_properties.get(property_name):
@@ -322,7 +321,6 @@ def get_table(ctx: Context, identifier: str, property_name: str) -> None:
     identifier_tuple = Catalog.identifier_to_tuple(identifier)
 
     metadata = catalog.load_table(identifier_tuple).metadata
-    assert metadata
 
     if property_name:
         if property_value := metadata.properties.get(property_name):
@@ -363,9 +361,10 @@ def table(ctx: Context, identifier: str, property_name: str, property_value: str
     catalog, output = _catalog_and_output(ctx)
     identifier_tuple = Catalog.identifier_to_tuple(identifier)
 
-    _ = catalog.load_table(identifier_tuple)
-    output.text(f"Setting {property_name}={property_value} on {identifier}")
-    raise NotImplementedError("Writing is WIP")
+    table = catalog.load_table(identifier_tuple)
+    with table.transaction() as tx:
+        tx.set_properties({property_name: property_value})
+    output.text(f"Set {property_name}={property_value} on {identifier}")
 
 
 @properties.group()
@@ -400,8 +399,9 @@ def table(ctx: Context, identifier: str, property_name: str) -> None:  # noqa: F
     catalog, output = _catalog_and_output(ctx)
     table = catalog.load_table(identifier)
     if property_name in table.metadata.properties:
-        output.exception(NotImplementedError("Writing is WIP"))
-        ctx.exit(1)
+        with table.transaction() as tx:
+            tx.remove_properties(property_name)
+        output.text(f"Property {property_name} removed from {identifier}")
     else:
         raise NoSuchPropertyException(f"Property {property_name} does not exist on {identifier}")
 
@@ -419,7 +419,7 @@ def list_refs(ctx: Context, identifier: str, type: str, verbose: bool) -> None:
     refs = table.refs()
     if type:
         type = type.lower()
-        if type not in {"branch", "tag"}:
+        if type not in {SnapshotRefType.BRANCH, SnapshotRefType.TAG}:
             raise ValueError(f"Type must be either branch or tag, got: {type}")
 
     relevant_refs = [
@@ -433,7 +433,7 @@ def list_refs(ctx: Context, identifier: str, type: str, verbose: bool) -> None:
 
 def _retention_properties(ref: SnapshotRef, table_properties: Dict[str, str]) -> Dict[str, str]:
     retention_properties = {}
-    if ref.snapshot_ref_type == "branch":
+    if ref.snapshot_ref_type == SnapshotRefType.BRANCH:
         default_min_snapshots_to_keep = property_as_int(
             table_properties,
             TableProperties.MIN_SNAPSHOTS_TO_KEEP,

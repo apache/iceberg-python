@@ -37,20 +37,14 @@ The PyIceberg Project is hosted on GitHub at <https://github.com/apache/iceberg-
 For the development, Poetry is used for packing and dependency management. You can install this using:
 
 ```bash
-pip install poetry
+make install-poetry
 ```
 
-Make sure you're using an up-to-date environment from venv
-
-```bash
-pip install --upgrade virtualenv pip
-python -m venv ./venv
-source ./venv/bin/activate
-```
-
-To get started, you can run `make install`, which installs Poetry and all the dependencies of the Iceberg library. This also installs the development dependencies. If you don't want to install the development dependencies, you need to install using `poetry install --no-dev`.
+To get started, you can run `make install`, which installs all the dependencies of the Iceberg library. This also installs the development dependencies. If you don't want to install the development dependencies, you need to install using `poetry install --without dev` instead of `make install`.
 
 If you want to install the library on the host, you can simply run `pip3 install -e .`. If you wish to use a virtual environment, you can run `poetry shell`. Poetry will open up a virtual environment with all the dependencies set.
+
+> **Note:** If you want to use `poetry shell`, you need to install it using `pip install poetry-plugin-shell`. Alternatively, you can run commands directly with `poetry run`.
 
 To set up IDEA with Poetry:
 
@@ -165,7 +159,7 @@ To rebuild the containers from scratch.
 
 Below are the formalized conventions that we adhere to in the PyIceberg project. The goal of this is to have a common agreement on how to evolve the codebase, but also using it as guidelines for newcomers to the project.
 
-## API Compatibility
+### API Compatibility
 
 It is important to keep the Python public API compatible across versions. The Python official [PEP-8](https://peps.python.org/pep-0008/) defines public methods as: _Public attributes should have no leading underscores_. This means not removing any methods without any notice, or removing or renaming any existing parameters. Adding new optional parameters is okay.
 
@@ -208,12 +202,12 @@ Which will warn:
 Deprecated in 0.1.0, will be removed in 0.2.0. The old_property is deprecated. Please use the something_else property instead.
 ```
 
-## Type annotations
+### Type annotations
 
 For the type annotation the types from the `Typing` package are used.
 
 PyIceberg offers support from Python 3.9 onwards, we can't use the [type hints from the standard collections](https://peps.python.org/pep-0585/).
 
-## Third party libraries
+### Third party libraries
 
 PyIceberg naturally integrates into the rich Python ecosystem, however it is important to be hesitant adding third party packages. Adding a lot of packages makes the library heavyweight, and causes incompatibilities with other projects if they use a different version of the library. Also, big libraries such as `s3fs`, `adlfs`, `pyarrow`, `thrift` should be optional to avoid downloading everything, while not being sure if is actually being used.

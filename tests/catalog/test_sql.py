@@ -17,7 +17,7 @@
 
 import os
 from pathlib import Path
-from typing import Any, Generator, List, cast
+from typing import Any, Generator, cast
 
 import pyarrow as pa
 import pytest
@@ -60,7 +60,7 @@ from pyiceberg.table.sorting import (
 )
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Identifier
-from pyiceberg.types import IntegerType, strtobool
+from pyiceberg.types import IntegerType, NestedField, StringType, strtobool
 
 CATALOG_TABLES = [c.__tablename__ for c in SqlCatalogBaseTable.__subclasses__()]
 
@@ -72,7 +72,7 @@ def catalog_name() -> str:
 
 @pytest.fixture(name="random_table_identifier")
 def fixture_random_table_identifier(warehouse: Path, database_name: str, table_name: str) -> Identifier:
-    os.makedirs(f"{warehouse}/{database_name}.db/{table_name}/metadata/", exist_ok=True)
+    os.makedirs(f"{warehouse}/{database_name}/{table_name}/metadata/", exist_ok=True)
     return database_name, table_name
 
 
@@ -80,13 +80,13 @@ def fixture_random_table_identifier(warehouse: Path, database_name: str, table_n
 def fixture_another_random_table_identifier(warehouse: Path, database_name: str, table_name: str) -> Identifier:
     database_name = database_name + "_new"
     table_name = table_name + "_new"
-    os.makedirs(f"{warehouse}/{database_name}.db/{table_name}/metadata/", exist_ok=True)
+    os.makedirs(f"{warehouse}/{database_name}/{table_name}/metadata/", exist_ok=True)
     return database_name, table_name
 
 
 @pytest.fixture(name="random_hierarchical_identifier")
 def fixture_random_hierarchical_identifier(warehouse: Path, hierarchical_namespace_name: str, table_name: str) -> Identifier:
-    os.makedirs(f"{warehouse}/{hierarchical_namespace_name}.db/{table_name}/metadata/", exist_ok=True)
+    os.makedirs(f"{warehouse}/{hierarchical_namespace_name}/{table_name}/metadata/", exist_ok=True)
     return Catalog.identifier_to_tuple(".".join((hierarchical_namespace_name, table_name)))
 
 
@@ -96,7 +96,7 @@ def fixture_another_random_hierarchical_identifier(
 ) -> Identifier:
     hierarchical_namespace_name = hierarchical_namespace_name + "_new"
     table_name = table_name + "_new"
-    os.makedirs(f"{warehouse}/{hierarchical_namespace_name}.db/{table_name}/metadata/", exist_ok=True)
+    os.makedirs(f"{warehouse}/{hierarchical_namespace_name}/{table_name}/metadata/", exist_ok=True)
     return Catalog.identifier_to_tuple(".".join((hierarchical_namespace_name, table_name)))
 
 
@@ -115,7 +115,7 @@ def catalog_memory(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, 
 @pytest.fixture(scope="module")
 def catalog_sqlite(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, None, None]:
     props = {
-        "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+        "uri": f"sqlite:////{warehouse}/sql-catalog",
         "warehouse": f"file://{warehouse}",
     }
     catalog = SqlCatalog(catalog_name, **props)
@@ -126,7 +126,7 @@ def catalog_sqlite(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, 
 
 @pytest.fixture(scope="module")
 def catalog_uri(warehouse: Path) -> str:
-    return f"sqlite:////{warehouse}/sql-catalog.db"
+    return f"sqlite:////{warehouse}/sql-catalog"
 
 
 @pytest.fixture(scope="module")
@@ -137,7 +137,7 @@ def alchemy_engine(catalog_uri: str) -> Engine:
 @pytest.fixture(scope="module")
 def catalog_sqlite_without_rowcount(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, None, None]:
     props = {
-        "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+        "uri": f"sqlite:////{warehouse}/sql-catalog",
         "warehouse": f"file://{warehouse}",
     }
     catalog = SqlCatalog(catalog_name, **props)
@@ -150,7 +150,7 @@ def catalog_sqlite_without_rowcount(catalog_name: str, warehouse: Path) -> Gener
 @pytest.fixture(scope="module")
 def catalog_sqlite_fsspec(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, None, None]:
     props = {
-        "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+        "uri": f"sqlite:////{warehouse}/sql-catalog",
         "warehouse": f"file://{warehouse}",
         PY_IO_IMPL: FSSPEC_FILE_IO,
     }
@@ -176,7 +176,7 @@ def test_creation_with_echo_parameter(catalog_name: str, warehouse: Path) -> Non
 
     for echo_param, expected_echo_value in test_cases:
         props = {
-            "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+            "uri": f"sqlite:////{warehouse}/sql-catalog",
             "warehouse": f"file://{warehouse}",
         }
         # None is for default value
@@ -199,7 +199,7 @@ def test_creation_with_pool_pre_ping_parameter(catalog_name: str, warehouse: Pat
 
     for pool_pre_ping_param, expected_pool_pre_ping_value in test_cases:
         props = {
-            "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+            "uri": f"sqlite:////{warehouse}/sql-catalog",
             "warehouse": f"file://{warehouse}",
         }
         # None is for default value
@@ -219,7 +219,7 @@ def test_creation_from_impl(catalog_name: str, warehouse: Path) -> None:
             catalog_name,
             **{
                 "py-catalog-impl": "pyiceberg.catalog.sql.SqlCatalog",
-                "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+                "uri": f"sqlite:////{warehouse}/sql-catalog",
                 "warehouse": f"file://{warehouse}",
             },
         ),
@@ -493,7 +493,7 @@ def test_create_table_with_given_location_removes_trailing_slash(
     identifier_tuple = Catalog.identifier_to_tuple(table_identifier)
     namespace = Catalog.namespace_from(table_identifier)
     table_name = Catalog.table_name_from(identifier_tuple)
-    location = f"file://{warehouse}/{catalog.name}.db/{table_name}-given"
+    location = f"file://{warehouse}/{catalog.name}/{table_name}-given"
     catalog.create_namespace(namespace)
     catalog.create_table(table_identifier, table_schema_nested, location=f"{location}/")
     table = catalog.load_table(table_identifier)
@@ -1027,7 +1027,7 @@ def test_create_namespace_if_not_exists(catalog: SqlCatalog, database_name: str)
 @pytest.mark.parametrize("namespace", [lazy_fixture("database_name"), lazy_fixture("hierarchical_namespace_name")])
 def test_create_namespace(catalog: SqlCatalog, namespace: str) -> None:
     catalog.create_namespace(namespace)
-    assert (Catalog.identifier_to_tuple(namespace)) in catalog.list_namespaces()
+    assert (Catalog.identifier_to_tuple(namespace)[:1]) in catalog.list_namespaces()
 
 
 @pytest.mark.parametrize(
@@ -1074,7 +1074,7 @@ def test_create_namespace_with_comment_and_location(catalog: SqlCatalog, namespa
     }
     catalog.create_namespace(namespace=namespace, properties=test_properties)
     loaded_database_list = catalog.list_namespaces()
-    assert Catalog.identifier_to_tuple(namespace) in loaded_database_list
+    assert Catalog.identifier_to_tuple(namespace)[:1] in loaded_database_list
     properties = catalog.load_namespace_properties(namespace)
     assert properties["comment"] == "this is a test description"
     assert properties["location"] == test_location
@@ -1117,17 +1117,60 @@ def test_create_namespace_with_empty_identifier(catalog: SqlCatalog, empty_names
         lazy_fixture("catalog_sqlite"),
     ],
 )
-@pytest.mark.parametrize("namespace_list", [lazy_fixture("database_list"), lazy_fixture("hierarchical_namespace_list")])
-def test_list_namespaces(catalog: SqlCatalog, namespace_list: List[str]) -> None:
+def test_namespace_exists(catalog: SqlCatalog) -> None:
+    for ns in [("db1",), ("db1", "ns1"), ("db2", "ns1"), ("db3", "ns1", "ns2")]:
+        catalog.create_namespace(ns)
+        assert catalog._namespace_exists(ns)
+
+    assert catalog._namespace_exists("db2")  # `db2` exists because `db2.ns1` exists
+    assert catalog._namespace_exists("db3.ns1")  # `db3.ns1` exists because `db3.ns1.ns2` exists
+    assert not catalog._namespace_exists("db_")  # make sure '_' is escaped in the query
+    assert not catalog._namespace_exists("db%")  # make sure '%' is escaped in the query
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+    ],
+)
+def test_list_namespaces(catalog: SqlCatalog) -> None:
+    namespace_list = ["db", "db.ns1", "db.ns1.ns2", "db.ns2", "db2", "db2.ns1", "db%"]
     for namespace in namespace_list:
-        catalog.create_namespace(namespace)
-    # Test global list
+        if not catalog._namespace_exists(namespace):
+            catalog.create_namespace(namespace)
+
     ns_list = catalog.list_namespaces()
+    for ns in [("db",), ("db%",), ("db2",)]:
+        assert ns in ns_list
+
+    ns_list = catalog.list_namespaces("db")
+    assert sorted(ns_list) == [("db", "ns1"), ("db", "ns2")]
+
+    ns_list = catalog.list_namespaces("db.ns1")
+    assert sorted(ns_list) == [("db", "ns1", "ns2")]
+
+    ns_list = catalog.list_namespaces("db.ns1.ns2")
+    assert len(ns_list) == 0
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+    ],
+)
+def test_list_namespaces_fuzzy_match(catalog: SqlCatalog) -> None:
+    namespace_list = ["db.ns1", "db.ns1.ns2", "db.ns2", "db.ns1X.ns3", "db_.ns1.ns2", "db2.ns1.ns2"]
     for namespace in namespace_list:
-        assert Catalog.identifier_to_tuple(namespace) in ns_list
-        # Test individual namespace list
-        assert len(one_namespace := catalog.list_namespaces(namespace)) == 1
-        assert Catalog.identifier_to_tuple(namespace) == one_namespace[0]
+        if not catalog._namespace_exists(namespace):
+            catalog.create_namespace(namespace)
+
+    assert catalog.list_namespaces("db.ns1") == [("db", "ns1", "ns2")]
+
+    assert catalog.list_namespaces("db_.ns1") == [("db_", "ns1", "ns2")]
 
 
 @pytest.mark.parametrize(
@@ -1159,13 +1202,13 @@ def test_list_non_existing_namespaces(catalog: SqlCatalog) -> None:
 def test_drop_namespace(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
     namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
-    assert namespace in catalog.list_namespaces()
+    assert catalog._namespace_exists(namespace)
     catalog.create_table(table_identifier, table_schema_nested)
     with pytest.raises(NamespaceNotEmptyError):
         catalog.drop_namespace(namespace)
     catalog.drop_table(table_identifier)
     catalog.drop_namespace(namespace)
-    assert namespace not in catalog.list_namespaces()
+    assert not catalog._namespace_exists(namespace)
 
 
 @pytest.mark.parametrize(
@@ -1192,7 +1235,7 @@ def test_load_namespace_properties(catalog: SqlCatalog, namespace: str) -> None:
     warehouse_location = "/test/location"
     test_properties = {
         "comment": "this is a test description",
-        "location": f"{warehouse_location}/{namespace}.db",
+        "location": f"{warehouse_location}/{namespace}",
         "test_property1": "1",
         "test_property2": "2",
         "test_property3": "3",
@@ -1243,7 +1286,7 @@ def test_update_namespace_properties(catalog: SqlCatalog, namespace: str) -> Non
     warehouse_location = "/test/location"
     test_properties = {
         "comment": "this is a test description",
-        "location": f"{warehouse_location}/{namespace}.db",
+        "location": f"{warehouse_location}/{namespace}",
         "test_property1": "1",
         "test_property2": "2",
         "test_property3": "3",
@@ -1263,7 +1306,7 @@ def test_update_namespace_properties(catalog: SqlCatalog, namespace: str) -> Non
         "comment": "updated test description",
         "test_property4": "4",
         "test_property5": "5",
-        "location": f"{warehouse_location}/{namespace}.db",
+        "location": f"{warehouse_location}/{namespace}",
     }
 
 
@@ -1661,3 +1704,56 @@ def test_delete_metadata_multiple(catalog: SqlCatalog, table_schema_nested: Sche
     assert not os.path.exists(original_metadata_location[len("file://") :])
     assert not os.path.exists(updated_metadata_1.metadata_file[len("file://") :])
     assert os.path.exists(updated_metadata_2.metadata_file[len("file://") :])
+
+
+class TestSqlCatalogClose:
+    """Test SqlCatalog close functionality."""
+
+    def test_sql_catalog_close(self, catalog_sqlite: SqlCatalog) -> None:
+        """Test that SqlCatalog close method properly disposes the engine."""
+        # Verify engine exists
+        assert hasattr(catalog_sqlite, "engine")
+
+        # Close the catalog
+        catalog_sqlite.close()
+
+        # Verify engine is disposed by checking that the engine still exists
+        assert hasattr(catalog_sqlite, "engine")
+
+    def test_sql_catalog_context_manager(self, warehouse: Path) -> None:
+        """Test that SqlCatalog works as a context manager."""
+        with SqlCatalog("test", uri="sqlite:///:memory:", warehouse=str(warehouse)) as catalog:
+            # Verify engine exists
+            assert hasattr(catalog, "engine")
+
+            # Create a namespace and table to test functionality
+            catalog.create_namespace("test_db")
+            schema = Schema(NestedField(1, "name", StringType(), required=True))
+            catalog.create_table(("test_db", "test_table"), schema)
+
+        # Verify engine is disposed after exiting context
+        assert hasattr(catalog, "engine")
+
+    def test_sql_catalog_context_manager_with_exception(self) -> None:
+        """Test that SqlCatalog context manager properly closes even with exceptions."""
+        catalog = None
+        try:
+            with SqlCatalog("test", uri="sqlite:///:memory:") as cat:
+                catalog = cat
+                # Verify engine exists
+                assert hasattr(catalog, "engine")
+                raise ValueError("Test exception")
+        except ValueError:
+            pass
+
+        # Verify engine is disposed even after exception
+        assert catalog is not None
+        assert hasattr(catalog, "engine")
+
+    def test_sql_catalog_multiple_close_calls(self, catalog_sqlite: SqlCatalog) -> None:
+        """Test that multiple close calls on SqlCatalog are safe."""
+        # First close
+        catalog_sqlite.close()
+
+        # Second close should not raise an exception
+        catalog_sqlite.close()

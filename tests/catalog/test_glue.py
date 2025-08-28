@@ -549,6 +549,18 @@ def test_drop_non_empty_namespace(
 
 
 @mock_aws
+def test_drop_namespace_that_contains_non_iceberg_tables(
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
+    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
+    test_catalog.create_namespace(namespace=database_name)
+    test_catalog.glue.create_table(DatabaseName=database_name, TableInput={"Name": "hive_table"})
+
+    with pytest.raises(NamespaceNotEmptyError):
+        test_catalog.drop_namespace(database_name)
+
+
+@mock_aws
 def test_drop_non_exist_namespace(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
     with pytest.raises(NoSuchNamespaceError):
@@ -779,6 +791,8 @@ def test_commit_table_properties(
         Name=table_name,
     )
     assert table_info["Table"]["Description"] == "test_description"
+    assert table_info["Table"]["Parameters"]["test_a"] == "test_aa"
+    assert table_info["Table"]["Parameters"]["test_c"] == "test_c"
 
 
 @mock_aws
@@ -932,3 +946,11 @@ def test_glue_endpoint_override(_bucket_initialize: None, moto_endpoint_url: str
         catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}", "glue.endpoint": test_endpoint}
     )
     assert test_catalog.glue.meta.endpoint_url == test_endpoint
+
+
+@mock_aws
+def test_glue_client_override() -> None:
+    catalog_name = "glue"
+    test_client = boto3.client("glue", region_name="us-west-2")
+    test_catalog = GlueCatalog(catalog_name, test_client)
+    assert test_catalog.glue is test_client

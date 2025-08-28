@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import importlib
 import logging
-import os
 import warnings
 from abc import ABC, abstractmethod
 from io import SEEK_SET
@@ -37,7 +36,6 @@ from typing import (
     List,
     Optional,
     Protocol,
-    Tuple,
     Type,
     Union,
     runtime_checkable,
@@ -54,31 +52,42 @@ AWS_SECRET_ACCESS_KEY = "client.secret-access-key"
 AWS_SESSION_TOKEN = "client.session-token"
 AWS_ROLE_ARN = "client.role-arn"
 AWS_ROLE_SESSION_NAME = "client.role-session-name"
+S3_ANONYMOUS = "s3.anonymous"
 S3_ENDPOINT = "s3.endpoint"
 S3_ACCESS_KEY_ID = "s3.access-key-id"
 S3_SECRET_ACCESS_KEY = "s3.secret-access-key"
 S3_SESSION_TOKEN = "s3.session-token"
 S3_REGION = "s3.region"
+S3_RESOLVE_REGION = "s3.resolve-region"
 S3_PROXY_URI = "s3.proxy-uri"
 S3_CONNECT_TIMEOUT = "s3.connect-timeout"
 S3_REQUEST_TIMEOUT = "s3.request-timeout"
+S3_SIGNER = "s3.signer"
 S3_SIGNER_URI = "s3.signer.uri"
 S3_SIGNER_ENDPOINT = "s3.signer.endpoint"
 S3_SIGNER_ENDPOINT_DEFAULT = "v1/aws/s3/sign"
 S3_ROLE_ARN = "s3.role-arn"
 S3_ROLE_SESSION_NAME = "s3.role-session-name"
 S3_FORCE_VIRTUAL_ADDRESSING = "s3.force-virtual-addressing"
+S3_RETRY_STRATEGY_IMPL = "s3.retry-strategy-impl"
 HDFS_HOST = "hdfs.host"
 HDFS_PORT = "hdfs.port"
 HDFS_USER = "hdfs.user"
 HDFS_KERB_TICKET = "hdfs.kerberos_ticket"
 ADLS_CONNECTION_STRING = "adls.connection-string"
+ADLS_CREDENTIAL = "adls.credential"
 ADLS_ACCOUNT_NAME = "adls.account-name"
 ADLS_ACCOUNT_KEY = "adls.account-key"
 ADLS_SAS_TOKEN = "adls.sas-token"
 ADLS_TENANT_ID = "adls.tenant-id"
 ADLS_CLIENT_ID = "adls.client-id"
-ADLS_ClIENT_SECRET = "adls.client-secret"
+ADLS_CLIENT_SECRET = "adls.client-secret"
+ADLS_ACCOUNT_HOST = "adls.account-host"
+ADLS_BLOB_STORAGE_AUTHORITY = "adls.blob-storage-authority"
+ADLS_DFS_STORAGE_AUTHORITY = "adls.dfs-storage-authority"
+ADLS_BLOB_STORAGE_SCHEME = "adls.blob-storage-scheme"
+ADLS_DFS_STORAGE_SCHEME = "adls.dfs-storage-scheme"
+ADLS_TOKEN = "adls.token"
 GCS_TOKEN = "gcs.oauth2.token"
 GCS_TOKEN_EXPIRES_AT_MS = "gcs.oauth2.token-expires-at"
 GCS_PROJECT_ID = "gcs.project-id"
@@ -90,6 +99,8 @@ GCS_SESSION_KWARGS = "gcs.session-kwargs"
 GCS_SERVICE_HOST = "gcs.service.host"
 GCS_DEFAULT_LOCATION = "gcs.default-bucket-location"
 GCS_VERSION_AWARE = "gcs.version-aware"
+HF_ENDPOINT = "hf.endpoint"
+HF_TOKEN = "hf.token"
 PYARROW_USE_LARGE_TYPES_ON_READ = "pyarrow.use-large-types-on-read"
 
 
@@ -302,10 +313,11 @@ SCHEMA_TO_FILE_IO: Dict[str, List[str]] = {
     "file": [ARROW_FILE_IO, FSSPEC_FILE_IO],
     "hdfs": [ARROW_FILE_IO],
     "viewfs": [ARROW_FILE_IO],
-    "abfs": [FSSPEC_FILE_IO],
-    "abfss": [FSSPEC_FILE_IO],
-    "wasb": [FSSPEC_FILE_IO],
-    "wasbs": [FSSPEC_FILE_IO],
+    "abfs": [FSSPEC_FILE_IO, ARROW_FILE_IO],
+    "abfss": [FSSPEC_FILE_IO, ARROW_FILE_IO],
+    "wasb": [FSSPEC_FILE_IO, ARROW_FILE_IO],
+    "wasbs": [FSSPEC_FILE_IO, ARROW_FILE_IO],
+    "hf": [FSSPEC_FILE_IO],
 }
 
 
@@ -367,14 +379,3 @@ def load_file_io(properties: Properties = EMPTY_DICT, location: Optional[str] = 
         raise ModuleNotFoundError(
             'Could not load a FileIO, please consider installing one: pip3 install "pyiceberg[pyarrow]", for more options refer to the docs.'
         ) from e
-
-
-def _parse_location(location: str) -> Tuple[str, str, str]:
-    """Return the path without the scheme."""
-    uri = urlparse(location)
-    if not uri.scheme:
-        return "file", uri.netloc, os.path.abspath(location)
-    elif uri.scheme in ("hdfs", "viewfs"):
-        return uri.scheme, uri.netloc, uri.path
-    else:
-        return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"

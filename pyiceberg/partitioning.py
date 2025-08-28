@@ -21,7 +21,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from functools import cached_property, singledispatch
-from typing import Annotated, Any, Dict, Generic, List, Optional, Tuple, TypeVar, Union
+from typing import Annotated, Any, Dict, Generic, List, Optional, Set, Tuple, TypeVar, Union
 from urllib.parse import quote_plus
 
 from pydantic import (
@@ -249,6 +249,31 @@ class PartitionSpec(IcebergBaseModel):
 UNPARTITIONED_PARTITION_SPEC = PartitionSpec(spec_id=0)
 
 
+def validate_partition_name(
+    field_name: str,
+    partition_transform: Transform[Any, Any],
+    source_id: int,
+    schema: Schema,
+    partition_names: Set[str],
+) -> None:
+    """Validate that a partition field name doesn't conflict with schema field names."""
+    try:
+        schema_field = schema.find_field(field_name)
+    except ValueError:
+        return  # No conflict if field doesn't exist in schema
+
+    if isinstance(partition_transform, (IdentityTransform, VoidTransform)):
+        # For identity and void transforms, allow conflict only if sourced from the same schema field
+        if schema_field.field_id != source_id:
+            raise ValueError(f"Cannot create identity partition sourced from different field in schema: {field_name}")
+    else:
+        raise ValueError(f"Cannot create partition with a name that exists in schema: {field_name}")
+    if not field_name:
+        raise ValueError("Undefined name")
+    if field_name in partition_names:
+        raise ValueError(f"Partition name has to be unique: {field_name}")
+
+
 def assign_fresh_partition_spec_ids(spec: PartitionSpec, old_schema: Schema, fresh_schema: Schema) -> PartitionSpec:
     partition_fields = []
     for pos, field in enumerate(spec.fields):
@@ -258,6 +283,9 @@ def assign_fresh_partition_spec_ids(spec: PartitionSpec, old_schema: Schema, fre
         fresh_field = fresh_schema.find_field(original_column_name)
         if fresh_field is None:
             raise ValueError(f"Could not find field in fresh schema: {original_column_name}")
+
+        validate_partition_name(field.name, field.transform, fresh_field.field_id, fresh_schema, set())
+
         partition_fields.append(
             PartitionField(
                 name=field.name,
@@ -390,18 +418,20 @@ class PartitionKey:
 
     @cached_property
     def partition(self) -> Record:  # partition key transformed with iceberg internal representation as input
-        iceberg_typed_key_values = {}
+        iceberg_typed_key_values = []
         for raw_partition_field_value in self.field_values:
             partition_fields = self.partition_spec.source_id_to_fields_map[raw_partition_field_value.field.source_id]
             if len(partition_fields) != 1:
                 raise ValueError(f"Cannot have redundant partitions: {partition_fields}")
             partition_field = partition_fields[0]
-            iceberg_typed_key_values[partition_field.name] = partition_record_value(
-                partition_field=partition_field,
-                value=raw_partition_field_value.value,
-                schema=self.schema,
+            iceberg_typed_key_values.append(
+                partition_record_value(
+                    partition_field=partition_field,
+                    value=raw_partition_field_value.value,
+                    schema=self.schema,
+                )
             )
-        return Record(**iceberg_typed_key_values)
+        return Record(*iceberg_typed_key_values)
 
     def to_path(self) -> str:
         return self.partition_spec.partition_to_path(self.partition, self.schema)
@@ -444,7 +474,7 @@ def _(type: IcebergType, value: Optional[Union[int, datetime]]) -> Optional[int]
     elif isinstance(value, datetime):
         return datetime_to_micros(value)
     else:
-        raise ValueError(f"Unknown type: {value}")
+        raise ValueError(f"Type not recognized: {value}")
 
 
 @_to_partition_representation.register(DateType)
@@ -456,7 +486,7 @@ def _(type: IcebergType, value: Optional[Union[int, date]]) -> Optional[int]:
     elif isinstance(value, date):
         return date_to_days(value)
     else:
-        raise ValueError(f"Unknown type: {value}")
+        raise ValueError(f"Type not recognized: {value}")
 
 
 @_to_partition_representation.register(TimeType)
@@ -465,8 +495,17 @@ def _(type: IcebergType, value: Optional[time]) -> Optional[int]:
 
 
 @_to_partition_representation.register(UUIDType)
-def _(type: IcebergType, value: Optional[uuid.UUID]) -> Optional[str]:
-    return str(value) if value is not None else None
+def _(type: IcebergType, value: Optional[Union[uuid.UUID, int, bytes]]) -> Optional[Union[bytes, int]]:
+    if value is None:
+        return None
+    elif isinstance(value, bytes):
+        return value  # IdentityTransform
+    elif isinstance(value, uuid.UUID):
+        return value.bytes  # IdentityTransform
+    elif isinstance(value, int):
+        return value  # BucketTransform
+    else:
+        raise ValueError(f"Type not recognized: {value}")
 
 
 @_to_partition_representation.register(PrimitiveType)

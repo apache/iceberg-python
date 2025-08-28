@@ -33,6 +33,9 @@ from pyiceberg.types import (
     NestedField,
     StringType,
     StructType,
+    TimestampType,
+    UnknownType,
+    UUIDType,
 )
 from pyiceberg.utils.schema_conversion import AvroSchemaConversion
 
@@ -263,19 +266,19 @@ def test_fixed_type() -> None:
 
 
 def test_unknown_primitive() -> None:
-    with pytest.raises(TypeError) as exc_info:
-        avro_type = "UnknownType"
-        AvroSchemaConversion()._convert_schema(avro_type)
-    assert "Unknown type: UnknownType" in str(exc_info.value)
+    avro_type = "null"
+    actual = AvroSchemaConversion()._convert_schema(avro_type)
+    expected = UnknownType()
+    assert actual == expected
 
 
-def test_unknown_complex_type() -> None:
+def test_unrecognized_complex_type() -> None:
     with pytest.raises(TypeError) as exc_info:
         avro_type = {
-            "type": "UnknownType",
+            "type": "UnrecognizedType",
         }
         AvroSchemaConversion()._convert_schema(avro_type)
-    assert "Unknown type: {'type': 'UnknownType'}" in str(exc_info.value)
+    assert "Type not recognized: {'type': 'UnrecognizedType'}" in str(exc_info.value)
 
 
 def test_convert_field_without_field_id() -> None:
@@ -324,6 +327,24 @@ def test_convert_date_type() -> None:
     avro_logical_type = {"type": "int", "logicalType": "date"}
     actual = AvroSchemaConversion()._convert_logical_type(avro_logical_type)
     assert actual == DateType()
+
+
+def test_convert_uuid_str_type() -> None:
+    avro_logical_type = {"type": "string", "logicalType": "uuid"}
+    actual = AvroSchemaConversion()._convert_logical_type(avro_logical_type)
+    assert actual == UUIDType()
+
+
+def test_convert_uuid_fixed_type() -> None:
+    avro_logical_type = {"type": "fixed", "logicalType": "uuid"}
+    actual = AvroSchemaConversion()._convert_logical_type(avro_logical_type)
+    assert actual == UUIDType()
+
+
+def test_convert_timestamp_micros_type() -> None:
+    avro_logical_type = {"type": "int", "logicalType": "timestamp-micros"}
+    actual = AvroSchemaConversion()._convert_logical_type(avro_logical_type)
+    assert actual == TimestampType()
 
 
 def test_unknown_logical_type() -> None:

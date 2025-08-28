@@ -15,16 +15,18 @@
 #  specific language governing permissions and limitations
 #  under the License.
 # pylint: disable=redefined-outer-name,unused-argument
+import base64
 import os
 from typing import Any, Callable, Dict, cast
 from unittest import mock
 
 import pytest
+from requests.exceptions import HTTPError
 from requests_mock import Mocker
 
 import pyiceberg
 from pyiceberg.catalog import PropertiesUpdateSummary, load_catalog
-from pyiceberg.catalog.rest import OAUTH2_SERVER_URI, RestCatalog
+from pyiceberg.catalog.rest import OAUTH2_SERVER_URI, SNAPSHOT_LOADING_MODE, RestCatalog
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
     NamespaceAlreadyExistsError,
@@ -49,7 +51,7 @@ from pyiceberg.utils.config import Config
 
 TEST_URI = "https://iceberg-test-catalog/"
 TEST_CREDENTIALS = "client:secret"
-TEST_AUTH_URL = "https://auth-endpoint/"
+TEST_OAUTH2_SERVER_URI = "https://auth-endpoint/"
 TEST_TOKEN = "some_jwt_token"
 TEST_SCOPE = "openid_offline_corpds_ds_profile"
 TEST_AUDIENCE = "test_audience"
@@ -57,7 +59,6 @@ TEST_RESOURCE = "test_resource"
 
 TEST_HEADERS = {
     "Content-type": "application/json",
-    "X-Client-Version": "0.14.1",
     "User-Agent": f"PyIceberg/{pyiceberg.__version__}",
     "Authorization": f"Bearer {TEST_TOKEN}",
     "X-Iceberg-Access-Delegation": "vended-credentials",
@@ -257,9 +258,9 @@ def test_token_with_custom_scope(rest_mock: Mocker) -> None:
 @pytest.mark.filterwarnings(
     "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
-def test_token_200_w_auth_url(rest_mock: Mocker) -> None:
+def test_token_200_w_oauth2_server_uri(rest_mock: Mocker) -> None:
     rest_mock.post(
-        TEST_AUTH_URL,
+        TEST_OAUTH2_SERVER_URI,
         json={
             "access_token": TEST_TOKEN,
             "token_type": "Bearer",
@@ -271,7 +272,7 @@ def test_token_200_w_auth_url(rest_mock: Mocker) -> None:
     )
     # pylint: disable=W0212
     assert (
-        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, **{OAUTH2_SERVER_URI: TEST_AUTH_URL})._session.headers[
+        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, **{OAUTH2_SERVER_URI: OAUTH2_SERVER_URI})._session.headers[
             "Authorization"
         ]
         == f"Bearer {TEST_TOKEN}"
@@ -323,19 +324,19 @@ def test_properties_sets_headers(requests_mock: Mocker) -> None:
         **{"header.Content-Type": "application/vnd.api+json", "header.Customized-Header": "some/value"},
     )
 
-    assert (
-        catalog._session.headers.get("Content-type") == "application/json"
-    ), "Expected 'Content-Type' default header not to be overwritten"
-    assert (
-        requests_mock.last_request.headers["Content-type"] == "application/json"
-    ), "Config request did not include expected 'Content-Type' header"
+    assert catalog._session.headers.get("Content-type") == "application/json", (
+        "Expected 'Content-Type' default header not to be overwritten"
+    )
+    assert requests_mock.last_request.headers["Content-type"] == "application/json", (
+        "Config request did not include expected 'Content-Type' header"
+    )
 
-    assert (
-        catalog._session.headers.get("Customized-Header") == "some/value"
-    ), "Expected 'Customized-Header' header to be 'some/value'"
-    assert (
-        requests_mock.last_request.headers["Customized-Header"] == "some/value"
-    ), "Config request did not include expected 'Customized-Header' header"
+    assert catalog._session.headers.get("Customized-Header") == "some/value", (
+        "Expected 'Customized-Header' header to be 'some/value'"
+    )
+    assert requests_mock.last_request.headers["Customized-Header"] == "some/value", (
+        "Config request did not include expected 'Customized-Header' header"
+    )
 
 
 def test_config_sets_headers(requests_mock: Mocker) -> None:
@@ -352,19 +353,19 @@ def test_config_sets_headers(requests_mock: Mocker) -> None:
     catalog = RestCatalog("rest", uri=TEST_URI, warehouse="s3://some-bucket")
     catalog.create_namespace(namespace)
 
-    assert (
-        catalog._session.headers.get("Content-type") == "application/json"
-    ), "Expected 'Content-Type' default header not to be overwritten"
-    assert (
-        requests_mock.last_request.headers["Content-type"] == "application/json"
-    ), "Create namespace request did not include expected 'Content-Type' header"
+    assert catalog._session.headers.get("Content-type") == "application/json", (
+        "Expected 'Content-Type' default header not to be overwritten"
+    )
+    assert requests_mock.last_request.headers["Content-type"] == "application/json", (
+        "Create namespace request did not include expected 'Content-Type' header"
+    )
 
-    assert (
-        catalog._session.headers.get("Customized-Header") == "some/value"
-    ), "Expected 'Customized-Header' header to be 'some/value'"
-    assert (
-        requests_mock.last_request.headers["Customized-Header"] == "some/value"
-    ), "Create namespace request did not include expected 'Customized-Header' header"
+    assert catalog._session.headers.get("Customized-Header") == "some/value", (
+        "Expected 'Customized-Header' header to be 'some/value'"
+    )
+    assert requests_mock.last_request.headers["Customized-Header"] == "some/value", (
+        "Create namespace request did not include expected 'Customized-Header' header"
+    )
 
 
 @pytest.mark.filterwarnings(
@@ -555,10 +556,29 @@ def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
     ]
 
 
+def test_list_namespace_with_parent_404(rest_mock: Mocker) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces?parent=some_namespace",
+        json={
+            "error": {
+                "message": "Namespace provided in the `parent` query parameter is not found",
+                "type": "NoSuchNamespaceException",
+                "code": 404,
+            }
+        },
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(NoSuchNamespaceError):
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces(("some_namespace",))
+
+
 @pytest.mark.filterwarnings(
     "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
-def test_list_namespaces_token_expired(rest_mock: Mocker) -> None:
+@pytest.mark.parametrize("status_code", [401, 419])
+def test_list_namespaces_token_expired_success_on_retries(rest_mock: Mocker, status_code: int) -> None:
     new_token = "new_jwt_token"
     new_header = dict(TEST_HEADERS)
     new_header["Authorization"] = f"Bearer {new_token}"
@@ -568,12 +588,12 @@ def test_list_namespaces_token_expired(rest_mock: Mocker) -> None:
         f"{TEST_URI}v1/namespaces",
         [
             {
-                "status_code": 419,
+                "status_code": status_code,
                 "json": {
                     "error": {
                         "message": "Authorization expired.",
                         "type": "AuthorizationExpiredError",
-                        "code": 419,
+                        "code": status_code,
                     }
                 },
                 "headers": TEST_HEADERS,
@@ -601,6 +621,10 @@ def test_list_namespaces_token_expired(rest_mock: Mocker) -> None:
         status_code=200,
     )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, credential=TEST_CREDENTIALS)
+    # LegacyOAuth2AuthManager is created twice through `_create_session()`
+    # which results in the token being refreshed twice when the RestCatalog is initialized.
+    assert tokens.call_count == 2
+
     assert catalog.list_namespaces() == [
         ("default",),
         ("examples",),
@@ -608,7 +632,7 @@ def test_list_namespaces_token_expired(rest_mock: Mocker) -> None:
         ("system",),
     ]
     assert namespaces.call_count == 2
-    assert tokens.call_count == 1
+    assert tokens.call_count == 3
 
     assert catalog.list_namespaces() == [
         ("default",),
@@ -617,7 +641,7 @@ def test_list_namespaces_token_expired(rest_mock: Mocker) -> None:
         ("system",),
     ]
     assert namespaces.call_count == 3
-    assert tokens.call_count == 1
+    assert tokens.call_count == 3
 
 
 def test_create_namespace_200(rest_mock: Mocker) -> None:
@@ -821,6 +845,29 @@ def test_load_table_200(rest_mock: Mocker, example_table_metadata_with_snapshot_
         request_headers=TEST_HEADERS,
     )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    actual = catalog.load_table(("fokko", "table"))
+    expected = Table(
+        identifier=("fokko", "table"),
+        metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
+        metadata=TableMetadataV1(**example_table_metadata_with_snapshot_v1_rest_json["metadata"]),
+        io=load_file_io(),
+        catalog=catalog,
+    )
+    # First compare the dicts
+    assert actual.metadata.model_dump() == expected.metadata.model_dump()
+    assert actual == expected
+
+
+def test_load_table_200_loading_mode(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]
+) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table?snapshots=refs",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{SNAPSHOT_LOADING_MODE: "refs"})
     actual = catalog.load_table(("fokko", "table"))
     expected = Table(
         identifier=("fokko", "table"),
@@ -1074,7 +1121,6 @@ def test_create_staged_table_200(
                     "schema-id": 0,
                     "identifier-field-ids": [],
                 },
-                "last-column-id": 2,
             },
             {"action": "set-current-schema", "schema-id": -1},
             {"action": "add-spec", "spec": {"spec-id": 0, "fields": []}},
@@ -1473,6 +1519,189 @@ def test_request_session_with_ssl_client_cert() -> None:
     assert "Could not find the TLS certificate file, invalid path: path_to_client_cert" in str(e.value)
 
 
+def test_rest_catalog_with_basic_auth_type(rest_mock: Mocker) -> None:
+    # Given
+    rest_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "basic",
+            "basic": {
+                "username": "one",
+                "password": "two",
+            },
+        },
+    }
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert catalog.uri == TEST_URI
+
+    encoded_user_pass = base64.b64encode(b"one:two").decode()
+    expected_auth_header = f"Basic {encoded_user_pass}"
+    assert rest_mock.last_request.headers["Authorization"] == expected_auth_header
+
+
+def test_rest_catalog_with_custom_auth_type() -> None:
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "custom",
+            "impl": "dummy.nonexistent.package",
+            "custom": {
+                "property1": "one",
+                "property2": "two",
+            },
+        },
+    }
+    with pytest.raises(ValueError) as e:
+        # Missing namespace
+        RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert "Could not load AuthManager class for 'dummy.nonexistent.package'" in str(e.value)
+
+
+def test_rest_catalog_with_custom_basic_auth_type(rest_mock: Mocker) -> None:
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "custom",
+            "impl": "pyiceberg.catalog.rest.auth.BasicAuthManager",
+            "custom": {
+                "username": "one",
+                "password": "two",
+            },
+        },
+    }
+    rest_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert catalog.uri == TEST_URI
+
+    encoded_user_pass = base64.b64encode(b"one:two").decode()
+    expected_auth_header = f"Basic {encoded_user_pass}"
+    assert rest_mock.last_request.headers["Authorization"] == expected_auth_header
+
+
+def test_rest_catalog_with_custom_auth_type_no_impl() -> None:
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "custom",
+            "custom": {
+                "property1": "one",
+                "property2": "two",
+            },
+        },
+    }
+    with pytest.raises(ValueError) as e:
+        # Missing namespace
+        RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert "auth.impl must be specified when using custom auth.type" in str(e.value)
+
+
+def test_rest_catalog_with_non_custom_auth_type_impl() -> None:
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "basic",
+            "impl": "basic.package",
+            "basic": {
+                "username": "one",
+                "password": "two",
+            },
+        },
+    }
+    with pytest.raises(ValueError) as e:
+        # Missing namespace
+        RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert "auth.impl can only be specified when using custom auth.type" in str(e.value)
+
+
+def test_rest_catalog_with_unsupported_auth_type() -> None:
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "unsupported",
+            "unsupported": {
+                "property1": "one",
+                "property2": "two",
+            },
+        },
+    }
+    with pytest.raises(ValueError) as e:
+        # Missing namespace
+        RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert "Could not load AuthManager class for 'unsupported'" in str(e.value)
+
+
+def test_rest_catalog_with_oauth2_auth_type(requests_mock: Mocker) -> None:
+    requests_mock.post(
+        f"{TEST_URI}oauth2/token",
+        json={
+            "access_token": "MTQ0NjJkZmQ5OTM2NDE1ZTZjNGZmZjI3",
+            "token_type": "Bearer",
+            "expires_in": 3600,
+            "refresh_token": "IwOGYzYTlmM2YxOTQ5MGE3YmNmMDFkNTVk",
+            "scope": "read",
+        },
+        status_code=200,
+    )
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "oauth2",
+            "oauth2": {
+                "client_id": "some_client_id",
+                "client_secret": "some_client_secret",
+                "token_url": f"{TEST_URI}oauth2/token",
+                "scope": "read",
+            },
+        },
+    }
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert catalog.uri == TEST_URI
+
+
+def test_rest_catalog_oauth2_non_200_token_response(requests_mock: Mocker) -> None:
+    requests_mock.post(
+        f"{TEST_URI}oauth2/token",
+        json={"error": "invalid_client"},
+        status_code=401,
+    )
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "oauth2",
+            "oauth2": {
+                "client_id": "bad_client_id",
+                "client_secret": "bad_client_secret",
+                "token_url": f"{TEST_URI}oauth2/token",
+                "scope": "read",
+            },
+        },
+    }
+
+    with pytest.raises(HTTPError):
+        RestCatalog("rest", **catalog_properties)  # type: ignore
+
+
 EXAMPLE_ENV = {"PYICEBERG_CATALOG__PRODUCTION__URI": TEST_URI}
 
 
@@ -1575,3 +1804,42 @@ def test_drop_view_204(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
     RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_view(("some_namespace", "some_view"))
+
+
+@mock.patch("google.auth.transport.requests.Request")
+@mock.patch("google.auth.load_credentials_from_file")
+def test_rest_catalog_with_google_credentials_path(
+    mock_load_creds: mock.MagicMock, mock_google_request: mock.MagicMock, rest_mock: Mocker
+) -> None:
+    mock_credentials = mock.MagicMock()
+    mock_credentials.token = "file_token"
+    mock_load_creds.return_value = (mock_credentials, "test_project_file")
+
+    # Given
+    rest_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "google",
+            "google": {
+                "credentials_path": "/fake/path.json",
+            },
+        },
+    }
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert catalog.uri == TEST_URI
+
+    expected_auth_header = "Bearer file_token"
+    assert rest_mock.last_request.headers["Authorization"] == expected_auth_header
+
+    mock_load_creds.assert_called_with("/fake/path.json", scopes=None)
+    mock_credentials.refresh.assert_called_once_with(mock_google_request.return_value)
+    history = rest_mock.request_history
+    assert len(history) == 1
+    actual_headers = history[0].headers
+    assert actual_headers["Authorization"] == expected_auth_header

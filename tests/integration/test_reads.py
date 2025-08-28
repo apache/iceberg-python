@@ -29,6 +29,7 @@ import pytest
 from hive_metastore.ttypes import LockRequest, LockResponse, LockState, UnlockRequest
 from pyarrow.fs import S3FileSystem
 from pydantic_core import ValidationError
+from pyspark.sql import SparkSession
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.hive import HiveCatalog, _HiveClient
@@ -41,6 +42,7 @@ from pyiceberg.expressions import (
     LessThan,
     NotEqualTo,
     NotNaN,
+    NotNull,
 )
 from pyiceberg.io import PYARROW_USE_LARGE_TYPES_ON_READ
 from pyiceberg.io.pyarrow import (
@@ -109,6 +111,27 @@ def test_table_properties(catalog: Catalog) -> None:
     with pytest.raises(ValidationError) as exc_info:
         table.transaction().set_properties(property_name=None).commit_transaction()
     assert "None type is not a supported value in properties: property_name" in str(exc_info.value)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive")])
+def test_hive_properties(catalog: Catalog) -> None:
+    table = create_table(catalog)
+    table.transaction().set_properties({"abc": "def", "p1": "123"}).commit_transaction()
+
+    hive_client: _HiveClient = _HiveClient(catalog.properties["uri"])
+
+    with hive_client as open_client:
+        hive_table = open_client.get_table(*TABLE_NAME)
+        assert hive_table.parameters.get("abc") == "def"
+        assert hive_table.parameters.get("p1") == "123"
+        assert hive_table.parameters.get("not_exist_parameter") is None
+
+    table.transaction().remove_properties("abc").commit_transaction()
+
+    with hive_client as open_client:
+        hive_table = open_client.get_table(*TABLE_NAME)
+        assert hive_table.parameters.get("abc") is None
 
 
 @pytest.mark.integration
@@ -298,9 +321,6 @@ def test_pyarrow_limit_with_multiple_files(catalog: Catalog) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_daft_nan(catalog: Catalog) -> None:
-    import daft
-
-    daft.context.set_runner_native()
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     df = table_test_null_nan_rewritten.to_daft()
     assert df.count_rows() == 3
@@ -310,9 +330,6 @@ def test_daft_nan(catalog: Catalog) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_daft_nan_rewritten(catalog: Catalog) -> None:
-    import daft
-
-    daft.context.set_runner_native()
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     df = table_test_null_nan_rewritten.to_daft()
     df = df.where(df["col_numeric"].float.is_nan())
@@ -320,6 +337,21 @@ def test_daft_nan_rewritten(catalog: Catalog) -> None:
     assert df.count_rows() == 1
     assert df.to_pydict()["idx"][0] == 1
     assert math.isnan(df.to_pydict()["col_numeric"][0])
+
+
+@pytest.mark.skip(reason="Bodo should not monekeypatch PyArrowFileIO, https://github.com/apache/iceberg-python/issues/2400")
+@pytest.mark.integration
+@pytest.mark.filterwarnings("ignore")
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_bodo_nan(catalog: Catalog, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Avoid local Mac issues (see https://github.com/apache/iceberg-python/issues/2225)
+    monkeypatch.setenv("BODO_DATAFRAME_LIBRARY_RUN_PARALLEL", "0")
+    monkeypatch.setenv("FI_PROVIDER", "tcp")
+
+    table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
+    df = table_test_null_nan_rewritten.to_bodo()
+    assert len(df) == 3
+    assert math.isnan(df.col_numeric.iloc[0])
 
 
 @pytest.mark.integration
@@ -384,7 +416,8 @@ def test_pyarrow_to_iceberg_all_types(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_pyarrow_deletes(catalog: Catalog) -> None:
+@pytest.mark.parametrize("format_version", [2, 3])
+def test_pyarrow_deletes(catalog: Catalog, format_version: int) -> None:
     # number, letter
     #  (1, 'a'),
     #  (2, 'b'),
@@ -398,7 +431,7 @@ def test_pyarrow_deletes(catalog: Catalog) -> None:
     #  (10, 'j'),
     #  (11, 'k'),
     #  (12, 'l')
-    test_positional_mor_deletes = catalog.load_table("default.test_positional_mor_deletes")
+    test_positional_mor_deletes = catalog.load_table(f"default.test_positional_mor_deletes_v{format_version}")
     arrow_table = test_positional_mor_deletes.scan().to_arrow()
     assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12]
 
@@ -421,7 +454,8 @@ def test_pyarrow_deletes(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_pyarrow_deletes_double(catalog: Catalog) -> None:
+@pytest.mark.parametrize("format_version", [2, 3])
+def test_pyarrow_deletes_double(catalog: Catalog, format_version: int) -> None:
     # number, letter
     #  (1, 'a'),
     #  (2, 'b'),
@@ -435,7 +469,7 @@ def test_pyarrow_deletes_double(catalog: Catalog) -> None:
     #  (10, 'j'),
     #  (11, 'k'),
     #  (12, 'l')
-    test_positional_mor_double_deletes = catalog.load_table("default.test_positional_mor_double_deletes")
+    test_positional_mor_double_deletes = catalog.load_table(f"default.test_positional_mor_double_deletes_v{format_version}")
     arrow_table = test_positional_mor_double_deletes.scan().to_arrow()
     assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 7, 8, 10, 11, 12]
 
@@ -458,7 +492,8 @@ def test_pyarrow_deletes_double(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_pyarrow_batches_deletes(catalog: Catalog) -> None:
+@pytest.mark.parametrize("format_version", [2, 3])
+def test_pyarrow_batches_deletes(catalog: Catalog, format_version: int) -> None:
     # number, letter
     #  (1, 'a'),
     #  (2, 'b'),
@@ -472,7 +507,7 @@ def test_pyarrow_batches_deletes(catalog: Catalog) -> None:
     #  (10, 'j'),
     #  (11, 'k'),
     #  (12, 'l')
-    test_positional_mor_deletes = catalog.load_table("default.test_positional_mor_deletes")
+    test_positional_mor_deletes = catalog.load_table(f"default.test_positional_mor_deletes_v{format_version}")
     arrow_table = test_positional_mor_deletes.scan().to_arrow_batch_reader().read_all()
     assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12]
 
@@ -499,7 +534,8 @@ def test_pyarrow_batches_deletes(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_pyarrow_batches_deletes_double(catalog: Catalog) -> None:
+@pytest.mark.parametrize("format_version", [2, 3])
+def test_pyarrow_batches_deletes_double(catalog: Catalog, format_version: int) -> None:
     # number, letter
     #  (1, 'a'),
     #  (2, 'b'),
@@ -513,7 +549,7 @@ def test_pyarrow_batches_deletes_double(catalog: Catalog) -> None:
     #  (10, 'j'),
     #  (11, 'k'),
     #  (12, 'l')
-    test_positional_mor_double_deletes = catalog.load_table("default.test_positional_mor_double_deletes")
+    test_positional_mor_double_deletes = catalog.load_table(f"default.test_positional_mor_double_deletes_v{format_version}")
     arrow_table = test_positional_mor_double_deletes.scan().to_arrow_batch_reader().read_all()
     assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 7, 8, 10, 11, 12]
 
@@ -562,15 +598,15 @@ def test_partitioned_tables(catalog: Catalog) -> None:
 def test_unpartitioned_uuid_table(catalog: Catalog) -> None:
     unpartitioned_uuid = catalog.load_table("default.test_uuid_and_fixed_unpartitioned")
     arrow_table_eq = unpartitioned_uuid.scan(row_filter="uuid_col == '102cb62f-e6f8-4eb0-9973-d9b012ff0967'").to_arrow()
-    assert arrow_table_eq["uuid_col"].to_pylist() == [uuid.UUID("102cb62f-e6f8-4eb0-9973-d9b012ff0967").bytes]
+    assert arrow_table_eq["uuid_col"].to_pylist() == [uuid.UUID("102cb62f-e6f8-4eb0-9973-d9b012ff0967")]
 
     arrow_table_neq = unpartitioned_uuid.scan(
         row_filter="uuid_col != '102cb62f-e6f8-4eb0-9973-d9b012ff0967' and uuid_col != '639cccce-c9d2-494a-a78c-278ab234f024'"
     ).to_arrow()
     assert arrow_table_neq["uuid_col"].to_pylist() == [
-        uuid.UUID("ec33e4b2-a834-4cc3-8c4a-a1d3bfc2f226").bytes,
-        uuid.UUID("c1b0d8e0-0b0e-4b1e-9b0a-0e0b0d0c0a0b").bytes,
-        uuid.UUID("923dae77-83d6-47cd-b4b0-d383e64ee57e").bytes,
+        uuid.UUID("ec33e4b2-a834-4cc3-8c4a-a1d3bfc2f226"),
+        uuid.UUID("c1b0d8e0-0b0e-4b1e-9b0a-0e0b0d0c0a0b"),
+        uuid.UUID("923dae77-83d6-47cd-b4b0-d383e64ee57e"),
     ]
 
 
@@ -595,16 +631,18 @@ def test_unpartitioned_fixed_table(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_scan_tag(catalog: Catalog) -> None:
-    test_positional_mor_deletes = catalog.load_table("default.test_positional_mor_deletes")
+@pytest.mark.parametrize("format_version", [2, 3])
+def test_scan_tag(catalog: Catalog, format_version: int) -> None:
+    test_positional_mor_deletes = catalog.load_table(f"default.test_positional_mor_deletes_v{format_version}")
     arrow_table = test_positional_mor_deletes.scan().use_ref("tag_12").to_arrow()
     assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_scan_branch(catalog: Catalog) -> None:
-    test_positional_mor_deletes = catalog.load_table("default.test_positional_mor_deletes")
+@pytest.mark.parametrize("format_version", [2, 3])
+def test_scan_branch(catalog: Catalog, format_version: int) -> None:
+    test_positional_mor_deletes = catalog.load_table(f"default.test_positional_mor_deletes_v{format_version}")
     arrow_table = test_positional_mor_deletes.scan().use_ref("without_5").to_arrow()
     assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12]
 
@@ -665,6 +703,24 @@ def test_filter_case_insensitive(catalog: Catalog) -> None:
 
     arrow_table = test_table_add_column.scan(row_filter="B == '2'", case_sensitive=False).to_arrow()
     assert arrow_table["b"].to_pylist() == ["2"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_filters_on_top_level_struct(catalog: Catalog) -> None:
+    test_empty_struct = catalog.load_table("default.test_table_empty_list_and_map")
+
+    arrow_table = test_empty_struct.scan().to_arrow()
+    assert None in arrow_table["col_struct"].to_pylist()
+
+    arrow_table = test_empty_struct.scan(row_filter=NotNull("col_struct")).to_arrow()
+    assert arrow_table["col_struct"].to_pylist() == [{"test": 1}]
+
+    arrow_table = test_empty_struct.scan(row_filter="col_struct is not null", case_sensitive=False).to_arrow()
+    assert arrow_table["col_struct"].to_pylist() == [{"test": 1}]
+
+    arrow_table = test_empty_struct.scan(row_filter="COL_STRUCT is null", case_sensitive=False).to_arrow()
+    assert arrow_table["col_struct"].to_pylist() == [None]
 
 
 @pytest.mark.integration
@@ -806,7 +862,16 @@ def test_configure_row_group_batch_size(session_catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_table_scan_default_to_large_types(catalog: Catalog) -> None:
+def test_table_scan_keep_types(catalog: Catalog) -> None:
+    expected_schema = pa.schema(
+        [
+            pa.field("string", pa.string()),
+            pa.field("string-to-binary", pa.large_binary()),
+            pa.field("binary", pa.binary()),
+            pa.field("list", pa.list_(pa.large_string())),
+        ]
+    )
+
     identifier = "default.test_table_scan_default_to_large_types"
     arrow_table = pa.Table.from_arrays(
         [
@@ -815,7 +880,7 @@ def test_table_scan_default_to_large_types(catalog: Catalog) -> None:
             pa.array([b"a", b"b", b"c"]),
             pa.array([["a", "b"], ["c", "d"], ["e", "f"]]),
         ],
-        names=["string", "string-to-binary", "binary", "list"],
+        schema=expected_schema,
     )
 
     try:
@@ -834,15 +899,6 @@ def test_table_scan_default_to_large_types(catalog: Catalog) -> None:
         update_schema.update_column("string-to-binary", BinaryType())
 
     result_table = tbl.scan().to_arrow()
-
-    expected_schema = pa.schema(
-        [
-            pa.field("string", pa.large_string()),
-            pa.field("string-to-binary", pa.large_binary()),
-            pa.field("binary", pa.large_binary()),
-            pa.field("list", pa.large_list(pa.large_string())),
-        ]
-    )
     assert result_table.schema.equals(expected_schema)
 
 
@@ -881,7 +937,7 @@ def test_table_scan_override_with_small_types(catalog: Catalog) -> None:
     expected_schema = pa.schema(
         [
             pa.field("string", pa.string()),
-            pa.field("string-to-binary", pa.binary()),
+            pa.field("string-to-binary", pa.large_binary()),
             pa.field("binary", pa.binary()),
             pa.field("list", pa.list_(pa.string())),
         ]
@@ -978,3 +1034,44 @@ def test_scan_with_datetime(catalog: Catalog) -> None:
 
     df = table.scan(row_filter=LessThan("datetime", yesterday)).to_pandas()
     assert len(df) == 0
+
+
+@pytest.mark.integration
+# TODO: For Hive we require writing V3
+# @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog")])
+def test_initial_default(catalog: Catalog, spark: SparkSession) -> None:
+    identifier = "default.test_initial_default"
+    try:
+        catalog.drop_table(identifier)
+    except NoSuchTableError:
+        pass
+
+    one_column = pa.table([pa.nulls(10, pa.int32())], names=["some_field"])
+
+    tbl = catalog.create_table(identifier, schema=one_column.schema, properties={"format-version": "2"})
+
+    tbl.append(one_column)
+
+    # Do the bump version through Spark, since PyIceberg does not support this (yet)
+    spark.sql(f"ALTER TABLE {identifier} SET TBLPROPERTIES('format-version'='3')")
+
+    with tbl.update_schema() as upd:
+        upd.add_column("so_true", BooleanType(), required=False, default_value=True)
+
+    result_table = tbl.scan().filter("so_true == True").to_arrow()
+
+    assert len(result_table) == 10
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_filter_after_arrow_scan(catalog: Catalog) -> None:
+    identifier = "test_partitioned_by_hours"
+    table = catalog.load_table(f"default.{identifier}")
+
+    scan = table.scan()
+    assert len(scan.to_arrow()) > 0
+
+    scan = scan.filter("ts >= '2023-03-05T00:00:00+00:00'")
+    assert len(scan.to_arrow()) > 0

@@ -62,6 +62,21 @@ non_parameterized_types = [
     (12, BinaryType),
 ]
 
+primitive_types = {
+    "boolean": BooleanType,
+    "int": IntegerType,
+    "long": LongType,
+    "float": FloatType,
+    "double": DoubleType,
+    "date": DateType,
+    "time": TimeType,
+    "timestamp": TimestampType,
+    "timestamptz": TimestamptzType,
+    "string": StringType,
+    "uuid": UUIDType,
+    "binary": BinaryType,
+}
+
 
 @pytest.mark.parametrize("input_index, input_type", non_parameterized_types)
 def test_repr_primitive_types(input_index: int, input_type: Type[PrimitiveType]) -> None:
@@ -225,10 +240,34 @@ def test_nested_field() -> None:
     assert str(field_var) == str(eval(repr(field_var)))
     assert field_var == pickle.loads(pickle.dumps(field_var))
 
-    with pytest.raises(pydantic_core.ValidationError) as exc_info:
+    with pytest.raises(pydantic_core.ValidationError, match=".*validation errors for NestedField.*"):
         _ = (NestedField(1, "field", StringType(), required=True, write_default=(1, "a", True)),)  # type: ignore
 
-    assert "validation errors for NestedField" in str(exc_info.value)
+
+def test_nested_field_complex_type_as_str_unsupported() -> None:
+    unsupported_types = ["list", "map", "struct"]
+    for type_str in unsupported_types:
+        with pytest.raises(ValueError) as exc_info:
+            _ = NestedField(1, "field", type_str, required=True)
+        assert f"Unsupported field type: '{type_str}'" in str(exc_info.value)
+
+
+def test_nested_field_primitive_type_as_str() -> None:
+    for type_str, type_class in primitive_types.items():
+        field_var = NestedField(
+            1,
+            "field",
+            type_str,
+            required=True,
+        )
+        assert isinstance(field_var.field_type, type_class), (
+            f"Expected {type_class.__name__}, got {field_var.field_type.__class__.__name__}"
+        )
+
+    # Test that passing 'bool' raises a ValueError, as it should be 'boolean'
+    with pytest.raises(ValueError) as exc_info:
+        _ = NestedField(1, "field", "bool", required=True)
+    assert "Unsupported field type: 'bool'" in str(exc_info.value)
 
 
 @pytest.mark.parametrize("input_index,input_type", non_parameterized_types)
@@ -484,6 +523,21 @@ def test_str_decimal() -> None:
 
 def test_repr_decimal() -> None:
     assert repr(DecimalType(19, 25)) == "DecimalType(precision=19, scale=25)"
+
+
+def test_repr_nested_field_default_nones_should_not_appear() -> None:
+    assert (
+        repr(NestedField(1, "required_field", StringType(), required=False, initial_default=None, write_default=None))
+        == "NestedField(field_id=1, name='required_field', field_type=StringType(), required=False)"
+    )
+    assert (
+        repr(NestedField(1, "required_field", StringType(), required=False, initial_default="hello", write_default=None))
+        == "NestedField(field_id=1, name='required_field', field_type=StringType(), required=False, initial_default='hello')"
+    )
+    assert (
+        repr(NestedField(1, "required_field", StringType(), required=False, initial_default="hello", write_default="bye"))
+        == "NestedField(field_id=1, name='required_field', field_type=StringType(), required=False, initial_default='hello', write_default='bye')"
+    )
 
 
 def test_serialization_nestedfield() -> None:

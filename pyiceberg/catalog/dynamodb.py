@@ -30,7 +30,7 @@ from typing import (
 import boto3
 
 from pyiceberg.catalog import (
-    DEPRECATED_BOTOCORE_SESSION,
+    BOTOCORE_SESSION,
     ICEBERG,
     METADATA_LOCATION,
     PREVIOUS_METADATA_LOCATION,
@@ -53,7 +53,8 @@ from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, A
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableResponse, Table
+from pyiceberg.table import CommitTableResponse, Table, TableProperties
+from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import (
@@ -65,6 +66,8 @@ from pyiceberg.utils.properties import get_first_property_value
 
 if TYPE_CHECKING:
     import pyarrow as pa
+    from mypy_boto3_dynamodb.client import DynamoDBClient
+
 
 DYNAMODB_CLIENT = "dynamodb"
 
@@ -93,18 +96,28 @@ DYNAMODB_SESSION_TOKEN = "dynamodb.session-token"
 
 
 class DynamoDbCatalog(MetastoreCatalog):
-    def __init__(self, name: str, **properties: str):
-        super().__init__(name, **properties)
+    def __init__(self, name: str, client: Optional["DynamoDBClient"] = None, **properties: str):
+        """Dynamodb catalog.
 
-        session = boto3.Session(
-            profile_name=properties.get(DYNAMODB_PROFILE_NAME),
-            region_name=get_first_property_value(properties, DYNAMODB_REGION, AWS_REGION),
-            botocore_session=properties.get(DEPRECATED_BOTOCORE_SESSION),
-            aws_access_key_id=get_first_property_value(properties, DYNAMODB_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
-            aws_secret_access_key=get_first_property_value(properties, DYNAMODB_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
-            aws_session_token=get_first_property_value(properties, DYNAMODB_SESSION_TOKEN, AWS_SESSION_TOKEN),
-        )
-        self.dynamodb = session.client(DYNAMODB_CLIENT)
+        Args:
+            name: Name to identify the catalog.
+            client: An optional boto3 dynamodb client.
+            properties: Properties for dynamodb client construction and configuration.
+        """
+        super().__init__(name, **properties)
+        if client is not None:
+            self.dynamodb = client
+        else:
+            session = boto3.Session(
+                profile_name=properties.get(DYNAMODB_PROFILE_NAME),
+                region_name=get_first_property_value(properties, DYNAMODB_REGION, AWS_REGION),
+                botocore_session=properties.get(BOTOCORE_SESSION),
+                aws_access_key_id=get_first_property_value(properties, DYNAMODB_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+                aws_secret_access_key=get_first_property_value(properties, DYNAMODB_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+                aws_session_token=get_first_property_value(properties, DYNAMODB_SESSION_TOKEN, AWS_SESSION_TOKEN),
+            )
+            self.dynamodb = session.client(DYNAMODB_CLIENT)
+
         self.dynamodb_table_name = self.properties.get(DYNAMODB_TABLE_NAME, DYNAMODB_TABLE_NAME_DEFAULT)
         self._ensure_catalog_table_exists_or_create()
 
@@ -168,12 +181,17 @@ class DynamoDbCatalog(MetastoreCatalog):
             ValueError: If the identifier is invalid, or no path is given to store metadata.
 
         """
-        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
+        schema: Schema = self._convert_schema_if_needed(  # type: ignore
+            schema,
+            int(properties.get(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION)),  # type: ignore
+        )
 
         database_name, table_name = self.identifier_to_database_and_table(identifier)
 
         location = self._resolve_table_location(location, database_name, table_name)
-        metadata_location = self._get_metadata_location(location=location)
+        provider = load_location_provider(table_location=location, table_properties=properties)
+        metadata_location = provider.new_table_metadata_file_location()
+
         metadata = new_table_metadata(
             location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
         )
@@ -649,6 +667,10 @@ class DynamoDbCatalog(MetastoreCatalog):
             catalog=self,
         )
 
+    def _get_default_warehouse_location(self, database_name: str, table_name: str) -> str:
+        """Override the default warehouse location to follow Hive-style conventions."""
+        return self._get_hive_style_warehouse_location(database_name, table_name)
+
 
 def _get_create_table_item(database_name: str, table_name: str, properties: Properties, metadata_location: str) -> Dict[str, Any]:
     current_timestamp_ms = str(round(time() * 1000))
@@ -821,7 +843,9 @@ def _convert_dynamo_item_to_regular_dict(dynamo_json: Dict[str, Any]) -> Dict[st
             raise ValueError("Only S and N data types are supported.")
 
         values = list(val_dict.values())
-        assert len(values) == 1
+        if len(values) != 1:
+            raise ValueError(f"Expecting only 1 value: {values}")
+
         column_value = values[0]
         regular_json[column_name] = column_value
 

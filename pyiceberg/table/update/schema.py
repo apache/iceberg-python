@@ -20,9 +20,10 @@ import itertools
 from copy import copy
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union
 
 from pyiceberg.exceptions import ResolveError, ValidationError
+from pyiceberg.expressions import literal  # type: ignore
 from pyiceberg.schema import (
     PartnerAccessor,
     Schema,
@@ -47,6 +48,7 @@ from pyiceberg.table.update import (
     UpdatesAndRequirements,
     UpdateTableMetadata,
 )
+from pyiceberg.typedef import L, TableVersion
 from pyiceberg.types import IcebergType, ListType, MapType, NestedField, PrimitiveType, StructType
 
 if TYPE_CHECKING:
@@ -140,11 +142,16 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         self._case_sensitive = case_sensitive
         return self
 
-    def union_by_name(self, new_schema: Union[Schema, "pa.Schema"]) -> UpdateSchema:
+    def union_by_name(
+        # TODO: Move TableProperties.DEFAULT_FORMAT_VERSION to separate file and set that as format_version default.
+        self,
+        new_schema: Union[Schema, "pa.Schema"],
+        format_version: TableVersion = 2,
+    ) -> UpdateSchema:
         from pyiceberg.catalog import Catalog
 
         visit_with_partner(
-            Catalog._convert_schema_if_needed(new_schema),
+            Catalog._convert_schema_if_needed(new_schema, format_version=format_version),
             -1,
             _UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),
             # type: ignore
@@ -153,7 +160,12 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         return self
 
     def add_column(
-        self, path: Union[str, Tuple[str, ...]], field_type: IcebergType, doc: Optional[str] = None, required: bool = False
+        self,
+        path: Union[str, Tuple[str, ...]],
+        field_type: IcebergType,
+        doc: Optional[str] = None,
+        required: bool = False,
+        default_value: Optional[L] = None,
     ) -> UpdateSchema:
         """Add a new column to a nested struct or Add a new top-level column.
 
@@ -168,6 +180,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
             field_type: Type for the new column.
             doc: Documentation string for the new column.
             required: Whether the new column is required.
+            default_value: Default value for the new column.
 
         Returns:
             This for method chaining.
@@ -176,10 +189,6 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
             if "." in path:
                 raise ValueError(f"Cannot add column with ambiguous name: {path}, provide a tuple instead")
             path = (path,)
-
-        if required and not self._allow_incompatible_changes:
-            # Table format version 1 and 2 cannot add required column because there is no initial value
-            raise ValueError(f"Incompatible change: cannot add required column: {'.'.join(path)}")
 
         name = path[-1]
         parent = path[:-1]
@@ -212,13 +221,34 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         # assign new IDs in order
         new_id = self.assign_new_column_id()
+        new_type = assign_fresh_schema_ids(field_type, self.assign_new_column_id)
+
+        if default_value is not None:
+            try:
+                # To make sure that the value is valid for the type
+                initial_default = literal(default_value).to(new_type).value
+            except ValueError as e:
+                raise ValueError(f"Invalid default value: {e}") from e
+        else:
+            initial_default = default_value  # type: ignore
+
+        if (required and initial_default is None) and not self._allow_incompatible_changes:
+            # Table format version 1 and 2 cannot add required column because there is no initial value
+            raise ValueError(f"Incompatible change: cannot add required column: {'.'.join(path)}")
 
         # update tracking for moves
         self._added_name_to_id[full_name] = new_id
         self._id_to_parent[new_id] = parent_full_path
 
-        new_type = assign_fresh_schema_ids(field_type, self.assign_new_column_id)
-        field = NestedField(field_id=new_id, name=name, field_type=new_type, required=required, doc=doc)
+        field = NestedField(
+            field_id=new_id,
+            name=name,
+            field_type=new_type,
+            required=required,
+            doc=doc,
+            initial_default=initial_default,
+            write_default=initial_default,
+        )
 
         if parent_id in self._adds:
             self._adds[parent_id].append(field)
@@ -250,6 +280,19 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         return self
 
+    def set_default_value(self, path: Union[str, Tuple[str, ...]], default_value: Optional[L]) -> UpdateSchema:
+        """Set the default value of a column.
+
+        Args:
+            path: The path to the column.
+
+        Returns:
+            The UpdateSchema with the delete operation staged.
+        """
+        self._set_column_default_value(path, default_value)
+
+        return self
+
     def rename_column(self, path_from: Union[str, Tuple[str, ...]], new_name: str) -> UpdateSchema:
         """Update the name of a column.
 
@@ -273,6 +316,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 field_type=updated.field_type,
                 doc=updated.doc,
                 required=updated.required,
+                initial_default=updated.initial_default,
+                write_default=updated.write_default,
             )
         else:
             self._updates[field_from.field_id] = NestedField(
@@ -281,6 +326,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 field_type=field_from.field_type,
                 doc=field_from.doc,
                 required=field_from.required,
+                initial_default=field_from.initial_default,
+                write_default=field_from.write_default,
             )
 
         # Lookup the field because of casing
@@ -330,6 +377,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 field_type=updated.field_type,
                 doc=updated.doc,
                 required=required,
+                initial_default=updated.initial_default,
+                write_default=updated.write_default,
             )
         else:
             self._updates[field.field_id] = NestedField(
@@ -338,6 +387,52 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 field_type=field.field_type,
                 doc=field.doc,
                 required=required,
+                initial_default=field.initial_default,
+                write_default=field.write_default,
+            )
+
+    def _set_column_default_value(self, path: Union[str, Tuple[str, ...]], default_value: Any) -> None:
+        path = (path,) if isinstance(path, str) else path
+        name = ".".join(path)
+
+        field = self._schema.find_field(name, self._case_sensitive)
+
+        if default_value is not None:
+            try:
+                # To make sure that the value is valid for the type
+                default_value = literal(default_value).to(field.field_type).value
+            except ValueError as e:
+                raise ValueError(f"Invalid default value: {e}") from e
+
+        if field.required and default_value == field.write_default:
+            # if the change is a noop, allow it even if allowIncompatibleChanges is false
+            return
+
+        if not self._allow_incompatible_changes and field.required and default_value is None:
+            raise ValueError("Cannot change change default-value of a required column to None")
+
+        if field.field_id in self._deletes:
+            raise ValueError(f"Cannot update a column that will be deleted: {name}")
+
+        if updated := self._updates.get(field.field_id):
+            self._updates[field.field_id] = NestedField(
+                field_id=updated.field_id,
+                name=updated.name,
+                field_type=updated.field_type,
+                doc=updated.doc,
+                required=updated.required,
+                initial_default=updated.initial_default,
+                write_default=default_value,
+            )
+        else:
+            self._updates[field.field_id] = NestedField(
+                field_id=field.field_id,
+                name=field.name,
+                field_type=field.field_type,
+                doc=field.doc,
+                required=field.required,
+                initial_default=field.initial_default,
+                write_default=default_value,
             )
 
     def update_column(
@@ -387,6 +482,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 field_type=field_type or updated.field_type,
                 doc=doc if doc is not None else updated.doc,
                 required=updated.required,
+                initial_default=updated.initial_default,
+                write_default=updated.write_default,
             )
         else:
             self._updates[field.field_id] = NestedField(
@@ -395,6 +492,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 field_type=field_type or field.field_type,
                 doc=doc if doc is not None else field.doc,
                 required=field.required,
+                initial_default=field.initial_default,
+                write_default=field.write_default,
             )
 
         if required is not None:
@@ -535,9 +634,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         if existing_schema_id != self._schema.schema_id:
             requirements += (AssertCurrentSchemaId(current_schema_id=self._schema.schema_id),)
             if existing_schema_id is None:
-                last_column_id = max(self._transaction.table_metadata.last_column_id, new_schema.highest_field_id)
                 updates += (
-                    AddSchemaUpdate(schema=new_schema, last_column_id=last_column_id),
+                    AddSchemaUpdate(schema=new_schema),
                     SetCurrentSchemaUpdate(schema_id=-1),
                 )
             else:
@@ -564,6 +662,13 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         # Check the field-ids
         new_schema = Schema(*struct.fields)
+        from pyiceberg.partitioning import validate_partition_name
+
+        for spec in self._transaction.table_metadata.partition_specs:
+            for partition_field in spec.fields:
+                validate_partition_name(
+                    partition_field.name, partition_field.transform, partition_field.source_id, new_schema, set()
+                )
         field_ids = set()
         for name in self._identifier_field_names:
             try:
@@ -636,19 +741,35 @@ class _ApplyChanges(SchemaVisitor[Optional[IcebergType]]):
             name = field.name
             doc = field.doc
             required = field.required
+            write_default = field.write_default
 
             # There is an update
             if update := self._updates.get(field.field_id):
                 name = update.name
                 doc = update.doc
                 required = update.required
+                write_default = update.write_default
 
-            if field.name == name and field.field_type == result_type and field.required == required and field.doc == doc:
+            if (
+                field.name == name
+                and field.field_type == result_type
+                and field.required == required
+                and field.doc == doc
+                and field.write_default == write_default
+            ):
                 new_fields.append(field)
             else:
                 has_changes = True
                 new_fields.append(
-                    NestedField(field_id=field.field_id, name=name, field_type=result_type, required=required, doc=doc)
+                    NestedField(
+                        field_id=field.field_id,
+                        name=name,
+                        field_type=result_type,
+                        required=required,
+                        doc=doc,
+                        initial_default=field.initial_default,
+                        write_default=write_default,
+                    )
                 )
 
         if has_changes:

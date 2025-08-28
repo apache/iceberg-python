@@ -19,15 +19,18 @@ import logging
 import os
 import tempfile
 import uuid
-from datetime import date
+import warnings
+from datetime import date, datetime, timezone
 from typing import Any, List, Optional
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import pyarrow
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
-from pyarrow.fs import FileType, LocalFileSystem, S3FileSystem
+from packaging import version
+from pyarrow.fs import AwsDefaultS3RetryStrategy, FileType, LocalFileSystem, S3FileSystem
 
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import (
@@ -55,9 +58,10 @@ from pyiceberg.expressions import (
     Or,
 )
 from pyiceberg.expressions.literals import literal
-from pyiceberg.io import InputStream, OutputStream, load_file_io
+from pyiceberg.io import S3_RETRY_STRATEGY_IMPL, InputStream, OutputStream, load_file_io
 from pyiceberg.io.pyarrow import (
     ICEBERG_SCHEMA,
+    PYARROW_PARQUET_FIELD_ID_KEY,
     ArrowScan,
     PyArrowFile,
     PyArrowFileIO,
@@ -67,6 +71,7 @@ from pyiceberg.io.pyarrow import (
     _determine_partitions,
     _primitive_to_physical,
     _read_deletes,
+    _task_to_record_batches,
     _to_requested_schema,
     bin_pack_arrow_table,
     compute_statistics_plan,
@@ -81,8 +86,8 @@ from pyiceberg.schema import Schema, make_compatible_name, visit
 from pyiceberg.table import FileScanTask, TableProperties
 from pyiceberg.table.metadata import TableMetadataV2
 from pyiceberg.table.name_mapping import create_mapping_from_schema
-from pyiceberg.transforms import IdentityTransform
-from pyiceberg.typedef import UTF8, Properties, Record
+from pyiceberg.transforms import HourTransform, IdentityTransform
+from pyiceberg.typedef import UTF8, Properties, Record, TableVersion
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -99,12 +104,18 @@ from pyiceberg.types import (
     PrimitiveType,
     StringType,
     StructType,
+    TimestampNanoType,
     TimestampType,
     TimestamptzType,
     TimeType,
 )
 from tests.catalog.test_base import InMemoryCatalog
 from tests.conftest import UNIFIED_AWS_SESSION_PROPERTIES
+
+skip_if_pyarrow_too_old = pytest.mark.skipif(
+    version.parse(pyarrow.__version__) < version.parse("20.0.0"),
+    reason="Requires pyarrow version >= 20.0.0",
+)
 
 
 def test_pyarrow_infer_local_fs_from_path() -> None:
@@ -374,6 +385,35 @@ def test_pyarrow_s3_session_properties() -> None:
         s3_fileio.new_input(location=f"s3://warehouse/{filename}")
 
         mock_s3fs.assert_called_with(
+            endpoint_override="http://localhost:9000",
+            access_key="admin",
+            secret_key="password",
+            region="us-east-1",
+            session_token="s3.session-token",
+        )
+
+
+def test_pyarrow_s3_session_properties_with_anonymous() -> None:
+    session_properties: Properties = {
+        "s3.anonymous": "true",
+        "s3.endpoint": "http://localhost:9000",
+        "s3.access-key-id": "admin",
+        "s3.secret-access-key": "password",
+        "s3.region": "us-east-1",
+        "s3.session-token": "s3.session-token",
+        **UNIFIED_AWS_SESSION_PROPERTIES,
+    }
+
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs, patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
+        s3_fileio = PyArrowFileIO(properties=session_properties)
+        filename = str(uuid.uuid4())
+
+        # Mock `resolve_s3_region` to prevent from the location used resolving to a different s3 region
+        mock_s3_region_resolver.side_effect = OSError("S3 bucket is not found")
+        s3_fileio.new_input(location=f"s3://warehouse/{filename}")
+
+        mock_s3fs.assert_called_with(
+            anonymous=True,
             endpoint_override="http://localhost:9000",
             access_key="admin",
             secret_key="password",
@@ -836,6 +876,18 @@ def _write_table_to_file(filepath: str, schema: pa.Schema, table: pa.Table) -> s
     return filepath
 
 
+def _write_table_to_data_file(filepath: str, schema: pa.Schema, table: pa.Table) -> DataFile:
+    filepath = _write_table_to_file(filepath, schema, table)
+    return DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=filepath,
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=len(table),
+        file_size_in_bytes=22,  # This is not relevant for now
+    )
+
+
 @pytest.fixture
 def file_int(schema_int: Schema, tmpdir: str) -> str:
     pyarrow_schema = schema_to_pyarrow(schema_int, metadata={ICEBERG_SCHEMA: bytes(schema_int.model_dump_json(), UTF8)})
@@ -962,6 +1014,10 @@ def file_map(schema_map: Schema, tmpdir: str) -> str:
 def project(
     schema: Schema, files: List[str], expr: Optional[BooleanExpression] = None, table_schema: Optional[Schema] = None
 ) -> pa.Table:
+    def _set_spec_id(datafile: DataFile) -> DataFile:
+        datafile.spec_id = 0
+        return datafile
+
     return ArrowScan(
         table_metadata=TableMetadataV2(
             location="file://a/b/",
@@ -977,13 +1033,15 @@ def project(
     ).to_table(
         tasks=[
             FileScanTask(
-                DataFile(
-                    content=DataFileContent.DATA,
-                    file_path=file,
-                    file_format=FileFormat.PARQUET,
-                    partition={},
-                    record_count=3,
-                    file_size_in_bytes=3,
+                _set_spec_id(
+                    DataFile.from_args(
+                        content=DataFileContent.DATA,
+                        file_path=file,
+                        file_format=FileFormat.PARQUET,
+                        partition={},
+                        record_count=3,
+                        file_size_in_bytes=3,
+                    )
                 )
             )
             for file in files
@@ -1065,10 +1123,10 @@ def test_read_map(schema_map: Schema, file_map: str) -> None:
 
     assert (
         repr(result_table.schema)
-        == """properties: map<large_string, large_string>
-  child 0, entries: struct<key: large_string not null, value: large_string not null> not null
-      child 0, key: large_string not null
-      child 1, value: large_string not null"""
+        == """properties: map<string, string>
+  child 0, entries: struct<key: string not null, value: string not null> not null
+      child 0, key: string not null
+      child 1, value: string not null"""
     )
 
 
@@ -1153,7 +1211,7 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
         properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
     )
 
-    file_data = pa.array(["foo"], type=pa.string())
+    file_data = pa.array(["foo", "bar", "baz"], type=pa.string())
     file_loc = f"{tmp_path}/test.parquet"
     pq.write_table(pa.table([file_data], names=["other_field"]), file_loc)
 
@@ -1163,12 +1221,12 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
         parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
     )
 
-    unpartitioned_file = DataFile(
+    unpartitioned_file = DataFile.from_args(
         content=DataFileContent.DATA,
         file_path=file_loc,
         file_format=FileFormat.PARQUET,
         # projected value
-        partition=Record(partition_id=1),
+        partition=Record(1),
         file_size_in_bytes=os.path.getsize(file_loc),
         sort_order_id=None,
         spec_id=table.metadata.default_spec_id,
@@ -1181,15 +1239,24 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
         with transaction.update_snapshot().overwrite() as update:
             update.append_data_file(unpartitioned_file)
 
-    assert (
-        str(table.scan().to_arrow())
-        == """pyarrow.Table
-other_field: large_string
-partition_id: int64
-----
-other_field: [["foo"]]
-partition_id: [[1]]"""
+    schema = pa.schema([("other_field", pa.string()), ("partition_id", pa.int32())])
+    assert table.scan().to_arrow() == pa.table(
+        {
+            "other_field": ["foo", "bar", "baz"],
+            "partition_id": [1, 1, 1],
+        },
+        schema=schema,
     )
+    # Test that row filter works with partition value projection
+    assert table.scan(row_filter="partition_id = 1").to_arrow() == pa.table(
+        {
+            "other_field": ["foo", "bar", "baz"],
+            "partition_id": [1, 1, 1],
+        },
+        schema=schema,
+    )
+    # Test that row filter does not return any rows for a non-existing partition value
+    assert len(table.scan(row_filter="partition_id = -1").to_arrow()) == 0
 
 
 def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryCatalog) -> None:
@@ -1225,12 +1292,12 @@ def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryC
         parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
     )
 
-    unpartitioned_file = DataFile(
+    unpartitioned_file = DataFile.from_args(
         content=DataFileContent.DATA,
         file_path=file_loc,
         file_format=FileFormat.PARQUET,
         # projected value
-        partition=Record(field_2=2, field_3=3),
+        partition=Record(2, 3),
         file_size_in_bytes=os.path.getsize(file_loc),
         sort_order_id=None,
         spec_id=table.metadata.default_spec_id,
@@ -1246,9 +1313,9 @@ def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryC
     assert (
         str(table.scan().to_arrow())
         == """pyarrow.Table
-field_1: large_string
-field_2: int64
-field_3: int64
+field_1: string
+field_2: int32
+field_3: int32
 ----
 field_1: [["foo"]]
 field_2: [[2]]
@@ -1471,9 +1538,9 @@ def test_projection_maps_of_structs(schema_map_of_structs: Schema, file_map_of_s
         assert actual.as_py() == expected
     assert (
         repr(result_table.schema)
-        == """locations: map<large_string, struct<latitude: double not null, longitude: double not null, altitude: double>>
-  child 0, entries: struct<key: large_string not null, value: struct<latitude: double not null, longitude: double not null, altitude: double> not null> not null
-      child 0, key: large_string not null
+        == """locations: map<string, struct<latitude: double not null, longitude: double not null, altitude: double>>
+  child 0, entries: struct<key: string not null, value: struct<latitude: double not null, longitude: double not null, altitude: double> not null> not null
+      child 0, key: string not null
       child 1, value: struct<latitude: double not null, longitude: double not null, altitude: double> not null
           child 0, latitude: double not null
           child 1, longitude: double not null
@@ -1540,7 +1607,7 @@ def deletes_file(tmp_path: str, example_task: FileScanTask) -> str:
 
 
 def test_read_deletes(deletes_file: str, example_task: FileScanTask) -> None:
-    deletes = _read_deletes(LocalFileSystem(), DataFile(file_path=deletes_file, file_format=FileFormat.PARQUET))
+    deletes = _read_deletes(PyArrowFileIO(), DataFile.from_args(file_path=deletes_file, file_format=FileFormat.PARQUET))
     assert set(deletes.keys()) == {example_task.file.file_path}
     assert list(deletes.values())[0] == pa.chunked_array([[1, 3, 5]])
 
@@ -1549,7 +1616,9 @@ def test_delete(deletes_file: str, example_task: FileScanTask, table_schema_simp
     metadata_location = "file://a/b/c.json"
     example_task_with_delete = FileScanTask(
         data_file=example_task.file,
-        delete_files={DataFile(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=FileFormat.PARQUET)},
+        delete_files={
+            DataFile.from_args(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=FileFormat.PARQUET)
+        },
     )
     with_deletes = ArrowScan(
         table_metadata=TableMetadataV2(
@@ -1583,8 +1652,8 @@ def test_delete_duplicates(deletes_file: str, example_task: FileScanTask, table_
     example_task_with_delete = FileScanTask(
         data_file=example_task.file,
         delete_files={
-            DataFile(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=FileFormat.PARQUET),
-            DataFile(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=FileFormat.PARQUET),
+            DataFile.from_args(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=FileFormat.PARQUET),
+            DataFile.from_args(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=FileFormat.PARQUET),
         },
     )
 
@@ -1671,7 +1740,7 @@ def test_new_output_file_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
 @pytest.mark.gcs
 @pytest.mark.skip(reason="Open issue on Arrow: https://github.com/apache/arrow/issues/36993")
 def test_write_and_read_file_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
-    """Test writing and reading a file using FsspecInputFile and FsspecOutputFile"""
+    """Test writing and reading a file using PyArrowFile"""
     location = f"gs://warehouse/{uuid4()}.txt"
     output_file = pyarrow_fileio_gcs.new_output(location=location)
     with output_file.create() as f:
@@ -1688,7 +1757,7 @@ def test_write_and_read_file_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
 
 @pytest.mark.gcs
 def test_getting_length_of_file_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
-    """Test getting the length of an FsspecInputFile and FsspecOutputFile"""
+    """Test getting the length of PyArrowFile"""
     filename = str(uuid4())
 
     output_file = pyarrow_fileio_gcs.new_output(location=f"gs://warehouse/{filename}")
@@ -1752,7 +1821,7 @@ def test_read_specified_bytes_for_file_gcs(pyarrow_fileio_gcs: PyArrowFileIO) ->
 @pytest.mark.gcs
 @pytest.mark.skip(reason="Open issue on Arrow: https://github.com/apache/arrow/issues/36993")
 def test_raise_on_opening_file_not_found_gcs(pyarrow_fileio_gcs: PyArrowFileIO) -> None:
-    """Test that an fsspec input file raises appropriately when the gcs file is not found"""
+    """Test that PyArrowFile raises appropriately when the gcs file is not found"""
 
     filename = str(uuid4())
     input_file = pyarrow_fileio_gcs.new_input(location=f"gs://warehouse/{filename}")
@@ -1814,7 +1883,7 @@ def test_converting_an_outputfile_to_an_inputfile_gcs(pyarrow_fileio_gcs: PyArro
 @pytest.mark.gcs
 @pytest.mark.skip(reason="Open issue on Arrow: https://github.com/apache/arrow/issues/36993")
 def test_writing_avro_file_gcs(generated_manifest_entry_file: str, pyarrow_fileio_gcs: PyArrowFileIO) -> None:
-    """Test that bytes match when reading a local avro file, writing it using fsspec file-io, and then reading it again"""
+    """Test that bytes match when reading a local avro file, writing it using pyarrow file-io, and then reading it again"""
     filename = str(uuid4())
     with PyArrowFileIO().new_input(location=generated_manifest_entry_file).open() as f:
         b1 = f.read()
@@ -1825,6 +1894,192 @@ def test_writing_avro_file_gcs(generated_manifest_entry_file: str, pyarrow_filei
             assert b1 == b2  # Check that bytes of read from local avro file match bytes written to s3
 
     pyarrow_fileio_gcs.delete(f"gs://warehouse/{filename}")
+
+
+@pytest.mark.adls
+@skip_if_pyarrow_too_old
+def test_new_input_file_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
+    """Test creating a new input file from pyarrow file-io"""
+    filename = str(uuid4())
+
+    input_file = pyarrow_fileio_adls.new_input(f"{adls_scheme}://warehouse/{filename}")
+
+    assert isinstance(input_file, PyArrowFile)
+    assert input_file.location == f"{adls_scheme}://warehouse/{filename}"
+
+
+@pytest.mark.adls
+@skip_if_pyarrow_too_old
+def test_new_output_file_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
+    """Test creating a new output file from pyarrow file-io"""
+    filename = str(uuid4())
+
+    output_file = pyarrow_fileio_adls.new_output(f"{adls_scheme}://warehouse/{filename}")
+
+    assert isinstance(output_file, PyArrowFile)
+    assert output_file.location == f"{adls_scheme}://warehouse/{filename}"
+
+
+@pytest.mark.adls
+@skip_if_pyarrow_too_old
+def test_write_and_read_file_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
+    """Test writing and reading a file using PyArrowFile"""
+    location = f"{adls_scheme}://warehouse/{uuid4()}.txt"
+    output_file = pyarrow_fileio_adls.new_output(location=location)
+    with output_file.create() as f:
+        assert f.write(b"foo") == 3
+
+    assert output_file.exists()
+
+    input_file = pyarrow_fileio_adls.new_input(location=location)
+    with input_file.open() as f:
+        assert f.read() == b"foo"
+
+    pyarrow_fileio_adls.delete(input_file)
+
+
+@pytest.mark.adls
+@skip_if_pyarrow_too_old
+def test_getting_length_of_file_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
+    """Test getting the length of PyArrowFile"""
+    filename = str(uuid4())
+
+    output_file = pyarrow_fileio_adls.new_output(location=f"{adls_scheme}://warehouse/{filename}")
+    with output_file.create() as f:
+        f.write(b"foobar")
+
+    assert len(output_file) == 6
+
+    input_file = pyarrow_fileio_adls.new_input(location=f"{adls_scheme}://warehouse/{filename}")
+    assert len(input_file) == 6
+
+    pyarrow_fileio_adls.delete(output_file)
+
+
+@pytest.mark.adls
+@skip_if_pyarrow_too_old
+def test_file_tell_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
+    location = f"{adls_scheme}://warehouse/{uuid4()}"
+
+    output_file = pyarrow_fileio_adls.new_output(location=location)
+    with output_file.create() as write_file:
+        write_file.write(b"foobar")
+
+    input_file = pyarrow_fileio_adls.new_input(location=location)
+    with input_file.open() as f:
+        f.seek(0)
+        assert f.tell() == 0
+        f.seek(1)
+        assert f.tell() == 1
+        f.seek(3)
+        assert f.tell() == 3
+        f.seek(0)
+        assert f.tell() == 0
+
+
+@pytest.mark.adls
+@skip_if_pyarrow_too_old
+def test_read_specified_bytes_for_file_adls(pyarrow_fileio_adls: PyArrowFileIO) -> None:
+    location = f"abfss://warehouse/{uuid4()}"
+
+    output_file = pyarrow_fileio_adls.new_output(location=location)
+    with output_file.create() as write_file:
+        write_file.write(b"foo")
+
+    input_file = pyarrow_fileio_adls.new_input(location=location)
+    with input_file.open() as f:
+        f.seek(0)
+        assert b"f" == f.read(1)
+        f.seek(0)
+        assert b"fo" == f.read(2)
+        f.seek(1)
+        assert b"o" == f.read(1)
+        f.seek(1)
+        assert b"oo" == f.read(2)
+        f.seek(0)
+        assert b"foo" == f.read(999)  # test reading amount larger than entire content length
+
+    pyarrow_fileio_adls.delete(input_file)
+
+
+@pytest.mark.adls
+@skip_if_pyarrow_too_old
+def test_raise_on_opening_file_not_found_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
+    """Test that PyArrowFile raises appropriately when the adls file is not found"""
+
+    filename = str(uuid4())
+    input_file = pyarrow_fileio_adls.new_input(location=f"{adls_scheme}://warehouse/{filename}")
+    with pytest.raises(FileNotFoundError) as exc_info:
+        input_file.open().read()
+
+    assert filename in str(exc_info.value)
+
+
+@pytest.mark.adls
+@skip_if_pyarrow_too_old
+def test_checking_if_a_file_exists_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
+    """Test checking if a file exists"""
+    non_existent_file = pyarrow_fileio_adls.new_input(location=f"{adls_scheme}://warehouse/does-not-exist.txt")
+    assert not non_existent_file.exists()
+
+    location = f"{adls_scheme}://warehouse/{uuid4()}"
+    output_file = pyarrow_fileio_adls.new_output(location=location)
+    assert not output_file.exists()
+    with output_file.create() as f:
+        f.write(b"foo")
+
+    existing_input_file = pyarrow_fileio_adls.new_input(location=location)
+    assert existing_input_file.exists()
+
+    existing_output_file = pyarrow_fileio_adls.new_output(location=location)
+    assert existing_output_file.exists()
+
+    pyarrow_fileio_adls.delete(existing_output_file)
+
+
+@pytest.mark.adls
+@skip_if_pyarrow_too_old
+def test_closing_a_file_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
+    """Test closing an output file and input file"""
+    filename = str(uuid4())
+    output_file = pyarrow_fileio_adls.new_output(location=f"{adls_scheme}://warehouse/{filename}")
+    with output_file.create() as write_file:
+        write_file.write(b"foo")
+        assert not write_file.closed  # type: ignore
+    assert write_file.closed  # type: ignore
+
+    input_file = pyarrow_fileio_adls.new_input(location=f"{adls_scheme}://warehouse/{filename}")
+    with input_file.open() as f:
+        assert not f.closed  # type: ignore
+    assert f.closed  # type: ignore
+
+    pyarrow_fileio_adls.delete(f"{adls_scheme}://warehouse/{filename}")
+
+
+@pytest.mark.adls
+@skip_if_pyarrow_too_old
+def test_converting_an_outputfile_to_an_inputfile_adls(pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
+    """Test converting an output file to an input file"""
+    filename = str(uuid4())
+    output_file = pyarrow_fileio_adls.new_output(location=f"{adls_scheme}://warehouse/{filename}")
+    input_file = output_file.to_input_file()
+    assert input_file.location == output_file.location
+
+
+@pytest.mark.adls
+@skip_if_pyarrow_too_old
+def test_writing_avro_file_adls(generated_manifest_entry_file: str, pyarrow_fileio_adls: PyArrowFileIO, adls_scheme: str) -> None:
+    """Test that bytes match when reading a local avro file, writing it using pyarrow file-io, and then reading it again"""
+    filename = str(uuid4())
+    with PyArrowFileIO().new_input(location=generated_manifest_entry_file).open() as f:
+        b1 = f.read()
+        with pyarrow_fileio_adls.new_output(location=f"{adls_scheme}://warehouse/{filename}").create() as out_f:
+            out_f.write(b1)
+        with pyarrow_fileio_adls.new_input(location=f"{adls_scheme}://warehouse/{filename}").open() as in_f:
+            b2 = in_f.read()
+            assert b1 == b2  # Check that bytes of read from local avro file match bytes written to s3
+
+    pyarrow_fileio_adls.delete(f"{adls_scheme}://warehouse/{filename}")
 
 
 def test_parse_location() -> None:
@@ -2143,16 +2398,110 @@ def test_partition_for_demo() -> None:
     )
     result = _determine_partitions(partition_spec, test_schema, arrow_table)
     assert {table_partition.partition_key.partition for table_partition in result} == {
-        Record(n_legs_identity=2, year_identity=2020),
-        Record(n_legs_identity=100, year_identity=2021),
-        Record(n_legs_identity=4, year_identity=2021),
-        Record(n_legs_identity=4, year_identity=2022),
-        Record(n_legs_identity=2, year_identity=2022),
-        Record(n_legs_identity=5, year_identity=2019),
+        Record(2, 2020),
+        Record(100, 2021),
+        Record(4, 2021),
+        Record(4, 2022),
+        Record(2, 2022),
+        Record(5, 2019),
     }
     assert (
         pa.concat_tables([table_partition.arrow_table_partition for table_partition in result]).num_rows == arrow_table.num_rows
     )
+
+
+def test_partition_for_nested_field() -> None:
+    schema = Schema(
+        NestedField(id=1, name="foo", field_type=StringType(), required=True),
+        NestedField(
+            id=2,
+            name="bar",
+            field_type=StructType(
+                NestedField(id=3, name="baz", field_type=TimestampType(), required=False),
+                NestedField(id=4, name="qux", field_type=IntegerType(), required=False),
+            ),
+            required=True,
+        ),
+    )
+
+    spec = PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=HourTransform(), name="ts"))
+
+    t1 = datetime(2025, 7, 11, 9, 30, 0)
+    t2 = datetime(2025, 7, 11, 10, 30, 0)
+
+    test_data = [
+        {"foo": "a", "bar": {"baz": t1, "qux": 1}},
+        {"foo": "b", "bar": {"baz": t2, "qux": 2}},
+    ]
+
+    arrow_table = pa.Table.from_pylist(test_data, schema=schema.as_arrow())
+    partitions = _determine_partitions(spec, schema, arrow_table)
+    partition_values = {p.partition_key.partition[0] for p in partitions}
+
+    assert partition_values == {486729, 486730}
+
+
+def test_partition_for_deep_nested_field() -> None:
+    schema = Schema(
+        NestedField(
+            id=1,
+            name="foo",
+            field_type=StructType(
+                NestedField(
+                    id=2,
+                    name="bar",
+                    field_type=StructType(NestedField(id=3, name="baz", field_type=StringType(), required=False)),
+                    required=True,
+                )
+            ),
+            required=True,
+        )
+    )
+
+    spec = PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=IdentityTransform(), name="qux"))
+
+    test_data = [
+        {"foo": {"bar": {"baz": "data-1"}}},
+        {"foo": {"bar": {"baz": "data-2"}}},
+        {"foo": {"bar": {"baz": "data-1"}}},
+    ]
+
+    arrow_table = pa.Table.from_pylist(test_data, schema=schema.as_arrow())
+    partitions = _determine_partitions(spec, schema, arrow_table)
+
+    assert len(partitions) == 2  # 2 unique partitions
+    partition_values = {p.partition_key.partition[0] for p in partitions}
+    assert partition_values == {"data-1", "data-2"}
+
+
+def test_inspect_partition_for_nested_field(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="foo", field_type=StringType(), required=True),
+        NestedField(
+            id=2,
+            name="bar",
+            field_type=StructType(
+                NestedField(id=3, name="baz", field_type=StringType(), required=False),
+                NestedField(id=4, name="qux", field_type=IntegerType(), required=False),
+            ),
+            required=True,
+        ),
+    )
+    spec = PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=IdentityTransform(), name="part"))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_partition_in_struct", schema=schema, partition_spec=spec)
+    test_data = [
+        {"foo": "a", "bar": {"baz": "data-a", "qux": 1}},
+        {"foo": "b", "bar": {"baz": "data-b", "qux": 2}},
+    ]
+
+    arrow_table = pa.Table.from_pylist(test_data, schema=table.schema().as_arrow())
+    table.append(arrow_table)
+    partitions_table = table.inspect.partitions()
+    partitions = partitions_table["partition"].to_pylist()
+
+    assert len(partitions) == 2
+    assert {part["part"] for part in partitions} == {"data-a", "data-b"}
 
 
 def test_identity_partition_on_multi_columns() -> None:
@@ -2172,7 +2521,7 @@ def test_identity_partition_on_multi_columns() -> None:
         (None, 4, "Kirin"),
         (2021, None, "Fish"),
     ] * 2
-    expected = {Record(n_legs_identity=test_rows[i][1], year_identity=test_rows[i][0]) for i in range(len(test_rows))}
+    expected = {Record(test_rows[i][1], test_rows[i][0]) for i in range(len(test_rows))}
     partition_spec = PartitionSpec(
         PartitionField(source_id=2, field_id=1002, transform=IdentityTransform(), name="n_legs_identity"),
         PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="year_identity"),
@@ -2201,6 +2550,54 @@ def test_identity_partition_on_multi_columns() -> None:
                 ("animal", "ascending"),
             ]
         ) == arrow_table.sort_by([("born_year", "ascending"), ("n_legs", "ascending"), ("animal", "ascending")])
+
+
+def test_initial_value() -> None:
+    # Have some fake data, otherwise it will generate a table without records
+    data = pa.record_batch([pa.nulls(10, pa.int64())], names=["some_field"])
+    result = _to_requested_schema(
+        Schema(NestedField(1, "we-love-22", LongType(), required=True, initial_default=22)), Schema(), data
+    )
+    assert result.column_names == ["we-love-22"]
+    for val in result[0]:
+        assert val.as_py() == 22
+
+
+def test__to_requested_schema_timestamp_to_timestamptz_projection() -> None:
+    # file is written with timestamp without timezone
+    file_schema = Schema(NestedField(1, "ts_field", TimestampType(), required=False))
+    batch = pa.record_batch(
+        [
+            pa.array(
+                [
+                    datetime(2025, 8, 14, 12, 0, 0),
+                    datetime(2025, 8, 14, 13, 0, 0),
+                ],
+                type=pa.timestamp("us"),
+            )
+        ],
+        names=["ts_field"],
+    )
+
+    # table is written with timestamp with timezone
+    table_schema = Schema(NestedField(1, "ts_field", TimestamptzType(), required=False))
+
+    actual_result = _to_requested_schema(table_schema, file_schema, batch, downcast_ns_timestamp_to_us=True)
+    expected = pa.record_batch(
+        [
+            pa.array(
+                [
+                    datetime(2025, 8, 14, 12, 0, 0),
+                    datetime(2025, 8, 14, 13, 0, 0),
+                ],
+                type=pa.timestamp("us", tz=timezone.utc),
+            )
+        ],
+        names=["ts_field"],
+    )
+
+    # expect actual_result to have timezone
+    assert expected.equals(actual_result)
 
 
 def test__to_requested_schema_timestamps(
@@ -2285,14 +2682,14 @@ def test_pyarrow_io_new_input_multi_region(caplog: Any) -> None:
         raise OSError("Unknown bucket")
 
     # For a pyarrow io instance with configured default s3 region
-    pyarrow_file_io = PyArrowFileIO({"s3.region": user_provided_region})
+    pyarrow_file_io = PyArrowFileIO({"s3.region": user_provided_region, "s3.resolve-region": "true"})
     with patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
         mock_s3_region_resolver.side_effect = _s3_region_map
 
         # The region is set to provided region if bucket region cannot be resolved
         with caplog.at_level(logging.WARNING):
             assert pyarrow_file_io.new_input("s3://non-exist-bucket/path/to/file")._filesystem.region == user_provided_region
-        assert f"Unable to resolve region for bucket non-exist-bucket, using default region {user_provided_region}" in caplog.text
+        assert "Unable to resolve region for bucket non-exist-bucket" in caplog.text
 
         for bucket_region in bucket_regions:
             # For s3 scheme, region is overwritten by resolved bucket region if different from user provided region
@@ -2318,3 +2715,73 @@ def test_pyarrow_io_multi_fs() -> None:
 
         # Same PyArrowFileIO instance resolves local file input to LocalFileSystem
         assert isinstance(pyarrow_file_io.new_input("file:///path/to/file")._filesystem, LocalFileSystem)
+
+
+class SomeRetryStrategy(AwsDefaultS3RetryStrategy):
+    def __init__(self) -> None:
+        super().__init__()
+        warnings.warn("Initialized SomeRetryStrategy 👍")
+
+
+def test_retry_strategy() -> None:
+    io = PyArrowFileIO(properties={S3_RETRY_STRATEGY_IMPL: "tests.io.test_pyarrow.SomeRetryStrategy"})
+    with pytest.warns(UserWarning, match="Initialized SomeRetryStrategy.*"):
+        io.new_input("s3://bucket/path/to/file")
+
+
+def test_retry_strategy_not_found() -> None:
+    io = PyArrowFileIO(properties={S3_RETRY_STRATEGY_IMPL: "pyiceberg.DoesNotExist"})
+    with pytest.warns(UserWarning, match="Could not initialize S3 retry strategy: pyiceberg.DoesNotExist"):
+        io.new_input("s3://bucket/path/to/file")
+
+
+@pytest.mark.parametrize("format_version", [1, 2, 3])
+def test_task_to_record_batches_nanos(format_version: TableVersion, tmpdir: str) -> None:
+    arrow_table = pa.table(
+        [
+            pa.array(
+                [
+                    datetime(2025, 8, 14, 12, 0, 0),
+                    datetime(2025, 8, 14, 13, 0, 0),
+                ],
+                type=pa.timestamp("ns"),
+            )
+        ],
+        pa.schema((pa.field("ts_field", pa.timestamp("ns"), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),)),
+    )
+
+    data_file = _write_table_to_data_file(f"{tmpdir}/test_task_to_record_batches_nanos.parquet", arrow_table.schema, arrow_table)
+
+    if format_version <= 2:
+        table_schema = Schema(NestedField(1, "ts_field", TimestampType(), required=False))
+    else:
+        table_schema = Schema(NestedField(1, "ts_field", TimestampNanoType(), required=False))
+
+    actual_result = list(
+        _task_to_record_batches(
+            PyArrowFileIO(),
+            FileScanTask(data_file),
+            bound_row_filter=AlwaysTrue(),
+            projected_schema=table_schema,
+            projected_field_ids={1},
+            positional_deletes=None,
+            case_sensitive=True,
+            format_version=format_version,
+        )
+    )[0]
+
+    def _expected_batch(unit: str) -> pa.RecordBatch:
+        return pa.record_batch(
+            [
+                pa.array(
+                    [
+                        datetime(2025, 8, 14, 12, 0, 0),
+                        datetime(2025, 8, 14, 13, 0, 0),
+                    ],
+                    type=pa.timestamp(unit),
+                )
+            ],
+            names=["ts_field"],
+        )
+
+    assert _expected_batch("ns" if format_version > 2 else "us").equals(actual_result)

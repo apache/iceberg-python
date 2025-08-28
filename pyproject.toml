@@ -16,7 +16,7 @@
 # under the License.
 [tool.poetry]
 name = "pyiceberg"
-version = "0.9.0"
+version = "0.10.0"
 readme = "README.md"
 homepage = "https://py.iceberg.apache.org/"
 repository = "https://github.com/apache/iceberg-python"
@@ -53,7 +53,7 @@ python = "^3.9.2, !=3.9.7"
 mmh3 = ">=4.0.0,<6.0.0"
 requests = ">=2.20.0,<3.0.0"
 click = ">=7.1.1,<9.0.0"
-rich = ">=10.11.0,<14.0.0"
+rich = ">=10.11.0,<15.0.0"
 strictyaml = ">=1.7.0,<2.0.0" # CVE-2020-14343 was fixed in 5.4.
 pydantic = ">=2.0,<3.0,!=2.4.0,!=2.4.1" # 2.4.0, 2.4.1 has a critical bug
 sortedcontainers = "2.4.0"
@@ -61,58 +61,65 @@ fsspec = ">=2023.1.0"
 pyparsing = ">=3.1.0,<4.0.0"
 zstandard = ">=0.13.0,<1.0.0"
 tenacity = ">=8.2.3,<10.0.0"
-pyarrow = { version = ">=17.0.0,<20.0.0", optional = true }
+pyroaring = ">=1.0.0,<2.0.0"
+pyarrow = { version = ">=17.0.0", optional = true }
+google-auth = { version = ">=2.4.0", optional = true }
 pandas = { version = ">=1.0.0,<3.0.0", optional = true }
 duckdb = { version = ">=0.5.0,<2.0.0", optional = true }
 ray = [
   { version = "==2.10.0", python = "<3.9", optional = true },
-  { version = ">=2.10.0,<3.0.0", python = ">=3.9", optional = true },
+  { version = ">=2.10.0,<=2.44.0", python = ">=3.9", optional = true },
 ]
 python-snappy = { version = ">=0.6.0,<1.0.0", optional = true }
 thrift = { version = ">=0.13.0,<1.0.0", optional = true }
-mypy-boto3-glue = { version = ">=1.28.18", optional = true }
 boto3 = { version = ">=1.24.59", optional = true }
+google-cloud-bigquery = { version = "^3.33.0", optional = true }
 s3fs = { version = ">=2023.1.0", optional = true }
-adlfs = { version = ">=2023.1.0", optional = true }
+adlfs = { version = ">=2024.7.0", optional = true }
 gcsfs = { version = ">=2023.1.0", optional = true }
+huggingface-hub = { version = ">=0.24.0", optional = true }
 psycopg2-binary = { version = ">=2.9.6", optional = true }
 sqlalchemy = { version = "^2.0.18", optional = true }
-getdaft = { version = ">=0.2.12", optional = true }
-cachetools = "^5.5.0"
-pyiceberg-core = { version = "^0.4.0", optional = true }
+bodo = { version = ">=2025.7.4", optional = true }
+daft = { version = ">=0.5.0", optional = true }
+cachetools = ">=5.5,<7.0"
+pyiceberg-core = { version = ">=0.5.1,<0.7.0", optional = true }
 polars = { version = "^1.21.0", optional = true }
 thrift-sasl = { version = ">=0.4.3", optional = true }
+kerberos = {version = "^1.3.1", optional = true}
+datafusion = { version = ">=45", optional = true }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "7.4.4"
 pytest-checkdocs = "2.13.0"
 pytest-lazy-fixture = "0.6.3"
-pre-commit = "4.1.0"
-fastavro = "1.10.0"
+pre-commit = "4.3.0"
+fastavro = "1.12.0"
 coverage = { version = "^7.4.2", extras = ["toml"] }
 requests-mock = "1.12.1"
 moto = { version = "^5.0.2", extras = ["server"] }
-typing-extensions = "4.12.2"
-pytest-mock = "3.14.0"
-pyspark = "3.5.3"
-cython = "3.0.12"
+typing-extensions = "4.15.0"
+pytest-mock = "3.14.1"
+pyspark = "3.5.6"
+cython = "3.1.3"
 deptry = ">=0.14,<0.24"
-datafusion = "^44.0.0"
 docutils = "!=0.21.post1"   # https://github.com/python-poetry/poetry/issues/9248#issuecomment-2026240520
+mypy-boto3-glue = ">=1.28.18"
+mypy-boto3-dynamodb = ">=1.28.18"
 
 [tool.poetry.group.docs.dependencies]
 # for mkdocs
 mkdocs = "1.6.1"
-griffe = "1.5.7"
-jinja2 = "3.1.5"
-mkdocstrings = "0.28.0"
-mkdocstrings-python = "1.15.0"
-mkdocs-literate-nav = "0.6.1"
-mkdocs-autorefs = "1.3.1"
+griffe = "1.12.1"
+jinja2 = "3.1.6"
+mkdocstrings = "0.30.0"
+mkdocstrings-python = "1.17.0"
+mkdocs-literate-nav = "0.6.2"
+mkdocs-autorefs = "1.4.2"
 mkdocs-gen-files = "0.5.0"
-mkdocs-material = "9.6.4"
+mkdocs-material = "9.6.18"
 mkdocs-material-extensions = "1.3.1"
-mkdocs-section-index = "0.3.9"
+mkdocs-section-index = "0.3.10"
 
 [[tool.mypy.overrides]]
 module = "pytest_mock.*"
@@ -120,6 +127,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "pyarrow.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "google.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -215,6 +226,10 @@ module = "mypy_boto3_glue.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = "mypy_boto3_dynamodb.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = "moto"
 ignore_missing_imports = true
 
@@ -274,6 +289,10 @@ ignore_missing_imports = true
 module = "pyiceberg_core.*"
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = "google.*"
+ignore_missing_imports = true
+
 [tool.poetry.scripts]
 pyiceberg = "pyiceberg.cli.console:run"
 
@@ -286,27 +305,34 @@ generate-setup-file = false
 script = "build-module.py"
 
 [tool.poetry.extras]
-pyarrow = ["pyarrow"]
+pyarrow = ["pyarrow", "pyiceberg-core"]
 pandas = ["pandas", "pyarrow"]
 duckdb = ["duckdb", "pyarrow"]
 ray = ["ray", "pyarrow", "pandas"]
-daft = ["getdaft"]
+bodo = ["bodo"]
+daft = ["daft"]
 polars = ["polars"]
 snappy = ["python-snappy"]
 hive = ["thrift"]
-hive-kerberos = ["thrift", "thrift_sasl"]
+hive-kerberos = ["thrift", "thrift_sasl", "kerberos"]
 s3fs = ["s3fs"]
-glue = ["boto3", "mypy-boto3-glue"]
+glue = ["boto3"]
 adlfs = ["adlfs"]
 dynamodb = ["boto3"]
+bigquery = ["google-cloud-bigquery"]
 zstandard = ["zstandard"]
 sql-postgres = ["sqlalchemy", "psycopg2-binary"]
 sql-sqlite = ["sqlalchemy"]
 gcsfs = ["gcsfs"]
 rest-sigv4 = ["boto3"]
+hf = ["huggingface-hub"]
 pyiceberg-core = ["pyiceberg-core"]
+datafusion = ["datafusion"]
+gcp-auth = ["google-auth"]
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
+
 markers = [
   "unmarked: marks a test as a unittest",
   "s3: marks a test as requiring access to s3 compliant storage (use with --aws-access-key-id, --aws-secret-access-key, and --endpoint args)",
@@ -426,6 +452,10 @@ module = "gcsfs.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = "huggingface_hub.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = "packaging.*"
 ignore_missing_imports = true
 
@@ -470,6 +500,10 @@ module = "daft.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = "bodo.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = "pyparsing.*"
 ignore_missing_imports = true
 
@@ -507,6 +541,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "datafusion.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pyroaring.*"
 ignore_missing_imports = true
 
 [tool.coverage.run]

@@ -271,7 +271,7 @@ def test_location(catalog: InMemoryCatalog) -> None:
     runner = CliRunner()
     result = runner.invoke(run, ["location", "default.my_table"])
     assert result.exit_code == 0
-    assert result.output == f"""{catalog._warehouse_location}/default.db/my_table\n"""
+    assert result.output == f"""{catalog._warehouse_location}/default/my_table\n"""
 
 
 def test_location_does_not_exists(catalog: InMemoryCatalog) -> None:
@@ -476,8 +476,8 @@ def test_properties_set_table(catalog: InMemoryCatalog) -> None:
 
     runner = CliRunner()
     result = runner.invoke(run, ["properties", "set", "table", "default.my_table", "location", "s3://new_location"])
-    assert result.exit_code == 1
-    assert "Writing is WIP" in result.output
+    assert result.exit_code == 0
+    assert result.output == "Set location=s3://new_location on default.my_table\n"
 
 
 def test_properties_set_table_does_not_exist(catalog: InMemoryCatalog) -> None:
@@ -518,8 +518,8 @@ def test_properties_remove_table(catalog: InMemoryCatalog) -> None:
 
     runner = CliRunner()
     result = runner.invoke(run, ["properties", "remove", "table", "default.my_table", "read.split.target.size"])
-    assert result.exit_code == 1
-    assert "Writing is WIP" in result.output
+    assert result.exit_code == 0
+    assert result.output == "Property read.split.target.size removed from default.my_table\n"
 
 
 def test_properties_remove_table_property_does_not_exists(catalog: InMemoryCatalog) -> None:
@@ -700,7 +700,7 @@ def test_json_location(catalog: InMemoryCatalog) -> None:
     runner = CliRunner()
     result = runner.invoke(run, ["--output=json", "location", "default.my_table"])
     assert result.exit_code == 0
-    assert result.output == f'"{catalog._warehouse_location}/default.db/my_table"\n'
+    assert result.output == f'"{catalog._warehouse_location}/default/my_table"\n'
 
 
 def test_json_location_does_not_exists(catalog: InMemoryCatalog) -> None:
@@ -894,8 +894,8 @@ def test_json_properties_set_table(catalog: InMemoryCatalog) -> None:
     result = runner.invoke(
         run, ["--output=json", "properties", "set", "table", "default.my_table", "location", "s3://new_location"]
     )
-    assert result.exit_code == 1
-    assert "Writing is WIP" in result.output
+    assert result.exit_code == 0
+    assert result.output == """"Set location=s3://new_location on default.my_table"\n"""
 
 
 def test_json_properties_set_table_does_not_exist(catalog: InMemoryCatalog) -> None:
@@ -938,8 +938,8 @@ def test_json_properties_remove_table(catalog: InMemoryCatalog) -> None:
 
     runner = CliRunner()
     result = runner.invoke(run, ["--output=json", "properties", "remove", "table", "default.my_table", "read.split.target.size"])
-    assert result.exit_code == 1
-    assert "Writing is WIP" in result.output
+    assert result.exit_code == 0
+    assert result.output == """"Property read.split.target.size removed from default.my_table"\n"""
 
 
 def test_json_properties_remove_table_property_does_not_exists(catalog: InMemoryCatalog) -> None:

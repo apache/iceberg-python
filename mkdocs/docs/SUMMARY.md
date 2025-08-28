@@ -24,12 +24,15 @@
 - [Configuration](configuration.md)
 - [CLI](cli.md)
 - [API](api.md)
+    - [Row Filter Syntax](row-filter-syntax.md)
+    - [Expression DSL](expression-dsl.md)
 - [Contributing](contributing.md)
 - [Community](community.md)
 - Releases
     - [Verify a release](verify-release.md)
     - [How to release](how-to-release.md)
     - [Release Notes](https://github.com/apache/iceberg-python/releases)
+    - [Nightly Build](nightly-build.md)
 - [Code Reference](reference/)
 
 <!-- markdown-link-check-enable-->

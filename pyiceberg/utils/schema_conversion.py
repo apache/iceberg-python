@@ -26,7 +26,14 @@ from typing import (
     Union,
 )
 
-from pyiceberg.schema import Schema, SchemaVisitorPerPrimitiveType, visit
+from pyiceberg.schema import (
+    FIELD_ID_PROP,
+    ICEBERG_FIELD_NAME_PROP,
+    Schema,
+    SchemaVisitorPerPrimitiveType,
+    make_compatible_name,
+    visit,
+)
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -47,6 +54,7 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 from pyiceberg.utils.decimal import decimal_required_bytes
@@ -62,6 +70,7 @@ PRIMITIVE_FIELD_TYPE_MAPPING: Dict[str, PrimitiveType] = {
     "long": LongType(),
     "string": StringType(),
     "enum": StringType(),
+    "null": UnknownType(),
 }
 
 LOGICAL_FIELD_TYPE_MAPPING: Dict[Tuple[str, str], PrimitiveType] = {
@@ -69,6 +78,7 @@ LOGICAL_FIELD_TYPE_MAPPING: Dict[Tuple[str, str], PrimitiveType] = {
     ("time-micros", "long"): TimeType(),
     ("timestamp-micros", "long"): TimestampType(),
     ("uuid", "fixed"): UUIDType(),
+    ("uuid", "string"): UUIDType(),
 }
 
 AvroType = Union[str, Any]
@@ -209,9 +219,9 @@ class AvroSchemaConversion:
                 elif isinstance(type_identifier, str) and type_identifier in PRIMITIVE_FIELD_TYPE_MAPPING:
                     return PRIMITIVE_FIELD_TYPE_MAPPING[type_identifier]
                 else:
-                    raise TypeError(f"Unknown type: {avro_type}")
+                    raise TypeError(f"Type not recognized: {avro_type}")
         else:
-            raise TypeError(f"Unknown type: {avro_type}")
+            raise TypeError(f"Type not recognized: {avro_type}")
 
     def _convert_field(self, field: Dict[str, Any]) -> NestedField:
         """Convert an Avro field into an Iceberg equivalent field.
@@ -222,13 +232,13 @@ class AvroSchemaConversion:
         Returns:
             The Iceberg equivalent field.
         """
-        if "field-id" not in field:
-            raise ValueError(f"Cannot convert field, missing field-id: {field}")
+        if FIELD_ID_PROP not in field:
+            raise ValueError(f"Cannot convert field, missing {FIELD_ID_PROP}: {field}")
 
         plain_type, required = self._resolve_union(field["type"])
 
         return NestedField(
-            field_id=field["field-id"],
+            field_id=field[FIELD_ID_PROP],
             name=field["name"],
             field_type=self._convert_schema(plain_type),
             required=required,
@@ -521,14 +531,20 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
         if isinstance(field_result, dict) and field_result.get("type") == "record":
             field_result["name"] = f"r{field.field_id}"
 
+        original_name = field.name
+        sanitized_name = make_compatible_name(original_name)
+
         result = {
-            "name": field.name,
-            "field-id": field.field_id,
+            "name": sanitized_name,
+            FIELD_ID_PROP: field.field_id,
             "type": field_result if field.required else ["null", field_result],
         }
 
+        if original_name != sanitized_name:
+            result[ICEBERG_FIELD_NAME_PROP] = original_name
+
         if field.write_default is not None:
-            result["default"] = field.write_default  # type: ignore
+            result["default"] = field.write_default
         elif field.optional:
             result["default"] = None
 
@@ -561,8 +577,8 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
                     "type": "record",
                     "name": f"k{self.last_map_key_field_id}_v{self.last_map_value_field_id}",
                     "fields": [
-                        {"name": "key", "type": key_result, "field-id": self.last_map_key_field_id},
-                        {"name": "value", "type": value_result, "field-id": self.last_map_value_field_id},
+                        {"name": "key", "type": key_result, FIELD_ID_PROP: self.last_map_key_field_id},
+                        {"name": "value", "type": value_result, FIELD_ID_PROP: self.last_map_value_field_id},
                     ],
                 },
                 "logicalType": "map",
@@ -603,12 +619,16 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
         return {"type": "long", "logicalType": "time-micros"}
 
     def visit_timestamp(self, timestamp_type: TimestampType) -> AvroType:
-        # Iceberg only supports micro's
         return {"type": "long", "logicalType": "timestamp-micros", "adjust-to-utc": False}
 
+    def visit_timestamp_ns(self, timestamp_type: TimestampType) -> AvroType:
+        return {"type": "long", "logicalType": "timestamp-nanos", "adjust-to-utc": False}
+
     def visit_timestamptz(self, timestamptz_type: TimestamptzType) -> AvroType:
-        # Iceberg only supports micro's
         return {"type": "long", "logicalType": "timestamp-micros", "adjust-to-utc": True}
+
+    def visit_timestamptz_ns(self, timestamptz_type: TimestamptzType) -> AvroType:
+        return {"type": "long", "logicalType": "timestamp-nanos", "adjust-to-utc": True}
 
     def visit_string(self, string_type: StringType) -> AvroType:
         return "string"
@@ -618,3 +638,6 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
 
     def visit_binary(self, binary_type: BinaryType) -> AvroType:
         return "bytes"
+
+    def visit_unknown(self, unknown_type: UnknownType) -> AvroType:
+        return "null"
