@@ -149,7 +149,7 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
-from pyiceberg.table import TableProperties
+from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties
 from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
@@ -1487,17 +1487,20 @@ def _task_to_record_batches(
     name_mapping: Optional[NameMapping] = None,
     partition_spec: Optional[PartitionSpec] = None,
     format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
+    downcast_ns_timestamp_to_us: Optional[bool] = None,
 ) -> Iterator[pa.RecordBatch]:
     arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
     with io.new_input(task.file.file_path).open() as fin:
         fragment = arrow_format.make_fragment(fin)
         physical_schema = fragment.physical_schema
-        # In V1 and V2 table formats, we only support Timestamp 'us' in Iceberg Schema
-        # Hence it is reasonable to always cast 'ns' timestamp to 'us' on read.
-        # When V3 support is introduced, we will update `downcast_ns_timestamp_to_us` flag based on
-        # the table format version.
+
+        # For V1 and V2, we only support Timestamp 'us' in Iceberg Schema, therefore it is reasonable to always cast 'ns' timestamp to 'us' on read.
+        # For V3 this has to set explicitly to avoid nanosecond timestamp to be down-casted by default
+        downcast_ns_timestamp_to_us = (
+            downcast_ns_timestamp_to_us if downcast_ns_timestamp_to_us is not None else format_version <= 2
+        )
         file_schema = pyarrow_to_schema(
-            physical_schema, name_mapping, downcast_ns_timestamp_to_us=True, format_version=format_version
+            physical_schema, name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version
         )
 
         # Apply column projection rules: https://iceberg.apache.org/spec/#column-projection
@@ -1555,7 +1558,7 @@ def _task_to_record_batches(
                 projected_schema,
                 file_project_schema,
                 current_batch,
-                downcast_ns_timestamp_to_us=True,
+                downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
                 projected_missing_fields=projected_missing_fields,
             )
 
@@ -1586,6 +1589,7 @@ class ArrowScan:
     _bound_row_filter: BooleanExpression
     _case_sensitive: bool
     _limit: Optional[int]
+    _downcast_ns_timestamp_to_us: Optional[bool]
     """Scan the Iceberg Table and create an Arrow construct.
 
     Attributes:
@@ -1612,6 +1616,7 @@ class ArrowScan:
         self._bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
         self._case_sensitive = case_sensitive
         self._limit = limit
+        self._downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE)
 
     @property
     def _projected_field_ids(self) -> Set[int]:
@@ -1728,6 +1733,7 @@ class ArrowScan:
                 self._table_metadata.name_mapping(),
                 self._table_metadata.specs().get(task.file.spec_id),
                 self._table_metadata.format_version,
+                self._downcast_ns_timestamp_to_us,
             )
             for batch in batches:
                 if self._limit is not None:
