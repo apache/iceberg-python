@@ -1486,7 +1486,7 @@ def test_update_namespace_properties_invalid_namespace(rest_mock: Mocker) -> Non
     assert "Empty namespace identifier" in str(e.value)
 
 
-def test_request_session_with_ssl_ca_bundle(monkeypatch) -> None:
+def test_request_session_with_ssl_ca_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
     # Given
     catalog_properties = {
         "uri": TEST_URI,
