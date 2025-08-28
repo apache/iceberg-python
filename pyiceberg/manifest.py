@@ -1062,7 +1062,15 @@ class ManifestWriter(ABC):
     def add_entry(self, entry: ManifestEntry) -> ManifestWriter:
         if self.closed:
             raise RuntimeError("Cannot add entry to closed manifest writer")
-        if entry.status == ManifestEntryStatus.ADDED:
+                # Ensure record_count is not None
+        if entry.data_file.record_count is None:
+            entry.data_file.record_count = 0  # or a real row count if available
+        if entry.data_file.file_format == FileFormat.ORC:
+            # ORC file stats not yet supported
+            self._added_files += 1 if entry.status == ManifestEntryStatus.ADDED else 0
+            self._existing_files += 1 if entry.status == ManifestEntryStatus.EXISTING else 0
+            self._deleted_files += 1 if entry.status == ManifestEntryStatus.DELETED else 0
+        elif entry.status == ManifestEntryStatus.ADDED:
             self._added_files += 1
             self._added_rows += entry.data_file.record_count
         elif entry.status == ManifestEntryStatus.EXISTING:

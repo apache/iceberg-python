@@ -63,6 +63,7 @@ import pyarrow.compute as pc
 import pyarrow.dataset as ds
 import pyarrow.lib
 import pyarrow.parquet as pq
+import pyarrow.orc as orc
 from pyarrow import ChunkedArray
 from pyarrow._s3fs import S3RetryStrategy
 from pyarrow.fs import (
@@ -201,6 +202,8 @@ BUFFER_SIZE = "buffer-size"
 ICEBERG_SCHEMA = b"iceberg.schema"
 # The PARQUET: in front means that it is Parquet specific, in this case the field_id
 PYARROW_PARQUET_FIELD_ID_KEY = b"PARQUET:field_id"
+# ORC stores IDs as string metadata
+ORC_FIELD_ID_KEY = b"iceberg.id"
 PYARROW_FIELD_DOC_KEY = b"doc"
 LIST_ELEMENT_NAME = "element"
 MAP_KEY_NAME = "key"
@@ -393,14 +396,28 @@ class PyArrowFileIO(FileIO):
 
     @staticmethod
     def parse_location(location: str) -> Tuple[str, str, str]:
-        """Return the path without the scheme."""
+        """Return (scheme, netloc, path) for the given location.
+        Uses environment variables DEFAULT_SCHEME and DEFAULT_NETLOC
+        if scheme/netloc are missing.
+        """
         uri = urlparse(location)
-        if not uri.scheme:
-            return "file", uri.netloc, os.path.abspath(location)
-        elif uri.scheme in ("hdfs", "viewfs"):
-            return uri.scheme, uri.netloc, uri.path
+
+        # Load defaults from environment
+        default_scheme = os.getenv("DEFAULT_SCHEME", "file")
+        default_netloc = os.getenv("DEFAULT_NETLOC", "")
+
+        # Apply logic
+        scheme = uri.scheme or default_scheme
+        netloc = uri.netloc or default_netloc
+
+        if scheme in ("hdfs", "viewfs"):
+            return scheme, netloc, uri.path
         else:
-            return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
+            # For non-HDFS URIs, include netloc in the path if present
+            path = uri.path if uri.scheme else os.path.abspath(location)
+            if netloc and not path.startswith(netloc):
+                path = f"{netloc}{path}"
+            return scheme, netloc, path
 
     def _initialize_fs(self, scheme: str, netloc: Optional[str] = None) -> FileSystem:
         """Initialize FileSystem for different scheme."""
@@ -605,7 +622,7 @@ class PyArrowFileIO(FileIO):
     def _initialize_local_fs(self) -> FileSystem:
         return PyArrowLocalFileSystem()
 
-    def new_input(self, location: str) -> PyArrowFile:
+    def new_input(self, location: str, fs: Optional[FileIO] = None) -> PyArrowFile:
         """Get a PyArrowFile instance to read bytes from the file at the given location.
 
         Args:
@@ -615,8 +632,11 @@ class PyArrowFileIO(FileIO):
             PyArrowFile: A PyArrowFile instance for the given location.
         """
         scheme, netloc, path = self.parse_location(location)
+        logger.warning(f"Scheme: {scheme}, Netloc: {netloc}, Path: {path}")
+        if not fs:
+            fs = self.fs_by_scheme(scheme, netloc)
         return PyArrowFile(
-            fs=self.fs_by_scheme(scheme, netloc),
+            fs=fs,
             location=location,
             path=path,
             buffer_size=int(self.properties.get(BUFFER_SIZE, ONE_MEGABYTE)),
@@ -1005,6 +1025,8 @@ def _expression_to_complementary_pyarrow(expr: BooleanExpression) -> pc.Expressi
 def _get_file_format(file_format: FileFormat, **kwargs: Dict[str, Any]) -> ds.FileFormat:
     if file_format == FileFormat.PARQUET:
         return ds.ParquetFileFormat(**kwargs)
+    elif file_format == FileFormat.ORC:
+        return ds.OrcFileFormat(**kwargs)
     else:
         raise ValueError(f"Unsupported file format: {file_format}")
 
@@ -1054,7 +1076,11 @@ def pyarrow_to_schema(
     downcast_ns_timestamp_to_us: bool = False,
     format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
 ) -> Schema:
-    has_ids = visit_pyarrow(schema, _HasIds())
+    logger.warning(f"schema {schema}")
+    hids = _HasIds()
+    logger.warning("hasIds")
+    has_ids = visit_pyarrow(schema, hids)
+    logger.warning(f"has_ids is {has_ids}, name_mapping is {name_mapping}")
     if has_ids:
         return visit_pyarrow(
             schema, _ConvertToIceberg(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version)
@@ -1222,11 +1248,22 @@ class PyArrowSchemaVisitor(Generic[T], ABC):
 
 
 def _get_field_id(field: pa.Field) -> Optional[int]:
-    return (
-        int(field_id_str.decode())
-        if (field.metadata and (field_id_str := field.metadata.get(PYARROW_PARQUET_FIELD_ID_KEY)))
-        else None
-    )
+    """Return the Iceberg field ID from Parquet or ORC metadata if available."""
+    if not field.metadata:
+        return None
+
+    # Try Parquet field ID first
+    field_id_bytes = field.metadata.get(PYARROW_PARQUET_FIELD_ID_KEY)
+    if field_id_bytes:
+        return int(field_id_bytes.decode())
+
+    # Fallback: try ORC field ID
+    field_id_bytes = field.metadata.get(ORC_FIELD_ID_KEY)
+    if field_id_bytes:
+        return int(field_id_bytes.decode())
+
+    return None
+
 
 
 class _HasIds(PyArrowSchemaVisitor[bool]):
@@ -1488,10 +1525,17 @@ def _task_to_record_batches(
     partition_spec: Optional[PartitionSpec] = None,
     format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
 ) -> Iterator[pa.RecordBatch]:
-    arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
+    logger.warning(f"file format is {task.file.file_format}")
+    if task.file.file_format == FileFormat.PARQUET:
+        arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
+    elif task.file.file_format == FileFormat.ORC:
+        arrow_format = ds.OrcFileFormat() # currently ORC doesn't support any fragment scan options
+    else:
+        raise ValueError("Unsupported file format")
     with io.new_input(task.file.file_path).open() as fin:
         fragment = arrow_format.make_fragment(fin)
         physical_schema = fragment.physical_schema
+        logger.warning(f"formats: filepath {task.file.file_path}, fragment {fragment}, physical_schema {physical_schema}")
         # In V1 and V2 table formats, we only support Timestamp 'us' in Iceberg Schema
         # Hence it is reasonable to always cast 'ns' timestamp to 'us' on read.
         # When V3 support is introduced, we will update `downcast_ns_timestamp_to_us` flag based on
@@ -2562,9 +2606,69 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
 
         return data_file
 
-    executor = ExecutorFactory.get_or_create()
-    data_files = executor.map(write_parquet, tasks)
+    def write_orc(task: WriteTask) -> DataFile:
+        table_schema = table_metadata.schema()
+        if (sanitized_schema := sanitize_column_names(table_schema)) != table_schema:
+            file_schema = sanitized_schema
+        else:
+            file_schema = table_schema
 
+        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+        batches = [
+            _to_requested_schema(
+                requested_schema=file_schema,
+                file_schema=task.schema,
+                batch=batch,
+                downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+                include_field_ids=True,
+            )
+            for batch in task.record_batches
+        ]
+        arrow_table = pa.Table.from_batches(batches)
+        file_path = location_provider.new_data_location(
+            data_file_name=task.generate_data_file_filename("orc"),
+            partition_key=task.partition_key,
+        )
+        fo = io.new_output(file_path)
+        with fo.create(overwrite=True) as fos:
+            orc.write_table(arrow_table, fos)
+        
+        # Extract statistics from the written ORC file
+        orc_file = orc.ORCFile(fo.to_input_file().open())
+        statistics = data_file_statistics_from_orc_metadata(
+            orc_metadata=orc_file,
+            stats_columns=compute_statistics_plan(file_schema, table_metadata.properties),
+            orc_column_mapping=orc_column_to_id_mapping(file_schema),
+            arrow_table=arrow_table,
+        )
+        
+        data_file = DataFile.from_args(
+            content=DataFileContent.DATA,
+            file_path=file_path,
+            file_format=FileFormat.ORC,
+            partition=task.partition_key.partition if task.partition_key else Record(),
+            file_size_in_bytes=len(fo),
+            sort_order_id=None,
+            spec_id=table_metadata.default_spec_id,
+            equality_ids=None,
+            key_metadata=None,
+            **statistics.to_serialized_dict(),
+        )
+        return data_file
+
+    executor = ExecutorFactory.get_or_create()
+    def dispatch(task: WriteTask) -> DataFile:
+        file_format = FileFormat(table_metadata.properties.get(
+            TableProperties.WRITE_FILE_FORMAT, 
+            TableProperties.WRITE_FILE_FORMAT_DEFAULT))
+        if file_format == FileFormat.PARQUET:
+            return write_parquet(task)
+        elif file_format == FileFormat.ORC:
+            return write_orc(task)
+        else:
+            raise ValueError(f"Unsupported file format: {file_format}")
+
+    data_files = executor.map(dispatch, tasks)
     return iter(data_files)
 
 
@@ -2861,3 +2965,180 @@ def _get_field_from_arrow_table(arrow_table: pa.Table, field_path: str) -> pa.Ar
     field_array = arrow_table[path_parts[0]]
     # Navigate into the struct using the remaining path parts
     return pc.struct_field(field_array, path_parts[1:])
+
+
+def data_file_statistics_from_orc_metadata(
+    orc_metadata: "orc.ORCFile",
+    stats_columns: Dict[int, StatisticsCollector],
+    orc_column_mapping: Dict[str, int],
+    arrow_table: Optional[pa.Table] = None,
+) -> DataFileStatistics:
+    """
+    Compute and return DataFileStatistics that includes the following.
+
+    - record_count
+    - column_sizes
+    - value_counts
+    - null_value_counts
+    - nan_value_counts
+    - column_aggregates
+    - split_offsets
+
+    Args:
+        orc_metadata (pyarrow.orc.ORCFile): A pyarrow ORC file object.
+        stats_columns (Dict[int, StatisticsCollector]): The statistics gathering plan. It is required to
+            set the mode for column metrics collection
+        orc_column_mapping (Dict[str, int]): The mapping of the ORC column name to the field ID
+        arrow_table (pa.Table, optional): The original arrow table that was written, used for row count
+    """
+    column_sizes: Dict[int, int] = {}
+    value_counts: Dict[int, int] = {}
+    split_offsets: List[int] = []
+
+    null_value_counts: Dict[int, int] = {}
+    nan_value_counts: Dict[int, int] = {}
+
+    col_aggs = {}
+
+    invalidate_col: Set[int] = set()
+    
+    # Get row count from the arrow table if available, otherwise use a default
+    if arrow_table is not None:
+        record_count = arrow_table.num_rows
+    else:
+        # Fallback: ORC doesn't provide num_rows like Parquet, so we'll use a default
+        record_count = 0
+    
+    # ORC files have a single stripe structure, unlike Parquet's row groups
+    # We'll process the file-level statistics
+    for col_name, field_id in orc_column_mapping.items():
+        stats_col = stats_columns[field_id]
+        
+        # Initialize column sizes (ORC doesn't provide per-column size like Parquet)
+        column_sizes[field_id] = 0  # ORC doesn't provide detailed column size info
+        
+        if stats_col.mode == MetricsMode(MetricModeTypes.NONE):
+            continue
+            
+        # Get column statistics from ORC metadata
+        try:
+            # ORC provides file-level statistics
+            # Note: ORC statistics are more limited than Parquet
+            # We'll use the available statistics and set defaults for missing ones
+            
+            # For ORC, we'll use the total number of values as value count
+            # This is a simplification since ORC doesn't provide per-column value counts like Parquet
+            value_counts[field_id] = record_count
+            
+            # ORC doesn't provide null counts in the same way as Parquet
+            # We'll set this to 0 for now, as ORC doesn't expose null counts easily
+            null_value_counts[field_id] = 0
+            
+            if stats_col.mode == MetricsMode(MetricModeTypes.COUNTS):
+                continue
+                
+            if field_id not in col_aggs:
+                col_aggs[field_id] = StatsAggregator(
+                    stats_col.iceberg_type, _primitive_to_physical(stats_col.iceberg_type), stats_col.mode.length
+                )
+            
+            # ORC doesn't provide min/max statistics in the same way as Parquet
+            # We'll skip the min/max aggregation for ORC files
+            # This is a limitation of ORC's metadata structure compared to Parquet
+            
+        except Exception as e:
+            invalidate_col.add(field_id)
+            logger.warning(f"Failed to extract ORC statistics for column {col_name}: {e}")
+    
+    # ORC doesn't have split offsets like Parquet
+    # We'll use an empty list or a single offset at 0
+    split_offsets = [0] if record_count > 0 else []
+    
+    # Clean up invalid columns
+    for field_id in invalidate_col:
+        col_aggs.pop(field_id, None)
+        null_value_counts.pop(field_id, None)
+
+    return DataFileStatistics(
+        record_count=record_count,
+        column_sizes=column_sizes,
+        value_counts=value_counts,
+        null_value_counts=null_value_counts,
+        nan_value_counts=nan_value_counts,
+        column_aggregates=col_aggs,
+        split_offsets=split_offsets,
+    )
+
+
+class ID2OrcColumn:
+    field_id: int
+    orc_column: str
+    
+    def __init__(self, field_id: int, orc_column: str):
+        self.field_id = field_id
+        self.orc_column = orc_column
+
+
+class ID2OrcColumnVisitor(PreOrderSchemaVisitor[List[ID2OrcColumn]]):
+    _field_id: int = 0
+    _path: List[str]
+
+    def __init__(self) -> None:
+        self._path = []
+
+    def schema(self, schema: Schema, struct_result: Callable[[], List[ID2OrcColumn]]) -> List[ID2OrcColumn]:
+        return struct_result()
+
+    def struct(self, struct: StructType, field_results: List[Callable[[], List[ID2OrcColumn]]]) -> List[ID2OrcColumn]:
+        return list(itertools.chain(*[result() for result in field_results]))
+
+    def field(self, field: NestedField, field_result: Callable[[], List[ID2OrcColumn]]) -> List[ID2OrcColumn]:
+        self._field_id = field.field_id
+        self._path.append(field.name)
+        result = field_result()
+        self._path.pop()
+        return result
+
+    def list(self, list_type: ListType, element_result: Callable[[], List[ID2OrcColumn]]) -> List[ID2OrcColumn]:
+        self._field_id = list_type.element_id
+        self._path.append("list.element")
+        result = element_result()
+        self._path.pop()
+        return result
+
+    def map(
+        self,
+        map_type: MapType,
+        key_result: Callable[[], List[ID2OrcColumn]],
+        value_result: Callable[[], List[ID2OrcColumn]],
+    ) -> List[ID2OrcColumn]:
+        self._field_id = map_type.key_id
+        self._path.append("key_value.key")
+        k = key_result()
+        self._path.pop()
+        self._field_id = map_type.value_id
+        self._path.append("key_value.value")
+        v = value_result()
+        self._path.pop()
+        return k + v
+
+    def primitive(self, primitive: PrimitiveType) -> List[ID2OrcColumn]:
+        return [ID2OrcColumn(field_id=self._field_id, orc_column=".".join(self._path))]
+
+
+def orc_column_to_id_mapping(
+    schema: Schema,
+) -> Dict[str, int]:
+    """
+    Create a mapping from ORC column names to Iceberg field IDs.
+    
+    Args:
+        schema: The Iceberg schema
+        
+    Returns:
+        A dictionary mapping ORC column names to field IDs
+    """
+    result: Dict[str, int] = {}
+    for pair in pre_order_visit(schema, ID2OrcColumnVisitor()):
+        result[pair.orc_column] = pair.field_id
+    return result

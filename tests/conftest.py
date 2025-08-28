@@ -2413,6 +2413,30 @@ def example_task(data_file: str) -> FileScanTask:
     )
 
 
+@pytest.fixture
+def data_file_orc(table_schema_simple: Schema, tmp_path: str) -> str:
+    import pyarrow as pa
+    import pyarrow.orc as orc
+
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+    table = pa.table(
+        {"foo": ["a", "b", "c"], "bar": [1, 2, 3], "baz": [True, False, None]},
+        schema=schema_to_pyarrow(table_schema_simple),
+    )
+
+    file_path = f"{tmp_path}/0000-data.orc"
+    orc.write_table(table=table, where=file_path)
+    return file_path
+
+
+@pytest.fixture
+def example_task_orc(data_file_orc: str) -> FileScanTask:
+    return FileScanTask(
+        data_file=DataFile.from_args(file_path=data_file_orc, file_format=FileFormat.ORC, file_size_in_bytes=1925),
+    )
+
+
 @pytest.fixture(scope="session")
 def warehouse(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return tmp_path_factory.mktemp("test_sql")
@@ -2435,6 +2459,20 @@ def table_v2(example_table_metadata_v2: Dict[str, Any]) -> Table:
     table_metadata = TableMetadataV2(**example_table_metadata_v2)
     return Table(
         identifier=("database", "table"),
+        metadata=table_metadata,
+        metadata_location=f"{table_metadata.location}/uuid.metadata.json",
+        io=load_file_io(),
+        catalog=NoopCatalog("NoopCatalog"),
+    )
+
+@pytest.fixture
+def table_v2_orc(example_table_metadata_v2: Dict[str, Any]) -> Table:
+    if not example_table_metadata_v2["properties"]:
+        example_table_metadata_v2["properties"] = {}
+    example_table_metadata_v2["properties"]["write.format.default"] = "ORC"
+    table_metadata = TableMetadataV2(**example_table_metadata_v2)
+    return Table(
+        identifier=("database", "table_orc"),
         metadata=table_metadata,
         metadata_location=f"{table_metadata.location}/uuid.metadata.json",
         io=load_file_io(),

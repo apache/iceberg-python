@@ -162,6 +162,9 @@ class UpsertResult:
 
 
 class TableProperties:
+    WRITE_FILE_FORMAT = "write.format.default"
+    WRITE_FILE_FORMAT_DEFAULT = "parquet"
+
     PARQUET_ROW_GROUP_SIZE_BYTES = "write.parquet.row-group-size-bytes"
     PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT = 128 * 1024 * 1024  # 128 MB
 
@@ -1053,12 +1056,21 @@ class Table:
         catalog: Catalog,
         config: Dict[str, str] = EMPTY_DICT,
     ) -> None:
+        self._validate_table_metadata(metadata)
         self._identifier = identifier
         self.metadata = metadata
         self.metadata_location = metadata_location
         self.io = io
         self.catalog = catalog
         self.config = config
+
+    def _validate_table_metadata(self, table_metadata: TableMetadata) -> None:
+        from pyiceberg.manifest import FileFormat
+        file_format = FileFormat(table_metadata.properties.get(
+            TableProperties.WRITE_FILE_FORMAT, 
+            TableProperties.WRITE_FILE_FORMAT_DEFAULT))
+        if file_format not in (FileFormat.PARQUET, FileFormat.ORC):
+            raise ValueError(f"Unsupported file format: {file_format}")
 
     def transaction(self) -> Transaction:
         """Create a new transaction object to first stage the changes, and then commit them to the catalog.
