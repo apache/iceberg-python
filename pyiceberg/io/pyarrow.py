@@ -403,18 +403,11 @@ class PyArrowFileIO(FileIO):
         default_netloc = properties.get("DEFAULT_NETLOC", "")
 
         if not uri.scheme:
-            scheme = default_scheme
-        if not uri.netloc:
-            netloc = default_netloc
-
-        if scheme in ("hdfs", "viewfs"):
-            return scheme, netloc, uri.path
+            return default_scheme, default_netloc, os.path.abspath(location)
+        elif uri.scheme in ("hdfs", "viewfs"):
+            return uri.scheme, uri.netloc, uri.path
         else:
-            # For non-HDFS URIs, include netloc in the path if present
-            path = uri.path if uri.scheme else os.path.abspath(location)
-            if netloc and not path.startswith(netloc):
-                path = f"{netloc}{path}"
-            return scheme, netloc, path
+            return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
 
     def _initialize_fs(self, scheme: str, netloc: Optional[str] = None) -> FileSystem:
         """Initialize FileSystem for different scheme."""

@@ -2801,7 +2801,7 @@ def test_parse_location_defaults() -> None:
     )
     assert scheme == "scheme"
     assert netloc == "netloc:8000"
-    assert path == "netloc:8000/foo/bar"
+    assert path == "/foo/bar"
 
     scheme, netloc, path = PyArrowFileIO.parse_location(
         "/foo/bar", properties={"DEFAULT_SCHEME": "hdfs", "DEFAULT_NETLOC": "netloc:8000"}
