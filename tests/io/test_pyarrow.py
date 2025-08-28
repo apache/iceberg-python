@@ -2426,8 +2426,6 @@ def test_partition_for_nested_field() -> None:
 
     spec = PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=HourTransform(), name="ts"))
 
-    from datetime import datetime
-
     t1 = datetime(2025, 7, 11, 9, 30, 0)
     t2 = datetime(2025, 7, 11, 10, 30, 0)
 
@@ -2739,8 +2737,6 @@ def test_retry_strategy_not_found() -> None:
 
 @pytest.mark.parametrize("format_version", [1, 2, 3])
 def test_task_to_record_batches_nanos(format_version: TableVersion, tmpdir: str) -> None:
-    from datetime import datetime
-
     arrow_table = pa.table(
         [
             pa.array(
