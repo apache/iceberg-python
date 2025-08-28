@@ -399,10 +399,9 @@ class PyArrowFileIO(FileIO):
         """
         uri = urlparse(location)
 
-        default_scheme = properties.get("DEFAULT_SCHEME", "file")
-        default_netloc = properties.get("DEFAULT_NETLOC", "")
-
         if not uri.scheme:
+            default_scheme = properties.get("DEFAULT_SCHEME", "file")
+            default_netloc = properties.get("DEFAULT_NETLOC", "")
             return default_scheme, default_netloc, os.path.abspath(location)
         elif uri.scheme in ("hdfs", "viewfs"):
             return uri.scheme, uri.netloc, uri.path
