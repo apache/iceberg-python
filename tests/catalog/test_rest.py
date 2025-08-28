@@ -1496,6 +1496,10 @@ def test_request_session_with_ssl_ca_bundle() -> None:
         },
     }
     with pytest.raises(OSError) as e:
+        if "REQUESTS_CA_BUNDLE" in os.environ:
+            os.environ.pop("REQUESTS_CA_BUNDLE")
+        if "CURL_CA_BUNDLE" in os.environ:
+            os.environ.pop("CURL_CA_BUNDLE")
         # Missing namespace
         RestCatalog("rest", **catalog_properties)  # type: ignore
     assert "Could not find a suitable TLS CA certificate bundle, invalid path: path_to_ca_bundle" in str(e.value)
