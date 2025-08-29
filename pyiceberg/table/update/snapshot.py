@@ -110,7 +110,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     _manifest_num_counter: itertools.count[int]
     _deleted_data_files: Set[DataFile]
     _compression: AvroCompressionCodec
-    _target_branch = MAIN_BRANCH
+    _target_branch: Optional[str]
 
     def __init__(
         self,
@@ -119,7 +119,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         io: FileIO,
         commit_uuid: Optional[uuid.UUID] = None,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
-        branch: str = MAIN_BRANCH,
+        branch: Optional[str] = MAIN_BRANCH,
     ) -> None:
         super().__init__(transaction)
         self.commit_uuid = commit_uuid or uuid.uuid4()
@@ -140,14 +140,13 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.snapshot_by_name(self._target_branch)) else None
         )
 
-    def _validate_target_branch(self, branch: str) -> str:
-        # Default is already set to MAIN_BRANCH. So branch name can't be None.
-        if branch is None:
-            raise ValueError("Invalid branch name: null")
-        if branch in self._transaction.table_metadata.refs:
-            ref = self._transaction.table_metadata.refs[branch]
-            if ref.snapshot_ref_type != SnapshotRefType.BRANCH:
-                raise ValueError(f"{branch} is a tag, not a branch. Tags cannot be targets for producing snapshots")
+    def _validate_target_branch(self, branch: Optional[str]) -> Optional[str]:
+        # if branch is none, write will be written into a staging snapshot
+        if branch is not None:
+            if branch in self._transaction.table_metadata.refs:
+                ref = self._transaction.table_metadata.refs[branch]
+                if ref.snapshot_ref_type != SnapshotRefType.BRANCH:
+                    raise ValueError(f"{branch} is a tag, not a branch. Tags cannot be targets for producing snapshots")
         return branch
 
     def append_data_file(self, data_file: DataFile) -> _SnapshotProducer[U]:
@@ -294,25 +293,33 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             schema_id=self._transaction.table_metadata.current_schema_id,
         )
 
-        return (
-            (
-                AddSnapshotUpdate(snapshot=snapshot),
-                SetSnapshotRefUpdate(
-                    snapshot_id=self._snapshot_id,
-                    parent_snapshot_id=self._parent_snapshot_id,
-                    ref_name=self._target_branch,
-                    type=SnapshotRefType.BRANCH,
+        add_snapshot_update = AddSnapshotUpdate(snapshot=snapshot)
+
+        if self._target_branch is None:
+            return (
+                (add_snapshot_update,),
+                (),
+            )
+        else:
+            return (
+                (
+                    add_snapshot_update,
+                    SetSnapshotRefUpdate(
+                        snapshot_id=self._snapshot_id,
+                        parent_snapshot_id=self._parent_snapshot_id,
+                        ref_name=self._target_branch,
+                        type=SnapshotRefType.BRANCH,
+                    ),
                 ),
-            ),
-            (
-                AssertRefSnapshotId(
-                    snapshot_id=self._transaction.table_metadata.refs[self._target_branch].snapshot_id
-                    if self._target_branch in self._transaction.table_metadata.refs
-                    else None,
-                    ref=self._target_branch,
+                (
+                    AssertRefSnapshotId(
+                        snapshot_id=self._transaction.table_metadata.refs[self._target_branch].snapshot_id
+                        if self._target_branch in self._transaction.table_metadata.refs
+                        else None,
+                        ref=self._target_branch,
+                    ),
                 ),
-            ),
-        )
+            )
 
     @property
     def snapshot_id(self) -> int:
@@ -359,7 +366,7 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         operation: Operation,
         transaction: Transaction,
         io: FileIO,
-        branch: str,
+        branch: Optional[str] = MAIN_BRANCH,
         commit_uuid: Optional[uuid.UUID] = None,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ):
@@ -530,7 +537,7 @@ class _MergeAppendFiles(_FastAppendFiles):
         operation: Operation,
         transaction: Transaction,
         io: FileIO,
-        branch: str,
+        branch: Optional[str] = MAIN_BRANCH,
         commit_uuid: Optional[uuid.UUID] = None,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ) -> None:
@@ -651,14 +658,14 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
 class UpdateSnapshot:
     _transaction: Transaction
     _io: FileIO
-    _branch: str
+    _branch: Optional[str]
     _snapshot_properties: Dict[str, str]
 
     def __init__(
         self,
         transaction: Transaction,
         io: FileIO,
-        branch: str,
+        branch: Optional[str] = MAIN_BRANCH,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ) -> None:
         self._transaction = transaction

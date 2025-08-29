@@ -2271,3 +2271,149 @@ def test_nanosecond_support_on_catalog(
         _create_table(
             session_catalog, identifier, {"format-version": "2"}, schema=arrow_table_schema_with_all_timestamp_precisions
         )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_stage_only_delete(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = f"default.test_stage_only_delete_files_v{format_version}"
+    iceberg_spec = PartitionSpec(
+        *[PartitionField(source_id=4, field_id=1001, transform=IdentityTransform(), name="integer_partition")]
+    )
+    tbl = _create_table(
+        session_catalog, identifier, {"format-version": str(format_version)}, [arrow_table_with_null], iceberg_spec
+    )
+
+    current_snapshot = tbl.metadata.current_snapshot_id
+    assert current_snapshot is not None
+
+    original_count = len(tbl.scan().to_arrow())
+    assert original_count == 3
+
+    tbl.delete("int = 9", branch=None)
+
+    # a new delete snapshot is added
+    snapshots = tbl.snapshots()
+    assert len(snapshots) == 2
+    # snapshot main ref has not changed
+    assert current_snapshot == tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == original_count
+
+    # Write to main branch
+    tbl.append(arrow_table_with_null)
+
+    # Main ref has changed
+    assert current_snapshot != tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == 6
+    snapshots = tbl.snapshots()
+    assert len(snapshots) == 3
+
+    rows = spark.sql(
+        f"""
+                SELECT operation, parent_id
+                FROM {identifier}.snapshots
+                ORDER BY committed_at ASC
+            """
+    ).collect()
+    operations = [row.operation for row in rows]
+    parent_snapshot_id = [row.parent_id for row in rows]
+    assert operations == ["append", "delete", "append"]
+    # both subsequent parent id should be the first snapshot id
+    assert parent_snapshot_id == [None, current_snapshot, current_snapshot]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_stage_only_append(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = f"default.test_stage_only_fast_append_files_v{format_version}"
+    tbl = _create_table(session_catalog, identifier, {"format-version": str(format_version)}, [arrow_table_with_null])
+
+    current_snapshot = tbl.metadata.current_snapshot_id
+    assert current_snapshot is not None
+
+    original_count = len(tbl.scan().to_arrow())
+    assert original_count == 3
+
+    # Write to staging branch
+    tbl.append(arrow_table_with_null, branch=None)
+
+    # Main ref has not changed and data is not yet appended
+    assert current_snapshot == tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == original_count
+    # There should be a new staged snapshot
+    snapshots = tbl.snapshots()
+    assert len(snapshots) == 2
+
+    # Write to main branch
+    tbl.append(arrow_table_with_null)
+
+    # Main ref has changed
+    assert current_snapshot != tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == 6
+    snapshots = tbl.snapshots()
+    assert len(snapshots) == 3
+
+    rows = spark.sql(
+        f"""
+            SELECT operation, parent_id
+            FROM {identifier}.snapshots
+            ORDER BY committed_at ASC
+        """
+    ).collect()
+    operations = [row.operation for row in rows]
+    parent_snapshot_id = [row.parent_id for row in rows]
+    assert operations == ["append", "append", "append"]
+    # both subsequent parent id should be the first snapshot id
+    assert parent_snapshot_id == [None, current_snapshot, current_snapshot]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_stage_only_overwrite_files(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = f"default.test_stage_only_overwrite_files_v{format_version}"
+    tbl = _create_table(session_catalog, identifier, {"format-version": str(format_version)}, [arrow_table_with_null])
+    first_snapshot = tbl.metadata.current_snapshot_id
+
+    # duplicate data with a new insert
+    tbl.append(arrow_table_with_null)
+
+    second_snapshot = tbl.metadata.current_snapshot_id
+    assert second_snapshot is not None
+    original_count = len(tbl.scan().to_arrow())
+    assert original_count == 6
+
+    # write to non-main branch
+    tbl.overwrite(arrow_table_with_null, branch=None)
+    assert second_snapshot == tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == original_count
+    snapshots = tbl.snapshots()
+    # overwrite will create 2 snapshots
+    assert len(snapshots) == 4
+
+    # Write to main branch again
+    tbl.append(arrow_table_with_null)
+
+    # Main ref has changed
+    assert second_snapshot != tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == 9
+    snapshots = tbl.snapshots()
+    assert len(snapshots) == 5
+
+    rows = spark.sql(
+        f"""
+                    SELECT operation, parent_id, snapshot_id
+                    FROM {identifier}.snapshots
+                    ORDER BY committed_at ASC
+                """
+    ).collect()
+    operations = [row.operation for row in rows]
+    parent_snapshot_id = [row.parent_id for row in rows]
+    assert operations == ["append", "append", "delete", "append", "append"]
+
+    assert parent_snapshot_id == [None, first_snapshot, second_snapshot, second_snapshot, second_snapshot]

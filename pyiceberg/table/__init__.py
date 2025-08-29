@@ -398,7 +398,9 @@ class Transaction:
             expr = Or(expr, match_partition_expression)
         return expr
 
-    def _append_snapshot_producer(self, snapshot_properties: Dict[str, str], branch: Optional[str]) -> _FastAppendFiles:
+    def _append_snapshot_producer(
+        self, snapshot_properties: Dict[str, str], branch: Optional[str] = MAIN_BRANCH
+    ) -> _FastAppendFiles:
         """Determine the append type based on table properties.
 
         Args:
@@ -439,9 +441,6 @@ class Transaction:
         Returns:
             A new UpdateSnapshot
         """
-        if branch is None:
-            branch = MAIN_BRANCH
-
         return UpdateSnapshot(self, io=self._table.io, branch=branch, snapshot_properties=snapshot_properties)
 
     def update_statistics(self) -> UpdateStatistics:
@@ -453,7 +452,7 @@ class Transaction:
         """
         return UpdateStatistics(transaction=self)
 
-    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = None) -> None:
+    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = MAIN_BRANCH) -> None:
         """
         Shorthand API for appending a PyArrow table to a table transaction.
 
@@ -492,7 +491,7 @@ class Transaction:
                     append_files.append_data_file(data_file)
 
     def dynamic_partition_overwrite(
-        self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = None
+        self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = MAIN_BRANCH
     ) -> None:
         """
         Shorthand for overwriting existing partitions with a PyArrow table.
@@ -559,7 +558,7 @@ class Transaction:
         overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
-        branch: Optional[str] = None,
+        branch: Optional[str] = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand for adding a table overwrite with a PyArrow table to the transaction.
@@ -619,7 +618,7 @@ class Transaction:
         delete_filter: Union[str, BooleanExpression],
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
-        branch: Optional[str] = None,
+        branch: Optional[str] = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand for deleting record from a table.
@@ -722,7 +721,7 @@ class Transaction:
         when_matched_update_all: bool = True,
         when_not_matched_insert_all: bool = True,
         case_sensitive: bool = True,
-        branch: Optional[str] = None,
+        branch: Optional[str] = MAIN_BRANCH,
     ) -> UpsertResult:
         """Shorthand API for performing an upsert to an iceberg table.
 
@@ -807,7 +806,7 @@ class Transaction:
             case_sensitive=case_sensitive,
         )
 
-        if branch is not None:
+        if branch in self.table_metadata.refs:
             matched_iceberg_record_batches_scan = matched_iceberg_record_batches_scan.use_ref(branch)
 
         matched_iceberg_record_batches = matched_iceberg_record_batches_scan.to_arrow_batch_reader()
@@ -1303,7 +1302,7 @@ class Table:
         when_matched_update_all: bool = True,
         when_not_matched_insert_all: bool = True,
         case_sensitive: bool = True,
-        branch: Optional[str] = None,
+        branch: Optional[str] = MAIN_BRANCH,
     ) -> UpsertResult:
         """Shorthand API for performing an upsert to an iceberg table.
 
@@ -1350,7 +1349,7 @@ class Table:
                 branch=branch,
             )
 
-    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = None) -> None:
+    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = MAIN_BRANCH) -> None:
         """
         Shorthand API for appending a PyArrow table to the table.
 
@@ -1363,7 +1362,7 @@ class Table:
             tx.append(df=df, snapshot_properties=snapshot_properties, branch=branch)
 
     def dynamic_partition_overwrite(
-        self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = None
+        self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = MAIN_BRANCH
     ) -> None:
         """Shorthand for dynamic overwriting the table with a PyArrow table.
 
@@ -1382,7 +1381,7 @@ class Table:
         overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
-        branch: Optional[str] = None,
+        branch: Optional[str] = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand for overwriting the table with a PyArrow table.
@@ -1415,7 +1414,7 @@ class Table:
         delete_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
-        branch: Optional[str] = None,
+        branch: Optional[str] = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand for deleting rows from the table.
