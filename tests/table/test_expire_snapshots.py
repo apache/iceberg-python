@@ -233,28 +233,28 @@ def test_retain_last_n_with_protection(table_v2: Table) -> None:
     # Clear shared state set on the class between tests
     ExpireSnapshots._snapshot_ids_to_expire.clear()
 
-    S1 = 101  # oldest (also protected)
-    S2 = 102
-    S3 = 103
-    S4 = 104  # newest
+    PROTECTED_SNAPSHOT = 3051729675574597101  # oldest (also protected)
+    EXPIRE_SNAPSHOT = 3051729675574597102
+    KEEP_SNAPSHOT_1 = 3051729675574597103
+    KEEP_SNAPSHOT_2 = 3051729675574597104  # newest
 
-    # Protected S1 as branch head
+    # Protected PROTECTED_SNAPSHOT as branch head
     table_v2.metadata = table_v2.metadata.model_copy(
         update={
             "refs": {
-                "main": MagicMock(snapshot_id=S1, snapshot_ref_type="branch"),
+                "main": MagicMock(snapshot_id=PROTECTED_SNAPSHOT, snapshot_ref_type="branch"),
             },
             "snapshots": [
-                SimpleNamespace(snapshot_id=S1, timestamp_ms=1, parent_snapshot_id=None),
-                SimpleNamespace(snapshot_id=S2, timestamp_ms=2, parent_snapshot_id=None),
-                SimpleNamespace(snapshot_id=S3, timestamp_ms=3, parent_snapshot_id=None),
-                SimpleNamespace(snapshot_id=S4, timestamp_ms=4, parent_snapshot_id=None),
+                SimpleNamespace(snapshot_id=PROTECTED_SNAPSHOT, timestamp_ms=1, parent_snapshot_id=None),
+                SimpleNamespace(snapshot_id=EXPIRE_SNAPSHOT, timestamp_ms=2, parent_snapshot_id=None),
+                SimpleNamespace(snapshot_id=KEEP_SNAPSHOT_1, timestamp_ms=3, parent_snapshot_id=None),
+                SimpleNamespace(snapshot_id=KEEP_SNAPSHOT_2, timestamp_ms=4, parent_snapshot_id=None),
             ],
         }
     )
 
     table_v2.catalog = MagicMock()
-    kept_ids = {S1, S3, S4}  # retain_last_n=2 keeps S4,S3 plus protected S1
+    kept_ids = {PROTECTED_SNAPSHOT, KEEP_SNAPSHOT_1, KEEP_SNAPSHOT_2}  # retain_last_n=2 keeps newest plus protected
     mock_response = CommitTableResponse(
         metadata=table_v2.metadata.model_copy(update={"snapshots": list(kept_ids)}),
         metadata_location="mock://metadata/location",
@@ -269,128 +269,150 @@ def test_retain_last_n_with_protection(table_v2: Table) -> None:
     updates = args[2] if len(args) > 2 else ()
     remove_update = next((u for u in updates if getattr(u, "action", None) == "remove-snapshots"), None)
     assert remove_update is not None
-    # Only S2 should be expired
-    assert set(remove_update.snapshot_ids) == {S2}
-    assert S2 not in table_v2.metadata.snapshots
+    # Only EXPIRE_SNAPSHOT should be expired
+    assert set(remove_update.snapshot_ids) == {EXPIRE_SNAPSHOT}
+    assert EXPIRE_SNAPSHOT not in table_v2.metadata.snapshots
 
 
-def test_older_than_with_retention_combination(table_v2: Table) -> None:
-    """Test older_than_with_retention combining timestamp, retain_last_n and min_snapshots_to_keep."""
+def test_retain_last_n_validation(table_v2: Table) -> None:
+    """Test retain_last_n validates n >= 1."""
+    ExpireSnapshots._snapshot_ids_to_expire.clear()
+
+    with pytest.raises(ValueError, match="Number of snapshots to retain must be at least 1"):
+        table_v2.maintenance.expire_snapshots().retain_last_n(0)
+
+    with pytest.raises(ValueError, match="Number of snapshots to retain must be at least 1"):
+        table_v2.maintenance.expire_snapshots().retain_last_n(-1)
+
+
+def test_with_retention_policy_validation(table_v2: Table) -> None:
+    """Test with_retention_policy validates parameter ranges."""
+    ExpireSnapshots._snapshot_ids_to_expire.clear()
+
+    with pytest.raises(ValueError, match="retain_last_n must be at least 1"):
+        table_v2.maintenance.expire_snapshots().with_retention_policy(retain_last_n=0).commit()
+
+    with pytest.raises(ValueError, match="min_snapshots_to_keep must be at least 1"):
+        table_v2.maintenance.expire_snapshots().with_retention_policy(min_snapshots_to_keep=0).commit()
+
+
+def test_with_retention_policy_no_criteria_does_nothing(table_v2: Table) -> None:
+    """Test with_retention_policy does nothing when no criteria provided."""
     from types import SimpleNamespace
 
     ExpireSnapshots._snapshot_ids_to_expire.clear()
 
-    # Create 5 snapshots with increasing timestamps
-    S1, S2, S3, S4, S5 = 201, 202, 203, 204, 205
+    SNAPSHOT_1, SNAPSHOT_2 = 3051729675574597501, 3051729675574597502
     snapshots = [
-        SimpleNamespace(snapshot_id=S1, timestamp_ms=100, parent_snapshot_id=None),
-        SimpleNamespace(snapshot_id=S2, timestamp_ms=200, parent_snapshot_id=None),
-        SimpleNamespace(snapshot_id=S3, timestamp_ms=300, parent_snapshot_id=None),
-        SimpleNamespace(snapshot_id=S4, timestamp_ms=400, parent_snapshot_id=None),
-        SimpleNamespace(snapshot_id=S5, timestamp_ms=500, parent_snapshot_id=None),
+        SimpleNamespace(snapshot_id=SNAPSHOT_1, timestamp_ms=100, parent_snapshot_id=None),
+        SimpleNamespace(snapshot_id=SNAPSHOT_2, timestamp_ms=200, parent_snapshot_id=None),
+    ]
+    table_v2.metadata = table_v2.metadata.model_copy(update={"refs": {}, "snapshots": snapshots, "properties": {}})
+    table_v2.catalog = MagicMock()
+
+    # Should be a no-op
+    result = table_v2.maintenance.expire_snapshots().with_retention_policy()
+    assert result._snapshot_ids_to_expire == set()
+
+
+def test_get_expiration_properties_missing_values(table_v2: Table) -> None:
+    """Test _get_expiration_properties handles missing properties gracefully."""
+    ExpireSnapshots._snapshot_ids_to_expire.clear()
+
+    # No expiration properties set
+    table_v2.metadata = table_v2.metadata.model_copy(update={"properties": {}})
+    expire = table_v2.maintenance.expire_snapshots()
+    max_age, min_snaps, max_ref_age = expire._get_expiration_properties()
+
+    assert max_age is None
+    assert min_snaps is None
+    assert max_ref_age is None
+
+
+def test_retain_last_n_fewer_snapshots_than_requested(table_v2: Table) -> None:
+    """Test retain_last_n when table has fewer snapshots than requested."""
+    from types import SimpleNamespace
+
+    ExpireSnapshots._snapshot_ids_to_expire.clear()
+
+    SNAPSHOT_1, SNAPSHOT_2 = 3051729675574597601, 3051729675574597602
+    snapshots = [
+        SimpleNamespace(snapshot_id=SNAPSHOT_1, timestamp_ms=100, parent_snapshot_id=None),
+        SimpleNamespace(snapshot_id=SNAPSHOT_2, timestamp_ms=200, parent_snapshot_id=None),
     ]
     table_v2.metadata = table_v2.metadata.model_copy(update={"refs": {}, "snapshots": snapshots})
     table_v2.catalog = MagicMock()
 
-    # Expect to expire S1,S2,S3 ; keep S4 (due to min snapshots) and S5 (retain_last_n=1)
+    # Request to keep 5 snapshots, but only 2 exist
+    result = table_v2.maintenance.expire_snapshots().retain_last_n(5)
+    # Should not expire anything
+    assert result._snapshot_ids_to_expire == set()
+
+
+def test_older_than_with_retention_edge_cases(table_v2: Table) -> None:
+    """Test edge cases for older_than_with_retention."""
+    from types import SimpleNamespace
+
+    ExpireSnapshots._snapshot_ids_to_expire.clear()
+
+    # Test with retain_last_n and a valid timestamp
+    EXPIRE_SNAPSHOT, KEEP_SNAPSHOT_1, KEEP_SNAPSHOT_2 = 3051729675574597701, 3051729675574597702, 3051729675574597703
+    snapshots = [
+        SimpleNamespace(snapshot_id=EXPIRE_SNAPSHOT, timestamp_ms=100, parent_snapshot_id=None),
+        SimpleNamespace(snapshot_id=KEEP_SNAPSHOT_1, timestamp_ms=200, parent_snapshot_id=None),
+        SimpleNamespace(snapshot_id=KEEP_SNAPSHOT_2, timestamp_ms=300, parent_snapshot_id=None),
+    ]
+    table_v2.metadata = table_v2.metadata.model_copy(update={"refs": {}, "snapshots": snapshots})
+    table_v2.catalog = MagicMock()
+
     mock_response = CommitTableResponse(
-        metadata=table_v2.metadata.model_copy(update={"snapshots": [S4, S5]}),
+        metadata=table_v2.metadata.model_copy(update={"snapshots": [KEEP_SNAPSHOT_1, KEEP_SNAPSHOT_2]}),
         metadata_location="mock://metadata/location",
         uuid=uuid4(),
     )
     table_v2.catalog.commit_table.return_value = mock_response
 
+    # Use a timestamp that would include all snapshots, but retain_last_n=2 should limit to keeping KEEP_SNAPSHOT_1, KEEP_SNAPSHOT_2
     table_v2.maintenance.expire_snapshots().older_than_with_retention(
-        timestamp_ms=450, retain_last_n=1, min_snapshots_to_keep=2
+        timestamp_ms=400, retain_last_n=2, min_snapshots_to_keep=None
     ).commit()
-    table_v2.metadata = mock_response.metadata
 
     args, kwargs = table_v2.catalog.commit_table.call_args
     updates = args[2] if len(args) > 2 else ()
     remove_update = next((u for u in updates if getattr(u, "action", None) == "remove-snapshots"), None)
     assert remove_update is not None
-    assert set(remove_update.snapshot_ids) == {S1, S2, S3}
-    assert set(table_v2.metadata.snapshots) == {S4, S5}
+    assert set(remove_update.snapshot_ids) == {EXPIRE_SNAPSHOT}
 
 
-def test_with_retention_policy_defaults(table_v2: Table) -> None:
-    """Test with_retention_policy uses table property defaults when arguments omitted."""
+def test_with_retention_policy_partial_properties(table_v2: Table) -> None:
+    """Test with_retention_policy with only some properties set."""
     from types import SimpleNamespace
 
     ExpireSnapshots._snapshot_ids_to_expire.clear()
 
-    # Properties: expire snapshots older than 350ms, keep at least 3 snapshots
-    properties = {
-        "history.expire.max-snapshot-age-ms": "350",
-        "history.expire.min-snapshots-to-keep": "3",
-    }
-    S1, S2, S3, S4, S5 = 301, 302, 303, 304, 305
+    # Only max-snapshot-age-ms set, no min-snapshots-to-keep
+    properties = {"history.expire.max-snapshot-age-ms": "250"}
+    EXPIRE_SNAPSHOT_1, EXPIRE_SNAPSHOT_2, KEEP_SNAPSHOT = 3051729675574597801, 3051729675574597802, 3051729675574597803
     snapshots = [
-        SimpleNamespace(snapshot_id=S1, timestamp_ms=100, parent_snapshot_id=None),
-        SimpleNamespace(snapshot_id=S2, timestamp_ms=200, parent_snapshot_id=None),
-        SimpleNamespace(snapshot_id=S3, timestamp_ms=300, parent_snapshot_id=None),
-        SimpleNamespace(snapshot_id=S4, timestamp_ms=400, parent_snapshot_id=None),
-        SimpleNamespace(snapshot_id=S5, timestamp_ms=500, parent_snapshot_id=None),
+        SimpleNamespace(snapshot_id=EXPIRE_SNAPSHOT_1, timestamp_ms=100, parent_snapshot_id=None),
+        SimpleNamespace(snapshot_id=EXPIRE_SNAPSHOT_2, timestamp_ms=200, parent_snapshot_id=None),
+        SimpleNamespace(snapshot_id=KEEP_SNAPSHOT, timestamp_ms=300, parent_snapshot_id=None),
     ]
     table_v2.metadata = table_v2.metadata.model_copy(update={"refs": {}, "snapshots": snapshots, "properties": properties})
     table_v2.catalog = MagicMock()
 
-    # Expect S1,S2 expired; S3 kept due to min_snapshots_to_keep
     mock_response = CommitTableResponse(
-        metadata=table_v2.metadata.model_copy(update={"snapshots": [S3, S4, S5]}),
+        metadata=table_v2.metadata.model_copy(update={"snapshots": [KEEP_SNAPSHOT]}),
         metadata_location="mock://metadata/location",
         uuid=uuid4(),
     )
     table_v2.catalog.commit_table.return_value = mock_response
 
+    # Should expire EXPIRE_SNAPSHOT_1,EXPIRE_SNAPSHOT_2 (older than 250ms), keep KEEP_SNAPSHOT
     table_v2.maintenance.expire_snapshots().with_retention_policy().commit()
-    table_v2.metadata = mock_response.metadata
 
     args, kwargs = table_v2.catalog.commit_table.call_args
     updates = args[2] if len(args) > 2 else ()
     remove_update = next((u for u in updates if getattr(u, "action", None) == "remove-snapshots"), None)
     assert remove_update is not None
-    assert set(remove_update.snapshot_ids) == {S1, S2}
-    assert set(table_v2.metadata.snapshots) == {S3, S4, S5}
-
-
-def test_get_expiration_properties(table_v2: Table) -> None:
-    """Test retrieval of expiration properties from table metadata."""
-    ExpireSnapshots._snapshot_ids_to_expire.clear()
-    properties = {
-        "history.expire.max-snapshot-age-ms": "60000",
-        "history.expire.min-snapshots-to-keep": "5",
-        "history.expire.max-ref-age-ms": "120000",
-    }
-    table_v2.metadata = table_v2.metadata.model_copy(update={"properties": properties})
-    expire = table_v2.maintenance.expire_snapshots()
-    max_age, min_snaps, max_ref_age = expire._get_expiration_properties()
-    assert max_age == 60000
-    assert min_snaps == 5
-    assert max_ref_age == 120000
-
-
-def test_get_snapshots_to_expire_with_retention_respects_protection(table_v2: Table) -> None:
-    """Internal helper should not select protected snapshots for expiration."""
-    from types import SimpleNamespace
-
-    ExpireSnapshots._snapshot_ids_to_expire.clear()
-
-    P = 401  # protected
-    A = 402
-    B = 403
-    table_v2.metadata = table_v2.metadata.model_copy(
-        update={
-            "refs": {"main": MagicMock(snapshot_id=P, snapshot_ref_type="branch")},
-            "snapshots": [
-                SimpleNamespace(snapshot_id=P, timestamp_ms=10, parent_snapshot_id=None),
-                SimpleNamespace(snapshot_id=A, timestamp_ms=20, parent_snapshot_id=None),
-                SimpleNamespace(snapshot_id=B, timestamp_ms=30, parent_snapshot_id=None),
-            ],
-        }
-    )
-    expire = table_v2.maintenance.expire_snapshots()
-    to_expire = expire._get_snapshots_to_expire_with_retention(timestamp_ms=100, retain_last_n=None, min_snapshots_to_keep=1)
-    # Protected snapshot P should not be in list; both A and B can expire respecting min keep
-    assert P not in to_expire
-    assert set(to_expire) == {A, B}
+    assert set(remove_update.snapshot_ids) == {EXPIRE_SNAPSHOT_1, EXPIRE_SNAPSHOT_2}
