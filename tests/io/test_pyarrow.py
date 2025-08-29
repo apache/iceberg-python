@@ -2785,3 +2785,29 @@ def test_task_to_record_batches_nanos(format_version: TableVersion, tmpdir: str)
         )
 
     assert _expected_batch("ns" if format_version > 2 else "us").equals(actual_result)
+
+
+def test_parse_location_defaults() -> None:
+    """Test that parse_location uses defaults."""
+
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
+    # if no default scheme or netloc is provided, use file scheme and empty netloc
+    scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar")
+    assert scheme == "file"
+    assert netloc == ""
+    assert path == "/foo/bar"
+
+    scheme, netloc, path = PyArrowFileIO.parse_location(
+        "/foo/bar", properties={"DEFAULT_SCHEME": "scheme", "DEFAULT_NETLOC": "netloc:8000"}
+    )
+    assert scheme == "scheme"
+    assert netloc == "netloc:8000"
+    assert path == "/foo/bar"
+
+    scheme, netloc, path = PyArrowFileIO.parse_location(
+        "/foo/bar", properties={"DEFAULT_SCHEME": "hdfs", "DEFAULT_NETLOC": "netloc:8000"}
+    )
+    assert scheme == "hdfs"
+    assert netloc == "netloc:8000"
+    assert path == "/foo/bar"
