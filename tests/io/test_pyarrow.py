@@ -2734,6 +2734,7 @@ def test_retry_strategy_not_found() -> None:
     with pytest.warns(UserWarning, match="Could not initialize S3 retry strategy: pyiceberg.DoesNotExist"):
         io.new_input("s3://bucket/path/to/file")
 
+
 @pytest.mark.parametrize("format_version", [1, 2, 3])
 def test_task_to_record_batches_nanos(format_version: TableVersion, tmpdir: str) -> None:
     arrow_table = pa.table(
@@ -2784,6 +2785,7 @@ def test_task_to_record_batches_nanos(format_version: TableVersion, tmpdir: str)
         )
 
     assert _expected_batch("ns" if format_version > 2 else "us").equals(actual_result)
+
 
 def test_parse_location_defaults() -> None:
     """Test that parse_location uses defaults."""
