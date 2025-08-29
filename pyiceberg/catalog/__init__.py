@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import (
     TYPE_CHECKING,
+    Any,
     Callable,
     Dict,
     List,
@@ -792,6 +793,33 @@ class Catalog(ABC):
             current_metadata_files: set[str] = {log.metadata_file for log in metadata.metadata_log}
             removed_previous_metadata_files.difference_update(current_metadata_files)
             delete_files(io, removed_previous_metadata_files, METADATA)
+
+    def close(self) -> None:  # noqa: B027
+        """Close the catalog and release any resources.
+
+        This method should be called when the catalog is no longer needed to ensure
+        proper cleanup of resources like database connections, file handles, etc.
+
+        Default implementation does nothing. Override in subclasses that need cleanup.
+        """
+
+    def __enter__(self) -> "Catalog":
+        """Enter the context manager.
+
+        Returns:
+            Catalog: The catalog instance.
+        """
+        return self
+
+    def __exit__(self, exc_type: Optional[type], exc_val: Optional[BaseException], exc_tb: Optional[Any]) -> None:
+        """Exit the context manager and close the catalog.
+
+        Args:
+            exc_type: Exception type if an exception occurred.
+            exc_val: Exception value if an exception occurred.
+            exc_tb: Exception traceback if an exception occurred.
+        """
+        self.close()
 
     def __repr__(self) -> str:
         """Return the string representation of the Catalog class."""

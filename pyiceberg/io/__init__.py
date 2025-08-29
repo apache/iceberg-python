@@ -313,8 +313,10 @@ SCHEMA_TO_FILE_IO: Dict[str, List[str]] = {
     "file": [ARROW_FILE_IO, FSSPEC_FILE_IO],
     "hdfs": [ARROW_FILE_IO],
     "viewfs": [ARROW_FILE_IO],
-    "abfs": [FSSPEC_FILE_IO],
-    "abfss": [FSSPEC_FILE_IO],
+    "abfs": [FSSPEC_FILE_IO, ARROW_FILE_IO],
+    "abfss": [FSSPEC_FILE_IO, ARROW_FILE_IO],
+    "wasb": [FSSPEC_FILE_IO, ARROW_FILE_IO],
+    "wasbs": [FSSPEC_FILE_IO, ARROW_FILE_IO],
     "hf": [FSSPEC_FILE_IO],
 }
 

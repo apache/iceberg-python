@@ -733,3 +733,14 @@ class SqlCatalog(MetastoreCatalog):
 
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError
+
+    def close(self) -> None:
+        """Close the catalog and release database connections.
+
+        This method closes the SQLAlchemy engine and disposes of all connection pools.
+        This ensures that any cached connections are properly closed, which is especially
+        important for blobfuse scenarios where file handles need to be closed for
+        data to be flushed to persistent storage.
+        """
+        if hasattr(self, "engine"):
+            self.engine.dispose()

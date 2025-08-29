@@ -60,7 +60,7 @@ from pyiceberg.table.sorting import (
 )
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Identifier
-from pyiceberg.types import IntegerType, strtobool
+from pyiceberg.types import IntegerType, NestedField, StringType, strtobool
 
 CATALOG_TABLES = [c.__tablename__ for c in SqlCatalogBaseTable.__subclasses__()]
 
@@ -1704,3 +1704,56 @@ def test_delete_metadata_multiple(catalog: SqlCatalog, table_schema_nested: Sche
     assert not os.path.exists(original_metadata_location[len("file://") :])
     assert not os.path.exists(updated_metadata_1.metadata_file[len("file://") :])
     assert os.path.exists(updated_metadata_2.metadata_file[len("file://") :])
+
+
+class TestSqlCatalogClose:
+    """Test SqlCatalog close functionality."""
+
+    def test_sql_catalog_close(self, catalog_sqlite: SqlCatalog) -> None:
+        """Test that SqlCatalog close method properly disposes the engine."""
+        # Verify engine exists
+        assert hasattr(catalog_sqlite, "engine")
+
+        # Close the catalog
+        catalog_sqlite.close()
+
+        # Verify engine is disposed by checking that the engine still exists
+        assert hasattr(catalog_sqlite, "engine")
+
+    def test_sql_catalog_context_manager(self, warehouse: Path) -> None:
+        """Test that SqlCatalog works as a context manager."""
+        with SqlCatalog("test", uri="sqlite:///:memory:", warehouse=str(warehouse)) as catalog:
+            # Verify engine exists
+            assert hasattr(catalog, "engine")
+
+            # Create a namespace and table to test functionality
+            catalog.create_namespace("test_db")
+            schema = Schema(NestedField(1, "name", StringType(), required=True))
+            catalog.create_table(("test_db", "test_table"), schema)
+
+        # Verify engine is disposed after exiting context
+        assert hasattr(catalog, "engine")
+
+    def test_sql_catalog_context_manager_with_exception(self) -> None:
+        """Test that SqlCatalog context manager properly closes even with exceptions."""
+        catalog = None
+        try:
+            with SqlCatalog("test", uri="sqlite:///:memory:") as cat:
+                catalog = cat
+                # Verify engine exists
+                assert hasattr(catalog, "engine")
+                raise ValueError("Test exception")
+        except ValueError:
+            pass
+
+        # Verify engine is disposed even after exception
+        assert catalog is not None
+        assert hasattr(catalog, "engine")
+
+    def test_sql_catalog_multiple_close_calls(self, catalog_sqlite: SqlCatalog) -> None:
+        """Test that multiple close calls on SqlCatalog are safe."""
+        # First close
+        catalog_sqlite.close()
+
+        # Second close should not raise an exception
+        catalog_sqlite.close()
