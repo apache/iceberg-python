@@ -106,6 +106,7 @@ deptry = ">=0.14,<0.24"
 docutils = "!=0.21.post1"   # https://github.com/python-poetry/poetry/issues/9248#issuecomment-2026240520
 mypy-boto3-glue = ">=1.28.18"
 mypy-boto3-dynamodb = ">=1.28.18"
+trino = {extras = ["sqlalchemy"], version = "^0.335.0"}
 
 [tool.poetry.group.docs.dependencies]
 # for mkdocs
@@ -338,6 +339,7 @@ markers = [
   "s3: marks a test as requiring access to s3 compliant storage (use with --aws-access-key-id, --aws-secret-access-key, and --endpoint args)",
   "adls: marks a test as requiring access to adls compliant storage (use with --adls.account-name, --adls.account-key, and --adls.endpoint args)",
   "integration: marks integration tests against Apache Spark",
+  "integration_trino: marks integration tests against Trino",
   "gcs: marks a test as requiring access to gcs compliant storage (use with --gs.token, --gs.project, and --gs.endpoint)",
   "benchmark: collection of tests to validate read/write performance before and after a change"
 ]

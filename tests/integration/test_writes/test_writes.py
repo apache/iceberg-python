@@ -39,6 +39,8 @@ from pyarrow.fs import S3FileSystem
 from pydantic_core import ValidationError
 from pyspark.sql import SparkSession
 from pytest_mock.plugin import MockerFixture
+from sqlalchemy import Connection
+from sqlalchemy.sql.expression import text
 
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.hive import HiveCatalog
@@ -51,18 +53,8 @@ from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
 from pyiceberg.table.refs import MAIN_BRANCH
 from pyiceberg.table.sorting import SortDirection, SortField, SortOrder
-from pyiceberg.transforms import DayTransform, HourTransform, IdentityTransform, Transform
-from pyiceberg.types import (
-    DateType,
-    DecimalType,
-    DoubleType,
-    IntegerType,
-    ListType,
-    LongType,
-    NestedField,
-    StringType,
-    UUIDType,
-)
+from pyiceberg.transforms import BucketTransform, DayTransform, HourTransform, IdentityTransform, Transform
+from pyiceberg.types import DateType, DecimalType, DoubleType, IntegerType, ListType, LongType, NestedField, StringType, UUIDType
 from utils import _create_table
 
 
@@ -2014,6 +2006,7 @@ def test_read_write_decimals(session_catalog: Catalog) -> None:
     assert tbl.scan().to_arrow() == arrow_table
 
 
+@pytest.mark.skip("UUID BucketTransform is not supported in Spark Iceberg 1.9.2 yet")
 @pytest.mark.integration
 @pytest.mark.parametrize(
     "transform",
@@ -2064,6 +2057,64 @@ def test_uuid_partitioning(session_catalog: Catalog, spark: SparkSession, transf
 
     lhs = [r[0] for r in spark.table(identifier).collect()]
     rhs = [str(u.as_py()) for u in tbl.scan().to_arrow()["uuid"].combine_chunks()]
+    assert lhs == rhs
+
+
+@pytest.mark.integration_trino
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "transform",
+    [IdentityTransform(), BucketTransform(32)],
+)
+@pytest.mark.parametrize(
+    "catalog, trino_conn",
+    [
+        (pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("trino_hive_conn")),
+        (pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("trino_rest_conn")),
+    ],
+)
+def test_uuid_partitioning_with_trino(catalog: Catalog, trino_conn: Connection, transform: Transform) -> None:  # type: ignore
+    identifier = f"default.test_uuid_partitioning_{str(transform).replace('[32]', '')}"
+
+    schema = Schema(NestedField(field_id=1, name="uuid", field_type=UUIDType(), required=True))
+
+    try:
+        catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=transform, name=f"uuid_{str(transform).replace('[32]', '')}")
+    )
+
+    import pyarrow as pa
+
+    arr_table = pa.Table.from_pydict(
+        {
+            "uuid": [
+                uuid.UUID("00000000-0000-0000-0000-000000000000").bytes,
+                uuid.UUID("11111111-1111-1111-1111-111111111111").bytes,
+            ],
+        },
+        schema=pa.schema(
+            [
+                # Uuid not yet supported, so we have to stick with `binary(16)`
+                # https://github.com/apache/arrow/issues/46468
+                pa.field("uuid", pa.binary(16), nullable=False),
+            ]
+        ),
+    )
+
+    tbl = catalog.create_table(
+        identifier=identifier,
+        schema=schema,
+        partition_spec=partition_spec,
+    )
+
+    tbl.append(arr_table)
+    rows = trino_conn.execute(text(f"SELECT * FROM {identifier}")).fetchall()
+    lhs = sorted([r[0] for r in rows])
+    rhs = sorted([u.as_py() for u in tbl.scan().to_arrow()["uuid"].combine_chunks()])
     assert lhs == rhs
 
 
