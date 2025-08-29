@@ -1421,6 +1421,27 @@ table.maintenance.expire_snapshots().with_retention_policy(
 ).commit()
 ```
 
+##### Using a context manager
+
+You can use a context manager to automatically commit on successful exit (and skip commit if an exception occurs):
+
+```python
+# Keep the 3 newest snapshots (plus protected refs) and enforce a floor of 8 total
+with table.maintenance.expire_snapshots() as expire:
+    expire.with_retention_policy(retain_last_n=3, min_snapshots_to_keep=8)
+
+# Only keep the last 5 snapshots
+with table.maintenance.expire_snapshots() as expire:
+    expire.retain_last_n(5)
+
+# Combine explicit cutoff with other guards
+from datetime import datetime, timedelta
+cutoff = int((datetime.utcnow() - timedelta(days=14)).timestamp() * 1000)
+
+with table.maintenance.expire_snapshots() as expire:
+    expire.older_than_with_retention(timestamp_ms=cutoff, retain_last_n=2, min_snapshots_to_keep=6)
+```
+
 Parameter interaction rules:
 
 - `retain_last_n` snapshots are always kept (plus protected refs)
