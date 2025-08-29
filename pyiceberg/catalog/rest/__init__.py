@@ -876,3 +876,10 @@ class RestCatalog(Catalog):
             response.raise_for_status()
         except HTTPError as exc:
             _handle_non_200_response(exc, {404: NoSuchViewError})
+
+    def close(self) -> None:
+        """Close the catalog and release Session connection adapters.
+
+        This method closes mounted HttpAdapters' pooled connections and any active Proxy pooled connections.
+        """
+        self._session.close()
