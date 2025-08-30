@@ -46,6 +46,7 @@ include = [
   { path = "dev", format = "sdist" },
   { path = "pyiceberg/**/*.so", format = "wheel" },
   { path = "pyiceberg/**/*.pyd", format = "wheel" },
+  { path = "poetry.lock", format = "sdist" },
 ]
 
 [tool.poetry.dependencies]
