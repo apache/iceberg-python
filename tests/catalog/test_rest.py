@@ -954,6 +954,7 @@ def test_load_table_404(rest_mock: Mocker) -> None:
         RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).load_table(("fokko", "does_not_exists"))
     assert "Table does not exist" in str(e.value)
 
+
 def test_load_table_404_non_existent_namespace(rest_mock: Mocker) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces/fokko/tables/does_not_exists",
@@ -971,6 +972,7 @@ def test_load_table_404_non_existent_namespace(rest_mock: Mocker) -> None:
     with pytest.raises(NoSuchNamespaceError) as e:
         RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).load_table(("fokko", "does_not_exists"))
     assert "Table does not exist" in str(e.value)
+
 
 def test_table_exists_200(rest_mock: Mocker) -> None:
     rest_mock.head(
