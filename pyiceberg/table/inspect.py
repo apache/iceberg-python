@@ -34,6 +34,12 @@ if TYPE_CHECKING:
 
 
 class InspectTable:
+    """A utility class for inspecting and analysing Iceberge table metadata.
+
+    Attributes:
+        tbl(table): The table object to be inspected.
+    """
+
     tbl: Table
 
     def __init__(self, tbl: Table) -> None:
@@ -45,6 +51,20 @@ class InspectTable:
             raise ModuleNotFoundError("For metadata operations PyArrow needs to be installed") from e
 
     def _get_snapshot(self, snapshot_id: Optional[int] = None) -> Snapshot:
+        """Return a snapshot from table metadata.
+
+        If snapshot_id is provided, returns the snapshot of that id.
+        If no snapshot_id is provided, returns current snapshot.
+
+        Args:
+            snapshot_id (Optional[int]): The ID of the snapshot to retrieve. If no ID is provided, return current snapshot.
+
+        Returns:
+            The snapshot metadata of requested ID.
+
+        Raises:
+            ValueError: If no snapshot with provided ID exist, or if the table has no current snapshot.
+        """
         if snapshot_id is not None:
             if snapshot := self.tbl.metadata.snapshot_by_id(snapshot_id):
                 return snapshot
@@ -57,6 +77,18 @@ class InspectTable:
             raise ValueError("Cannot get a snapshot as the table does not have any.")
 
     def snapshots(self) -> "pa.Table":
+        """Generate and return a table containing metadata of all snapshots.
+
+        Returns:
+            pa.Table: A PyArrow table where each row corresponds to a snapshots. It includes:
+                    - committed_at (timestamp[ms]): The time when the snapshot was committed.
+                    - snapshot_id (int64): Id of snapshot.
+                    - parent_id (int64, nullable): ID of parent snapshot, if any.
+                    - operation (string, nullable): The operation (eg., "append", "overwrite").
+                    - manifest_list (string): Path to the manifest list file.
+                    - summary (map<string, string>, nullable): Additional metadata properties.
+
+        """
         import pyarrow as pa
 
         snapshots_schema = pa.schema(
@@ -95,6 +127,45 @@ class InspectTable:
         )
 
     def entries(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+        """Generate and return a table containing manifest entries for a given snapshot.
+
+        Args:
+            snapshot_id (Optional[int]): ID of the snapshot to read entries from. If None, the current snapshot is used.
+
+        Returns:
+            pa.Table: A PyArraow table where each row represent a manifest entry with fields:
+                    - status (int8): Entry status (e.g., added, existing, deleted).
+                    - snapshot_id (int65): Snapshot ID associated with the entry.
+                    - sequence_number (int64): Sequence number of the entry.
+                    - file_sequence_number (int64): File-level sequence number.
+                    - data_file (struct):
+                        - content (int8): Data file content type (e.g., DATA, POSITION_DELETES).
+                        - file_path (string): Data file path.
+                        - file_format (string): File format (e.g., parquet, avro, orc).
+                        - partition (struct): Partition values for the file.
+                        - record_count (int64): Number of record in the file.
+                        - file_size_in_bytes (int64): File size in bytes.
+                        - column_sizes (map<int32, int64>, nullable): Column sizes by field ID.
+                        - value_counts (map<int32, int64>, nullable): Value counts by field ID.
+                        - null_value_counts (map<int32, int64>, nullable): Null value counts.
+                        - nan_value_counts (map<int32, int64>, nullable): NaN value counts.
+                        - lower_bounds (map<int32, binary>, nullable): Encoded lower bounds.
+                        - upper_bounds (map<int32, binary>, nullable): Encoded upper bounds.
+                        - key_metadata (binary, nullable): File encryption key metadata.
+                        - split_offsets (list<int64>, nullable): File split offsets.
+                        - equality_ids (list<int32>, nullable): Equality IDs for the file.
+                        - sort_order_id (int32, nullable):  Sort order ID for the file.
+                        - spec_id (int32): Partition spec ID for the file
+                    - readable_metrics (struct, nullable): Decode to human-readable metrics
+
+                      for each field, including:
+                        - column_size (int64, nullable)
+                        - value_count (int64, nullable)
+                        - null_value_count (int64, nullable)
+                        - nan_value_count (int64, nullable)
+                        - lower_bound (type-dependent, nullable)
+                        - upper_bound (type-dependent, nullable)
+        """
         import pyarrow as pa
 
         from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -226,6 +297,17 @@ class InspectTable:
         )
 
     def refs(self) -> "pa.Table":
+        """Generate a PyArrow table containing metadata references from a table.
+
+        Returns:
+            pa.Table: A PyArraow table with the following schema:
+                - name (string): The name of the reference.
+                - type (dictionary<int32, string>): The type of reference.
+                - snapshot_id (int64): The snapshot ID that the reference points to.
+                - max_reference_age_in_ms (int64, nullable): Maximum allowed age for the reference in milliseconds.
+                - min_snapshots_to_keep (int32, nullable): Minimum number of snapshots to keep.
+                - max_snapshot_age_in_ms (int64, nullable): Maximum age of snapshots in milliseconds.
+        """
         import pyarrow as pa
 
         ref_schema = pa.schema(
@@ -256,6 +338,24 @@ class InspectTable:
         return pa.Table.from_pylist(ref_results, schema=ref_schema)
 
     def partitions(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+        """Generate a PyArrow table containing partition information for a given snapshot.
+
+        Args:
+            snapshot_id (Optional[int]): The ID of the snapshot to retrieve partition information for.
+                                        If not provided, the current snapshot will be used.
+
+        Returns:
+            pa.Table: A PyArrow table with aggregated partition statistics. The schema is:
+                - record_count (int64): Total number of records.
+                - file_count (int32): Total number of data files.
+                - total_data_file_size_in_bytes(int64): Sum of data file sizes.
+                - position_delete-record_count (int 64): Total number of position delete records.
+                - position_delete_file_count (int32): Number of position delete files.
+                - equality_delete_record_count (int64): Total number of equality delete records.
+                - equality_delete_file_count (int32): Number of equality delete files.
+                - last_updated_at (timestamp[ms, nullable]): Timestamp of the most recent update in the partition.
+                - last_updated_snapshot_id (int 64, nullable): Snapshot ID of the most recent update.
+        """
         import pyarrow as pa
 
         from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -319,6 +419,28 @@ class InspectTable:
         )
 
     def _process_manifest(self, manifest: ManifestFile) -> Dict[Tuple[str, Any], Any]:
+        """Process a manifest file and extract partition-level statistics.
+
+        Args:
+            manifest: The manifest file containing metadata about data files and delete  files.
+
+        Returns:
+            Dict[Tuple[str, Any], Any]: A dictionary mapping an partition key to a row of aggregated statistics with the following fields:
+                - partition (dict): Partition values for this row.
+                - spec_id (int): Partition spec identifier.
+                - record_count (int): Total number of records in data files.
+                - file_count (int): Number of data files.
+                - total_data_file_size_in_bytes (int): Sum of data file sizes.
+                - position_delete_record_count (int): Number of position delete records.
+                - position_delete_file_count (int): Number of position delete files.
+                - equality_delete_record_count (int): Number of equality delete records.
+                - equality_delete_file_count (int): Number of equality delete files.
+                - last_updated_at (int or None): Timestamp (ms) of the most recent snapshot touching this partition.
+                - last_updated_snapshot_id (int or None): Snapshot ID of the most recent snapshot touching this partition.
+
+        Raises:
+            ValueError: If the entry has a `data_file.content` value that is not recognized
+        """
         partitions_map: Dict[Tuple[str, Any], Any] = {}
         for entry in manifest.fetch_manifest_entry(io=self.tbl.io):
             partition = entry.data_file.partition
@@ -370,6 +492,29 @@ class InspectTable:
         return partitions_map
 
     def _get_manifests_schema(self) -> "pa.Schema":
+        """Generate the PyArrow schema used to represent manifest metadata.
+
+        Returns:
+            pa.Schema: A PyArrow schema with the following fields:
+                - content (int8): The type of manifest content.
+                - path (string): The file path of the manifest.
+                - length (int64): Length of the manifest file in bytes.
+                - partition_spec_id (int32): Identifier of the partition spec.
+                - added_snapshot_id (int64): Snapshot ID when the manifest was added.
+                - added_data_files_count (int32): Number of new data files.
+                - existing_data_files_count (int32): Number of existing data files.
+                - deleted_data_files_count (int32): Number of deleted data files.
+                - added_delete_files_count (int32): Number of new delete files.
+                - existing_delete_files_count (int32): Number of existing delete files.
+                - deleted_delete_files_count (int32): Number of deleted delete files.
+                - partition_summaries (list<struct>): Partition summary information, where each struct contains:
+
+                    - contains_null (bool): Whether the partition contains null values.
+                    - contains_nan (bool): Whether the partition contains NaN values.
+                    - lower_bound (string, nullable): Lower bound of the partition values.
+                    - upper_bound (string, nullable): Upper bound of the partition values.
+
+        """
         import pyarrow as pa
 
         partition_summary_schema = pa.struct(
@@ -400,6 +545,15 @@ class InspectTable:
         return manifest_schema
 
     def _get_all_manifests_schema(self) -> "pa.Schema":
+        """Extend the manifest schema to include additional fields.
+
+        This method adds fields like reference snapshot IDs to the standard manifest schema,
+        enabling support for tables with historical and branching capabilities.
+
+        Returns:
+            pa.Schema: The extended manifest schema, including additional fields for:
+                - reference_snapshot_id: ID of the snapshot referencing the manifest.
+        """
         import pyarrow as pa
 
         all_manifests_schema = self._get_manifests_schema()
@@ -407,6 +561,35 @@ class InspectTable:
         return all_manifests_schema
 
     def _generate_manifests_table(self, snapshot: Optional[Snapshot], is_all_manifests_table: bool = False) -> "pa.Table":
+        """Generate a PyArrow table of manifest metadata for a snapshot.
+
+        Args:
+            snapshot (Optional[Snapshot]): The snapshot whose manifests should be processed. If None, an empty table is returned.
+            is_all_manifest_table (bool): If True, generates a schema suitable for the "all manifests" table and includes an additional field reference_snapshot_id.
+                                        If False, generates a schema for a single snapshot’s manifests.
+
+        Returns:
+            pa.Table: A PyArrow Table with one row per manifest, following one of these schemas:
+                - content (int8): Manifest content type (data or deletes).
+                - path (string): Manifest file path.
+                - length (int64): Manifest file length in bytes.
+                - partition_spec_id (int32): Partition spec identifier.
+                - added_snapshot_id (int64): Snapshot ID when the manifest was added.
+                - added_data_files_count (int32): Number of data files added.
+                - existing_data_files_count (int32): Number of existing data files.
+                - deleted_data_files_count (int32): Number of deleted data files.
+                - added_delete_files_count (int32): Number of delete files added.
+                - existing_delete_files_count (int32): Number of existing delete files.
+                - deleted_delete_files_count (int32): Number of deleted delete files.
+                - partition_summaries (list<struct>): Summary info for each partition,
+                including:
+                    - contains_null (bool): Whether null values exist.
+                    - contains_nan (bool, nullable): Whether NaN values exist.
+                    - lower_bound (string, nullable): Lower bound of partition values.
+                    - upper_bound (string, nullable): Upper bound of partition values.
+
+
+        """
         import pyarrow as pa
 
         def _partition_summaries_to_rows(
@@ -476,9 +659,27 @@ class InspectTable:
         )
 
     def manifests(self) -> "pa.Table":
+        """Retrieve the table of manifests for the current snapshot.
+
+        This method extracts metadata about manifests, including file paths, partition summaries,
+        and snapshot-level metrics for the current state of the Iceberg table.
+
+        Returns:
+            - pa.Table: A PyArrow table containing details about manifests.
+        """
         return self._generate_manifests_table(self.tbl.current_snapshot())
 
     def metadata_log_entries(self) -> "pa.Table":
+        """Generate a PyArrow table containing the table's metadata log entries.
+
+        Retturns :
+            pa.Table: A PyArrow table with following schema:
+                - timestamp (timestamp[ms]): The time when the metadata file was created/recorded.
+                - file (string): Path to the metadata file.
+                - latest_snapshot_id (int64, nullable): ID of the latest snapshot at the time of the metadata entry.
+                - latest_schema_id (int32, nullable): ID of the latest schema at the time of the metadata entry.
+                - latest_sequence_number (int64, nullable):  Latest sequence number associated with the metadata entry.
+        """
         import pyarrow as pa
 
         from pyiceberg.table.snapshots import MetadataLogEntry
@@ -494,6 +695,19 @@ class InspectTable:
         )
 
         def metadata_log_entry_to_row(metadata_entry: MetadataLogEntry) -> Dict[str, Any]:
+            """Convert a MetadataLogEntry into a dictionary row.
+
+            Args:
+                metadata_entry (MetadataLogEntry): A metadata log entry containing a metadata file reference and timestamp.
+
+            Returns:
+                Dict[str, Any]: Any dictionary with following keys:
+                    - timestamp (int): The entry timestamp in milliseconds.
+                    - file (str): Path to the metadata file.
+                    - latest_snapshot_it (int or None): Snapshot ID active at this timestamp.
+                    - latest_schema_id (int of None): Schema ID active at this timestamp.
+                    - latest_sequence_number (int or None): Sequence number active at this timestamp.
+            """
             latest_snapshot = self.tbl.snapshot_as_of_timestamp(metadata_entry.timestamp_ms)
             return {
                 "timestamp": metadata_entry.timestamp_ms,
@@ -515,6 +729,16 @@ class InspectTable:
         )
 
     def history(self) -> "pa.Table":
+        """Generate a PyArrow table of the table's snapshot hisotry.
+
+        Returns:
+            pa.Table: A PyArrow table with the following schema:
+                - made_current_at (timestamp[ms]): The time when the snapshot was made the current snapshot.
+                - snapshot_id (int64): The ID of the snapshot.
+                - parent_id (int64, nullable): The parent snapshot ID, if any.
+                - is_current_ancestor (bool): Whether the snapshot is an ancestor of the current snapshot.
+
+        """
         import pyarrow as pa
 
         history_schema = pa.schema(
@@ -548,6 +772,28 @@ class InspectTable:
     def _get_files_from_manifest(
         self, manifest_list: ManifestFile, data_file_filter: Optional[Set[DataFileContent]] = None
     ) -> "pa.Table":
+        """Extract file-level metadata from a manifest into a PyArrow table.
+
+        Args:
+            manifest_list (ManifestFile): The manifest file that contains references to data files.
+            data_file_filter (Optional[Set[DataFileContent]]): If provided, only includes files whose content matches one of the specified types.
+
+        Returns:
+            pa.Table:  A PyArrow Table where each row corresponds to one data file referenced in the manifest, with the following fields:
+                - content (int): File content type (e.g., DATA, DELETES).
+                - file_path (string): Path to the data file.
+                - file_format (string): File format (e.g., PARQUET, AVRO).
+                - spec_id (int): Partition spec ID used for the file.
+                - partition (struct): Partition values for the file.
+                - record_count (int): Number of records in the file.
+                - file_size_in_bytes (int): File size in bytes.
+                - column_sizes, value_counts, null_value_counts, nan_value_counts, lower_bounds, upper_bounds (dicts, nullable): Column-level metrics, if present.
+                - key_metadata (bytes, nullable): File encryption key metadata.
+                - split_offsets (list[int]): Split offsets for scan planning.
+                - equality_ids (list[int], nullable): Equality IDs if applicable.
+                - sort_order_id (int, nullable): Sort order ID.
+                - readable_metrics (dict): Metrics keyed by column name with decoded lower/upper bounds.
+        """
         import pyarrow as pa
 
         files: list[dict[str, Any]] = []
@@ -612,6 +858,37 @@ class InspectTable:
         )
 
     def _get_files_schema(self) -> "pa.Schema":
+        """Build the PyArrow schema for the files metadata table.
+
+        Returns:
+            pa.Schema: A PyArrow schema with the following fields:
+                - content (int8): File content type (e.g., DATA, DELETES).
+                - file_path (string): Path to the data file.
+                - file_format (dictionary[int32 → string]): File format.
+                - spec_id (int32): Partition spec ID.
+                - partition (struct): Partition values per spec.
+                - record_count (int64): Number of records in the file.
+                - file_size_in_bytes (int64): File size in bytes.
+                - column_sizes (map<int32, int64>, nullable): Column size metrics.
+                - value_counts (map<int32, int64>, nullable): Value count metrics.
+                - null_value_counts (map<int32, int64>, nullable): Null count metrics.
+                - nan_value_counts (map<int32, int64>, nullable): NaN count metrics.
+                - lower_bounds (map<int32, binary>, nullable): Encoded lower bounds.
+                - upper_bounds (map<int32, binary>, nullable): Encoded upper bounds.
+                - key_metadata (binary, nullable): Encryption key metadata.
+                - split_offsets (list<int64>, nullable): Offsets for file splits.
+                - equality_ids (list<int32>, nullable): Equality IDs.
+                - sort_order_id (int32, nullable): Sort order ID.
+                - readable_metrics (struct, nullable): Decoded metrics by column name.
+                For each column, the struct contains:
+                    - column_size (int64, nullable)
+                    - value_count (int64, nullable)
+                    - null_value_count (int64, nullable)
+                    - nan_value_count (int64, nullable)
+                    - lower_bound (field-typed, nullable)
+                    - upper_bound (field-typed, nullable)
+
+        """
         import pyarrow as pa
 
         from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -665,6 +942,23 @@ class InspectTable:
         return files_schema
 
     def _files(self, snapshot_id: Optional[int] = None, data_file_filter: Optional[Set[DataFileContent]] = None) -> "pa.Table":
+        """Retrieve a table of files from a specific snapshot, optionally filtered by content type.
+
+        This method fetches file-level metadata, including details about data and delete files,
+        for a given snapshot.
+
+        Args:
+            snapshot_id (Optional[int]): The snapshot ID to retrieve files for.
+            data_file_filter (Optional[Set[DataFileContent]]): A set of file content types
+                (e.g., data or delete files) to filter the results.
+
+        Returns:
+          pa.Table: A PyArrow table containing file metadata, including fields like:
+             - content: Type of file content (data or deletes).
+             - file_path: Path to the file.
+             - record_count: Number of records in the file.
+             - file_size_in_bytes: Size of the file in bytes.
+        """
         import pyarrow as pa
 
         if not snapshot_id and not self.tbl.metadata.current_snapshot():
@@ -682,15 +976,59 @@ class InspectTable:
         return pa.concat_tables(results)
 
     def files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+        """Retrieve a table of files for the current snapshot or a specific snapshot ID.
+
+        This method fetches file-level metadata for data and delete files in the table.
+
+        Args:
+            snapshot_id (Optional[int]): The snapshot ID to retrieve files for. If None,
+                the current snapshot is used.
+
+        Returns:
+            pa.Table: A PyArrow table containing file metadata.
+        """
         return self._files(snapshot_id)
 
     def data_files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+        """Retrieve a table of data files for the current snapshot or a specific snapshot ID.
+
+        This method fetches metadata for files containing table data (excluding delete files).
+
+        Args:
+            snapshot_id (Optional[int]): The snapshot ID to filter data files for. If None,
+                the current snapshot is used.
+
+        Returns:
+            pa.Table: A PyArrow table containing metadata for data files.
+        """
         return self._files(snapshot_id, {DataFileContent.DATA})
 
     def delete_files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+        """Retrieve a table of delete files for the current snapshot or a specific snapshot ID.
+
+        This method fetches metadata for files containing delete markers.
+
+        Args:
+            snapshot_id (Optional[int]): The snapshot ID to filter delete files for. If None,
+               the current snapshot is used.
+
+        Returns:
+           pa.Table: A PyArrow table containing metadata for delete files.
+        """
         return self._files(snapshot_id, {DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES})
 
     def all_manifests(self) -> "pa.Table":
+        """Retrieve a table of all manifests from all snapshots in the table.
+
+        This method aggregates metadata for all manifests, including historical ones,
+        providing a comprehensive view of the table's state
+
+        Returns:
+            pa.Table: A PyArrow table containing metadata for all manifests, including fields like:
+                - content: Content type of the manifest.
+                - path: Path to the manifest file.
+                - added_snapshot_id: Snapshot ID when the manifest was added.
+        """
         import pyarrow as pa
 
         snapshots = self.tbl.snapshots()
@@ -704,6 +1042,16 @@ class InspectTable:
         return pa.concat_tables(manifests_by_snapshots)
 
     def _all_files(self, data_file_filter: Optional[Set[DataFileContent]] = None) -> "pa.Table":
+        """Aggregate all files from all snapshots into a single PyArrow table.
+
+        Args:
+            data_file_filter (Optional[Set[DataFileContent]]): If provided, only include files whose content matches one of the specified types.
+
+        Returns:
+             pa.Table: A PyArrow Table containing all files across all snapshots, with schema
+            defined by `_get_files_schema()`. If no snapshots exist, returns an
+            empty table with the correct schema.
+        """
         import pyarrow as pa
 
         snapshots = self.tbl.snapshots()
