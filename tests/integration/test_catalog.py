@@ -34,12 +34,12 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
 )
 from pyiceberg.io import WAREHOUSE
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
+from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import INITIAL_SCHEMA_ID, Schema
 from pyiceberg.table.metadata import INITIAL_SPEC_ID
 from pyiceberg.table.sorting import INITIAL_SORT_ORDER_ID, SortField, SortOrder
-from pyiceberg.transforms import IdentityTransform
-from pyiceberg.types import IntegerType, LongType, UUIDType
+from pyiceberg.transforms import DayTransform, IdentityTransform
+from pyiceberg.types import IntegerType, LongType, NestedField, TimestampType, UUIDType
 from tests.conftest import clean_up
 
 
@@ -233,17 +233,20 @@ def test_update_table_transaction(test_catalog: Catalog, test_schema: Schema, ta
     table = test_catalog.create_table(identifier, test_schema)
     assert test_catalog.table_exists(identifier)
 
-    expected_schema: Schema = Schema()
-    expected_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC
+    expected_schema = Schema(
+        NestedField(1, "VendorID", IntegerType(), False),
+        NestedField(2, "tpep_pickup_datetime", TimestampType(), False),
+        NestedField(3, "new_col", IntegerType(), False),
+    )
+
+    expected_spec = PartitionSpec(PartitionField(3, 1000, IdentityTransform(), "new_col"))
 
     with table.transaction() as transaction:
         with transaction.update_schema() as update_schema:
             update_schema.add_column("new_col", IntegerType())
-            expected_schema = update_schema._apply()
 
         with transaction.update_spec() as update_spec:
             update_spec.add_field("new_col", IdentityTransform())
-            expected_spec = update_spec._apply()
 
     table = test_catalog.load_table(identifier)
     assert table.schema().as_struct() == expected_schema.as_struct()
@@ -266,8 +269,9 @@ def test_update_schema_conflict(test_catalog: Catalog, test_schema: Schema, tabl
 
     # Update schema concurrently so that the original update fails
     concurrent_update = test_catalog.load_table(identifier).update_schema().delete_column("VendorID")
-    expected_schema = concurrent_update._apply()
     concurrent_update.commit()
+
+    expected_schema = Schema(NestedField(2, "tpep_pickup_datetime", TimestampType(), False))
 
     with pytest.raises(CommitFailedException):
         original_update.commit()
@@ -322,8 +326,18 @@ def test_create_table_transaction_multiple_schemas(
 
     # TODO: test replace sort order when available
 
-    expected_schema = table_transaction.update_schema()._apply()
-    expected_spec = table_transaction.update_spec()._apply()
+    expected_schema = Schema(
+        NestedField(1, "VendorID", IntegerType(), False),
+        NestedField(2, "tpep_pickup_datetime", TimestampType(), False),
+        NestedField(3, "new_col", IntegerType(), False),
+        NestedField(4, "new_col_1", UUIDType(), False),
+    )
+
+    expected_spec = PartitionSpec(
+        PartitionField(1, 1000, IdentityTransform(), "VendorID"),
+        PartitionField(2, 1001, DayTransform(), "tpep_pickup_day"),
+        PartitionField(3, 1002, IdentityTransform(), "new_col"),
+    )
 
     table_transaction.commit_transaction()
     assert test_catalog.table_exists(identifier)
