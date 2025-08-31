@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
 
 class InspectTable:
-    """A utility class for inspecting and analysing Iceberge table metadata.
+    """A utility class for inspecting and analyzing Iceberg table metadata.
 
     Attributes:
         tbl(table): The table object to be inspected.
@@ -133,7 +133,7 @@ class InspectTable:
             snapshot_id (Optional[int]): ID of the snapshot to read entries from. If None, the current snapshot is used.
 
         Returns:
-            pa.Table: A PyArraow table where each row represent a manifest entry with fields:
+            pa.Table: A PyArrow table where each row represent a manifest entry with fields:
                     - status (int8): Entry status (e.g., added, existing, deleted).
                     - snapshot_id (int65): Snapshot ID associated with the entry.
                     - sequence_number (int64): Sequence number of the entry.
@@ -300,7 +300,7 @@ class InspectTable:
         """Generate a PyArrow table containing metadata references from a table.
 
         Returns:
-            pa.Table: A PyArraow table with the following schema:
+            pa.Table: A PyArrow table with the following schema:
                 - name (string): The name of the reference.
                 - type (dictionary<int32, string>): The type of reference.
                 - snapshot_id (int64): The snapshot ID that the reference points to.
@@ -422,7 +422,7 @@ class InspectTable:
         """Process a manifest file and extract partition-level statistics.
 
         Args:
-            manifest: The manifest file containing metadata about data files and delete  files.
+            manifest: The manifest file containing metadata about data files and delete files.
 
         Returns:
             Dict[Tuple[str, Any], Any]: A dictionary mapping an partition key to a row of aggregated statistics with the following fields:
