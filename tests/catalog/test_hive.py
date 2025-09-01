@@ -40,12 +40,8 @@ from hive_metastore.v3.ttypes import (
     SkewedInfo,
     StorageDescriptor,
 )
-from hive_metastore.v3.ttypes import (
-    Database as HiveDatabase,
-)
-from hive_metastore.v3.ttypes import (
-    Table as HiveTable,
-)
+from hive_metastore.v3.ttypes import Database as HiveDatabase
+from hive_metastore.v3.ttypes import Table as HiveTable
 
 from pyiceberg.catalog import PropertiesUpdateSummary
 from pyiceberg.catalog.hive import (
