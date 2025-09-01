@@ -55,12 +55,8 @@ from hive_metastore.v3.ttypes import (
     StorageDescriptor,
     UnlockRequest,
 )
-from hive_metastore.v3.ttypes import (
-    Database as HiveDatabase,
-)
-from hive_metastore.v3.ttypes import (
-    Table as HiveTable,
-)
+from hive_metastore.v3.ttypes import Database as HiveDatabase
+from hive_metastore.v3.ttypes import Table as HiveTable
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 from thrift.protocol import TBinaryProtocol
 from thrift.transport import TSocket, TTransport

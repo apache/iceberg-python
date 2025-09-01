@@ -260,7 +260,7 @@ def test_no_uri_supplied() -> None:
 
 
 def test_check_number_of_namespaces(table_schema_simple: Schema) -> None:
-    _HiveClient._get_hive_version = MagicMock(return_value=HiveVersion(4, 0, 0))  # type: ignore
+    _HiveClient._get_hive_version = MagicMock(return_value=HiveVersion(4, 0, 0))  # type: ignore[method-assign]
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
     with pytest.raises(ValueError):
@@ -287,7 +287,7 @@ def test_create_table(
 
     catalog._client = MagicMock()
     catalog._client.__enter__().create_table.return_value = None
-    catalog._get_hive_table = MagicMock(return_value=hive_table)  # type: ignore
+    catalog._get_hive_table = MagicMock(return_value=hive_table)  # type: ignore[method-assign]
     catalog._client.__enter__().get_database.return_value = hive_database
     catalog.create_table(("default", "table"), schema=table_schema_with_all_types, properties={"owner": "javaberg"})
 
@@ -466,7 +466,7 @@ def test_create_table_with_given_location_removes_trailing_slash(
 
     catalog._client = MagicMock()
     catalog._client.__enter__().create_table.return_value = None
-    catalog._get_hive_table = MagicMock(return_value=hive_table)  # type: ignore
+    catalog._get_hive_table = MagicMock(return_value=hive_table)  # type: ignore[method-assign]
     catalog._client.__enter__().get_database.return_value = hive_database
     catalog.create_table(
         ("default", "table"), schema=table_schema_with_all_types, properties={"owner": "javaberg"}, location=f"{location}/"
@@ -639,7 +639,7 @@ def test_create_v1_table(table_schema_simple: Schema, hive_database: HiveDatabas
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
     catalog._client = MagicMock()
-    catalog._get_hive_table = MagicMock()  # type: ignore
+    catalog._get_hive_table = MagicMock()  # type: ignore[method-assign]
     catalog._client.__enter__().create_table.return_value = None
     catalog._get_hive_table.return_value = hive_table
     catalog._client.__enter__().get_database.return_value = hive_database
@@ -692,7 +692,7 @@ def test_load_table(hive_table: HiveTable) -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
     catalog._client = MagicMock()
-    catalog._get_hive_table = MagicMock(return_value=hive_table)  # type: ignore
+    catalog._get_hive_table = MagicMock(return_value=hive_table)  # type: ignore[method-assign]
     table = catalog.load_table(("default", "new_tabl2e"))
 
     catalog._get_hive_table.assert_called_with(catalog._client.__enter__(), dbname="default", tbl_name="new_tabl2e")
@@ -792,7 +792,7 @@ def test_load_table_from_self_identifier(hive_table: HiveTable) -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
     catalog._client = MagicMock()
-    catalog._get_hive_table = MagicMock(return_value=hive_table)  # type: ignore
+    catalog._get_hive_table = MagicMock(return_value=hive_table)  # type: ignore[method-assign]
     intermediate = catalog.load_table(("default", "new_tabl2e"))
     table = catalog.load_table(intermediate.name())
 
@@ -898,7 +898,7 @@ def test_rename_table(hive_table: HiveTable) -> None:
     renamed_table.tableName = "new_tabl3e"
 
     catalog._client = MagicMock()
-    catalog._get_hive_table = MagicMock(side_effect=[hive_table, renamed_table])  # type: ignore
+    catalog._get_hive_table = MagicMock(side_effect=[hive_table, renamed_table])  # type: ignore[method-assign]
     catalog._client.__enter__().alter_table_with_environment_context.return_value = None
 
     from_identifier = ("default", "new_tabl2e")
@@ -925,7 +925,7 @@ def test_rename_table_from_self_identifier(hive_table: HiveTable) -> None:
     catalog.table_exists = MagicMock(return_value=False)  # type: ignore[method-assign]
 
     catalog._client = MagicMock()
-    catalog._get_hive_table = MagicMock(return_value=hive_table)  # type: ignore
+    catalog._get_hive_table = MagicMock(return_value=hive_table)  # type: ignore[method-assign]
 
     from_identifier = ("default", "new_tabl2e")
     from_table = catalog.load_table(from_identifier)
@@ -1053,7 +1053,7 @@ def test_list_tables(hive_table: HiveTable) -> None:
 
     catalog._client = MagicMock()
     catalog._client.__enter__().get_all_tables.return_value = ["table1", "table2", "table3", "table4"]
-    catalog._get_table_objects_by_name = MagicMock()  # type: ignore
+    catalog._get_table_objects_by_name = MagicMock()  # type: ignore[method-assign]
     catalog._get_table_objects_by_name.return_value = [tbl1, tbl2, tbl3, tbl4]
 
     got_tables = catalog.list_tables("database")
@@ -1090,7 +1090,7 @@ def test_drop_table_from_self_identifier(hive_table: HiveTable) -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
     catalog._client = MagicMock()
-    catalog._get_hive_table = MagicMock(return_value=hive_table)  # type: ignore
+    catalog._get_hive_table = MagicMock(return_value=hive_table)  # type: ignore[method-assign]
     table = catalog.load_table(("default", "new_tabl2e"))
 
     catalog._client.__enter__().get_all_databases.return_value = ["namespace1", "namespace2"]
