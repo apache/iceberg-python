@@ -1090,7 +1090,10 @@ class ManifestWriter(ABC):
         if entry.sequence_number is not None and entry.sequence_number >= 0:
             self.add_entry(
                 ManifestEntry.from_args(
-                    snapshot_id=self._snapshot_id, sequence_number=entry.sequence_number, data_file=entry.data_file
+                    status=ManifestEntryStatus.ADDED,
+                    snapshot_id=self._snapshot_id,
+                    sequence_number=entry.sequence_number,
+                    data_file=entry.data_file,
                 )
             )
         else:
