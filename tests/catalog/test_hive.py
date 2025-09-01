@@ -27,7 +27,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 import thrift.transport.TSocket
-from hive_metastore.v4.ttypes import (
+from hive_metastore.v3.ttypes import (
     AlreadyExistsException,
     EnvironmentContext,
     FieldSchema,
@@ -40,10 +40,10 @@ from hive_metastore.v4.ttypes import (
     SkewedInfo,
     StorageDescriptor,
 )
-from hive_metastore.v4.ttypes import (
+from hive_metastore.v3.ttypes import (
     Database as HiveDatabase,
 )
-from hive_metastore.v4.ttypes import (
+from hive_metastore.v3.ttypes import (
     Table as HiveTable,
 )
 
@@ -57,6 +57,7 @@ from pyiceberg.catalog.hive import (
     LOCK_CHECK_MIN_WAIT_TIME,
     LOCK_CHECK_RETRIES,
     HiveCatalog,
+    HiveVersion,
     _construct_hive_storage_descriptor,
     _HiveClient,
 )
@@ -259,7 +260,7 @@ def test_no_uri_supplied() -> None:
 
 
 def test_check_number_of_namespaces(table_schema_simple: Schema) -> None:
-    _HiveClient._get_hive_version = MagicMock(return_value=3)  # type: ignore
+    _HiveClient._get_hive_version = MagicMock(return_value=HiveVersion(4, 0, 0))  # type: ignore
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
     with pytest.raises(ValueError):
@@ -959,7 +960,7 @@ def test_rename_table_from_does_not_exists() -> None:
     catalog.table_exists = MagicMock(return_value=False)  # type: ignore[method-assign]
 
     catalog._client = MagicMock()
-    catalog._client.__enter__()._hive_version = 3
+    catalog._client._hive_version = HiveVersion(4, 0, 0)
     catalog._client.__enter__().alter_table_with_environment_context.side_effect = NoSuchObjectException(
         message="hive.default.does_not_exists table not found"
     )
@@ -970,12 +971,22 @@ def test_rename_table_from_does_not_exists() -> None:
     assert "Table does not exist: does_not_exists" in str(exc_info.value)
 
 
+def test_rename_table_to_table_already_exists(hive_table: HiveTable) -> None:
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
+    catalog.load_table = MagicMock(return_value=hive_table)  # type: ignore[method-assign]
+
+    with pytest.raises(TableAlreadyExistsError) as exc_info:
+        catalog.rename_table(("default", "some_table"), ("default", "new_tabl2e"))
+
+    assert "Table already exists: new_tabl2e" in str(exc_info.value)
+
+
 def test_rename_table_to_namespace_does_not_exists() -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
     catalog.table_exists = MagicMock(return_value=False)  # type: ignore[method-assign]
 
     catalog._client = MagicMock()
-    catalog._client.__enter__()._hive_version = 3
+    catalog._client._hive_version = HiveVersion(4, 0, 0)
     catalog._client.__enter__().alter_table_with_environment_context.side_effect = InvalidOperationException(
         message="Unable to change partition or table. Database default does not exist Check metastore logs for detailed stack.does_not_exists"
     )
@@ -1186,7 +1197,7 @@ def test_update_namespace_properties(hive_database: HiveDatabase) -> None:
             name="default",
             description=None,
             locationUri=hive_database.locationUri,
-            parameters={"test": None, "label": "core"},
+            parameters={"label": "core"},
             privileges=None,
             ownerName=None,
             ownerType=1,

@@ -19,6 +19,7 @@ import importlib
 import logging
 import socket
 import time
+from collections import namedtuple
 from types import TracebackType
 from typing import (
     TYPE_CHECKING,
@@ -33,8 +34,8 @@ from typing import (
 )
 from urllib.parse import urlparse
 
-from hive_metastore.v4.ThriftHiveMetastore import Client
-from hive_metastore.v4.ttypes import (
+from hive_metastore.v3.ThriftHiveMetastore import Client
+from hive_metastore.v3.ttypes import (
     AlreadyExistsException,
     CheckLockRequest,
     EnvironmentContext,
@@ -54,10 +55,10 @@ from hive_metastore.v4.ttypes import (
     StorageDescriptor,
     UnlockRequest,
 )
-from hive_metastore.v4.ttypes import (
+from hive_metastore.v3.ttypes import (
     Database as HiveDatabase,
 )
-from hive_metastore.v4.ttypes import (
+from hive_metastore.v3.ttypes import (
     Table as HiveTable,
 )
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -148,6 +149,7 @@ DEFAULT_LOCK_CHECK_MAX_WAIT_TIME = 60  # 1 min
 DEFAULT_LOCK_CHECK_RETRIES = 4
 DO_NOT_UPDATE_STATS = "DO_NOT_UPDATE_STATS"
 DO_NOT_UPDATE_STATS_DEFAULT = "true"
+HiveVersion = namedtuple("HiveVersion", "major minor patch")
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +159,7 @@ class _HiveClient:
 
     _transport: TTransport
     _ugi: Optional[List[str]]
-    _hive_version: int = 4
+    _hive_version: HiveVersion = HiveVersion(4, 0, 0)
     _hms_v3: object
     _hms_v4: object
 
@@ -177,13 +179,15 @@ class _HiveClient:
         self.hms_v4 = importlib.import_module("hive_metastore.v4.ThriftHiveMetastore")
         self._hive_version = self._get_hive_version()
 
-    def _get_hive_version(self) -> int:
+    def _get_hive_version(self) -> HiveVersion:
         with self as open_client:
-            major, *_ = open_client.getVersion().split(".")
-            return int(major)
+            version = map(int, open_client.getVersion().split("."))
+            return HiveVersion(*version)
 
     def _init_thrift_transport(self) -> TTransport:
         url_parts = urlparse(self._uri)
+        if not url_parts.hostname or not url_parts.port:
+            raise ValueError("hive hostname and port must be set")
         socket = TSocket.TSocket(url_parts.hostname, url_parts.port)
         if not self._kerberos_auth:
             return TTransport.TBufferedTransport(socket)
@@ -192,7 +196,7 @@ class _HiveClient:
 
     def _client(self) -> Client:
         protocol = TBinaryProtocol.TBinaryProtocol(self._transport)
-        hms = self.hms_v3 if self._hive_version < 4 else self.hms_v4
+        hms = self.hms_v4 if all((self._hive_version.major >= 4, self._hive_version.patch > 0)) else self.hms_v3
         client: Client = hms.Client(protocol)
         if self._ugi:
             client.set_ugi(*self._ugi)
@@ -407,14 +411,17 @@ class HiveCatalog(MetastoreCatalog):
             raise TableAlreadyExistsError(f"Table {hive_table.dbName}.{hive_table.tableName} already exists") from e
 
     def _get_hive_table(self, open_client: Client, *, dbname: str, tbl_name: str) -> HiveTable:
-        if open_client._hive_version < 4:
+        try:
+            if all((self._client._hive_version.major >= 4, self._client._hive_version.patch > 0)):
+                return open_client.get_table_req(GetTableRequest(dbName=dbname, tblName=tbl_name)).table
             return open_client.get_table(dbname=dbname, tbl_name=tbl_name)
-        return open_client.get_table_req(GetTableRequest(dbName=dbname, tblName=tbl_name)).table
+        except NoSuchObjectException as e:
+            raise NoSuchTableError(f"Table does not exists: {tbl_name}") from e
 
     def _get_table_objects_by_name(self, open_client: Client, *, dbname: str, tbl_names: list[str]) -> list[HiveTable]:
-        if open_client._hive_version < 4:
-            return open_client.get_table_objects_by_name(dbname=dbname, tbl_names=tbl_names)
-        return open_client.get_table_objects_by_name_req(GetTablesRequest(dbName=dbname, tblNames=tbl_names)).tables
+        if all((self._client._hive_version.major >= 4, self._client._hive_version.patch > 0)):
+            return open_client.get_table_objects_by_name_req(GetTablesRequest(dbName=dbname, tblNames=tbl_names)).tables
+        return open_client.get_table_objects_by_name(dbname=dbname, tbl_names=tbl_names)
 
     def create_table(
         self,
@@ -458,7 +465,7 @@ class HiveCatalog(MetastoreCatalog):
 
         with self._client as open_client:
             self._create_hive_table(open_client, tbl)
-            hive_table: HiveTable = self._get_hive_table(open_client, dbname=database_name, tbl_name=table_name)
+            hive_table = self._get_hive_table(open_client, dbname=database_name, tbl_name=table_name)
 
         return self._convert_hive_into_iceberg(hive_table)
 
@@ -488,7 +495,7 @@ class HiveCatalog(MetastoreCatalog):
         tbl = self._convert_iceberg_into_hive(staged_table)
         with self._client as open_client:
             self._create_hive_table(open_client, tbl)
-            hive_table: HiveTable = self._get_hive_table(open_client, dbname=database_name, tbl_name=table_name)
+            hive_table = self._get_hive_table(open_client, dbname=database_name, tbl_name=table_name)
 
         return self._convert_hive_into_iceberg(hive_table)
 
@@ -684,7 +691,7 @@ class HiveCatalog(MetastoreCatalog):
 
         try:
             with self._client as open_client:
-                tbl: HiveTable = self._get_hive_table(open_client, dbname=from_database_name, tbl_name=from_table_name)
+                tbl = self._get_hive_table(open_client, dbname=from_database_name, tbl_name=from_table_name)
                 tbl.dbName = to_database_name
                 tbl.tableName = to_table_name
                 open_client.alter_table_with_environment_context(
@@ -828,7 +835,7 @@ class HiveCatalog(MetastoreCatalog):
             if removals:
                 for key in removals:
                     if key in parameters:
-                        parameters[key] = None
+                        parameters.pop(key)
                         removed.add(key)
             if updates:
                 for key, value in updates.items():
