@@ -219,11 +219,14 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
 
         executor = ExecutorFactory.get_or_create()
 
-        added_manifests = executor.submit(_write_added_manifest)
-        delete_manifests = executor.submit(_write_delete_manifest)
-        existing_manifests = executor.submit(self._existing_manifests)
+        # added_manifests = executor.submit(_write_added_manifest)
+        # delete_manifests = executor.submit(_write_delete_manifest)
+        # existing_manifests = executor.submit(self._existing_manifests)
+        added_manifests = _write_added_manifest()
+        delete_manifests = _write_delete_manifest()
+        existing_manifests = self._existing_manifests()
 
-        return self._process_manifests(added_manifests.result() + delete_manifests.result() + existing_manifests.result())
+        return self._process_manifests(added_manifests + delete_manifests + existing_manifests)
 
     def _summary(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> Summary:
         from pyiceberg.table import TableProperties

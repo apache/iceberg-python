@@ -985,12 +985,12 @@ def _inherit_from_manifest(entry: ManifestEntry, manifest: ManifestFile) -> Mani
 
     # in v1 tables, the sequence number is not persisted and can be safely defaulted to 0
     # in v2 tables, the sequence number should be inherited iff the entry status is ADDED
-    if entry.sequence_number == 0 and (manifest.sequence_number == 0 or entry.status == ManifestEntryStatus.ADDED):
+    if entry.sequence_number is None and entry.status == ManifestEntryStatus.ADDED:
         entry.sequence_number = manifest.sequence_number
 
     # in v1 tables, the file sequence number is not persisted and can be safely defaulted to 0
     # in v2 tables, the file sequence number should be inherited iff the entry status is ADDED
-    if entry.file_sequence_number == 0 and (manifest.sequence_number == 0 or entry.status == ManifestEntryStatus.ADDED):
+    if entry.file_sequence_number is None and entry.status == ManifestEntryStatus.ADDED:
         # Only available in V2, always 0 in V1
         entry.file_sequence_number = manifest.sequence_number
 
@@ -1132,6 +1132,7 @@ class ManifestWriter(ABC):
             self._deleted_files += 1
             self._deleted_rows += entry.data_file.record_count
         else:
+            entry
             raise ValueError(f"Unknown entry: {entry.status}")
 
         self._partitions.append(entry.data_file.partition)
@@ -1150,7 +1151,7 @@ class ManifestWriter(ABC):
         if entry.sequence_number is not None and entry.sequence_number >= 0:
             self.add_entry(
                 ManifestEntry.from_args(
-                    snapshot_id=self._snapshot_id, sequence_number=entry.sequence_number, data_file=entry.data_file
+                    status=ManifestEntryStatus.ADDED, snapshot_id=self._snapshot_id, sequence_number=entry.sequence_number, data_file=entry.data_file
                 )
             )
         else:
