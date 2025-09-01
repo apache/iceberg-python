@@ -1091,7 +1091,7 @@ class ManifestWriter(ABC):
             ManifestEntry.from_args(
                 status=ManifestEntryStatus.ADDED,
                 snapshot_id=self._snapshot_id,
-                sequence_number=entry.sequence_number if entry.file_sequence_number != UNASSIGNED_SEQ else None,
+                sequence_number=entry.sequence_number if entry.sequence_number != UNASSIGNED_SEQ else None,
                 data_file=entry.data_file,
             )
         )
