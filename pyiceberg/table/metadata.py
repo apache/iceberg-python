@@ -295,8 +295,10 @@ class TableMetadataCommonFields(IcebergBaseModel):
 
         return snapshot_id
 
-    def snapshot_by_name(self, name: str) -> Optional[Snapshot]:
+    def snapshot_by_name(self, name: Optional[str]) -> Optional[Snapshot]:
         """Return the snapshot referenced by the given name or null if no such reference exists."""
+        if name is None:
+            name = MAIN_BRANCH
         if ref := self.refs.get(name):
             return self.snapshot_by_id(ref.snapshot_id)
         return None
