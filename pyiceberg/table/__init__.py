@@ -80,6 +80,7 @@ from pyiceberg.partitioning import (
 from pyiceberg.schema import Schema
 from pyiceberg.table.inspect import InspectTable
 from pyiceberg.table.locations import LocationProvider, load_location_provider
+from pyiceberg.table.maintenance import MaintenanceTable
 from pyiceberg.table.metadata import (
     INITIAL_SEQUENCE_NUMBER,
     TableMetadata,
@@ -115,7 +116,7 @@ from pyiceberg.table.update import (
     update_table_metadata,
 )
 from pyiceberg.table.update.schema import UpdateSchema
-from pyiceberg.table.update.snapshot import ExpireSnapshots, ManageSnapshots, UpdateSnapshot, _FastAppendFiles
+from pyiceberg.table.update.snapshot import ManageSnapshots, UpdateSnapshot, _FastAppendFiles
 from pyiceberg.table.update.spec import UpdateSpec
 from pyiceberg.table.update.statistics import UpdateStatistics
 from pyiceberg.transforms import IdentityTransform
@@ -219,7 +220,7 @@ class TableProperties:
 
     DEFAULT_NAME_MAPPING = "schema.name-mapping.default"
     FORMAT_VERSION = "format-version"
-    DEFAULT_FORMAT_VERSION = 2
+    DEFAULT_FORMAT_VERSION: TableVersion = 2
 
     MANIFEST_TARGET_SIZE_BYTES = "commit.manifest.target-size-bytes"
     MANIFEST_TARGET_SIZE_BYTES_DEFAULT = 8 * 1024 * 1024  # 8 MB
@@ -430,7 +431,9 @@ class Transaction:
             name_mapping=self.table_metadata.name_mapping(),
         )
 
-    def update_snapshot(self, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = None) -> UpdateSnapshot:
+    def update_snapshot(
+        self, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = MAIN_BRANCH
+    ) -> UpdateSnapshot:
         """Create a new UpdateSnapshot to produce a new snapshot for the table.
 
         Returns:
@@ -469,15 +472,12 @@ class Transaction:
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
-        if unsupported_partitions := [
-            field for field in self.table_metadata.spec().fields if not field.transform.supports_pyarrow_transform
-        ]:
-            raise ValueError(
-                f"Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: {unsupported_partitions}."
-            )
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
         _check_pyarrow_schema_compatible(
-            self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+            self.table_metadata.schema(),
+            provided_schema=df.schema,
+            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+            format_version=self.table_metadata.format_version,
         )
 
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
@@ -527,7 +527,10 @@ class Transaction:
 
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
         _check_pyarrow_schema_compatible(
-            self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+            self.table_metadata.schema(),
+            provided_schema=df.schema,
+            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+            format_version=self.table_metadata.format_version,
         )
 
         # If dataframe does not have data, there is no need to overwrite
@@ -585,15 +588,12 @@ class Transaction:
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
-        if unsupported_partitions := [
-            field for field in self.table_metadata.spec().fields if not field.transform.supports_pyarrow_transform
-        ]:
-            raise ValueError(
-                f"Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: {unsupported_partitions}."
-            )
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
         _check_pyarrow_schema_compatible(
-            self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+            self.table_metadata.schema(),
+            provided_schema=df.schema,
+            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+            format_version=self.table_metadata.format_version,
         )
 
         if overwrite_filter != AlwaysFalse():
@@ -789,7 +789,10 @@ class Transaction:
 
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
         _check_pyarrow_schema_compatible(
-            self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+            self.table_metadata.schema(),
+            provided_schema=df.schema,
+            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+            format_version=self.table_metadata.format_version,
         )
 
         # get list of rows that exist so we don't have to load the entire target table
@@ -954,7 +957,7 @@ class CreateTableTransaction(Transaction):
 
         schema: Schema = table_metadata.schema()
         self._updates += (
-            AddSchemaUpdate(schema_=schema, last_column_id=schema.highest_field_id),
+            AddSchemaUpdate(schema_=schema),
             SetCurrentSchemaUpdate(schema_id=-1),
         )
 
@@ -1073,6 +1076,15 @@ class Table:
             InspectTable object based on this Table.
         """
         return InspectTable(self)
+
+    @property
+    def maintenance(self) -> MaintenanceTable:
+        """Return the MaintenanceTable object for maintenance.
+
+        Returns:
+            MaintenanceTable object based on this Table.
+        """
+        return MaintenanceTable(self)
 
     def refresh(self) -> Table:
         """Refresh the current table metadata.
@@ -1245,10 +1257,6 @@ class Table:
            ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
         """
         return ManageSnapshots(transaction=Transaction(self, autocommit=True))
-
-    def expire_snapshots(self) -> ExpireSnapshots:
-        """Shorthand to run expire snapshots by id or by a timestamp."""
-        return ExpireSnapshots(transaction=Transaction(self, autocommit=True))
 
     def update_statistics(self) -> UpdateStatistics:
         """

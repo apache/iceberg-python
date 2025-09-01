@@ -169,17 +169,46 @@ def test_rename_table(test_catalog: Catalog, table_schema_nested: Schema, table_
     new_database_name = f"{database_name}_new"
     test_catalog.create_namespace(database_name)
     test_catalog.create_namespace(new_database_name)
-    new_table_name = f"rename-{table_name}"
+
     identifier = (database_name, table_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert table.name() == identifier
+
+    new_table_name = f"rename-{table_name}"
     new_identifier = (new_database_name, new_table_name)
     test_catalog.rename_table(identifier, new_identifier)
     new_table = test_catalog.load_table(new_identifier)
+
     assert new_table.name() == new_identifier
     assert new_table.metadata_location == table.metadata_location
+
     with pytest.raises(NoSuchTableError):
         test_catalog.load_table(identifier)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_rename_table_already_exists(
+    test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str
+) -> None:
+    new_database_name = f"{database_name}_new"
+    test_catalog.create_namespace(database_name)
+    test_catalog.create_namespace(new_database_name)
+
+    identifier = (database_name, table_name)
+    table = test_catalog.create_table(identifier, table_schema_nested)
+    assert table.name() == identifier
+
+    new_table_name = f"rename-{table_name}"
+    new_identifier = (new_database_name, new_table_name)
+    new_table = test_catalog.create_table(new_identifier, table_schema_nested)
+    assert new_table.name() == new_identifier
+
+    with pytest.raises(TableAlreadyExistsError):
+        test_catalog.rename_table(identifier, new_identifier)
+
+    assert test_catalog.table_exists(identifier)
+    assert test_catalog.table_exists(new_identifier)
 
 
 @pytest.mark.integration

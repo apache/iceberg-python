@@ -19,7 +19,7 @@ exclude: ^vendor/
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -27,19 +27,19 @@ repos:
       - id: check-yaml
       - id: check-ast
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.13
+    rev: v0.12.9
     hooks:
       - id: ruff
         args: [ --fix, --exit-non-zero-on-fix ]
       - id: ruff-format
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.16.0
+    rev: v1.17.1
     hooks:
       - id: mypy
         args:
           [--install-types, --non-interactive, --config=pyproject.toml]
   - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.43.0
+    rev: v0.45.0
     hooks:
       - id: markdownlint
         args: ["--fix"]
@@ -54,7 +54,7 @@ repos:
         additional_dependencies:
           - tomli==2.0.1
   - repo: https://github.com/ikamensh/flynt
-    rev: 1.0.1
+    rev: 1.0.6
     hooks:
       - id: flynt
         args:
@@ -62,17 +62,6 @@ repos:
           - --line-length
           - '99999'
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.3.0
+    rev: v2.4.1
     hooks:
       - id: codespell
-ci:
-    autofix_commit_msg: |
-        [pre-commit.ci] auto fixes from pre-commit.com hooks
-
-        for more information, see https://pre-commit.ci
-    autofix_prs: true
-    autoupdate_branch: ''
-    autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
-    autoupdate_schedule: weekly
-    skip: []
-    submodules: false

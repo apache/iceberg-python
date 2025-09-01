@@ -2279,6 +2279,13 @@ def database_name() -> str:
 
 
 @pytest.fixture()
+def gcp_dataset_name() -> str:
+    prefix = "my_iceberg_database_"
+    random_tag = "".join(choice(string.ascii_letters) for _ in range(RANDOM_LENGTH))
+    return (prefix + random_tag).lower()
+
+
+@pytest.fixture()
 def database_list(database_name: str) -> List[str]:
     return [f"{database_name}_{idx}" for idx in range(NUM_TABLES)]
 
@@ -2299,6 +2306,13 @@ def hierarchical_namespace_list(hierarchical_namespace_name: str) -> List[str]:
 BUCKET_NAME = "test_bucket"
 TABLE_METADATA_LOCATION_REGEX = re.compile(
     r"""s3://test_bucket/my_iceberg_database-[a-z]{20}.db/
+    my_iceberg_table-[a-z]{20}/metadata/
+    [0-9]{5}-[a-f0-9]{8}-?[a-f0-9]{4}-?4[a-f0-9]{3}-?[89ab][a-f0-9]{3}-?[a-f0-9]{12}.metadata.json""",
+    re.X,
+)
+
+BQ_TABLE_METADATA_LOCATION_REGEX = re.compile(
+    r"""gs://alexstephen-test-bq-bucket/my_iceberg_database_[a-z]{20}.db/
     my_iceberg_table-[a-z]{20}/metadata/
     [0-9]{5}-[a-f0-9]{8}-?[a-f0-9]{4}-?4[a-f0-9]{3}-?[89ab][a-f0-9]{3}-?[a-f0-9]{12}.metadata.json""",
     re.X,
@@ -2325,6 +2339,13 @@ def get_bucket_name() -> str:
     return bucket_name
 
 
+def get_gcs_bucket_name() -> str:
+    bucket_name = os.getenv("GCS_TEST_BUCKET")
+    if bucket_name is None:
+        raise ValueError("Please specify a bucket to run the test by setting environment variable GCS_TEST_BUCKET")
+    return bucket_name
+
+
 def get_glue_endpoint() -> Optional[str]:
     """Set the optional environment variable AWS_TEST_GLUE_ENDPOINT for a glue endpoint to test."""
     return os.getenv("AWS_TEST_GLUE_ENDPOINT")
@@ -2332,6 +2353,16 @@ def get_glue_endpoint() -> Optional[str]:
 
 def get_s3_path(bucket_name: str, database_name: Optional[str] = None, table_name: Optional[str] = None) -> str:
     result_path = f"s3://{bucket_name}"
+    if database_name is not None:
+        result_path += f"/{database_name}.db"
+
+    if table_name is not None:
+        result_path += f"/{table_name}"
+    return result_path
+
+
+def get_gcs_path(bucket_name: str, database_name: Optional[str] = None, table_name: Optional[str] = None) -> str:
+    result_path = f"gcs://{bucket_name}"
     if database_name is not None:
         result_path += f"/{database_name}.db"
 

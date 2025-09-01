@@ -64,6 +64,7 @@ from pyiceberg.table import (
     StagedTable,
     Table,
     TableIdentifier,
+    TableProperties,
 )
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
@@ -78,8 +79,6 @@ from pyiceberg.utils.properties import get_first_property_value, get_header_prop
 
 if TYPE_CHECKING:
     import pyarrow as pa
-
-ICEBERG_REST_SPEC_VERSION = "0.14.1"
 
 
 class Endpoints:
@@ -484,7 +483,6 @@ class RestCatalog(Catalog):
         header_properties = get_header_properties(self.properties)
         session.headers.update(header_properties)
         session.headers["Content-type"] = "application/json"
-        session.headers["X-Client-Version"] = ICEBERG_REST_SPEC_VERSION
         session.headers["User-Agent"] = f"PyIceberg/{__version__}"
         session.headers.setdefault("X-Iceberg-Access-Delegation", ACCESS_DELEGATION_DEFAULT)
 
@@ -498,7 +496,10 @@ class RestCatalog(Catalog):
         properties: Properties = EMPTY_DICT,
         stage_create: bool = False,
     ) -> TableResponse:
-        iceberg_schema = self._convert_schema_if_needed(schema)
+        iceberg_schema = self._convert_schema_if_needed(
+            schema,
+            int(properties.get(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION)),  # type: ignore
+        )
         fresh_schema = assign_fresh_schema_ids(iceberg_schema)
         fresh_partition_spec = assign_fresh_partition_spec_ids(partition_spec, iceberg_schema, fresh_schema)
         fresh_sort_order = assign_fresh_sort_order_ids(sort_order, iceberg_schema, fresh_schema)
@@ -875,3 +876,10 @@ class RestCatalog(Catalog):
             response.raise_for_status()
         except HTTPError as exc:
             _handle_non_200_response(exc, {404: NoSuchViewError})
+
+    def close(self) -> None:
+        """Close the catalog and release Session connection adapters.
+
+        This method closes mounted HttpAdapters' pooled connections and any active Proxy pooled connections.
+        """
+        self._session.close()

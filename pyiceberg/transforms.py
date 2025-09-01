@@ -212,10 +212,6 @@ class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
             return self.root == other.root
         return False
 
-    @property
-    def supports_pyarrow_transform(self) -> bool:
-        return False
-
     @abstractmethod
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]": ...
 
@@ -399,10 +395,6 @@ class BucketTransform(Transform[S, int]):
         pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
         return _pyiceberg_transform_wrapper(pyiceberg_core_transform.bucket, self._num_buckets)
 
-    @property
-    def supports_pyarrow_transform(self) -> bool:
-        return True
-
 
 class TimeResolution(IntEnum):
     YEAR = 6
@@ -460,10 +452,6 @@ class TimeTransform(Transform[S, int], Generic[S], Singleton):
 
     @property
     def preserves_order(self) -> bool:
-        return True
-
-    @property
-    def supports_pyarrow_transform(self) -> bool:
         return True
 
 
@@ -781,10 +769,6 @@ class IdentityTransform(Transform[S, S]):
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
         return lambda v: v
 
-    @property
-    def supports_pyarrow_transform(self) -> bool:
-        return True
-
 
 class TruncateTransform(Transform[S, S]):
     """A transform for truncating a value to a specified width.
@@ -931,10 +915,6 @@ class TruncateTransform(Transform[S, S]):
 
         return _pyiceberg_transform_wrapper(pyiceberg_core_transform.truncate, self._width)
 
-    @property
-    def supports_pyarrow_transform(self) -> bool:
-        return True
-
 
 @singledispatch
 def _human_string(value: Any, _type: IcebergType) -> str:
@@ -1049,7 +1029,12 @@ class VoidTransform(Transform[S, None], Singleton):
         return "VoidTransform()"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        raise NotImplementedError()
+        try:
+            import pyarrow as pa
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For partition transforms, PyArrow needs to be installed") from e
+
+        return lambda arr: pa.nulls(len(arr), type=arr.type)
 
 
 def _truncate_number(

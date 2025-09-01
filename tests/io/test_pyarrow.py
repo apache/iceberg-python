@@ -20,7 +20,7 @@ import os
 import tempfile
 import uuid
 import warnings
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any, List, Optional
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -61,6 +61,7 @@ from pyiceberg.expressions.literals import literal
 from pyiceberg.io import S3_RETRY_STRATEGY_IMPL, InputStream, OutputStream, load_file_io
 from pyiceberg.io.pyarrow import (
     ICEBERG_SCHEMA,
+    PYARROW_PARQUET_FIELD_ID_KEY,
     ArrowScan,
     PyArrowFile,
     PyArrowFileIO,
@@ -70,6 +71,7 @@ from pyiceberg.io.pyarrow import (
     _determine_partitions,
     _primitive_to_physical,
     _read_deletes,
+    _task_to_record_batches,
     _to_requested_schema,
     bin_pack_arrow_table,
     compute_statistics_plan,
@@ -85,7 +87,7 @@ from pyiceberg.table import FileScanTask, TableProperties
 from pyiceberg.table.metadata import TableMetadataV2
 from pyiceberg.table.name_mapping import create_mapping_from_schema
 from pyiceberg.transforms import HourTransform, IdentityTransform
-from pyiceberg.typedef import UTF8, Properties, Record
+from pyiceberg.typedef import UTF8, Properties, Record, TableVersion
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -102,6 +104,7 @@ from pyiceberg.types import (
     PrimitiveType,
     StringType,
     StructType,
+    TimestampNanoType,
     TimestampType,
     TimestamptzType,
     TimeType,
@@ -382,6 +385,35 @@ def test_pyarrow_s3_session_properties() -> None:
         s3_fileio.new_input(location=f"s3://warehouse/{filename}")
 
         mock_s3fs.assert_called_with(
+            endpoint_override="http://localhost:9000",
+            access_key="admin",
+            secret_key="password",
+            region="us-east-1",
+            session_token="s3.session-token",
+        )
+
+
+def test_pyarrow_s3_session_properties_with_anonymous() -> None:
+    session_properties: Properties = {
+        "s3.anonymous": "true",
+        "s3.endpoint": "http://localhost:9000",
+        "s3.access-key-id": "admin",
+        "s3.secret-access-key": "password",
+        "s3.region": "us-east-1",
+        "s3.session-token": "s3.session-token",
+        **UNIFIED_AWS_SESSION_PROPERTIES,
+    }
+
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs, patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
+        s3_fileio = PyArrowFileIO(properties=session_properties)
+        filename = str(uuid.uuid4())
+
+        # Mock `resolve_s3_region` to prevent from the location used resolving to a different s3 region
+        mock_s3_region_resolver.side_effect = OSError("S3 bucket is not found")
+        s3_fileio.new_input(location=f"s3://warehouse/{filename}")
+
+        mock_s3fs.assert_called_with(
+            anonymous=True,
             endpoint_override="http://localhost:9000",
             access_key="admin",
             secret_key="password",
@@ -842,6 +874,18 @@ def _write_table_to_file(filepath: str, schema: pa.Schema, table: pa.Table) -> s
     with pq.ParquetWriter(filepath, schema) as writer:
         writer.write_table(table)
     return filepath
+
+
+def _write_table_to_data_file(filepath: str, schema: pa.Schema, table: pa.Table) -> DataFile:
+    filepath = _write_table_to_file(filepath, schema, table)
+    return DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=filepath,
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=len(table),
+        file_size_in_bytes=22,  # This is not relevant for now
+    )
 
 
 @pytest.fixture
@@ -2382,8 +2426,6 @@ def test_partition_for_nested_field() -> None:
 
     spec = PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=HourTransform(), name="ts"))
 
-    from datetime import datetime
-
     t1 = datetime(2025, 7, 11, 9, 30, 0)
     t2 = datetime(2025, 7, 11, 10, 30, 0)
 
@@ -2521,6 +2563,43 @@ def test_initial_value() -> None:
         assert val.as_py() == 22
 
 
+def test__to_requested_schema_timestamp_to_timestamptz_projection() -> None:
+    # file is written with timestamp without timezone
+    file_schema = Schema(NestedField(1, "ts_field", TimestampType(), required=False))
+    batch = pa.record_batch(
+        [
+            pa.array(
+                [
+                    datetime(2025, 8, 14, 12, 0, 0),
+                    datetime(2025, 8, 14, 13, 0, 0),
+                ],
+                type=pa.timestamp("us"),
+            )
+        ],
+        names=["ts_field"],
+    )
+
+    # table is written with timestamp with timezone
+    table_schema = Schema(NestedField(1, "ts_field", TimestamptzType(), required=False))
+
+    actual_result = _to_requested_schema(table_schema, file_schema, batch, downcast_ns_timestamp_to_us=True)
+    expected = pa.record_batch(
+        [
+            pa.array(
+                [
+                    datetime(2025, 8, 14, 12, 0, 0),
+                    datetime(2025, 8, 14, 13, 0, 0),
+                ],
+                type=pa.timestamp("us", tz=timezone.utc),
+            )
+        ],
+        names=["ts_field"],
+    )
+
+    # expect actual_result to have timezone
+    assert expected.equals(actual_result)
+
+
 def test__to_requested_schema_timestamps(
     arrow_table_schema_with_all_timestamp_precisions: pa.Schema,
     arrow_table_with_all_timestamp_precisions: pa.Table,
@@ -2654,3 +2733,81 @@ def test_retry_strategy_not_found() -> None:
     io = PyArrowFileIO(properties={S3_RETRY_STRATEGY_IMPL: "pyiceberg.DoesNotExist"})
     with pytest.warns(UserWarning, match="Could not initialize S3 retry strategy: pyiceberg.DoesNotExist"):
         io.new_input("s3://bucket/path/to/file")
+
+
+@pytest.mark.parametrize("format_version", [1, 2, 3])
+def test_task_to_record_batches_nanos(format_version: TableVersion, tmpdir: str) -> None:
+    arrow_table = pa.table(
+        [
+            pa.array(
+                [
+                    datetime(2025, 8, 14, 12, 0, 0),
+                    datetime(2025, 8, 14, 13, 0, 0),
+                ],
+                type=pa.timestamp("ns"),
+            )
+        ],
+        pa.schema((pa.field("ts_field", pa.timestamp("ns"), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),)),
+    )
+
+    data_file = _write_table_to_data_file(f"{tmpdir}/test_task_to_record_batches_nanos.parquet", arrow_table.schema, arrow_table)
+
+    if format_version <= 2:
+        table_schema = Schema(NestedField(1, "ts_field", TimestampType(), required=False))
+    else:
+        table_schema = Schema(NestedField(1, "ts_field", TimestampNanoType(), required=False))
+
+    actual_result = list(
+        _task_to_record_batches(
+            PyArrowFileIO(),
+            FileScanTask(data_file),
+            bound_row_filter=AlwaysTrue(),
+            projected_schema=table_schema,
+            projected_field_ids={1},
+            positional_deletes=None,
+            case_sensitive=True,
+            format_version=format_version,
+        )
+    )[0]
+
+    def _expected_batch(unit: str) -> pa.RecordBatch:
+        return pa.record_batch(
+            [
+                pa.array(
+                    [
+                        datetime(2025, 8, 14, 12, 0, 0),
+                        datetime(2025, 8, 14, 13, 0, 0),
+                    ],
+                    type=pa.timestamp(unit),
+                )
+            ],
+            names=["ts_field"],
+        )
+
+    assert _expected_batch("ns" if format_version > 2 else "us").equals(actual_result)
+
+
+def test_parse_location_defaults() -> None:
+    """Test that parse_location uses defaults."""
+
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
+    # if no default scheme or netloc is provided, use file scheme and empty netloc
+    scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar")
+    assert scheme == "file"
+    assert netloc == ""
+    assert path == "/foo/bar"
+
+    scheme, netloc, path = PyArrowFileIO.parse_location(
+        "/foo/bar", properties={"DEFAULT_SCHEME": "scheme", "DEFAULT_NETLOC": "netloc:8000"}
+    )
+    assert scheme == "scheme"
+    assert netloc == "netloc:8000"
+    assert path == "/foo/bar"
+
+    scheme, netloc, path = PyArrowFileIO.parse_location(
+        "/foo/bar", properties={"DEFAULT_SCHEME": "hdfs", "DEFAULT_NETLOC": "netloc:8000"}
+    )
+    assert scheme == "hdfs"
+    assert netloc == "netloc:8000"
+    assert path == "/foo/bar"
