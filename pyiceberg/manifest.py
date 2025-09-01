@@ -1087,21 +1087,16 @@ class ManifestWriter(ABC):
         return self
 
     def add(self, entry: ManifestEntry) -> ManifestWriter:
-        if entry.sequence_number is not None and entry.sequence_number >= 0:
-            self.add_entry(
-                ManifestEntry.from_args(
-                    status=ManifestEntryStatus.ADDED,
-                    snapshot_id=self._snapshot_id,
-                    sequence_number=entry.sequence_number,
-                    data_file=entry.data_file,
-                )
+        self.add_entry(
+            ManifestEntry.from_args(
+                status=ManifestEntryStatus.ADDED,
+                snapshot_id=self._snapshot_id,
+                sequence_number=entry.sequence_number if entry.file_sequence_number != UNASSIGNED_SEQ else None,
+                file_sequence_number=entry.file_sequence_number if entry.file_sequence_number != UNASSIGNED_SEQ else None,
+                data_file=entry.data_file,
             )
-        else:
-            self.add_entry(
-                ManifestEntry.from_args(
-                    status=ManifestEntryStatus.ADDED, snapshot_id=self._snapshot_id, data_file=entry.data_file
-                )
-            )
+        )
+
         return self
 
     def delete(self, entry: ManifestEntry) -> ManifestWriter:
