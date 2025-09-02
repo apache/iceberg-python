@@ -1657,6 +1657,10 @@ def test_merge_manifests_local_file_system(catalog: SqlCatalog, arrow_table_with
         tbl.append(arrow_table_with_null)
 
     assert len(tbl.scan().to_arrow()) == 5 * len(arrow_table_with_null)
+    current_snapshot = tbl.current_snapshot()
+    assert current_snapshot
+    manifests = current_snapshot.manifests(tbl.io)
+    assert len(manifests) == 1
 
 
 @pytest.mark.parametrize(
