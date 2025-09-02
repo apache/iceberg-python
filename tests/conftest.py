@@ -35,19 +35,13 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from random import choice, randint
 from tempfile import TemporaryDirectory
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Dict,
-    Generator,
-    List,
-    Optional,
-)
+from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional
 
 import boto3
 import pytest
 from moto import mock_aws
 from pydantic_core import to_json
+from sqlalchemy import Connection
 
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.noop import NoopCatalog
@@ -144,6 +138,18 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--gcs.oauth2.token", action="store", default="anon", help="The GCS authentication method for tests marked gcs"
     )
     parser.addoption("--gcs.project-id", action="store", default="test", help="The GCP project for tests marked gcs")
+    parser.addoption(
+        "--trino.rest.endpoint",
+        action="store",
+        default="trino://test@localhost:8082/warehouse_rest",
+        help="The Trino REST endpoint URL for tests marked as integration_trino",
+    )
+    parser.addoption(
+        "--trino.hive.endpoint",
+        action="store",
+        default="trino://test@localhost:8082/warehouse_hive",
+        help="The Trino Hive endpoint URL for tests marked as integration_trino",
+    )
 
 
 @pytest.fixture(scope="session")
@@ -2495,6 +2501,28 @@ def bound_reference_binary() -> BoundReference[str]:
 @pytest.fixture
 def bound_reference_uuid() -> BoundReference[str]:
     return BoundReference(field=NestedField(1, "field", UUIDType(), required=False), accessor=Accessor(position=0, inner=None))
+
+
+@pytest.fixture(scope="session")
+def trino_hive_conn(request: pytest.FixtureRequest) -> Generator[Connection, None, None]:
+    from sqlalchemy import create_engine
+
+    trino_endpoint = request.config.getoption("--trino.hive.endpoint")
+    engine = create_engine(trino_endpoint)
+    connection = engine.connect()
+    yield connection
+    connection.close()
+
+
+@pytest.fixture(scope="session")
+def trino_rest_conn(request: pytest.FixtureRequest) -> Generator[Connection, None, None]:
+    from sqlalchemy import create_engine
+
+    trino_endpoint = request.config.getoption("--trino.rest.endpoint")
+    engine = create_engine(trino_endpoint)
+    connection = engine.connect()
+    yield connection
+    connection.close()
 
 
 @pytest.fixture(scope="session")
