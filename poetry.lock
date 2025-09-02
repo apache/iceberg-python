@@ -2,15 +2,15 @@
 
 [[package]]
 name = "adlfs"
-version = "2024.12.0"
+version = "2025.8.0"
 description = "Access Azure Datalake Gen1 with fsspec and dask"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
 markers = "extra == \"adlfs\""
 files = [
-    {file = "adlfs-2024.12.0-py3-none-any.whl", hash = "sha256:00aab061ddec0413b2039487e656b62e01ece8ef1ca0493f76034a596cf069e3"},
-    {file = "adlfs-2024.12.0.tar.gz", hash = "sha256:04582bf7461a57365766d01a295a0a88b2b8c42c4fea06e2d673f62675cac5c6"},
+    {file = "adlfs-2025.8.0-py3-none-any.whl", hash = "sha256:c12a9203a31485cad19599bf2ad30d8efcf4cf0fd2446c60fcdc18604fae07b1"},
+    {file = "adlfs-2025.8.0.tar.gz", hash = "sha256:6fe5857866c18990f632598273e6a8b15edc6baf8614272ede25624057b83e64"},
 ]
 
 [package.dependencies]
@@ -4188,7 +4188,7 @@ description = "Beautiful, Pythonic protocol buffers"
 optional = true
 python-versions = ">=3.7"
 groups = ["main"]
-markers = "(python_version < \"3.12\" or python_version >= \"3.13\" or extra == \"bigquery\" or extra == \"gcsfs\") and (extra == \"gcsfs\" or extra == \"bigquery\")"
+markers = "python_version < \"3.12\" and (extra == \"gcsfs\" or extra == \"bigquery\") or extra == \"bigquery\" or extra == \"gcsfs\""
 files = [
     {file = "proto_plus-1.26.1-py3-none-any.whl", hash = "sha256:13285478c2dcf2abb829db158e1047e2f1e8d63a077d94263c2b88b043c75a66"},
     {file = "proto_plus-1.26.1.tar.gz", hash = "sha256:21a515a4c4c0088a773899e23c7bbade3d18f9c66c73edd4c7ee3816bc96a012"},
