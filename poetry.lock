@@ -1254,19 +1254,19 @@ files = [
 
 [[package]]
 name = "daft"
-version = "0.5.21"
+version = "0.5.22"
 description = "Distributed Dataframes for Multimodal Data"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
 markers = "extra == \"daft\""
 files = [
-    {file = "daft-0.5.21-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:87dca076939993177e881d6915308e2977661644b450924296667a96aeeb82d9"},
-    {file = "daft-0.5.21-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:ebe5239210f1aa8e25bc556a584db2d7849bed9aa3ce447ba19d19f3e6dd5e5c"},
-    {file = "daft-0.5.21-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:8c22d7ddc489bee4ffa7bd40fba6d909e9232bfd74f44978de3331704cb93132"},
-    {file = "daft-0.5.21-cp39-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:59cac11866d708b6f11f23f122be53d9ca96c403b6e9adef59f093b9c48850c3"},
-    {file = "daft-0.5.21-cp39-abi3-win_amd64.whl", hash = "sha256:4bdd7417f55ee044cf7b0e1ea163a2441a75d380dd0d55d7f796570ebea98cc0"},
-    {file = "daft-0.5.21.tar.gz", hash = "sha256:0cd8c10d1002ed3dd18c8f60bbddcd5e0b679546e47b48344e78ff7519c1c0fe"},
+    {file = "daft-0.5.22-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:3ea79057c8792e48974de26e18b779e6d062caee97684f5cb4887c576be44ba9"},
+    {file = "daft-0.5.22-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:21f82a20634c34c4fae582a572f4dd763f89556303e9c02d4db5cd8f5e20cb6b"},
+    {file = "daft-0.5.22-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:a7dfe76be2a408d9cc6b75610e880d4d970c79af19fd7b769689b46effe974b8"},
+    {file = "daft-0.5.22-cp39-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:d38cf492620af76f2d5bebf57cf58f3204d40cecfc4be5c640f5bd3940414f9f"},
+    {file = "daft-0.5.22-cp39-abi3-win_amd64.whl", hash = "sha256:80bbfcbda6fdb647fb5be0006571710f7af041d58366fdd04d3daca77c596932"},
+    {file = "daft-0.5.22.tar.gz", hash = "sha256:402dfb70ed1f2791aaefc3a298ec9decf2479221e1311e6b0d769653c42e276c"},
 ]
 
 [package.dependencies]
@@ -1282,12 +1282,12 @@ clickhouse = ["clickhouse-connect"]
 deltalake = ["deltalake", "packaging"]
 hudi = ["pyarrow (>=8.0.0)"]
 huggingface = ["huggingface-hub"]
-iceberg = ["packaging", "pyiceberg (>=0.7.0)"]
+iceberg = ["packaging", "pyiceberg (>=0.7.0,<0.9.1)"]
 lance = ["pylance"]
 numpy = ["numpy"]
 pandas = ["pandas"]
-ray = ["packaging", "ray[client,data] (>=2.0.0) ; platform_system != \"Windows\"", "ray[client,data] (>=2.10.0) ; platform_system == \"Windows\""]
-spark = ["googleapis-common-protos (==1.56.4)", "grpcio (>=1.48,<1.57)", "grpcio-status (>=1.48,<1.57)", "numpy (>=1.15)", "pandas (>=1.0.5)", "py4j (>=0.10.9.7)", "pyspark (==3.5.5)"]
+ray = ["packaging", "ray[client,data] (>=2.0.0,<2.48.0) ; platform_system != \"Windows\"", "ray[client,data] (>=2.10.0,<2.48.0) ; platform_system == \"Windows\""]
+spark = ["googleapis-common-protos (>=1.56.4)", "grpcio (>=1.48)", "grpcio-status (>=1.48)", "numpy (>=1.15)", "pandas (>=1.0.5)", "py4j (>=0.10.9.7)", "pyspark (==3.5.5)"]
 sql = ["connectorx", "sqlalchemy", "sqlglot"]
 unity = ["httpx (<=0.27.2)", "unitycatalog"]
 
