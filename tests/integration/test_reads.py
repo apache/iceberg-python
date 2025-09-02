@@ -26,7 +26,7 @@ from urllib.parse import urlparse
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
-from hive_metastore.ttypes import LockRequest, LockResponse, LockState, UnlockRequest
+from hive_metastore.v3.ttypes import LockRequest, LockResponse, LockState, UnlockRequest
 from pyarrow.fs import S3FileSystem
 from pydantic_core import ValidationError
 from pyspark.sql import SparkSession
@@ -115,14 +115,13 @@ def test_table_properties(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive")])
-def test_hive_properties(catalog: Catalog) -> None:
+def test_hive_properties(catalog: HiveCatalog) -> None:
     table = create_table(catalog)
     table.transaction().set_properties({"abc": "def", "p1": "123"}).commit_transaction()
-
     hive_client: _HiveClient = _HiveClient(catalog.properties["uri"])
 
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = catalog._get_hive_table(open_client, dbname="default", tbl_name="t1")
         assert hive_table.parameters.get("abc") == "def"
         assert hive_table.parameters.get("p1") == "123"
         assert hive_table.parameters.get("not_exist_parameter") is None
@@ -130,7 +129,7 @@ def test_hive_properties(catalog: Catalog) -> None:
     table.transaction().remove_properties("abc").commit_transaction()
 
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = catalog._get_hive_table(open_client, dbname="default", tbl_name="t1")
         assert hive_table.parameters.get("abc") is None
 
 
