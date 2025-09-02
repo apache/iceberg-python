@@ -32,7 +32,8 @@ from pydantic import (
     model_validator,
 )
 
-from pyiceberg.schema import Schema
+from pyiceberg.exceptions import ValidationError
+from pyiceberg.schema import Schema, _index_parents, index_by_id
 from pyiceberg.transforms import (
     BucketTransform,
     DayTransform,
@@ -244,6 +245,37 @@ class PartitionSpec(IcebergBaseModel):
 
         path = "/".join([field_str + "=" + value_str for field_str, value_str in zip(field_strs, value_strs)])
         return path
+
+    @staticmethod
+    def check_compatibility(partition_spec: PartitionSpec, schema: Schema, allow_missing_fields: bool = False) -> None:
+        # if the underlying field is dropped, we cannot check they are compatible -- continue
+        schema_fields = index_by_id(schema)
+        parents = _index_parents(schema)
+
+        def validate_parents_are_structs(field_id: int) -> None:
+            parent_id = parents.get(field_id)
+            while parent_id:
+                parent_type = schema.find_type(parent_id)
+                if not parent_type.is_struct:
+                    raise ValidationError("Invalid partition field parent: %s", parent_type)
+                parent_id = parents.get(parent_id)
+
+        for field in partition_spec.fields:
+            source_field = schema_fields.get(field.source_id)
+            if allow_missing_fields and source_field:
+                continue
+
+            if not isinstance(field.transform, VoidTransform):
+                if source_field:
+                    source_type = source_field.field_type
+                    if not source_type.is_primitive:
+                        raise ValidationError(f"Cannot partition by non-primitive source field: {source_type}")
+                    if not field.transform.can_transform(source_type):
+                        raise ValidationError(f"Invalid source type {source_type} for transform: {field.transform}")
+                    # The only valid parent types for a PartitionField are StructTypes. This must be checked recursively
+                    validate_parents_are_structs(field.source_id)
+                else:
+                    raise ValidationError(f"Cannot find source column for partition field: {field}")
 
 
 UNPARTITIONED_PARTITION_SPEC = PartitionSpec(spec_id=0)
