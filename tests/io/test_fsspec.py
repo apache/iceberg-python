@@ -505,7 +505,7 @@ def test_writing_avro_file_adls(generated_manifest_entry_file: str, adls_fsspec_
 
 @pytest.mark.adls
 def test_fsspec_pickle_round_trip_aldfs(adls_fsspec_fileio: FsspecFileIO, adls_scheme: str) -> None:
-    _test_fsspec_pickle_round_trip(adls_fsspec_fileio, "{adls_scheme}://tests/foo.txt")
+    _test_fsspec_pickle_round_trip(adls_fsspec_fileio, f"{adls_scheme}://tests/foo.txt")
 
 
 @pytest.mark.gcs
