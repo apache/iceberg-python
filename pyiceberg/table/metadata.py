@@ -562,11 +562,6 @@ class TableMetadataV3(TableMetadataCommonFields, IcebergBaseModel):
     next_row_id: Optional[int] = Field(alias="next-row-id", default=None)
     """A long higher than all assigned row IDs; the next snapshot's `first-row-id`."""
 
-    def model_dump_json(
-        self, exclude_none: bool = True, exclude: Optional[Any] = None, by_alias: bool = True, **kwargs: Any
-    ) -> str:
-        raise NotImplementedError("Writing V3 is not yet supported, see: https://github.com/apache/iceberg-python/issues/1551")
-
 
 TableMetadata = Annotated[Union[TableMetadataV1, TableMetadataV2, TableMetadataV3], Field(discriminator="format_version")]
 
