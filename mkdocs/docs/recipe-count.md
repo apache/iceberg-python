@@ -57,6 +57,24 @@ The count operation is highly efficient because:
 - **Filter pushdown**: Eliminates files that don't match criteria
 - **Cached statistics**: Utilizes pre-computed record counts
 
+!!! tip "Even Faster: Use Snapshot Properties"
+
+    For the fastest possible total row count (without filters), you can access the cached count directly from snapshot properties, avoiding any table scanning:
+
+    ```python
+    # Get total records from snapshot metadata (fastest method)
+    total_records = table.current_snapshot().summary.additional_properties["total-records"]
+    print(f"Total rows from snapshot: {total_records}")
+    ```
+
+    **When to use this approach:**
+    - When you need the total table row count without any filters
+    - For dashboard queries that need instant response times
+    - When working with very large tables where even metadata scanning takes time
+    - For monitoring and alerting systems that check table sizes frequently
+
+    **Note:** This method only works for total counts. For filtered counts, use `table.scan().filter(...).count()`.
+
 ## Test Scenarios
 
 Our test suite validates count behavior across different scenarios:

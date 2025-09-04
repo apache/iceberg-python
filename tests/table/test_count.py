@@ -59,17 +59,17 @@ def test_count_basic():
     - The count() method aggregates these counts efficiently
     """
     # Create a mock table with the necessary attributes
-    table = Mock(spec=DataScan)
+    scan = Mock(spec=DataScan)
 
     # Mock the plan_files method to return our dummy task
     task = DummyTask(42, residual=AlwaysTrue(), delete_files=[])
-    table.plan_files = MagicMock(return_value=[task])
+    scan.plan_files = MagicMock(return_value=[task])
 
     # Import and call the actual count method
     from pyiceberg.table import DataScan as ActualDataScan
-    table.count = ActualDataScan.count.__get__(table, ActualDataScan)
+    scan.count = ActualDataScan.count.__get__(scan, ActualDataScan)
 
-    assert table.count() == 42
+    assert scan.count() == 42
 
 
 def test_count_empty():
@@ -86,16 +86,16 @@ def test_count_empty():
     - Tables with restrictive filters that match no data
     """
     # Create a mock table with the necessary attributes
-    table = Mock(spec=DataScan)
+    scan = Mock(spec=DataScan)
 
     # Mock the plan_files method to return no tasks
-    table.plan_files = MagicMock(return_value=[])
+    scan.plan_files = MagicMock(return_value=[])
 
     # Import and call the actual count method
     from pyiceberg.table import DataScan as ActualDataScan
-    table.count = ActualDataScan.count.__get__(table, ActualDataScan)
+    scan.count = ActualDataScan.count.__get__(scan, ActualDataScan)
 
-    assert table.count() == 0
+    assert scan.count() == 0
 
 
 def test_count_large():
@@ -113,17 +113,17 @@ def test_count_large():
     - Distributed data scenarios common in big data environments
     """
     # Create a mock table with the necessary attributes
-    table = Mock(spec=DataScan)
+    scan = Mock(spec=DataScan)
 
     # Mock the plan_files method to return multiple tasks
     tasks = [
         DummyTask(500000, residual=AlwaysTrue(), delete_files=[]),
         DummyTask(500000, residual=AlwaysTrue(), delete_files=[]),
     ]
-    table.plan_files = MagicMock(return_value=tasks)
+    scan.plan_files = MagicMock(return_value=tasks)
 
     # Import and call the actual count method
     from pyiceberg.table import DataScan as ActualDataScan
-    table.count = ActualDataScan.count.__get__(table, ActualDataScan)
+    scan.count = ActualDataScan.count.__get__(scan, ActualDataScan)
 
-    assert table.count() == 1000000
+    assert scan.count() == 1000000
