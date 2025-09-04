@@ -64,7 +64,7 @@ def test_manage_snapshots_thread_safety_fix() -> None:
 
 def test_manage_snapshots_concurrent_operations() -> None:
     """Test concurrent operations with separate ManageSnapshots instances."""
-    results: Dict[str, tuple] = {"manage1_updates": (), "manage2_updates": ()}
+    results: Dict[str, tuple[Any, ...]] = {"manage1_updates": (), "manage2_updates": ()}
 
     def worker1() -> None:
         transaction1 = Mock()
@@ -114,31 +114,31 @@ def test_manage_snapshots_concurrent_different_tables() -> None:
     table2.metadata.table_uuid = uuid4()
 
     # Track calls to each table's manage operations
-    table1_operations = []
-    table2_operations = []
+    table1_operations: List[Dict[str, Any]] = []
+    table2_operations: List[Dict[str, Any]] = []
 
-    def create_table1_manage_mock():
+    def create_table1_manage_mock() -> ManageSnapshots:
         transaction_mock = Mock()
-        
-        def set_ref_snapshot_side_effect(**kwargs):
+
+        def set_ref_snapshot_side_effect(**kwargs: Any) -> tuple[tuple[str, ...], tuple[str, ...]]:
             table1_operations.append(kwargs)
             return (("table1_update",), ("table1_req",))
-        
+
         transaction_mock._set_ref_snapshot = Mock(side_effect=set_ref_snapshot_side_effect)
         manage_mock = ManageSnapshots(transaction_mock)
-        manage_mock.commit = Mock(return_value=None)
+        manage_mock.commit = Mock(return_value=None)  # type: ignore[method-assign]
         return manage_mock
 
-    def create_table2_manage_mock():
+    def create_table2_manage_mock() -> ManageSnapshots:
         transaction_mock = Mock()
-        
-        def set_ref_snapshot_side_effect(**kwargs):
+
+        def set_ref_snapshot_side_effect(**kwargs: Any) -> tuple[tuple[str, ...], tuple[str, ...]]:
             table2_operations.append(kwargs)
             return (("table2_update",), ("table2_req",))
-        
+
         transaction_mock._set_ref_snapshot = Mock(side_effect=set_ref_snapshot_side_effect)
         manage_mock = ManageSnapshots(transaction_mock)
-        manage_mock.commit = Mock(return_value=None)
+        manage_mock.commit = Mock(return_value=None)  # type: ignore[method-assign]
         return manage_mock
 
     table1.manage_snapshots = Mock(side_effect=create_table1_manage_mock)
@@ -148,9 +148,7 @@ def test_manage_snapshots_concurrent_different_tables() -> None:
     table1_snapshot_id = 1001
     table2_snapshot_id = 2001
 
-    def manage_table_snapshots(
-        table_obj: Any, table_name: str, snapshot_id: int, tag_name: str, results: Dict[str, Any]
-    ) -> None:
+    def manage_table_snapshots(table_obj: Any, table_name: str, snapshot_id: int, tag_name: str, results: Dict[str, Any]) -> None:
         """Manage snapshots for a specific table."""
         try:
             # Create tag operation (as in real usage)
@@ -168,12 +166,8 @@ def test_manage_snapshots_concurrent_different_tables() -> None:
     results2: Dict[str, Any] = {}
 
     # Create threads to manage snapshots for different tables concurrently
-    thread1 = threading.Thread(
-        target=manage_table_snapshots, args=(table1, "table1", table1_snapshot_id, "tag1", results1)
-    )
-    thread2 = threading.Thread(
-        target=manage_table_snapshots, args=(table2, "table2", table2_snapshot_id, "tag2", results2)
-    )
+    thread1 = threading.Thread(target=manage_table_snapshots, args=(table1, "table1", table1_snapshot_id, "tag1", results1))
+    thread2 = threading.Thread(target=manage_table_snapshots, args=(table2, "table2", table2_snapshot_id, "tag2", results2))
 
     # Start threads concurrently
     thread1.start()
@@ -218,37 +212,37 @@ def test_manage_snapshots_cross_table_isolation() -> None:
     table2.metadata.table_uuid = uuid.uuid4()
 
     # Track which operations each table's manage operation receives
-    table1_manage_calls = []
-    table2_manage_calls = []
+    table1_manage_calls: List[Dict[str, Any]] = []
+    table2_manage_calls: List[Dict[str, Any]] = []
 
-    def mock_table1_manage():
+    def mock_table1_manage() -> ManageSnapshots:
         transaction_mock = Mock()
-        
-        def set_ref_side_effect(**kwargs):
+
+        def set_ref_side_effect(**kwargs: Any) -> tuple[tuple[str, ...], tuple[str, ...]]:
             table1_manage_calls.append(kwargs)
             return (("update1",), ("req1",))
-        
+
         transaction_mock._set_ref_snapshot = Mock(side_effect=set_ref_side_effect)
         manage_mock = ManageSnapshots(transaction_mock)
-        manage_mock.commit = Mock(return_value=None)
+        manage_mock.commit = Mock(return_value=None)  # type: ignore[method-assign]
         return manage_mock
 
-    def mock_table2_manage():
+    def mock_table2_manage() -> ManageSnapshots:
         transaction_mock = Mock()
-        
-        def set_ref_side_effect(**kwargs):
+
+        def set_ref_side_effect(**kwargs: Any) -> tuple[tuple[str, ...], tuple[str, ...]]:
             table2_manage_calls.append(kwargs)
             return (("update2",), ("req2",))
-        
+
         transaction_mock._set_ref_snapshot = Mock(side_effect=set_ref_side_effect)
         manage_mock = ManageSnapshots(transaction_mock)
-        manage_mock.commit = Mock(return_value=None)
+        manage_mock.commit = Mock(return_value=None)  # type: ignore[method-assign]
         return manage_mock
 
     table1.manage_snapshots = Mock(side_effect=mock_table1_manage)
     table2.manage_snapshots = Mock(side_effect=mock_table2_manage)
 
-    def manage_from_table(table: Any, table_name: str, operations: List[Dict], results: Dict[str, Any]) -> None:
+    def manage_from_table(table: Any, table_name: str, operations: List[Dict[str, Any]], results: Dict[str, Any]) -> None:
         """Perform multiple manage operations on a specific table."""
         try:
             for op in operations:
@@ -257,7 +251,7 @@ def test_manage_snapshots_cross_table_isolation() -> None:
                     manager.create_tag(snapshot_id=op["snapshot_id"], tag_name=op["name"]).commit()
                 elif op["type"] == "branch":
                     manager.create_branch(snapshot_id=op["snapshot_id"], branch_name=op["name"]).commit()
-            
+
             results["success"] = True
             results["operations"] = operations
         except Exception as e:
@@ -292,7 +286,7 @@ def test_manage_snapshots_cross_table_isolation() -> None:
     # Table1 should only see table1 operations
     table1_snapshot_ids = [call["snapshot_id"] for call in table1_manage_calls]
     expected_table1_ids = [1001, 1002]
-    
+
     assert table1_snapshot_ids == expected_table1_ids, (
         f"Table1 received unexpected snapshot IDs: {table1_snapshot_ids} (expected {expected_table1_ids})"
     )
@@ -300,7 +294,7 @@ def test_manage_snapshots_cross_table_isolation() -> None:
     # Table2 should only see table2 operations
     table2_snapshot_ids = [call["snapshot_id"] for call in table2_manage_calls]
     expected_table2_ids = [2001, 2002]
-    
+
     assert table2_snapshot_ids == expected_table2_ids, (
         f"Table2 received unexpected snapshot IDs: {table2_snapshot_ids} (expected {expected_table2_ids})"
     )
@@ -316,17 +310,17 @@ def test_manage_snapshots_cross_table_isolation() -> None:
 
 def test_manage_snapshots_concurrent_same_table_different_operations() -> None:
     """Test that concurrent ManageSnapshots operations work correctly."""
-    
+
     # Mock current snapshot ID
     current_snapshot_id = 12345
 
     # Create mock transactions that return the expected format
-    def create_mock_transaction():
+    def create_mock_transaction() -> Mock:
         transaction_mock = Mock()
         transaction_mock._set_ref_snapshot = Mock(return_value=(("update",), ("req",)))
         return transaction_mock
 
-    def manage_snapshots_thread_func(operations: List[Dict], results: Dict[str, Any]) -> None:
+    def manage_snapshots_thread_func(operations: List[Dict[str, Any]], results: Dict[str, Any]) -> None:
         """Function to run in a thread that performs manage snapshot operations and captures results."""
         try:
             for op in operations:
@@ -365,7 +359,7 @@ def test_manage_snapshots_concurrent_same_table_different_operations() -> None:
     # Assert that both operations succeeded
     assert results1.get("success", False), f"Thread 1 management failed: {results1.get('error', 'Unknown error')}"
     assert results2.get("success", False), f"Thread 2 management failed: {results2.get('error', 'Unknown error')}"
-    
+
     # Verify that each thread has its own isolated state
     assert results1["updates"] == ("update",), f"Thread 1 should have ('update',), got {results1['updates']}"
     assert results2["updates"] == ("update",), f"Thread 2 should have ('update',), got {results2['updates']}"
