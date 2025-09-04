@@ -810,8 +810,10 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
        ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
     """
 
-    _updates: Tuple[TableUpdate, ...] = ()
-    _requirements: Tuple[TableRequirement, ...] = ()
+    def __init__(self, transaction: Transaction) -> None:
+        super().__init__(transaction)
+        self._updates: Tuple[TableUpdate, ...] = ()
+        self._requirements: Tuple[TableRequirement, ...] = ()
 
     def _commit(self) -> UpdatesAndRequirements:
         """Apply the pending changes and commit."""
