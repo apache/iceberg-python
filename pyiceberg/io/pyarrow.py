@@ -1011,6 +1011,10 @@ def _expression_to_complementary_pyarrow(expr: BooleanExpression) -> pc.Expressi
 def _get_file_format(file_format: FileFormat, **kwargs: Dict[str, Any]) -> ds.FileFormat:
     if file_format == FileFormat.PARQUET:
         return ds.ParquetFileFormat(**kwargs)
+    elif file_format == FileFormat.ORC:
+        # ORC doesn't support pre_buffer and buffer_size parameters
+        orc_kwargs = {k: v for k, v in kwargs.items() if k not in ['pre_buffer', 'buffer_size']}
+        return ds.OrcFileFormat(**orc_kwargs)
     else:
         raise ValueError(f"Unsupported file format: {file_format}")
 
@@ -1027,6 +1031,15 @@ def _read_deletes(io: FileIO, data_file: DataFile) -> Dict[str, pa.ChunkedArray]
             file.as_py(): table.filter(pc.field("file_path") == file).column("pos")
             for file in table.column("file_path").chunks[0].dictionary
         }
+    elif data_file.file_format == FileFormat.ORC:
+        with io.new_input(data_file.file_path).open() as fi:
+            delete_fragment = _get_file_format(data_file.file_format).make_fragment(fi)
+            table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
+            # For ORC, file_path columns are not dictionary-encoded, so we use unique() directly
+            return {
+                path.as_py(): table.filter(pc.field("file_path") == path).column("pos")
+                for path in table.column("file_path").unique()
+            }
     elif data_file.file_format == FileFormat.PUFFIN:
         with io.new_input(data_file.file_path).open() as fi:
             payload = fi.read()
@@ -1495,7 +1508,7 @@ def _task_to_record_batches(
     format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
     downcast_ns_timestamp_to_us: Optional[bool] = None,
 ) -> Iterator[pa.RecordBatch]:
-    arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
+    arrow_format = _get_file_format(task.file.file_format, pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
     with io.new_input(task.file.file_path).open() as fin:
         fragment = arrow_format.make_fragment(fin)
         physical_schema = fragment.physical_schema
