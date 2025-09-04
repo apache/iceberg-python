@@ -211,6 +211,9 @@ class TableProperties:
     WRITE_OBJECT_STORE_PARTITIONED_PATHS_DEFAULT = True
 
     WRITE_DATA_PATH = "write.data.path"
+
+    WRITE_FILE_FORMAT = "write.format.default"
+    WRITE_FILE_FORMAT_DEFAULT = "parquet"
     WRITE_METADATA_PATH = "write.metadata.path"
 
     DELETE_MODE = "write.delete.mode"

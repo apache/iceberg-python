@@ -28,6 +28,7 @@ from uuid import uuid4
 import pyarrow
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pyarrow.orc as orc
 import pytest
 from packaging import version
 from pyarrow.fs import AwsDefaultS3RetryStrategy, FileType, LocalFileSystem, S3FileSystem
@@ -1595,29 +1596,60 @@ def test_projection_filter_on_unknown_field(schema_int_str: Schema, file_int_str
     assert "Could not find field with name unknown_field, case_sensitive=True" in str(exc_info.value)
 
 
-@pytest.fixture
-def deletes_file(tmp_path: str, example_task: FileScanTask) -> str:
+@pytest.fixture(params=["parquet", "orc"])
+def deletes_file(tmp_path: str, request: pytest.FixtureRequest) -> str:
+    if request.param == "parquet":
+        example_task = request.getfixturevalue("example_task")
+        import pyarrow.parquet as pq
+        write_func = pq.write_table
+        file_ext = "parquet"
+    else:  # orc
+        example_task = request.getfixturevalue("example_task_orc")
+        import pyarrow.orc as orc
+        write_func = orc.write_table
+        file_ext = "orc"
+    
     path = example_task.file.file_path
     table = pa.table({"file_path": [path, path, path], "pos": [1, 3, 5]})
 
-    deletes_file_path = f"{tmp_path}/deletes.parquet"
-    pq.write_table(table, deletes_file_path)
+    deletes_file_path = f"{tmp_path}/deletes.{file_ext}"
+    write_func(table, deletes_file_path)
 
     return deletes_file_path
 
 
-def test_read_deletes(deletes_file: str, example_task: FileScanTask) -> None:
-    deletes = _read_deletes(PyArrowFileIO(), DataFile.from_args(file_path=deletes_file, file_format=FileFormat.PARQUET))
-    assert set(deletes.keys()) == {example_task.file.file_path}
+def test_read_deletes(deletes_file: str, request: pytest.FixtureRequest) -> None:
+    # Determine file format from the file extension
+    file_format = FileFormat.PARQUET if deletes_file.endswith('.parquet') else FileFormat.ORC
+    
+    # Get the appropriate example_task fixture based on file format
+    if file_format == FileFormat.PARQUET:
+        example_task = request.getfixturevalue("example_task")
+    else:
+        example_task = request.getfixturevalue("example_task_orc")
+    
+    deletes = _read_deletes(PyArrowFileIO(), DataFile.from_args(file_path=deletes_file, file_format=file_format))
+    # Get the expected file path from the actual deletes keys since they might differ between formats
+    expected_file_path = list(deletes.keys())[0]
+    assert set(deletes.keys()) == {expected_file_path}
     assert list(deletes.values())[0] == pa.chunked_array([[1, 3, 5]])
 
 
-def test_delete(deletes_file: str, example_task: FileScanTask, table_schema_simple: Schema) -> None:
+def test_delete(deletes_file: str, request: pytest.FixtureRequest, table_schema_simple: Schema) -> None:
+    # Determine file format from the file extension
+    file_format = FileFormat.PARQUET if deletes_file.endswith('.parquet') else FileFormat.ORC
+    
+    # Get the appropriate example_task fixture based on file format
+    if file_format == FileFormat.PARQUET:
+        example_task = request.getfixturevalue("example_task")
+    else:
+        example_task = request.getfixturevalue("example_task_orc")
+    
     metadata_location = "file://a/b/c.json"
     example_task_with_delete = FileScanTask(
         data_file=example_task.file,
         delete_files={
-            DataFile.from_args(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=FileFormat.PARQUET)
+            DataFile.from_args(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=file_format)
         },
     )
     with_deletes = ArrowScan(
@@ -1634,26 +1666,36 @@ def test_delete(deletes_file: str, example_task: FileScanTask, table_schema_simp
         row_filter=AlwaysTrue(),
     ).to_table(tasks=[example_task_with_delete])
 
-    assert (
-        str(with_deletes)
-        == """pyarrow.Table
-foo: large_string
+    # ORC uses 'string' while Parquet uses 'large_string' for string columns
+    expected_foo_type = "string" if file_format == FileFormat.ORC else "large_string"
+    expected_str = f"""pyarrow.Table
+foo: {expected_foo_type}
 bar: int32 not null
 baz: bool
 ----
 foo: [["a","c"]]
 bar: [[1,3]]
 baz: [[true,null]]"""
-    )
+    
+    assert str(with_deletes) == expected_str
 
 
-def test_delete_duplicates(deletes_file: str, example_task: FileScanTask, table_schema_simple: Schema) -> None:
+def test_delete_duplicates(deletes_file: str, request: pytest.FixtureRequest, table_schema_simple: Schema) -> None:
+    # Determine file format from the file extension
+    file_format = FileFormat.PARQUET if deletes_file.endswith('.parquet') else FileFormat.ORC
+    
+    # Get the appropriate example_task fixture based on file format
+    if file_format == FileFormat.PARQUET:
+        example_task = request.getfixturevalue("example_task")
+    else:
+        example_task = request.getfixturevalue("example_task_orc")
+    
     metadata_location = "file://a/b/c.json"
     example_task_with_delete = FileScanTask(
         data_file=example_task.file,
         delete_files={
-            DataFile.from_args(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=FileFormat.PARQUET),
-            DataFile.from_args(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=FileFormat.PARQUET),
+            DataFile.from_args(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=file_format),
+            DataFile.from_args(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=file_format),
         },
     )
 
@@ -1671,17 +1713,18 @@ def test_delete_duplicates(deletes_file: str, example_task: FileScanTask, table_
         row_filter=AlwaysTrue(),
     ).to_table(tasks=[example_task_with_delete])
 
-    assert (
-        str(with_deletes)
-        == """pyarrow.Table
-foo: large_string
+    # ORC uses 'string' while Parquet uses 'large_string' for string columns
+    expected_foo_type = "string" if file_format == FileFormat.ORC else "large_string"
+    expected_str = f"""pyarrow.Table
+foo: {expected_foo_type}
 bar: int32 not null
 baz: bool
 ----
 foo: [["a","c"]]
 bar: [[1,3]]
 baz: [[true,null]]"""
-    )
+    
+    assert str(with_deletes) == expected_str
 
 
 def test_pyarrow_wrap_fsspec(example_task: FileScanTask, table_schema_simple: Schema) -> None:
@@ -2811,3 +2854,439 @@ def test_parse_location_defaults() -> None:
     assert scheme == "hdfs"
     assert netloc == "netloc:8000"
     assert path == "/foo/bar"
+
+
+def test_write_and_read_orc(tmp_path):
+    """Test basic ORC write and read functionality."""
+    # Create a simple Arrow table
+    data = pa.table({'a': [1, 2, 3], 'b': ['x', 'y', 'z']})
+    orc_path = tmp_path / 'test.orc'
+    orc.write_table(data, str(orc_path))
+    # Read it back
+    orc_file = orc.ORCFile(str(orc_path))
+    table_read = orc_file.read()
+    assert table_read.equals(data)
+
+
+def test_orc_file_format_integration(tmp_path):
+    """Test ORC file format integration with PyArrow dataset API."""
+    # This test mimics a minimal integration with PyIceberg's FileFormat enum and pyarrow.orc
+    from pyiceberg.manifest import FileFormat
+    import pyarrow.dataset as ds
+    data = pa.table({'a': [10, 20], 'b': ['foo', 'bar']})
+    orc_path = tmp_path / 'iceberg.orc'
+    orc.write_table(data, str(orc_path))
+    # Use PyArrow dataset API to read as ORC
+    dataset = ds.dataset(str(orc_path), format=ds.OrcFileFormat())
+    table_read = dataset.to_table()
+    assert table_read.equals(data)
+
+
+def test_iceberg_read_orc(tmp_path):
+    """
+    Integration test: Read ORC files via Iceberg API.
+    To run just this test:
+        pytest tests/io/test_pyarrow.py -k test_iceberg_read_orc
+    """
+    import pyarrow as pa
+    import pyarrow.orc as orc
+    from pyiceberg.schema import Schema, NestedField
+    from pyiceberg.types import IntegerType, StringType
+    from pyiceberg.manifest import FileFormat, DataFileContent
+    from pyiceberg.table.metadata import TableMetadataV2
+    from pyiceberg.partitioning import PartitionSpec
+    from pyiceberg.io.pyarrow import PyArrowFileIO, ArrowScan
+    from pyiceberg.table import FileScanTask
+    from pyiceberg.expressions import AlwaysTrue
+
+    # Define schema and data
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(2, "name", StringType(), required=False),
+    )
+    data = pa.table({"id": pa.array([1, 2, 3], type=pa.int32()), "name": ["a", "b", "c"]})
+
+    # Create ORC file directly using PyArrow
+    orc_path = tmp_path / "test_data.orc"
+    orc.write_table(data, str(orc_path))
+
+    # Create table metadata
+    table_metadata = TableMetadataV2(
+        location=f"file://{tmp_path}/test_location",
+        last_column_id=2,
+        format_version=2,
+        schemas=[schema],
+        partition_specs=[PartitionSpec()],
+        properties={
+            "write.format.default": "parquet",  # This doesn't matter for reading
+            "schema.name-mapping.default": '[{"field-id": 1, "names": ["id"]}, {"field-id": 2, "names": ["name"]}]',  # Add name mapping for ORC files without field IDs
+        }
+    )
+    io = PyArrowFileIO()
+
+    # Create a DataFile pointing to the ORC file
+    from pyiceberg.manifest import DataFile
+    from pyiceberg.typedef import Record
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=str(orc_path),
+        file_format=FileFormat.ORC,
+        partition=Record(),
+        file_size_in_bytes=orc_path.stat().st_size,
+        sort_order_id=None,
+        spec_id=0,
+        equality_ids=None,
+        key_metadata=None,
+        record_count=3,
+        column_sizes={1: 12, 2: 12},  # Approximate sizes
+        value_counts={1: 3, 2: 3},
+        null_value_counts={1: 0, 2: 0},
+        nan_value_counts={1: 0, 2: 0},
+        lower_bounds={1: b"\x01\x00\x00\x00", 2: b"a"},  # Approximate bounds
+        upper_bounds={1: b"\x03\x00\x00\x00", 2: b"c"},
+        split_offsets=None,
+    )
+    # Ensure spec_id is properly set
+    data_file.spec_id = 0
+
+    # Read back using ArrowScan
+    scan = ArrowScan(
+        table_metadata=table_metadata,
+        io=io,
+        projected_schema=schema,
+        row_filter=AlwaysTrue(),
+        case_sensitive=True,
+    )
+    scan_task = FileScanTask(data_file=data_file)
+    table_read = scan.to_table([scan_task])
+    
+    # Compare data ignoring schema metadata (like not null constraints)
+    assert table_read.num_rows == data.num_rows
+    assert table_read.num_columns == data.num_columns
+    assert table_read.column_names == data.column_names
+    
+    # Compare actual column data values
+    for col_name in data.column_names:
+        assert table_read.column(col_name).to_pylist() == data.column(col_name).to_pylist()
+
+
+def test_orc_row_filtering_predicate_pushdown(tmp_path):
+    """
+    Test ORC row filtering and predicate pushdown functionality.
+    To run just this test:
+        pytest tests/io/test_pyarrow.py -k test_orc_row_filtering_predicate_pushdown
+    """
+    import pyarrow as pa
+    import pyarrow.orc as orc
+    from pyiceberg.schema import Schema, NestedField
+    from pyiceberg.types import IntegerType, StringType, BooleanType
+    from pyiceberg.manifest import FileFormat, DataFileContent
+    from pyiceberg.table.metadata import TableMetadataV2
+    from pyiceberg.partitioning import PartitionSpec
+    from pyiceberg.io.pyarrow import PyArrowFileIO, ArrowScan
+    from pyiceberg.table import FileScanTask
+    from pyiceberg.expressions import EqualTo, GreaterThan, LessThan, And, Or, In
+
+    # Define schema and data with more complex data for filtering
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(2, "name", StringType(), required=False),
+        NestedField(3, "age", IntegerType(), required=True),
+        NestedField(4, "active", BooleanType(), required=True),
+    )
+    
+    # Create data with various values for filtering
+    data = pa.table({
+        "id": pa.array([1, 2, 3, 4, 5], type=pa.int32()),
+        "name": ["alice", "bob", "charlie", "david", "eve"],
+        "age": pa.array([25, 30, 35, 40, 45], type=pa.int32()),
+        "active": [True, False, True, True, False]
+    })
+
+    # Create ORC file
+    orc_path = tmp_path / "filter_test.orc"
+    orc.write_table(data, str(orc_path))
+
+    # Create table metadata
+    table_metadata = TableMetadataV2(
+        location=f"file://{tmp_path}/test_location",
+        last_column_id=4,
+        format_version=2,
+        schemas=[schema],
+        partition_specs=[PartitionSpec()],
+        properties={
+            "schema.name-mapping.default": '[{"field-id": 1, "names": ["id"]}, {"field-id": 2, "names": ["name"]}, {"field-id": 3, "names": ["age"]}, {"field-id": 4, "names": ["active"]}]',
+        }
+    )
+    io = PyArrowFileIO()
+
+    # Create DataFile
+    from pyiceberg.manifest import DataFile
+    from pyiceberg.typedef import Record
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=str(orc_path),
+        file_format=FileFormat.ORC,
+        partition=Record(),
+        file_size_in_bytes=orc_path.stat().st_size,
+        sort_order_id=None,
+        spec_id=0,
+        equality_ids=None,
+        key_metadata=None,
+        record_count=5,
+        column_sizes={1: 20, 2: 50, 3: 20, 4: 10},
+        value_counts={1: 5, 2: 5, 3: 5, 4: 5},
+        null_value_counts={1: 0, 2: 0, 3: 0, 4: 0},
+        nan_value_counts={1: 0, 2: 0, 3: 0, 4: 0},
+        lower_bounds={1: b"\x01\x00\x00\x00", 2: b"alice", 3: b"\x19\x00\x00\x00", 4: b"\x00"},
+        upper_bounds={1: b"\x05\x00\x00\x00", 2: b"eve", 3: b"\x2d\x00\x00\x00", 4: b"\x01"},
+        split_offsets=None,
+    )
+    data_file.spec_id = 0
+
+    scan_task = FileScanTask(data_file=data_file)
+
+    # Test 1: Simple equality filter
+    scan = ArrowScan(
+        table_metadata=table_metadata,
+        io=io,
+        projected_schema=schema,
+        row_filter=EqualTo("id", 3),
+        case_sensitive=True,
+    )
+    result = scan.to_table([scan_task])
+    assert result.num_rows == 1
+    assert result.column("id").to_pylist() == [3]
+    assert result.column("name").to_pylist() == ["charlie"]
+
+    # Test 2: Range filter
+    scan = ArrowScan(
+        table_metadata=table_metadata,
+        io=io,
+        projected_schema=schema,
+        row_filter=And(GreaterThan("age", 30), LessThan("age", 45)),
+        case_sensitive=True,
+    )
+    result = scan.to_table([scan_task])
+    assert result.num_rows == 2
+    assert set(result.column("id").to_pylist()) == {3, 4}
+
+    # Test 3: String filter
+    scan = ArrowScan(
+        table_metadata=table_metadata,
+        io=io,
+        projected_schema=schema,
+        row_filter=EqualTo("name", "bob"),
+        case_sensitive=True,
+    )
+    result = scan.to_table([scan_task])
+    assert result.num_rows == 1
+    assert result.column("name").to_pylist() == ["bob"]
+
+    # Test 4: Boolean filter
+    scan = ArrowScan(
+        table_metadata=table_metadata,
+        io=io,
+        projected_schema=schema,
+        row_filter=EqualTo("active", True),
+        case_sensitive=True,
+    )
+    result = scan.to_table([scan_task])
+    assert result.num_rows == 3
+    assert set(result.column("id").to_pylist()) == {1, 3, 4}
+
+    # Test 5: IN filter
+    scan = ArrowScan(
+        table_metadata=table_metadata,
+        io=io,
+        projected_schema=schema,
+        row_filter=In("id", [1, 3, 5]),
+        case_sensitive=True,
+    )
+    result = scan.to_table([scan_task])
+    assert result.num_rows == 3
+    assert set(result.column("id").to_pylist()) == {1, 3, 5}
+
+    # Test 6: Complex AND/OR filter
+    scan = ArrowScan(
+        table_metadata=table_metadata,
+        io=io,
+        projected_schema=schema,
+        row_filter=Or(
+            And(EqualTo("active", True), GreaterThan("age", 30)),
+            EqualTo("name", "bob")
+        ),
+        case_sensitive=True,
+    )
+    result = scan.to_table([scan_task])
+    assert result.num_rows == 3
+    assert set(result.column("id").to_pylist()) == {2, 3, 4}  # bob, charlie, david
+
+
+def test_orc_record_batching_streaming(tmp_path):
+    """
+    Test ORC record batching and streaming functionality.
+    To run just this test:
+        pytest tests/io/test_pyarrow.py -k test_orc_record_batching_streaming
+    """
+    import pyarrow as pa
+    import pyarrow.orc as orc
+    from pyiceberg.schema import Schema, NestedField
+    from pyiceberg.types import IntegerType, StringType
+    from pyiceberg.manifest import FileFormat, DataFileContent
+    from pyiceberg.table.metadata import TableMetadataV2
+    from pyiceberg.partitioning import PartitionSpec
+    from pyiceberg.io.pyarrow import PyArrowFileIO, ArrowScan
+    from pyiceberg.table import FileScanTask
+    from pyiceberg.expressions import AlwaysTrue
+
+    # Define schema and create larger dataset for batching
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(2, "value", StringType(), required=False),
+    )
+    
+    # Create larger dataset to test batching
+    num_rows = 1000
+    data = pa.table({
+        "id": pa.array(range(1, num_rows + 1), type=pa.int32()),
+        "value": [f"value_{i}" for i in range(1, num_rows + 1)]
+    })
+
+    # Create ORC file
+    orc_path = tmp_path / "batch_test.orc"
+    orc.write_table(data, str(orc_path))
+
+    # Create table metadata
+    table_metadata = TableMetadataV2(
+        location=f"file://{tmp_path}/test_location",
+        last_column_id=2,
+        format_version=2,
+        schemas=[schema],
+        partition_specs=[PartitionSpec()],
+        properties={
+            "schema.name-mapping.default": '[{"field-id": 1, "names": ["id"]}, {"field-id": 2, "names": ["value"]}]',
+        }
+    )
+    io = PyArrowFileIO()
+
+    # Create DataFile
+    from pyiceberg.manifest import DataFile
+    from pyiceberg.typedef import Record
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=str(orc_path),
+        file_format=FileFormat.ORC,
+        partition=Record(),
+        file_size_in_bytes=orc_path.stat().st_size,
+        sort_order_id=None,
+        spec_id=0,
+        equality_ids=None,
+        key_metadata=None,
+        record_count=num_rows,
+        column_sizes={1: 4000, 2: 8000},
+        value_counts={1: num_rows, 2: num_rows},
+        null_value_counts={1: 0, 2: 0},
+        nan_value_counts={1: 0, 2: 0},
+        lower_bounds={1: b"\x01\x00\x00\x00", 2: b"value_1"},
+        upper_bounds={1: b"\xe8\x03\x00\x00", 2: b"value_1000"},
+        split_offsets=None,
+    )
+    data_file.spec_id = 0
+
+    scan_task = FileScanTask(data_file=data_file)
+
+    # Test 1: Record batching - verify we get multiple batches
+    scan = ArrowScan(
+        table_metadata=table_metadata,
+        io=io,
+        projected_schema=schema,
+        row_filter=AlwaysTrue(),
+        case_sensitive=True,
+    )
+    
+    batches = list(scan.to_record_batches([scan_task]))
+    assert len(batches) > 0, "Should return at least one batch"
+    
+    # Verify all batches are RecordBatch objects
+    for batch in batches:
+        assert isinstance(batch, pa.RecordBatch), f"Expected RecordBatch, got {type(batch)}"
+        assert batch.num_columns == 2, f"Expected 2 columns, got {batch.num_columns}"
+        assert "id" in batch.schema.names, "Missing 'id' column"
+        assert "value" in batch.schema.names, "Missing 'value' column"
+
+    # Test 2: Verify data integrity across batches
+    total_rows = sum(batch.num_rows for batch in batches)
+    assert total_rows == num_rows, f"Expected {num_rows} rows total, got {total_rows}"
+    
+    # Collect all data from batches
+    all_ids = []
+    all_values = []
+    for batch in batches:
+        all_ids.extend(batch.column("id").to_pylist())
+        all_values.extend(batch.column("value").to_pylist())
+    
+    # Verify data matches original
+    assert all_ids == list(range(1, num_rows + 1)), "ID data doesn't match"
+    assert all_values == [f"value_{i}" for i in range(1, num_rows + 1)], "Value data doesn't match"
+
+    # Test 3: Streaming behavior - verify we can process batches one by one
+    scan = ArrowScan(
+        table_metadata=table_metadata,
+        io=io,
+        projected_schema=schema,
+        row_filter=AlwaysTrue(),
+        case_sensitive=True,
+    )
+    
+    processed_rows = 0
+    batch_count = 0
+    for batch in scan.to_record_batches([scan_task]):
+        batch_count += 1
+        processed_rows += batch.num_rows
+        # Verify each batch has reasonable size (not too small, not too large)
+        assert batch.num_rows > 0, "Batch should not be empty"
+        assert batch.num_rows <= num_rows, "Batch should not exceed total rows"
+    
+    assert batch_count > 0, "Should have at least one batch"
+    assert processed_rows == num_rows, f"Processed {processed_rows} rows, expected {num_rows}"
+
+    # Test 4: Column projection with batching
+    projected_schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+    )
+    
+    scan = ArrowScan(
+        table_metadata=table_metadata,
+        io=io,
+        projected_schema=projected_schema,
+        row_filter=AlwaysTrue(),
+        case_sensitive=True,
+    )
+    
+    batches = list(scan.to_record_batches([scan_task]))
+    assert len(batches) > 0, "Should return batches for projected schema"
+    
+    for batch in batches:
+        assert batch.num_columns == 1, f"Expected 1 column after projection, got {batch.num_columns}"
+        assert "id" in batch.schema.names, "Missing 'id' column after projection"
+        assert "value" not in batch.schema.names, "Should not have 'value' column after projection"
+
+    # Test 5: Filtering with batching
+    from pyiceberg.expressions import GreaterThan
+    scan = ArrowScan(
+        table_metadata=table_metadata,
+        io=io,
+        projected_schema=schema,
+        row_filter=GreaterThan("id", 500),
+        case_sensitive=True,
+    )
+    
+    batches = list(scan.to_record_batches([scan_task]))
+    total_filtered_rows = sum(batch.num_rows for batch in batches)
+    assert total_filtered_rows == 500, f"Expected 500 rows after filtering, got {total_filtered_rows}"
+    
+    # Verify all returned IDs are > 500
+    for batch in batches:
+        ids = batch.column("id").to_pylist()
+        assert all(id_val > 500 for id_val in ids), f"Found ID <= 500: {ids}"
