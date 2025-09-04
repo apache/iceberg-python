@@ -713,6 +713,46 @@ def test_upsert_with_nulls(catalog: Catalog) -> None:
         schema=schema,
     )
 
+    # upsert table with null value
+    data_with_null = pa.Table.from_pylist(
+        [
+            {"foo": None, "bar": 1, "baz": False},
+        ],
+        schema=schema,
+    )
+    upd = table.upsert(data_with_null, join_cols=["foo"])
+    assert upd.rows_updated == 0
+    assert upd.rows_inserted == 1
+    assert table.scan().to_arrow() == pa.Table.from_pylist(
+        [
+            {"foo": None, "bar": 1, "baz": False},
+            {"foo": "apple", "bar": 7, "baz": False},
+            {"foo": "banana", "bar": None, "baz": False},
+        ],
+        schema=schema,
+    )
+
+    # upsert table with null and non-null values, in two join columns
+    data_with_null = pa.Table.from_pylist(
+        [
+            {"foo": None, "bar": 1, "baz": True},
+            {"foo": "lemon", "bar": None, "baz": False},
+        ],
+        schema=schema,
+    )
+    upd = table.upsert(data_with_null, join_cols=["foo", "bar"])
+    assert upd.rows_updated == 1
+    assert upd.rows_inserted == 1
+    assert table.scan().to_arrow() == pa.Table.from_pylist(
+        [
+            {"foo": "lemon", "bar": None, "baz": False},
+            {"foo": None, "bar": 1, "baz": True},
+            {"foo": "apple", "bar": 7, "baz": False},
+            {"foo": "banana", "bar": None, "baz": False},
+        ],
+        schema=schema,
+    )
+
 
 def test_transaction(catalog: Catalog) -> None:
     """Test the upsert within a Transaction. Make sure that if something fails the entire Transaction is
