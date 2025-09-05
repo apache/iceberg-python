@@ -35,16 +35,12 @@ print(f"Total rows in table: {row_count}")
 Count rows matching specific conditions:
 
 ```python
-from pyiceberg.expressions import GreaterThan, EqualTo, And
-
 # Count rows with population > 1,000,000
 large_cities = table.scan().filter("population > 1000000").count()
 print(f"Large cities: {large_cities}")
 
 # Count rows with specific country and population criteria
-filtered_count = table.scan().filter(
-    And(EqualTo("country", "Netherlands"), GreaterThan("population", 100000))
-).count()
+filtered_count = table.scan().filter("country = 'Netherlands' AND population > 100000").count()
 print(f"Dutch cities with population > 100k: {filtered_count}")
 ```
 
@@ -62,9 +58,7 @@ limited_count = table.scan().count(limit=10000)
 print(f"Row count (max 10k): {limited_count}")
 
 # Combine limit with filters for efficient targeted counting
-recent_orders_sample = table.scan().filter(
-    GreaterThan("order_date", "2023-01-01")
-).count(limit=5000)
+recent_orders_sample = table.scan().filter("order_date > '2023-01-01'").count(limit=5000)
 print(f"Recent orders (up to 5000): {recent_orders_sample}")
 ```
 
