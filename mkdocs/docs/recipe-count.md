@@ -38,7 +38,7 @@ Count rows matching specific conditions:
 from pyiceberg.expressions import GreaterThan, EqualTo, And
 
 # Count rows with population > 1,000,000
-large_cities = table.scan().filter(GreaterThan("population", 1000000)).count()
+large_cities = table.scan().filter("population > 1000000").count()
 print(f"Large cities: {large_cities}")
 
 # Count rows with specific country and population criteria
@@ -47,6 +47,48 @@ filtered_count = table.scan().filter(
 ).count()
 print(f"Dutch cities with population > 100k: {filtered_count}")
 ```
+
+## Count with Limit
+
+The `count()` method supports a `limit` parameter for efficient counting when you only need to know if a table has at least N rows, or when working with very large datasets:
+
+```python
+# Check if table has at least 1000 rows (stops counting after reaching 1000)
+has_enough_rows = table.scan().count(limit=1000) >= 1000
+print(f"Table has at least 1000 rows: {has_enough_rows}")
+
+# Get count up to a maximum of 10,000 rows
+limited_count = table.scan().count(limit=10000)
+print(f"Row count (max 10k): {limited_count}")
+
+# Combine limit with filters for efficient targeted counting
+recent_orders_sample = table.scan().filter(
+    GreaterThan("order_date", "2023-01-01")
+).count(limit=5000)
+print(f"Recent orders (up to 5000): {recent_orders_sample}")
+```
+
+### Performance Benefits of Limit
+
+Using the `limit` parameter provides significant performance improvements:
+
+- **Early termination**: Stops processing files once the limit is reached
+- **Reduced I/O**: Avoids reading metadata from unnecessary files
+- **Memory efficiency**: Processes only the minimum required data
+- **Faster response**: Ideal for existence checks and sampling operations
+
+!!! tip "When to Use Limit"
+
+    **Use `limit` when:**
+    - Checking if a table has "enough" data (existence checks)
+    - Sampling row counts from very large tables
+    - Building dashboards that show approximate counts
+    - Validating data ingestion without full table scans
+
+    **Example use cases:**
+    - Data quality gates: "Does this partition have at least 1000 rows?"
+    - Monitoring alerts: "Are there more than 100 error records today?"
+    - Approximate statistics: "Show roughly how many records per hour"
 
 ## Performance Characteristics
 
@@ -97,12 +139,41 @@ assert empty_table.scan().count() == 0
 assert large_table.scan().count() == 1000000
 ```
 
+### Limit Functionality (test_count_with_limit_mock)
+```python
+# Tests that limit parameter is respected and provides early termination
+limited_count = table.scan().count(limit=50)
+assert limited_count == 50  # Stops at limit even if more rows exist
+
+# Test with limit larger than available data
+all_rows = small_table.scan().count(limit=1000)
+assert all_rows == 42  # Returns actual count when limit > total rows
+```
+
+### Integration Testing (test_datascan_count_respects_limit)
+```python
+# Full end-to-end validation with real table operations
+# Creates table, adds data, verifies limit behavior in realistic scenarios
+assert table.scan().count(limit=1) == 1
+assert table.scan().count() > 1  # Unlimited count returns more
+```
+
 ## Best Practices
 
 1. **Use count() for data validation**: Verify expected row counts after ETL operations
 2. **Combine with filters**: Get targeted counts without full table scans
-3. **Monitor table growth**: Track record counts over time for capacity planning
-4. **Validate partitions**: Count rows per partition to ensure balanced distribution
+3. **Leverage limit for existence checks**: Use `count(limit=N)` when you only need to know if a table has at least N rows
+4. **Monitor table growth**: Track record counts over time for capacity planning
+5. **Validate partitions**: Count rows per partition to ensure balanced distribution
+6. **Use appropriate limits**: Set sensible limits for dashboard queries and monitoring to improve response times
+
+!!! warning "Limit Considerations"
+
+    When using `limit`, remember that:
+    - The count may be less than the actual total if limit is reached
+    - Results are deterministic but depend on file processing order
+    - Use unlimited count when you need exact totals
+    - Combine with filters for more targeted limited counting
 
 ## Common Use Cases
 

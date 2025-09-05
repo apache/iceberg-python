@@ -15,9 +15,12 @@ Iceberg table infrastructure, ensuring fast and isolated unit tests.
 """
 
 import pytest
+import pyarrow as pa
 from unittest.mock import MagicMock, Mock, patch
 from pyiceberg.table import DataScan
 from pyiceberg.expressions import AlwaysTrue
+from pyiceberg.schema import Schema
+from pyiceberg.types import NestedField, StringType, IntegerType, BooleanType
 
 
 class DummyFile:
@@ -60,6 +63,7 @@ def test_count_basic():
     """
     # Create a mock table with the necessary attributes
     scan = Mock(spec=DataScan)
+    scan.limit = None  # Add the limit attribute for our fix
 
     # Mock the plan_files method to return our dummy task
     task = DummyTask(42, residual=AlwaysTrue(), delete_files=[])
@@ -87,6 +91,7 @@ def test_count_empty():
     """
     # Create a mock table with the necessary attributes
     scan = Mock(spec=DataScan)
+    scan.limit = None  # Add the limit attribute for our fix
 
     # Mock the plan_files method to return no tasks
     scan.plan_files = MagicMock(return_value=[])
@@ -114,6 +119,7 @@ def test_count_large():
     """
     # Create a mock table with the necessary attributes
     scan = Mock(spec=DataScan)
+    scan.limit = None  # Add the limit attribute for our fix
 
     # Mock the plan_files method to return multiple tasks
     tasks = [
@@ -127,3 +133,122 @@ def test_count_large():
     scan.count = ActualDataScan.count.__get__(scan, ActualDataScan)
 
     assert scan.count() == 1000000
+
+
+def test_count_with_limit_mock():
+    """
+    Test count functionality with limit using mocked data.
+
+    This test verifies that the count() method respects limits when set,
+    using mock objects to simulate different scenarios without requiring
+    integration services.
+    """
+    # Test Case 1: Limit smaller than total records
+    scan = Mock(spec=DataScan)
+    scan.limit = 5  # Set limit
+
+    tasks = [
+        DummyTask(3, residual=AlwaysTrue(), delete_files=[]),
+        DummyTask(4, residual=AlwaysTrue(), delete_files=[]),
+        DummyTask(2, residual=AlwaysTrue(), delete_files=[]),  # Total = 9 records
+    ]
+    scan.plan_files = MagicMock(return_value=tasks)
+
+    from pyiceberg.table import DataScan as ActualDataScan
+    scan.count = ActualDataScan.count.__get__(scan, ActualDataScan)
+
+    result = scan.count()
+    assert result == 5, f"Expected count to respect limit=5, got {result}"
+
+    # Test Case 2: Limit larger than available data
+    scan2 = Mock(spec=DataScan)
+    scan2.limit = 15  # Limit larger than data
+
+    tasks2 = [
+        DummyTask(3, residual=AlwaysTrue(), delete_files=[]),
+        DummyTask(2, residual=AlwaysTrue(), delete_files=[]),  # Total = 5 records
+    ]
+    scan2.plan_files = MagicMock(return_value=tasks2)
+    scan2.count = ActualDataScan.count.__get__(scan2, ActualDataScan)
+
+    result2 = scan2.count()
+    assert result2 == 5, f"Expected count=5 (all available), got {result2} with limit=15"
+
+    # Test Case 3: Limit equals total records
+    scan3 = Mock(spec=DataScan)
+    scan3.limit = 7  # Exact match
+
+    tasks3 = [
+        DummyTask(4, residual=AlwaysTrue(), delete_files=[]),
+        DummyTask(3, residual=AlwaysTrue(), delete_files=[]),  # Total = 7 records
+    ]
+    scan3.plan_files = MagicMock(return_value=tasks3)
+    scan3.count = ActualDataScan.count.__get__(scan3, ActualDataScan)
+
+    result3 = scan3.count()
+    assert result3 == 7, f"Expected count=7 (exact limit), got {result3}"
+
+def test_datascan_count_respects_limit(session_catalog):
+    """
+    Test that DataScan.count() respects the limit parameter.
+
+    This test verifies the fix for issue #2121 where count() was ignoring
+    the limit and returning the total table row count instead of being
+    bounded by the scan limit.
+    """
+    import uuid
+
+    # Create a simple schema
+    schema = Schema(
+        NestedField(1, "str", StringType(), required=False),
+        NestedField(2, "int", IntegerType(), required=False),
+        NestedField(3, "bool", BooleanType(), required=False)
+    )
+
+    # Use a unique table name to avoid conflicts
+    table_name = f"default.test_limit_{uuid.uuid4().hex[:8]}"
+
+    try:
+        # Try to drop table if it exists
+        try:
+            session_catalog.drop_table(table_name)
+        except:
+            pass  # Table might not exist, which is fine
+
+        # Create a table with more rows than our test limits
+        table = session_catalog.create_table(table_name, schema=schema)
+
+        # Add 10 rows to ensure we have enough data
+        records = [
+            {"str": f"foo{i}", "int": i, "bool": True} for i in range(10)
+        ]
+        table.append(
+            pa.Table.from_pylist(records, schema=table.schema().as_arrow())
+        )
+
+        # Test Case 1: Basic limit functionality
+        scan_limit_3 = table.scan(limit=3)
+        count_3 = scan_limit_3.count()
+        assert count_3 == 3, f"Expected count to respect limit=3, got {count_3}"
+
+        # Test Case 2: Limit larger than table size
+        scan_limit_20 = table.scan(limit=20)
+        count_20 = scan_limit_20.count()
+        assert count_20 == 10, f"Expected count=10 (all rows), got {count_20} with limit=20"
+
+        # Test Case 3: No limit should return all rows
+        scan_no_limit = table.scan()
+        count_all = scan_no_limit.count()
+        assert count_all == 10, f"Expected count=10 (all rows), got {count_all} without limit"
+
+        # Test Case 4: Edge case - limit of 1
+        scan_limit_1 = table.scan(limit=1)
+        count_1 = scan_limit_1.count()
+        assert count_1 == 1, f"Expected count to respect limit=1, got {count_1}"
+
+    finally:
+        # Clean up the test table
+        try:
+            session_catalog.drop_table(table_name)
+        except:
+            pass  # Ignore cleanup errors
