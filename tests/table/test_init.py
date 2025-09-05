@@ -78,6 +78,7 @@ from pyiceberg.table.update import (
     AssertTableUUID,
     RemovePartitionStatisticsUpdate,
     RemovePropertiesUpdate,
+    RemoveSchemasUpdate,
     RemoveSnapshotRefUpdate,
     RemoveSnapshotsUpdate,
     RemoveStatisticsUpdate,
@@ -1284,6 +1285,35 @@ def test_update_metadata_log_overflow(table_v2: Table) -> None:
         table_v2.metadata_location,
     )
     assert len(new_metadata.metadata_log) == 1
+
+
+def test_remove_schemas_update(table_v2: Table) -> None:
+    base_metadata = table_v2.metadata
+    assert len(base_metadata.schemas) == 2
+
+    update = RemoveSchemasUpdate(schema_ids=[0])
+    updated_metadata = update_table_metadata(
+        base_metadata,
+        (update,),
+    )
+
+    assert len(updated_metadata.schemas) == 1
+
+
+def test_remove_schemas_update_schema_does_not_exist(table_v2: Table) -> None:
+    update = RemoveSchemasUpdate(
+        schema_ids=[123],
+    )
+    with pytest.raises(ValueError, match="Schema with schema id 123 does not exist"):
+        update_table_metadata(table_v2.metadata, (update,))
+
+
+def test_remove_schemas_update_current_schema(table_v2: Table) -> None:
+    update = RemoveSchemasUpdate(
+        schema_ids=[1],
+    )
+    with pytest.raises(ValueError, match="Cannot remove current schema with id 1"):
+        update_table_metadata(table_v2.metadata, (update,))
 
 
 def test_set_statistics_update(table_v2_with_statistics: Table) -> None:
