@@ -3290,3 +3290,205 @@ def test_orc_record_batching_streaming(tmp_path):
     for batch in batches:
         ids = batch.column("id").to_pylist()
         assert all(id_val > 500 for id_val in ids), f"Found ID <= 500: {ids}"
+
+
+def test_orc_field_id_extraction():
+    """
+    Test ORC field ID extraction from PyArrow field metadata.
+    To run just this test:
+        pytest tests/io/test_pyarrow.py -k test_orc_field_id_extraction
+    """
+    import pyarrow as pa
+    from pyiceberg.io.pyarrow import _get_field_id, ORC_FIELD_ID_KEY, PYARROW_PARQUET_FIELD_ID_KEY
+
+    # Test 1: Parquet field ID extraction
+    field_parquet = pa.field('test_parquet', pa.string(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: b'123'})
+    field_id = _get_field_id(field_parquet)
+    assert field_id == 123, f"Expected Parquet field ID 123, got {field_id}"
+
+    # Test 2: ORC field ID extraction
+    field_orc = pa.field('test_orc', pa.string(), metadata={ORC_FIELD_ID_KEY: b'456'})
+    field_id = _get_field_id(field_orc)
+    assert field_id == 456, f"Expected ORC field ID 456, got {field_id}"
+
+    # Test 3: No field ID
+    field_no_id = pa.field('test_no_id', pa.string())
+    field_id = _get_field_id(field_no_id)
+    assert field_id is None, f"Expected None for field without ID, got {field_id}"
+
+    # Test 4: Both field IDs present (should prefer Parquet)
+    field_both = pa.field('test_both', pa.string(), metadata={
+        PYARROW_PARQUET_FIELD_ID_KEY: b'123',
+        ORC_FIELD_ID_KEY: b'456'
+    })
+    field_id = _get_field_id(field_both)
+    assert field_id == 123, f"Expected Parquet field ID 123 (preferred), got {field_id}"
+
+    # Test 5: Empty metadata
+    field_empty_metadata = pa.field('test_empty', pa.string(), metadata={})
+    field_id = _get_field_id(field_empty_metadata)
+    assert field_id is None, f"Expected None for field with empty metadata, got {field_id}"
+
+    # Test 6: Invalid field ID format
+    field_invalid = pa.field('test_invalid', pa.string(), metadata={ORC_FIELD_ID_KEY: b'not_a_number'})
+    try:
+        field_id = _get_field_id(field_invalid)
+        assert False, "Expected ValueError for invalid field ID format"
+    except ValueError:
+        pass  # Expected behavior
+
+    # Test 7: Different data types
+    field_int = pa.field('test_int', pa.int32(), metadata={ORC_FIELD_ID_KEY: b'789'})
+    field_id = _get_field_id(field_int)
+    assert field_id == 789, f"Expected ORC field ID 789 for int field, got {field_id}"
+
+    field_bool = pa.field('test_bool', pa.bool_(), metadata={ORC_FIELD_ID_KEY: b'101'})
+    field_id = _get_field_id(field_bool)
+    assert field_id == 101, f"Expected ORC field ID 101 for bool field, got {field_id}"
+
+
+def test_orc_schema_with_field_ids(tmp_path):
+    """
+    Test ORC reading with actual field IDs embedded in the schema.
+    This test creates an ORC file with field IDs and reads it without name mapping.
+    To run just this test:
+        pytest tests/io/test_pyarrow.py -k test_orc_schema_with_field_ids
+    """
+    import pyarrow as pa
+    import pyarrow.orc as orc
+    from pyiceberg.schema import Schema, NestedField
+    from pyiceberg.types import IntegerType, StringType
+    from pyiceberg.manifest import FileFormat, DataFileContent
+    from pyiceberg.table.metadata import TableMetadataV2
+    from pyiceberg.partitioning import PartitionSpec
+    from pyiceberg.io.pyarrow import PyArrowFileIO, ArrowScan, schema_to_pyarrow, ORC_FIELD_ID_KEY
+    from pyiceberg.table import FileScanTask
+    from pyiceberg.expressions import AlwaysTrue
+
+    # Define schema
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(2, "name", StringType(), required=False),
+    )
+
+    # Create PyArrow schema with ORC field IDs
+    arrow_schema = pa.schema([
+        pa.field("id", pa.int32(), metadata={ORC_FIELD_ID_KEY: b"1"}),
+        pa.field("name", pa.string(), metadata={ORC_FIELD_ID_KEY: b"2"})
+    ])
+
+    # Create data with the schema that has field IDs
+    data = pa.table({
+        "id": pa.array([1, 2, 3], type=pa.int32()),
+        "name": ["alice", "bob", "charlie"]
+    }, schema=arrow_schema)
+
+    # Create ORC file
+    orc_path = tmp_path / "field_id_test.orc"
+    orc.write_table(data, str(orc_path))
+
+    # Create table metadata WITHOUT name mapping (should work with field IDs)
+    table_metadata = TableMetadataV2(
+        location=f"file://{tmp_path}/test_location",
+        last_column_id=2,
+        format_version=2,
+        schemas=[schema],
+        partition_specs=[PartitionSpec()],
+        properties={
+            # No name mapping - should work with field IDs
+        }
+    )
+    io = PyArrowFileIO()
+
+    # Create DataFile
+    from pyiceberg.manifest import DataFile
+    from pyiceberg.typedef import Record
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=str(orc_path),
+        file_format=FileFormat.ORC,
+        partition=Record(),
+        file_size_in_bytes=orc_path.stat().st_size,
+        sort_order_id=None,
+        spec_id=0,
+        equality_ids=None,
+        key_metadata=None,
+        record_count=3,
+        column_sizes={1: 12, 2: 30},
+        value_counts={1: 3, 2: 3},
+        null_value_counts={1: 0, 2: 0},
+        nan_value_counts={1: 0, 2: 0},
+        lower_bounds={1: b"\x01\x00\x00\x00", 2: b"alice"},
+        upper_bounds={1: b"\x03\x00\x00\x00", 2: b"charlie"},
+        split_offsets=None,
+    )
+    data_file.spec_id = 0
+
+    # Read back using ArrowScan - should work without name mapping
+    scan = ArrowScan(
+        table_metadata=table_metadata,
+        io=io,
+        projected_schema=schema,
+        row_filter=AlwaysTrue(),
+        case_sensitive=True,
+    )
+    scan_task = FileScanTask(data_file=data_file)
+    table_read = scan.to_table([scan_task])
+    
+    # Verify the data was read correctly
+    assert table_read.num_rows == 3
+    assert table_read.num_columns == 2
+    assert table_read.column_names == ["id", "name"]
+    
+    # Verify data matches
+    assert table_read.column("id").to_pylist() == [1, 2, 3]
+    assert table_read.column("name").to_pylist() == ["alice", "bob", "charlie"]
+
+
+def test_orc_schema_conversion_with_field_ids():
+    """
+    Test that schema_to_pyarrow correctly adds ORC field IDs when file_format is specified.
+    To run just this test:
+        pytest tests/io/test_pyarrow.py -k test_orc_schema_conversion_with_field_ids
+    """
+    from pyiceberg.schema import Schema, NestedField
+    from pyiceberg.types import IntegerType, StringType
+    from pyiceberg.manifest import FileFormat
+    from pyiceberg.io.pyarrow import schema_to_pyarrow, ORC_FIELD_ID_KEY, PYARROW_PARQUET_FIELD_ID_KEY
+
+    # Define schema
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(2, "name", StringType(), required=False),
+    )
+
+    # Test 1: Default behavior (should add Parquet field IDs)
+    arrow_schema_default = schema_to_pyarrow(schema, include_field_ids=True)
+    
+    id_field = arrow_schema_default.field(0)  # id field
+    name_field = arrow_schema_default.field(1)  # name field
+    
+    assert id_field.metadata[PYARROW_PARQUET_FIELD_ID_KEY] == b"1"
+    assert name_field.metadata[PYARROW_PARQUET_FIELD_ID_KEY] == b"2"
+    assert ORC_FIELD_ID_KEY not in id_field.metadata
+    assert ORC_FIELD_ID_KEY not in name_field.metadata
+
+    # Test 2: Explicitly specify ORC format
+    arrow_schema_orc = schema_to_pyarrow(schema, include_field_ids=True, file_format=FileFormat.ORC)
+    
+    id_field_orc = arrow_schema_orc.field(0)  # id field
+    name_field_orc = arrow_schema_orc.field(1)  # name field
+    
+    assert id_field_orc.metadata[ORC_FIELD_ID_KEY] == b"1"
+    assert name_field_orc.metadata[ORC_FIELD_ID_KEY] == b"2"
+    assert PYARROW_PARQUET_FIELD_ID_KEY not in id_field_orc.metadata
+    assert PYARROW_PARQUET_FIELD_ID_KEY not in name_field_orc.metadata
+
+    # Test 3: No field IDs
+    arrow_schema_no_ids = schema_to_pyarrow(schema, include_field_ids=False, file_format=FileFormat.ORC)
+    
+    id_field_no_ids = arrow_schema_no_ids.field(0)
+    name_field_no_ids = arrow_schema_no_ids.field(1)
+    
+    assert not id_field_no_ids.metadata
+    assert not name_field_no_ids.metadata
