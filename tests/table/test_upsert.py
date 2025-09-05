@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 from pathlib import PosixPath
+from typing import Any
 
 import pyarrow as pa
 import pytest
@@ -497,7 +498,7 @@ def test_create_match_filter_single_condition() -> None:
         ),
     ],
 )
-def test_create_match_filter_with_nulls(data: list[dict], expected: BooleanExpression) -> None:
+def test_create_match_filter_with_nulls(data: list[dict[str, Any]], expected: BooleanExpression) -> None:
     schema = pa.schema([pa.field("x", pa.float64()), pa.field("y", pa.float64())])
     table = pa.Table.from_pylist(data, schema=schema)
     join_cols = sorted({col for record in data for col in record})
