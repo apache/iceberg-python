@@ -33,6 +33,7 @@ import logging
 import operator
 import os
 import re
+import tempfile
 import uuid
 import warnings
 from abc import ABC, abstractmethod
@@ -1505,24 +1506,84 @@ def _task_to_record_batches(
 ) -> Iterator[pa.RecordBatch]:
     # Handle different file formats
     if task.file.file_format == FileFormat.VORTEX:
-        # Use Vortex I/O module to read the file
-        from pyiceberg.io.vortex import read_vortex_file
+        # Use native Vortex PyArrow integration to read the file
+        try:
+            import vortex as vx
+        except ImportError as e:
+            raise ImportError(
+                "vortex-data package is required for Vortex file format support. "
+                "Install it with: pip install vortex-data"
+            ) from e
 
-        vortex_batches = read_vortex_file(
-            file_path=task.file.file_path,
-            io=io,
-            projected_schema=projected_schema,
-            row_filter=bound_row_filter,
-            case_sensitive=case_sensitive,
-        )
+        # Read the Vortex file using native integration
+        # For remote files, we might need to copy to local temp first
+        input_file = io.new_input(task.file.file_path)
 
-        for batch in vortex_batches:
-            # Apply positional deletes if present
-            if positional_deletes is not None and len(positional_deletes) > 0:
-                # TODO: Implement positional delete application for Vortex
-                logger.warning("Positional deletes are not yet fully supported for Vortex files")
+        # Create a temporary local file to read from
+        with tempfile.NamedTemporaryFile(suffix=".vortex", delete=False) as temp_file:
+            temp_path = temp_file.name
 
-            yield batch
+        try:
+            # Copy remote file to local temp file
+            with input_file.open() as fin:
+                with open(temp_path, 'wb') as temp_f:
+                    chunk_size = 8192
+                    while True:
+                        chunk = fin.read(chunk_size)
+                        if not chunk:
+                            break
+                        temp_f.write(chunk)
+
+            # Read using native Vortex integration
+            # vx.open() returns a VortexFile that can be converted to Arrow
+            vortex_file = vx.open(temp_path)
+
+            # Convert to PyArrow RecordBatchReader, which preserves column structure
+            reader = vortex_file.to_arrow()
+
+            # Iterate over record batches
+            for batch in reader:
+                # Cast string_view columns to string for compatibility with other formats
+                schema = batch.schema
+                need_cast = False
+                cast_mapping = {}
+
+                for i, field in enumerate(schema):
+                    if pa.types.is_string_view(field.type):
+                        cast_mapping[i] = pa.string()
+                        need_cast = True
+
+                if need_cast:
+                    # Apply type casting
+                    arrays = []
+                    for i, column in enumerate(batch.columns):
+                        if i in cast_mapping:
+                            arrays.append(pa.compute.cast(column, cast_mapping[i]))
+                        else:
+                            arrays.append(column)
+
+                    # Create new schema with string types
+                    new_fields = []
+                    for i, field in enumerate(schema):
+                        if i in cast_mapping:
+                            new_fields.append(pa.field(field.name, cast_mapping[i], nullable=field.nullable))
+                        else:
+                            new_fields.append(field)
+                    new_schema = pa.schema(new_fields)
+
+                    batch = pa.RecordBatch.from_arrays(arrays, schema=new_schema)
+
+                # Apply positional deletes if present
+                if positional_deletes is not None and len(positional_deletes) > 0:
+                    # TODO: Implement positional delete application for Vortex
+                    logger.warning("Positional deletes are not yet fully supported for Vortex files")
+
+                yield batch
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+
         return
 
     # Default Parquet handling
@@ -2542,15 +2603,24 @@ def data_file_statistics_from_parquet_metadata(
 def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties
 
-    parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
-    row_group_size = property_as_int(
-        properties=table_metadata.properties,
-        property_name=TableProperties.PARQUET_ROW_GROUP_LIMIT,
-        default=TableProperties.PARQUET_ROW_GROUP_LIMIT_DEFAULT,
-    )
+    # Get the desired write format from table properties
+    write_format = table_metadata.properties.get(
+        TableProperties.WRITE_FORMAT_DEFAULT,
+        TableProperties.WRITE_FORMAT_DEFAULT_DEFAULT
+    ).lower()
+    
+    # Convert format string to FileFormat enum
+    if write_format == "parquet":
+        target_format = FileFormat.PARQUET
+    elif write_format == "vortex":
+        target_format = FileFormat.VORTEX
+    else:
+        raise ValueError(f"Unsupported write format: {write_format}. Supported formats: parquet, vortex")
+
+    # Set up common components
     location_provider = load_location_provider(table_location=table_metadata.location, table_properties=table_metadata.properties)
 
-    def write_parquet(task: WriteTask) -> DataFile:
+    def write_data_file(task: WriteTask) -> DataFile:
         table_schema = table_metadata.schema()
         # if schema needs to be transformed, use the transformed schema and adjust the arrow table accordingly
         # otherwise use the original schema
@@ -2571,44 +2641,227 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             for batch in task.record_batches
         ]
         arrow_table = pa.Table.from_batches(batches)
-        file_path = location_provider.new_data_location(
-            data_file_name=task.generate_data_file_filename("parquet"),
-            partition_key=task.partition_key,
-        )
-        fo = io.new_output(file_path)
-        with fo.create(overwrite=True) as fos:
-            with pq.ParquetWriter(
-                fos, schema=arrow_table.schema, store_decimal_as_integer=True, **parquet_writer_kwargs
-            ) as writer:
-                writer.write(arrow_table, row_group_size=row_group_size)
-        statistics = data_file_statistics_from_parquet_metadata(
-            parquet_metadata=writer.writer.metadata,
-            stats_columns=compute_statistics_plan(file_schema, table_metadata.properties),
-            parquet_column_mapping=parquet_path_to_id_mapping(file_schema),
-        )
-        data_file = DataFile.from_args(
-            content=DataFileContent.DATA,
-            file_path=file_path,
-            file_format=FileFormat.PARQUET,
-            partition=task.partition_key.partition if task.partition_key else Record(),
-            file_size_in_bytes=len(fo),
-            # After this has been fixed:
-            # https://github.com/apache/iceberg-python/issues/271
-            # sort_order_id=task.sort_order_id,
-            sort_order_id=None,
-            # Just copy these from the table for now
-            spec_id=table_metadata.default_spec_id,
-            equality_ids=None,
-            key_metadata=None,
-            **statistics.to_serialized_dict(),
-        )
 
-        return data_file
+        if target_format == FileFormat.VORTEX:
+            # Use Vortex native integration
+            return _write_vortex_file(task, arrow_table, file_schema, table_metadata, io, location_provider)
+        else:
+            # Default Parquet writing
+            return _write_parquet_file(task, arrow_table, file_schema, table_metadata, io, location_provider)
 
     executor = ExecutorFactory.get_or_create()
-    data_files = executor.map(write_parquet, tasks)
+    data_files = executor.map(write_data_file, tasks)
 
     return iter(data_files)
+
+
+def _write_parquet_file(
+    task: WriteTask,
+    arrow_table: pa.Table,
+    file_schema: Schema,
+    table_metadata: TableMetadata,
+    io: FileIO,
+    location_provider: Any
+) -> DataFile:
+    """Write a Parquet file using existing PyIceberg logic."""
+    parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
+    row_group_size = property_as_int(
+        properties=table_metadata.properties,
+        property_name=TableProperties.PARQUET_ROW_GROUP_LIMIT,
+        default=TableProperties.PARQUET_ROW_GROUP_LIMIT_DEFAULT,
+    )
+    
+    file_path = location_provider.new_data_location(
+        data_file_name=task.generate_data_file_filename("parquet"),
+        partition_key=task.partition_key,
+    )
+    fo = io.new_output(file_path)
+    with fo.create(overwrite=True) as fos:
+        with pq.ParquetWriter(
+            fos, schema=arrow_table.schema, store_decimal_as_integer=True, **parquet_writer_kwargs
+        ) as writer:
+            writer.write(arrow_table, row_group_size=row_group_size)
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=writer.writer.metadata,
+        stats_columns=compute_statistics_plan(file_schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(file_schema),
+    )
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=file_path,
+        file_format=FileFormat.PARQUET,
+        partition=task.partition_key.partition if task.partition_key else Record(),
+        file_size_in_bytes=len(fo),
+        sort_order_id=None,
+        spec_id=table_metadata.default_spec_id,
+        equality_ids=None,
+        key_metadata=None,
+        **statistics.to_serialized_dict(),
+    )
+
+    return data_file
+
+
+def _write_vortex_file(
+    task: WriteTask,
+    arrow_table: pa.Table,
+    file_schema: Schema,
+    table_metadata: TableMetadata,
+    io: FileIO,
+    location_provider: Any
+) -> DataFile:
+    """Write a Vortex file using native Vortex PyArrow integration."""
+    try:
+        import vortex as vx
+    except ImportError as e:
+        raise ImportError(
+            "vortex-data package is required for Vortex file format support. "
+            "Install it with: pip install vortex-data"
+        ) from e
+    
+    file_path = location_provider.new_data_location(
+        data_file_name=task.generate_data_file_filename("vortex"),
+        partition_key=task.partition_key,
+    )
+    
+    # Use Vortex's native PyArrow integration to write the file
+    # Convert individual columns rather than the entire table to preserve column structure
+    # This is similar to how we would handle struct arrays in Vortex
+    
+    fo = io.new_output(file_path)
+    
+    # Create a temporary local file for Vortex to write to, then copy to final location
+    with tempfile.NamedTemporaryFile(suffix=".vortex", delete=False) as temp_file:
+        temp_path = temp_file.name
+
+    try:
+        # For multi-column tables, we need to write it as a record batch / table structure
+        # Use Vortex io.write with the PyArrow table directly
+        # According to Vortex docs, we can pass PyArrow structures directly
+        vx.io.write(arrow_table, temp_path)
+
+        # Copy from temporary file to final location using PyIceberg's FileIO
+        with open(temp_path, 'rb') as temp_f:
+            with fo.create(overwrite=True) as fos:
+                # Stream the file content in chunks
+                chunk_size = 8192
+                while True:
+                    chunk = temp_f.read(chunk_size)
+                    if not chunk:
+                        break
+                    fos.write(chunk)
+    finally:
+        # Clean up temporary file
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+    
+    # Create basic statistics for Vortex file
+    # Note: Vortex files don't use Parquet metadata, so we create minimal stats
+    record_count = len(arrow_table)
+    file_size_bytes = len(fo)
+    
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=file_path,
+        file_format=FileFormat.VORTEX,
+        partition=task.partition_key.partition if task.partition_key else Record(),
+        file_size_in_bytes=file_size_bytes,
+        record_count=record_count,
+        sort_order_id=None,
+        spec_id=table_metadata.default_spec_id,
+        equality_ids=None,
+        key_metadata=None,
+        # Vortex files don't have the same detailed statistics as Parquet
+        # We'll provide basic statistics
+        value_counts={},
+        null_value_counts={},
+        nan_value_counts={},
+        lower_bounds={},
+        upper_bounds={},
+        split_offsets=None,
+    )
+
+    return data_file
+    record_count = len(arrow_table)
+    file_size_bytes = len(fo)
+    
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=file_path,
+        file_format=FileFormat.VORTEX,
+        partition=task.partition_key.partition if task.partition_key else Record(),
+        file_size_in_bytes=file_size_bytes,
+        record_count=record_count,
+        sort_order_id=None,
+        spec_id=table_metadata.default_spec_id,
+        equality_ids=None,
+        key_metadata=None,
+        # Vortex files don't have the same detailed statistics as Parquet
+        # We'll provide basic statistics
+        value_counts={},
+        null_value_counts={},
+        nan_value_counts={},
+        lower_bounds={},
+        upper_bounds={},
+        split_offsets=None,
+    )
+
+    return data_file
+
+
+def _write_vortex(task: WriteTask, io: FileIO, table_metadata: TableMetadata, location_provider) -> DataFile:
+    """Write a task using Vortex file format.
+    
+    Args:
+        task: The WriteTask containing data to write
+        io: FileIO instance for file operations
+        table_metadata: Table metadata containing schema and properties
+        location_provider: Location provider for generating file paths
+        
+    Returns:
+        DataFile: Metadata about the written Vortex file
+    """
+    from pyiceberg.io.vortex import convert_iceberg_to_vortex_file
+    
+    table_schema = table_metadata.schema()
+    # if schema needs to be transformed, use the transformed schema and adjust the arrow table accordingly
+    # otherwise use the original schema
+    if (sanitized_schema := sanitize_column_names(table_schema)) != table_schema:
+        file_schema = sanitized_schema
+    else:
+        file_schema = table_schema
+
+    downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+    batches = [
+        _to_requested_schema(
+            requested_schema=file_schema,
+            file_schema=task.schema,
+            batch=batch,
+            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+            include_field_ids=True,
+        )
+        for batch in task.record_batches
+    ]
+    arrow_table = pa.Table.from_batches(batches)
+    
+    # Generate file path for Vortex file
+    file_path = location_provider.new_data_location(
+        data_file_name=task.generate_data_file_filename("vortex"),
+        partition_key=task.partition_key,
+    )
+    
+    # Write Vortex file using the specialized I/O module
+    data_file = convert_iceberg_to_vortex_file(
+        iceberg_table_data=arrow_table,
+        iceberg_schema=file_schema,
+        output_path=file_path,
+        io=io,
+        compression=True,  # Default to compressed Vortex files
+        partition=task.partition_key.partition if task.partition_key else Record(),
+        spec_id=table_metadata.default_spec_id,
+    )
+    
+    return data_file
 
 
 def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[List[pa.RecordBatch]]:

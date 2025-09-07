@@ -194,6 +194,9 @@ class TableProperties:
     WRITE_AVRO_COMPRESSION = "write.avro.compression-codec"
     WRITE_AVRO_COMPRESSION_DEFAULT = "gzip"
 
+    WRITE_FORMAT_DEFAULT = "write.format.default"
+    WRITE_FORMAT_DEFAULT_DEFAULT = "parquet"
+
     DEFAULT_WRITE_METRICS_MODE = "write.metadata.metrics.default"
     DEFAULT_WRITE_METRICS_MODE_DEFAULT = "truncate(16)"
 
