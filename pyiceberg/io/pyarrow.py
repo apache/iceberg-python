@@ -1577,6 +1577,22 @@ def _task_to_record_batches(
             else:
                 reader = vortex_file.to_arrow()
 
+            # Prepare PyArrow filter if needed (using projected_schema for Vortex)
+            pyarrow_filter = None
+            if bound_row_filter is not AlwaysTrue():
+                # For Vortex, use the projected schema directly since it has correct field IDs
+                # Apply column projection rules for filter translation
+                projected_missing_fields = _get_column_projection_values(
+                    task.file, projected_schema, partition_spec, projected_schema.field_ids
+                )
+                
+                translated_row_filter = translate_column_names(
+                    bound_row_filter, projected_schema, case_sensitive=case_sensitive, projected_field_values=projected_missing_fields
+                )
+                bound_file_filter = bind(projected_schema, translated_row_filter, case_sensitive=case_sensitive)
+                pyarrow_filter = expression_to_pyarrow(bound_file_filter)
+                logger.debug(f"Created PyArrow filter for Vortex: {pyarrow_filter}")
+
             # Iterate over record batches with optimizations applied
             current_index = 0
             for batch in reader:
@@ -1611,6 +1627,23 @@ def _task_to_record_batches(
                     batch = pa.RecordBatch.from_arrays(arrays, schema=new_schema)
 
                 current_batch = batch
+
+                # Apply PyArrow filter if present
+                if pyarrow_filter is not None:
+                    try:
+                        # Convert batch to table for filtering, then back to batch
+                        table = pa.Table.from_batches([current_batch])
+                        filtered_table = table.filter(pyarrow_filter)
+                        if filtered_table.num_rows > 0:
+                            current_batch = filtered_table.to_batches()[0]
+                        else:
+                            current_batch = pa.RecordBatch.from_arrays(
+                                [pa.array([], type=field.type) for field in current_batch.schema],
+                                schema=current_batch.schema
+                            )
+                        logger.debug(f"Applied PyArrow filter to Vortex batch: {len(batch)} -> {len(current_batch)} rows")
+                    except Exception as e:
+                        logger.warning(f"Failed to apply PyArrow filter to Vortex batch: {e}, returning unfiltered")
 
                 # Apply positional deletes if present
                 if positional_deletes is not None and len(positional_deletes) > 0:
