@@ -1038,9 +1038,8 @@ def _read_deletes(io: FileIO, data_file: DataFile) -> Dict[str, pa.ChunkedArray]
 
         return PuffinFile(payload).to_vector()
     elif data_file.file_format == FileFormat.VORTEX:
-        # Vortex delete files are not yet supported
-        # TODO: Implement Vortex delete file support
-        raise ValueError("Vortex delete files are not yet supported")
+        from pyiceberg.io.vortex import read_vortex_deletes
+        return read_vortex_deletes(io, data_file)
     else:
         raise ValueError(f"Delete file format not supported: {data_file.file_format}")
 
@@ -1534,14 +1533,63 @@ def _task_to_record_batches(
                             break
                         temp_f.write(chunk)
 
-            # Read using native Vortex integration
+            # Read using native Vortex integration with optimizations
             # vx.open() returns a VortexFile that can be converted to Arrow
             vortex_file = vx.open(temp_path)
+            
+            # Get the file schema for projection mapping
+            # First read the Arrow schema to understand the file structure
+            try:
+                basic_reader = vortex_file.to_arrow()
+                first_batch = next(iter(basic_reader))
+                file_arrow_schema = first_batch.schema
+                # Reset the file for actual reading
+                vortex_file = vx.open(temp_path)
+            except Exception as e:
+                logger.debug(f"Failed to read Vortex schema for optimization: {e}")
+                # Fall back to basic read without optimizations
+                reader = vortex_file.to_arrow()
 
-            # Convert to PyArrow RecordBatchReader, which preserves column structure
-            reader = vortex_file.to_arrow()
+            # Apply column projection if available
+            projection = None
+            if projected_field_ids and 'file_arrow_schema' in locals():
+                # Map projected field IDs to column names based on Arrow schema
+                # For Vortex, we'll use column names directly since it preserves field structure
+                projection = []
+                for field in file_arrow_schema:
+                    # Simple heuristic: include field if we're projecting or if no specific projection
+                    projection.append(field.name)
+                
+                # Limit projection to what's actually requested if we can determine it
+                # This is a simplified approach - full implementation would need field ID mapping
+                logger.debug(f"Vortex projection candidates: {projection}")
 
-            # Iterate over record batches
+            # Apply row filter if available
+            vortex_filter = None
+            if bound_row_filter is not AlwaysTrue():
+                try:
+                    from pyiceberg.io.vortex import _convert_iceberg_filter_to_vortex
+                    vortex_filter = _convert_iceberg_filter_to_vortex(bound_row_filter)
+                    if vortex_filter:
+                        logger.debug("Applied Vortex native filter pushdown")
+                    else:
+                        logger.debug("Filter conversion failed, will apply after read")
+                except Exception as e:
+                    logger.debug(f"Vortex filter conversion failed: {e}, will apply after read")
+
+            # Scan with optimizations
+            if 'file_arrow_schema' in locals():
+                try:
+                    scanner = vortex_file.scan(projection=projection, expr=vortex_filter)
+                    reader = scanner.to_arrow()
+                    logger.debug("Using optimized Vortex scan with filter/projection pushdown")
+                except Exception as e:
+                    # Fallback to basic read if optimized scan fails
+                    logger.debug(f"Vortex optimized scan failed: {e}, falling back to basic read")
+                    reader = vortex_file.to_arrow()
+
+            # Iterate over record batches with optimizations applied
+            current_index = 0
             for batch in reader:
                 # Cast string_view columns to string for compatibility with other formats
                 schema = batch.schema
@@ -1573,12 +1621,23 @@ def _task_to_record_batches(
 
                     batch = pa.RecordBatch.from_arrays(arrays, schema=new_schema)
 
+                current_batch = batch
+
                 # Apply positional deletes if present
                 if positional_deletes is not None and len(positional_deletes) > 0:
-                    # TODO: Implement positional delete application for Vortex
-                    logger.warning("Positional deletes are not yet fully supported for Vortex files")
+                    # Use the same logic as Parquet files - create mask of valid indices
+                    indices = _combine_positional_deletes(positional_deletes, current_index, current_index + len(batch))
+                    current_batch = current_batch.take(indices)
+                    logger.debug(f"Applied positional deletes to Vortex batch: {len(batch)} -> {len(current_batch)} rows")
 
-                yield batch
+                # Update current index for next batch
+                current_index += len(batch)
+
+                # Skip empty batches
+                if current_batch.num_rows == 0:
+                    continue
+
+                yield current_batch
         finally:
             # Clean up temporary file
             if os.path.exists(temp_path):
@@ -2806,61 +2865,6 @@ def _write_vortex_file(
         split_offsets=None,
     )
 
-    return data_file
-
-
-def _write_vortex(task: WriteTask, io: FileIO, table_metadata: TableMetadata, location_provider) -> DataFile:
-    """Write a task using Vortex file format.
-    
-    Args:
-        task: The WriteTask containing data to write
-        io: FileIO instance for file operations
-        table_metadata: Table metadata containing schema and properties
-        location_provider: Location provider for generating file paths
-        
-    Returns:
-        DataFile: Metadata about the written Vortex file
-    """
-    from pyiceberg.io.vortex import convert_iceberg_to_vortex_file
-    
-    table_schema = table_metadata.schema()
-    # if schema needs to be transformed, use the transformed schema and adjust the arrow table accordingly
-    # otherwise use the original schema
-    if (sanitized_schema := sanitize_column_names(table_schema)) != table_schema:
-        file_schema = sanitized_schema
-    else:
-        file_schema = table_schema
-
-    downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
-    batches = [
-        _to_requested_schema(
-            requested_schema=file_schema,
-            file_schema=task.schema,
-            batch=batch,
-            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
-            include_field_ids=True,
-        )
-        for batch in task.record_batches
-    ]
-    arrow_table = pa.Table.from_batches(batches)
-    
-    # Generate file path for Vortex file
-    file_path = location_provider.new_data_location(
-        data_file_name=task.generate_data_file_filename("vortex"),
-        partition_key=task.partition_key,
-    )
-    
-    # Write Vortex file using the specialized I/O module
-    data_file = convert_iceberg_to_vortex_file(
-        iceberg_table_data=arrow_table,
-        iceberg_schema=file_schema,
-        output_path=file_path,
-        io=io,
-        compression=True,  # Default to compressed Vortex files
-        partition=task.partition_key.partition if task.partition_key else Record(),
-        spec_id=table_metadata.default_spec_id,
-    )
-    
     return data_file
 
 

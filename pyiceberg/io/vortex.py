@@ -59,6 +59,18 @@ from pyiceberg.expressions import (
     NotNaN,
     NotNull,
     Or,
+    BoundEqualTo,
+    BoundGreaterThan, 
+    BoundGreaterThanOrEqual,
+    BoundIn,
+    BoundIsNaN,
+    BoundIsNull,
+    BoundLessThan,
+    BoundLessThanOrEqual,
+    BoundNotEqualTo,
+    BoundNotIn,
+    BoundNotNaN,
+    BoundNotNull,
 )
 from pyiceberg.io import FileIO
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
@@ -712,56 +724,56 @@ def _visit_filter_expression(expr: BooleanExpression) -> Optional[Any]:
     if isinstance(expr, AlwaysTrue):
         return None  # No filter needed
 
-    elif isinstance(expr, EqualTo):
-        # For UnboundTerm, try to get the name - handle both Reference and other types
-        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+    # Handle both bound and unbound equality expressions
+    elif isinstance(expr, (EqualTo, BoundEqualTo)):
+        term_name = _get_term_name(expr.term)
         return ve.eq(ve.col(term_name), _convert_literal_value(expr.literal))
 
-    elif isinstance(expr, NotEqualTo):
-        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+    elif isinstance(expr, (NotEqualTo, BoundNotEqualTo)):
+        term_name = _get_term_name(expr.term)
         return ve.neq(ve.col(term_name), _convert_literal_value(expr.literal))
 
-    elif isinstance(expr, LessThan):
-        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+    elif isinstance(expr, (LessThan, BoundLessThan)):
+        term_name = _get_term_name(expr.term)
         return ve.lt(ve.col(term_name), _convert_literal_value(expr.literal))
 
-    elif isinstance(expr, LessThanOrEqual):
-        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+    elif isinstance(expr, (LessThanOrEqual, BoundLessThanOrEqual)):
+        term_name = _get_term_name(expr.term)
         return ve.lte(ve.col(term_name), _convert_literal_value(expr.literal))
 
-    elif isinstance(expr, GreaterThan):
-        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+    elif isinstance(expr, (GreaterThan, BoundGreaterThan)):
+        term_name = _get_term_name(expr.term)
         return ve.gt(ve.col(term_name), _convert_literal_value(expr.literal))
 
-    elif isinstance(expr, GreaterThanOrEqual):
-        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+    elif isinstance(expr, (GreaterThanOrEqual, BoundGreaterThanOrEqual)):
+        term_name = _get_term_name(expr.term)
         return ve.gte(ve.col(term_name), _convert_literal_value(expr.literal))
 
-    elif isinstance(expr, IsNull):
-        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+    elif isinstance(expr, (IsNull, BoundIsNull)):
+        term_name = _get_term_name(expr.term)
         return ve.is_null(ve.col(term_name))
 
-    elif isinstance(expr, NotNull):
-        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+    elif isinstance(expr, (NotNull, BoundNotNull)):
+        term_name = _get_term_name(expr.term)
         return ve.is_not_null(ve.col(term_name))
 
-    elif isinstance(expr, IsNaN):
+    elif isinstance(expr, (IsNaN, BoundIsNaN)):
         # Vortex may handle NaN differently - this is a best effort conversion
-        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+        term_name = _get_term_name(expr.term)
         return ve.is_nan(ve.col(term_name))
 
-    elif isinstance(expr, NotNaN):
-        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+    elif isinstance(expr, (NotNaN, BoundNotNaN)):
+        term_name = _get_term_name(expr.term)
         return ve.is_not_nan(ve.col(term_name))
 
-    elif isinstance(expr, In):
+    elif isinstance(expr, (In, BoundIn)):
         values = [_convert_literal_value(lit) for lit in expr.literals]
-        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+        term_name = _get_term_name(expr.term)
         return ve.is_in(ve.col(term_name), values)
 
-    elif isinstance(expr, NotIn):
+    elif isinstance(expr, (NotIn, BoundNotIn)):
         values = [_convert_literal_value(lit) for lit in expr.literals]
-        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+        term_name = _get_term_name(expr.term)
         return ve.is_not_in(ve.col(term_name), values)
 
     elif isinstance(expr, And):
@@ -795,6 +807,19 @@ def _visit_filter_expression(expr: BooleanExpression) -> Optional[Any]:
     else:
         logger.warning(f"Unsupported filter expression type: {type(expr)}")
         return None
+
+
+def _get_term_name(term: Any) -> str:
+    """Extract the column name from a term (bound or unbound)."""
+    # For bound terms, get the field name from the reference
+    if hasattr(term, 'field') and hasattr(term.field, 'name'):
+        return term.field.name
+    # For unbound terms, check if it has a name attribute
+    elif hasattr(term, 'name'):
+        return term.name
+    # Fallback to string representation
+    else:
+        return str(term)
 
 
 def _convert_literal_value(literal: Any) -> Any:
