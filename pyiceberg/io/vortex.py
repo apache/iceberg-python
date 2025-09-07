@@ -713,43 +713,56 @@ def _visit_filter_expression(expr: BooleanExpression) -> Optional[Any]:
         return None  # No filter needed
 
     elif isinstance(expr, EqualTo):
-        return ve.eq(ve.col(expr.term.ref().name), _convert_literal_value(expr.literal))
+        # For UnboundTerm, try to get the name - handle both Reference and other types
+        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+        return ve.eq(ve.col(term_name), _convert_literal_value(expr.literal))
 
     elif isinstance(expr, NotEqualTo):
-        return ve.neq(ve.col(expr.term.ref().name), _convert_literal_value(expr.literal))
+        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+        return ve.neq(ve.col(term_name), _convert_literal_value(expr.literal))
 
     elif isinstance(expr, LessThan):
-        return ve.lt(ve.col(expr.term.ref().name), _convert_literal_value(expr.literal))
+        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+        return ve.lt(ve.col(term_name), _convert_literal_value(expr.literal))
 
     elif isinstance(expr, LessThanOrEqual):
-        return ve.lte(ve.col(expr.term.ref().name), _convert_literal_value(expr.literal))
+        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+        return ve.lte(ve.col(term_name), _convert_literal_value(expr.literal))
 
     elif isinstance(expr, GreaterThan):
-        return ve.gt(ve.col(expr.term.ref().name), _convert_literal_value(expr.literal))
+        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+        return ve.gt(ve.col(term_name), _convert_literal_value(expr.literal))
 
     elif isinstance(expr, GreaterThanOrEqual):
-        return ve.gte(ve.col(expr.term.ref().name), _convert_literal_value(expr.literal))
+        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+        return ve.gte(ve.col(term_name), _convert_literal_value(expr.literal))
 
     elif isinstance(expr, IsNull):
-        return ve.is_null(ve.col(expr.term.ref().name))
+        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+        return ve.is_null(ve.col(term_name))
 
     elif isinstance(expr, NotNull):
-        return ve.is_not_null(ve.col(expr.term.ref().name))
+        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+        return ve.is_not_null(ve.col(term_name))
 
     elif isinstance(expr, IsNaN):
         # Vortex may handle NaN differently - this is a best effort conversion
-        return ve.is_nan(ve.col(expr.term.ref().name))
+        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+        return ve.is_nan(ve.col(term_name))
 
     elif isinstance(expr, NotNaN):
-        return ve.is_not_nan(ve.col(expr.term.ref().name))
+        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+        return ve.is_not_nan(ve.col(term_name))
 
     elif isinstance(expr, In):
         values = [_convert_literal_value(lit) for lit in expr.literals]
-        return ve.is_in(ve.col(expr.term.ref().name), values)
+        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+        return ve.is_in(ve.col(term_name), values)
 
     elif isinstance(expr, NotIn):
         values = [_convert_literal_value(lit) for lit in expr.literals]
-        return ve.is_not_in(ve.col(expr.term.ref().name), values)
+        term_name = str(expr.term) if not hasattr(expr.term, "name") else expr.term.name
+        return ve.is_not_in(ve.col(term_name), values)
 
     elif isinstance(expr, And):
         left = _visit_filter_expression(expr.left)
@@ -1338,10 +1351,10 @@ class VortexFileManager:
         if not file_paths:
             return {"status": "healthy", "files_analyzed": 0, "recommendations": []}
 
-        analysis = {
+        analysis: Dict[str, Any] = {
             "files_analyzed": len(file_paths),
             "total_size_bytes": 0,
-            "avg_file_size_mb": 0,
+            "avg_file_size_mb": 0.0,
             "small_files_count": 0,
             "large_files_count": 0,
             "corrupted_files": [],

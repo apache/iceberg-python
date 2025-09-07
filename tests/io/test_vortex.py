@@ -18,6 +18,7 @@
 import os
 import tempfile
 import uuid
+from typing import Iterator
 from unittest.mock import MagicMock, patch
 
 import pyarrow as pa
@@ -129,7 +130,7 @@ def empty_arrow_table() -> pa.Table:
 
 
 @pytest.fixture
-def temp_file_path() -> str:
+def temp_file_path() -> Iterator[str]:
     """Create a temporary file path for testing."""
     with tempfile.NamedTemporaryFile(delete=False, suffix=".vortex") as f:
         temp_path = f.name
