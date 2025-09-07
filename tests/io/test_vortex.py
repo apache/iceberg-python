@@ -105,23 +105,27 @@ def complex_schema() -> Schema:
 @pytest.fixture
 def sample_arrow_table() -> pa.Table:
     """Create a sample PyArrow table for testing."""
-    return pa.table({
-        "id": [1, 2, 3, 4, 5],
-        "name": ["Alice", "Bob", "Charlie", "Diana", "Eve"],
-        "active": [True, False, True, True, False],
-        "score": [95, 87, 92, 88, 91],
-    })
+    return pa.table(
+        {
+            "id": [1, 2, 3, 4, 5],
+            "name": ["Alice", "Bob", "Charlie", "Diana", "Eve"],
+            "active": [True, False, True, True, False],
+            "score": [95, 87, 92, 88, 91],
+        }
+    )
 
 
 @pytest.fixture
 def empty_arrow_table() -> pa.Table:
     """Create an empty PyArrow table for testing."""
-    return pa.table({
-        "id": pa.array([], type=pa.int64()),
-        "name": pa.array([], type=pa.string()),
-        "active": pa.array([], type=pa.bool_()),
-        "score": pa.array([], type=pa.int32()),
-    })
+    return pa.table(
+        {
+            "id": pa.array([], type=pa.int64()),
+            "name": pa.array([], type=pa.string()),
+            "active": pa.array([], type=pa.bool_()),
+            "score": pa.array([], type=pa.int32()),
+        }
+    )
 
 
 @pytest.fixture
@@ -158,7 +162,7 @@ class TestSchemaConversion:
         assert vortex_schema is not None
         assert isinstance(vortex_schema, pa.Schema)
         assert len(vortex_schema) == 4
-        
+
         # Check field names and types
         field_names = [field.name for field in vortex_schema]
         assert "id" in field_names
@@ -171,7 +175,7 @@ class TestSchemaConversion:
         vortex_schema = iceberg_schema_to_vortex_schema(complex_schema)
         assert vortex_schema is not None
         assert isinstance(vortex_schema, pa.Schema)
-        
+
         # Verify nested fields are preserved
         field_names = [field.name for field in vortex_schema]
         assert "address" in field_names
@@ -210,7 +214,7 @@ class TestArrowVortexConversion:
         # First convert to Vortex, then back to Arrow
         vortex_array = arrow_to_vortex_array(sample_arrow_table, compress=False)
         converted_table = vortex_to_arrow_table(vortex_array)
-        
+
         assert isinstance(converted_table, pa.Table)
         assert len(converted_table) > 0
 
@@ -220,7 +224,7 @@ class TestArrowVortexConversion:
         mock_vortex_array = MagicMock()
         del mock_vortex_array.to_arrow_array
         del mock_vortex_array.to_arrow
-        
+
         with pytest.raises(ValueError, match="does not have a recognized Arrow conversion method"):
             vortex_to_arrow_table(mock_vortex_array)
 
@@ -236,7 +240,7 @@ class TestVortexFileOperations:
             file_path=temp_file_path,
             io=io,
         )
-        
+
         assert file_size > 0
         assert os.path.exists(temp_file_path)
 
@@ -252,10 +256,12 @@ class TestVortexFileOperations:
         )
 
         # Then read it back
-        record_batches = list(read_vortex_file(
-            file_path=temp_file_path,
-            io=io,
-        ))
+        record_batches = list(
+            read_vortex_file(
+                file_path=temp_file_path,
+                io=io,
+            )
+        )
 
         assert len(record_batches) > 0
         # Convert record batches to table for comparison
@@ -271,7 +277,7 @@ class TestVortexFileOperations:
             file_path=temp_file_path,
             io=io,
         )
-        
+
         assert file_size >= 0
         assert os.path.exists(temp_file_path)
 
@@ -282,6 +288,8 @@ class TestVortexFileOperations:
 
         with pytest.raises((FileNotFoundError, OSError, IOError)):
             list(read_vortex_file(file_path=nonexistent_path, io=io))
+
+
 class TestVortexWriteTask:
     """Test VortexWriteTask functionality."""
 
@@ -303,27 +311,22 @@ class TestVortexWriteTask:
         """Test data file path generation in VortexWriteTask."""
         task = VortexWriteTask(
             write_uuid=uuid.uuid4(),
-            task_uuid=uuid.uuid4(),
+            task_id=1,
+            record_batches=[],
             schema=sample_schema,
-            spec=None,
-            table_location="s3://bucket/table/",
-            data_file_format=FileFormat.VORTEX,
-            io=PyArrowFileIO(),
         )
-        
-        file_path = task.generate_data_file_path("partition_path")
-        assert file_path.endswith(".vortex")
-        assert "s3://bucket/table/" in file_path
+
+        filename = task.generate_data_file_filename("vortex")
+        assert filename.endswith(".vortex")
+        assert str(task.write_uuid) in filename
+        assert str(task.task_id) in filename
 
 
 class TestConversionUtilities:
     """Test high-level conversion utilities."""
 
     def test_convert_iceberg_to_vortex_file(
-        self, 
-        sample_arrow_table: pa.Table, 
-        sample_schema: Schema, 
-        temp_file_path: str
+        self, sample_arrow_table: pa.Table, sample_schema: Schema, temp_file_path: str
     ) -> None:
         """Test high-level Iceberg to Vortex file conversion."""
         io = PyArrowFileIO()
@@ -334,7 +337,7 @@ class TestConversionUtilities:
             io=io,
             compression=True,
         )
-        
+
         assert isinstance(data_file, DataFile)
         assert data_file.file_format == FileFormat.VORTEX
         assert data_file.file_path == temp_file_path
@@ -353,15 +356,11 @@ class TestConversionUtilities:
                 io=io,
             )
 
-    def test_batch_convert_iceberg_to_vortex(
-        self, 
-        sample_arrow_table: pa.Table, 
-        sample_schema: Schema
-    ) -> None:
+    def test_batch_convert_iceberg_to_vortex(self, sample_arrow_table: pa.Table, sample_schema: Schema) -> None:
         """Test batch conversion of multiple tables."""
         io = PyArrowFileIO()
         tables = [sample_arrow_table, sample_arrow_table]
-        
+
         with tempfile.TemporaryDirectory() as temp_dir:
             data_files = batch_convert_iceberg_to_vortex(
                 arrow_tables=tables,
@@ -371,7 +370,7 @@ class TestConversionUtilities:
                 file_prefix="test_batch",
                 compression=True,
             )
-            
+
             assert len(data_files) == 2
             for i, data_file in enumerate(data_files):
                 assert isinstance(data_file, DataFile)
@@ -388,7 +387,7 @@ class TestConversionUtilities:
             output_directory="/tmp",
             io=io,
         )
-        
+
         assert data_files == []
 
 
@@ -410,7 +409,7 @@ class TestOptimizationUtilities:
     def test_optimize_vortex_write_config(self, sample_arrow_table: pa.Table) -> None:
         """Test write configuration optimization."""
         config = optimize_vortex_write_config(sample_arrow_table, target_file_size_mb=64)
-        
+
         assert isinstance(config, dict)
         assert "compression" in config
         assert "row_group_size" in config
@@ -426,7 +425,7 @@ class TestOptimizationUtilities:
     def test_analyze_vortex_compatibility_simple(self, sample_schema: Schema) -> None:
         """Test compatibility analysis for simple schema."""
         analysis = analyze_vortex_compatibility(sample_schema)
-        
+
         assert isinstance(analysis, dict)
         assert analysis["compatible"] is True
         assert "warnings" in analysis
@@ -437,16 +436,13 @@ class TestOptimizationUtilities:
     def test_analyze_vortex_compatibility_complex(self, complex_schema: Schema) -> None:
         """Test compatibility analysis for complex schema."""
         analysis = analyze_vortex_compatibility(complex_schema)
-        
+
         assert isinstance(analysis, dict)
         assert analysis["compatible"] is True
-        
+
         # Check that complex types are detected
         field_analysis = analysis["field_analysis"]
-        nested_fields = [
-            field for field in field_analysis 
-            if field["name"] in ["address", "tags", "metadata"]
-        ]
+        nested_fields = [field for field in field_analysis if field["name"] in ["address", "tags", "metadata"]]
         assert len(nested_fields) > 0
 
     def test_analyze_compatibility_large_schema(self) -> None:
@@ -454,10 +450,10 @@ class TestOptimizationUtilities:
         # Create a schema with >1000 fields
         fields = [
             NestedField(field_id=i, name=f"field_{i}", field_type=StringType(), required=False)
-            for i in range(1, 1001)
+            for i in range(1, 1002)  # Creates 1001 fields
         ]
         large_schema = Schema(*fields)
-        
+
         analysis = analyze_vortex_compatibility(large_schema)
         assert "Schema has >1000 fields" in str(analysis["warnings"])
 
@@ -470,21 +466,14 @@ class TestErrorHandling:
         # This should not raise an exception during creation
         task = VortexWriteTask(
             write_uuid=uuid.uuid4(),
-            task_uuid=uuid.uuid4(),
+            task_id=1,
+            record_batches=[],
             schema=sample_schema,
-            spec=None,
-            table_location="invalid://location/",
-            data_file_format=FileFormat.VORTEX,
-            io=PyArrowFileIO(),
         )
         assert task is not None
 
     @patch("pyiceberg.io.vortex.write_vortex_file", side_effect=Exception("Write failed"))
-    def test_convert_file_write_error(
-        self, 
-        sample_arrow_table: pa.Table, 
-        sample_schema: Schema
-    ) -> None:
+    def test_convert_file_write_error(self, sample_arrow_table: pa.Table, sample_schema: Schema) -> None:
         """Test error handling in file conversion when write fails."""
         io = PyArrowFileIO()
         with pytest.raises(ValueError, match="Failed to convert Iceberg data to Vortex file"):
@@ -495,15 +484,11 @@ class TestErrorHandling:
                 io=io,
             )
 
-    def test_batch_convert_with_write_failure(
-        self, 
-        sample_arrow_table: pa.Table, 
-        sample_schema: Schema
-    ) -> None:
+    def test_batch_convert_with_write_failure(self, sample_arrow_table: pa.Table, sample_schema: Schema) -> None:
         """Test batch conversion with write failure."""
         io = PyArrowFileIO()
         tables = [sample_arrow_table]
-        
+
         with patch("pyiceberg.io.vortex.convert_iceberg_to_vortex_file", side_effect=Exception("Write failed")):
             with pytest.raises(ValueError, match="Batch conversion failed"):
                 batch_convert_iceberg_to_vortex(
