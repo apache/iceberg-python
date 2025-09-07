@@ -672,27 +672,20 @@ def read_vortex_file(
             # Open with Vortex
             vortex_file = vx.open(tmp_file_path)
 
-            # Apply column projection if specified
+            # Apply column projection if specified for Vortex scan
             projection = None
             if projected_schema:
                 projection = [field.name for field in projected_schema.fields]
 
-            # Apply row filter if specified
-            vortex_filter = None
-            if row_filter and not isinstance(row_filter, AlwaysTrue):
-                # Convert Iceberg expression to Vortex expression
-                # This is a simplified conversion - full implementation would need
-                # comprehensive expression mapping
-                vortex_filter = _convert_iceberg_filter_to_vortex(row_filter)
-
-            # Scan the file
-            scanner = vortex_file.scan(projection=projection, expr=vortex_filter)
+            # Read data using Vortex (no filter pushdown - let PyIceberg handle filtering)
+            scanner = vortex_file.scan(projection=projection)
 
             # Read all data and convert to Arrow
             vortex_array = scanner.read_all()
             arrow_table = vortex_to_arrow_table(vortex_array)
 
-            # Yield as record batches
+            # PyIceberg will handle filtering at the Arrow level after this function returns
+            # This avoids type conversion issues between Iceberg expressions and Vortex expressions
             yield from arrow_table.to_batches()
 
         finally:
@@ -896,7 +889,7 @@ def _convert_literal_value(literal: Any, vx: Any) -> Any:
     else:
         value = literal
     
-    # Create Vortex scalar to infer correct dtype
+    # Use scalar inference - this should choose appropriate types
     scalar_obj = vx.scalar(value)
     return ve.literal(scalar_obj.dtype, value)
 

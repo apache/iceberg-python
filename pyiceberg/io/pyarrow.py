@@ -1564,29 +1564,18 @@ def _task_to_record_batches(
                 # This is a simplified approach - full implementation would need field ID mapping
                 logger.debug(f"Vortex projection candidates: {projection}")
 
-            # Apply row filter if available
-            vortex_filter = None
-            if bound_row_filter is not AlwaysTrue():
-                try:
-                    from pyiceberg.io.vortex import _convert_iceberg_filter_to_vortex
-                    vortex_filter = _convert_iceberg_filter_to_vortex(bound_row_filter)
-                    if vortex_filter:
-                        logger.debug("Applied Vortex native filter pushdown")
-                    else:
-                        logger.debug("Filter conversion failed, will apply after read")
-                except Exception as e:
-                    logger.debug(f"Vortex filter conversion failed: {e}, will apply after read")
-
-            # Scan with optimizations
+            # Scan with optimizations (no filter pushdown to avoid type conversion issues)
             if 'file_arrow_schema' in locals():
                 try:
-                    scanner = vortex_file.scan(projection=projection, expr=vortex_filter)
+                    scanner = vortex_file.scan(projection=projection)
                     reader = scanner.to_arrow()
-                    logger.debug("Using optimized Vortex scan with filter/projection pushdown")
+                    logger.debug("Using optimized Vortex scan with projection")
                 except Exception as e:
                     # Fallback to basic read if optimized scan fails
                     logger.debug(f"Vortex optimized scan failed: {e}, falling back to basic read")
                     reader = vortex_file.to_arrow()
+            else:
+                reader = vortex_file.to_arrow()
 
             # Iterate over record batches with optimizations applied
             current_index = 0
