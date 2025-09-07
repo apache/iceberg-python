@@ -99,6 +99,7 @@ class FileFormat(str, Enum):
     PARQUET = "PARQUET"
     ORC = "ORC"
     PUFFIN = "PUFFIN"
+    VORTEX = "VORTEX"
 
     @classmethod
     def _missing_(cls, value: object) -> Union[None, str]:

@@ -1011,6 +1011,10 @@ def _expression_to_complementary_pyarrow(expr: BooleanExpression) -> pc.Expressi
 def _get_file_format(file_format: FileFormat, **kwargs: Dict[str, Any]) -> ds.FileFormat:
     if file_format == FileFormat.PARQUET:
         return ds.ParquetFileFormat(**kwargs)
+    elif file_format == FileFormat.VORTEX:
+        # For now, Vortex files will be handled through the Vortex I/O module
+        # rather than through PyArrow's dataset API
+        raise ValueError("Vortex files should be handled through pyiceberg.io.vortex module")
     else:
         raise ValueError(f"Unsupported file format: {file_format}")
 
@@ -1032,6 +1036,10 @@ def _read_deletes(io: FileIO, data_file: DataFile) -> Dict[str, pa.ChunkedArray]
             payload = fi.read()
 
         return PuffinFile(payload).to_vector()
+    elif data_file.file_format == FileFormat.VORTEX:
+        # Vortex delete files are not yet supported
+        # TODO: Implement Vortex delete file support
+        raise ValueError("Vortex delete files are not yet supported")
     else:
         raise ValueError(f"Delete file format not supported: {data_file.file_format}")
 
@@ -1495,6 +1503,29 @@ def _task_to_record_batches(
     format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
     downcast_ns_timestamp_to_us: Optional[bool] = None,
 ) -> Iterator[pa.RecordBatch]:
+    # Handle different file formats
+    if task.file.file_format == FileFormat.VORTEX:
+        # Use Vortex I/O module to read the file
+        from pyiceberg.io.vortex import read_vortex_file
+
+        vortex_batches = read_vortex_file(
+            file_path=task.file.file_path,
+            io=io,
+            projected_schema=projected_schema,
+            row_filter=bound_row_filter,
+            case_sensitive=case_sensitive,
+        )
+
+        for batch in vortex_batches:
+            # Apply positional deletes if present
+            if positional_deletes is not None and len(positional_deletes) > 0:
+                # TODO: Implement positional delete application for Vortex
+                logger.warning("Positional deletes are not yet fully supported for Vortex files")
+
+            yield batch
+        return
+
+    # Default Parquet handling
     arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
     with io.new_input(task.file.file_path).open() as fin:
         fragment = arrow_format.make_fragment(fin)
