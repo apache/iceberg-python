@@ -52,6 +52,7 @@ from pyiceberg.types import ListType, MapType, StructType
 try:
     import vortex as vx  # type: ignore[import-not-found]
     import vortex.expr as ve  # type: ignore[import-not-found]
+
     VORTEX_AVAILABLE = True
 except ImportError:
     VORTEX_AVAILABLE = False
@@ -101,7 +102,7 @@ def iceberg_schema_to_vortex_schema(iceberg_schema: Schema) -> Any:
 
     Returns:
         A PyArrow schema that Vortex can use for type inference
-        
+
     Raises:
         ImportError: If vortex-data is not installed
         ValueError: If schema conversion fails
@@ -113,10 +114,10 @@ def iceberg_schema_to_vortex_schema(iceberg_schema: Schema) -> Any:
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
         arrow_schema = schema_to_pyarrow(iceberg_schema, include_field_ids=True)
-        
+
         # Validate that the schema is compatible with Vortex
         _validate_vortex_schema_compatibility(arrow_schema)
-        
+
         return arrow_schema
     except Exception as e:
         raise ValueError(f"Failed to convert Iceberg schema to Vortex-compatible format: {e}") from e
@@ -124,25 +125,25 @@ def iceberg_schema_to_vortex_schema(iceberg_schema: Schema) -> Any:
 
 def _validate_vortex_schema_compatibility(arrow_schema: pa.Schema) -> None:
     """Validate that a PyArrow schema is compatible with Vortex.
-    
+
     Args:
         arrow_schema: The PyArrow schema to validate
-        
+
     Raises:
         ValueError: If the schema contains unsupported types
     """
     unsupported_types = []
-    
+
     for field in arrow_schema:
         field_type = field.type
-        
+
         # Check for complex nested types that might not be fully supported
         if pa.types.is_union(field_type):
             unsupported_types.append(f"Union type in field '{field.name}'")
         elif pa.types.is_large_list(field_type) or pa.types.is_large_string(field_type):
             # Large types might have performance implications
             logger.warning(f"Large type detected in field '{field.name}' - may impact performance")
-    
+
     if unsupported_types:
         raise ValueError(f"Schema contains unsupported types for Vortex: {', '.join(unsupported_types)}")
 
@@ -162,11 +163,11 @@ def arrow_to_vortex_array(arrow_table: pa.Table, compress: bool = True) -> Any:
         ValueError: If conversion fails
     """
     _check_vortex_available()
-    
+
     try:
         # Create Vortex array from Arrow table
         vortex_array = vx.array(arrow_table)
-        
+
         # Apply compression if requested
         if compress:
             try:
@@ -174,9 +175,9 @@ def arrow_to_vortex_array(arrow_table: pa.Table, compress: bool = True) -> Any:
                 logger.debug(f"Applied Vortex compression to array with {len(arrow_table)} rows")
             except Exception as e:
                 logger.warning(f"Vortex compression failed, using uncompressed array: {e}")
-        
+
         return vortex_array
-        
+
     except Exception as e:
         raise ValueError(f"Failed to convert PyArrow table to Vortex array: {e}") from e
 
@@ -196,54 +197,57 @@ def vortex_to_arrow_table(vortex_array: Any, preserve_field_ids: bool = True) ->
         ValueError: If conversion fails
     """
     _check_vortex_available()
-    
+
     try:
         # Convert Vortex array to Arrow
-        if hasattr(vortex_array, 'to_arrow_array'):
+        if hasattr(vortex_array, "to_arrow_array"):
             arrow_data = vortex_array.to_arrow_array()
-        elif hasattr(vortex_array, 'to_arrow'):
+        elif hasattr(vortex_array, "to_arrow"):
             arrow_data = vortex_array.to_arrow()
         else:
             raise ValueError("Vortex array does not have a recognized Arrow conversion method")
-        
+
         # Handle both Table and Array returns
         if isinstance(arrow_data, pa.Table):
             arrow_table = arrow_data
         elif isinstance(arrow_data, pa.Array):
             # Convert Array to Table with a single column
-            arrow_table = pa.table([arrow_data], names=['data'])
+            arrow_table = pa.table([arrow_data], names=["data"])
+        elif isinstance(arrow_data, pa.ChunkedArray):
+            # Convert ChunkedArray to Table with a single column
+            arrow_table = pa.table([arrow_data], names=["data"])
         else:
             # Handle RecordBatch or other formats
-            if hasattr(arrow_data, 'to_table'):
+            if hasattr(arrow_data, "to_table"):
                 arrow_table = arrow_data.to_table()
             else:
                 raise ValueError(f"Unexpected Arrow data type: {type(arrow_data)}")
-        
+
         # Validate the resulting table
         _validate_arrow_table_integrity(arrow_table)
-        
+
         logger.debug(f"Converted Vortex array to Arrow table with {len(arrow_table)} rows, {len(arrow_table.schema)} columns")
         return arrow_table
-        
+
     except Exception as e:
         raise ValueError(f"Failed to convert Vortex array to PyArrow table: {e}") from e
 
 
 def _validate_arrow_table_integrity(arrow_table: pa.Table) -> None:
     """Validate the integrity of a converted Arrow table.
-    
+
     Args:
         arrow_table: The Arrow table to validate
-        
+
     Raises:
         ValueError: If the table has integrity issues
     """
     if arrow_table is None:
         raise ValueError("Converted Arrow table is None")
-    
+
     if len(arrow_table.schema) == 0:
         raise ValueError("Converted Arrow table has no columns")
-    
+
     # Check for null schemas or corrupt data
     try:
         arrow_table.validate()
@@ -462,7 +466,7 @@ def batch_convert_iceberg_to_vortex(
             )
 
             data_files.append(data_file)
-            logger.debug(f"Converted batch file {i+1}/{len(arrow_tables)}: {output_path}")
+            logger.debug(f"Converted batch file {i + 1}/{len(arrow_tables)}: {output_path}")
 
         logger.info(f"Completed batch conversion: {len(data_files)} Vortex files created")
         return data_files
@@ -521,11 +525,7 @@ def analyze_vortex_compatibility(iceberg_schema: Schema) -> Dict[str, Any]:
         if len(iceberg_schema.fields) > 1000:
             analysis["warnings"].append("Schema has >1000 fields, consider schema optimization")
 
-        nested_fields = sum(
-            1
-            for field in iceberg_schema.fields
-            if isinstance(field.field_type, (StructType, ListType, MapType))
-        )
+        nested_fields = sum(1 for field in iceberg_schema.fields if isinstance(field.field_type, (StructType, ListType, MapType)))
         if nested_fields > len(iceberg_schema.fields) * 0.5:
             analysis["recommended_optimizations"].append("High ratio of nested fields detected - consider denormalization")
 
