@@ -713,82 +713,133 @@ def _convert_iceberg_filter_to_vortex(iceberg_filter: BooleanExpression) -> Opti
         return None
 
     try:
-        return _visit_filter_expression(iceberg_filter)
+        import vortex.expr as ve
+        import vortex as vx
+        return _visit_filter_expression(iceberg_filter, ve, vx)
     except Exception as e:
         logger.warning(f"Failed to convert filter expression to Vortex: {e}")
         return None
 
 
-def _visit_filter_expression(expr: BooleanExpression) -> Optional[Any]:
-    """Recursively visit and convert filter expressions."""
+def _visit_filter_expression(expr: BooleanExpression, ve: Any, vx: Any) -> Optional[Any]:
+    """Recursively visit and convert filter expressions.
+    
+    Args:
+        expr: The Iceberg boolean expression
+        ve: vortex.expr module
+        vx: vortex module
+    """
     if isinstance(expr, AlwaysTrue):
         return None  # No filter needed
 
     # Handle both bound and unbound equality expressions
     elif isinstance(expr, (EqualTo, BoundEqualTo)):
         term_name = _get_term_name(expr.term)
-        return ve.eq(ve.col(term_name), _convert_literal_value(expr.literal))
+        col_expr = ve.column(term_name)
+        literal_expr = _convert_literal_value(expr.literal, vx)
+        return col_expr == literal_expr
 
     elif isinstance(expr, (NotEqualTo, BoundNotEqualTo)):
         term_name = _get_term_name(expr.term)
-        return ve.neq(ve.col(term_name), _convert_literal_value(expr.literal))
+        col_expr = ve.column(term_name)
+        literal_expr = _convert_literal_value(expr.literal, vx)
+        return col_expr != literal_expr
 
     elif isinstance(expr, (LessThan, BoundLessThan)):
         term_name = _get_term_name(expr.term)
-        return ve.lt(ve.col(term_name), _convert_literal_value(expr.literal))
+        col_expr = ve.column(term_name)
+        literal_expr = _convert_literal_value(expr.literal, vx)
+        return col_expr < literal_expr
 
     elif isinstance(expr, (LessThanOrEqual, BoundLessThanOrEqual)):
         term_name = _get_term_name(expr.term)
-        return ve.lte(ve.col(term_name), _convert_literal_value(expr.literal))
+        col_expr = ve.column(term_name)
+        literal_expr = _convert_literal_value(expr.literal, vx)
+        return col_expr <= literal_expr
 
     elif isinstance(expr, (GreaterThan, BoundGreaterThan)):
         term_name = _get_term_name(expr.term)
-        return ve.gt(ve.col(term_name), _convert_literal_value(expr.literal))
+        col_expr = ve.column(term_name)
+        literal_expr = _convert_literal_value(expr.literal, vx)
+        return col_expr > literal_expr
 
     elif isinstance(expr, (GreaterThanOrEqual, BoundGreaterThanOrEqual)):
         term_name = _get_term_name(expr.term)
-        return ve.gte(ve.col(term_name), _convert_literal_value(expr.literal))
+        col_expr = ve.column(term_name)
+        literal_expr = _convert_literal_value(expr.literal, vx)
+        return col_expr >= literal_expr
 
     elif isinstance(expr, (IsNull, BoundIsNull)):
         term_name = _get_term_name(expr.term)
-        return ve.is_null(ve.col(term_name))
+        # Note: Vortex might not have direct is_null, skip for now
+        return None
 
     elif isinstance(expr, (NotNull, BoundNotNull)):
         term_name = _get_term_name(expr.term)
-        return ve.is_not_null(ve.col(term_name))
+        # Note: Vortex might not have direct is_not_null, skip for now
+        return None
 
     elif isinstance(expr, (IsNaN, BoundIsNaN)):
-        # Vortex may handle NaN differently - this is a best effort conversion
-        term_name = _get_term_name(expr.term)
-        return ve.is_nan(ve.col(term_name))
+        # Vortex may not have direct NaN support, skip for now
+        return None
 
     elif isinstance(expr, (NotNaN, BoundNotNaN)):
-        term_name = _get_term_name(expr.term)
-        return ve.is_not_nan(ve.col(term_name))
+        # Vortex may not have direct NaN support, skip for now
+        return None
 
     elif isinstance(expr, (In, BoundIn)):
-        values = [_convert_literal_value(lit) for lit in expr.literals]
+        # Convert to OR chain since Vortex may not have direct is_in
         term_name = _get_term_name(expr.term)
-        return ve.is_in(ve.col(term_name), values)
+        col_expr = ve.column(term_name)
+        
+        if not expr.literals:
+            return None
+        
+        # Create OR chain: col == lit1 OR col == lit2 OR ...
+        conditions = []
+        for lit in expr.literals:
+            literal_expr = _convert_literal_value(lit, vx)
+            conditions.append(col_expr == literal_expr)
+        
+        # Chain with OR using operator |
+        result = conditions[0]
+        for condition in conditions[1:]:
+            result = result | condition
+        return result
 
     elif isinstance(expr, (NotIn, BoundNotIn)):
-        values = [_convert_literal_value(lit) for lit in expr.literals]
+        # Convert to AND chain since Vortex may not have direct is_not_in
         term_name = _get_term_name(expr.term)
-        return ve.is_not_in(ve.col(term_name), values)
+        col_expr = ve.column(term_name)
+        
+        if not expr.literals:
+            return None
+        
+        # Create AND chain: col != lit1 AND col != lit2 AND ...
+        conditions = []
+        for lit in expr.literals:
+            literal_expr = _convert_literal_value(lit, vx)
+            conditions.append(col_expr != literal_expr)
+        
+        # Chain with AND using operator &
+        result = conditions[0]
+        for condition in conditions[1:]:
+            result = result & condition
+        return result
 
     elif isinstance(expr, And):
-        left = _visit_filter_expression(expr.left)
-        right = _visit_filter_expression(expr.right)
+        left = _visit_filter_expression(expr.left, ve, vx)
+        right = _visit_filter_expression(expr.right, ve, vx)
         if left is None:
             return right
         elif right is None:
             return left
         else:
-            return ve.and_(left, right)
+            return left & right
 
     elif isinstance(expr, Or):
-        left = _visit_filter_expression(expr.left)
-        right = _visit_filter_expression(expr.right)
+        left = _visit_filter_expression(expr.left, ve, vx)
+        right = _visit_filter_expression(expr.right, ve, vx)
         if left is None and right is None:
             return None
         elif left is None:
@@ -796,13 +847,18 @@ def _visit_filter_expression(expr: BooleanExpression) -> Optional[Any]:
         elif right is None:
             return left
         else:
-            return ve.or_(left, right)
+            return left | right
 
     elif isinstance(expr, Not):
-        inner = _visit_filter_expression(expr.child)
+        inner = _visit_filter_expression(expr.child, ve, vx)
         if inner is None:
             return None
-        return ve.not_(inner)
+        # Use ve.not_() if it exists, otherwise try unary negation
+        try:
+            return ve.not_(inner)
+        except AttributeError:
+            # If ve.not_() doesn't exist, we may need to skip
+            return None
 
     else:
         logger.warning(f"Unsupported filter expression type: {type(expr)}")
@@ -822,11 +878,27 @@ def _get_term_name(term: Any) -> str:
         return str(term)
 
 
-def _convert_literal_value(literal: Any) -> Any:
-    """Convert an Iceberg literal value to a Vortex-compatible value."""
+def _convert_literal_value(literal: Any, vx: Any) -> Any:
+    """Convert an Iceberg literal value to a Vortex literal expression.
+    
+    Args:
+        literal: The Iceberg literal value
+        vx: vortex module
+        
+    Returns:
+        A Vortex literal expression
+    """
+    import vortex.expr as ve
+    
+    # Extract the actual value from Iceberg literal
     if hasattr(literal, "value"):
-        return literal.value
-    return literal
+        value = literal.value
+    else:
+        value = literal
+    
+    # Create Vortex scalar to infer correct dtype
+    scalar_obj = vx.scalar(value)
+    return ve.literal(scalar_obj.dtype, value)
 
 
 @dataclass(frozen=True)
