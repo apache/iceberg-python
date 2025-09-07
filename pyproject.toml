@@ -50,7 +50,7 @@ include = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.9.2, !=3.9.7"
+python = ">=3.11,<3.14"
 mmh3 = ">=4.0.0,<6.0.0"
 requests = ">=2.20.0,<3.0.0"
 click = ">=7.1.1,<9.0.0"
