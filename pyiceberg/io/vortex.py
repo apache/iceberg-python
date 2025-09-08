@@ -604,6 +604,96 @@ def write_vortex_file(
         raise ValueError(f"Failed to write Vortex file {file_path}: {e}") from e
 
 
+def write_vortex_streaming(
+    reader: pa.RecordBatchReader,
+    file_path: str,
+    io: FileIO,
+) -> int:
+    """Write a RecordBatchReader to a Vortex file using streaming API for optimal performance.
+
+    This function leverages the official Vortex API's streaming capabilities mentioned in the
+    documentation: "data is streamed directly without loading the entire dataset into memory"
+
+    Args:
+        reader: The PyArrow RecordBatchReader to write
+        file_path: The path where to write the file
+        io: The FileIO instance for file operations
+
+    Returns:
+        The size of the written file in bytes
+    """
+    _check_vortex_available()
+
+    try:
+        # Use Vortex's streaming write API which accepts RecordBatchReader
+        # This is the optimal path mentioned in the official docs
+        if _can_use_direct_streaming(file_path, io):
+            return _write_vortex_streaming_direct(reader, file_path, io)
+        else:
+            # For remote files, use optimized temp file approach
+            return _write_vortex_streaming_temp(reader, file_path, io)
+
+    except Exception as e:
+        raise ValueError(f"Failed to write Vortex file via streaming {file_path}: {e}") from e
+
+
+def _write_vortex_streaming_direct(reader: pa.RecordBatchReader, file_path: str, io: FileIO) -> int:
+    """Write using direct streaming with RecordBatchReader."""
+    try:
+        # Use the official Vortex API with RecordBatchReader for streaming
+        vx.io.write(reader, file_path)
+
+        # Get file size
+        input_file = io.new_input(file_path)
+        file_size = len(input_file)
+
+        logger.debug(f"Successfully wrote Vortex file via streaming: {file_path} ({file_size} bytes)")
+        return file_size
+
+    except Exception:
+        logger.debug(f"Direct streaming failed for {file_path}, falling back to temp file")
+        return _write_vortex_streaming_temp(reader, file_path, io)
+
+
+def _write_vortex_streaming_temp(reader: pa.RecordBatchReader, file_path: str, io: FileIO) -> int:
+    """Write using temp file with RecordBatchReader for optimal memory usage."""
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(suffix=VORTEX_FILE_EXTENSION, delete=False) as tmp_file:
+        tmp_file_path = tmp_file.name
+
+    try:
+        # Use the official Vortex streaming API with RecordBatchReader
+        # This leverages the "data is streamed directly without loading entire dataset" capability
+        vx.io.write(reader, tmp_file_path)
+
+        # Optimized copy to final destination using larger chunks
+        output_file = io.new_output(file_path)
+        with output_file.create(overwrite=True) as output_stream:
+            with open(tmp_file_path, "rb") as temp_stream:
+                # Use larger chunks for better I/O performance (8MB vs 1MB)
+                chunk_size = 8 * 1024 * 1024  # 8MB chunks
+                while True:
+                    chunk = temp_stream.read(chunk_size)
+                    if not chunk:
+                        break
+                    output_stream.write(chunk)
+
+    finally:
+        # Clean up temporary file
+        try:
+            os.unlink(tmp_file_path)
+        except Exception as e:
+            logger.warning(f"Failed to cleanup temporary file {tmp_file_path}: {e}")
+
+    # Get final file size efficiently
+    input_file = io.new_input(file_path)
+    file_size = len(input_file)
+
+    logger.debug(f"Successfully wrote Vortex file via streaming: {file_path} ({file_size} bytes)")
+    return file_size
+
+
 def _can_use_direct_streaming(file_path: str, io: FileIO) -> bool:
     """Check if we can use direct streaming for this file path and IO."""
     # For now, only enable for local file paths to avoid complexity

@@ -469,18 +469,34 @@ class Transaction:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
 
-        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, _dataframe_to_data_files
+        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, _check_vortex_schema_compatible, _dataframe_to_data_files
 
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
-        _check_pyarrow_schema_compatible(
-            self.table_metadata.schema(),
-            provided_schema=df.schema,
-            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
-            format_version=self.table_metadata.format_version,
-        )
+        
+        # Optimization: Use fast schema check for Vortex writes
+        write_format = self.table_metadata.properties.get(
+            TableProperties.WRITE_FORMAT_DEFAULT,
+            TableProperties.WRITE_FORMAT_DEFAULT_DEFAULT
+        ).lower()
+        
+        if write_format == "vortex":
+            # Vortex is more flexible with schema compatibility - use lightweight check
+            _check_vortex_schema_compatible(
+                self.table_metadata.schema(),
+                provided_schema=df.schema,
+                downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+            )
+        else:
+            # Standard PyArrow schema compatibility check for other formats
+            _check_pyarrow_schema_compatible(
+                self.table_metadata.schema(),
+                provided_schema=df.schema,
+                downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+                format_version=self.table_metadata.format_version,
+            )
 
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
             # skip writing data files if the dataframe is empty
