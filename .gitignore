@@ -52,3 +52,4 @@ pyiceberg/avro/decoder_fast.c
 pyiceberg/avro/*.html
 pyiceberg/avro/*.so
 benchmarks/simple_vortex_parquet_benchmark.py
+.bench_out

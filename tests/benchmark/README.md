@@ -39,14 +39,22 @@ cd /path/to/iceberg-python
 .venv/bin/python tests/benchmark/vortex_benchmark.py --production
 ```
 
+### Partitioned Write Benchmark
+
+```bash
+cd /path/to/iceberg-python
+.venv/bin/python tests/benchmark/vortex_benchmark.py --partitioned
+```
+
 ## 📁 Benchmark Files
 
 ### Main Benchmark
 - **`vortex_benchmark.py`** - **[PRIMARY]** Unified comprehensive benchmark suite with CLI options
 
 ### Test Suite (pytest-compatible)
-- **`test_benchmark.py`** - Original PyIceberg taxi dataset benchmark
-- **`test_vortex_vs_parquet_performance.py`** - Vortex performance tests for CI
+
+- **`test_benchmark.py`** - **[DEPRECATED]** Original PyIceberg taxi dataset benchmark (functionality merged into vortex_benchmark.py)
+- **`test_vortex_vs_parquet_performance.py`** - **[DEPRECATED]** Vortex performance tests (functionality merged into vortex_benchmark.py)
 
 ## 🎯 Optimization Achievements
 
@@ -134,7 +142,64 @@ cd /path/to/iceberg-python
 pytest tests/benchmark/test_*.py -v
 ```
 
-## 📊 Performance Results Summary
+## 🧪 Instrumentation and profiling
+
+The `vortex_benchmark.py` CLI supports fine-grained instrumentation to help identify bottlenecks:
+
+- `--instrument`: enable timing and JSONL event logging
+- `--profile-cpu`: capture cProfile per block (writes `.prof` files)
+- `--profile-mem`: capture top memory diffs per block (writes `*.mem.txt`)
+- `--out-dir <path>`: directory for artifacts (defaults to `.bench_out/<timestamp>`)
+- `--run-label <label>`: optional tag added to all events
+
+Example quick run:
+
+```bash
+.venv/bin/python tests/benchmark/vortex_benchmark.py --quick --instrument --profile-cpu --profile-mem --run-label local-dev
+```
+
+Artifacts produced:
+
+- `benchmark_events.jsonl`: JSON lines with blocks, durations, and optional memory summaries
+- `*.prof`: CPU profiles per block (open with SnakeViz or `python -m pstats`)
+- `*.mem.txt`: top memory allocation snapshots per block
+
+Inspecting `.prof` files:
+
+```bash
+# Optional: pip install snakeviz
+snakeviz .bench_out/<timestamp>/vortex.write.io.prof
+```
+
+You can load `benchmark_events.jsonl` into a notebook or a small script to aggregate average durations per block and pinpoint bottlenecks.
+
+## � Scalene profiling (CPU/Memory hotspots)
+
+Scalene provides statistical CPU and memory profiling with line-level attribution.
+
+Setup:
+
+```bash
+pip install scalene
+```
+
+Run against the benchmark (helper script):
+
+```bash
+tests/benchmark/run_scalene.sh
+# or customize
+OUT_DIR=.bench_out/scalene MODE=--quick LABEL=dev tests/benchmark/run_scalene.sh
+```
+
+Outputs:
+- Text: `.bench_out/scalene/scalene_report.txt`
+- HTML: `.bench_out/scalene/scalene_report.html`
+
+Tips:
+- Focus attention on `pyiceberg/io/vortex.py` and hotspots in batch creation, layout optimization, and Vortex read/write calls.
+- Combine with `--instrument` JSONL to correlate wall-time blocks with Scalene’s per-line CPU/memory percentages.
+
+## �📊 Performance Results Summary
 
 ### Current Performance Characteristics
 
