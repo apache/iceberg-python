@@ -32,9 +32,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import tempfile
 import time
-import shutil
 from pathlib import Path
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Optional, Dict
 
 try:
     import vortex as vx
@@ -302,10 +301,16 @@ class VortexBenchmarkSuite:
                 size_ratio = parquet_size / vortex_size if vortex_size > 0 else 0
                 read_ratio = vortex_read_rate / parquet_read_rate if parquet_read_rate > 0 else 0
                 
-                print(f"   📊 Vortex vs Parquet:")
-                print(f"      Write: {write_ratio:.2f}x faster")
-                print(f"      Read:  {read_ratio:.2f}x faster") 
-                print(f"      Size:  {size_ratio:.2f}x compression ratio")
+                print("   📊 Vortex vs Parquet:")
+                if write_ratio >= 1:
+                    print(f"      Write: {write_ratio:.2f}x faster")
+                else:
+                    print(f"      Write: {(1/write_ratio):.2f}x slower")
+                if read_ratio >= 1:
+                    print(f"      Read:  {read_ratio:.2f}x faster")
+                else:
+                    print(f"      Read:  {(1/read_ratio):.2f}x slower")
+                print(f"      Size:  {size_ratio:.2f}x compression (Parquet/Vortex)")
                 
                 results.append({
                     'rows': num_rows,
@@ -475,14 +480,16 @@ def main():
                     write_ratio = result.get('write_ratio', 0)
                     read_ratio = result.get('read_ratio', 0)
                     size_ratio = result.get('size_ratio', 0)
-                    print(f"   {rows:>7,} rows: {write_ratio:.2f}x write, {read_ratio:.2f}x read, {size_ratio:.2f}x compression")
+                    print(
+                        f"   {rows:>7,} rows: {write_ratio:.2f}x write (of Parquet), {read_ratio:.2f}x read (of Parquet), {size_ratio:.2f}x compression (P/V)"
+                    )
     
     print("\n✅ Benchmark complete!")
     print("\n📋 Key Findings:")
-    print("   ✅ Schema compatibility bottleneck fixed (~1.3% improvement)")
-    print("   ✅ Smart batch optimization (+10% for small datasets)")
-    print("   ✅ Read performance consistently 2-3x faster than Parquet")
-    print("   ✅ Compression efficiency similar to Parquet")
+    print("   ✅ Batch tuning helps small datasets; neutral/negative on larger")
+    print("   ✅ Reads are often faster on small data; near parity at medium; can be slower on large")
+    print("   ✅ Writes are typically slower than Parquet (trade-off for read speed and size)")
+    print("   ✅ Compression typically 1.2–2.0x smaller than Parquet (data-dependent)")
 
 
 if __name__ == "__main__":
