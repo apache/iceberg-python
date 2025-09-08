@@ -696,31 +696,27 @@ def _write_vortex_streaming_temp(reader: pa.RecordBatchReader, file_path: str, i
 
 def _can_use_direct_streaming(file_path: str, io: FileIO) -> bool:
     """Check if we can use direct streaming for this file path and IO."""
-    # For now, only enable for local file paths to avoid complexity
-    # TODO: Extend this logic based on FileIO capabilities
-    return file_path.startswith(('/', './')) or '://' not in file_path
+    # Allow direct streaming for local files and common cloud URLs Vortex supports natively
+    if file_path.startswith(("/", "./")) or "://" not in file_path:
+        return True
+    if file_path.startswith(("s3://", "gs://", "az://", "abfs://", "adl://", "oss://")):
+        return True
+    return False
 
 
 def _write_vortex_direct(arrow_table: pa.Table, file_path: str, io: FileIO) -> int:
     """Write Vortex file using direct streaming with official Vortex API."""
     try:
         # Use Vortex's native write API which accepts PyArrow Tables directly
-        # This avoids any intermediate conversions and leverages Vortex optimizations
         vx.io.write(arrow_table, file_path)
 
         # Get file size
         input_file = io.new_input(file_path)
         file_size = len(input_file)
 
-        logger.debug(f"Successfully wrote Vortex file directly: {file_path} ({file_size} bytes, {len(arrow_table)} rows)")
-        return file_size
-
-    except Exception as e:
-        logger.debug(f"Direct streaming failed for {file_path}, falling back to temp file: {e}")
-        return _write_vortex_temp_file(arrow_table, file_path, io)
-        file_size = len(input_file)
-
-        logger.debug(f"Successfully wrote Vortex file directly: {file_path} ({file_size} bytes, {len(arrow_table)} rows)")
+        logger.debug(
+            f"Successfully wrote Vortex file directly: {file_path} ({file_size} bytes, {len(arrow_table)} rows)"
+        )
         return file_size
 
     except Exception as e:
@@ -774,29 +770,69 @@ def read_vortex_file(
     row_filter: Optional[BooleanExpression] = None,
     case_sensitive: bool = True,
 ) -> Iterator[pa.RecordBatch]:
-    """Read a Vortex file and return PyArrow record batches.
-
-    Args:
-        file_path: The path to the Vortex file
-        io: The FileIO instance for file operations
-        projected_schema: Optional schema projection
-        row_filter: Optional row filter expression
-        case_sensitive: Whether column names are case sensitive
-
-    Yields:
-        PyArrow record batches
-    """
+    """Read a Vortex file and return PyArrow record batches."""
     _check_vortex_available()
 
+    # Prefer direct URL reading when available to avoid temp files
+    if "://" in file_path and hasattr(vx, "io") and hasattr(vx.io, "read_url"):
+        vx_expr = None
+        if row_filter is not None:
+            try:
+                vx_expr = _convert_iceberg_filter_to_vortex(row_filter)
+            except Exception as e:
+                logger.debug(f"Skipping Vortex predicate pushdown due to conversion error: {e}")
+                vx_expr = None
+        try:
+            result = vx.io.read_url(file_path)
+            if vx_expr is not None and hasattr(result, "filter"):
+                result = result.filter(vx_expr)
+
+            # Convert to Arrow table
+            arrow_table = (
+                result.to_arrow_table() if hasattr(result, "to_arrow_table") else vortex_to_arrow_table(result)
+            )
+
+            # Apply projection if requested
+            if projected_schema is not None:
+                proj_names = [field.name for field in projected_schema.fields]
+                proj_names = [n for n in proj_names if n in arrow_table.column_names]
+                if proj_names:
+                    arrow_table = arrow_table.select(proj_names)
+
+            # Yield in batches
+            yield from arrow_table.to_batches(max_chunksize=256_000)
+            return
+        except Exception as e:
+            logger.debug(f"Direct URL read path failed, will try direct open: {e}")
+
+    # Try to open the path directly (works for local files and some schemes)
+    try:
+        vortex_file = vx.open(file_path)
+
+        projection = None
+        if projected_schema:
+            projection = [field.name for field in projected_schema.fields]
+
+        vx_expr = None
+        if row_filter is not None:
+            try:
+                vx_expr = _convert_iceberg_filter_to_vortex(row_filter)
+            except Exception as e:
+                logger.debug(f"Skipping Vortex predicate pushdown due to conversion error: {e}")
+                vx_expr = None
+
+        batch_size = 256_000
+        reader = vortex_file.to_arrow(projection=projection, expr=vx_expr, batch_size=batch_size)
+        yield from reader
+        return
+    except Exception as e:
+        logger.debug(f"Direct open path failed for {file_path}, falling back to temp copy: {e}")
+
+    # Final fallback: stream through FileIO into a temp file
     input_file = io.new_input(file_path)
-
-    # Stream batches from the Vortex file and apply predicate pushdown when possible
     with input_file.open() as input_stream:
-        # Write to temporary file for vortex.open to read
         import tempfile
-
         with tempfile.NamedTemporaryFile(suffix=VORTEX_FILE_EXTENSION, delete=False) as tmp_file:
-            # Optimized copy with larger chunks
             chunk_size = 8 * 1024 * 1024  # 8MB chunks
             while True:
                 chunk = input_stream.read(chunk_size)
@@ -805,33 +841,28 @@ def read_vortex_file(
                 tmp_file.write(chunk)
             tmp_file_path = tmp_file.name
 
+    try:
+        vortex_file = vx.open(tmp_file_path)
+        projection = None
+        if projected_schema:
+            projection = [field.name for field in projected_schema.fields]
+
+        vx_expr = None
+        if row_filter is not None:
+            try:
+                vx_expr = _convert_iceberg_filter_to_vortex(row_filter)
+            except Exception as e:
+                logger.debug(f"Skipping Vortex predicate pushdown due to conversion error: {e}")
+                vx_expr = None
+
+        batch_size = 256_000
+        reader = vortex_file.to_arrow(projection=projection, expr=vx_expr, batch_size=batch_size)
+        yield from reader
+    finally:
         try:
-            # Open with Vortex
-            vortex_file = vx.open(tmp_file_path)
-
-            # Apply column projection if specified for Vortex scan
-            projection = None
-            if projected_schema:
-                projection = [field.name for field in projected_schema.fields]
-
-            # Try to convert Iceberg filter to a Vortex expression for pushdown
-            vx_expr = None
-            if row_filter is not None:
-                try:
-                    vx_expr = _convert_iceberg_filter_to_vortex(row_filter)
-                except Exception as e:
-                    logger.debug(f"Skipping Vortex predicate pushdown due to conversion error: {e}")
-                    vx_expr = None
-
-            # Stream Arrow RecordBatches directly from Vortex (projection + predicate pushdown)
-            # Use a moderate batch size to balance IO and memory
-            batch_size = 256_000
-            reader = vortex_file.to_arrow(projection=projection, expr=vx_expr, batch_size=batch_size)
-            yield from reader
-
-        finally:
-            # Clean up temporary file
             os.unlink(tmp_file_path)
+        except Exception:
+            pass
 
 
 def _convert_iceberg_filter_to_vortex(iceberg_filter: BooleanExpression) -> Optional[Any]:
@@ -903,12 +934,25 @@ def _visit_filter_expression(expr: BooleanExpression, ve: Any, vx: Any) -> Optio
 
     elif isinstance(expr, (IsNull, BoundIsNull)):
         term_name = _get_term_name(expr.term)
-        # Note: Vortex might not have direct is_null, skip for now
-        return None
+        col_expr = ve.column(term_name)
+        if hasattr(ve, "is_null"):
+            return ve.is_null(col_expr)
+        try:
+            return col_expr == None  # noqa: E711
+        except Exception:
+            return None
 
     elif isinstance(expr, (NotNull, BoundNotNull)):
         term_name = _get_term_name(expr.term)
-        # Note: Vortex might not have direct is_not_null, skip for now
+        col_expr = ve.column(term_name)
+        if hasattr(ve, "is_not_null"):
+            return ve.is_not_null(col_expr)
+        try:
+            is_null_expr = ve.is_null(col_expr) if hasattr(ve, "is_null") else None
+            if is_null_expr is not None and hasattr(ve, "not_"):
+                return ve.not_(is_null_expr)
+        except Exception:
+            return None
         return None
 
     elif isinstance(expr, (IsNaN, BoundIsNaN)):
