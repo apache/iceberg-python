@@ -4189,7 +4189,7 @@ description = "Beautiful, Pythonic protocol buffers"
 optional = true
 python-versions = ">=3.7"
 groups = ["main"]
-markers = "(python_version < \"3.12\" or python_version >= \"3.13\" or extra == \"bigquery\" or extra == \"gcsfs\") and (extra == \"gcsfs\" or extra == \"bigquery\")"
+markers = "python_version < \"3.12\" and (extra == \"gcsfs\" or extra == \"bigquery\") or extra == \"bigquery\" or extra == \"gcsfs\""
 files = [
     {file = "proto_plus-1.26.1-py3-none-any.whl", hash = "sha256:13285478c2dcf2abb829db158e1047e2f1e8d63a077d94263c2b88b043c75a66"},
     {file = "proto_plus-1.26.1.tar.gz", hash = "sha256:21a515a4c4c0088a773899e23c7bbade3d18f9c66c73edd4c7ee3816bc96a012"},
@@ -4617,19 +4617,19 @@ windows-terminal = ["colorama (>=0.4.6)"]
 
 [[package]]
 name = "pyiceberg-core"
-version = "0.5.1"
+version = "0.6.0"
 description = ""
 optional = true
 python-versions = "~=3.9"
 groups = ["main"]
 markers = "extra == \"pyarrow\" or extra == \"pyiceberg-core\""
 files = [
-    {file = "pyiceberg_core-0.5.1-cp39-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:f5bffe70f036d4409ab5f8a2a52353635dfa9afa665e84eb5fb0415d12171aaa"},
-    {file = "pyiceberg_core-0.5.1-cp39-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:aa5d0d00efeb7c03ad48b17577452f42398f398b41034d2695a294c872365fcd"},
-    {file = "pyiceberg_core-0.5.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6ae88f65f68898a680dde4d83179903d14b9ef2ca8f7b8715fca5d91a2aa24cd"},
-    {file = "pyiceberg_core-0.5.1-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:9d02f82292d2d01cc6b43f79eadf1209e84457cf0a2b945a2ed834245d6a45f6"},
-    {file = "pyiceberg_core-0.5.1-cp39-abi3-win_amd64.whl", hash = "sha256:aad22d3ea743fcf941336542fcf565e16b28b9131087d70e1b03924005334af3"},
-    {file = "pyiceberg_core-0.5.1.tar.gz", hash = "sha256:5359750e690169e06e4c20b74854f0048abbb5fe74b75919247d87cf2af2fcf4"},
+    {file = "pyiceberg_core-0.6.0-cp39-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:2f228a54a2a69912378be18f98ea866bb4a08d265c875856f99cd81f2f7299ba"},
+    {file = "pyiceberg_core-0.6.0-cp39-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:edb41a1f182774085b11352a1f44955d561e21453f00973021244471873fbbd7"},
+    {file = "pyiceberg_core-0.6.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:5cf869d225d57254a54bc3778841cffea4193319bc0a849767a15e05e75c9b36"},
+    {file = "pyiceberg_core-0.6.0-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:18c12fe1ac5b4725b673cf0d1d0ab3e9475644ac0dae871a2e9a293c2622f0a8"},
+    {file = "pyiceberg_core-0.6.0-cp39-abi3-win_amd64.whl", hash = "sha256:d3249eeae5e1d1f1d2c8bd8d6eced98da002afa7c48c751cb22d8dbd4b091a1e"},
+    {file = "pyiceberg_core-0.6.0.tar.gz", hash = "sha256:ce2cac8cf8a85da6e682cec032165fcf387256257971f0f84bc6d50c0941f261"},
 ]
 
 [[package]]
