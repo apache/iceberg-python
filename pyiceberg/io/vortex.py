@@ -60,7 +60,7 @@ from pyiceberg.expressions import (
     NotNull,
     Or,
     BoundEqualTo,
-    BoundGreaterThan, 
+    BoundGreaterThan,
     BoundGreaterThanOrEqual,
     BoundIn,
     BoundIsNaN,
@@ -320,9 +320,9 @@ def convert_iceberg_to_vortex_file(
         iceberg_schema_to_vortex_schema(iceberg_schema)
         logger.debug(f"Validated schema with {len(iceberg_schema.fields)} fields")
 
-        # Convert data to Vortex array for validation
-        arrow_to_vortex_array(iceberg_table_data, compress=compression)
-        logger.debug(f"Validated {len(iceberg_table_data)} rows for Vortex conversion")
+        # Avoid full data conversion here; schema validation is sufficient.
+        # Actual conversion/writing happens in write_vortex_file.
+        logger.debug(f"Prepared {len(iceberg_table_data)} rows for Vortex conversion")
 
         # Write Vortex file
         file_size = write_vortex_file(
@@ -573,7 +573,7 @@ def write_vortex_file(
     io: FileIO,
     compression: Optional[str] = None,
 ) -> int:
-    """Write a PyArrow table to a Vortex file.
+    """Write a PyArrow table to a Vortex file using the official Vortex API.
 
     Args:
         arrow_table: The PyArrow table to write
@@ -592,47 +592,89 @@ def write_vortex_file(
             # For empty tables, create a minimal Vortex file with just the schema
             logger.debug(f"Writing empty Arrow table with schema: {arrow_table.schema}")
 
-        # Convert Arrow table to Vortex array
-        vortex_array = arrow_to_vortex_array(arrow_table, compress=(compression is not None))
-
-        # Write using a temporary file approach for better reliability
-        import tempfile
-
-        with tempfile.NamedTemporaryFile(suffix=VORTEX_FILE_EXTENSION, delete=False) as tmp_file:
-            tmp_file_path = tmp_file.name
-
-        try:
-            # Write Vortex file to temporary location
-            vx.io.write(vortex_array, tmp_file_path)
-
-            # Copy to final destination using FileIO
-            output_file = io.new_output(file_path)
-            with output_file.create(overwrite=True) as output_stream:
-                with open(tmp_file_path, "rb") as temp_stream:
-                    # Stream in chunks for memory efficiency
-                    chunk_size = 1024 * 1024  # 1MB chunks
-                    while True:
-                        chunk = temp_stream.read(chunk_size)
-                        if not chunk:
-                            break
-                        output_stream.write(chunk)
-
-        finally:
-            # Clean up temporary file
-            try:
-                os.unlink(tmp_file_path)
-            except Exception as e:
-                logger.warning(f"Failed to cleanup temporary file {tmp_file_path}: {e}")
-
-        # Get final file size
-        input_file = io.new_input(file_path)
-        file_size = len(input_file)
-
-        logger.debug(f"Successfully wrote Vortex file: {file_path} ({file_size} bytes, {len(arrow_table)} rows)")
-        return file_size
+        # Use Vortex's native write API which supports PyArrow Tables directly
+        # For local files, write directly; for remote files, write to temp then copy
+        if _can_use_direct_streaming(file_path, io):
+            return _write_vortex_direct(arrow_table, file_path, io)
+        else:
+            # For remote files, use temp file with Vortex native API
+            return _write_vortex_temp_file(arrow_table, file_path, io)
 
     except Exception as e:
         raise ValueError(f"Failed to write Vortex file {file_path}: {e}") from e
+
+
+def _can_use_direct_streaming(file_path: str, io: FileIO) -> bool:
+    """Check if we can use direct streaming for this file path and IO."""
+    # For now, only enable for local file paths to avoid complexity
+    # TODO: Extend this logic based on FileIO capabilities
+    return file_path.startswith(('/', './')) or '://' not in file_path
+
+
+def _write_vortex_direct(arrow_table: pa.Table, file_path: str, io: FileIO) -> int:
+    """Write Vortex file using direct streaming with official Vortex API."""
+    try:
+        # Use Vortex's native write API which accepts PyArrow Tables directly
+        # This avoids any intermediate conversions and leverages Vortex optimizations
+        vx.io.write(arrow_table, file_path)
+
+        # Get file size
+        input_file = io.new_input(file_path)
+        file_size = len(input_file)
+
+        logger.debug(f"Successfully wrote Vortex file directly: {file_path} ({file_size} bytes, {len(arrow_table)} rows)")
+        return file_size
+
+    except Exception as e:
+        logger.debug(f"Direct streaming failed for {file_path}, falling back to temp file: {e}")
+        return _write_vortex_temp_file(arrow_table, file_path, io)
+        file_size = len(input_file)
+
+        logger.debug(f"Successfully wrote Vortex file directly: {file_path} ({file_size} bytes, {len(arrow_table)} rows)")
+        return file_size
+
+    except Exception as e:
+        logger.debug(f"Direct streaming failed for {file_path}, falling back to temp file: {e}")
+        return _write_vortex_temp_file(arrow_table, file_path, io)
+
+
+def _write_vortex_temp_file(arrow_table: pa.Table, file_path: str, io: FileIO) -> int:
+    """Write Vortex file using temp file with official Vortex API."""
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(suffix=VORTEX_FILE_EXTENSION, delete=False) as tmp_file:
+        tmp_file_path = tmp_file.name
+
+    try:
+        # Use Vortex's native write API which accepts PyArrow Tables directly
+        # This leverages all Vortex optimizations including compression and encoding selection
+        vx.io.write(arrow_table, tmp_file_path)
+
+        # Optimized copy to final destination using larger chunks
+        output_file = io.new_output(file_path)
+        with output_file.create(overwrite=True) as output_stream:
+            with open(tmp_file_path, "rb") as temp_stream:
+                # Use larger chunks for better I/O performance (8MB vs 1MB)
+                chunk_size = 8 * 1024 * 1024  # 8MB chunks
+                while True:
+                    chunk = temp_stream.read(chunk_size)
+                    if not chunk:
+                        break
+                    output_stream.write(chunk)
+
+    finally:
+        # Clean up temporary file
+        try:
+            os.unlink(tmp_file_path)
+        except Exception as e:
+            logger.warning(f"Failed to cleanup temporary file {tmp_file_path}: {e}")
+
+    # Get final file size efficiently
+    input_file = io.new_input(file_path)
+    file_size = len(input_file)
+
+    logger.debug(f"Successfully wrote Vortex file: {file_path} ({file_size} bytes, {len(arrow_table)} rows)")
+    return file_size
 
 
 def read_vortex_file(
@@ -658,14 +700,19 @@ def read_vortex_file(
 
     input_file = io.new_input(file_path)
 
-    # For now, read the entire file into memory
-    # TODO: Implement streaming reads for large files
+    # Stream batches from the Vortex file and apply predicate pushdown when possible
     with input_file.open() as input_stream:
         # Write to temporary file for vortex.open to read
         import tempfile
 
         with tempfile.NamedTemporaryFile(suffix=VORTEX_FILE_EXTENSION, delete=False) as tmp_file:
-            tmp_file.write(input_stream.read())
+            # Optimized copy with larger chunks
+            chunk_size = 8 * 1024 * 1024  # 8MB chunks
+            while True:
+                chunk = input_stream.read(chunk_size)
+                if not chunk:
+                    break
+                tmp_file.write(chunk)
             tmp_file_path = tmp_file.name
 
         try:
@@ -677,16 +724,20 @@ def read_vortex_file(
             if projected_schema:
                 projection = [field.name for field in projected_schema.fields]
 
-            # Read data using Vortex (no filter pushdown - let PyIceberg handle filtering)
-            scanner = vortex_file.scan(projection=projection)
+            # Try to convert Iceberg filter to a Vortex expression for pushdown
+            vx_expr = None
+            if row_filter is not None:
+                try:
+                    vx_expr = _convert_iceberg_filter_to_vortex(row_filter)
+                except Exception as e:
+                    logger.debug(f"Skipping Vortex predicate pushdown due to conversion error: {e}")
+                    vx_expr = None
 
-            # Read all data and convert to Arrow
-            vortex_array = scanner.read_all()
-            arrow_table = vortex_to_arrow_table(vortex_array)
-
-            # PyIceberg will handle filtering at the Arrow level after this function returns
-            # This avoids type conversion issues between Iceberg expressions and Vortex expressions
-            yield from arrow_table.to_batches()
+            # Stream Arrow RecordBatches directly from Vortex (projection + predicate pushdown)
+            # Use a moderate batch size to balance IO and memory
+            batch_size = 256_000
+            reader = vortex_file.to_arrow(projection=projection, expr=vx_expr, batch_size=batch_size)
+            yield from reader
 
         finally:
             # Clean up temporary file
@@ -706,8 +757,6 @@ def _convert_iceberg_filter_to_vortex(iceberg_filter: BooleanExpression) -> Opti
         return None
 
     try:
-        import vortex.expr as ve
-        import vortex as vx
         return _visit_filter_expression(iceberg_filter, ve, vx)
     except Exception as e:
         logger.warning(f"Failed to convert filter expression to Vortex: {e}")
@@ -716,7 +765,7 @@ def _convert_iceberg_filter_to_vortex(iceberg_filter: BooleanExpression) -> Opti
 
 def _visit_filter_expression(expr: BooleanExpression, ve: Any, vx: Any) -> Optional[Any]:
     """Recursively visit and convert filter expressions.
-    
+
     Args:
         expr: The Iceberg boolean expression
         ve: vortex.expr module
@@ -784,16 +833,16 @@ def _visit_filter_expression(expr: BooleanExpression, ve: Any, vx: Any) -> Optio
         # Convert to OR chain since Vortex may not have direct is_in
         term_name = _get_term_name(expr.term)
         col_expr = ve.column(term_name)
-        
+
         if not expr.literals:
             return None
-        
+
         # Create OR chain: col == lit1 OR col == lit2 OR ...
         conditions = []
         for lit in expr.literals:
             literal_expr = _convert_literal_value(lit, vx)
             conditions.append(col_expr == literal_expr)
-        
+
         # Chain with OR using operator |
         result = conditions[0]
         for condition in conditions[1:]:
@@ -804,16 +853,16 @@ def _visit_filter_expression(expr: BooleanExpression, ve: Any, vx: Any) -> Optio
         # Convert to AND chain since Vortex may not have direct is_not_in
         term_name = _get_term_name(expr.term)
         col_expr = ve.column(term_name)
-        
+
         if not expr.literals:
             return None
-        
+
         # Create AND chain: col != lit1 AND col != lit2 AND ...
         conditions = []
         for lit in expr.literals:
             literal_expr = _convert_literal_value(lit, vx)
             conditions.append(col_expr != literal_expr)
-        
+
         # Chain with AND using operator &
         result = conditions[0]
         for condition in conditions[1:]:
@@ -873,22 +922,22 @@ def _get_term_name(term: Any) -> str:
 
 def _convert_literal_value(literal: Any, vx: Any) -> Any:
     """Convert an Iceberg literal value to a Vortex literal expression.
-    
+
     Args:
         literal: The Iceberg literal value
         vx: vortex module
-        
+
     Returns:
         A Vortex literal expression
     """
     import vortex.expr as ve
-    
+
     # Extract the actual value from Iceberg literal
     if hasattr(literal, "value"):
         value = literal.value
     else:
         value = literal
-    
+
     # Use scalar inference - this should choose appropriate types
     scalar_obj = vx.scalar(value)
     return ve.literal(scalar_obj.dtype, value)
