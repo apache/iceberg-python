@@ -1256,19 +1256,19 @@ files = [
 
 [[package]]
 name = "daft"
-version = "0.5.22"
+version = "0.6.0"
 description = "Distributed Dataframes for Multimodal Data"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
 markers = "extra == \"daft\""
 files = [
-    {file = "daft-0.5.22-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:3ea79057c8792e48974de26e18b779e6d062caee97684f5cb4887c576be44ba9"},
-    {file = "daft-0.5.22-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:21f82a20634c34c4fae582a572f4dd763f89556303e9c02d4db5cd8f5e20cb6b"},
-    {file = "daft-0.5.22-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:a7dfe76be2a408d9cc6b75610e880d4d970c79af19fd7b769689b46effe974b8"},
-    {file = "daft-0.5.22-cp39-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:d38cf492620af76f2d5bebf57cf58f3204d40cecfc4be5c640f5bd3940414f9f"},
-    {file = "daft-0.5.22-cp39-abi3-win_amd64.whl", hash = "sha256:80bbfcbda6fdb647fb5be0006571710f7af041d58366fdd04d3daca77c596932"},
-    {file = "daft-0.5.22.tar.gz", hash = "sha256:402dfb70ed1f2791aaefc3a298ec9decf2479221e1311e6b0d769653c42e276c"},
+    {file = "daft-0.6.0-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:0b1ac6cc209d611d575f3ab4a43ee19a45675876b0590df7e471ad9ffec647e3"},
+    {file = "daft-0.6.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:2e0395e84655b1a3366dcb24843c81b10d648751f918edbf45ad294984de4294"},
+    {file = "daft-0.6.0-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:16d6067a2c1c745840dc1681c7f5ed0d120bf9c39f55be35ee89ac1d1b9a0318"},
+    {file = "daft-0.6.0-cp39-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:54e40dd024d7743f4d02c820ffe44b46c05a62405bcd56f0b8f417e2125bfc66"},
+    {file = "daft-0.6.0-cp39-abi3-win_amd64.whl", hash = "sha256:fe1fa9a1ce79b6445fbfd3fceca71ce4986f7e3354a554c9884a0f9f6a8961c9"},
+    {file = "daft-0.6.0.tar.gz", hash = "sha256:44541d3e4f90a118361b96f3480f5f5998309963b29e3470e678d6df02c6a68e"},
 ]
 
 [package.dependencies]
@@ -1278,7 +1278,7 @@ tqdm = "*"
 typing-extensions = ">=4.0.0"
 
 [package.extras]
-all = ["daft[aws,azure,clickhouse,deltalake,gcp,huggingface,iceberg,numpy,pandas,ray,spark,sql,unity]"]
+all = ["daft[aws,azure,clickhouse,deltalake,gcp,hudi,huggingface,iceberg,lance,numpy,openai,pandas,ray,sentence-transformers,spark,sql,transformers,turbopuffer,unity]"]
 aws = ["boto3"]
 clickhouse = ["clickhouse-connect"]
 deltalake = ["deltalake", "packaging"]
@@ -1287,10 +1287,14 @@ huggingface = ["huggingface-hub"]
 iceberg = ["packaging", "pyiceberg (>=0.7.0,<0.9.1)"]
 lance = ["pylance"]
 numpy = ["numpy"]
+openai = ["openai"]
 pandas = ["pandas"]
 ray = ["packaging", "ray[client,data] (>=2.0.0,<2.48.0) ; platform_system != \"Windows\"", "ray[client,data] (>=2.10.0,<2.48.0) ; platform_system == \"Windows\""]
+sentence-transformers = ["sentence-transformers"]
 spark = ["googleapis-common-protos (>=1.56.4)", "grpcio (>=1.48)", "grpcio-status (>=1.48)", "numpy (>=1.15)", "pandas (>=1.0.5)", "py4j (>=0.10.9.7)", "pyspark (==3.5.5)"]
 sql = ["connectorx", "sqlalchemy", "sqlglot"]
+transformers = ["torch", "torchvision", "transformers"]
+turbopuffer = ["turbopuffer"]
 unity = ["httpx (<=0.27.2)", "unitycatalog"]
 
 [[package]]
