@@ -100,7 +100,7 @@ coverage = { version = "^7.4.2", extras = ["toml"] }
 requests-mock = "1.12.1"
 moto = { version = "^5.0.2", extras = ["server"] }
 typing-extensions = "4.15.0"
-pytest-mock = "3.14.1"
+pytest-mock = "3.15.0"
 pyspark = "3.5.6"
 cython = "3.1.3"
 deptry = ">=0.14,<0.24"
