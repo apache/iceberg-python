@@ -23,47 +23,55 @@ This test demonstrates that Vortex filtering now works correctly,
 matching Parquet behavior exactly.
 """
 
-from pyiceberg.catalog.memory import InMemoryCatalog
-from pyiceberg.schema import Schema
-from pyiceberg.types import NestedField, IntegerType, StringType, DoubleType
-from pyiceberg.expressions import GreaterThan, LessThan, EqualTo, And, Or
 import pyarrow as pa
+
+from pyiceberg.catalog import InMemoryCatalog
+from pyiceberg.expressions import (
+    And,
+    EqualTo,
+    GreaterThan,
+    LessThan,
+    Or,
+)
+from pyiceberg.schema import Schema
+from pyiceberg.types import DoubleType, IntegerType, NestedField, StringType
 
 print("🎯 Comprehensive Vortex Filtering Test")
 print("=" * 50)
 
 # Set up test
 catalog = InMemoryCatalog(name="test_catalog")
-ns = catalog.create_namespace("test")
+catalog.create_namespace("test")  # This returns None, which is expected
 
 # Create schema with multiple data types
 schema = Schema(
     NestedField(1, "id", IntegerType(), required=True),
-    NestedField(2, "name", StringType(), required=True), 
+    NestedField(2, "name", StringType(), required=True),
     NestedField(3, "value", IntegerType(), required=True),
     NestedField(4, "score", DoubleType(), required=True),
 )
 
 # Create table with Vortex format
-table = catalog.create_table(
-    "test.comprehensive_filtering",
-    schema=schema,
-    properties={"write.format.default": "vortex"}
-)
+table = catalog.create_table("test.comprehensive_filtering", schema=schema, properties={"write.format.default": "vortex"})
 
 # Add comprehensive test data
-data = pa.Table.from_pylist([
-    {"id": 1, "name": "Alice", "value": 30, "score": 85.5},
-    {"id": 2, "name": "Bob", "value": 60, "score": 92.0},  
-    {"id": 3, "name": "Charlie", "value": 90, "score": 78.5},
-    {"id": 4, "name": "Diana", "value": 45, "score": 96.0},
-    {"id": 5, "name": "Eve", "value": 75, "score": 88.0},
-], schema=pa.schema([
-    pa.field("id", pa.int32(), nullable=False),
-    pa.field("name", pa.string(), nullable=False),
-    pa.field("value", pa.int32(), nullable=False),
-    pa.field("score", pa.float64(), nullable=False),
-]))
+data = pa.Table.from_pylist(
+    [
+        {"id": 1, "name": "Alice", "value": 30, "score": 85.5},
+        {"id": 2, "name": "Bob", "value": 60, "score": 92.0},
+        {"id": 3, "name": "Charlie", "value": 90, "score": 78.5},
+        {"id": 4, "name": "Diana", "value": 45, "score": 96.0},
+        {"id": 5, "name": "Eve", "value": 75, "score": 88.0},
+    ],
+    schema=pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=False),
+            pa.field("name", pa.string(), nullable=False),
+            pa.field("value", pa.int32(), nullable=False),
+            pa.field("score", pa.float64(), nullable=False),
+        ]
+    ),
+)
 
 table.append(data)
 print("✅ Added comprehensive test data (5 rows)")
@@ -85,18 +93,18 @@ for test_name, filter_expr, expected_names in test_cases:
         # Apply filter and get results
         filtered_results = table.scan(row_filter=filter_expr).to_arrow()
         actual_names = {row["name"] for row in filtered_results.to_pylist()}
-        
+
         if actual_names == expected_names:
             print(f"   ✅ {test_name}: Found {len(actual_names)} rows - {actual_names}")
         else:
             print(f"   ❌ {test_name}: Expected {expected_names}, Got {actual_names}")
             all_passed = False
-            
+
     except Exception as e:
         print(f"   ❌ {test_name}: FAILED with error - {e}")
         all_passed = False
 
-print(f"\n🎯 Final Result:")
+print("\n🎯 Final Result:")
 if all_passed:
     print("✅ ALL FILTERING TESTS PASSED! Vortex filtering optimization is working perfectly.")
     print("🚀 Vortex integration now has full feature parity with Parquet for filtering!")

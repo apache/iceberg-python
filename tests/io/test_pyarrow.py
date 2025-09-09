@@ -2811,3 +2811,68 @@ def test_parse_location_defaults() -> None:
     assert scheme == "hdfs"
     assert netloc == "netloc:8000"
     assert path == "/foo/bar"
+
+
+# Tests for Vortex file support in add_files functionality
+def test_vortex_file_to_data_file_import_error():
+    """Test that vortex_file_to_data_file raises ImportError when vortex is not available."""
+    from unittest.mock import Mock, patch
+
+    from pyiceberg.io.pyarrow import vortex_file_to_data_file
+
+    mock_io = Mock()
+    mock_metadata = Mock()
+
+    with patch("pyiceberg.io.vortex.VORTEX_AVAILABLE", False):
+        with pytest.raises(ImportError, match="vortex-data is not installed"):
+            vortex_file_to_data_file(mock_io, mock_metadata, "test.vortex")
+
+
+def test_vortex_file_to_data_file_returns_data_file():
+    """Test that vortex_file_to_data_file creates a DataFile with correct properties."""
+    from unittest.mock import Mock, patch
+
+    from pyiceberg.io.pyarrow import vortex_file_to_data_file
+    from pyiceberg.manifest import FileFormat
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import LongType, NestedField, StringType
+
+    # Mock FileIO
+    mock_io = Mock()
+    mock_input = Mock()
+    mock_input.__len__ = Mock(return_value=1024)
+    mock_io.new_input.return_value = mock_input
+
+    # Mock TableMetadata
+    mock_metadata = Mock()
+    mock_metadata.format_version = 2
+    mock_spec = Mock()
+    mock_spec.fields = []  # Unpartitioned table
+    mock_metadata.spec.return_value = mock_spec
+    mock_metadata.schema.return_value = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "name", StringType(), required=False),
+    )
+    mock_metadata.default_spec_id = 0
+
+    # Mock Vortex batch
+    mock_batch = Mock()
+    mock_batch.num_rows = 10
+    mock_batch.schema = Mock()
+
+    with patch("pyiceberg.io.vortex.VORTEX_AVAILABLE", True), \
+         patch("pyiceberg.io.vortex.read_vortex_file") as mock_read_vortex, \
+         patch("pyiceberg.io.pyarrow._check_pyarrow_schema_compatible") as mock_check_schema:
+
+        mock_read_vortex.return_value = iter([mock_batch])
+
+        result = vortex_file_to_data_file(mock_io, mock_metadata, "test.vortex")
+
+        # Verify the result is a DataFile with Vortex format
+        assert result.file_format == FileFormat.VORTEX
+        assert result.file_path == "test.vortex"
+        assert result.record_count == 10
+
+        # Verify function calls
+        mock_read_vortex.assert_called_once_with(file_path="test.vortex", io=mock_io, batch_size=10000)
+        mock_check_schema.assert_called_once()

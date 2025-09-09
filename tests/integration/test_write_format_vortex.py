@@ -38,6 +38,7 @@ from pyiceberg.types import (
 # Check if vortex is available
 try:
     import importlib.util
+
     VORTEX_AVAILABLE = importlib.util.find_spec("vortex") is not None
 except ImportError:
     VORTEX_AVAILABLE = False
@@ -99,21 +100,19 @@ def test_data() -> pa.Table:
 class TestWriteFormatConfiguration:
     """Test write format configuration using table properties."""
 
-    def test_default_parquet_format(
-        self, vortex_catalog: SqlCatalog, test_schema: Schema, test_data: pa.Table
-    ) -> None:
+    def test_default_parquet_format(self, vortex_catalog: SqlCatalog, test_schema: Schema, test_data: pa.Table) -> None:
         """Test that default format is Parquet when no write format is specified."""
         table_name = "default.test_default_parquet"
-        
+
         # Create table without specifying write format
         table = vortex_catalog.create_table(
             identifier=table_name,
             schema=test_schema,
         )
-        
+
         # Write data
         table.append(test_data)
-        
+
         # Verify that data files are in Parquet format
         data_files = []
         for snapshot in table.snapshots():
@@ -121,7 +120,7 @@ class TestWriteFormatConfiguration:
                 for manifest_entry in manifest_list.fetch_manifest_entry(table.io):
                     if manifest_entry.data_file:
                         data_files.append(manifest_entry.data_file)
-        
+
         assert len(data_files) > 0
         for data_file in data_files:
             assert data_file.file_format == FileFormat.PARQUET
@@ -132,29 +131,27 @@ class TestWriteFormatConfiguration:
     ) -> None:
         """Test setting Vortex as write format using transaction properties."""
         table_name = "default.test_vortex_write_format"
-        
+
         # Create table
         table = vortex_catalog.create_table(
             identifier=table_name,
             schema=test_schema,
         )
-        
+
         # Set write format to Vortex using transaction
         transaction = table.transaction()
-        transaction.set_properties({
-            TableProperties.WRITE_FORMAT_DEFAULT: "vortex"
-        })
+        transaction.set_properties({TableProperties.WRITE_FORMAT_DEFAULT: "vortex"})
         transaction.commit_transaction()
-        
+
         # Refresh table to get updated properties
         table = vortex_catalog.load_table(table_name)
-        
+
         # Verify the property was set
         assert table.properties.get(TableProperties.WRITE_FORMAT_DEFAULT) == "vortex"
-        
+
         # Write data
         table.append(test_data)
-        
+
         # Verify that data files are in Vortex format
         data_files = []
         for snapshot in table.snapshots():
@@ -162,40 +159,36 @@ class TestWriteFormatConfiguration:
                 for manifest_entry in manifest_list.fetch_manifest_entry(table.io):
                     if manifest_entry.data_file:
                         data_files.append(manifest_entry.data_file)
-        
+
         assert len(data_files) > 0
         for data_file in data_files:
             assert data_file.file_format == FileFormat.VORTEX
             assert data_file.file_path.endswith(".vortex")
 
-    def test_parquet_write_format_explicit(
-        self, vortex_catalog: SqlCatalog, test_schema: Schema, test_data: pa.Table
-    ) -> None:
+    def test_parquet_write_format_explicit(self, vortex_catalog: SqlCatalog, test_schema: Schema, test_data: pa.Table) -> None:
         """Test explicitly setting Parquet as write format."""
         table_name = "default.test_parquet_explicit"
-        
+
         # Create table
         table = vortex_catalog.create_table(
             identifier=table_name,
             schema=test_schema,
         )
-        
+
         # Set write format to Parquet explicitly using transaction
         transaction = table.transaction()
-        transaction.set_properties({
-            TableProperties.WRITE_FORMAT_DEFAULT: "parquet"
-        })
+        transaction.set_properties({TableProperties.WRITE_FORMAT_DEFAULT: "parquet"})
         transaction.commit_transaction()
-        
+
         # Refresh table to get updated properties
         table = vortex_catalog.load_table(table_name)
-        
+
         # Verify the property was set
         assert table.properties.get(TableProperties.WRITE_FORMAT_DEFAULT) == "parquet"
-        
+
         # Write data
         table.append(test_data)
-        
+
         # Verify that data files are in Parquet format
         data_files = []
         for snapshot in table.snapshots():
@@ -203,7 +196,7 @@ class TestWriteFormatConfiguration:
                 for manifest_entry in manifest_list.fetch_manifest_entry(table.io):
                     if manifest_entry.data_file:
                         data_files.append(manifest_entry.data_file)
-        
+
         assert len(data_files) > 0
         for data_file in data_files:
             assert data_file.file_format == FileFormat.PARQUET
@@ -214,51 +207,45 @@ class TestWriteFormatConfiguration:
     ) -> None:
         """Test that invalid write format raises appropriate error."""
         table_name = "default.test_invalid_format"
-        
+
         # Create table
         table = vortex_catalog.create_table(
             identifier=table_name,
             schema=test_schema,
         )
-        
+
         # Set write format to invalid value using transaction
         transaction = table.transaction()
-        transaction.set_properties({
-            TableProperties.WRITE_FORMAT_DEFAULT: "invalid_format"
-        })
+        transaction.set_properties({TableProperties.WRITE_FORMAT_DEFAULT: "invalid_format"})
         transaction.commit_transaction()
-        
+
         # Refresh table to get updated properties
         table = vortex_catalog.load_table(table_name)
-        
+
         # Attempt to write data should raise ValueError
         with pytest.raises(ValueError, match="Unsupported write format: invalid_format"):
             table.append(test_data)
 
-    def test_vortex_read_back_data(
-        self, vortex_catalog: SqlCatalog, test_schema: Schema, test_data: pa.Table
-    ) -> None:
+    def test_vortex_read_back_data(self, vortex_catalog: SqlCatalog, test_schema: Schema, test_data: pa.Table) -> None:
         """Test that data written in Vortex format can be read back correctly."""
         table_name = "default.test_vortex_read_back"
-        
+
         # Create table and set write format to Vortex
         table = vortex_catalog.create_table(
             identifier=table_name,
             schema=test_schema,
         )
-        
+
         transaction = table.transaction()
-        transaction.set_properties({
-            TableProperties.WRITE_FORMAT_DEFAULT: "vortex"
-        })
+        transaction.set_properties({TableProperties.WRITE_FORMAT_DEFAULT: "vortex"})
         transaction.commit_transaction()
-        
+
         # Refresh table
         table = vortex_catalog.load_table(table_name)
-        
+
         # Write data
         table.append(test_data)
-        
+
         # Read data back and verify
         result = table.scan().to_arrow()
 
@@ -267,7 +254,7 @@ class TestWriteFormatConfiguration:
         # Debug: Print result columns to understand the issue
         print(f"Result columns: {result.column_names}")
         print(f"Expected columns: {test_data.column_names}")
-        
+
         # Verify content matches
         result_dict = result.to_pydict()
         expected_dict = test_data.to_pydict()
@@ -279,7 +266,7 @@ class TestWriteFormatConfiguration:
         assert result_dict["name"] == expected_dict["name"]
         assert result_dict["age"] == expected_dict["age"]
         assert result_dict["active"] == expected_dict["active"]
-        
+
         # Handle floating point precision
         for i, (result_score, expected_score) in enumerate(zip(result_dict["score"], expected_dict["score"])):
             assert abs(result_score - expected_score) < 1e-10, f"Score mismatch at index {i}"
@@ -289,29 +276,27 @@ class TestWriteFormatConfiguration:
     ) -> None:
         """Test that changing write format only affects new writes, not existing files."""
         table_name = "default.test_format_change"
-        
+
         # Create table (default Parquet format)
         table = vortex_catalog.create_table(
             identifier=table_name,
             schema=test_schema,
         )
-        
+
         # Write first batch (should be Parquet)
         table.append(test_data)
-        
+
         # Change write format to Vortex
         transaction = table.transaction()
-        transaction.set_properties({
-            TableProperties.WRITE_FORMAT_DEFAULT: "vortex"
-        })
+        transaction.set_properties({TableProperties.WRITE_FORMAT_DEFAULT: "vortex"})
         transaction.commit_transaction()
-        
+
         # Refresh table
         table = vortex_catalog.load_table(table_name)
-        
+
         # Write second batch (should be Vortex)
         table.append(test_data)
-        
+
         # Collect all unique data files (avoid duplicates from multiple snapshots)
         data_files = set()
         for snapshot in table.snapshots():
@@ -319,7 +304,7 @@ class TestWriteFormatConfiguration:
                 for manifest_entry in manifest_list.fetch_manifest_entry(table.io):
                     if manifest_entry.data_file:
                         data_files.add(manifest_entry.data_file.file_path)
-        
+
         # Convert back to list of data file objects for format checking
         all_data_files = []
         for snapshot in table.snapshots():
@@ -328,16 +313,16 @@ class TestWriteFormatConfiguration:
                     if manifest_entry.data_file and manifest_entry.data_file.file_path in data_files:
                         all_data_files.append(manifest_entry.data_file)
                         data_files.remove(manifest_entry.data_file.file_path)  # Remove to avoid duplicates
-        
+
         # Should have files in both formats
         assert len(all_data_files) == 2
-        
+
         parquet_files = [df for df in all_data_files if df.file_format == FileFormat.PARQUET]
         vortex_files = [df for df in all_data_files if df.file_format == FileFormat.VORTEX]
-        
+
         assert len(parquet_files) == 1
         assert len(vortex_files) == 1
-        
+
         # Verify data can still be read (both formats together)
         result = table.scan().to_arrow()
         assert len(result) == len(test_data) * 2  # Two batches of data

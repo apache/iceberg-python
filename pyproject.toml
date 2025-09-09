@@ -550,5 +550,17 @@ ignore_missing_imports = true
 module = "pyroaring.*"
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = "vortex"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "vortex.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "numpy.*"
+ignore_missing_imports = true
+
 [tool.coverage.run]
 source = ['pyiceberg/']

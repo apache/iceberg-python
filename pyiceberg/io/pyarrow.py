@@ -37,10 +37,10 @@ import tempfile
 import uuid
 import warnings
 from abc import ABC, abstractmethod
-from functools import lru_cache, singledispatch
+from copy import copy
 from dataclasses import dataclass
 from enum import Enum
-from copy import copy
+from functools import lru_cache, singledispatch
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -59,8 +59,8 @@ from typing import (
 )
 from urllib.parse import urlparse
 
-import pyarrow as pa
 import pyarrow
+import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
@@ -162,29 +162,29 @@ from pyiceberg.table.puffin import PuffinFile
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record, TableVersion
 from pyiceberg.types import (
-    IcebergType,
-    PrimitiveType,
-    StructType,
-    NestedField,
-    ListType,
-    MapType,
-    BooleanType,
-    IntegerType,
-    LongType,
-    FloatType,
-    DoubleType,
-    DecimalType,
-    StringType,
-    FixedType,
-    UnknownType,
-    DateType,
-    TimeType,
-    TimestampType,
-    TimestamptzType,
-    TimestampNanoType,
-    TimestamptzNanoType,
-    UUIDType,
     BinaryType,
+    BooleanType,
+    DateType,
+    DecimalType,
+    DoubleType,
+    FixedType,
+    FloatType,
+    IcebergType,
+    IntegerType,
+    ListType,
+    LongType,
+    MapType,
+    NestedField,
+    PrimitiveType,
+    StringType,
+    StructType,
+    TimestampNanoType,
+    TimestampType,
+    TimestamptzNanoType,
+    TimestamptzType,
+    TimeType,
+    UnknownType,
+    UUIDType,
     strtobool,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
@@ -1042,8 +1042,9 @@ def _read_deletes(io: FileIO, data_file: DataFile) -> Dict[str, pa.ChunkedArray]
 
         return PuffinFile(payload).to_vector()
     elif data_file.file_format == FileFormat.VORTEX:
-        from pyiceberg.io.vortex import read_vortex_deletes
-        return read_vortex_deletes(io, data_file)
+        # TODO: Implement Vortex delete file support
+        logger.warning("Vortex delete files are not yet fully supported")
+        return {}
     else:
         raise ValueError(f"Delete file format not supported: {data_file.file_format}")
 
@@ -1512,28 +1513,25 @@ def _task_to_record_batches(
         # Use native Vortex PyArrow integration with proper API usage
         try:
             import vortex as vx
-            import vortex.expr as ve
         except ImportError as e:
             raise ImportError(
-                "vortex-data package is required for Vortex file format support. "
-                "Install it with: pip install vortex-data"
+                "vortex-data package is required for Vortex file format support. Install it with: pip install vortex-data"
             ) from e
 
         # Read the Vortex file using the official Vortex API
         input_file = io.new_input(task.file.file_path)
-        
+
         try:
             # For remote files, use vx.io.read_url for efficient remote access
             # For local files, use vx.open() directly
-            if task.file.file_path.startswith(('http://', 'https://', 's3://', 'gs://', 'abfss://')):
+            if task.file.file_path.startswith(("http://", "https://", "s3://", "gs://", "abfss://")):
                 # Use Vortex's built-in remote file support
                 logger.debug(f"Reading remote Vortex file: {task.file.file_path}")
-                
+
                 # Build projection from projected_schema field names
                 projection = None
                 if projected_schema and projected_field_ids:
-                    projection = [field.name for field in projected_schema.fields 
-                                if field.field_id in projected_field_ids]
+                    projection = [field.name for field in projected_schema.fields if field.field_id in projected_field_ids]
                     logger.debug(f"Using Vortex projection: {projection}")
 
                 # Convert Iceberg filter to Vortex expression if available
@@ -1546,18 +1544,13 @@ def _task_to_record_batches(
                         logger.debug(f"Could not convert filter to Vortex expression: {e}")
 
                 # Read with projection and filter using official API
-                vortex_array = vx.io.read_url(
-                    task.file.file_path,
-                    projection=projection,
-                    row_filter=vortex_filter
-                )
-                
+                vortex_array = vx.io.read_url(task.file.file_path, projection=projection, row_filter=vortex_filter)
+
                 # Convert to Arrow RecordBatchReader for streaming
                 reader = pa.RecordBatchReader.from_batches(
-                    vortex_array.to_arrow_array().to_table().schema,
-                    [vortex_array.to_arrow_array().to_table().to_batches()[0]]
+                    vortex_array.to_arrow_array().to_table().schema, [vortex_array.to_arrow_array().to_table().to_batches()[0]]
                 )
-                
+
             else:
                 # For local files or when we need to copy, use optimized temp file approach
                 with tempfile.NamedTemporaryFile(suffix=".vortex", delete=False) as temp_file:
@@ -1565,7 +1558,7 @@ def _task_to_record_batches(
 
                 # Optimized copy with larger chunks
                 with input_file.open() as fin:
-                    with open(temp_path, 'wb') as temp_f:
+                    with open(temp_path, "wb") as temp_f:
                         chunk_size = 8 * 1024 * 1024  # 8MB chunks for better I/O performance
                         while True:
                             chunk = fin.read(chunk_size)
@@ -1579,8 +1572,7 @@ def _task_to_record_batches(
                 # Build projection from projected_schema field names
                 projection = None
                 if projected_schema and projected_field_ids:
-                    projection = [field.name for field in projected_schema.fields 
-                                if field.field_id in projected_field_ids]
+                    projection = [field.name for field in projected_schema.fields if field.field_id in projected_field_ids]
                     logger.debug(f"Using Vortex projection: {projection}")
 
                 # Convert Iceberg filter to Vortex expression if available
@@ -1596,7 +1588,7 @@ def _task_to_record_batches(
                 reader = vortex_file.to_arrow(
                     projection=projection,
                     expr=vortex_expr,
-                    batch_size=256_000  # Moderate batch size for streaming
+                    batch_size=256_000,  # Moderate batch size for streaming
                 )
 
             # Stream record batches using the official RecordBatchReader
@@ -1620,7 +1612,7 @@ def _task_to_record_batches(
 
         finally:
             # Clean up temporary file if it was created
-            if 'temp_path' in locals() and os.path.exists(temp_path):
+            if "temp_path" in locals() and os.path.exists(temp_path):
                 os.unlink(temp_path)
 
         return
@@ -1703,7 +1695,6 @@ def _task_to_record_batches(
 def _convert_iceberg_to_vortex_filter(iceberg_filter: BooleanExpression) -> Optional[Any]:
     """Convert an Iceberg filter to a Vortex expression using the official API."""
     try:
-        import vortex.expr as ve
         # This is a simplified converter - full implementation would need complete mapping
         # For now, return None to indicate no filter conversion
         logger.debug("Filter conversion to Vortex not yet implemented, reading without filter")
@@ -2657,10 +2648,9 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
 
     # Get the desired write format from table properties
     write_format = table_metadata.properties.get(
-        TableProperties.WRITE_FORMAT_DEFAULT,
-        TableProperties.WRITE_FORMAT_DEFAULT_DEFAULT
+        TableProperties.WRITE_FORMAT_DEFAULT, TableProperties.WRITE_FORMAT_DEFAULT_DEFAULT
     ).lower()
-    
+
     # Convert format string to FileFormat enum
     if write_format == "parquet":
         target_format = FileFormat.PARQUET
@@ -2682,11 +2672,13 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             file_schema = table_schema
 
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
-        
+
         if target_format == FileFormat.VORTEX:
             # OPTIMIZATION: Use official Vortex API with RecordBatchReader for better performance
             # This follows the official docs: vx.io.write() supports RecordBatchReader for streaming
-            return _write_vortex_file_optimized(task, file_schema, table_metadata, io, location_provider, downcast_ns_timestamp_to_us)
+            return _write_vortex_file_optimized(
+                task, file_schema, table_metadata, io, location_provider, downcast_ns_timestamp_to_us
+            )
         else:
             # Standard Parquet path with full schema transformations
             batches = [
@@ -2705,26 +2697,20 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
 
     # Convert tasks to list to count them for optimization decisions
     task_list = list(tasks)
-    
+
     # For small numbers of tasks, avoid executor overhead
     if len(task_list) <= 2:
         # Sequential processing for small workloads to avoid executor overhead
         data_files = [write_data_file(task) for task in task_list]
+        return iter(data_files)
     else:
         # Use executor for larger workloads where parallelism helps
         executor = ExecutorFactory.get_or_create()
-        data_files = executor.map(write_data_file, task_list)
-
-    return iter(data_files)
+        return executor.map(write_data_file, task_list)
 
 
 def _write_parquet_file(
-    task: WriteTask,
-    arrow_table: pa.Table,
-    file_schema: Schema,
-    table_metadata: TableMetadata,
-    io: FileIO,
-    location_provider: Any
+    task: WriteTask, arrow_table: pa.Table, file_schema: Schema, table_metadata: TableMetadata, io: FileIO, location_provider: Any
 ) -> DataFile:
     """Write a Parquet file using existing PyIceberg logic."""
     parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
@@ -2733,16 +2719,14 @@ def _write_parquet_file(
         property_name=TableProperties.PARQUET_ROW_GROUP_LIMIT,
         default=TableProperties.PARQUET_ROW_GROUP_LIMIT_DEFAULT,
     )
-    
+
     file_path = location_provider.new_data_location(
         data_file_name=task.generate_data_file_filename("parquet"),
         partition_key=task.partition_key,
     )
     fo = io.new_output(file_path)
     with fo.create(overwrite=True) as fos:
-        with pq.ParquetWriter(
-            fos, schema=arrow_table.schema, store_decimal_as_integer=True, **parquet_writer_kwargs
-        ) as writer:
+        with pq.ParquetWriter(fos, schema=arrow_table.schema, store_decimal_as_integer=True, **parquet_writer_kwargs) as writer:
             writer.write(arrow_table, row_group_size=row_group_size)
     statistics = data_file_statistics_from_parquet_metadata(
         parquet_metadata=writer.writer.metadata,
@@ -2766,12 +2750,7 @@ def _write_parquet_file(
 
 
 def _write_vortex_file(
-    task: WriteTask,
-    arrow_table: pa.Table,
-    file_schema: Schema,
-    table_metadata: TableMetadata,
-    io: FileIO,
-    location_provider: Any
+    task: WriteTask, arrow_table: pa.Table, file_schema: Schema, table_metadata: TableMetadata, io: FileIO, location_provider: Any
 ) -> DataFile:
     """Write a Vortex file by delegating to the centralized Vortex writer."""
     # Compute destination path
@@ -2822,7 +2801,7 @@ def _write_vortex_file_optimized(
     downcast_ns_timestamp_to_us: bool,
 ) -> DataFile:
     """Optimized Vortex file writer using official API features.
-    
+
     This implementation leverages:
     1. RecordBatchReader for streaming (official Vortex API)
     2. Reduced schema transformations
@@ -2836,11 +2815,8 @@ def _write_vortex_file_optimized(
 
     # Optimization 1: Minimize schema transformations
     # Check if we need expensive schema transformations
-    needs_schema_transform = (
-        file_schema != task.schema or 
-        downcast_ns_timestamp_to_us
-    )
-    
+    needs_schema_transform = file_schema != task.schema or downcast_ns_timestamp_to_us
+
     if needs_schema_transform:
         # Only transform when necessary - do it once efficiently
         transformed_batches = [
@@ -2860,17 +2836,17 @@ def _write_vortex_file_optimized(
     # Optimization 2: Use RecordBatchReader for streaming (official Vortex API)
     # The official docs show vx.io.write() accepts RecordBatchReader for streaming
     total_rows = sum(len(batch) for batch in transformed_batches)
-    
+
     # Apply Vortex API best practices for batch sizing
     temp_table = pa.Table.from_batches(transformed_batches)
     optimal_batch_size = _calculate_optimal_vortex_batch_size(temp_table)
-    
+
     if len(transformed_batches) > 1 and total_rows > 100_000:
         # For larger datasets, use streaming RecordBatchReader with optimized batching
         # This leverages Vortex's row_range and batch_size optimizations from the official API
         if transformed_batches:
             schema = transformed_batches[0].schema
-            
+
             # Only use custom batching for small datasets where it provides benefit
             # For larger datasets, PyArrow's default batching is already optimal
             if total_rows <= 100_000:
@@ -2881,12 +2857,12 @@ def _write_vortex_file_optimized(
                 # For larger datasets, use PyArrow's optimized default reader
                 combined_table = pa.Table.from_batches(transformed_batches)
                 reader = combined_table.to_reader()
-            
+
             # Use official Vortex streaming write API
             from pyiceberg.io.vortex import write_vortex_streaming
-            
+
             file_size_bytes = write_vortex_streaming(
-                reader=reader,
+                record_batch_reader=reader,
                 file_path=file_path,
                 io=io,
             )
@@ -2899,10 +2875,10 @@ def _write_vortex_file_optimized(
         else:
             # Handle empty case
             arrow_table = pa.Table.from_batches([], schema=schema_to_pyarrow(file_schema))
-        
+
         # Use regular Vortex write
         from pyiceberg.io.vortex import write_vortex_file as _vx_write
-        
+
         file_size_bytes = _vx_write(
             arrow_table=arrow_table,
             file_path=file_path,
@@ -2952,15 +2928,15 @@ def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[List[
 
 def _calculate_optimal_vortex_batch_size(table: pa.Table) -> int:
     """Calculate optimal batch size for Vortex writes based on the official API guidelines.
-    
+
     The Vortex documentation shows batch_size parameters throughout the API,
     suggesting optimal batching strategies for different dataset sizes.
-    
+
     Updated based on performance testing - more aggressive sizing for throughput.
-    
+
     Args:
         table: PyArrow table to analyze for optimal batch sizing
-        
+
     Returns:
         Optimal batch size for Vortex streaming
     """
@@ -2985,37 +2961,37 @@ def _calculate_optimal_vortex_batch_size(table: pa.Table) -> int:
 
 def _optimize_vortex_batch_layout(batches: List[pa.RecordBatch], target_batch_size: int) -> List[pa.RecordBatch]:
     """Optimize batch layout for Vortex writes using RepeatedScan-inspired chunking.
-    
+
     The official Vortex API documentation shows RepeatedScan.execute(row_range=(start, stop))
     which suggests optimal row range processing. We apply similar principles to batch layout.
-    
+
     Args:
         batches: Original record batches
         target_batch_size: Target rows per batch
-        
+
     Returns:
         Optimized batches with target sizing
     """
     if not batches:
         return batches
-    
+
     # If all batches are already close to optimal size, return as-is
     total_rows = sum(len(batch) for batch in batches)
     avg_batch_size = total_rows / len(batches) if batches else 0
-    
+
     # If average batch size is within 20% of target, optimization not needed
     if 0.8 * target_batch_size <= avg_batch_size <= 1.2 * target_batch_size:
         return batches
-    
+
     # For now, use a simple optimization: combine all batches and re-chunk
     # This leverages Vortex's preference for consistent batch sizes
     try:
         # Combine all batches into a table
         combined_table = pa.Table.from_batches(batches)
-        
+
         # Re-chunk with optimal batch size
         optimized_batches = combined_table.to_batches(max_chunksize=target_batch_size)
-        
+
         return list(optimized_batches)
     except Exception:
         # Fallback: return original batches if optimization fails
@@ -3029,46 +3005,47 @@ def _check_vortex_schema_compatible(
 ) -> None:
     """
     Fast schema compatibility check optimized for Vortex writes.
-    
+
     Vortex is more flexible with schema compatibility than Parquet,
     so we can use a lighter-weight check that avoids expensive conversions.
-    
+
     Args:
         requested_schema: The Iceberg schema we want
         provided_schema: The PyArrow schema being provided
         downcast_ns_timestamp_to_us: Whether to downcast nanosecond timestamps
-        
+
     Raises:
         ValueError: If the schemas are fundamentally incompatible
     """
     # Fast path: basic field count and name compatibility
     requested_fields = {field.name: field for field in requested_schema.fields}
     provided_names = {field.name for field in provided_schema}
-    
+
     # Check for missing required fields
     missing_fields = set(requested_fields.keys()) - provided_names
     if missing_fields:
         missing_required = [name for name in missing_fields if requested_fields[name].required]
         if missing_required:
             raise ValueError(f"Missing required fields: {', '.join(sorted(missing_required))}")
-    
+
     # Check for extra fields (warning, not error - Vortex can handle extra columns)
     extra_fields = provided_names - set(requested_fields.keys())
     if extra_fields:
         logger.debug(f"Extra fields in provided schema (will be ignored): {', '.join(sorted(extra_fields))}")
-    
+
     # Basic type compatibility check for common fields
     for field_name in provided_names & set(requested_fields.keys()):
         requested_field = requested_fields[field_name]
         provided_field = provided_schema.field(field_name)
-        
+
         # Vortex handles most type conversions automatically, only check for major incompatibilities
         if not _are_vortex_types_compatible(requested_field.field_type, provided_field.type):
-            raise ValueError(f"Incompatible type for field '{field_name}': "
-                           f"expected {requested_field.field_type}, got {provided_field.type}")
+            raise ValueError(
+                f"Incompatible type for field '{field_name}': expected {requested_field.field_type}, got {provided_field.type}"
+            )
 
 
-def _are_vortex_types_compatible(iceberg_type, arrow_type) -> bool:
+def _are_vortex_types_compatible(iceberg_type: Any, arrow_type: pa.DataType) -> bool:
     """Check if types are compatible for Vortex writes (more permissive than Parquet)."""
     # Vortex handles most numeric conversions
     if isinstance(iceberg_type, (IntegerType, LongType)) and pa.types.is_integer(arrow_type):
@@ -3161,6 +3138,85 @@ def parquet_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_pa
     return data_file
 
 
+def vortex_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_path: str) -> DataFile:
+    """Convert a Vortex file path into a DataFile.
+
+    Args:
+        io: FileIO instance for file operations
+        table_metadata: Table metadata containing schema and properties
+        file_path: Path to the Vortex file
+
+    Returns:
+        DataFile object representing the Vortex file
+
+    Raises:
+        ImportError: If Vortex support is not available
+        ValueError: If file format is not compatible with table schema
+    """
+    from pyiceberg.io.vortex import VORTEX_AVAILABLE, read_vortex_file
+    from pyiceberg.manifest import DataFileContent
+
+    if not VORTEX_AVAILABLE:
+        raise ImportError(
+            "vortex-data is not installed. Please install it with: pip install vortex-data or pip install 'pyiceberg[vortex]'"
+        )
+
+    input_file = io.new_input(file_path)
+
+    # Read a small sample from the Vortex file to validate schema and get basic stats
+    # We'll read just the first few batches to avoid loading the entire file
+    record_batches = []
+    total_rows = 0
+
+    try:
+        batch_iterator = read_vortex_file(file_path=file_path, io=io, batch_size=10000)
+        # Read first few batches to get schema and row count estimate
+        for i, batch in enumerate(batch_iterator):
+            record_batches.append(batch)
+            total_rows += batch.num_rows
+            # Only read first few batches for metadata extraction
+            if i >= 2:  # Read up to 3 batches for schema validation
+                break
+    except Exception as e:
+        raise ValueError(f"Failed to read Vortex file {file_path}: {e}") from e
+
+    if not record_batches:
+        raise ValueError(f"Vortex file {file_path} appears to be empty")
+
+    # Get Arrow schema from the first batch
+    arrow_schema = record_batches[0].schema
+
+    # Validate schema compatibility with table schema
+    schema = table_metadata.schema()
+    _check_pyarrow_schema_compatible(schema, arrow_schema, format_version=table_metadata.format_version)
+
+    # Create basic statistics - we could enhance this later to read actual Vortex metadata
+    statistics = DataFileStatistics(
+        record_count=total_rows,
+        column_sizes={},
+        value_counts={},
+        null_value_counts={},
+        nan_value_counts={},
+        column_aggregates={},
+        split_offsets=[],
+    )
+
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=file_path,
+        file_format=FileFormat.VORTEX,
+        partition=statistics.partition(table_metadata.spec(), table_metadata.schema()),
+        file_size_in_bytes=len(input_file),
+        sort_order_id=None,
+        spec_id=table_metadata.default_spec_id,
+        equality_ids=None,
+        key_metadata=None,
+        **statistics.to_serialized_dict(),
+    )
+
+    return data_file
+
+
 ICEBERG_UNCOMPRESSED_CODEC = "uncompressed"
 PYARROW_UNCOMPRESSED_CODEC = "none"
 
@@ -3238,18 +3294,18 @@ def _dataframe_to_data_files(
 
     # Get the desired write format to optimize batching strategy
     write_format = table_metadata.properties.get(
-        TableProperties.WRITE_FORMAT_DEFAULT,
-        TableProperties.WRITE_FORMAT_DEFAULT_DEFAULT
+        TableProperties.WRITE_FORMAT_DEFAULT, TableProperties.WRITE_FORMAT_DEFAULT_DEFAULT
     ).lower()
 
     # Optimize batching for Vortex vs Parquet
     if write_format == "vortex":
         # Vortex can handle larger batches more efficiently than Parquet
         # Use fewer, larger batches to reduce overhead and leverage streaming
-        def vortex_batch_strategy(arrow_table, target_size):
+        def vortex_batch_strategy(tbl: pa.Table, target_file_size: int) -> Iterator[List[pa.RecordBatch]]:
             # Use 2x larger effective batch sizes for Vortex streaming optimization
-            vortex_target_size = target_size * 2
-            return bin_pack_arrow_table(arrow_table, vortex_target_size)
+            vortex_target_size = target_file_size * 2
+            return bin_pack_arrow_table(tbl, vortex_target_size)
+
         batch_strategy = vortex_batch_strategy
     else:
         batch_strategy = bin_pack_arrow_table

@@ -34,17 +34,32 @@ from __future__ import annotations
 
 import logging
 import os
+import platform
+import sys
+import tempfile
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, Iterator, List, Optional
+from functools import lru_cache
+from typing import Any, Dict, Iterator, List, Optional, Union
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
 from pyiceberg.expressions import (
     AlwaysTrue,
     And,
     BooleanExpression,
+    BoundEqualTo,
+    BoundGreaterThan,
+    BoundGreaterThanOrEqual,
+    BoundIn,
+    BoundIsNaN,
+    BoundIsNull,
+    BoundLessThan,
+    BoundLessThanOrEqual,
+    BoundNotEqualTo,
+    BoundNotIn,
+    BoundNotNaN,
+    BoundNotNull,
     EqualTo,
     GreaterThan,
     GreaterThanOrEqual,
@@ -59,30 +74,15 @@ from pyiceberg.expressions import (
     NotNaN,
     NotNull,
     Or,
-    BoundEqualTo,
-    BoundGreaterThan,
-    BoundGreaterThanOrEqual,
-    BoundIn,
-    BoundIsNaN,
-    BoundIsNull,
-    BoundLessThan,
-    BoundLessThanOrEqual,
-    BoundNotEqualTo,
-    BoundNotIn,
-    BoundNotNaN,
-    BoundNotNull,
 )
 from pyiceberg.io import FileIO
-from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
-from pyiceberg.partitioning import PartitionKey, PartitionSpec
+from pyiceberg.partitioning import PartitionKey
 from pyiceberg.schema import Schema
-from pyiceberg.table.metadata import TableMetadata
-from pyiceberg.typedef import Record
 from pyiceberg.types import ListType, MapType, StructType
 
 try:
-    import vortex as vx  # type: ignore[import-not-found]
-    import vortex.expr as ve  # type: ignore[import-not-found]
+    import vortex as vx
+    import vortex.expr as ve
 
     VORTEX_AVAILABLE = True
 except ImportError:
@@ -90,11 +90,107 @@ except ImportError:
     vx = None
     ve = None
 
-
 logger = logging.getLogger(__name__)
 
 # Vortex file extension
 VORTEX_FILE_EXTENSION = ".vortex"
+
+# Environment variable configuration for performance tuning
+VORTEX_BATCH_SIZE = int(os.environ.get("VORTEX_BATCH_SIZE", "1048576"))  # 1M default
+VORTEX_ENABLE_CACHE = os.environ.get("VORTEX_ENABLE_CACHE", "true").lower() == "true"
+VORTEX_COMPRESSION_LEVEL = os.environ.get("VORTEX_COMPRESSION_LEVEL", "auto")  # auto, fast, best, none
+
+# Cache for repeated file reads
+_vortex_file_cache: Dict[str, Any] = {}
+
+
+# Memory Allocator Optimization for Vortex Performance
+# ====================================================
+
+
+def _get_memory_allocator_info() -> Dict[str, Any]:
+    """Get information about the current memory allocator configuration."""
+    system = platform.system()
+
+    info: Dict[str, Any] = {
+        "system": system,
+        "python_version": sys.version.split()[0],
+        "current_settings": {},
+        "recommended_settings": {},
+        "optimizations_applied": [],
+    }
+
+    # Check current environment variables
+    alloc_vars = ("MALLOC_ARENA_MAX", "MALLOC_MMAP_THRESHOLD", "MALLOC_TRIM_THRESHOLD", "MALLOC_TOP_PAD", "PYTHONMALLOC")
+
+    for var in alloc_vars:
+        current_value = os.environ.get(var)
+        info["current_settings"][var] = current_value or "default"
+
+    # Set recommended values based on system
+    if system == "Linux":
+        info["recommended_settings"] = {
+            "MALLOC_ARENA_MAX": "1",  # Single arena for better cache locality
+            "MALLOC_MMAP_THRESHOLD": "131072",  # 128KB threshold for mmap
+            "MALLOC_TRIM_THRESHOLD": "524288",  # 512KB trim threshold
+            "MALLOC_TOP_PAD": "1048576",  # 1MB top pad
+            "PYTHONMALLOC": "malloc",  # Use system malloc
+        }
+    elif system == "Darwin":  # macOS
+        info["recommended_settings"] = {"MALLOC_MMAP_THRESHOLD": "131072", "PYTHONMALLOC": "malloc"}
+    else:
+        info["recommended_settings"] = {"PYTHONMALLOC": "malloc"}
+
+    return info
+
+
+def _optimize_memory_allocator() -> None:
+    """Apply memory allocator optimizations for Vortex performance."""
+    system = platform.system()
+
+    logger.info("🔧 Optimizing Memory Allocator for Vortex Performance")
+
+    if system == "Linux":
+        # Optimize glibc malloc for high-throughput workloads
+        os.environ.setdefault("MALLOC_ARENA_MAX", "1")
+        os.environ.setdefault("MALLOC_MMAP_THRESHOLD", "131072")
+        os.environ.setdefault("MALLOC_TRIM_THRESHOLD", "524288")
+        os.environ.setdefault("MALLOC_TOP_PAD", "1048576")
+        os.environ.setdefault("PYTHONMALLOC", "malloc")
+
+    elif system == "Darwin":
+        # macOS optimizations (limited tunables available)
+        os.environ.setdefault("MALLOC_MMAP_THRESHOLD", "131072")
+        os.environ.setdefault("PYTHONMALLOC", "malloc")
+
+    # Cross-platform optimizations
+    os.environ.setdefault("PYTHONMALLOC", "malloc")
+
+    # Log applied optimizations
+    optimizations = []
+    if os.environ.get("MALLOC_ARENA_MAX"):
+        optimizations.append(f"MALLOC_ARENA_MAX={os.environ['MALLOC_ARENA_MAX']}")
+    if os.environ.get("MALLOC_MMAP_THRESHOLD"):
+        threshold_kb = int(os.environ["MALLOC_MMAP_THRESHOLD"]) // 1024
+        optimizations.append(f"MALLOC_MMAP_THRESHOLD={threshold_kb}KB")
+    if os.environ.get("PYTHONMALLOC"):
+        optimizations.append(f"PYTHONMALLOC={os.environ['PYTHONMALLOC']}")
+
+    if optimizations:
+        logger.info(f"✅ Applied memory optimizations: {', '.join(optimizations)}")
+    else:
+        logger.info("ℹ️  No additional memory optimizations needed")
+
+
+# Apply memory optimizations when Vortex module is loaded
+if VORTEX_AVAILABLE:
+    try:
+        _optimize_memory_allocator()
+        logger.info("✅ Vortex memory allocator optimizations applied successfully")
+    except Exception as e:
+        logger.warning(f"⚠️  Failed to apply memory optimizations: {e}")
+else:
+    logger.debug("ℹ️  Vortex not available, skipping memory optimizations")
 
 
 @dataclass(frozen=True)
@@ -125,6 +221,431 @@ def _check_vortex_available() -> None:
         )
 
 
+def vortex_to_arrow_table(vortex_array: Any, preserve_field_ids: bool = True) -> pa.Table:
+    """Convert a Vortex array to a PyArrow table.
+
+    Args:
+        vortex_array: The Vortex array to convert
+        preserve_field_ids: Whether to preserve Iceberg field IDs
+
+    Returns:
+        A PyArrow table
+
+    Raises:
+        ImportError: If vortex-data is not installed
+        ValueError: If conversion fails
+    """
+    _check_vortex_available()
+
+    try:
+        # Use Vortex's native Arrow conversion
+        if hasattr(vortex_array, "to_arrow_table"):
+            return vortex_array.to_arrow_table()
+        elif hasattr(vortex_array, "to_arrow"):
+            arrow_result = vortex_array.to_arrow()
+            if isinstance(arrow_result, pa.Table):
+                return arrow_result
+            elif hasattr(arrow_result, "read_all"):
+                return arrow_result.read_all()
+            else:
+                return pa.Table.from_batches([arrow_result])
+        else:
+            # Fallback: try converting via Arrow array
+            arrow_array = vx.array(vortex_array).to_arrow()
+            return pa.Table.from_arrays([arrow_array], names=["data"])
+    except Exception as e:
+        raise ValueError(f"Failed to convert Vortex array to Arrow table: {e}") from e
+
+
+def _write_with_temp_file(data: Union[pa.Table, pa.RecordBatchReader], file_path: str, io: FileIO) -> None:
+    """Write to temp file then copy to final location."""
+    with tempfile.NamedTemporaryFile(suffix=".vortex", delete=False) as tmp:
+        vx.io.write(data, tmp.name)
+        tmp.flush()
+
+        # Copy to final location with large chunks
+        output_file = io.new_output(file_path)
+        with output_file.create(overwrite=True) as output_stream:
+            with open(tmp.name, "rb") as f:
+                chunk_size = 16 * 1024 * 1024  # 16MB chunks
+                while chunk := f.read(chunk_size):
+                    output_stream.write(chunk)
+
+        os.unlink(tmp.name)
+
+
+def _open_with_temp_file(file_path: str, io: FileIO) -> Any:
+    """Open remote file via temp copy."""
+    with tempfile.NamedTemporaryFile(suffix=".vortex", delete=False) as tmp:
+        # Copy remote file to temp
+        input_file = io.new_input(file_path)
+        with input_file.open() as input_stream:
+            with open(tmp.name, "wb") as f:
+                chunk_size = 16 * 1024 * 1024  # 16MB chunks
+                data = input_stream.read(chunk_size)
+                while data:
+                    f.write(data)
+                    data = input_stream.read(chunk_size)
+
+        # Open temp file with Vortex
+        vxf = vx.open(tmp.name)
+
+        # Clean up temp file after opening
+        os.unlink(tmp.name)
+        return vxf
+
+
+def write_vortex_file(
+    arrow_table: Union[pa.Table, pa.RecordBatchReader],
+    file_path: str,
+    io: FileIO,
+    compression: Optional[str] = None,
+    streaming: bool = True,
+) -> int:
+    """Write Arrow data to Vortex format with streaming and compression.
+
+    Args:
+        arrow_table: PyArrow Table or RecordBatchReader for streaming
+        file_path: Target file path
+        io: FileIO instance for remote writes
+        compression: Compression level ('auto', 'fast', 'best', None)
+        streaming: Use streaming write for large datasets
+
+    Returns:
+        File size in bytes
+    """
+    _check_vortex_available()
+
+    compression = compression or VORTEX_COMPRESSION_LEVEL
+
+    # Handle streaming input
+    if streaming and isinstance(arrow_table, pa.Table) and len(arrow_table) > 100_000:
+        # Convert large tables to streaming reader
+        arrow_table = arrow_table.to_reader(max_chunksize=VORTEX_BATCH_SIZE)
+
+    # Apply compression if requested and not streaming
+    if compression and compression != "none" and isinstance(arrow_table, pa.Table):
+        # Pre-compress for better performance
+        vortex_array = vx.array(arrow_table)
+        if compression == "best":
+            vortex_array = vx.compress(vortex_array)
+        arrow_table = vortex_array.to_arrow()
+
+    # Check if we can write directly
+    is_local = not file_path.startswith(("s3://", "gs://", "abfs://", "http://", "https://"))
+
+    if is_local:
+        # Direct write for local files
+        try:
+            vx.io.write(arrow_table, file_path)
+        except Exception as e:
+            logger.warning(f"Direct write failed: {e}, using fallback")
+            _write_with_temp_file(arrow_table, file_path, io)
+    else:
+        # Use temp file for remote locations
+        _write_with_temp_file(arrow_table, file_path, io)
+
+    # Get file size
+    try:
+        if is_local:
+            file_size = os.path.getsize(file_path)
+        else:
+            input_file = io.new_input(file_path)
+            file_size = len(input_file)
+    except Exception:
+        file_size = 0
+
+    logger.debug(f"Wrote Vortex file: {file_path} ({file_size} bytes)")
+    return file_size
+
+
+def read_vortex_file(
+    file_path: str,
+    io: FileIO,
+    projected_schema: Optional[Schema] = None,
+    filters: Optional[BooleanExpression] = None,
+    batch_size: Optional[int] = None,
+    use_cache: bool = True,
+) -> Iterator[pa.RecordBatch]:
+    """Read Vortex file with optimized multi-path strategy for maximum speed.
+
+    Args:
+        file_path: Path to Vortex file
+        io: FileIO instance
+        projected_schema: Schema for column projection
+        filters: Boolean expression for row filtering
+        batch_size: Number of rows per batch
+        use_cache: Use cached file handles for repeated reads
+
+    Yields:
+        PyArrow RecordBatches
+    """
+    _check_vortex_available()
+
+    # Use smaller batch size for better streaming performance (like previous fast implementation)
+    batch_size = batch_size or 256_000  # 256K rows - proven optimal from commit db71cc5
+
+    # Convert filters once
+    vortex_expr = None
+    if filters:
+        try:
+            vortex_expr = _convert_iceberg_filter_to_vortex(filters)
+        except Exception as e:
+            logger.debug(f"Skipping Vortex predicate pushdown due to conversion error: {e}")
+            vortex_expr = None
+
+    # Get projection columns
+    projection = None
+    if projected_schema:
+        projection = [field.name for field in projected_schema.fields]
+
+    # Path 1: Try direct URL reading (fastest path from previous implementation)
+    if "://" in file_path and hasattr(vx, "io") and hasattr(vx.io, "read_url"):
+        try:
+            result = vx.io.read_url(file_path)
+            if vortex_expr is not None and hasattr(result, "filter"):
+                result = result.filter(vortex_expr)
+
+            # Convert to Arrow table
+            arrow_table = result.to_arrow_table() if hasattr(result, "to_arrow_table") else vortex_to_arrow_table(result)
+
+            # Apply projection if requested
+            if projection:
+                proj_names = [n for n in projection if n in arrow_table.column_names]
+                if proj_names:
+                    arrow_table = arrow_table.select(proj_names)
+
+            # Yield in optimized batches
+            yield from arrow_table.to_batches(max_chunksize=batch_size)
+            return
+        except Exception as e:
+            logger.debug(f"Direct URL read path failed, trying direct open: {e}")
+
+    # Path 2: Try direct file opening (fast path)
+    try:
+        # Check cache for repeated reads
+        cache_key = f"{file_path}:{projection}:{vortex_expr}" if use_cache and VORTEX_ENABLE_CACHE else None
+        if cache_key and cache_key in _vortex_file_cache:
+            logger.debug(f"Using cached Vortex file handle for {file_path}")
+            vortex_file = _vortex_file_cache[cache_key]
+        else:
+            vortex_file = vx.open(file_path)
+            if cache_key:
+                _vortex_file_cache[cache_key] = vortex_file
+
+        # Create reader with projection and filtering - direct yield for speed
+        reader = vortex_file.to_arrow(projection=projection, expr=vortex_expr, batch_size=batch_size)
+        yield from reader
+        return
+    except Exception as e:
+        logger.debug(f"Direct open path failed for {file_path}, falling back to temp copy: {e}")
+
+    # Path 3: Fallback - temp file copy (slowest but compatible)
+    input_file = io.new_input(file_path)
+    with input_file.open() as input_stream:
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=VORTEX_FILE_EXTENSION, delete=False) as tmp_file:
+            chunk_size = 8 * 1024 * 1024  # 8MB chunks
+            while True:
+                chunk = input_stream.read(chunk_size)
+                if not chunk:
+                    break
+                tmp_file.write(chunk)
+            tmp_file_path = tmp_file.name
+
+    try:
+        vortex_file = vx.open(tmp_file_path)
+        reader = vortex_file.to_arrow(projection=projection, expr=vortex_expr, batch_size=batch_size)
+        yield from reader
+    finally:
+        try:
+            os.unlink(tmp_file_path)
+        except Exception:
+            pass
+
+
+def write_vortex_streaming(
+    record_batch_reader: pa.RecordBatchReader, file_path: str, io: FileIO, compress_batches: bool = False
+) -> int:
+    """Write streaming data to Vortex with optional per-batch compression.
+
+    Args:
+        record_batch_reader: PyArrow RecordBatchReader
+        file_path: Target file path
+        io: FileIO instance
+        compress_batches: Apply compression to each batch
+
+    Returns:
+        File size in bytes
+    """
+    _check_vortex_available()
+
+    if compress_batches:
+        # Create compressed batch generator
+        def compressed_batches() -> Iterator[pa.RecordBatch]:
+            for batch in record_batch_reader:
+                vx_array = vx.array(batch)
+                compressed = vx.compress(vx_array)
+                yield compressed.to_arrow()
+
+        # Create new reader from compressed batches
+        compressed_reader = pa.RecordBatchReader.from_batches(record_batch_reader.schema, compressed_batches())
+        data_to_write = compressed_reader
+    else:
+        data_to_write = record_batch_reader
+
+    # Use standard write function with streaming data
+    return write_vortex_file(arrow_table=data_to_write, file_path=file_path, io=io, streaming=True)
+
+
+@lru_cache(maxsize=32)
+def create_repeated_scan(
+    file_path: str,
+    projection: Optional[tuple[str, ...]] = None,
+    filters_hash: Optional[int] = None,
+    batch_size: int = VORTEX_BATCH_SIZE,
+) -> Any:
+    """Create a cached RepeatedScan for optimized repeated reads.
+
+    Args:
+        file_path: Path to Vortex file
+        projection: Tuple of column names (hashable for cache)
+        filters_hash: Hash of filter expression
+        batch_size: Rows per batch
+
+    Returns:
+        Vortex RepeatedScan object
+    """
+    _check_vortex_available()
+
+    vxf = vx.open(file_path)
+
+    # Convert projection tuple back to list
+    projection_list = list(projection) if projection else None
+
+    # Create repeated scan for efficient repeated reads
+    repeated_scan = vxf.to_repeated_scan(projection=projection_list, batch_size=batch_size)
+
+    logger.debug(f"Created RepeatedScan for {file_path} with projection {projection_list}")
+    return repeated_scan
+
+
+def optimize_for_vortex(arrow_table: pa.Table) -> pa.Table:
+    """Optimize Arrow table for Vortex writing.
+
+    Args:
+        arrow_table: Input Arrow table
+
+    Returns:
+        Optimized Arrow table
+    """
+    if not VORTEX_AVAILABLE:
+        return arrow_table
+
+    # Ensure non-nullable top-level for streaming
+    schema = arrow_table.schema
+    if any(field.nullable for field in schema):
+        # Create non-nullable schema
+        new_fields = []
+        for field in schema:
+            if field.name != "__null_marker__":  # Skip internal fields
+                new_fields.append(pa.field(field.name, field.type, nullable=False))
+            else:
+                new_fields.append(field)
+
+        new_schema = pa.schema(new_fields)
+        arrow_table = arrow_table.cast(new_schema)
+
+    return arrow_table
+
+
+def clear_vortex_cache() -> None:
+    """Clear the Vortex file cache."""
+    global _vortex_file_cache
+    _vortex_file_cache.clear()
+    create_repeated_scan.cache_clear()
+    logger.info("Cleared Vortex file cache")
+
+
+def _get_term_name(term: Any) -> str:
+    """Extract the field name from a term (bound or unbound)."""
+    if hasattr(term, "field") and hasattr(term.field, "name"):
+        return term.field.name
+    elif hasattr(term, "name"):
+        return term.name
+    else:
+        return str(term)
+
+
+def _convert_iceberg_filter_to_vortex(expr: BooleanExpression, schema: Optional[Schema] = None) -> Any:
+    """Convert Iceberg filter expression to Vortex expression.
+
+    Args:
+        expr: Iceberg boolean expression
+        schema: Optional schema for field resolution
+
+    Returns:
+        Vortex expression object
+    """
+    _check_vortex_available()
+
+    # Handle simple cases
+    if isinstance(expr, AlwaysTrue):
+        return None  # No filter
+
+    # Handle bound predicates
+    if isinstance(expr, (BoundEqualTo, EqualTo)):
+        return ve.column(_get_term_name(expr.term)) == expr.literal.value
+    elif isinstance(expr, (BoundNotEqualTo, NotEqualTo)):
+        return ve.column(_get_term_name(expr.term)) != expr.literal.value
+    elif isinstance(expr, (BoundLessThan, LessThan)):
+        return ve.column(_get_term_name(expr.term)) < expr.literal.value
+    elif isinstance(expr, (BoundLessThanOrEqual, LessThanOrEqual)):
+        return ve.column(_get_term_name(expr.term)) <= expr.literal.value
+    elif isinstance(expr, (BoundGreaterThan, GreaterThan)):
+        return ve.column(_get_term_name(expr.term)) > expr.literal.value
+    elif isinstance(expr, (BoundGreaterThanOrEqual, GreaterThanOrEqual)):
+        return ve.column(_get_term_name(expr.term)) >= expr.literal.value
+    elif isinstance(expr, (BoundIsNull, IsNull)):
+        return ve.column(_get_term_name(expr.term)).is_null()
+    elif isinstance(expr, (BoundNotNull, NotNull)):
+        return ~ve.column(_get_term_name(expr.term)).is_null()
+    elif isinstance(expr, (BoundIsNaN, IsNaN)):
+        return ve.column(_get_term_name(expr.term)).is_nan()
+    elif isinstance(expr, (BoundNotNaN, NotNaN)):
+        return ~ve.column(_get_term_name(expr.term)).is_nan()
+    elif isinstance(expr, (BoundIn, In)):
+        return ve.column(_get_term_name(expr.term)).is_in(list(expr.literals))
+    elif isinstance(expr, (BoundNotIn, NotIn)):
+        return ~ve.column(_get_term_name(expr.term)).is_in(list(expr.literals))
+    elif isinstance(expr, And):
+        left = _convert_iceberg_filter_to_vortex(expr.left, schema)
+        right = _convert_iceberg_filter_to_vortex(expr.right, schema)
+        if left is None:
+            return right
+        if right is None:
+            return left
+        return left & right
+    elif isinstance(expr, Or):
+        left = _convert_iceberg_filter_to_vortex(expr.left, schema)
+        right = _convert_iceberg_filter_to_vortex(expr.right, schema)
+        if left is None and right is None:
+            return None
+        if left is None:
+            return right
+        if right is None:
+            return left
+        return left | right
+    elif isinstance(expr, Not):
+        inner = _convert_iceberg_filter_to_vortex(expr.child, schema)
+        return ~inner if inner is not None else None
+    else:
+        logger.warning(f"Unsupported filter type: {type(expr)}")
+        return None
+
+
+# Keep existing helper functions for compatibility
 def iceberg_schema_to_vortex_schema(iceberg_schema: Schema) -> Any:
     """Convert an Iceberg schema to a Vortex schema.
 
@@ -177,333 +698,6 @@ def _validate_vortex_schema_compatibility(arrow_schema: pa.Schema) -> None:
 
     if unsupported_types:
         raise ValueError(f"Schema contains unsupported types for Vortex: {', '.join(unsupported_types)}")
-
-
-def arrow_to_vortex_array(arrow_table: pa.Table, compress: bool = True) -> Any:
-    """Convert a PyArrow table to a Vortex array.
-
-    Args:
-        arrow_table: The PyArrow table to convert
-        compress: Whether to apply Vortex compression optimizations
-
-    Returns:
-        A Vortex array
-
-    Raises:
-        ImportError: If vortex-data is not installed
-        ValueError: If conversion fails
-    """
-    _check_vortex_available()
-
-    try:
-        # Create Vortex array from Arrow table
-        vortex_array = vx.array(arrow_table)
-
-        # Apply compression if requested
-        if compress:
-            try:
-                vortex_array = vx.compress(vortex_array)
-                logger.debug(f"Applied Vortex compression to array with {len(arrow_table)} rows")
-            except Exception as e:
-                logger.warning(f"Vortex compression failed, using uncompressed array: {e}")
-
-        return vortex_array
-
-    except Exception as e:
-        raise ValueError(f"Failed to convert PyArrow table to Vortex array: {e}") from e
-
-
-def vortex_to_arrow_table(vortex_array: Any, preserve_field_ids: bool = True) -> pa.Table:
-    """Convert a Vortex array back to a PyArrow table.
-
-    Args:
-        vortex_array: The Vortex array to convert
-        preserve_field_ids: Whether to preserve Iceberg field IDs in metadata
-
-    Returns:
-        A PyArrow table
-
-    Raises:
-        ImportError: If vortex-data is not installed
-        ValueError: If conversion fails
-    """
-    _check_vortex_available()
-
-    try:
-        # Convert Vortex array to Arrow
-        if hasattr(vortex_array, "to_arrow_array"):
-            arrow_data = vortex_array.to_arrow_array()
-        elif hasattr(vortex_array, "to_arrow"):
-            arrow_data = vortex_array.to_arrow()
-        else:
-            raise ValueError("Vortex array does not have a recognized Arrow conversion method")
-
-        # Handle both Table and Array returns
-        if isinstance(arrow_data, pa.Table):
-            arrow_table = arrow_data
-        elif isinstance(arrow_data, pa.Array):
-            # Convert Array to Table with a single column
-            arrow_table = pa.table([arrow_data], names=["data"])
-        elif isinstance(arrow_data, pa.ChunkedArray):
-            # Convert ChunkedArray to Table with a single column
-            arrow_table = pa.table([arrow_data], names=["data"])
-        else:
-            # Handle RecordBatch or other formats
-            if hasattr(arrow_data, "to_table"):
-                arrow_table = arrow_data.to_table()
-            else:
-                raise ValueError(f"Unexpected Arrow data type: {type(arrow_data)}")
-
-        # Validate the resulting table
-        _validate_arrow_table_integrity(arrow_table)
-
-        logger.debug(f"Converted Vortex array to Arrow table with {len(arrow_table)} rows, {len(arrow_table.schema)} columns")
-        return arrow_table
-
-    except Exception as e:
-        raise ValueError(f"Failed to convert Vortex array to PyArrow table: {e}") from e
-
-
-def _validate_arrow_table_integrity(arrow_table: pa.Table) -> None:
-    """Validate the integrity of a converted Arrow table.
-
-    Args:
-        arrow_table: The Arrow table to validate
-
-    Raises:
-        ValueError: If the table has integrity issues
-    """
-    if arrow_table is None:
-        raise ValueError("Converted Arrow table is None")
-
-    if len(arrow_table.schema) == 0:
-        raise ValueError("Converted Arrow table has no columns")
-
-    # Check for null schemas or corrupt data
-    try:
-        arrow_table.validate()
-    except Exception as e:
-        logger.warning(f"Arrow table validation failed: {e}")
-
-
-def convert_iceberg_to_vortex_file(
-    iceberg_table_data: pa.Table,
-    iceberg_schema: Schema,
-    output_path: str,
-    io: FileIO,
-    compression: bool = True,
-) -> DataFile:
-    """High-level function to convert Iceberg table data to a Vortex file.
-
-    Args:
-        iceberg_table_data: PyArrow table with Iceberg data
-        iceberg_schema: The Iceberg schema
-        output_path: Path where to write the Vortex file
-        io: FileIO instance for file operations
-        compression: Whether to apply Vortex compression
-
-    Returns:
-        DataFile metadata for the created Vortex file
-
-    Raises:
-        ImportError: If vortex-data is not installed
-        ValueError: If conversion fails
-    """
-    _check_vortex_available()
-
-    try:
-        # Validate input
-        if iceberg_table_data is None or len(iceberg_table_data) == 0:
-            raise ValueError("Input table data is empty")
-
-        # Convert schema for validation
-        iceberg_schema_to_vortex_schema(iceberg_schema)
-        logger.debug(f"Validated schema with {len(iceberg_schema.fields)} fields")
-
-        # Avoid full data conversion here; schema validation is sufficient.
-        # Actual conversion/writing happens in write_vortex_file.
-        logger.debug(f"Prepared {len(iceberg_table_data)} rows for Vortex conversion")
-
-        # Write Vortex file
-        file_size = write_vortex_file(
-            arrow_table=iceberg_table_data,  # Use original Arrow table for writing
-            file_path=output_path,
-            io=io,
-            compression="auto" if compression else None,
-        )
-
-        # Create DataFile metadata
-        data_file = DataFile.from_args(
-            content=DataFileContent.DATA,
-            file_path=output_path,
-            file_format=FileFormat.VORTEX,
-            partition=Record(),
-            file_size_in_bytes=file_size,
-            record_count=len(iceberg_table_data),
-            sort_order_id=None,
-            spec_id=0,  # Default spec
-            equality_ids=None,
-            key_metadata=None,
-        )
-
-        logger.info(f"Successfully created Vortex file: {output_path} ({file_size} bytes, {len(iceberg_table_data)} rows)")
-        return data_file
-
-    except Exception as e:
-        raise ValueError(f"Failed to convert Iceberg data to Vortex file: {e}") from e
-
-
-def estimate_vortex_compression_ratio(arrow_table: pa.Table) -> float:
-    """Estimate the compression ratio that Vortex might achieve.
-
-    Args:
-        arrow_table: The PyArrow table to analyze
-
-    Returns:
-        Estimated compression ratio (original_size / compressed_size)
-
-    Note:
-        This is an approximation based on data characteristics
-    """
-    if not VORTEX_AVAILABLE:
-        return 1.0  # No compression without Vortex
-
-    try:
-        # Estimate based on data types and patterns
-        compression_ratio = 1.0
-
-        for column in arrow_table.columns:
-            column_type = column.type
-
-            if pa.types.is_string(column_type) or pa.types.is_binary(column_type):
-                # String compression can be very effective
-                compression_ratio *= 2.5
-            elif pa.types.is_integer(column_type):
-                # Integer compression depends on distribution
-                compression_ratio *= 1.8
-            elif pa.types.is_floating(column_type):
-                # Floating point compression is more limited
-                compression_ratio *= 1.3
-            elif pa.types.is_boolean(column_type):
-                # Boolean data compresses excellently
-                compression_ratio *= 8.0
-
-        # Cap the estimate at reasonable bounds
-        return min(max(compression_ratio, 1.1), 10.0)
-
-    except Exception:
-        return 2.0  # Default conservative estimate
-
-
-def optimize_vortex_write_config(
-    arrow_table: pa.Table,
-    target_file_size_mb: int = 128,
-) -> Dict[str, Any]:
-    """Generate optimized configuration for Vortex file writing.
-
-    Args:
-        arrow_table: The table to be written
-        target_file_size_mb: Target file size in MB
-
-    Returns:
-        Dictionary with optimized Vortex write parameters
-    """
-    config = {
-        "compression": "auto",
-        "row_group_size": 10000,
-        "dictionary_encoding": True,
-        "statistics": True,
-    }
-
-    if not VORTEX_AVAILABLE:
-        return config
-
-    try:
-        # Adjust based on table characteristics
-        num_rows = len(arrow_table)
-        num_columns = len(arrow_table.schema)
-
-        # Optimize row group size based on data volume
-        if num_rows < 1000:
-            config["row_group_size"] = max(100, num_rows // 10)
-        elif num_rows > 1_000_000:
-            config["row_group_size"] = 50000
-        else:
-            config["row_group_size"] = min(10000, num_rows // 100)
-
-        # Enable advanced compression for large tables
-        if num_rows > 100_000 or num_columns > 100:
-            config["compression"] = "aggressive"
-
-        # Dictionary encoding is most effective for string columns
-        string_columns = sum(1 for field in arrow_table.schema if pa.types.is_string(field.type))
-        if string_columns == 0:
-            config["dictionary_encoding"] = False
-
-        return config
-
-    except Exception:
-        return config
-
-
-def batch_convert_iceberg_to_vortex(
-    arrow_tables: List[pa.Table],
-    iceberg_schema: Schema,
-    output_directory: str,
-    io: FileIO,
-    file_prefix: str = "data",
-    compression: bool = True,
-) -> List[DataFile]:
-    """Convert multiple Arrow tables to Vortex files in batch.
-
-    Args:
-        arrow_tables: List of PyArrow tables to convert
-        iceberg_schema: The Iceberg schema
-        output_directory: Directory to write Vortex files
-        io: FileIO instance
-        file_prefix: Prefix for generated file names
-        compression: Whether to apply compression
-
-    Returns:
-        List of DataFile metadata for created files
-
-    Raises:
-        ValueError: If batch conversion fails
-    """
-    _check_vortex_available()
-
-    if not arrow_tables:
-        return []
-
-    data_files = []
-    total_rows = sum(len(table) for table in arrow_tables)
-    logger.info(f"Starting batch conversion of {len(arrow_tables)} tables ({total_rows} total rows)")
-
-    try:
-        for i, arrow_table in enumerate(arrow_tables):
-            if len(arrow_table) == 0:
-                logger.warning(f"Skipping empty table {i}")
-                continue
-
-            file_name = f"{file_prefix}_{i:04d}.vortex"
-            output_path = f"{output_directory.rstrip('/')}/{file_name}"
-
-            data_file = convert_iceberg_to_vortex_file(
-                iceberg_table_data=arrow_table,
-                iceberg_schema=iceberg_schema,
-                output_path=output_path,
-                io=io,
-                compression=compression,
-            )
-
-            data_files.append(data_file)
-            logger.debug(f"Converted batch file {i + 1}/{len(arrow_tables)}: {output_path}")
-
-        logger.info(f"Completed batch conversion: {len(data_files)} Vortex files created")
-        return data_files
-
-    except Exception as e:
-        raise ValueError(f"Batch conversion failed at file {len(data_files)}: {e}") from e
 
 
 def analyze_vortex_compatibility(iceberg_schema: Schema) -> Dict[str, Any]:
@@ -565,1122 +759,3 @@ def analyze_vortex_compatibility(iceberg_schema: Schema) -> Dict[str, Any]:
         analysis["warnings"].append(f"Analysis failed: {e}")
 
     return analysis
-
-
-def write_vortex_file(
-    arrow_table: pa.Table,
-    file_path: str,
-    io: FileIO,
-    compression: Optional[str] = None,
-) -> int:
-    """Write a PyArrow table to a Vortex file using the official Vortex API.
-
-    Args:
-        arrow_table: The PyArrow table to write
-        file_path: The path where to write the file
-        io: The FileIO instance for file operations
-        compression: Optional compression algorithm (handled by Vortex internally)
-
-    Returns:
-        The size of the written file in bytes
-    """
-    _check_vortex_available()
-
-    try:
-        # Handle empty tables gracefully - they should be writable
-        if len(arrow_table) == 0:
-            # For empty tables, create a minimal Vortex file with just the schema
-            logger.debug(f"Writing empty Arrow table with schema: {arrow_table.schema}")
-
-        # Use Vortex's native write API which supports PyArrow Tables directly
-        # For local files, write directly; for remote files, write to temp then copy
-        if _can_use_direct_streaming(file_path, io):
-            return _write_vortex_direct(arrow_table, file_path, io)
-        else:
-            # For remote files, use temp file with Vortex native API
-            return _write_vortex_temp_file(arrow_table, file_path, io)
-
-    except Exception as e:
-        raise ValueError(f"Failed to write Vortex file {file_path}: {e}") from e
-
-
-def write_vortex_streaming(
-    reader: pa.RecordBatchReader,
-    file_path: str,
-    io: FileIO,
-) -> int:
-    """Write a RecordBatchReader to a Vortex file using streaming API for optimal performance.
-
-    This function leverages the official Vortex API's streaming capabilities mentioned in the
-    documentation: "data is streamed directly without loading the entire dataset into memory"
-
-    Args:
-        reader: The PyArrow RecordBatchReader to write
-        file_path: The path where to write the file
-        io: The FileIO instance for file operations
-
-    Returns:
-        The size of the written file in bytes
-    """
-    _check_vortex_available()
-
-    try:
-        # Use Vortex's streaming write API which accepts RecordBatchReader
-        # This is the optimal path mentioned in the official docs
-        if _can_use_direct_streaming(file_path, io):
-            return _write_vortex_streaming_direct(reader, file_path, io)
-        else:
-            # For remote files, use optimized temp file approach
-            return _write_vortex_streaming_temp(reader, file_path, io)
-
-    except Exception as e:
-        raise ValueError(f"Failed to write Vortex file via streaming {file_path}: {e}") from e
-
-
-def _write_vortex_streaming_direct(reader: pa.RecordBatchReader, file_path: str, io: FileIO) -> int:
-    """Write using direct streaming with RecordBatchReader."""
-    try:
-        # Use the official Vortex API with RecordBatchReader for streaming
-        vx.io.write(reader, file_path)
-
-        # Get file size
-        input_file = io.new_input(file_path)
-        file_size = len(input_file)
-
-        logger.debug(f"Successfully wrote Vortex file via streaming: {file_path} ({file_size} bytes)")
-        return file_size
-
-    except Exception:
-        logger.debug(f"Direct streaming failed for {file_path}, falling back to temp file")
-        return _write_vortex_streaming_temp(reader, file_path, io)
-
-
-def _write_vortex_streaming_temp(reader: pa.RecordBatchReader, file_path: str, io: FileIO) -> int:
-    """Write using temp file with RecordBatchReader for optimal memory usage."""
-    import tempfile
-
-    with tempfile.NamedTemporaryFile(suffix=VORTEX_FILE_EXTENSION, delete=False) as tmp_file:
-        tmp_file_path = tmp_file.name
-
-    try:
-        # Use the official Vortex streaming API with RecordBatchReader
-        # This leverages the "data is streamed directly without loading entire dataset" capability
-        vx.io.write(reader, tmp_file_path)
-
-        # Optimized copy to final destination using larger chunks
-        output_file = io.new_output(file_path)
-        with output_file.create(overwrite=True) as output_stream:
-            with open(tmp_file_path, "rb") as temp_stream:
-                # Use larger chunks for better I/O performance (8MB vs 1MB)
-                chunk_size = 8 * 1024 * 1024  # 8MB chunks
-                while True:
-                    chunk = temp_stream.read(chunk_size)
-                    if not chunk:
-                        break
-                    output_stream.write(chunk)
-
-    finally:
-        # Clean up temporary file
-        try:
-            os.unlink(tmp_file_path)
-        except Exception as e:
-            logger.warning(f"Failed to cleanup temporary file {tmp_file_path}: {e}")
-
-    # Get final file size efficiently
-    input_file = io.new_input(file_path)
-    file_size = len(input_file)
-
-    logger.debug(f"Successfully wrote Vortex file via streaming: {file_path} ({file_size} bytes)")
-    return file_size
-
-
-def _can_use_direct_streaming(file_path: str, io: FileIO) -> bool:
-    """Check if we can use direct streaming for this file path and IO."""
-    # Allow direct streaming for local files and common cloud URLs Vortex supports natively
-    if file_path.startswith(("/", "./")) or "://" not in file_path:
-        return True
-    if file_path.startswith(("s3://", "gs://", "az://", "abfs://", "adl://", "oss://")):
-        return True
-    return False
-
-
-def _write_vortex_direct(arrow_table: pa.Table, file_path: str, io: FileIO) -> int:
-    """Write Vortex file using direct streaming with official Vortex API."""
-    try:
-        # Use Vortex's native write API which accepts PyArrow Tables directly
-        vx.io.write(arrow_table, file_path)
-
-        # Get file size
-        input_file = io.new_input(file_path)
-        file_size = len(input_file)
-
-        logger.debug(
-            f"Successfully wrote Vortex file directly: {file_path} ({file_size} bytes, {len(arrow_table)} rows)"
-        )
-        return file_size
-
-    except Exception as e:
-        logger.debug(f"Direct streaming failed for {file_path}, falling back to temp file: {e}")
-        return _write_vortex_temp_file(arrow_table, file_path, io)
-
-
-def _write_vortex_temp_file(arrow_table: pa.Table, file_path: str, io: FileIO) -> int:
-    """Write Vortex file using temp file with official Vortex API."""
-    import tempfile
-
-    with tempfile.NamedTemporaryFile(suffix=VORTEX_FILE_EXTENSION, delete=False) as tmp_file:
-        tmp_file_path = tmp_file.name
-
-    try:
-        # Use Vortex's native write API which accepts PyArrow Tables directly
-        # This leverages all Vortex optimizations including compression and encoding selection
-        vx.io.write(arrow_table, tmp_file_path)
-
-        # Optimized copy to final destination using larger chunks
-        output_file = io.new_output(file_path)
-        with output_file.create(overwrite=True) as output_stream:
-            with open(tmp_file_path, "rb") as temp_stream:
-                # Use larger chunks for better I/O performance (8MB vs 1MB)
-                chunk_size = 8 * 1024 * 1024  # 8MB chunks
-                while True:
-                    chunk = temp_stream.read(chunk_size)
-                    if not chunk:
-                        break
-                    output_stream.write(chunk)
-
-    finally:
-        # Clean up temporary file
-        try:
-            os.unlink(tmp_file_path)
-        except Exception as e:
-            logger.warning(f"Failed to cleanup temporary file {tmp_file_path}: {e}")
-
-    # Get final file size efficiently
-    input_file = io.new_input(file_path)
-    file_size = len(input_file)
-
-    logger.debug(f"Successfully wrote Vortex file: {file_path} ({file_size} bytes, {len(arrow_table)} rows)")
-    return file_size
-
-
-def read_vortex_file(
-    file_path: str,
-    io: FileIO,
-    projected_schema: Optional[Schema] = None,
-    row_filter: Optional[BooleanExpression] = None,
-    case_sensitive: bool = True,
-) -> Iterator[pa.RecordBatch]:
-    """Read a Vortex file and return PyArrow record batches."""
-    _check_vortex_available()
-
-    # Prefer direct URL reading when available to avoid temp files
-    if "://" in file_path and hasattr(vx, "io") and hasattr(vx.io, "read_url"):
-        vx_expr = None
-        if row_filter is not None:
-            try:
-                vx_expr = _convert_iceberg_filter_to_vortex(row_filter)
-            except Exception as e:
-                logger.debug(f"Skipping Vortex predicate pushdown due to conversion error: {e}")
-                vx_expr = None
-        try:
-            result = vx.io.read_url(file_path)
-            if vx_expr is not None and hasattr(result, "filter"):
-                result = result.filter(vx_expr)
-
-            # Convert to Arrow table
-            arrow_table = (
-                result.to_arrow_table() if hasattr(result, "to_arrow_table") else vortex_to_arrow_table(result)
-            )
-
-            # Apply projection if requested
-            if projected_schema is not None:
-                proj_names = [field.name for field in projected_schema.fields]
-                proj_names = [n for n in proj_names if n in arrow_table.column_names]
-                if proj_names:
-                    arrow_table = arrow_table.select(proj_names)
-
-            # Yield in batches
-            yield from arrow_table.to_batches(max_chunksize=256_000)
-            return
-        except Exception as e:
-            logger.debug(f"Direct URL read path failed, will try direct open: {e}")
-
-    # Try to open the path directly (works for local files and some schemes)
-    try:
-        vortex_file = vx.open(file_path)
-
-        projection = None
-        if projected_schema:
-            projection = [field.name for field in projected_schema.fields]
-
-        vx_expr = None
-        if row_filter is not None:
-            try:
-                vx_expr = _convert_iceberg_filter_to_vortex(row_filter)
-            except Exception as e:
-                logger.debug(f"Skipping Vortex predicate pushdown due to conversion error: {e}")
-                vx_expr = None
-
-        batch_size = 256_000
-        reader = vortex_file.to_arrow(projection=projection, expr=vx_expr, batch_size=batch_size)
-        yield from reader
-        return
-    except Exception as e:
-        logger.debug(f"Direct open path failed for {file_path}, falling back to temp copy: {e}")
-
-    # Final fallback: stream through FileIO into a temp file
-    input_file = io.new_input(file_path)
-    with input_file.open() as input_stream:
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix=VORTEX_FILE_EXTENSION, delete=False) as tmp_file:
-            chunk_size = 8 * 1024 * 1024  # 8MB chunks
-            while True:
-                chunk = input_stream.read(chunk_size)
-                if not chunk:
-                    break
-                tmp_file.write(chunk)
-            tmp_file_path = tmp_file.name
-
-    try:
-        vortex_file = vx.open(tmp_file_path)
-        projection = None
-        if projected_schema:
-            projection = [field.name for field in projected_schema.fields]
-
-        vx_expr = None
-        if row_filter is not None:
-            try:
-                vx_expr = _convert_iceberg_filter_to_vortex(row_filter)
-            except Exception as e:
-                logger.debug(f"Skipping Vortex predicate pushdown due to conversion error: {e}")
-                vx_expr = None
-
-        batch_size = 256_000
-        reader = vortex_file.to_arrow(projection=projection, expr=vx_expr, batch_size=batch_size)
-        yield from reader
-    finally:
-        try:
-            os.unlink(tmp_file_path)
-        except Exception:
-            pass
-
-
-def _convert_iceberg_filter_to_vortex(iceberg_filter: BooleanExpression) -> Optional[Any]:
-    """Convert an Iceberg filter expression to a Vortex expression.
-
-    Args:
-        iceberg_filter: The Iceberg boolean expression
-
-    Returns:
-        A Vortex expression or None if conversion is not supported
-    """
-    if not VORTEX_AVAILABLE:
-        return None
-
-    try:
-        return _visit_filter_expression(iceberg_filter, ve, vx)
-    except Exception as e:
-        logger.warning(f"Failed to convert filter expression to Vortex: {e}")
-        return None
-
-
-def _visit_filter_expression(expr: BooleanExpression, ve: Any, vx: Any) -> Optional[Any]:
-    """Recursively visit and convert filter expressions.
-
-    Args:
-        expr: The Iceberg boolean expression
-        ve: vortex.expr module
-        vx: vortex module
-    """
-    if isinstance(expr, AlwaysTrue):
-        return None  # No filter needed
-
-    # Handle both bound and unbound equality expressions
-    elif isinstance(expr, (EqualTo, BoundEqualTo)):
-        term_name = _get_term_name(expr.term)
-        col_expr = ve.column(term_name)
-        literal_expr = _convert_literal_value(expr.literal, vx)
-        return col_expr == literal_expr
-
-    elif isinstance(expr, (NotEqualTo, BoundNotEqualTo)):
-        term_name = _get_term_name(expr.term)
-        col_expr = ve.column(term_name)
-        literal_expr = _convert_literal_value(expr.literal, vx)
-        return col_expr != literal_expr
-
-    elif isinstance(expr, (LessThan, BoundLessThan)):
-        term_name = _get_term_name(expr.term)
-        col_expr = ve.column(term_name)
-        literal_expr = _convert_literal_value(expr.literal, vx)
-        return col_expr < literal_expr
-
-    elif isinstance(expr, (LessThanOrEqual, BoundLessThanOrEqual)):
-        term_name = _get_term_name(expr.term)
-        col_expr = ve.column(term_name)
-        literal_expr = _convert_literal_value(expr.literal, vx)
-        return col_expr <= literal_expr
-
-    elif isinstance(expr, (GreaterThan, BoundGreaterThan)):
-        term_name = _get_term_name(expr.term)
-        col_expr = ve.column(term_name)
-        literal_expr = _convert_literal_value(expr.literal, vx)
-        return col_expr > literal_expr
-
-    elif isinstance(expr, (GreaterThanOrEqual, BoundGreaterThanOrEqual)):
-        term_name = _get_term_name(expr.term)
-        col_expr = ve.column(term_name)
-        literal_expr = _convert_literal_value(expr.literal, vx)
-        return col_expr >= literal_expr
-
-    elif isinstance(expr, (IsNull, BoundIsNull)):
-        term_name = _get_term_name(expr.term)
-        col_expr = ve.column(term_name)
-        if hasattr(ve, "is_null"):
-            return ve.is_null(col_expr)
-        try:
-            return col_expr == None  # noqa: E711
-        except Exception:
-            return None
-
-    elif isinstance(expr, (NotNull, BoundNotNull)):
-        term_name = _get_term_name(expr.term)
-        col_expr = ve.column(term_name)
-        if hasattr(ve, "is_not_null"):
-            return ve.is_not_null(col_expr)
-        try:
-            is_null_expr = ve.is_null(col_expr) if hasattr(ve, "is_null") else None
-            if is_null_expr is not None and hasattr(ve, "not_"):
-                return ve.not_(is_null_expr)
-        except Exception:
-            return None
-        return None
-
-    elif isinstance(expr, (IsNaN, BoundIsNaN)):
-        # Vortex may not have direct NaN support, skip for now
-        return None
-
-    elif isinstance(expr, (NotNaN, BoundNotNaN)):
-        # Vortex may not have direct NaN support, skip for now
-        return None
-
-    elif isinstance(expr, (In, BoundIn)):
-        # Convert to OR chain since Vortex may not have direct is_in
-        term_name = _get_term_name(expr.term)
-        col_expr = ve.column(term_name)
-
-        if not expr.literals:
-            return None
-
-        # Create OR chain: col == lit1 OR col == lit2 OR ...
-        conditions = []
-        for lit in expr.literals:
-            literal_expr = _convert_literal_value(lit, vx)
-            conditions.append(col_expr == literal_expr)
-
-        # Chain with OR using operator |
-        result = conditions[0]
-        for condition in conditions[1:]:
-            result = result | condition
-        return result
-
-    elif isinstance(expr, (NotIn, BoundNotIn)):
-        # Convert to AND chain since Vortex may not have direct is_not_in
-        term_name = _get_term_name(expr.term)
-        col_expr = ve.column(term_name)
-
-        if not expr.literals:
-            return None
-
-        # Create AND chain: col != lit1 AND col != lit2 AND ...
-        conditions = []
-        for lit in expr.literals:
-            literal_expr = _convert_literal_value(lit, vx)
-            conditions.append(col_expr != literal_expr)
-
-        # Chain with AND using operator &
-        result = conditions[0]
-        for condition in conditions[1:]:
-            result = result & condition
-        return result
-
-    elif isinstance(expr, And):
-        left = _visit_filter_expression(expr.left, ve, vx)
-        right = _visit_filter_expression(expr.right, ve, vx)
-        if left is None:
-            return right
-        elif right is None:
-            return left
-        else:
-            return left & right
-
-    elif isinstance(expr, Or):
-        left = _visit_filter_expression(expr.left, ve, vx)
-        right = _visit_filter_expression(expr.right, ve, vx)
-        if left is None and right is None:
-            return None
-        elif left is None:
-            return right
-        elif right is None:
-            return left
-        else:
-            return left | right
-
-    elif isinstance(expr, Not):
-        inner = _visit_filter_expression(expr.child, ve, vx)
-        if inner is None:
-            return None
-        # Use ve.not_() if it exists, otherwise try unary negation
-        try:
-            return ve.not_(inner)
-        except AttributeError:
-            # If ve.not_() doesn't exist, we may need to skip
-            return None
-
-    else:
-        logger.warning(f"Unsupported filter expression type: {type(expr)}")
-        return None
-
-
-def _get_term_name(term: Any) -> str:
-    """Extract the column name from a term (bound or unbound)."""
-    # For bound terms, get the field name from the reference
-    if hasattr(term, 'field') and hasattr(term.field, 'name'):
-        return term.field.name
-    # For unbound terms, check if it has a name attribute
-    elif hasattr(term, 'name'):
-        return term.name
-    # Fallback to string representation
-    else:
-        return str(term)
-
-
-def _convert_literal_value(literal: Any, vx: Any) -> Any:
-    """Convert an Iceberg literal value to a Vortex literal expression.
-
-    Args:
-        literal: The Iceberg literal value
-        vx: vortex module
-
-    Returns:
-        A Vortex literal expression
-    """
-    import vortex.expr as ve
-
-    # Extract the actual value from Iceberg literal
-    if hasattr(literal, "value"):
-        value = literal.value
-    else:
-        value = literal
-
-    # Use scalar inference - this should choose appropriate types
-    scalar_obj = vx.scalar(value)
-    return ve.literal(scalar_obj.dtype, value)
-
-
-@dataclass(frozen=True)
-class VortexDataFileStatistics:
-    """Statistics for a Vortex data file."""
-
-    record_count: int
-    column_sizes: Dict[int, int]
-    value_counts: Dict[int, int]
-    null_value_counts: Dict[int, int]
-    nan_value_counts: Dict[int, int]
-    split_offsets: List[int]
-    lower_bounds: Optional[Dict[int, bytes]] = None
-    upper_bounds: Optional[Dict[int, bytes]] = None
-
-    def to_serialized_dict(self) -> Dict[str, Any]:
-        """Convert statistics to a serialized dictionary."""
-        result = {
-            "record_count": self.record_count,
-            "column_sizes": self.column_sizes,
-            "value_counts": self.value_counts,
-            "null_value_counts": self.null_value_counts,
-            "nan_value_counts": self.nan_value_counts,
-        }
-
-        if self.lower_bounds:
-            result["lower_bounds"] = self.lower_bounds
-        if self.upper_bounds:
-            result["upper_bounds"] = self.upper_bounds
-
-        return result
-
-    @classmethod
-    def from_arrow_table(cls, arrow_table: pa.Table, schema: Schema) -> "VortexDataFileStatistics":
-        """Create statistics from an Arrow table and Iceberg schema."""
-        record_count = len(arrow_table)
-        column_sizes: Dict[int, int] = {}
-        value_counts: Dict[int, int] = {}
-        null_value_counts: Dict[int, int] = {}
-        nan_value_counts: Dict[int, int] = {}
-        lower_bounds: Dict[int, bytes] = {}
-        upper_bounds: Dict[int, bytes] = {}
-
-        # Map field names to field IDs
-        field_name_to_id = {field.name: field.field_id for field in schema.fields}
-
-        for column_name, column in zip(arrow_table.column_names, arrow_table.columns):
-            field_id = field_name_to_id.get(column_name)
-            if field_id is None:
-                continue
-
-            # Calculate column size (approximate)
-            try:
-                column_size = column.nbytes if hasattr(column, "nbytes") else 0
-                column_sizes[field_id] = column_size
-            except Exception:
-                column_sizes[field_id] = 0
-
-            # Count values and nulls
-            value_counts[field_id] = len(column) - pa.compute.count_distinct(column).as_py()
-            null_count = pa.compute.sum(pa.compute.is_null(column)).as_py() or 0
-            null_value_counts[field_id] = null_count
-
-            # Count NaN values for floating point columns
-            if pa.types.is_floating(column.type):
-                try:
-                    nan_count = pa.compute.sum(pa.compute.is_nan(column)).as_py() or 0
-                    nan_value_counts[field_id] = nan_count
-                except Exception:
-                    nan_value_counts[field_id] = 0
-            else:
-                nan_value_counts[field_id] = 0
-
-            # Calculate bounds for supported types
-            try:
-                if len(column) > 0 and null_count < len(column):
-                    min_val = pa.compute.min(column).as_py()
-                    max_val = pa.compute.max(column).as_py()
-
-                    if min_val is not None:
-                        lower_bounds[field_id] = _serialize_bound_value(min_val, column.type)
-                    if max_val is not None:
-                        upper_bounds[field_id] = _serialize_bound_value(max_val, column.type)
-            except Exception as e:
-                logger.debug(f"Failed to calculate bounds for column {column_name}: {e}")
-
-        return cls(
-            record_count=record_count,
-            column_sizes=column_sizes,
-            value_counts=value_counts,
-            null_value_counts=null_value_counts,
-            nan_value_counts=nan_value_counts,
-            split_offsets=[0],  # Single split by default
-            lower_bounds=lower_bounds,
-            upper_bounds=upper_bounds,
-        )
-
-
-def _serialize_bound_value(value: Any, arrow_type: pa.DataType) -> bytes:
-    """Serialize a bound value to bytes for Iceberg metadata."""
-    if value is None:
-        return b""
-
-    try:
-        if pa.types.is_string(arrow_type):
-            return str(value).encode("utf-8")
-        elif pa.types.is_integer(arrow_type):
-            return int(value).to_bytes(8, byteorder="big", signed=True)
-        elif pa.types.is_floating(arrow_type):
-            import struct
-
-            if pa.types.is_float32(arrow_type):
-                return struct.pack(">f", float(value))
-            else:
-                return struct.pack(">d", float(value))
-        elif pa.types.is_boolean(arrow_type):
-            return b"\x01" if value else b"\x00"
-        elif pa.types.is_date(arrow_type):
-            return int(value).to_bytes(4, byteorder="big", signed=False)
-        elif pa.types.is_timestamp(arrow_type):
-            return int(value).to_bytes(8, byteorder="big", signed=True)
-        else:
-            # For other types, convert to string and encode
-            return str(value).encode("utf-8")
-    except Exception as e:
-        logger.debug(f"Failed to serialize bound value {value} of type {arrow_type}: {e}")
-        return b""
-
-
-def vortex_file_to_data_file(
-    io: FileIO,
-    table_metadata: TableMetadata,
-    file_path: str,
-    partition_spec: Optional[PartitionSpec] = None,
-) -> DataFile:
-    """Convert a Vortex file to a DataFile object.
-
-    Args:
-        io: The FileIO instance
-        table_metadata: The table metadata
-        file_path: The path to the Vortex file
-        partition_spec: Optional partition specification
-
-    Returns:
-        A DataFile object
-    """
-    _check_vortex_available()
-
-    input_file = io.new_input(file_path)
-    file_size = len(input_file)
-
-    # For statistics, we need to read the file
-    # This is simplified - in practice, we'd want to extract metadata without full read
-    try:
-        record_batches = list(read_vortex_file(file_path, io))
-        record_count = sum(len(batch) for batch in record_batches)
-
-        # Create basic statistics
-        statistics = VortexDataFileStatistics(
-            record_count=record_count,
-            column_sizes={},  # Would need to calculate from Vortex metadata
-            value_counts={},  # Would need to calculate from Vortex metadata
-            null_value_counts={},  # Would need to calculate from Vortex metadata
-            nan_value_counts={},  # Would need to calculate from Vortex metadata
-            split_offsets=[0],  # Single split for now
-        )
-
-        data_file = DataFile.from_args(
-            content=DataFileContent.DATA,
-            file_path=file_path,
-            file_format=FileFormat.VORTEX,
-            partition=Record(),  # Would need partition extraction
-            file_size_in_bytes=file_size,
-            sort_order_id=None,
-            spec_id=table_metadata.default_spec_id,
-            equality_ids=None,
-            key_metadata=None,
-            **statistics.to_serialized_dict(),
-        )
-
-        return data_file
-
-    except Exception as e:
-        logger.warning(f"Failed to read Vortex file statistics for {file_path}: {e}")
-
-        # Return basic DataFile without statistics
-        return DataFile.from_args(
-            content=DataFileContent.DATA,
-            file_path=file_path,
-            file_format=FileFormat.VORTEX,
-            partition=Record(),
-            file_size_in_bytes=file_size,
-            record_count=0,  # Unknown
-            sort_order_id=None,
-            spec_id=table_metadata.default_spec_id,
-            equality_ids=None,
-            key_metadata=None,
-        )
-
-
-def write_vortex_data_files(
-    io: FileIO,
-    table_metadata: TableMetadata,
-    tasks: Iterator[VortexWriteTask],
-) -> Iterator[DataFile]:
-    """Write Vortex data files from write tasks.
-
-    Args:
-        io: The FileIO instance
-        table_metadata: The table metadata
-        tasks: Iterator of write tasks
-
-    Yields:
-        DataFile objects for the written files
-    """
-    _check_vortex_available()
-
-    from pyiceberg.table.locations import load_location_provider
-
-    # Get location provider for generating file paths
-    location_provider = load_location_provider(table_location=table_metadata.location, table_properties=table_metadata.properties)
-
-    for task in tasks:
-        # Convert record batches to Arrow table
-        if not task.record_batches:
-            continue
-
-        arrow_table = pa.Table.from_batches(task.record_batches)
-
-        # Generate file path
-        file_path = location_provider.new_data_location(
-            data_file_name=task.generate_data_file_filename("vortex"),
-            partition_key=task.partition_key,
-        )
-
-        # Write Vortex file
-        write_vortex_file(
-            arrow_table=arrow_table,
-            file_path=file_path,
-            io=io,
-            compression=None,  # Vortex handles compression internally
-        )
-
-        # Create data file metadata
-        yield vortex_file_to_data_file(
-            io=io,
-            table_metadata=table_metadata,
-            file_path=file_path,
-        )
-
-
-def vortex_files_to_data_files(
-    io: FileIO,
-    table_metadata: TableMetadata,
-    file_paths: Iterator[str],
-) -> Iterator[DataFile]:
-    """Convert Vortex file paths to DataFile objects.
-
-    Args:
-        io: The FileIO instance
-        table_metadata: The table metadata
-        file_paths: Iterator of file paths
-
-    Yields:
-        DataFile objects
-    """
-    for file_path in file_paths:
-        yield vortex_file_to_data_file(
-            io=io,
-            table_metadata=table_metadata,
-            file_path=file_path,
-        )
-
-
-def read_vortex_deletes(io: FileIO, data_file: DataFile) -> Dict[str, pa.ChunkedArray]:
-    """Read Vortex delete files and return positional deletes.
-
-    Args:
-        io: The FileIO instance
-        data_file: The delete file to read
-
-    Returns:
-        Dictionary mapping file paths to delete positions
-
-    Raises:
-        NotImplementedError: Vortex delete files are not yet fully supported
-    """
-    _check_vortex_available()
-
-    if data_file.file_format != FileFormat.VORTEX:
-        raise ValueError(f"Expected Vortex file format, got {data_file.file_format}")
-
-    # TODO: Implement proper Vortex delete file reading
-    # For now, we'll read the file and extract positional delete information
-    try:
-        record_batches = list(read_vortex_file(data_file.file_path, io))
-
-        if not record_batches:
-            return {}
-
-        # Combine all batches into a single table
-        combined_table = pa.Table.from_batches(record_batches)
-
-        # Expect standard delete file schema with 'file_path' and 'pos' columns
-        if "file_path" not in combined_table.column_names or "pos" not in combined_table.column_names:
-            raise ValueError("Vortex delete file must contain 'file_path' and 'pos' columns")
-
-        # Group delete positions by file path
-        deletes_by_file: Dict[str, pa.ChunkedArray] = {}
-
-        file_paths = combined_table.column("file_path")
-        positions = combined_table.column("pos")
-
-        # Convert to dictionary format expected by PyIceberg
-        unique_files = pc.unique(file_paths)
-
-        for file_name in unique_files.to_pylist():
-            mask = pc.equal(file_paths, file_name)
-            file_positions = pc.filter(positions, mask)
-            deletes_by_file[file_name] = file_positions
-
-        return deletes_by_file
-
-    except Exception as e:
-        logger.warning(f"Failed to read Vortex delete file {data_file.file_path}: {e}")
-        return {}
-
-
-def optimize_vortex_file_layout(
-    io: FileIO,
-    input_files: List[str],
-    output_file: str,
-    schema: Schema,
-    target_file_size: int = 128 * 1024 * 1024,  # 128MB
-) -> DataFile:
-    """Optimize multiple Vortex files by combining them into a single optimized file.
-
-    Args:
-        io: The FileIO instance
-        input_files: List of input Vortex file paths
-        output_file: Path for the optimized output file
-        schema: The Iceberg schema
-        target_file_size: Target file size in bytes
-
-    Returns:
-        DataFile for the optimized file
-
-    Raises:
-        ValueError: If optimization fails
-    """
-    _check_vortex_available()
-
-    if not input_files:
-        raise ValueError("No input files provided for optimization")
-
-    try:
-        # Read all input files and combine into batches
-        all_batches: List[pa.RecordBatch] = []
-        total_rows = 0
-
-        for file_path in input_files:
-            batches = list(read_vortex_file(file_path, io))
-            all_batches.extend(batches)
-            total_rows += sum(len(batch) for batch in batches)
-
-        if not all_batches:
-            raise ValueError("No data found in input files")
-
-        # Combine all batches into a single table
-        combined_table = pa.Table.from_batches(all_batches)
-
-        # Sort the table for better compression and query performance
-        # Use the first column as the sort key (this could be made configurable)
-        if len(combined_table.columns) > 0:
-            first_column = combined_table.column_names[0]
-            try:
-                sort_indices = pc.sort_indices(combined_table, sort_keys=[(first_column, "ascending")])
-                combined_table = pc.take(combined_table, sort_indices)
-                logger.debug(f"Sorted table by column '{first_column}' for optimization")
-            except Exception as e:
-                logger.debug(f"Failed to sort table for optimization: {e}")
-
-        # Write the optimized file
-        file_size = write_vortex_file(
-            arrow_table=combined_table,
-            file_path=output_file,
-            io=io,
-            compression="auto",
-        )
-
-        # Generate statistics
-        statistics = VortexDataFileStatistics.from_arrow_table(combined_table, schema)
-
-        # Create DataFile metadata
-        data_file = DataFile.from_args(
-            content=DataFileContent.DATA,
-            file_path=output_file,
-            file_format=FileFormat.VORTEX,
-            partition=Record(),
-            file_size_in_bytes=file_size,
-            record_count=len(combined_table),
-            sort_order_id=None,
-            spec_id=0,
-            equality_ids=None,
-            key_metadata=None,
-            **statistics.to_serialized_dict(),
-        )
-
-        logger.info(f"Optimized {len(input_files)} files into {output_file}: {total_rows} rows, {file_size} bytes")
-
-        return data_file
-
-    except Exception as e:
-        raise ValueError(f"Failed to optimize Vortex files: {e}") from e
-
-
-def estimate_vortex_query_performance(
-    files: List[DataFile],
-    query_columns: Optional[List[str]] = None,
-    row_filter: Optional[BooleanExpression] = None,
-) -> Dict[str, Any]:
-    """Estimate query performance characteristics for Vortex files.
-
-    Args:
-        files: List of DataFile objects
-        query_columns: List of columns to be queried (projection)
-        row_filter: Row filter expression
-
-    Returns:
-        Dictionary with performance estimates
-    """
-    if not files:
-        return {"estimated_scan_time_ms": 0, "estimated_bytes_scanned": 0, "recommendations": []}
-
-    total_bytes = sum(f.file_size_in_bytes for f in files if f.file_format == FileFormat.VORTEX)
-    total_rows = sum(f.record_count for f in files if f.file_format == FileFormat.VORTEX)
-    vortex_files = len([f for f in files if f.file_format == FileFormat.VORTEX])
-
-    # Rough performance estimates based on Vortex characteristics
-    # These would be refined with actual benchmarking data
-
-    # Vortex is ~10-20x faster for scans than Parquet
-    base_scan_time_ms = (total_bytes / (100 * 1024 * 1024)) * 1000  # 100MB/s base rate
-    vortex_scan_time_ms = base_scan_time_ms / 15  # ~15x speedup
-
-    # Column projection benefits
-    if query_columns:
-        # Assume 50% reduction in scan time for typical column projection
-        vortex_scan_time_ms *= 0.5
-
-    # Row filtering benefits
-    if row_filter and not isinstance(row_filter, AlwaysTrue):
-        # Vortex's advanced indexing reduces scan time significantly
-        vortex_scan_time_ms *= 0.3
-
-    recommendations = []
-
-    if vortex_files < len(files):
-        recommendations.append("Convert Parquet files to Vortex format for better performance")
-
-    if len(files) > 100:
-        recommendations.append("Consider file compaction to reduce metadata overhead")
-
-    if total_rows > 0 and total_bytes / total_rows > 1000:  # Large average row size
-        recommendations.append("Large row sizes detected - ensure proper column pruning")
-
-    return {
-        "estimated_scan_time_ms": max(1, int(vortex_scan_time_ms)),
-        "estimated_bytes_scanned": total_bytes,
-        "total_files": len(files),
-        "vortex_files": vortex_files,
-        "total_rows": total_rows,
-        "performance_multiplier": "15x faster than Parquet",
-        "recommendations": recommendations,
-    }
-
-
-class VortexFileManager:
-    """Advanced file management utilities for Vortex files."""
-
-    def __init__(self, io: FileIO):
-        """Initialize the Vortex file manager.
-
-        Args:
-            io: The FileIO instance to use
-        """
-        self.io = io
-        _check_vortex_available()
-
-    def compact_files(
-        self,
-        input_files: List[str],
-        output_directory: str,
-        schema: Schema,
-        target_file_size: int = 128 * 1024 * 1024,
-        max_files_per_compact: int = 10,
-    ) -> List[DataFile]:
-        """Compact multiple Vortex files into optimized larger files.
-
-        Args:
-            input_files: List of input file paths
-            output_directory: Directory for output files
-            schema: The Iceberg schema
-            target_file_size: Target size for compacted files
-            max_files_per_compact: Maximum files to compact together
-
-        Returns:
-            List of compacted DataFile objects
-        """
-        if not input_files:
-            return []
-
-        compacted_files = []
-
-        # Group files for compaction
-        file_groups = [input_files[i : i + max_files_per_compact] for i in range(0, len(input_files), max_files_per_compact)]
-
-        for group_idx, file_group in enumerate(file_groups):
-            output_path = f"{output_directory.rstrip('/')}/compacted_{group_idx:04d}.vortex"
-
-            try:
-                compacted_file = optimize_vortex_file_layout(
-                    io=self.io,
-                    input_files=file_group,
-                    output_file=output_path,
-                    schema=schema,
-                    target_file_size=target_file_size,
-                )
-                compacted_files.append(compacted_file)
-
-                logger.info(f"Compacted {len(file_group)} files into {output_path}")
-
-            except Exception as e:
-                logger.error(f"Failed to compact file group {group_idx}: {e}")
-
-        return compacted_files
-
-    def analyze_file_health(self, file_paths: List[str]) -> Dict[str, Any]:
-        """Analyze the health and performance characteristics of Vortex files.
-
-        Args:
-            file_paths: List of Vortex file paths to analyze
-
-        Returns:
-            Health analysis report
-        """
-        if not file_paths:
-            return {"status": "healthy", "files_analyzed": 0, "recommendations": []}
-
-        analysis: Dict[str, Any] = {
-            "files_analyzed": len(file_paths),
-            "total_size_bytes": 0,
-            "avg_file_size_mb": 0.0,
-            "small_files_count": 0,
-            "large_files_count": 0,
-            "corrupted_files": [],
-            "recommendations": [],
-        }
-
-        small_file_threshold = 10 * 1024 * 1024  # 10MB
-        large_file_threshold = 500 * 1024 * 1024  # 500MB
-
-        for file_path in file_paths:
-            try:
-                input_file = self.io.new_input(file_path)
-                file_size = len(input_file)
-
-                analysis["total_size_bytes"] += file_size
-
-                if file_size < small_file_threshold:
-                    analysis["small_files_count"] += 1
-                elif file_size > large_file_threshold:
-                    analysis["large_files_count"] += 1
-
-                # Basic corruption check - try to read metadata
-                try:
-                    list(read_vortex_file(file_path, self.io, projected_schema=None))
-                except Exception:
-                    analysis["corrupted_files"].append(file_path)
-
-            except Exception as e:
-                logger.warning(f"Failed to analyze file {file_path}: {e}")
-                analysis["corrupted_files"].append(file_path)
-
-        # Calculate averages
-        if analysis["files_analyzed"] > 0:
-            analysis["avg_file_size_mb"] = analysis["total_size_bytes"] / (1024 * 1024) / analysis["files_analyzed"]
-
-        # Generate recommendations
-        if analysis["small_files_count"] > analysis["files_analyzed"] * 0.5:
-            analysis["recommendations"].append("High number of small files detected - consider compaction")
-
-        if analysis["large_files_count"] > 0:
-            analysis["recommendations"].append("Large files detected - ensure proper partitioning for query performance")
-
-        if analysis["corrupted_files"]:
-            analysis["recommendations"].append(
-                f"Found {len(analysis['corrupted_files'])} corrupted files - investigate data integrity"
-            )
-
-        # Determine overall health
-        if analysis["corrupted_files"]:
-            analysis["status"] = "unhealthy"
-        elif analysis["small_files_count"] > analysis["files_analyzed"] * 0.7:
-            analysis["status"] = "needs_optimization"
-        else:
-            analysis["status"] = "healthy"
-
-        return analysis

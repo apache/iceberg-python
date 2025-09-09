@@ -22,6 +22,7 @@ from __future__ import annotations
 import contextlib
 import cProfile
 import json
+import os
 import time
 import tracemalloc
 from dataclasses import dataclass
@@ -40,33 +41,48 @@ class InstrumentConfig:
 
 
 class Instrumentor:
-    def __init__(self, config: InstrumentConfig):
+    def __init__(self, config: InstrumentConfig) -> None:
         self.config = config
-        self._ensure_out_dir()
-        self._json_path: Optional[Path] = None
-        if self.config.enabled and self.config.json_events:
-            self._json_path = Path(self.config.out_dir) / "benchmark_events.jsonl"
-            # Touch file
-            self._json_path.parent.mkdir(parents=True, exist_ok=True)
-            self._json_path.touch(exist_ok=True)
+        self._json_path: Optional[str] = None
+        # Determine data dir - first try environment, then workspace default
+        user_data_dir = os.environ.get("BENCHMARK_DATA_DIR")
+        if user_data_dir:
+            self.data_dir = Path(user_data_dir)
+        else:
+            # Default to benchmark_data in project root
+            current_file = Path(__file__)
+            project_root = current_file.parents[2]  # Go up from tests/benchmark/
+            self.data_dir = project_root / "benchmark_data"
 
-        if self.config.enabled and self.config.mem and not tracemalloc.is_tracing():
-            tracemalloc.start()
+        # Initialize JSON logging if enabled
+        if self.config.enabled and self.config.json_events:
+            self._ensure_out_dir()
+            out_dir = self.config.out_dir
+            if out_dir is not None:
+                self._json_path = str(Path(out_dir) / "events.jsonl")
 
     def _ensure_out_dir(self) -> None:
         if not self.config.out_dir:
             # Default to current working dir under .bench_out/<ts>
             ts = time.strftime("%Y%m%d-%H%M%S")
             self.config.out_dir = str(Path.cwd() / ".bench_out" / ts)
-        Path(self.config.out_dir).mkdir(parents=True, exist_ok=True)
+        out_dir = self.config.out_dir
+        if out_dir is not None:
+            Path(out_dir).mkdir(parents=True, exist_ok=True)
 
     def _cpu_prof_path(self, block_name: str) -> Path:
         safe = block_name.replace(" ", "_").replace("/", "_")
-        return Path(self.config.out_dir) / f"{safe}.prof"
+        out_dir = self.config.out_dir
+        if out_dir is None:
+            raise ValueError("Output directory not configured")
+        return Path(out_dir) / f"{safe}.prof"
 
     def _mem_txt_path(self, block_name: str) -> Path:
         safe = block_name.replace(" ", "_").replace("/", "_")
-        return Path(self.config.out_dir) / f"{safe}.mem.txt"
+        out_dir = self.config.out_dir
+        if out_dir is None:
+            raise ValueError("Output directory not configured")
+        return Path(out_dir) / f"{safe}.mem.txt"
 
     @contextlib.contextmanager
     def profile_block(self, name: str, extra: Optional[Dict[str, Any]] = None) -> Iterator[None]:
@@ -103,10 +119,14 @@ class Instrumentor:
                         stats = mem_after.compare_to(mem_before, "lineno")
                     else:
                         stats = mem_after.statistics("lineno")
-                    # Summarize top 5 lines
+                    # Summarize top 5 lines - use common attributes available on both types
                     top_lines = []
                     for stat in stats[:5]:
-                        top_lines.append(f"{stat.traceback.format()[-1].strip()} - size={stat.size/1024:.1f} KiB, count={stat.count}")
+                        if hasattr(stat, 'traceback'):
+                            # Both Statistic and StatisticDiff have traceback, size, count
+                            top_lines.append(
+                                f"{stat.traceback.format()[-1].strip()} - size={stat.size / 1024:.1f} KiB, count={stat.count}"
+                            )
                     mem_top = "\n".join(top_lines)
                     # Also write to a side file for convenience
                     with open(self._mem_txt_path(name), "w", encoding="utf-8") as f:

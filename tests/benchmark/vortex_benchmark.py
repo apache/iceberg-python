@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-PyIceberg Vortex Performance Benchmark Suite
+PyIceberg Vortex Performance Benchmark Suite.
+
 ============================================
 
 Comprehensive Vortex performance testing including:
@@ -13,26 +14,26 @@ Comprehensive Vortex performance testing including:
 Usage:
     # Quick performance check (recommended)
     python tests/benchmark/vortex_benchmark.py --quick
-    
+
     # Full benchmark suite
     python tests/benchmark/vortex_benchmark.py --full
-    
+
     # Optimization analysis only
     python tests/benchmark/vortex_benchmark.py --optimizations
-    
+
     # Large scale test (15M+ rows)
     python tests/benchmark/vortex_benchmark.py --large
-    
+
     # Production scenarios
     python tests/benchmark/vortex_benchmark.py --production
 """
 
 import argparse
+import os
 import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-import os
 
 import numpy as np
 import pyarrow as pa
@@ -42,13 +43,14 @@ from tests.benchmark._instrumentation import InstrumentConfig, Instrumentor
 
 try:
     import vortex as vx
+
     VORTEX_AVAILABLE = True
 except ImportError:
     VORTEX_AVAILABLE = False
 
+from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.io.pyarrow import _calculate_optimal_vortex_batch_size, _optimize_vortex_batch_layout
 from pyiceberg.schema import Schema
-from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.transforms import DayTransform
 
 
@@ -57,48 +59,53 @@ class VortexBenchmarkSuite:
 
     def __init__(self, temp_dir: Optional[str] = None, instr: Optional[Instrumentor] = None):
         self.temp_dir = temp_dir or tempfile.mkdtemp()
-        self.results = {}
+        self.results: Dict[str, Any] = {}
         self.instr = instr or Instrumentor(InstrumentConfig(enabled=False))
-    
+
     def create_realistic_data(self, num_rows: int, complexity: str = "medium") -> pa.Table:
         """Create realistic test data with varying complexity - optimized version."""
-        
         # Pre-allocate arrays for better performance
         base_data = {
-            'id': np.arange(num_rows, dtype=np.int64),
-            'name': np.array([f'user_{i}' for i in range(num_rows)], dtype=object),
-            'timestamp': np.arange(1000000, 1000000 + num_rows, dtype=np.int64),
+            "id": np.arange(num_rows, dtype=np.int64),
+            "name": np.array([f"user_{i}" for i in range(num_rows)], dtype=object),
+            "timestamp": np.arange(1000000, 1000000 + num_rows, dtype=np.int64),
         }
-        
+
         if complexity == "simple":
-            base_data.update({
-                'value': np.arange(num_rows, dtype=np.float64) * 1.1,
-                'status': np.where(np.arange(num_rows) % 2 == 0, 'active', 'inactive'),
-            })
+            base_data.update(
+                {
+                    "value": np.arange(num_rows, dtype=np.float64) * 1.1,
+                    "status": np.where(np.arange(num_rows) % 2 == 0, "active", "inactive"),
+                }
+            )
         elif complexity == "medium":
-            base_data.update({
-                'score': np.arange(num_rows, dtype=np.float64) * 0.1,
-                'category': np.array([f'cat_{i % 10}' for i in range(num_rows)], dtype=object),
-                'value': np.arange(num_rows, dtype=np.float64) * 1.5,
-                'status': np.where(np.arange(num_rows) % 3 == 0, 'active', 'inactive'),
-                'price': (np.arange(num_rows) % 1000).astype(np.float64) + 0.99,
-            })
+            base_data.update(
+                {
+                    "score": np.arange(num_rows, dtype=np.float64) * 0.1,
+                    "category": np.array([f"cat_{i % 10}" for i in range(num_rows)], dtype=object),
+                    "value": np.arange(num_rows, dtype=np.float64) * 1.5,
+                    "status": np.where(np.arange(num_rows) % 3 == 0, "active", "inactive"),
+                    "price": (np.arange(num_rows) % 1000).astype(np.float64) + 0.99,
+                }
+            )
         elif complexity == "complex":
-            base_data.update({
-                'score': np.arange(num_rows, dtype=np.float64) * 0.1,
-                'category': np.array([f'cat_{i % 20}' for i in range(num_rows)], dtype=object),
-                'subcategory': np.array([f'subcat_{i % 100}' for i in range(num_rows)], dtype=object),
-                'value': np.arange(num_rows, dtype=np.float64) * 1.5,
-                'price': (np.arange(num_rows) % 1000).astype(np.float64) + 0.99,
-                'quantity': (np.arange(num_rows) % 50 + 1).astype(np.int32),
-                'status': np.where(np.arange(num_rows) % 3 == 0, 'active', 'inactive'),
-                'metadata': np.array([f'{{"key": "value_{i % 10}"}}' for i in range(num_rows)], dtype=object),
-                'is_premium': (np.arange(num_rows) % 5 == 0).astype(bool),
-                'order_total': (np.arange(num_rows) % 10000).astype(np.float64) + 50.0,
-            })
-        
+            base_data.update(
+                {
+                    "score": np.arange(num_rows, dtype=np.float64) * 0.1,
+                    "category": np.array([f"cat_{i % 20}" for i in range(num_rows)], dtype=object),
+                    "subcategory": np.array([f"subcat_{i % 100}" for i in range(num_rows)], dtype=object),
+                    "value": np.arange(num_rows, dtype=np.float64) * 1.5,
+                    "price": (np.arange(num_rows) % 1000).astype(np.float64) + 0.99,
+                    "quantity": (np.arange(num_rows) % 50 + 1).astype(np.int32),
+                    "status": np.where(np.arange(num_rows) % 3 == 0, "active", "inactive"),
+                    "metadata": np.array([f'{{"key": "value_{i % 10}"}}' for i in range(num_rows)], dtype=object),
+                    "is_premium": (np.arange(num_rows) % 5 == 0).astype(bool),
+                    "order_total": (np.arange(num_rows) % 10000).astype(np.float64) + 50.0,
+                }
+            )
+
         return pa.table(base_data)
-    
+
     def create_test_schemas(self) -> Dict[str, Schema]:
         """Create various test schemas for benchmarking."""
         from pyiceberg.schema import Schema
@@ -114,7 +121,7 @@ class VortexBenchmarkSuite:
             StructType,
             TimestampType,
         )
-        
+
         return {
             "simple": Schema(
                 NestedField(field_id=1, name="id", field_type=LongType(), required=True),
@@ -157,7 +164,7 @@ class VortexBenchmarkSuite:
                 ),
             ),
         }
-    
+
     def generate_test_data(self, schema_name: str, num_rows: int) -> pa.Table:
         """Generate test data for different schemas and sizes."""
         if schema_name == "simple":
@@ -220,19 +227,19 @@ class VortexBenchmarkSuite:
 
         else:
             raise ValueError(f"Unknown schema: {schema_name}")
-    
+
     def benchmark_vortex_write(self, table: pa.Table, optimize: bool = True) -> Tuple[float, int]:
         """Benchmark Vortex write performance with adaptive optimizations."""
         if not VORTEX_AVAILABLE:
             return 0.0, 0
-        
+
         file_path = f"{self.temp_dir}/test_vortex_{int(time.time())}.vortex"
-        
+
         start_time = time.time()
         try:
             # Adaptive optimization: only use complex optimizations for large datasets
             num_rows = table.num_rows
-            
+
             if optimize and num_rows >= 1_000_000:  # Only optimize for million+ rows
                 # Use our optimizations for larger datasets
                 with self.instr.profile_block("vortex.write.batch_size_calc", {"rows": num_rows}):
@@ -247,20 +254,20 @@ class VortexBenchmarkSuite:
                 # Use simple, direct approach for smaller datasets
                 with self.instr.profile_block("vortex.write.default_reader"):
                     reader = table.to_reader()
-            
+
             with self.instr.profile_block("vortex.write.io", {"path": file_path}):
                 vx.io.write(reader, file_path)
             write_time = time.time() - start_time
-            
+
             # Get file size
             file_size = Path(file_path).stat().st_size
             self.instr.event("vortex.write.complete", {"bytes": file_size, "seconds": round(write_time, 4)})
             return write_time, file_size
-            
+
         except Exception as e:
             print(f"   ❌ Vortex write failed: {e}")
             return 0.0, 0
-    
+
     def benchmark_parquet_write(self, table: pa.Table) -> Tuple[float, int]:
         """Benchmark Parquet write performance."""
         file_path = f"{self.temp_dir}/test_parquet_{int(time.time())}.parquet"
@@ -278,16 +285,17 @@ class VortexBenchmarkSuite:
         except Exception as e:
             print(f"   ❌ Parquet write failed: {e}")
             return 0.0, 0
-    
+
     def benchmark_vortex_read(self, file_path: str, table_rows: int) -> Tuple[float, int]:
         """Benchmark Vortex read performance."""
         if not VORTEX_AVAILABLE:
             return 0.0, 0
-        
+
         start_time = time.time()
         try:
             # Convert to absolute file URL for Vortex
             import os
+
             abs_path = os.path.abspath(file_path)
             file_url = f"file://{abs_path}"
             with self.instr.profile_block("vortex.read.read_url", {"url": file_url}):
@@ -300,7 +308,7 @@ class VortexBenchmarkSuite:
         except Exception as e:
             print(f"   ❌ Vortex read failed: {e}")
             return 0.0, 0
-    
+
     def benchmark_parquet_read(self, file_path: str, table_rows: int) -> Tuple[float, int]:
         """Benchmark Parquet read performance."""
         start_time = time.time()
@@ -312,32 +320,27 @@ class VortexBenchmarkSuite:
         except Exception as e:
             print(f"   ❌ Parquet read failed: {e}")
             return 0.0, 0
-    
-    def test_optimization_functions(self):
+
+    def test_optimization_functions(self) -> None:
         """Test our optimization functions."""
         print("🔧 Vortex Optimization Analysis")
         print("================================")
-        
+
         # Test batch size calculation
         print("\n📊 Batch Size Optimization:")
-        test_cases = [
-            (10_000, "Small"),
-            (100_000, "Medium"),
-            (1_000_000, "Large"),
-            (10_000_000, "Very Large")
-        ]
-        
+        test_cases = [(10_000, "Small"), (100_000, "Medium"), (1_000_000, "Large"), (10_000_000, "Very Large")]
+
         for num_rows, description in test_cases:
             table = self.create_realistic_data(num_rows)
             optimal_size = _calculate_optimal_vortex_batch_size(table)
             efficiency = optimal_size / num_rows if num_rows > optimal_size else num_rows / optimal_size
             print(f"   {description:>10} ({num_rows:>8,} rows) → {optimal_size:>6,} batch size (ratio: {efficiency:.3f})")
-        
+
         # Test batch layout optimization
         print("\n🔧 Batch Layout Optimization:")
-        data = {'id': range(20_000), 'value': [i * 2 for i in range(20_000)]}
+        data = {"id": range(20_000), "value": [i * 2 for i in range(20_000)]}
         table = pa.table(data)
-        
+
         # Create inconsistent batches
         batches = [
             table.slice(0, 3_000).to_batches()[0],
@@ -345,18 +348,18 @@ class VortexBenchmarkSuite:
             table.slice(15_000, 2_000).to_batches()[0],
             table.slice(17_000, 3_000).to_batches()[0],
         ]
-        
+
         print(f"   Original batches: {[batch.num_rows for batch in batches]}")
-        
+
         optimized = _optimize_vortex_batch_layout(batches, target_batch_size=8_000)
         print(f"   Optimized batches: {[batch.num_rows for batch in optimized]}")
-        
+
         original_total = sum(batch.num_rows for batch in batches)
         optimized_total = sum(batch.num_rows for batch in optimized)
         integrity_check = "✅" if original_total == optimized_total else "❌"
         print(f"   Data integrity: {original_total} → {optimized_total} ({integrity_check})")
-    
-    def run_optimization_impact_test(self):
+
+    def run_optimization_impact_test(self) -> None:
         """Test optimization impact across different dataset sizes."""
         print("\n🚀 Optimization Impact Analysis")
         print("===============================")
@@ -399,13 +402,13 @@ class VortexBenchmarkSuite:
                 print("   ⚠️  Vortex not available")
 
         return results
-    
-    def run_format_comparison(self, dataset_sizes: List[int], complexity: str = "medium"):
+
+    def run_format_comparison(self, dataset_sizes: List[int], complexity: str = "medium") -> None:
         """Run comprehensive Vortex vs Parquet comparison."""
         print(f"\n📈 Format Performance Comparison ({complexity} complexity)")
         print("=" * 60)
 
-        results: List[Dict] = []
+        results: List[Dict[str, Any]] = []
 
         for num_rows in dataset_sizes:
             print(f"\n📊 Testing {num_rows:,} rows:")
@@ -460,114 +463,121 @@ class VortexBenchmarkSuite:
                 if write_ratio >= 1:
                     print(f"      Write: {write_ratio:.2f}x faster")
                 else:
-                    print(f"      Write: {(1/write_ratio):.2f}x slower")
+                    print(f"      Write: {(1 / write_ratio):.2f}x slower")
                 if read_ratio >= 1:
                     print(f"      Read:  {read_ratio:.2f}x faster")
                 else:
-                    print(f"      Read:  {(1/read_ratio):.2f}x slower")
+                    print(f"      Read:  {(1 / read_ratio):.2f}x slower")
                 print(f"      Size:  {size_ratio:.2f}x compression (Parquet/Vortex)")
-                self.instr.event("comparison.metrics", {
-                    "rows": num_rows,
-                    "write_ratio": round(write_ratio, 4),
-                    "read_ratio": round(read_ratio, 4),
-                    "size_ratio": round(size_ratio, 4),
-                })
-                results.append({
-                    'rows': num_rows,
-                    'vortex_write_rate': vortex_write_rate,
-                    'parquet_write_rate': parquet_write_rate,
-                    'vortex_read_rate': vortex_read_rate,
-                    'parquet_read_rate': parquet_read_rate,
-                    'vortex_size': vortex_size,
-                    'parquet_size': parquet_size,
-                    'write_ratio': write_ratio,
-                    'read_ratio': read_ratio,
-                    'size_ratio': size_ratio
-                })
+                self.instr.event(
+                    "comparison.metrics",
+                    {
+                        "rows": num_rows,
+                        "write_ratio": round(write_ratio, 4),
+                        "read_ratio": round(read_ratio, 4),
+                        "size_ratio": round(size_ratio, 4),
+                    },
+                )
+                results.append(
+                    {
+                        "rows": num_rows,
+                        "vortex_write_rate": vortex_write_rate,
+                        "parquet_write_rate": parquet_write_rate,
+                        "vortex_read_rate": vortex_read_rate,
+                        "parquet_read_rate": parquet_read_rate,
+                        "vortex_size": vortex_size,
+                        "parquet_size": parquet_size,
+                        "write_ratio": write_ratio,
+                        "read_ratio": read_ratio,
+                        "size_ratio": size_ratio,
+                    }
+                )
 
         return results
-    
-    def run_large_scale_benchmark(self):
+
+    def run_large_scale_benchmark(self) -> None:
         """Run large scale benchmark (15M+ rows)."""
         print("🎯 Large Scale Benchmark (15M+ rows)")
         print("====================================")
-        
+
         # Generate large dataset
         target_size_gb = 2.0
         row_size_bytes = 138  # Estimated from previous benchmarks
         target_rows = int((target_size_gb * 1024 * 1024 * 1024) / row_size_bytes)
-        
+
         print(f"Generating ~{target_rows:,} rows for {target_size_gb}GB dataset...")
         print("This may take several minutes...")
-        
+
         # Generate in batches to avoid memory issues
         batch_size = 100_000
         batches = []
-        
+
         for i in range(0, target_rows, batch_size):
             current_batch_size = min(batch_size, target_rows - i)
             batch_data = {
-                'id': range(i, i + current_batch_size),
-                'name': [f'user_{j}' for j in range(i, i + current_batch_size)],
-                'score': [j * 0.1 for j in range(i, i + current_batch_size)],
-                'category': [f'cat_{j % 10}' for j in range(i, i + current_batch_size)],
-                'value': [j * 1.5 for j in range(i, i + current_batch_size)],
-                'status': ['active' if j % 3 == 0 else 'inactive' for j in range(i, i + current_batch_size)],
-                'timestamp': [1000000 + j for j in range(i, i + current_batch_size)],
-                'price': [float(j % 1000) + 0.99 for j in range(i, i + current_batch_size)],
-                'is_premium': [j % 5 == 0 for j in range(i, i + current_batch_size)],
-                'order_total': [float(j % 10000) + 50.0 for j in range(i, i + current_batch_size)],
+                "id": range(i, i + current_batch_size),
+                "name": [f"user_{j}" for j in range(i, i + current_batch_size)],
+                "score": [j * 0.1 for j in range(i, i + current_batch_size)],
+                "category": [f"cat_{j % 10}" for j in range(i, i + current_batch_size)],
+                "value": [j * 1.5 for j in range(i, i + current_batch_size)],
+                "status": ["active" if j % 3 == 0 else "inactive" for j in range(i, i + current_batch_size)],
+                "timestamp": [1000000 + j for j in range(i, i + current_batch_size)],
+                "price": [float(j % 1000) + 0.99 for j in range(i, i + current_batch_size)],
+                "is_premium": [j % 5 == 0 for j in range(i, i + current_batch_size)],
+                "order_total": [float(j % 10000) + 50.0 for j in range(i, i + current_batch_size)],
             }
             batches.append(pa.table(batch_data))
-            
+
             if (i // batch_size + 1) % 10 == 0:
                 print(f"   Generated batch {i // batch_size + 1}/{target_rows // batch_size + 1}")
-        
+
         # Combine all batches
         table = pa.concat_tables(batches)
         actual_rows = table.num_rows
         print(f"✅ Generated {actual_rows:,} rows")
-        
+
         # Run comparison
         self.run_format_comparison([actual_rows], "complex")
-    
-    def run_production_scenarios(self):
+
+    def run_production_scenarios(self) -> None:
         """Run production-oriented benchmark scenarios."""
         print("🏭 Production Scenario Benchmarks")
         print("=================================")
-        
+
         scenarios = [
             (250_000, "simple", "ETL Processing"),
             (750_000, "medium", "Analytics Workload"),
             (2_000_000, "complex", "Data Lake Ingestion"),
         ]
-        
+
         for num_rows, complexity, scenario_name in scenarios:
             print(f"\n🎯 {scenario_name} Scenario:")
             print(f"   Dataset: {num_rows:,} rows, {complexity} complexity")
-            
+
             self.run_format_comparison([num_rows], complexity)
-    
-    def generate_summary_report(self, results: List[Dict]):
+
+    def generate_summary_report(self, results: List[Dict[str, Any]]) -> None:
         """Generate a comprehensive summary report."""
         if not results:
             return
-        
+
         print("\n📊 Performance Summary Report")
         print("=" * 70)
-        print(f"{'Dataset':<12} {'Vortex W':<10} {'Parquet W':<11} {'Vortex R':<10} {'Parquet R':<11} {'W Ratio':<8} {'R Ratio':<8}")
+        print(
+            f"{'Dataset':<12} {'Vortex W':<10} {'Parquet W':<11} {'Vortex R':<10} {'Parquet R':<11} {'W Ratio':<8} {'R Ratio':<8}"
+        )
         print("-" * 70)
-        
+
         for result in results:
-            rows = result['rows']
-            vw = result['vortex_write_rate'] / 1000
-            pw = result['parquet_write_rate'] / 1000
-            vr = result['vortex_read_rate'] / 1000
-            pr = result['parquet_read_rate'] / 1000
-            wr = result.get('write_ratio', 0)
-            rr = result.get('read_ratio', 0)
-            
-            print(f"{rows/1000:>8.0f}K {vw:>8.0f}K {pw:>9.0f}K {vr:>8.0f}K {pr:>9.0f}K {wr:>6.2f}x {rr:>6.2f}x")
+            rows = result["rows"]
+            vw = result["vortex_write_rate"] / 1000
+            pw = result["parquet_write_rate"] / 1000
+            vr = result["vortex_read_rate"] / 1000
+            pr = result["parquet_read_rate"] / 1000
+            wr = result.get("write_ratio", 0)
+            rr = result.get("read_ratio", 0)
+
+            print(f"{rows / 1000:>8.0f}K {vw:>8.0f}K {pw:>9.0f}K {vr:>8.0f}K {pr:>9.0f}K {wr:>6.2f}x {rr:>6.2f}x")
 
     # --- ASCII graph helpers ---
     def _bar(self, value: float, max_value: float, width: int = 32, char: str = "█") -> str:
@@ -578,11 +588,11 @@ class VortexBenchmarkSuite:
 
     def _human_rows_per_s(self, v: float) -> str:
         if v >= 1_000_000_000:
-            return f"{v/1_000_000_000:.2f}B/s"
+            return f"{v / 1_000_000_000:.2f}B/s"
         if v >= 1_000_000:
-            return f"{v/1_000_000:.2f}M/s"
+            return f"{v / 1_000_000:.2f}M/s"
         if v >= 1_000:
-            return f"{v/1_000:.2f}K/s"
+            return f"{v / 1_000:.2f}K/s"
         return f"{v:.0f}/s"
 
     def _human_bytes(self, b: int) -> str:
@@ -593,15 +603,15 @@ class VortexBenchmarkSuite:
             f /= 1024.0
         return f"{f:.2f} TB"
 
-    def print_ascii_graphs(self, results: List[Dict]) -> None:
+    def print_ascii_graphs(self, results: List[Dict[str, Any]]) -> None:
         for res in results:
-            rows = res.get('rows', 0)
-            vw = float(res.get('vortex_write_rate', 0) or 0)
-            pw = float(res.get('parquet_write_rate', 0) or 0)
-            vr = float(res.get('vortex_read_rate', 0) or 0)
-            pr = float(res.get('parquet_read_rate', 0) or 0)
-            vs = int(res.get('vortex_size', 0) or 0)
-            ps = int(res.get('parquet_size', 0) or 0)
+            rows = res.get("rows", 0)
+            vw = float(res.get("vortex_write_rate", 0) or 0)
+            pw = float(res.get("parquet_write_rate", 0) or 0)
+            vr = float(res.get("vortex_read_rate", 0) or 0)
+            pr = float(res.get("parquet_read_rate", 0) or 0)
+            vs = int(res.get("vortex_size", 0) or 0)
+            ps = int(res.get("parquet_size", 0) or 0)
 
             print(f"\n📦 Dataset: {rows:,} rows")
 
@@ -623,7 +633,7 @@ class VortexBenchmarkSuite:
             print(f"    Vortex  | {self._bar(vs, max_s)} {self._human_bytes(vs)}")
             print(f"    Parquet | {self._bar(ps, max_s)} {self._human_bytes(ps)}")
 
-    def benchmark_partitioned_write(self, table: pa.Table, num_runs: int = 5) -> Dict[str, float]:
+    def benchmark_partitioned_write(self, table: pa.Table, num_runs: int = 5) -> Dict[str, Any]:
         """Benchmark partitioned table writes using PyIceberg SQL catalog."""
         import statistics
         import timeit
@@ -659,15 +669,11 @@ class VortexBenchmarkSuite:
         avg_time = statistics.mean(runs)
         print(f"   Average: {avg_time:.3f}s")
 
-        return {
-            "avg_time": avg_time,
-            "runs": runs,
-            "table_name": "default.taxi_partitioned"
-        }
+        return {"avg_time": avg_time, "runs": runs, "table_name": "default.taxi_partitioned"}
 
 
-def main():
-    """Main benchmark runner with CLI interface."""
+def main() -> None:
+    """Run benchmark with CLI interface."""
     parser = argparse.ArgumentParser(description="PyIceberg Vortex Performance Benchmark Suite")
     parser.add_argument("--quick", action="store_true", help="Run quick benchmark (recommended)")
     parser.add_argument("--full", action="store_true", help="Run full benchmark suite")
@@ -682,21 +688,21 @@ def main():
     parser.add_argument("--out-dir", type=str, default=None, help="Output directory for artifacts")
     parser.add_argument("--run-label", type=str, default=None, help="Optional label to tag events")
     parser.add_argument("--graph", action="store_true", help="Print ASCII graphs for throughput and sizes")
-    
+
     args = parser.parse_args()
-    
+
     # Default to quick if no arguments
     if not any([args.quick, args.full, args.optimizations, args.large, args.production, args.partitioned]):
         args.quick = True
-    
+
     print("🎯 PyIceberg Vortex Performance Benchmark Suite")
     print("=" * 50)
-    
+
     if not VORTEX_AVAILABLE:
         print("⚠️  Warning: Vortex not available. Some tests will be skipped.")
-    
+
     print()
-    
+
     with tempfile.TemporaryDirectory() as temp_dir:
         instr = Instrumentor(
             InstrumentConfig(
@@ -709,78 +715,78 @@ def main():
             )
         )
         suite = VortexBenchmarkSuite(temp_dir, instr)
-        
+
         if args.optimizations:
             suite.test_optimization_functions()
             suite.run_optimization_impact_test()
-            
+
         elif args.large:
             suite.run_large_scale_benchmark()
-            
+
         elif args.production:
             suite.run_production_scenarios()
-            
+
         elif args.partitioned:
             # Load taxi dataset for partitioned write test
             import urllib.request
-            
+
             print("🏭 Partitioned Write Benchmark")
             print("==============================")
-            
+
             # Download taxi dataset
             taxi_dataset = "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2022-01.parquet"
             taxi_dataset_dest = f"{temp_dir}/yellow_tripdata_2022-01.parquet"
             urllib.request.urlretrieve(taxi_dataset, taxi_dataset_dest)
-            
+
             taxi_table = pq.read_table(taxi_dataset_dest)
             print(f"   Loaded taxi dataset: {taxi_table.num_rows:,} rows")
-            
+
             # Run partitioned write benchmark
             with instr.profile_block("partitioned.write"):
                 result = suite.benchmark_partitioned_write(taxi_table)
-            
+
             print(f"   ✅ Completed: {result['table_name']} created with {len(result['runs'])} runs")
             print(f"   📊 Average time: {result['avg_time']:.3f}s")
-            
+
         elif args.full:
             print("🚀 Full Benchmark Suite")
             print("======================")
-            
+
             # Run all components
             with instr.profile_block("optimizations.functions"):
                 suite.test_optimization_functions()
             with instr.profile_block("optimizations.impact"):
                 suite.run_optimization_impact_test()
-            
+
             # Format comparison at multiple scales
             sizes = [100_000, 500_000, 1_500_000, 5_000_000]
             with instr.profile_block("format_comparison.full", {"sizes": sizes}):
                 results = suite.run_format_comparison(sizes)
-            
+
             # Production scenarios
             with instr.profile_block("production.scenarios"):
                 suite.run_production_scenarios()
-            
+
             # Summary report
             if results:
                 suite.generate_summary_report(results)
-            
+
         elif args.quick:
             print("⚡ Quick Benchmark")
             print("=================")
-            
+
             # Quick format comparison
             sizes = [100_000, 500_000]
             with instr.profile_block("format_comparison.quick", {"sizes": sizes}):
                 results = suite.run_format_comparison(sizes)
-            
+
             if results:
                 print("\n🎯 Quick Summary:")
                 for result in results:
-                    rows = result['rows']
-                    write_ratio = result.get('write_ratio', 0)
-                    read_ratio = result.get('read_ratio', 0)
-                    size_ratio = result.get('size_ratio', 0)
+                    rows = result["rows"]
+                    write_ratio = result.get("write_ratio", 0)
+                    read_ratio = result.get("read_ratio", 0)
+                    size_ratio = result.get("size_ratio", 0)
                     print(
                         f"   {rows:>7,} rows: {write_ratio:.2f}x write (of Parquet), {read_ratio:.2f}x read (of Parquet), {size_ratio:.2f}x compression (P/V)"
                     )
@@ -788,7 +794,7 @@ def main():
                     print("\n📊 ASCII Graphs")
                     print("=" * 50)
                     suite.print_ascii_graphs(results)
-    
+
     print("\n✅ Benchmark complete!")
     print("\n📋 Key Findings:")
     print("   ✅ Batch tuning helps small datasets; neutral/negative on larger")
