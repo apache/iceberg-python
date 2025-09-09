@@ -21,7 +21,7 @@ RUN apt-get -qq update && \
       curl \
       vim \
       unzip \
-      openjdk-11-jdk \
+      openjdk-17-jdk \
       build-essential \
       software-properties-common \
       ssh && \
