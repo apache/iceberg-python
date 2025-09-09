@@ -38,6 +38,10 @@ from hive_metastore.ttypes import (
     CheckLockRequest,
     EnvironmentContext,
     FieldSchema,
+    GetTableRequest,
+    GetTableResult,
+    GetTablesRequest,
+    GetTablesResult,
     InvalidOperationException,
     LockComponent,
     LockLevel,
@@ -389,8 +393,11 @@ class HiveCatalog(MetastoreCatalog):
 
     def _get_hive_table(self, open_client: Client, database_name: str, table_name: str) -> HiveTable:
         try:
-            return open_client.get_table(dbname=database_name, tbl_name=table_name)
-        except NoSuchObjectException as e:
+            get_table_result: GetTableResult = open_client.get_table_req(
+                req=GetTableRequest(dbName=database_name, tblName=table_name)
+            )
+            return get_table_result.table
+        except IndexError as e:
             raise NoSuchTableError(f"Table does not exists: {table_name}") from e
 
     def create_table(
@@ -435,7 +442,10 @@ class HiveCatalog(MetastoreCatalog):
 
         with self._client as open_client:
             self._create_hive_table(open_client, tbl)
-            hive_table = open_client.get_table(dbname=database_name, tbl_name=table_name)
+            try:
+                hive_table = self._get_hive_table(open_client, database_name, table_name)
+            except IndexError as e:
+                raise NoSuchObjectException("get_table failed: unknown result") from e
 
         return self._convert_hive_into_iceberg(hive_table)
 
@@ -465,7 +475,10 @@ class HiveCatalog(MetastoreCatalog):
         tbl = self._convert_iceberg_into_hive(staged_table)
         with self._client as open_client:
             self._create_hive_table(open_client, tbl)
-            hive_table = open_client.get_table(dbname=database_name, tbl_name=table_name)
+            try:
+                hive_table = self._get_hive_table(open_client, database_name, table_name)
+            except IndexError as e:
+                raise NoSuchObjectException("get_table failed: unknown result") from e
 
         return self._convert_hive_into_iceberg(hive_table)
 
@@ -661,7 +674,10 @@ class HiveCatalog(MetastoreCatalog):
 
         try:
             with self._client as open_client:
-                tbl = open_client.get_table(dbname=from_database_name, tbl_name=from_table_name)
+                try:
+                    tbl = self._get_hive_table(open_client, from_database_name, from_table_name)
+                except IndexError as e:
+                    raise NoSuchObjectException("get_table failed: unknown result") from e
                 tbl.dbName = to_database_name
                 tbl.tableName = to_table_name
                 open_client.alter_table_with_environment_context(
@@ -731,11 +747,13 @@ class HiveCatalog(MetastoreCatalog):
         """
         database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
         with self._client as open_client:
+            all_table_names = open_client.get_all_tables(db_name=database_name)
+            get_tables_result: GetTablesResult = open_client.get_table_objects_by_name_req(
+                req=GetTablesRequest(dbName=database_name, tblNames=all_table_names)
+            )
             return [
                 (database_name, table.tableName)
-                for table in open_client.get_table_objects_by_name(
-                    dbname=database_name, tbl_names=open_client.get_all_tables(db_name=database_name)
-                )
+                for table in get_tables_result.tables
                 if table.parameters.get(TABLE_TYPE, "").lower() == ICEBERG
             ]
 
