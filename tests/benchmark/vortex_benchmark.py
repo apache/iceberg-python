@@ -401,9 +401,7 @@ class VortexBenchmarkSuite:
             else:
                 print("   ⚠️  Vortex not available")
 
-        return results
-
-    def run_format_comparison(self, dataset_sizes: List[int], complexity: str = "medium") -> None:
+    def run_format_comparison(self, dataset_sizes: List[int], complexity: str = "medium") -> List[Dict[str, Any]]:
         """Run comprehensive Vortex vs Parquet comparison."""
         print(f"\n📈 Format Performance Comparison ({complexity} complexity)")
         print("=" * 60)

@@ -35,7 +35,6 @@ from __future__ import annotations
 import logging
 import os
 import platform
-import sys
 import tempfile
 import uuid
 from dataclasses import dataclass
@@ -106,42 +105,6 @@ _vortex_file_cache: Dict[str, Any] = {}
 
 # Memory Allocator Optimization for Vortex Performance
 # ====================================================
-
-
-def _get_memory_allocator_info() -> Dict[str, Any]:
-    """Get information about the current memory allocator configuration."""
-    system = platform.system()
-
-    info: Dict[str, Any] = {
-        "system": system,
-        "python_version": sys.version.split()[0],
-        "current_settings": {},
-        "recommended_settings": {},
-        "optimizations_applied": [],
-    }
-
-    # Check current environment variables
-    alloc_vars = ("MALLOC_ARENA_MAX", "MALLOC_MMAP_THRESHOLD", "MALLOC_TRIM_THRESHOLD", "MALLOC_TOP_PAD", "PYTHONMALLOC")
-
-    for var in alloc_vars:
-        current_value = os.environ.get(var)
-        info["current_settings"][var] = current_value or "default"
-
-    # Set recommended values based on system
-    if system == "Linux":
-        info["recommended_settings"] = {
-            "MALLOC_ARENA_MAX": "1",  # Single arena for better cache locality
-            "MALLOC_MMAP_THRESHOLD": "131072",  # 128KB threshold for mmap
-            "MALLOC_TRIM_THRESHOLD": "524288",  # 512KB trim threshold
-            "MALLOC_TOP_PAD": "1048576",  # 1MB top pad
-            "PYTHONMALLOC": "malloc",  # Use system malloc
-        }
-    elif system == "Darwin":  # macOS
-        info["recommended_settings"] = {"MALLOC_MMAP_THRESHOLD": "131072", "PYTHONMALLOC": "malloc"}
-    else:
-        info["recommended_settings"] = {"PYTHONMALLOC": "malloc"}
-
-    return info
 
 
 def _optimize_memory_allocator() -> None:
@@ -251,6 +214,10 @@ def vortex_to_arrow_table(vortex_array: Any, preserve_field_ids: bool = True) ->
                 return pa.Table.from_batches([arrow_result])
         else:
             # Fallback: try converting via Arrow array
+            if vx is None:
+                raise ImportError(
+                    "vortex-data is not installed. Please install it with: pip install vortex-data or pip install 'pyiceberg[vortex]'"
+                )
             arrow_array = vx.array(vortex_array).to_arrow()
             return pa.Table.from_arrays([arrow_array], names=["data"])
     except Exception as e:
@@ -348,8 +315,13 @@ def write_vortex_file(
     # Get file size
     try:
         if is_local:
-            file_size = os.path.getsize(file_path)
-        else:
+            input_file = io.new_input(file_path)
+            if hasattr(input_file, "get_length"):
+                file_size = input_file.get_length()
+            else:
+                with input_file.open() as f:
+                    f.seek(0, os.SEEK_END)
+                    file_size = f.tell()
             input_file = io.new_input(file_path)
             file_size = len(input_file)
     except Exception:
@@ -646,6 +618,8 @@ def _convert_iceberg_filter_to_vortex(expr: BooleanExpression, schema: Optional[
 
 
 # Keep existing helper functions for compatibility
+# The following helper functions (e.g., iceberg_schema_to_vortex_schema, _validate_vortex_schema_compatibility, analyze_vortex_compatibility)
+# are preserved for compatibility with legacy PyIceberg code and to ensure interoperability with older schema conversion logic.
 def iceberg_schema_to_vortex_schema(iceberg_schema: Schema) -> Any:
     """Convert an Iceberg schema to a Vortex schema.
 
@@ -685,7 +659,6 @@ def _validate_vortex_schema_compatibility(arrow_schema: pa.Schema) -> None:
         ValueError: If the schema contains unsupported types
     """
     unsupported_types = []
-
     for field in arrow_schema:
         field_type = field.type
 
@@ -694,6 +667,9 @@ def _validate_vortex_schema_compatibility(arrow_schema: pa.Schema) -> None:
             unsupported_types.append(f"Union type in field '{field.name}'")
         elif pa.types.is_large_list(field_type) or pa.types.is_large_string(field_type):
             # Large types might have performance implications
+            warning_msg = f"Large type detected in field '{field.name}' - may impact performance"
+            logger.warning(warning_msg)
+            unsupported_types.append(warning_msg)
             logger.warning(f"Large type detected in field '{field.name}' - may impact performance")
 
     if unsupported_types:

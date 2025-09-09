@@ -27,7 +27,8 @@ import time
 import tracemalloc
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterator, Optional
+from tracemalloc import Statistic, StatisticDiff
+from typing import Any, Dict, Iterator, Optional, Sequence
 
 
 @dataclass
@@ -116,13 +117,13 @@ class Instrumentor:
                 try:
                     mem_after = tracemalloc.take_snapshot()
                     if mem_before is not None:
-                        stats = mem_after.compare_to(mem_before, "lineno")
+                        stats: Sequence[Statistic | StatisticDiff] = mem_after.compare_to(mem_before, "lineno")
                     else:
                         stats = mem_after.statistics("lineno")
                     # Summarize top 5 lines - use common attributes available on both types
                     top_lines = []
                     for stat in stats[:5]:
-                        if hasattr(stat, 'traceback'):
+                        if hasattr(stat, "traceback"):
                             # Both Statistic and StatisticDiff have traceback, size, count
                             top_lines.append(
                                 f"{stat.traceback.format()[-1].strip()} - size={stat.size / 1024:.1f} KiB, count={stat.count}"

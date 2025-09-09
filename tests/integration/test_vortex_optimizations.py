@@ -76,14 +76,14 @@ def test_vortex_optimizations() -> None:
 
         print("\n=== Testing Projection ===")
         # Test with projection (should show column projection in logs)
-        result = table.scan(selected_fields=["id", "name"]).to_arrow()
+        result = table.scan(selected_fields=("id", "name")).to_arrow()
 
         print(f"Projected result: {len(result.columns)} columns (expected: 2)")
         print(f"Columns: {result.column_names}")
 
         print("\n=== Testing Combined Filter + Projection ===")
         # Test with both filter and projection
-        result = table.scan(row_filter=LessThan("value", 80), selected_fields=["name", "value"]).to_arrow()
+        result = table.scan(row_filter=LessThan("value", 80), selected_fields=("name", "value")).to_arrow()
 
         print(f"Combined result: {len(result)} rows, {len(result.columns)} columns")
         print(f"Names: {result['name'].to_pylist()}")

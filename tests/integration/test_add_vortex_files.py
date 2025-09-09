@@ -100,14 +100,12 @@ def create_vortex_file(data: pa.Table, file_path: str) -> None:
     from pyiceberg.io.fsspec import FsspecFileIO
     from pyiceberg.io.vortex import write_vortex_file
 
-    io = FsspecFileIO()
-    write_vortex_file(data=data, file_path=file_path, io=io)
+    io = FsspecFileIO(properties={})
+    write_vortex_file(arrow_table=data, file_path=file_path, io=io)
 
 
 @pytest.mark.integration
-def test_add_vortex_files_to_table(
-    vortex_catalog: SqlCatalog, test_schema: Schema, test_data: pa.Table, tmp_path: Path
-) -> None:
+def test_add_vortex_files_to_table(vortex_catalog: SqlCatalog, test_schema: Schema, test_data: pa.Table, tmp_path: Path) -> None:
     """Test adding Vortex files to an Iceberg table."""
     # Create table
     table_name = "test_vortex_add_files"
@@ -119,11 +117,11 @@ def test_add_vortex_files_to_table(
     # Create test Vortex files
     vortex_file_1 = str(tmp_path / "data_1.vortex")
     vortex_file_2 = str(tmp_path / "data_2.vortex")
-    
+
     # Split test data into two files
     data_1 = test_data.slice(0, 2)
     data_2 = test_data.slice(3, 2)
-    
+
     create_vortex_file(data_1, vortex_file_1)
     create_vortex_file(data_2, vortex_file_2)
 
@@ -159,11 +157,11 @@ def test_add_mixed_format_files_to_table(
     # Create test files in different formats
     vortex_file = str(tmp_path / "data.vortex")
     parquet_file = str(tmp_path / "data.parquet")
-    
+
     # Use first 2 rows for Vortex file
     vortex_data = test_data.slice(0, 2)
     create_vortex_file(vortex_data, vortex_file)
-    
+
     # Use next 2 rows for Parquet file
     parquet_data = test_data.slice(2, 2)
     pq.write_table(parquet_data, parquet_file)
@@ -196,9 +194,7 @@ def test_add_mixed_format_files_to_table(
 
 
 @pytest.mark.integration
-def test_add_vortex_file_with_incompatible_schema(
-    vortex_catalog: SqlCatalog, test_schema: Schema, tmp_path: Path
-) -> None:
+def test_add_vortex_file_with_incompatible_schema(vortex_catalog: SqlCatalog, test_schema: Schema, tmp_path: Path) -> None:
     """Test that adding a Vortex file with incompatible schema raises an error."""
     # Create table with original schema
     table_name = "test_vortex_incompatible_schema"
@@ -208,12 +204,14 @@ def test_add_vortex_file_with_incompatible_schema(
     )
 
     # Create data with incompatible schema (missing required field)
-    incompatible_data = pa.table({
-        "id": pa.array([1, 2, 3], type=pa.int64()),
-        "name": ["Alice", "Bob", "Charlie"],
-        # Missing age, active, score fields
-    })
-    
+    incompatible_data = pa.table(
+        {
+            "id": pa.array([1, 2, 3], type=pa.int64()),
+            "name": ["Alice", "Bob", "Charlie"],
+            # Missing age, active, score fields
+        }
+    )
+
     vortex_file = str(tmp_path / "incompatible.vortex")
     create_vortex_file(incompatible_data, vortex_file)
 
@@ -250,7 +248,9 @@ def test_add_vortex_files_maintains_transaction_consistency(
 
     # Verify new snapshot was created
     new_snapshot = tbl.current_snapshot()
-    assert new_snapshot.snapshot_id != (initial_snapshot.snapshot_id if initial_snapshot else 0)
+    initial_snapshot_id = initial_snapshot.snapshot_id if initial_snapshot else 0
+    assert new_snapshot is not None
+    assert new_snapshot.snapshot_id != initial_snapshot_id
 
     # Verify all files are present
     data_files = tbl.inspect.data_files()
@@ -278,19 +278,16 @@ def test_add_vortex_files_with_snapshot_properties(
     create_vortex_file(test_data, vortex_file)
 
     # Add file with custom properties
-    custom_properties = {
-        "operation": "vortex-add-files-test",
-        "added_by": "test-suite",
-        "file_count": "1"
-    }
-    
+    custom_properties = {"operation": "vortex-add-files-test", "added_by": "test-suite", "file_count": "1"}
+
     tbl.add_files(file_paths=[vortex_file], snapshot_properties=custom_properties)
 
     # Verify snapshot properties
     current_snapshot = tbl.current_snapshot()
     assert current_snapshot is not None
-    
+
     snapshot_summary = current_snapshot.summary
+    assert snapshot_summary is not None
     for key, value in custom_properties.items():
         assert snapshot_summary.get(key) == value
 
@@ -328,7 +325,7 @@ def test_vortex_file_format_detection_by_extension(
     # Verify formats were detected correctly
     data_files = tbl.inspect.data_files()
     data_file_list = data_files.to_pylist()
-    
+
     for data_file in data_file_list:
         file_path = data_file["file_path"]
         if file_path.lower().endswith(".vortex"):
@@ -340,9 +337,7 @@ def test_vortex_file_format_detection_by_extension(
 
 
 @pytest.mark.integration
-def test_add_vortex_file_error_handling(
-    vortex_catalog: SqlCatalog, test_schema: Schema, tmp_path: Path
-) -> None:
+def test_add_vortex_file_error_handling(vortex_catalog: SqlCatalog, test_schema: Schema, tmp_path: Path) -> None:
     """Test error handling when adding invalid Vortex files."""
     # Create table
     table_name = "test_vortex_error_handling"

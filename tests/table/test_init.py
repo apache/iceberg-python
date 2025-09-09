@@ -1442,7 +1442,7 @@ def test_remove_partition_statistics_update_with_invalid_snapshot_id(table_v2_wi
         )
 
 
-def test_files_to_data_files_detects_formats_correctly():
+def test_files_to_data_files_detects_formats_correctly() -> None:
     """Test that _files_to_data_files correctly detects file formats by extension."""
     from unittest.mock import Mock, patch
 
@@ -1455,14 +1455,15 @@ def test_files_to_data_files_detects_formats_correctly():
         "data/file1.parquet",
         "data/file2.vortex",
         "data/file3.PARQUET",  # Test case insensitive
-        "data/file4.VORTEX",   # Test case insensitive
-        "data/file5.txt",      # Should default to parquet
+        "data/file4.VORTEX",  # Test case insensitive
+        "data/file5.txt",  # Should default to parquet
     ]
 
-    with patch("pyiceberg.io.pyarrow.parquet_file_to_data_file"), \
-         patch("pyiceberg.io.pyarrow.vortex_file_to_data_file"), \
-         patch("pyiceberg.table.ExecutorFactory.get_or_create") as mock_executor:
-
+    with (
+        patch("pyiceberg.io.pyarrow.parquet_file_to_data_file"),
+        patch("pyiceberg.io.pyarrow.vortex_file_to_data_file"),
+        patch("pyiceberg.table.ExecutorFactory.get_or_create") as mock_executor,
+    ):
         # Mock executor to return results synchronously
         mock_executor_instance = Mock()
         mock_future = Mock()
@@ -1477,7 +1478,7 @@ def test_files_to_data_files_detects_formats_correctly():
         assert len(submit_calls) == 5
 
 
-def test_files_to_data_files_extension_detection():
+def test_files_to_data_files_extension_detection() -> None:
     """Test specific file extension detection logic."""
     from unittest.mock import Mock, patch
 
@@ -1495,13 +1496,14 @@ def test_files_to_data_files_extension_detection():
         ("file.Parquet", "parquet"),
         ("file.Vortex", "vortex"),
         ("file.txt", "parquet"),  # Default case
-        ("file", "parquet"),      # No extension
+        ("file", "parquet"),  # No extension
     ]
 
-    with patch("pyiceberg.io.pyarrow.parquet_file_to_data_file"), \
-         patch("pyiceberg.io.pyarrow.vortex_file_to_data_file"), \
-         patch("pyiceberg.table.ExecutorFactory.get_or_create") as mock_executor:
-
+    with (
+        patch("pyiceberg.io.pyarrow.parquet_file_to_data_file"),
+        patch("pyiceberg.io.pyarrow.vortex_file_to_data_file"),
+        patch("pyiceberg.table.ExecutorFactory.get_or_create") as mock_executor,
+    ):
         mock_executor_instance = Mock()
         mock_future = Mock()
         mock_future.result.return_value = Mock()

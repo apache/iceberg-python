@@ -215,7 +215,7 @@ Tips:
 
 ## �📊 Performance Results Summary
 
-### Current Performance Characteristics
+### Performance Summary
 
 **Write Performance**: **~1.07M rows/sec**
 
@@ -316,7 +316,7 @@ cd /path/to/iceberg-python
 .venv/bin/python tests/benchmark/comprehensive_benchmark.py --full
 ```
 
-### pytest Integration
+### Running with pytest
 
 ```bash
 # Run benchmark tests in CI/CD

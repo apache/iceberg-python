@@ -911,9 +911,7 @@ class Transaction:
                 **{TableProperties.DEFAULT_NAME_MAPPING: self.table_metadata.schema().name_mapping.model_dump_json()}
             )
         with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
-            data_files = _files_to_data_files(
-                table_metadata=self.table_metadata, file_paths=file_paths, io=self._table.io
-            )
+            data_files = _files_to_data_files(table_metadata=self.table_metadata, file_paths=file_paths, io=self._table.io)
             for data_file in data_files:
                 update_snapshot.append_data_file(data_file)
 
@@ -2138,9 +2136,9 @@ def _files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], i
 
     for file_path in file_paths:
         # Determine file format based on extension
-        if file_path.lower().endswith('.parquet'):
+        if file_path.lower().endswith(".parquet"):
             futures.append(executor.submit(parquet_file_to_data_file, io, table_metadata, file_path))
-        elif file_path.lower().endswith('.vortex'):
+        elif file_path.lower().endswith(".vortex"):
             futures.append(executor.submit(vortex_file_to_data_file, io, table_metadata, file_path))
         else:
             # Default to Parquet for backwards compatibility

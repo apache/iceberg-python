@@ -2814,7 +2814,7 @@ def test_parse_location_defaults() -> None:
 
 
 # Tests for Vortex file support in add_files functionality
-def test_vortex_file_to_data_file_import_error():
+def test_vortex_file_to_data_file_import_error() -> None:
     """Test that vortex_file_to_data_file raises ImportError when vortex is not available."""
     from unittest.mock import Mock, patch
 
@@ -2828,7 +2828,7 @@ def test_vortex_file_to_data_file_import_error():
             vortex_file_to_data_file(mock_io, mock_metadata, "test.vortex")
 
 
-def test_vortex_file_to_data_file_returns_data_file():
+def test_vortex_file_to_data_file_returns_data_file() -> None:
     """Test that vortex_file_to_data_file creates a DataFile with correct properties."""
     from unittest.mock import Mock, patch
 
@@ -2860,10 +2860,11 @@ def test_vortex_file_to_data_file_returns_data_file():
     mock_batch.num_rows = 10
     mock_batch.schema = Mock()
 
-    with patch("pyiceberg.io.vortex.VORTEX_AVAILABLE", True), \
-         patch("pyiceberg.io.vortex.read_vortex_file") as mock_read_vortex, \
-         patch("pyiceberg.io.pyarrow._check_pyarrow_schema_compatible") as mock_check_schema:
-
+    with (
+        patch("pyiceberg.io.vortex.VORTEX_AVAILABLE", True),
+        patch("pyiceberg.io.vortex.read_vortex_file") as mock_read_vortex,
+        patch("pyiceberg.io.pyarrow._check_pyarrow_schema_compatible") as mock_check_schema,
+    ):
         mock_read_vortex.return_value = iter([mock_batch])
 
         result = vortex_file_to_data_file(mock_io, mock_metadata, "test.vortex")
