@@ -1009,8 +1009,7 @@ class InspectTable:
         This method fetches metadata for files containing delete markers.
 
         Args:
-            snapshot_id (Optional[int]): The snapshot ID to filter delete files for. If None,
-               the current snapshot is used.
+            snapshot_id (Optional[int]): The snapshot ID to filter delete files for. If None, the current snapshot is used.
 
         Returns:
            pa.Table: A PyArrow table containing metadata for delete files.
