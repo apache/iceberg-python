@@ -19,7 +19,7 @@
 
 # Verifying a release
 
-Each Apache PyIceberg release is validated by the community by holding a vote. A community release manager will prepare a release candidate and call a vote on the Iceberg dev list. To validate the release candidate, community members will test it out in their downstream projects and environments.
+Each PyIceberg release is validated by the community by holding a vote. A community release manager will prepare a release candidate and call a vote on the Iceberg dev list. To validate the release candidate, community members will test it out in their downstream projects and environments.
 
 In addition to testing in downstream projects, community members also check the release’s signatures, checksums, and license documentation.
 
@@ -48,13 +48,18 @@ Set an environment variable to the version to verify and path to use
 
 ```sh
 export PYICEBERG_VERSION=<version> # e.g. 0.6.1rc3
+```
+
+And a temp folder for the artifacts
+
+```sh
 export PYICEBERG_VERIFICATION_DIR=/tmp/pyiceberg/${PYICEBERG_VERSION}
 ```
 
 Next, verify the `.asc` file.
 
 ```sh
-svn checkout https://dist.apache.org/repos/dist/dev/iceberg/pyiceberg-${PYICEBERG_VERSION}/ ${PYICEBERG_VERIFICATION_DIR}
+svn checkout https://dist.apache.org/repos/dist/dev/iceberg/pyiceberg-$PYICEBERG_VERSION/ ${PYICEBERG_VERIFICATION_DIR}
 
 cd ${PYICEBERG_VERIFICATION_DIR}
 

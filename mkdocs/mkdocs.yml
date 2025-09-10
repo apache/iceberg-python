@@ -44,6 +44,7 @@ theme:
     - navigation.tracking
     - navigation.tabs
     - navigation.tabs.sticky
+    - content.code.copy  # Enables the copy button
   palette:
     - scheme: default
       toggle:

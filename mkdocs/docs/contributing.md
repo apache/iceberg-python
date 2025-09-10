@@ -159,7 +159,7 @@ To rebuild the containers from scratch.
 
 Below are the formalized conventions that we adhere to in the PyIceberg project. The goal of this is to have a common agreement on how to evolve the codebase, but also using it as guidelines for newcomers to the project.
 
-## API Compatibility
+### API Compatibility
 
 It is important to keep the Python public API compatible across versions. The Python official [PEP-8](https://peps.python.org/pep-0008/) defines public methods as: _Public attributes should have no leading underscores_. This means not removing any methods without any notice, or removing or renaming any existing parameters. Adding new optional parameters is okay.
 
@@ -202,12 +202,12 @@ Which will warn:
 Deprecated in 0.1.0, will be removed in 0.2.0. The old_property is deprecated. Please use the something_else property instead.
 ```
 
-## Type annotations
+### Type annotations
 
 For the type annotation the types from the `Typing` package are used.
 
 PyIceberg offers support from Python 3.9 onwards, we can't use the [type hints from the standard collections](https://peps.python.org/pep-0585/).
 
-## Third party libraries
+### Third party libraries
 
 PyIceberg naturally integrates into the rich Python ecosystem, however it is important to be hesitant adding third party packages. Adding a lot of packages makes the library heavyweight, and causes incompatibilities with other projects if they use a different version of the library. Also, big libraries such as `s3fs`, `adlfs`, `pyarrow`, `thrift` should be optional to avoid downloading everything, while not being sure if is actually being used.

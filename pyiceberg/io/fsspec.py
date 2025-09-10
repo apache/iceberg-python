@@ -168,9 +168,11 @@ def _s3(properties: Properties) -> AbstractFileSystem:
         config_kwargs["read_timeout"] = float(request_timeout)
 
     if s3_anonymous := properties.get(S3_ANONYMOUS):
-        config_kwargs["anon"] = strtobool(s3_anonymous)
+        anon = strtobool(s3_anonymous)
+    else:
+        anon = False
 
-    fs = S3FileSystem(client_kwargs=client_kwargs, config_kwargs=config_kwargs)
+    fs = S3FileSystem(anon=anon, client_kwargs=client_kwargs, config_kwargs=config_kwargs)
 
     for event_name, event_function in register_events.items():
         fs.s3.meta.events.unregister(event_name, unique_id=1925)
