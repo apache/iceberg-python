@@ -32,7 +32,6 @@ class FieldName(IcebergRootModel[str]):
     )
 
 
-
 class BooleanTypeValue(IcebergRootModel[bool]):
     root: bool = Field(..., json_schema_extra={"example": True})
 
