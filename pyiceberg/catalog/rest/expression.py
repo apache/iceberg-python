@@ -103,17 +103,19 @@ class UnaryExpression(IcebergBaseModel):
     value: Dict[str, Any]
 
 
-class Expression(IcebergRootModel[
-    Union[
-        TrueExpression,
-        FalseExpression,
-        AndOrExpression,
-        NotExpression,
-        SetExpression,
-        LiteralExpression,
-        UnaryExpression,
+class Expression(
+    IcebergRootModel[
+        Union[
+            TrueExpression,
+            FalseExpression,
+            AndOrExpression,
+            NotExpression,
+            SetExpression,
+            LiteralExpression,
+            UnaryExpression,
+        ]
     ]
-]):
+):
     root: Union[
         TrueExpression,
         FalseExpression,

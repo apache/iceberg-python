@@ -41,8 +41,12 @@ def test_serialize_plan_table_scan_request():
                 left=Expression(
                     root=AndOrExpression(
                         type="and",
-                        left=Expression(root=LiteralExpression(type="lt", term=Term(root="a"), value={"type": "integer", "value": 1})),
-                        right=Expression(root=LiteralExpression(type="lt-eq", term=Term(root="b"), value={"type": "integer", "value": 2})),
+                        left=Expression(
+                            root=LiteralExpression(type="lt", term=Term(root="a"), value={"type": "integer", "value": 1})
+                        ),
+                        right=Expression(
+                            root=LiteralExpression(type="lt-eq", term=Term(root="b"), value={"type": "integer", "value": 2})
+                        ),
                     )
                 ),
                 right=Expression(root=LiteralExpression(type="eq", term=Term(root="c"), value={"type": "integer", "value": 3})),
@@ -69,8 +73,12 @@ def test_deserialize_plan_table_scan_request():
                 left=Expression(
                     root=AndOrExpression(
                         type="and",
-                        left=Expression(root=LiteralExpression(type="lt", term=Term(root="a"), value={"type": "integer", "value": 1})),
-                        right=Expression(root=LiteralExpression(type="lt-eq", term=Term(root="b"), value={"type": "integer", "value": 2})),
+                        left=Expression(
+                            root=LiteralExpression(type="lt", term=Term(root="a"), value={"type": "integer", "value": 1})
+                        ),
+                        right=Expression(
+                            root=LiteralExpression(type="lt-eq", term=Term(root="b"), value={"type": "integer", "value": 2})
+                        ),
                     )
                 ),
                 right=Expression(root=LiteralExpression(type="eq", term=Term(root="c"), value={"type": "integer", "value": 3})),
