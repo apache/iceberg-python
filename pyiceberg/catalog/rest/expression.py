@@ -15,58 +15,63 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Literal, Union
 
 from pydantic import Field
 
-from pyiceberg.expressions import Reference
 from pyiceberg.transforms import Transform
-from pyiceberg.typedef import IcebergBaseModel
+from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel
 
 
-class ExpressionType(IcebergBaseModel):
-    __root__: str = Field(
+class Reference(IcebergRootModel[str]):
+    root: str = Field(..., json_schema_extra={"example": "column-name"})
+
+
+class ExpressionType(IcebergRootModel[str]):
+    root: str = Field(
         ...,
-        example=[
-            "true",
-            "false",
-            "eq",
-            "and",
-            "or",
-            "not",
-            "in",
-            "not-in",
-            "lt",
-            "lt-eq",
-            "gt",
-            "gt-eq",
-            "not-eq",
-            "starts-with",
-            "not-starts-with",
-            "is-null",
-            "not-null",
-            "is-nan",
-            "not-nan",
-        ],
+        json_schema_extra={
+            "example": [
+                "true",
+                "false",
+                "eq",
+                "and",
+                "or",
+                "not",
+                "in",
+                "not-in",
+                "lt",
+                "lt-eq",
+                "gt",
+                "gt-eq",
+                "not-eq",
+                "starts-with",
+                "not-starts-with",
+                "is-null",
+                "not-null",
+                "is-nan",
+                "not-nan",
+            ]
+        },
     )
 
 
 class TrueExpression(IcebergBaseModel):
-    type: ExpressionType = Field(default_factory=lambda: ExpressionType.parse_obj("true"), const=True)
+    type: Literal["true"] = "true"
 
 
 class FalseExpression(IcebergBaseModel):
-    type: ExpressionType = Field(default_factory=lambda: ExpressionType.parse_obj("false"), const=True)
+    type: Literal["false"] = "false"
 
 
 class TransformTerm(IcebergBaseModel):
-    type: str = Field("transform", const=True)
+    type: Literal["transform"] = "transform"
     transform: Transform
     term: Reference
 
 
-class Term(IcebergBaseModel):
-    __root__: Union[Reference, TransformTerm]
+class Term(IcebergRootModel[Union[Reference, TransformTerm]]):
+    root: Union[Reference, TransformTerm]
 
 
 class AndOrExpression(IcebergBaseModel):
@@ -76,7 +81,7 @@ class AndOrExpression(IcebergBaseModel):
 
 
 class NotExpression(IcebergBaseModel):
-    type: ExpressionType = Field(default_factory=lambda: ExpressionType.parse_obj("not"), const=True)
+    type: Literal["not"] = "not"
     child: "Expression"
 
 
@@ -98,8 +103,18 @@ class UnaryExpression(IcebergBaseModel):
     value: Dict[str, Any]
 
 
-class Expression(IcebergBaseModel):
-    __root__: Union[
+class Expression(IcebergRootModel[
+    Union[
+        TrueExpression,
+        FalseExpression,
+        AndOrExpression,
+        NotExpression,
+        SetExpression,
+        LiteralExpression,
+        UnaryExpression,
+    ]
+]):
+    root: Union[
         TrueExpression,
         FalseExpression,
         AndOrExpression,
