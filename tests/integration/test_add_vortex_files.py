@@ -14,9 +14,6 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
-"""Integration tests for add_files functionality with Vortex file format."""
-
 from pathlib import Path
 from typing import Generator
 
