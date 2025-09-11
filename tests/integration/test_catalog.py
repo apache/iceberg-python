@@ -33,6 +33,7 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
 )
 from pyiceberg.io import WAREHOUSE
+from pyiceberg.manifest import DataFile, FileFormat
 from pyiceberg.schema import Schema
 from tests.conftest import clean_up
 
@@ -343,3 +344,39 @@ def test_update_namespace_properties(test_catalog: Catalog, database_name: str) 
         else:
             assert k in update_report.removed
     assert "updated test description" == test_catalog.load_namespace_properties(database_name)["comment"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_create_transaction(test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str) -> None:
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(database_name)
+
+    transaction = test_catalog.build_table(identifier, table_schema_nested).create_transaction()
+
+    assert not test_catalog.table_exists(identifier)
+
+    file_a = DataFile(
+        file_path="/data/foo.parquet",
+        file_format=FileFormat.PARQUET,
+        record_count=50,
+        file_size_in_bytes=1024,
+    )
+    transaction.new_fast_append().append_file(file_a).commit()
+
+    assert not test_catalog.table_exists(identifier)
+
+    transaction.commit_transaction()
+
+    assert test_catalog.table_exists(identifier)
+
+    table = test_catalog.load_table(identifier)
+    assert len(list(table.snapshots)) == 1
+    assert len(table.history()) == 1
+    snapshot = table.current_snapshot()
+    assert snapshot.summary["total-data-files"] == "1"
+
+    manifest = list(snapshot.manifests(table.io))[0]
+    assert len(manifest.entries) == 1
+    entry = manifest.entries[0]
+    assert entry.data_file.file_path == "/data/foo.parquet"
