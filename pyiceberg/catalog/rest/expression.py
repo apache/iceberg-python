@@ -66,7 +66,7 @@ class FalseExpression(IcebergBaseModel):
 
 class TransformTerm(IcebergBaseModel):
     type: Literal["transform"] = "transform"
-    transform: Transform
+    transform: Transform[Any, Any]
     term: Reference
 
 

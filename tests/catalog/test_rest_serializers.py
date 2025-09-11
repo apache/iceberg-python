@@ -31,7 +31,7 @@ from pyiceberg.catalog.rest.planning_models import (
 )
 
 
-def test_serialize_plan_table_scan_request():
+def test_serialize_plan_table_scan_request() -> None:
     """Test serializing a PlanTableScanRequest to a dict"""
     expression = AndOrExpression(
         type="and",
@@ -63,7 +63,7 @@ def test_serialize_plan_table_scan_request():
     assert request.model_dump_json(exclude_none=True) == snapshot_json_for_plan_table_scan_request()
 
 
-def test_deserialize_plan_table_scan_request():
+def test_deserialize_plan_table_scan_request() -> None:
     """Test deserializing a PlanTableScanRequest from a dict"""
     expression = AndOrExpression(
         type="and",
@@ -95,7 +95,7 @@ def test_deserialize_plan_table_scan_request():
     assert request == PlanTableScanRequest.model_validate_json(snapshot_json_for_plan_table_scan_request())
 
 
-def test_deserialize_scan_tasks():
+def test_deserialize_scan_tasks() -> None:
     """Test deserializing a ScanTasks from a dict"""
     scan_tasks = ScanTasks.model_validate_json(snapshot_json_for_scan_tasks())
     assert len(scan_tasks.file_scan_tasks) == 1
@@ -105,7 +105,7 @@ def test_deserialize_scan_tasks():
     assert scan_tasks.delete_files[1].root.file_path == "/path/to/delete-b.parquet"
 
 
-def test_serialize_scan_tasks():
+def test_serialize_scan_tasks() -> None:
     """Test serializing a ScanTasks to a dict"""
     scan_tasks = ScanTasks(
         file_scan_tasks=[
@@ -151,9 +151,9 @@ def test_serialize_scan_tasks():
     assert scan_tasks.model_dump_json(exclude_none=True) == snapshot_json_for_scan_tasks()
 
 
-def snapshot_json_for_plan_table_scan_request():
+def snapshot_json_for_plan_table_scan_request() -> str:
     return """{"snapshot-id":1,"select":["a","b","c"],"filter":{"type":"and","left":{"type":"or","left":{"type":"and","left":{"type":"lt","term":"a","value":{"type":"integer","value":1}},"right":{"type":"lt-eq","term":"b","value":{"type":"integer","value":2}}},"right":{"type":"eq","term":"c","value":{"type":"integer","value":3}}},"right":{"type":"gt","term":"d","value":{"type":"integer","value":4}}},"case-sensitive":true,"use-snapshot-schema":false}"""
 
 
-def snapshot_json_for_scan_tasks():
+def snapshot_json_for_scan_tasks() -> str:
     return """{"delete-files":[{"content":"position-deletes","file-path":"/path/to/delete-a.parquet","file-format":"parquet","spec-id":0,"partition":[],"file-size-in-bytes":256,"record-count":10},{"content":"equality-deletes","file-path":"/path/to/delete-b.parquet","file-format":"parquet","spec-id":0,"partition":[],"file-size-in-bytes":256,"record-count":10,"equality-ids":[1,2]}],"file-scan-tasks":[{"data-file":{"content":"data","file-path":"/path/to/data-a.parquet","file-format":"parquet","spec-id":0,"partition":[],"file-size-in-bytes":1024,"record-count":56},"delete-file-references":[0,1]}]}"""
