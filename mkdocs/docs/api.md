@@ -1002,25 +1002,18 @@ To show only data files or delete files in the current snapshot, use `table.insp
 
 ## Add Files
 
-Expert Iceberg users may choose to commit existing data files to the Iceberg table without rewriting them. PyIceberg supports both **Parquet** and **Vortex** file formats.
+Expert Iceberg users may choose to commit existing parquet files to the Iceberg table as data files, without rewriting them.
 
 <!-- prettier-ignore-start -->
 
-!!! note "Supported Formats"
-    `add_files` supports both Parquet and Vortex file formats:
-    - **Parquet files** (`.parquet`): Traditional columnar format with broad ecosystem support
-    - **Vortex files** (`.vortex`): Next-generation format with 100x faster random access and 10-20x faster scans
-    - **Mixed formats**: You can add both Parquet and Vortex files in the same operation
-    - **Format detection**: File format is automatically detected based on file extension
-
 !!! note "Name Mapping"
-    Because `add_files` uses existing files without writing new files that are aware of the Iceberg's schema, it requires the Iceberg's table to have a [Name Mapping](https://iceberg.apache.org/spec/?h=name+mapping#name-mapping-serialization) (The Name mapping maps the field names within the files to the Iceberg field IDs). Hence, `add_files` requires that there are no field IDs in the file's metadata, and creates a new Name Mapping based on the table's current schema if the table doesn't already have one.
+    Because `add_files` uses existing files without writing new parquet files that are aware of the Iceberg's schema, it requires the Iceberg's table to have a [Name Mapping](https://iceberg.apache.org/spec/?h=name+mapping#name-mapping-serialization) (The Name mapping maps the field names within the parquet files to the Iceberg field IDs). Hence, `add_files` requires that there are no field IDs in the parquet file's metadata, and creates a new Name Mapping based on the table's current schema if the table doesn't already have one.
 
 !!! note "Partitions"
-    `add_files` only requires the client to read the existing file metadata to infer the partition value of each file. This implementation supports adding files to Iceberg tables with partition transforms like `MonthTransform`, and `TruncateTransform` which preserve the order of the values after the transformation (Any Transform that has the `preserves_order` property set to True is supported). Please note that if the column statistics of the `PartitionField`'s source column are not present in the file metadata, the partition value is inferred as `None`.
+    `add_files` only requires the client to read the existing parquet files' metadata footer to infer the partition value of each file. This implementation also supports adding files to Iceberg tables with partition transforms like `MonthTransform`, and `TruncateTransform` which preserve the order of the values after the transformation (Any Transform that has the `preserves_order` property set to True is supported). Please note that if the column statistics of the `PartitionField`'s source column are not present in the parquet metadata, the partition value is inferred as `None`.
 
 !!! warning "Maintenance Operations"
-    Because `add_files` commits the existing data files to the Iceberg Table as any other data file, destructive maintenance operations like expiring snapshots will remove them.
+    Because `add_files` commits the existing parquet files to the Iceberg Table as any other data file, destructive maintenance operations like expiring snapshots will remove them.
 
 !!! warning "Check Duplicate Files"
     The `check_duplicate_files` parameter determines whether the method validates that the specified `file_paths` do not already exist in the Iceberg table. When set to True (the default), the method performs a validation against the table’s current data files to prevent accidental duplication, helping to maintain data consistency by ensuring the same file is not added multiple times. While this check is important for data integrity, it can introduce performance overhead for tables with a large number of files. Setting check_duplicate_files=False can improve performance but increases the risk of duplicate files, which may lead to data inconsistencies or table corruption. It is strongly recommended to keep this parameter enabled unless duplicate file handling is strictly enforced elsewhere.
@@ -1040,7 +1033,7 @@ Expert Iceberg users may choose to commit existing data files to the Iceberg tab
 Add files to Iceberg table:
 
 ```python
-# Given that these files have schema consistent with the Iceberg table
+# Given that these parquet files have schema consistent with the Iceberg table
 
 file_paths = [
     "s3a://warehouse/default/existing-1.parquet",
@@ -1051,23 +1044,7 @@ file_paths = [
 
 tbl.add_files(file_paths=file_paths)
 
-# A new snapshot is committed to the table with manifests pointing to the existing files
-```
-
-Add mixed-format files (Parquet and Vortex) to Iceberg table:
-
-```python
-# PyIceberg automatically detects file format based on extension
-
-file_paths = [
-    "s3a://warehouse/default/data-1.parquet",    # Parquet format
-    "s3a://warehouse/default/data-2.vortex",     # Vortex format
-    "s3a://warehouse/default/data-3.parquet",    # Parquet format
-    "s3a://warehouse/default/data-4.vortex",     # Vortex format
-]
-
-# All files are processed with their respective format handlers
-tbl.add_files(file_paths=file_paths)
+# A new snapshot is committed to the table with manifests pointing to the existing parquet files
 ```
 
 Add files to Iceberg table with custom snapshot properties:
@@ -1077,7 +1054,7 @@ Add files to Iceberg table with custom snapshot properties:
 
 file_paths = [
     "s3a://warehouse/default/existing-1.parquet",
-    "s3a://warehouse/default/existing-2.vortex",
+    "s3a://warehouse/default/existing-2.parquet",
 ]
 
 # Custom snapshot properties
@@ -1086,7 +1063,7 @@ snapshot_properties = {"abc": "def"}
 # Enable duplicate file checking
 check_duplicate_files = True
 
-# Add the data files to the Iceberg table without rewriting
+# Add the Parquet files to the Iceberg table without rewriting
 tbl.add_files(
     file_paths=file_paths,
     snapshot_properties=snapshot_properties,
