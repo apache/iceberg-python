@@ -22,120 +22,121 @@ from uuid import UUID
 from pydantic import Field
 
 from pyiceberg.catalog.rest.expression import Expression
-from pyiceberg.typedef import IcebergBaseModel
+from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel
 
 
-class FieldName(IcebergBaseModel):
-    __root__: str = Field(
+class FieldName(IcebergRootModel[str]):
+    root: str = Field(
         ...,
         description="A full field name (including parent field names), such as those passed in APIs like Java `Schema#findField(String name)`.\nThe nested field name follows these rules - Nested struct fields are named by concatenating field names at each struct level using dot (`.`) delimiter, e.g. employer.contact_info.address.zip_code - Nested fields in a map key are named using the keyword `key`, e.g. employee_address_map.key.first_name - Nested fields in a map value are named using the keyword `value`, e.g. employee_address_map.value.zip_code - Nested fields in a list are named using the keyword `element`, e.g. employees.element.first_name",
     )
 
 
-class BooleanTypeValue(IcebergBaseModel):
-    __root__: bool = Field(..., example=True)
+
+class BooleanTypeValue(IcebergRootModel[bool]):
+    root: bool = Field(..., json_schema_extra={"example": True})
 
 
-class IntegerTypeValue(IcebergBaseModel):
-    __root__: int = Field(..., example=42)
+class IntegerTypeValue(IcebergRootModel[int]):
+    root: int = Field(..., json_schema_extra={"example": 42})
 
 
-class LongTypeValue(IcebergBaseModel):
-    __root__: int = Field(..., example=9223372036854775807)
+class LongTypeValue(IcebergRootModel[int]):
+    root: int = Field(..., json_schema_extra={"example": 9223372036854775807})
 
 
-class FloatTypeValue(IcebergBaseModel):
-    __root__: float = Field(..., example=3.14)
+class FloatTypeValue(IcebergRootModel[float]):
+    root: float = Field(..., json_schema_extra={"example": 3.14})
 
 
-class DoubleTypeValue(IcebergBaseModel):
-    __root__: float = Field(..., example=123.456)
+class DoubleTypeValue(IcebergRootModel[float]):
+    root: float = Field(..., json_schema_extra={"example": 123.456})
 
 
-class DecimalTypeValue(IcebergBaseModel):
-    __root__: str = Field(
+class DecimalTypeValue(IcebergRootModel[str]):
+    root: str = Field(
         ...,
         description="Decimal type values are serialized as strings. Decimals with a positive scale serialize as numeric plain text, while decimals with a negative scale use scientific notation and the exponent will be equal to the negated scale. For instance, a decimal with a positive scale is '123.4500', with zero scale is '2', and with a negative scale is '2E+20'",
-        example="123.4500",
+        json_schema_extra={"example": "123.4500"},
     )
 
 
-class StringTypeValue(IcebergBaseModel):
-    __root__: str = Field(..., example="hello")
+class StringTypeValue(IcebergRootModel[str]):
+    root: str = Field(..., json_schema_extra={"example": "hello"})
 
 
-class UUIDTypeValue(IcebergBaseModel):
-    __root__: UUID = Field(
+class UUIDTypeValue(IcebergRootModel[UUID]):
+    root: UUID = Field(
         ...,
         description="UUID type values are serialized as a 36-character lowercase string in standard UUID format as specified by RFC-4122",
-        example="eb26bdb1-a1d8-4aa6-990e-da940875492c",
+        json_schema_extra={"example": "eb26bdb1-a1d8-4aa6-990e-da940875492c"},
         max_length=36,
         min_length=36,
-        regex="^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
     )
 
 
-class DateTypeValue(IcebergBaseModel):
-    __root__: date = Field(
+class DateTypeValue(IcebergRootModel[date]):
+    root: date = Field(
         ...,
         description="Date type values follow the 'YYYY-MM-DD' ISO-8601 standard date format",
-        example="2007-12-03",
+        json_schema_extra={"example": "2007-12-03"},
     )
 
 
-class TimeTypeValue(IcebergBaseModel):
-    __root__: str = Field(
+class TimeTypeValue(IcebergRootModel[str]):
+    root: str = Field(
         ...,
         description="Time type values follow the 'HH:MM:SS.ssssss' ISO-8601 format with microsecond precision",
-        example="22:31:08.123456",
+        json_schema_extra={"example": "22:31:08.123456"},
     )
 
 
-class TimestampTypeValue(IcebergBaseModel):
-    __root__: str = Field(
+class TimestampTypeValue(IcebergRootModel[str]):
+    root: str = Field(
         ...,
         description="Timestamp type values follow the 'YYYY-MM-DDTHH:MM:SS.ssssss' ISO-8601 format with microsecond precision",
-        example="2007-12-03T10:15:30.123456",
+        json_schema_extra={"example": "2007-12-03T10:15:30.123456"},
     )
 
 
-class TimestampTzTypeValue(IcebergBaseModel):
-    __root__: str = Field(
+class TimestampTzTypeValue(IcebergRootModel[str]):
+    root: str = Field(
         ...,
         description="TimestampTz type values follow the 'YYYY-MM-DDTHH:MM:SS.ssssss+00:00' ISO-8601 format with microsecond precision, and a timezone offset (+00:00 for UTC)",
-        example="2007-12-03T10:15:30.123456+00:00",
+        json_schema_extra={"example": "2007-12-03T10:15:30.123456+00:00"},
     )
 
 
-class TimestampNanoTypeValue(IcebergBaseModel):
-    __root__: str = Field(
+class TimestampNanoTypeValue(IcebergRootModel[str]):
+    root: str = Field(
         ...,
         description="Timestamp_ns type values follow the 'YYYY-MM-DDTHH:MM:SS.sssssssss' ISO-8601 format with nanosecond precision",
-        example="2007-12-03T10:15:30.123456789",
+        json_schema_extra={"example": "2007-12-03T10:15:30.123456789"},
     )
 
 
-class TimestampTzNanoTypeValue(IcebergBaseModel):
-    __root__: str = Field(
+class TimestampTzNanoTypeValue(IcebergRootModel[str]):
+    root: str = Field(
         ...,
         description="Timestamp_ns type values follow the 'YYYY-MM-DDTHH:MM:SS.sssssssss+00:00' ISO-8601 format with nanosecond precision, and a timezone offset (+00:00 for UTC)",
-        example="2007-12-03T10:15:30.123456789+00:00",
+        json_schema_extra={"example": "2007-12-03T10:15:30.123456789+00:00"},
     )
 
 
-class FixedTypeValue(IcebergBaseModel):
-    __root__: str = Field(
+class FixedTypeValue(IcebergRootModel[str]):
+    root: str = Field(
         ...,
         description="Fixed length type values are stored and serialized as an uppercase hexadecimal string preserving the fixed length",
-        example="78797A",
+        json_schema_extra={"example": "78797A"},
     )
 
 
-class BinaryTypeValue(IcebergBaseModel):
-    __root__: str = Field(
+class BinaryTypeValue(IcebergRootModel[str]):
+    root: str = Field(
         ...,
         description="Binary type values are stored and serialized as an uppercase hexadecimal string",
-        example="78797A",
+        json_schema_extra={"example": "78797A"},
     )
 
 
@@ -144,8 +145,29 @@ class CountMap(IcebergBaseModel):
     values: Optional[List[LongTypeValue]] = Field(None, description="List of Long values, matched to 'keys' by index")
 
 
-class PrimitiveTypeValue(IcebergBaseModel):
-    __root__: Union[
+class PrimitiveTypeValue(
+    IcebergRootModel[
+        Union[
+            BooleanTypeValue,
+            IntegerTypeValue,
+            LongTypeValue,
+            FloatTypeValue,
+            DoubleTypeValue,
+            DecimalTypeValue,
+            StringTypeValue,
+            UUIDTypeValue,
+            DateTypeValue,
+            TimeTypeValue,
+            TimestampTypeValue,
+            TimestampTzTypeValue,
+            TimestampNanoTypeValue,
+            TimestampTzNanoTypeValue,
+            FixedTypeValue,
+            BinaryTypeValue,
+        ]
+    ]
+):
+    root: Union[
         BooleanTypeValue,
         IntegerTypeValue,
         LongTypeValue,
@@ -215,7 +237,7 @@ class ContentFile(IcebergBaseModel):
     partition: List[PrimitiveTypeValue] = Field(
         ...,
         description="A list of partition field values ordered based on the fields of the partition spec specified by the `spec-id`",
-        example=[1, "bar"],
+        json_schema_extra={"example": [1, "bar"]},
     )
     file_size_in_bytes: int = Field(..., alias="file-size-in-bytes", description="Total file size in bytes")
     record_count: int = Field(..., alias="record-count", description="Number of records in the file")
@@ -225,7 +247,7 @@ class ContentFile(IcebergBaseModel):
 
 
 class PositionDeleteFile(ContentFile):
-    content: Literal["position-deletes"] = Field(..., const=True)
+    content: Literal["position-deletes"] = "position-deletes"
     content_offset: Optional[int] = Field(
         None,
         alias="content-offset",
@@ -239,16 +261,16 @@ class PositionDeleteFile(ContentFile):
 
 
 class EqualityDeleteFile(ContentFile):
-    content: Literal["equality-deletes"] = Field(..., const=True)
+    content: Literal["equality-deletes"] = "equality-deletes"
     equality_ids: Optional[List[int]] = Field(None, alias="equality-ids", description="List of equality field IDs")
 
 
-class DeleteFile(IcebergBaseModel):
-    __root__: Union[PositionDeleteFile, EqualityDeleteFile] = Field(..., discriminator="content")
+class DeleteFile(IcebergRootModel[Union[PositionDeleteFile, EqualityDeleteFile]]):
+    root: Union[PositionDeleteFile, EqualityDeleteFile] = Field(..., discriminator="content")
 
 
 class DataFile(ContentFile):
-    content: str = Field(..., const=True)
+    content: Literal["data"] = "data"
     first_row_id: Optional[int] = Field(
         None,
         alias="first-row-id",
@@ -296,8 +318,8 @@ class FileScanTask(IcebergBaseModel):
     )
 
 
-class PlanTask(IcebergBaseModel):
-    __root__: str = Field(
+class PlanTask(IcebergRootModel[str]):
+    root: str = Field(
         ...,
         description="An opaque string provided by the REST server that represents a unit of work to produce file scan tasks for scan planning. This allows clients to fetch tasks across multiple requests to accommodate large result sets.",
     )
