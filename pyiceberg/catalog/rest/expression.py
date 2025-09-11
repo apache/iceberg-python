@@ -17,12 +17,14 @@
 
 from typing import Any, Dict, List, Union
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
+from pyiceberg.expressions import Reference
+from pyiceberg.transforms import Transform
 from pyiceberg.typedef import IcebergBaseModel
 
 
-class ExpressionType(BaseModel):
+class ExpressionType(IcebergBaseModel):
     __root__: str = Field(
         ...,
         example=[
@@ -57,32 +59,13 @@ class FalseExpression(IcebergBaseModel):
     type: ExpressionType = Field(default_factory=lambda: ExpressionType.parse_obj("false"), const=True)
 
 
-class Transform(IcebergBaseModel):
-    __root__: str = Field(
-        ...,
-        example=[
-            "identity",
-            "year",
-            "month",
-            "day",
-            "hour",
-            "bucket[256]",
-            "truncate[16]",
-        ],
-    )
-
-
-class Reference(IcebergBaseModel):
-    __root__: str = Field(..., example=["column-name"])
-
-
 class TransformTerm(IcebergBaseModel):
     type: str = Field("transform", const=True)
     transform: Transform
     term: Reference
 
 
-class Term(BaseModel):
+class Term(IcebergBaseModel):
     __root__: Union[Reference, TransformTerm]
 
 
