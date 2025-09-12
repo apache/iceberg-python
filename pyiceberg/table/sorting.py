@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=keyword-arg-before-vararg
+from __future__ import annotations
+
 from enum import Enum
 from typing import Annotated, Any, Callable, Dict, List, Optional, Union
 
@@ -26,7 +28,8 @@ from pydantic import (
     model_validator,
 )
 
-from pyiceberg.schema import Schema
+from pyiceberg.exceptions import ValidationError
+from pyiceberg.schema import Schema, index_by_id
 from pyiceberg.transforms import IdentityTransform, Transform, parse_transform
 from pyiceberg.typedef import IcebergBaseModel
 from pyiceberg.types import IcebergType
@@ -167,6 +170,18 @@ class SortOrder(IcebergBaseModel):
         """Return the string representation of the SortOrder class."""
         fields = f"{', '.join(repr(column) for column in self.fields)}, " if self.fields else ""
         return f"SortOrder({fields}order_id={self.order_id})"
+
+    @staticmethod
+    def check_compatibility(sort_order: SortOrder, schema: Schema) -> None:
+        schema_ids = index_by_id(schema)
+        for field in sort_order.fields:
+            if source_field := schema_ids.get(field.source_id):
+                if not source_field.field_type.is_primitive:
+                    raise ValidationError(f"Cannot sort by non-primitive source field: {source_field}")
+                if not field.transform.can_transform(source_field.field_type):
+                    raise ValidationError(f"Invalid source type {source_field.field_type} for transform: {field.transform}")
+            else:
+                raise ValidationError(f"Cannot find source column for sort field: {field}")
 
 
 UNSORTED_SORT_ORDER_ID = 0
