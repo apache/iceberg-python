@@ -39,15 +39,15 @@ class BinaryEncoder:
         Args:
             boolean: The boolean to write.
         """
-        self.write(bytearray([bool(boolean)]))
+        self.write(bytes([bool(boolean)]))
 
     def write_int(self, integer: int) -> None:
         """Integer and long values are written using variable-length zig-zag coding."""
         datum = (integer << 1) ^ (integer >> 63)
         while (datum & ~0x7F) != 0:
-            self.write(bytearray([(datum & 0x7F) | 0x80]))
+            self.write(bytes([(datum & 0x7F) | 0x80]))
             datum >>= 7
-        self.write(bytearray([datum]))
+        self.write(bytes([datum]))
 
     def write_float(self, f: float) -> None:
         """Write a float as 4 bytes."""
