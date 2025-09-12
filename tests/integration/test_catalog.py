@@ -376,9 +376,13 @@ def test_create_transaction(test_catalog: Catalog, table_schema_nested: Schema, 
     assert len(table.snapshots()) == 1
     assert len(table.history()) == 1
     snapshot = table.current_snapshot()
+    assert snapshot, "Snapshot should not be None"
+    assert snapshot.summary, "Summary should not be None"
     assert snapshot.summary["total-data-files"] == "1"
 
-    manifest = list(snapshot.manifests(table.io))[0]
+    manifests = snapshot.manifests(table.io)
+    assert len(manifests) == 1
+    manifest = manifests[0]
     entries = manifest.fetch_manifest_entry(table.io)
     assert len(entries) == 1
     entry = entries[0]
