@@ -508,6 +508,34 @@ def test_fsspec_pickle_round_trip_aldfs(adls_fsspec_fileio: FsspecFileIO) -> Non
     _test_fsspec_pickle_round_trip(adls_fsspec_fileio, "abfss://tests/foo.txt")
 
 
+@pytest.mark.adls
+def test_adls_account_name_sas_token_extraction() -> None:
+    session_properties: Properties = {
+        "adls.tenant-id": "test-tenant-id",
+        "adls.account-host": "testaccount.dfs.core.windows.net",
+        "adls.sas-token-expires-at-ms.testaccount.dfs.core.windows.net": "1757597218121",
+        "adls.sas-token-expires-at-ms.testaccount": "test-sas-token"
+    }
+
+    with mock.patch("adfls.AzureBlobFileSystem") as mock_adfls:
+        adls_fileio = FsspecFileIO(properties=session_properties)
+        filename = str(uuid.uuid4())
+
+        adls_fileio.new_input(location=f"abfss://tests/{filename}")
+
+        mock_adfls.assert_called_with(
+            connection_string=None,
+            credential=None,
+            account_name="testaccount",
+            account_key=None,
+            sas_token="test-sas-token",
+            tenant_id="test-tenant-id",
+            client_id=None,
+            client_secret=None,
+            account_host="testaccount.dfs.core.windows.net",
+        )
+
+
 @pytest.mark.gcs
 def test_fsspec_new_input_file_gcs(fsspec_fileio_gcs: FsspecFileIO) -> None:
     """Test creating a new input file from a fsspec file-io"""
