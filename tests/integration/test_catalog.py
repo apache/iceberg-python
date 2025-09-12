@@ -33,7 +33,9 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
 )
 from pyiceberg.io import WAREHOUSE
+from pyiceberg.manifest import DataFile, FileFormat
 from pyiceberg.schema import Schema
+from pyiceberg.typedef import Record
 from tests.conftest import clean_up
 
 
@@ -343,3 +345,45 @@ def test_update_namespace_properties(test_catalog: Catalog, database_name: str) 
         else:
             assert k in update_report.removed
     assert "updated test description" == test_catalog.load_namespace_properties(database_name)["comment"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_create_transaction(test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str) -> None:
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(database_name)
+
+    transaction = test_catalog.create_table_transaction(identifier, table_schema_nested)
+
+    assert not test_catalog.table_exists(identifier)
+
+    file_a = DataFile.from_args(
+        file_path="/data/foo.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=50,
+        file_size_in_bytes=1024,
+    )
+    transaction.update_snapshot().fast_append().append_data_file(file_a).commit()
+
+    assert not test_catalog.table_exists(identifier)
+
+    transaction.commit_transaction()
+
+    assert test_catalog.table_exists(identifier)
+
+    table = test_catalog.load_table(identifier)
+    assert len(table.snapshots()) == 1
+    assert len(table.history()) == 1
+    snapshot = table.current_snapshot()
+    assert snapshot, "Snapshot should not be None"
+    assert snapshot.summary, "Summary should not be None"
+    assert snapshot.summary["total-data-files"] == "1"
+
+    manifests = snapshot.manifests(table.io)
+    assert len(manifests) == 1
+    manifest = manifests[0]
+    entries = manifest.fetch_manifest_entry(table.io)
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.data_file.file_path == "/data/foo.parquet"
