@@ -21,11 +21,18 @@
 PYTEST_ARGS ?= -v  # Override with e.g. PYTEST_ARGS="-vv --tb=short"
 COVERAGE ?= 0      # Set COVERAGE=1 to enable coverage: make test COVERAGE=1
 COVERAGE_FAIL_UNDER ?= 85  # Minimum coverage % to pass: make coverage-report COVERAGE_FAIL_UNDER=70
+KEEP_COMPOSE ?= 0  # Set KEEP_COMPOSE=1 to keep containers after integration tests
 
 ifeq ($(COVERAGE),1)
   TEST_RUNNER = poetry run coverage run --parallel-mode --source=pyiceberg -m
 else
   TEST_RUNNER = poetry run
+endif
+
+ifeq ($(KEEP_COMPOSE),1)
+  CLEANUP_COMMAND = echo "Keeping containers running for debugging (KEEP_COMPOSE=1)"
+else
+  CLEANUP_COMMAND = docker compose -f dev/docker-compose-integration.yml down -v --remove-orphans 2>/dev/null || true
 endif
 
 POETRY_VERSION = 2.1.4
@@ -85,7 +92,7 @@ lint: ## Run code linters via pre-commit
 test: ## Run all unit tests (excluding integration)
 	$(TEST_RUNNER) pytest tests/ -m "(unmarked or parametrize) and not integration" $(PYTEST_ARGS)
 
-test-integration: test-integration-setup test-integration-exec ## Run integration tests
+test-integration: test-integration-setup test-integration-exec test-integration-cleanup ## Run integration tests
 
 test-integration-setup: ## Start Docker services for integration tests
 	docker compose -f dev/docker-compose-integration.yml kill
@@ -97,6 +104,12 @@ test-integration-setup: ## Start Docker services for integration tests
 
 test-integration-exec: ## Run integration tests (excluding provision)
 	$(TEST_RUNNER) pytest tests/ -m integration $(PYTEST_ARGS)
+
+test-integration-cleanup: ## Clean up integration test environment
+	@if [ "${KEEP_COMPOSE}" != "1" ]; then \
+		echo "Cleaning up Docker containers..."; \
+	fi
+	$(CLEANUP_COMMAND)
 
 test-integration-rebuild: ## Rebuild integration Docker services from scratch
 	docker compose -f dev/docker-compose-integration.yml kill
