@@ -514,7 +514,7 @@ def test_adls_account_name_sas_token_extraction() -> None:
         "adls.tenant-id": "test-tenant-id",
         "adls.account-host": "testaccount.dfs.core.windows.net",
         "adls.sas-token-expires-at-ms.testaccount.dfs.core.windows.net": "1757597218121",
-        "adls.sas-token-expires-at-ms.testaccount": "test-sas-token"
+        "adls.sas-token-expires-at-ms.testaccount": "test-sas-token",
     }
 
     with mock.patch("adfls.AzureBlobFileSystem") as mock_adfls:
