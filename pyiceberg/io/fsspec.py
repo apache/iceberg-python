@@ -207,7 +207,7 @@ def _adls(properties: Properties) -> AbstractFileSystem:
     from azure.core.credentials_async import AsyncTokenCredential
 
     for key, sas_token in {
-        key.replace(f"{ADLS_SAS_TOKEN}.", ""): value for key, value in properties.items() if key.startswith(ADLS_SAS_TOKEN)
+        key.replace(f"{ADLS_SAS_TOKEN}.", ""): value for key, value in properties.items() if key.startswith(f"{ADLS_SAS_TOKEN}.")
     }.items():
         if ADLS_ACCOUNT_NAME not in properties:
             properties[ADLS_ACCOUNT_NAME] = key.split(".")[0]
