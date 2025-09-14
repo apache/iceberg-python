@@ -1156,7 +1156,7 @@ def test_update_namespace_properties(hive_database: HiveDatabase) -> None:
             name="default",
             description=None,
             locationUri=hive_database.locationUri,
-            parameters={"test": None, "label": "core"},
+            parameters={"label": "core"},
             privileges=None,
             ownerName=None,
             ownerType=1,

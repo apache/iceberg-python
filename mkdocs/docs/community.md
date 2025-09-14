@@ -30,7 +30,7 @@ Community discussions happen primarily on the [dev mailing list](https://lists.a
 
 ## Iceberg Community Events
 
-The PyIceberg community sync is on the last Tuesday of every month. To join, make sure to subscribe to the [iceberg-python-sync Google group](https://groups.google.com/g/iceberg-python-sync).
+The PyIceberg community sync is on the last Tuesday of every month. The calendar event is located on the [Iceberg Dev Events](https://iceberg.apache.org/community#iceberg-community-events) calendar.
 
 ## Community Guidelines
 
