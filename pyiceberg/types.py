@@ -100,7 +100,7 @@ def _parse_fixed_type(fixed: Any) -> int:
         return fixed
 
 
-def _parse_geography_type(geography: Any) -> Tuple[str, GeographyType.EdgeAlgorithm]:
+def _parse_geography_type(geography: Any) -> Tuple[Optional[str], Optional[GeographyType.EdgeAlgorithm]]:
     if isinstance(geography, str):
         matches = GEOGRAPHY_REGEX.search(geography)
         if matches:
@@ -120,7 +120,7 @@ def _parse_geography_type(geography: Any) -> Tuple[str, GeographyType.EdgeAlgori
         return geography
 
 
-def _parse_geometry_type(geometry: Any) -> str:
+def _parse_geometry_type(geometry: Any) -> Optional[str]:
     if isinstance(geometry, str):
         matches = GEOMETRY_REGEX.search(geometry)
         if matches:
@@ -137,7 +137,7 @@ def _parse_geometry_type(geometry: Any) -> str:
         return geometry
 
 
-def _raise_if_any_missing_dictionary_key(d: Dict, expected_type: str, *keys: str):
+def _raise_if_any_missing_dictionary_key(d: Dict[str, str], expected_type: str, *keys: str) -> None:
     missing_keys = []
     for key in keys:
         if key not in d:
@@ -945,12 +945,12 @@ class GeographyType(PrimitiveType):
             return f"geography({self.crs or GeographyType.default_crs}, {self.edge_algorithm.value})"
 
     @property
-    def crs(self) -> str:
+    def crs(self) -> Optional[str]:
         """Return the crs of the geography."""
         return self.root[0]
 
     @property
-    def edge_algorithm(self) -> EdgeAlgorithm:
+    def edge_algorithm(self) -> Optional[EdgeAlgorithm]:
         """Return the algorithm of the geography."""
         return self.root[1]
 
@@ -971,7 +971,7 @@ class GeographyType(PrimitiveType):
         """Return the hash of the crs."""
         return hash(self.root)
 
-    def __getnewargs__(self) -> Tuple[str, EdgeAlgorithm]:
+    def __getnewargs__(self) -> Tuple[Optional[str], Optional[EdgeAlgorithm]]:
         """Pickle the GeographyType class."""
         return self.crs, self.edge_algorithm
 
@@ -1006,7 +1006,7 @@ class GeometryType(PrimitiveType):
         return f"geometry({self.crs})"
 
     @property
-    def crs(self) -> str:
+    def crs(self) -> Optional[str]:
         """Return the crs of the geometry."""
         return self.root[0]
 
@@ -1024,7 +1024,7 @@ class GeometryType(PrimitiveType):
         """Return the hash of the crs."""
         return hash(self.root)
 
-    def __getnewargs__(self) -> str:
+    def __getnewargs__(self) -> Tuple[Optional[str]]:
         """Pickle the GeometryType class."""
         return (self.crs, )
 
