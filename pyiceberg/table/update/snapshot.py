@@ -924,12 +924,15 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
     Pending changes are applied on commit.
     """
 
+    _updates: Tuple[TableUpdate, ...]
+    _requirements: Tuple[TableRequirement, ...]
+    _snapshot_ids_to_expire: Set[int]
+
     def __init__(self, transaction: Transaction) -> None:
         super().__init__(transaction)
-        # Initialize instance-level attributes to avoid sharing state between instances
-        self._snapshot_ids_to_expire: Set[int] = set()
-        self._updates: Tuple[TableUpdate, ...] = ()
-        self._requirements: Tuple[TableRequirement, ...] = ()
+        self._updates = ()
+        self._requirements = ()
+        self._snapshot_ids_to_expire = set()
 
     def _commit(self) -> UpdatesAndRequirements:
         """
