@@ -1092,10 +1092,14 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         return self
 
     def retain_last_n(self, n: int) -> ExpireSnapshots:
-        """Keep only the last N snapshots, expiring all others.
+        """Keep only the last N snapshots globally across all branches, expiring all others.
+
+        Note: This method considers snapshots globally across the entire table history,
+        not per-branch. Protected snapshots (branch/tag heads) are always preserved
+        regardless of the retention count.
 
         Args:
-            n: Number of most recent snapshots to keep.
+            n: Number of most recent snapshots to keep globally.
 
         Returns:
             This for method chaining.
