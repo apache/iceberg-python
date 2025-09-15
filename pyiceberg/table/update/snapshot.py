@@ -953,7 +953,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
             if ref.snapshot_ref_type in [SnapshotRefType.TAG, SnapshotRefType.BRANCH]
         }
 
-    def by_id(self, snapshot_id: int) -> "ExpireSnapshots":
+    def by_id(self, snapshot_id: int) -> ExpireSnapshots:
         """
         Expire a snapshot by its ID.
 
@@ -1008,7 +1008,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
 
     def older_than_with_retention(
         self, timestamp_ms: int, retain_last_n: Optional[int] = None, min_snapshots_to_keep: Optional[int] = None
-    ) -> "ExpireSnapshots":
+    ) -> ExpireSnapshots:
         """Expire all unprotected snapshots with a timestamp older than a given value, with retention strategies.
 
         Args:
@@ -1027,7 +1027,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
 
     def with_retention_policy(
         self, timestamp_ms: Optional[int] = None, retain_last_n: Optional[int] = None, min_snapshots_to_keep: Optional[int] = None
-    ) -> "ExpireSnapshots":
+    ) -> ExpireSnapshots:
         """Comprehensive snapshot expiration with multiple retention strategies.
 
         This method provides a unified interface for snapshot expiration with various
@@ -1091,7 +1091,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         self._snapshot_ids_to_expire.update(snapshots_to_expire)
         return self
 
-    def retain_last_n(self, n: int) -> "ExpireSnapshots":
+    def retain_last_n(self, n: int) -> ExpireSnapshots:
         """Keep only the last N snapshots, expiring all others.
 
         Args:
@@ -1106,28 +1106,31 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         if n < 1:
             raise ValueError("Number of snapshots to retain must be at least 1")
 
-        protected_ids = self._get_protected_snapshot_ids()
-
-        # Sort snapshots by timestamp (most recent first)
-        sorted_snapshots = sorted(self._transaction.table_metadata.snapshots, key=lambda s: s.timestamp_ms, reverse=True)
-
-        # Keep the last N snapshots and all protected ones
-        snapshots_to_keep = set()
-        snapshots_to_keep.update(protected_ids)
-
-        # Add the N most recent snapshots
-        for i, snapshot in enumerate(sorted_snapshots):
-            if i < n:
-                snapshots_to_keep.add(snapshot.snapshot_id)
-
-        # Find snapshots to expire
-        snapshots_to_expire = []
-        for snapshot in self._transaction.table_metadata.snapshots:
-            if snapshot.snapshot_id not in snapshots_to_keep:
-                snapshots_to_expire.append(snapshot.snapshot_id)
+        snapshots_to_keep = self._get_snapshots_to_keep(retain_last_n=n)
+        snapshots_to_expire = [
+            id for snapshot in self._transaction.table_metadata.snapshots if (id := snapshot.snapshot_id) not in snapshots_to_keep
+        ]
 
         self._snapshot_ids_to_expire.update(snapshots_to_expire)
         return self
+
+    def _get_snapshots_to_keep(self, retain_last_n: Optional[int] = None) -> Set[int]:
+        """Get set of snapshot IDs that should be kept based on protection and retention rules.
+
+        Args:
+            retain_last_n: Number of most recent snapshots to keep.
+
+        Returns:
+            Set of snapshot IDs to keep.
+        """
+        snapshots_to_keep = self._get_protected_snapshot_ids()
+
+        if retain_last_n is not None:
+            # Sort snapshots by timestamp (most recent first), and get most recent N
+            sorted_snapshots = sorted(self._transaction.table_metadata.snapshots, key=lambda s: s.timestamp_ms, reverse=True)
+            snapshots_to_keep.update(snapshot.snapshot_id for snapshot in sorted_snapshots[:retain_last_n])
+
+        return snapshots_to_keep
 
     def _get_snapshots_to_expire_with_retention(
         self, timestamp_ms: Optional[int] = None, retain_last_n: Optional[int] = None, min_snapshots_to_keep: Optional[int] = None
@@ -1142,22 +1145,10 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         Returns:
             List of snapshot IDs to expire.
         """
-        protected_ids = self._get_protected_snapshot_ids()
-
-        # Sort snapshots by timestamp (most recent first)
-        sorted_snapshots = sorted(self._transaction.table_metadata.snapshots, key=lambda s: s.timestamp_ms, reverse=True)
-
-        # Start with all snapshots that could be expired
-        candidates_for_expiration = []
-        snapshots_to_keep = set(protected_ids)
-
-        # Apply retain_last_n constraint
-        if retain_last_n is not None:
-            for i, snapshot in enumerate(sorted_snapshots):
-                if i < retain_last_n:
-                    snapshots_to_keep.add(snapshot.snapshot_id)
+        snapshots_to_keep = self._get_snapshots_to_keep(retain_last_n=retain_last_n)
 
         # Apply timestamp constraint
+        candidates_for_expiration = []
         for snapshot in self._transaction.table_metadata.snapshots:
             if snapshot.snapshot_id not in snapshots_to_keep and (timestamp_ms is None or snapshot.timestamp_ms < timestamp_ms):
                 candidates_for_expiration.append(snapshot)
@@ -1166,18 +1157,12 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         candidates_for_expiration.sort(key=lambda s: s.timestamp_ms)
 
         # Apply min_snapshots_to_keep constraint
-        total_snapshots = len(self._transaction.table_metadata.snapshots)
-        snapshots_to_expire: List[int] = []
-
-        for candidate in candidates_for_expiration:
-            # Check if expiring this snapshot would violate min_snapshots_to_keep
-            remaining_after_expiration = total_snapshots - len(snapshots_to_expire) - 1
-
-            if min_snapshots_to_keep is None or remaining_after_expiration >= min_snapshots_to_keep:
-                snapshots_to_expire.append(candidate.snapshot_id)
-            else:
-                # Stop expiring to maintain minimum count
-                break
+        if min_snapshots_to_keep is not None:
+            total_snapshots = len(self._transaction.table_metadata.snapshots)
+            max_to_expire = total_snapshots - min_snapshots_to_keep
+            snapshots_to_expire = [candidate.snapshot_id for candidate in candidates_for_expiration[:max_to_expire]]
+        else:
+            snapshots_to_expire = [candidate.snapshot_id for candidate in candidates_for_expiration]
 
         return snapshots_to_expire
 
@@ -1187,15 +1172,12 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         Returns:
             Tuple of (max_snapshot_age_ms, min_snapshots_to_keep, max_ref_age_ms)
         """
+        from pyiceberg.table import TableProperties
+
         properties = self._transaction.table_metadata.properties
 
-        max_snapshot_age_ms = properties.get("history.expire.max-snapshot-age-ms")
-        max_snapshot_age = int(max_snapshot_age_ms) if max_snapshot_age_ms is not None else None
-
-        min_snapshots = properties.get("history.expire.min-snapshots-to-keep")
-        min_snapshots_to_keep = int(min_snapshots) if min_snapshots is not None else None
-
-        max_ref_age = properties.get("history.expire.max-ref-age-ms")
-        max_ref_age_ms = int(max_ref_age) if max_ref_age is not None else None
+        max_snapshot_age = property_as_int(properties, TableProperties.MAX_SNAPSHOT_AGE_MS)
+        min_snapshots_to_keep = property_as_int(properties, TableProperties.MIN_SNAPSHOTS_TO_KEEP)
+        max_ref_age_ms = property_as_int(properties, "history.expire.max-ref-age-ms")
 
         return max_snapshot_age, min_snapshots_to_keep, max_ref_age_ms
