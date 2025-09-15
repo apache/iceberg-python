@@ -1242,19 +1242,19 @@ files = [
 
 [[package]]
 name = "daft"
-version = "0.6.0"
+version = "0.6.1"
 description = "Distributed Dataframes for Multimodal Data"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
 markers = "extra == \"daft\""
 files = [
-    {file = "daft-0.6.0-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:0b1ac6cc209d611d575f3ab4a43ee19a45675876b0590df7e471ad9ffec647e3"},
-    {file = "daft-0.6.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:2e0395e84655b1a3366dcb24843c81b10d648751f918edbf45ad294984de4294"},
-    {file = "daft-0.6.0-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:16d6067a2c1c745840dc1681c7f5ed0d120bf9c39f55be35ee89ac1d1b9a0318"},
-    {file = "daft-0.6.0-cp39-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:54e40dd024d7743f4d02c820ffe44b46c05a62405bcd56f0b8f417e2125bfc66"},
-    {file = "daft-0.6.0-cp39-abi3-win_amd64.whl", hash = "sha256:fe1fa9a1ce79b6445fbfd3fceca71ce4986f7e3354a554c9884a0f9f6a8961c9"},
-    {file = "daft-0.6.0.tar.gz", hash = "sha256:44541d3e4f90a118361b96f3480f5f5998309963b29e3470e678d6df02c6a68e"},
+    {file = "daft-0.6.1-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:f7e47f433b7d5e6902b6310f6953b3edc60267bbdb3bb7a89a46f7122d3612c8"},
+    {file = "daft-0.6.1-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:31cf0d2eadde4ebc5d50de9e20462fbda550f1735372f09ee2f88a82b395958d"},
+    {file = "daft-0.6.1-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:51d90f3f5e2714f15416797cf7d68d2db21dee8b03bd93eef22ebca096ecc669"},
+    {file = "daft-0.6.1-cp39-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:7baceb0817492e79cc451d2e36545faaa1011c5dd82b3c9c42ede624f565ec3b"},
+    {file = "daft-0.6.1-cp39-abi3-win_amd64.whl", hash = "sha256:50c7cccba56e5640ddc151a488d44a4716906cdc6c3fa0489a0a1f871713692d"},
+    {file = "daft-0.6.1.tar.gz", hash = "sha256:5759e8eeda525b2f86a59e411f31afe9b06b35b431e6a820a7acd35d1d4c920f"},
 ]
 
 [package.dependencies]
@@ -4220,7 +4220,7 @@ description = "Beautiful, Pythonic protocol buffers"
 optional = true
 python-versions = ">=3.7"
 groups = ["main"]
-markers = "(python_version < \"3.12\" or python_version >= \"3.13\" or extra == \"bigquery\" or extra == \"gcsfs\") and (extra == \"gcsfs\" or extra == \"bigquery\")"
+markers = "python_version < \"3.12\" and (extra == \"gcsfs\" or extra == \"bigquery\") or extra == \"bigquery\" or extra == \"gcsfs\""
 files = [
     {file = "proto_plus-1.26.1-py3-none-any.whl", hash = "sha256:13285478c2dcf2abb829db158e1047e2f1e8d63a077d94263c2b88b043c75a66"},
     {file = "proto_plus-1.26.1.tar.gz", hash = "sha256:21a515a4c4c0088a773899e23c7bbade3d18f9c66c73edd4c7ee3816bc96a012"},
