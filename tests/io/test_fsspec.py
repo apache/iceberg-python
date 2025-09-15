@@ -517,13 +517,13 @@ def test_adls_account_name_sas_token_extraction() -> None:
         "adls.sas-token-expires-at-ms.testaccount": "test-sas-token",
     }
 
-    with mock.patch("adfls.AzureBlobFileSystem") as mock_adfls:
+    with mock.patch("adlfs.AzureBlobFileSystem") as mock_adlfs:
         adls_fileio = FsspecFileIO(properties=session_properties)
         filename = str(uuid.uuid4())
 
         adls_fileio.new_input(location=f"abfss://tests/{filename}")
 
-        mock_adfls.assert_called_with(
+        mock_adlfs.assert_called_with(
             connection_string=None,
             credential=None,
             account_name="testaccount",
