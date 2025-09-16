@@ -21,14 +21,15 @@ import tempfile
 import uuid
 import warnings
 from datetime import date, datetime, timezone
+from pathlib import Path
 from typing import Any, List, Optional
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pyarrow
 import pyarrow as pa
-import pyarrow.parquet as pq
 import pyarrow.orc as orc
+import pyarrow.parquet as pq
 import pytest
 from packaging import version
 from pyarrow.fs import AwsDefaultS3RetryStrategy, FileType, LocalFileSystem, S3FileSystem
@@ -1601,14 +1602,16 @@ def deletes_file(tmp_path: str, request: pytest.FixtureRequest) -> str:
     if request.param == "parquet":
         example_task = request.getfixturevalue("example_task")
         import pyarrow.parquet as pq
+
         write_func = pq.write_table
         file_ext = "parquet"
     else:  # orc
         example_task = request.getfixturevalue("example_task_orc")
         import pyarrow.orc as orc
+
         write_func = orc.write_table
         file_ext = "orc"
-    
+
     path = example_task.file.file_path
     table = pa.table({"file_path": [path, path, path], "pos": [1, 3, 5]})
 
@@ -1620,14 +1623,14 @@ def deletes_file(tmp_path: str, request: pytest.FixtureRequest) -> str:
 
 def test_read_deletes(deletes_file: str, request: pytest.FixtureRequest) -> None:
     # Determine file format from the file extension
-    file_format = FileFormat.PARQUET if deletes_file.endswith('.parquet') else FileFormat.ORC
-    
+    file_format = FileFormat.PARQUET if deletes_file.endswith(".parquet") else FileFormat.ORC
+
     # Get the appropriate example_task fixture based on file format
     if file_format == FileFormat.PARQUET:
-        example_task = request.getfixturevalue("example_task")
+        request.getfixturevalue("example_task")
     else:
-        example_task = request.getfixturevalue("example_task_orc")
-    
+        request.getfixturevalue("example_task_orc")
+
     deletes = _read_deletes(PyArrowFileIO(), DataFile.from_args(file_path=deletes_file, file_format=file_format))
     # Get the expected file path from the actual deletes keys since they might differ between formats
     expected_file_path = list(deletes.keys())[0]
@@ -1637,14 +1640,14 @@ def test_read_deletes(deletes_file: str, request: pytest.FixtureRequest) -> None
 
 def test_delete(deletes_file: str, request: pytest.FixtureRequest, table_schema_simple: Schema) -> None:
     # Determine file format from the file extension
-    file_format = FileFormat.PARQUET if deletes_file.endswith('.parquet') else FileFormat.ORC
-    
+    file_format = FileFormat.PARQUET if deletes_file.endswith(".parquet") else FileFormat.ORC
+
     # Get the appropriate example_task fixture based on file format
     if file_format == FileFormat.PARQUET:
         example_task = request.getfixturevalue("example_task")
     else:
         example_task = request.getfixturevalue("example_task_orc")
-    
+
     metadata_location = "file://a/b/c.json"
     example_task_with_delete = FileScanTask(
         data_file=example_task.file,
@@ -1676,20 +1679,20 @@ baz: bool
 foo: [["a","c"]]
 bar: [[1,3]]
 baz: [[true,null]]"""
-    
+
     assert str(with_deletes) == expected_str
 
 
 def test_delete_duplicates(deletes_file: str, request: pytest.FixtureRequest, table_schema_simple: Schema) -> None:
     # Determine file format from the file extension
-    file_format = FileFormat.PARQUET if deletes_file.endswith('.parquet') else FileFormat.ORC
-    
+    file_format = FileFormat.PARQUET if deletes_file.endswith(".parquet") else FileFormat.ORC
+
     # Get the appropriate example_task fixture based on file format
     if file_format == FileFormat.PARQUET:
         example_task = request.getfixturevalue("example_task")
     else:
         example_task = request.getfixturevalue("example_task_orc")
-    
+
     metadata_location = "file://a/b/c.json"
     example_task_with_delete = FileScanTask(
         data_file=example_task.file,
@@ -1723,7 +1726,7 @@ baz: bool
 foo: [["a","c"]]
 bar: [[1,3]]
 baz: [[true,null]]"""
-    
+
     assert str(with_deletes) == expected_str
 
 
@@ -2856,11 +2859,11 @@ def test_parse_location_defaults() -> None:
     assert path == "/foo/bar"
 
 
-def test_write_and_read_orc(tmp_path):
+def test_write_and_read_orc(tmp_path: Path) -> None:
     """Test basic ORC write and read functionality."""
     # Create a simple Arrow table
-    data = pa.table({'a': [1, 2, 3], 'b': ['x', 'y', 'z']})
-    orc_path = tmp_path / 'test.orc'
+    data = pa.table({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    orc_path = tmp_path / "test.orc"
     orc.write_table(data, str(orc_path))
     # Read it back
     orc_file = orc.ORCFile(str(orc_path))
@@ -2868,13 +2871,13 @@ def test_write_and_read_orc(tmp_path):
     assert table_read.equals(data)
 
 
-def test_orc_file_format_integration(tmp_path):
+def test_orc_file_format_integration(tmp_path: Path) -> None:
     """Test ORC file format integration with PyArrow dataset API."""
     # This test mimics a minimal integration with PyIceberg's FileFormat enum and pyarrow.orc
-    from pyiceberg.manifest import FileFormat
     import pyarrow.dataset as ds
-    data = pa.table({'a': [10, 20], 'b': ['foo', 'bar']})
-    orc_path = tmp_path / 'iceberg.orc'
+
+    data = pa.table({"a": [10, 20], "b": ["foo", "bar"]})
+    orc_path = tmp_path / "iceberg.orc"
     orc.write_table(data, str(orc_path))
     # Use PyArrow dataset API to read as ORC
     dataset = ds.dataset(str(orc_path), format=ds.OrcFileFormat())
@@ -2882,7 +2885,7 @@ def test_orc_file_format_integration(tmp_path):
     assert table_read.equals(data)
 
 
-def test_iceberg_read_orc(tmp_path):
+def test_iceberg_read_orc(tmp_path: Path) -> None:
     """
     Integration test: Read ORC files via Iceberg API.
     To run just this test:
@@ -2890,14 +2893,15 @@ def test_iceberg_read_orc(tmp_path):
     """
     import pyarrow as pa
     import pyarrow.orc as orc
-    from pyiceberg.schema import Schema, NestedField
-    from pyiceberg.types import IntegerType, StringType
-    from pyiceberg.manifest import FileFormat, DataFileContent
-    from pyiceberg.table.metadata import TableMetadataV2
-    from pyiceberg.partitioning import PartitionSpec
-    from pyiceberg.io.pyarrow import PyArrowFileIO, ArrowScan
-    from pyiceberg.table import FileScanTask
+
     from pyiceberg.expressions import AlwaysTrue
+    from pyiceberg.io.pyarrow import ArrowScan, PyArrowFileIO
+    from pyiceberg.manifest import DataFileContent, FileFormat
+    from pyiceberg.partitioning import PartitionSpec
+    from pyiceberg.schema import Schema
+    from pyiceberg.table import FileScanTask
+    from pyiceberg.table.metadata import TableMetadataV2
+    from pyiceberg.types import IntegerType, StringType
 
     # Define schema and data
     schema = Schema(
@@ -2920,13 +2924,14 @@ def test_iceberg_read_orc(tmp_path):
         properties={
             "write.format.default": "parquet",  # This doesn't matter for reading
             "schema.name-mapping.default": '[{"field-id": 1, "names": ["id"]}, {"field-id": 2, "names": ["name"]}]',  # Add name mapping for ORC files without field IDs
-        }
+        },
     )
     io = PyArrowFileIO()
 
     # Create a DataFile pointing to the ORC file
     from pyiceberg.manifest import DataFile
     from pyiceberg.typedef import Record
+
     data_file = DataFile.from_args(
         content=DataFileContent.DATA,
         file_path=str(orc_path),
@@ -2959,18 +2964,18 @@ def test_iceberg_read_orc(tmp_path):
     )
     scan_task = FileScanTask(data_file=data_file)
     table_read = scan.to_table([scan_task])
-    
+
     # Compare data ignoring schema metadata (like not null constraints)
     assert table_read.num_rows == data.num_rows
     assert table_read.num_columns == data.num_columns
     assert table_read.column_names == data.column_names
-    
+
     # Compare actual column data values
     for col_name in data.column_names:
         assert table_read.column(col_name).to_pylist() == data.column(col_name).to_pylist()
 
 
-def test_orc_row_filtering_predicate_pushdown(tmp_path):
+def test_orc_row_filtering_predicate_pushdown(tmp_path: Path) -> None:
     """
     Test ORC row filtering and predicate pushdown functionality.
     To run just this test:
@@ -2978,14 +2983,15 @@ def test_orc_row_filtering_predicate_pushdown(tmp_path):
     """
     import pyarrow as pa
     import pyarrow.orc as orc
-    from pyiceberg.schema import Schema, NestedField
-    from pyiceberg.types import IntegerType, StringType, BooleanType
-    from pyiceberg.manifest import FileFormat, DataFileContent
-    from pyiceberg.table.metadata import TableMetadataV2
+
+    from pyiceberg.expressions import And, EqualTo, GreaterThan, In, LessThan, Or
+    from pyiceberg.io.pyarrow import ArrowScan, PyArrowFileIO
+    from pyiceberg.manifest import DataFileContent, FileFormat
     from pyiceberg.partitioning import PartitionSpec
-    from pyiceberg.io.pyarrow import PyArrowFileIO, ArrowScan
+    from pyiceberg.schema import Schema
     from pyiceberg.table import FileScanTask
-    from pyiceberg.expressions import EqualTo, GreaterThan, LessThan, And, Or, In
+    from pyiceberg.table.metadata import TableMetadataV2
+    from pyiceberg.types import BooleanType, IntegerType, StringType
 
     # Define schema and data with more complex data for filtering
     schema = Schema(
@@ -2994,14 +3000,16 @@ def test_orc_row_filtering_predicate_pushdown(tmp_path):
         NestedField(3, "age", IntegerType(), required=True),
         NestedField(4, "active", BooleanType(), required=True),
     )
-    
+
     # Create data with various values for filtering
-    data = pa.table({
-        "id": pa.array([1, 2, 3, 4, 5], type=pa.int32()),
-        "name": ["alice", "bob", "charlie", "david", "eve"],
-        "age": pa.array([25, 30, 35, 40, 45], type=pa.int32()),
-        "active": [True, False, True, True, False]
-    })
+    data = pa.table(
+        {
+            "id": pa.array([1, 2, 3, 4, 5], type=pa.int32()),
+            "name": ["alice", "bob", "charlie", "david", "eve"],
+            "age": pa.array([25, 30, 35, 40, 45], type=pa.int32()),
+            "active": [True, False, True, True, False],
+        }
+    )
 
     # Create ORC file
     orc_path = tmp_path / "filter_test.orc"
@@ -3016,13 +3024,14 @@ def test_orc_row_filtering_predicate_pushdown(tmp_path):
         partition_specs=[PartitionSpec()],
         properties={
             "schema.name-mapping.default": '[{"field-id": 1, "names": ["id"]}, {"field-id": 2, "names": ["name"]}, {"field-id": 3, "names": ["age"]}, {"field-id": 4, "names": ["active"]}]',
-        }
+        },
     )
     io = PyArrowFileIO()
 
     # Create DataFile
     from pyiceberg.manifest import DataFile
     from pyiceberg.typedef import Record
+
     data_file = DataFile.from_args(
         content=DataFileContent.DATA,
         file_path=str(orc_path),
@@ -3112,10 +3121,7 @@ def test_orc_row_filtering_predicate_pushdown(tmp_path):
         table_metadata=table_metadata,
         io=io,
         projected_schema=schema,
-        row_filter=Or(
-            And(EqualTo("active", True), GreaterThan("age", 30)),
-            EqualTo("name", "bob")
-        ),
+        row_filter=Or(And(EqualTo("active", True), GreaterThan("age", 30)), EqualTo("name", "bob")),
         case_sensitive=True,
     )
     result = scan.to_table([scan_task])
@@ -3123,7 +3129,7 @@ def test_orc_row_filtering_predicate_pushdown(tmp_path):
     assert set(result.column("id").to_pylist()) == {2, 3, 4}  # bob, charlie, david
 
 
-def test_orc_record_batching_streaming(tmp_path):
+def test_orc_record_batching_streaming(tmp_path: Path) -> None:
     """
     Test ORC record batching and streaming functionality with multiple files and fragments.
     This test validates that we get the expected number of batches based on file scan tasks
@@ -3133,14 +3139,15 @@ def test_orc_record_batching_streaming(tmp_path):
     """
     import pyarrow as pa
     import pyarrow.orc as orc
-    from pyiceberg.schema import Schema, NestedField
-    from pyiceberg.types import IntegerType, StringType
-    from pyiceberg.manifest import FileFormat, DataFileContent
-    from pyiceberg.table.metadata import TableMetadataV2
-    from pyiceberg.partitioning import PartitionSpec
-    from pyiceberg.io.pyarrow import PyArrowFileIO, ArrowScan
-    from pyiceberg.table import FileScanTask
+
     from pyiceberg.expressions import AlwaysTrue
+    from pyiceberg.io.pyarrow import ArrowScan, PyArrowFileIO
+    from pyiceberg.manifest import DataFileContent, FileFormat
+    from pyiceberg.partitioning import PartitionSpec
+    from pyiceberg.schema import Schema
+    from pyiceberg.table import FileScanTask
+    from pyiceberg.table.metadata import TableMetadataV2
+    from pyiceberg.types import IntegerType, StringType
 
     # Define schema
     schema = Schema(
@@ -3157,7 +3164,7 @@ def test_orc_record_batching_streaming(tmp_path):
         partition_specs=[PartitionSpec()],
         properties={
             "schema.name-mapping.default": '[{"field-id": 1, "names": ["id"]}, {"field-id": 2, "names": ["value"]}]',
-        }
+        },
     )
     io = PyArrowFileIO()
 
@@ -3166,16 +3173,18 @@ def test_orc_record_batching_streaming(tmp_path):
     num_files = 2
     rows_per_file = 2000  # Larger than default batch size to ensure multiple batches per file
     total_rows = num_files * rows_per_file
-    
+
     scan_tasks = []
     for file_idx in range(num_files):
         # Create data for this file
         start_id = file_idx * rows_per_file + 1
         end_id = (file_idx + 1) * rows_per_file
-        data = pa.table({
-            "id": pa.array(range(start_id, end_id + 1), type=pa.int32()),
-            "value": [f"file_{file_idx}_value_{i}" for i in range(start_id, end_id + 1)]
-        })
+        data = pa.table(
+            {
+                "id": pa.array(range(start_id, end_id + 1), type=pa.int32()),
+                "value": [f"file_{file_idx}_value_{i}" for i in range(start_id, end_id + 1)],
+            }
+        )
 
         # Create ORC file
         orc_path = tmp_path / f"batch_test_{file_idx}.orc"
@@ -3184,6 +3193,7 @@ def test_orc_record_batching_streaming(tmp_path):
         # Create DataFile
         from pyiceberg.manifest import DataFile
         from pyiceberg.typedef import Record
+
         data_file = DataFile.from_args(
             content=DataFileContent.DATA,
             file_path=str(orc_path),
@@ -3199,8 +3209,8 @@ def test_orc_record_batching_streaming(tmp_path):
             value_counts={1: rows_per_file, 2: rows_per_file},
             null_value_counts={1: 0, 2: 0},
             nan_value_counts={1: 0, 2: 0},
-            lower_bounds={1: start_id.to_bytes(4, 'little'), 2: f"file_{file_idx}_value_{start_id}".encode()},
-            upper_bounds={1: end_id.to_bytes(4, 'little'), 2: f"file_{file_idx}_value_{end_id}".encode()},
+            lower_bounds={1: start_id.to_bytes(4, "little"), 2: f"file_{file_idx}_value_{start_id}".encode()},
+            upper_bounds={1: end_id.to_bytes(4, "little"), 2: f"file_{file_idx}_value_{end_id}".encode()},
             split_offsets=None,
         )
         data_file.spec_id = 0
@@ -3214,22 +3224,22 @@ def test_orc_record_batching_streaming(tmp_path):
         row_filter=AlwaysTrue(),
         case_sensitive=True,
     )
-    
+
     batches = list(scan.to_record_batches(scan_tasks))
-    
+
     # Verify we get the expected number of batches
     # Based on our testing, PyArrow creates 1 batch per file
     expected_batches = num_files  # 1 batch per file
     assert len(batches) == expected_batches, f"Expected {expected_batches} batches (1 per file), got {len(batches)}"
-    
+
     # Verify batch sizes are reasonable (not too large)
     max_batch_size = max(batch.num_rows for batch in batches)
     assert max_batch_size <= 2000, f"Batch size {max_batch_size} seems too large for ORC files"
     assert max_batch_size > 0, "Batch should not be empty"
-    
+
     # We shouldn't get more batches than total rows (one batch per row maximum)
     assert len(batches) <= total_rows, f"Expected at most {total_rows} batches (one per row), got {len(batches)}"
-    
+
     # Verify all batches are RecordBatch objects
     for batch in batches:
         assert isinstance(batch, pa.RecordBatch), f"Expected RecordBatch, got {type(batch)}"
@@ -3240,18 +3250,18 @@ def test_orc_record_batching_streaming(tmp_path):
     # Test 2: Verify data integrity across all batches from all files
     total_rows = sum(batch.num_rows for batch in batches)
     assert total_rows == total_rows, f"Expected {total_rows} rows total, got {total_rows}"
-    
+
     # Collect all data from batches and verify it spans all files
     all_ids = []
     all_values = []
     for batch in batches:
         all_ids.extend(batch.column("id").to_pylist())
         all_values.extend(batch.column("value").to_pylist())
-    
+
     # Verify we have data from all files
     expected_ids = list(range(1, total_rows + 1))
     assert sorted(all_ids) == expected_ids, f"ID data doesn't match expected range 1-{total_rows}"
-    
+
     # Verify values contain data from all files
     file_values = set()
     for value in all_values:
@@ -3265,7 +3275,7 @@ def test_orc_record_batching_streaming(tmp_path):
     batch_sizes = [batch.num_rows for batch in batches]
     total_batch_rows = sum(batch_sizes)
     assert total_batch_rows == total_rows, f"Total batch rows {total_batch_rows} != expected {total_rows}"
-    
+
     # Verify we have reasonable batch sizes (not too small, not too large)
     for batch_size in batch_sizes:
         assert batch_size > 0, "Batch should not be empty"
@@ -3279,35 +3289,37 @@ def test_orc_record_batching_streaming(tmp_path):
         row_filter=AlwaysTrue(),
         case_sensitive=True,
     )
-    
+
     processed_rows = 0
     batch_count = 0
-    file_data_counts = {i: 0 for i in range(num_files)}
-    
+    file_data_counts = dict.fromkeys(range(num_files), 0)
+
     for batch in scan.to_record_batches(scan_tasks):
         batch_count += 1
         processed_rows += batch.num_rows
-        
+
         # Count rows per file in this batch
         for value in batch.column("value").to_pylist():
             if value.startswith("file_"):
                 file_idx = int(value.split("_")[1])
                 file_data_counts[file_idx] += 1
-    
+
         # PyArrow may optimize batching, so we just verify we get reasonable batching
         assert batch_count >= 1, f"Expected at least 1 batch, got {batch_count}"
         assert batch_count <= num_files, f"Expected at most {num_files} batches (1 per file), got {batch_count}"
     assert processed_rows == total_rows, f"Processed {processed_rows} rows, expected {total_rows}"
-    
+
     # Verify each file contributed data
     for file_idx in range(num_files):
-        assert file_data_counts[file_idx] == rows_per_file, f"File {file_idx} contributed {file_data_counts[file_idx]} rows, expected {rows_per_file}"
+        assert file_data_counts[file_idx] == rows_per_file, (
+            f"File {file_idx} contributed {file_data_counts[file_idx]} rows, expected {rows_per_file}"
+        )
 
     # Test 5: Column projection with multiple files
     projected_schema = Schema(
         NestedField(1, "id", IntegerType(), required=True),
     )
-    
+
     scan = ArrowScan(
         table_metadata=table_metadata,
         io=io,
@@ -3315,10 +3327,10 @@ def test_orc_record_batching_streaming(tmp_path):
         row_filter=AlwaysTrue(),
         case_sensitive=True,
     )
-    
+
     batches = list(scan.to_record_batches(scan_tasks))
     assert len(batches) >= 1, f"Expected at least 1 batch for projected schema, got {len(batches)}"
-    
+
     for batch in batches:
         assert batch.num_columns == 1, f"Expected 1 column after projection, got {batch.num_columns}"
         assert "id" in batch.schema.names, "Missing 'id' column after projection"
@@ -3326,6 +3338,7 @@ def test_orc_record_batching_streaming(tmp_path):
 
     # Test 6: Filtering with multiple files
     from pyiceberg.expressions import GreaterThan
+
     scan = ArrowScan(
         table_metadata=table_metadata,
         io=io,
@@ -3333,12 +3346,14 @@ def test_orc_record_batching_streaming(tmp_path):
         row_filter=GreaterThan("id", total_rows // 2),  # Filter to second half of data
         case_sensitive=True,
     )
-    
+
     batches = list(scan.to_record_batches(scan_tasks))
     total_filtered_rows = sum(batch.num_rows for batch in batches)
     expected_filtered = total_rows // 2
-    assert total_filtered_rows == expected_filtered, f"Expected {expected_filtered} rows after filtering, got {total_filtered_rows}"
-    
+    assert total_filtered_rows == expected_filtered, (
+        f"Expected {expected_filtered} rows after filtering, got {total_filtered_rows}"
+    )
+
     # Verify all returned IDs are in the filtered range
     for batch in batches:
         ids = batch.column("id").to_pylist()
@@ -3350,19 +3365,19 @@ def test_orc_record_batching_streaming(tmp_path):
     print(f"Generated {len(batches)} batches from {num_files} files with {total_rows} total rows")
     print(f"Batch sizes: {[batch.num_rows for batch in batches]}")
     print(f"Average batch size: {total_rows / len(batches):.1f} rows per batch")
-    
+
     # This validates the end-to-end batching behavior as requested in the PR comment
     # We expect multiple batches based on file size and configured batch size
     print(f"Expected at least {num_files} batches (1 per file) with PyArrow's default batching")
     print(f"Actual batch count: {len(batches)}")
     print(f"Batch sizes: {[batch.num_rows for batch in batches]}")
-    
+
     # Verify we get reasonable batching behavior
     assert len(batches) >= 1, f"Expected at least 1 batch, got {len(batches)}"
     assert len(batches) <= total_rows, f"Expected at most {total_rows} batches (one per row), got {len(batches)}"
 
 
-def test_orc_batching_exact_counts_single_file(tmp_path):
+def test_orc_batching_exact_counts_single_file(tmp_path: Path) -> None:
     """
     Test exact batch counts for single ORC files of different sizes.
     This test explicitly verifies the number of batches PyArrow creates for different file sizes.
@@ -3372,14 +3387,15 @@ def test_orc_batching_exact_counts_single_file(tmp_path):
     """
     import pyarrow as pa
     import pyarrow.orc as orc
-    from pyiceberg.schema import Schema, NestedField
-    from pyiceberg.types import IntegerType, StringType
-    from pyiceberg.manifest import FileFormat, DataFileContent
-    from pyiceberg.table.metadata import TableMetadataV2
-    from pyiceberg.partitioning import PartitionSpec
-    from pyiceberg.io.pyarrow import PyArrowFileIO, ArrowScan
-    from pyiceberg.table import FileScanTask
+
     from pyiceberg.expressions import AlwaysTrue
+    from pyiceberg.io.pyarrow import ArrowScan, PyArrowFileIO
+    from pyiceberg.manifest import DataFileContent, FileFormat
+    from pyiceberg.partitioning import PartitionSpec
+    from pyiceberg.schema import Schema
+    from pyiceberg.table import FileScanTask
+    from pyiceberg.table.metadata import TableMetadataV2
+    from pyiceberg.types import IntegerType, StringType
 
     # Define schema
     schema = Schema(
@@ -3396,7 +3412,7 @@ def test_orc_batching_exact_counts_single_file(tmp_path):
         partition_specs=[PartitionSpec()],
         properties={
             "schema.name-mapping.default": '[{"field-id": 1, "names": ["id"]}, {"field-id": 2, "names": ["value"]}]',
-        }
+        },
     )
     io = PyArrowFileIO()
 
@@ -3408,15 +3424,14 @@ def test_orc_batching_exact_counts_single_file(tmp_path):
         (2000, "Large file (1 stripe)"),
         (5000, "Very large file (1 stripe)"),
     ]
-    
+
     for num_rows, description in test_cases:
         print(f"\n=== Testing {description} with {num_rows} rows ===")
-        
+
         # Create data
-        data = pa.table({
-            "id": pa.array(range(1, num_rows + 1), type=pa.int32()),
-            "value": [f"value_{i}" for i in range(1, num_rows + 1)]
-        })
+        data = pa.table(
+            {"id": pa.array(range(1, num_rows + 1), type=pa.int32()), "value": [f"value_{i}" for i in range(1, num_rows + 1)]}
+        )
 
         # Create ORC file
         orc_path = tmp_path / f"test_{num_rows}_rows.orc"
@@ -3425,6 +3440,7 @@ def test_orc_batching_exact_counts_single_file(tmp_path):
         # Create DataFile
         from pyiceberg.manifest import DataFile
         from pyiceberg.typedef import Record
+
         data_file = DataFile.from_args(
             content=DataFileContent.DATA,
             file_path=str(orc_path),
@@ -3441,7 +3457,7 @@ def test_orc_batching_exact_counts_single_file(tmp_path):
             null_value_counts={1: 0, 2: 0},
             nan_value_counts={1: 0, 2: 0},
             lower_bounds={1: b"\x01\x00\x00\x00", 2: b"value_1"},
-            upper_bounds={1: num_rows.to_bytes(4, 'little'), 2: f"value_{num_rows}".encode()},
+            upper_bounds={1: num_rows.to_bytes(4, "little"), 2: f"value_{num_rows}".encode()},
             split_offsets=None,
         )
         data_file.spec_id = 0
@@ -3455,27 +3471,27 @@ def test_orc_batching_exact_counts_single_file(tmp_path):
             row_filter=AlwaysTrue(),
             case_sensitive=True,
         )
-        
+
         batches = list(scan.to_record_batches([scan_task]))
-        
+
         print(f"  Rows: {num_rows}")
         print(f"  Batches: {len(batches)}")
         print(f"  Batch sizes: {[batch.num_rows for batch in batches]}")
-        
+
         # Verify exact batch count and sizes
         total_batch_rows = sum(batch.num_rows for batch in batches)
         assert total_batch_rows == num_rows, f"Total rows mismatch: expected {num_rows}, got {total_batch_rows}"
-        
+
         # Verify data integrity
         all_ids = []
         for batch in batches:
             all_ids.extend(batch.column("id").to_pylist())
         assert sorted(all_ids) == list(range(1, num_rows + 1)), f"Data integrity check failed for {num_rows} rows"
-        
+
         print(f"  ✓ {description}: {len(batches)} batches, {total_batch_rows} total rows")
 
 
-def test_orc_batching_exact_counts_multiple_files(tmp_path):
+def test_orc_batching_exact_counts_multiple_files(tmp_path: Path) -> None:
     """
     Test exact batch counts for multiple ORC files of different sizes and counts.
     This test explicitly verifies the number of batches PyArrow creates for different file configurations.
@@ -3485,14 +3501,15 @@ def test_orc_batching_exact_counts_multiple_files(tmp_path):
     """
     import pyarrow as pa
     import pyarrow.orc as orc
-    from pyiceberg.schema import Schema, NestedField
-    from pyiceberg.types import IntegerType, StringType
-    from pyiceberg.manifest import FileFormat, DataFileContent
-    from pyiceberg.table.metadata import TableMetadataV2
-    from pyiceberg.partitioning import PartitionSpec
-    from pyiceberg.io.pyarrow import PyArrowFileIO, ArrowScan
-    from pyiceberg.table import FileScanTask
+
     from pyiceberg.expressions import AlwaysTrue
+    from pyiceberg.io.pyarrow import ArrowScan, PyArrowFileIO
+    from pyiceberg.manifest import DataFileContent, FileFormat
+    from pyiceberg.partitioning import PartitionSpec
+    from pyiceberg.schema import Schema
+    from pyiceberg.table import FileScanTask
+    from pyiceberg.table.metadata import TableMetadataV2
+    from pyiceberg.types import IntegerType, StringType
 
     # Define schema
     schema = Schema(
@@ -3509,7 +3526,7 @@ def test_orc_batching_exact_counts_multiple_files(tmp_path):
         partition_specs=[PartitionSpec()],
         properties={
             "schema.name-mapping.default": '[{"field-id": 1, "names": ["id"]}, {"field-id": 2, "names": ["value"]}]',
-        }
+        },
     )
     io = PyArrowFileIO()
 
@@ -3521,21 +3538,23 @@ def test_orc_batching_exact_counts_multiple_files(tmp_path):
         (4, 750, "4 files, 750 rows each (1 stripe each)"),
         (2, 2000, "2 files, 2000 rows each (1 stripe each)"),
     ]
-    
+
     for num_files, rows_per_file, description in test_cases:
         print(f"\n=== Testing {description} ===")
-        
+
         total_rows = num_files * rows_per_file
         scan_tasks = []
-        
+
         for file_idx in range(num_files):
             # Create data for this file
             start_id = file_idx * rows_per_file + 1
             end_id = (file_idx + 1) * rows_per_file
-            data = pa.table({
-                "id": pa.array(range(start_id, end_id + 1), type=pa.int32()),
-                "value": [f"file_{file_idx}_value_{i}" for i in range(start_id, end_id + 1)]
-            })
+            data = pa.table(
+                {
+                    "id": pa.array(range(start_id, end_id + 1), type=pa.int32()),
+                    "value": [f"file_{file_idx}_value_{i}" for i in range(start_id, end_id + 1)],
+                }
+            )
 
             # Create ORC file
             orc_path = tmp_path / f"multi_test_{file_idx}_{rows_per_file}_rows.orc"
@@ -3544,6 +3563,7 @@ def test_orc_batching_exact_counts_multiple_files(tmp_path):
             # Create DataFile
             from pyiceberg.manifest import DataFile
             from pyiceberg.typedef import Record
+
             data_file = DataFile.from_args(
                 content=DataFileContent.DATA,
                 file_path=str(orc_path),
@@ -3559,8 +3579,8 @@ def test_orc_batching_exact_counts_multiple_files(tmp_path):
                 value_counts={1: rows_per_file, 2: rows_per_file},
                 null_value_counts={1: 0, 2: 0},
                 nan_value_counts={1: 0, 2: 0},
-                lower_bounds={1: start_id.to_bytes(4, 'little'), 2: f"file_{file_idx}_value_{start_id}".encode()},
-                upper_bounds={1: end_id.to_bytes(4, 'little'), 2: f"file_{file_idx}_value_{end_id}".encode()},
+                lower_bounds={1: start_id.to_bytes(4, "little"), 2: f"file_{file_idx}_value_{start_id}".encode()},
+                upper_bounds={1: end_id.to_bytes(4, "little"), 2: f"file_{file_idx}_value_{end_id}".encode()},
                 split_offsets=None,
             )
             data_file.spec_id = 0
@@ -3574,99 +3594,99 @@ def test_orc_batching_exact_counts_multiple_files(tmp_path):
             row_filter=AlwaysTrue(),
             case_sensitive=True,
         )
-        
+
         batches = list(scan.to_record_batches(scan_tasks))
-        
+
         print(f"  Files: {num_files}")
         print(f"  Rows per file: {rows_per_file}")
         print(f"  Total rows: {total_rows}")
         print(f"  Batches: {len(batches)}")
         print(f"  Batch sizes: {[batch.num_rows for batch in batches]}")
-        
+
         # Verify exact batch count and sizes
         total_batch_rows = sum(batch.num_rows for batch in batches)
         assert total_batch_rows == total_rows, f"Total rows mismatch: expected {total_rows}, got {total_batch_rows}"
-        
+
         # Verify data spans all files
         all_ids = []
-        file_data_counts = {i: 0 for i in range(num_files)}
-        
+        file_data_counts = dict.fromkeys(range(num_files), 0)
+
         for batch in batches:
             batch_ids = batch.column("id").to_pylist()
             all_ids.extend(batch_ids)
-            
+
             # Count rows per file in this batch
             for value in batch.column("value").to_pylist():
                 if value.startswith("file_"):
                     file_idx = int(value.split("_")[1])
                     file_data_counts[file_idx] += 1
-        
+
         # Verify we have data from all files
         assert sorted(all_ids) == list(range(1, total_rows + 1)), f"Data integrity check failed for {description}"
-        
+
         # Verify each file contributed data
         for file_idx in range(num_files):
-            assert file_data_counts[file_idx] == rows_per_file, f"File {file_idx} contributed {file_data_counts[file_idx]} rows, expected {rows_per_file}"
-        
+            assert file_data_counts[file_idx] == rows_per_file, (
+                f"File {file_idx} contributed {file_data_counts[file_idx]} rows, expected {rows_per_file}"
+            )
+
         print(f"  ✓ {description}: {len(batches)} batches, {total_batch_rows} total rows")
 
 
-def test_orc_field_id_extraction():
+def test_orc_field_id_extraction() -> None:
     """
     Test ORC field ID extraction from PyArrow field metadata.
     To run just this test:
         pytest tests/io/test_pyarrow.py -k test_orc_field_id_extraction
     """
     import pyarrow as pa
-    from pyiceberg.io.pyarrow import _get_field_id, ORC_FIELD_ID_KEY, PYARROW_PARQUET_FIELD_ID_KEY
+
+    from pyiceberg.io.pyarrow import ORC_FIELD_ID_KEY, PYARROW_PARQUET_FIELD_ID_KEY, _get_field_id
 
     # Test 1: Parquet field ID extraction
-    field_parquet = pa.field('test_parquet', pa.string(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: b'123'})
+    field_parquet = pa.field("test_parquet", pa.string(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: b"123"})
     field_id = _get_field_id(field_parquet)
     assert field_id == 123, f"Expected Parquet field ID 123, got {field_id}"
 
     # Test 2: ORC field ID extraction
-    field_orc = pa.field('test_orc', pa.string(), metadata={ORC_FIELD_ID_KEY: b'456'})
+    field_orc = pa.field("test_orc", pa.string(), metadata={ORC_FIELD_ID_KEY: b"456"})
     field_id = _get_field_id(field_orc)
     assert field_id == 456, f"Expected ORC field ID 456, got {field_id}"
 
     # Test 3: No field ID
-    field_no_id = pa.field('test_no_id', pa.string())
+    field_no_id = pa.field("test_no_id", pa.string())
     field_id = _get_field_id(field_no_id)
     assert field_id is None, f"Expected None for field without ID, got {field_id}"
 
     # Test 4: Both field IDs present (should prefer Parquet)
-    field_both = pa.field('test_both', pa.string(), metadata={
-        PYARROW_PARQUET_FIELD_ID_KEY: b'123',
-        ORC_FIELD_ID_KEY: b'456'
-    })
+    field_both = pa.field("test_both", pa.string(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: b"123", ORC_FIELD_ID_KEY: b"456"})
     field_id = _get_field_id(field_both)
     assert field_id == 123, f"Expected Parquet field ID 123 (preferred), got {field_id}"
 
     # Test 5: Empty metadata
-    field_empty_metadata = pa.field('test_empty', pa.string(), metadata={})
+    field_empty_metadata = pa.field("test_empty", pa.string(), metadata={})
     field_id = _get_field_id(field_empty_metadata)
     assert field_id is None, f"Expected None for field with empty metadata, got {field_id}"
 
     # Test 6: Invalid field ID format
-    field_invalid = pa.field('test_invalid', pa.string(), metadata={ORC_FIELD_ID_KEY: b'not_a_number'})
+    field_invalid = pa.field("test_invalid", pa.string(), metadata={ORC_FIELD_ID_KEY: b"not_a_number"})
     try:
         field_id = _get_field_id(field_invalid)
-        assert False, "Expected ValueError for invalid field ID format"
+        raise AssertionError("Expected ValueError for invalid field ID format")
     except ValueError:
         pass  # Expected behavior
 
     # Test 7: Different data types
-    field_int = pa.field('test_int', pa.int32(), metadata={ORC_FIELD_ID_KEY: b'789'})
+    field_int = pa.field("test_int", pa.int32(), metadata={ORC_FIELD_ID_KEY: b"789"})
     field_id = _get_field_id(field_int)
     assert field_id == 789, f"Expected ORC field ID 789 for int field, got {field_id}"
 
-    field_bool = pa.field('test_bool', pa.bool_(), metadata={ORC_FIELD_ID_KEY: b'101'})
+    field_bool = pa.field("test_bool", pa.bool_(), metadata={ORC_FIELD_ID_KEY: b"101"})
     field_id = _get_field_id(field_bool)
     assert field_id == 101, f"Expected ORC field ID 101 for bool field, got {field_id}"
 
 
-def test_orc_schema_with_field_ids(tmp_path):
+def test_orc_schema_with_field_ids(tmp_path: Path) -> None:
     """
     Test ORC reading with actual field IDs embedded in the schema.
     This test creates an ORC file with field IDs and reads it without name mapping.
@@ -3675,14 +3695,15 @@ def test_orc_schema_with_field_ids(tmp_path):
     """
     import pyarrow as pa
     import pyarrow.orc as orc
-    from pyiceberg.schema import Schema, NestedField
-    from pyiceberg.types import IntegerType, StringType
-    from pyiceberg.manifest import FileFormat, DataFileContent
-    from pyiceberg.table.metadata import TableMetadataV2
-    from pyiceberg.partitioning import PartitionSpec
-    from pyiceberg.io.pyarrow import PyArrowFileIO, ArrowScan, schema_to_pyarrow, ORC_FIELD_ID_KEY
-    from pyiceberg.table import FileScanTask
+
     from pyiceberg.expressions import AlwaysTrue
+    from pyiceberg.io.pyarrow import ORC_FIELD_ID_KEY, ArrowScan, PyArrowFileIO
+    from pyiceberg.manifest import DataFileContent, FileFormat
+    from pyiceberg.partitioning import PartitionSpec
+    from pyiceberg.schema import Schema
+    from pyiceberg.table import FileScanTask
+    from pyiceberg.table.metadata import TableMetadataV2
+    from pyiceberg.types import IntegerType, StringType
 
     # Define schema
     schema = Schema(
@@ -3691,16 +3712,15 @@ def test_orc_schema_with_field_ids(tmp_path):
     )
 
     # Create PyArrow schema with ORC field IDs
-    arrow_schema = pa.schema([
-        pa.field("id", pa.int32(), metadata={ORC_FIELD_ID_KEY: b"1"}),
-        pa.field("name", pa.string(), metadata={ORC_FIELD_ID_KEY: b"2"})
-    ])
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), metadata={ORC_FIELD_ID_KEY: b"1"}),
+            pa.field("name", pa.string(), metadata={ORC_FIELD_ID_KEY: b"2"}),
+        ]
+    )
 
     # Create data with the schema that has field IDs
-    data = pa.table({
-        "id": pa.array([1, 2, 3], type=pa.int32()),
-        "name": ["alice", "bob", "charlie"]
-    }, schema=arrow_schema)
+    data = pa.table({"id": pa.array([1, 2, 3], type=pa.int32()), "name": ["alice", "bob", "charlie"]}, schema=arrow_schema)
 
     # Create ORC file
     orc_path = tmp_path / "field_id_test.orc"
@@ -3715,13 +3735,14 @@ def test_orc_schema_with_field_ids(tmp_path):
         partition_specs=[PartitionSpec()],
         properties={
             # No name mapping - should work with field IDs
-        }
+        },
     )
     io = PyArrowFileIO()
 
     # Create DataFile
     from pyiceberg.manifest import DataFile
     from pyiceberg.typedef import Record
+
     data_file = DataFile.from_args(
         content=DataFileContent.DATA,
         file_path=str(orc_path),
@@ -3753,27 +3774,27 @@ def test_orc_schema_with_field_ids(tmp_path):
     )
     scan_task = FileScanTask(data_file=data_file)
     table_read = scan.to_table([scan_task])
-    
+
     # Verify the data was read correctly
     assert table_read.num_rows == 3
     assert table_read.num_columns == 2
     assert table_read.column_names == ["id", "name"]
-    
+
     # Verify data matches
     assert table_read.column("id").to_pylist() == [1, 2, 3]
     assert table_read.column("name").to_pylist() == ["alice", "bob", "charlie"]
 
 
-def test_orc_schema_conversion_with_field_ids():
+def test_orc_schema_conversion_with_field_ids() -> None:
     """
     Test that schema_to_pyarrow correctly adds ORC field IDs when file_format is specified.
     To run just this test:
         pytest tests/io/test_pyarrow.py -k test_orc_schema_conversion_with_field_ids
     """
-    from pyiceberg.schema import Schema, NestedField
-    from pyiceberg.types import IntegerType, StringType
+    from pyiceberg.io.pyarrow import ORC_FIELD_ID_KEY, PYARROW_PARQUET_FIELD_ID_KEY, schema_to_pyarrow
     from pyiceberg.manifest import FileFormat
-    from pyiceberg.io.pyarrow import schema_to_pyarrow, ORC_FIELD_ID_KEY, PYARROW_PARQUET_FIELD_ID_KEY
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import IntegerType, StringType
 
     # Define schema
     schema = Schema(
@@ -3783,10 +3804,10 @@ def test_orc_schema_conversion_with_field_ids():
 
     # Test 1: Default behavior (should add Parquet field IDs)
     arrow_schema_default = schema_to_pyarrow(schema, include_field_ids=True)
-    
+
     id_field = arrow_schema_default.field(0)  # id field
     name_field = arrow_schema_default.field(1)  # name field
-    
+
     assert id_field.metadata[PYARROW_PARQUET_FIELD_ID_KEY] == b"1"
     assert name_field.metadata[PYARROW_PARQUET_FIELD_ID_KEY] == b"2"
     assert ORC_FIELD_ID_KEY not in id_field.metadata
@@ -3794,10 +3815,10 @@ def test_orc_schema_conversion_with_field_ids():
 
     # Test 2: Explicitly specify ORC format
     arrow_schema_orc = schema_to_pyarrow(schema, include_field_ids=True, file_format=FileFormat.ORC)
-    
+
     id_field_orc = arrow_schema_orc.field(0)  # id field
     name_field_orc = arrow_schema_orc.field(1)  # name field
-    
+
     assert id_field_orc.metadata[ORC_FIELD_ID_KEY] == b"1"
     assert name_field_orc.metadata[ORC_FIELD_ID_KEY] == b"2"
     assert PYARROW_PARQUET_FIELD_ID_KEY not in id_field_orc.metadata
@@ -3805,68 +3826,69 @@ def test_orc_schema_conversion_with_field_ids():
 
     # Test 3: No field IDs
     arrow_schema_no_ids = schema_to_pyarrow(schema, include_field_ids=False, file_format=FileFormat.ORC)
-    
+
     id_field_no_ids = arrow_schema_no_ids.field(0)
     name_field_no_ids = arrow_schema_no_ids.field(1)
-    
+
     assert not id_field_no_ids.metadata
     assert not name_field_no_ids.metadata
 
 
-def test_orc_batching_behavior_documentation(tmp_path):
+def test_orc_batching_behavior_documentation(tmp_path: Path) -> None:
     """
     Document and verify PyArrow's exact batching behavior for ORC files.
     This test serves as comprehensive documentation of how PyArrow batches ORC files.
-    
+
     ORC BATCHING BEHAVIOR SUMMARY:
     =============================
-    
+
     1. STRIPE-BASED BATCHING:
        - PyArrow creates exactly 1 batch per ORC stripe
        - This is similar to how Parquet creates 1 batch per row group
        - Number of batches = Number of stripes in the ORC file
-    
+
     2. DEFAULT BEHAVIOR:
        - Default ORC writing creates 1 stripe per file (64MB default stripe size)
        - Therefore, most ORC files have 1 batch per file by default
        - This is why many tests show "1 batch per file" behavior
-    
+
     3. CONFIGURABLE BATCHING:
        - ORC CAN have multiple batches per file when configured with multiple stripes
        - Use stripe_size parameter when writing ORC files to control batching
        - stripe_size < 200KB: PyArrow ignores the parameter, uses default 1024 rows per stripe
        - stripe_size >= 200KB: PyArrow respects the parameter and creates stripes accordingly
-    
+
     4. PYARROW CONFIGURATION:
        - PyIceberg sets buffer_size=8MB for both Parquet and ORC
        - Parquet: Gets the 8MB buffer_size parameter (ds.ParquetFileFormat supports it)
        - ORC: Ignores the 8MB buffer_size parameter (ds.OrcFileFormat doesn't support it)
        - This means ORC uses PyArrow's default batching behavior (based on stripes)
-    
+
     5. KEY DIFFERENCES FROM PARQUET:
        - Parquet: 1 FileScanTask → 1 File → 1 PyArrow Fragment → N Batches (based on row groups)
        - ORC: 1 FileScanTask → 1 File → 1 PyArrow Fragment → N Batches (based on stripes)
        - Both formats support multiple batches per file when configured properly
        - The difference is in default configuration, not fundamental behavior
-    
+
     6. TESTING IMPLICATIONS:
        - Tests using default ORC writing will show 1 batch per file
        - Tests using custom stripe_size >= 200KB will show multiple batches per file
        - Always verify the actual number of stripes in ORC files when testing batching
-    
+
     To run just this test:
         pytest tests/io/test_pyarrow.py -k test_orc_batching_behavior_documentation
     """
     import pyarrow as pa
     import pyarrow.orc as orc
-    from pyiceberg.schema import Schema, NestedField
-    from pyiceberg.types import IntegerType, StringType
-    from pyiceberg.manifest import FileFormat, DataFileContent
-    from pyiceberg.table.metadata import TableMetadataV2
-    from pyiceberg.partitioning import PartitionSpec
-    from pyiceberg.io.pyarrow import PyArrowFileIO, ArrowScan
-    from pyiceberg.table import FileScanTask
+
     from pyiceberg.expressions import AlwaysTrue
+    from pyiceberg.io.pyarrow import ArrowScan, PyArrowFileIO
+    from pyiceberg.manifest import DataFileContent, FileFormat
+    from pyiceberg.partitioning import PartitionSpec
+    from pyiceberg.schema import Schema
+    from pyiceberg.table import FileScanTask
+    from pyiceberg.table.metadata import TableMetadataV2
+    from pyiceberg.types import IntegerType, StringType
 
     # Define schema
     schema = Schema(
@@ -3883,7 +3905,7 @@ def test_orc_batching_behavior_documentation(tmp_path):
         partition_specs=[PartitionSpec()],
         properties={
             "schema.name-mapping.default": '[{"field-id": 1, "names": ["id"]}, {"field-id": 2, "names": ["value"]}]',
-        }
+        },
     )
     io = PyArrowFileIO()
 
@@ -3907,21 +3929,23 @@ def test_orc_batching_behavior_documentation(tmp_path):
         (4, 750, 4, "Four small files (1 stripe each)"),
         (2, 2000, 2, "Two large files (1 stripe each)"),
     ]
-    
+
     for file_count, rows_per_file, expected_batches, description in test_cases:
         print(f"Testing: {description} ({file_count} files × {rows_per_file} rows)")
-        
+
         total_rows = file_count * rows_per_file
         scan_tasks = []
-        
+
         for file_idx in range(file_count):
             # Create data for this file
             start_id = file_idx * rows_per_file + 1
             end_id = (file_idx + 1) * rows_per_file
-            data = pa.table({
-                "id": pa.array(range(start_id, end_id + 1), type=pa.int32()),
-                "value": [f"file_{file_idx}_value_{i}" for i in range(start_id, end_id + 1)]
-            })
+            data = pa.table(
+                {
+                    "id": pa.array(range(start_id, end_id + 1), type=pa.int32()),
+                    "value": [f"file_{file_idx}_value_{i}" for i in range(start_id, end_id + 1)],
+                }
+            )
 
             # Create ORC file
             orc_path = tmp_path / f"doc_test_{file_idx}_{rows_per_file}_rows.orc"
@@ -3930,6 +3954,7 @@ def test_orc_batching_behavior_documentation(tmp_path):
             # Create DataFile
             from pyiceberg.manifest import DataFile
             from pyiceberg.typedef import Record
+
             data_file = DataFile.from_args(
                 content=DataFileContent.DATA,
                 file_path=str(orc_path),
@@ -3945,8 +3970,8 @@ def test_orc_batching_behavior_documentation(tmp_path):
                 value_counts={1: rows_per_file, 2: rows_per_file},
                 null_value_counts={1: 0, 2: 0},
                 nan_value_counts={1: 0, 2: 0},
-                lower_bounds={1: start_id.to_bytes(4, 'little'), 2: f"file_{file_idx}_value_{start_id}".encode()},
-                upper_bounds={1: end_id.to_bytes(4, 'little'), 2: f"file_{file_idx}_value_{end_id}".encode()},
+                lower_bounds={1: start_id.to_bytes(4, "little"), 2: f"file_{file_idx}_value_{start_id}".encode()},
+                upper_bounds={1: end_id.to_bytes(4, "little"), 2: f"file_{file_idx}_value_{end_id}".encode()},
                 split_offsets=None,
             )
             data_file.spec_id = 0
@@ -3960,24 +3985,24 @@ def test_orc_batching_behavior_documentation(tmp_path):
             row_filter=AlwaysTrue(),
             case_sensitive=True,
         )
-        
+
         batches = list(scan.to_record_batches(scan_tasks))
-        
+
         # Verify exact batch count
         assert len(batches) == expected_batches, f"Expected {expected_batches} batches, got {len(batches)} for {description}"
-        
+
         # Verify total rows
         total_batch_rows = sum(batch.num_rows for batch in batches)
         assert total_batch_rows == total_rows, f"Total rows mismatch: expected {total_rows}, got {total_batch_rows}"
-        
+
         # Verify data integrity
         all_ids = []
         for batch in batches:
             all_ids.extend(batch.column("id").to_pylist())
         assert sorted(all_ids) == list(range(1, total_rows + 1)), f"Data integrity check failed for {description}"
-        
+
         print(f"  ✓ {description}: {len(batches)} batches, {total_batch_rows} total rows")
-    
+
     print("\n=== Summary ===")
     print("PyArrow ORC batching behavior is simple and predictable:")
     print("- 1 batch per file, regardless of file size")
@@ -3987,28 +4012,29 @@ def test_orc_batching_behavior_documentation(tmp_path):
     print("- This behavior is consistent across all file sizes tested (100-5000 rows)")
 
 
-def test_parquet_vs_orc_batching_behavior_comparison(tmp_path):
+def test_parquet_vs_orc_batching_behavior_comparison(tmp_path: Path) -> None:
     """
     Compare Parquet vs ORC batching behavior to document the key differences.
-    
+
     Key differences:
     - PARQUET: 1 FileScanTask → 1 File → 1 PyArrow Fragment → N Batches (based on row groups)
     - ORC: 1 FileScanTask → 1 File → 1 PyArrow Fragment → N Batches (based on stripes)
-    
+
     To run just this test:
         pytest tests/io/test_pyarrow.py -k test_parquet_vs_orc_batching_behavior_comparison
     """
     import pyarrow as pa
-    import pyarrow.parquet as pq
     import pyarrow.orc as orc
-    from pyiceberg.schema import Schema, NestedField
-    from pyiceberg.types import IntegerType, StringType
-    from pyiceberg.manifest import FileFormat, DataFileContent
-    from pyiceberg.table.metadata import TableMetadataV2
-    from pyiceberg.partitioning import PartitionSpec
-    from pyiceberg.io.pyarrow import PyArrowFileIO, ArrowScan
-    from pyiceberg.table import FileScanTask
+    import pyarrow.parquet as pq
+
     from pyiceberg.expressions import AlwaysTrue
+    from pyiceberg.io.pyarrow import ArrowScan, PyArrowFileIO
+    from pyiceberg.manifest import DataFileContent, FileFormat
+    from pyiceberg.partitioning import PartitionSpec
+    from pyiceberg.schema import Schema
+    from pyiceberg.table import FileScanTask
+    from pyiceberg.table.metadata import TableMetadataV2
+    from pyiceberg.types import IntegerType, StringType
 
     # Define schema
     schema = Schema(
@@ -4025,7 +4051,7 @@ def test_parquet_vs_orc_batching_behavior_comparison(tmp_path):
         partition_specs=[PartitionSpec()],
         properties={
             "schema.name-mapping.default": '[{"field-id": 1, "names": ["id"]}, {"field-id": 2, "names": ["value"]}]',
-        }
+        },
     )
     io = PyArrowFileIO()
 
@@ -4038,16 +4064,13 @@ def test_parquet_vs_orc_batching_behavior_comparison(tmp_path):
     print("Testing PARQUET batching with different row group sizes:")
     parquet_test_cases = [
         (1000, "Small row groups"),
-        (2000, "Medium row groups"), 
+        (2000, "Medium row groups"),
         (5000, "Large row groups"),
     ]
-    
+
     for row_group_size, description in parquet_test_cases:
         # Create data
-        data = pa.table({
-            "id": pa.array(range(1, 10001), type=pa.int32()),
-            "value": [f"value_{i}" for i in range(1, 10001)]
-        })
+        data = pa.table({"id": pa.array(range(1, 10001), type=pa.int32()), "value": [f"value_{i}" for i in range(1, 10001)]})
 
         # Create Parquet file with specific row group size
         parquet_path = tmp_path / f"parquet_test_{row_group_size}.parquet"
@@ -4056,6 +4079,7 @@ def test_parquet_vs_orc_batching_behavior_comparison(tmp_path):
         # Create DataFile
         from pyiceberg.manifest import DataFile
         from pyiceberg.typedef import Record
+
         data_file = DataFile.from_args(
             content=DataFileContent.DATA,
             file_path=str(parquet_path),
@@ -4086,15 +4110,17 @@ def test_parquet_vs_orc_batching_behavior_comparison(tmp_path):
             row_filter=AlwaysTrue(),
             case_sensitive=True,
         )
-        
+
         batches = list(scan.to_record_batches([scan_task]))
         expected_batches = 10000 // row_group_size  # Number of row groups
-        
+
         print(f"  {description} (row_group_size={row_group_size}): {len(batches)} batches, sizes={[b.num_rows for b in batches]}")
-        
+
         # Verify exact batch count based on row groups
-        assert len(batches) == expected_batches, f"Expected {expected_batches} batches for row_group_size={row_group_size}, got {len(batches)}"
-        
+        assert len(batches) == expected_batches, (
+            f"Expected {expected_batches} batches for row_group_size={row_group_size}, got {len(batches)}"
+        )
+
         # Verify total rows
         total_rows = sum(batch.num_rows for batch in batches)
         assert total_rows == 10000, f"Expected 10000 total rows, got {total_rows}"
@@ -4106,13 +4132,12 @@ def test_parquet_vs_orc_batching_behavior_comparison(tmp_path):
         (5000, "Medium file"),
         (10000, "Large file"),
     ]
-    
+
     for file_size, description in orc_test_cases:
         # Create data
-        data = pa.table({
-            "id": pa.array(range(1, file_size + 1), type=pa.int32()),
-            "value": [f"value_{i}" for i in range(1, file_size + 1)]
-        })
+        data = pa.table(
+            {"id": pa.array(range(1, file_size + 1), type=pa.int32()), "value": [f"value_{i}" for i in range(1, file_size + 1)]}
+        )
 
         # Create ORC file
         orc_path = tmp_path / f"orc_test_{file_size}.orc"
@@ -4121,6 +4146,7 @@ def test_parquet_vs_orc_batching_behavior_comparison(tmp_path):
         # Create DataFile
         from pyiceberg.manifest import DataFile
         from pyiceberg.typedef import Record
+
         data_file = DataFile.from_args(
             content=DataFileContent.DATA,
             file_path=str(orc_path),
@@ -4137,7 +4163,7 @@ def test_parquet_vs_orc_batching_behavior_comparison(tmp_path):
             null_value_counts={1: 0, 2: 0},
             nan_value_counts={1: 0, 2: 0},
             lower_bounds={1: b"\x01\x00\x00\x00", 2: b"value_1"},
-            upper_bounds={1: file_size.to_bytes(4, 'little'), 2: f"value_{file_size}".encode()},
+            upper_bounds={1: file_size.to_bytes(4, "little"), 2: f"value_{file_size}".encode()},
             split_offsets=None,
         )
         data_file.spec_id = 0
@@ -4151,15 +4177,17 @@ def test_parquet_vs_orc_batching_behavior_comparison(tmp_path):
             row_filter=AlwaysTrue(),
             case_sensitive=True,
         )
-        
+
         batches = list(scan.to_record_batches([scan_task]))
-        
+
         print(f"  {description} (file_size={file_size}): {len(batches)} batches, sizes={[b.num_rows for b in batches]}")
-        
+
         # Verify ORC creates 1 batch per file (with default stripe configuration)
         # Note: This is because default ORC writing creates 1 stripe per file
-        assert len(batches) == 1, f"Expected 1 batch for ORC file with {file_size} rows (default stripe config), got {len(batches)}"
-        
+        assert len(batches) == 1, (
+            f"Expected 1 batch for ORC file with {file_size} rows (default stripe config), got {len(batches)}"
+        )
+
         # Verify total rows
         total_rows = sum(batch.num_rows for batch in batches)
         assert total_rows == file_size, f"Expected {file_size} total rows, got {total_rows}"
@@ -4197,30 +4225,31 @@ def test_parquet_vs_orc_batching_behavior_comparison(tmp_path):
     print("- The key difference is default configuration, not fundamental capability")
 
 
-def test_orc_stripe_size_batch_size_compression_interaction(tmp_path):
+def test_orc_stripe_size_batch_size_compression_interaction(tmp_path: Path) -> None:
     """
     Test that demonstrates how stripe size, batch size, and compression interact
     to affect ORC batching behavior.
-    
+
     This test shows:
     1. How stripe_size affects the number of stripes (and therefore batches)
     2. How batch_size affects the number of stripes when stripe_size is small
     3. How compression affects both stripe count and file size
     4. The relationship between uncompressed target size and actual file size
-    
+
     To run just this test:
         pytest tests/io/test_pyarrow.py -k test_orc_stripe_size_batch_size_compression_interaction
     """
     import pyarrow as pa
     import pyarrow.orc as orc
-    from pyiceberg.schema import Schema, NestedField
-    from pyiceberg.types import IntegerType, StringType
-    from pyiceberg.manifest import FileFormat, DataFileContent
-    from pyiceberg.table.metadata import TableMetadataV2
-    from pyiceberg.partitioning import PartitionSpec
-    from pyiceberg.io.pyarrow import PyArrowFileIO, ArrowScan
-    from pyiceberg.table import FileScanTask
+
     from pyiceberg.expressions import AlwaysTrue
+    from pyiceberg.io.pyarrow import ArrowScan, PyArrowFileIO
+    from pyiceberg.manifest import DataFileContent, FileFormat
+    from pyiceberg.partitioning import PartitionSpec
+    from pyiceberg.schema import Schema
+    from pyiceberg.table import FileScanTask
+    from pyiceberg.table.metadata import TableMetadataV2
+    from pyiceberg.types import IntegerType, StringType
 
     # Define schema
     schema = Schema(
@@ -4237,7 +4266,7 @@ def test_orc_stripe_size_batch_size_compression_interaction(tmp_path):
         partition_specs=[PartitionSpec()],
         properties={
             "schema.name-mapping.default": '[{"field-id": 1, "names": ["id"]}, {"field-id": 2, "names": ["value"]}]',
-        }
+        },
     )
     io = PyArrowFileIO()
 
@@ -4246,15 +4275,12 @@ def test_orc_stripe_size_batch_size_compression_interaction(tmp_path):
     print()
 
     # Create test data
-    data = pa.table({
-        "id": pa.array(range(1, 10001), type=pa.int32()),
-        "value": [f"value_{i}" for i in range(1, 10001)]
-    })
+    data = pa.table({"id": pa.array(range(1, 10001), type=pa.int32()), "value": [f"value_{i}" for i in range(1, 10001)]})
 
     print("Test data analysis:")
     raw_size = len(data) * 15  # 4 bytes (int32) + 11 bytes (string) per row
     print(f"  Total rows: {len(data)}")
-    print(f"  Raw data size: {raw_size:,} bytes ({raw_size/1024:.1f}KB)")
+    print(f"  Raw data size: {raw_size:,} bytes ({raw_size / 1024:.1f}KB)")
     print(f"  Estimated bytes per row (raw): {raw_size / len(data):.1f} bytes")
     print()
 
@@ -4272,40 +4298,41 @@ def test_orc_stripe_size_batch_size_compression_interaction(tmp_path):
 
     for stripe_size, batch_size, compression, description in test_cases:
         print(f"Testing: {description}")
-        
+
         # Create ORC file with specific parameters
         orc_path = tmp_path / f"orc_test_{hash(description)}.orc"
-        
-        write_kwargs = {"compression": compression}
+
+        write_kwargs: dict[str, Any] = {"compression": compression}
         if stripe_size is not None:
             write_kwargs["stripe_size"] = stripe_size
         if batch_size is not None:
             write_kwargs["batch_size"] = batch_size
-            
+
         orc.write_table(data, str(orc_path), **write_kwargs)
-        
+
         # Analyze the ORC file
         file_size = orc_path.stat().st_size
         orc_file = orc.ORCFile(str(orc_path))
         actual_stripes = orc_file.nstripes
         stripe_sizes_rows = [orc_file.read_stripe(i).num_rows for i in range(actual_stripes)]
-        
-        print(f"  File size: {file_size:,} bytes ({file_size/1024:.1f}KB)")
+
+        print(f"  File size: {file_size:,} bytes ({file_size / 1024:.1f}KB)")
         print(f"  Stripes: {actual_stripes}")
         print(f"  Rows per stripe: {stripe_sizes_rows}")
-        
+
         if stripe_size:
             target_bytes_per_row = stripe_size / stripe_sizes_rows[0] if stripe_sizes_rows else 0
             print(f"  Target bytes per row (uncompressed): {target_bytes_per_row:.1f} bytes")
-        
+
         actual_bytes_per_row = file_size / len(data)
         compression_ratio = raw_size / file_size
         print(f"  Actual bytes per row: {actual_bytes_per_row:.1f} bytes")
         print(f"  Compression ratio: {compression_ratio:.1f}x")
-        
+
         # Test PyArrow batching
         from pyiceberg.manifest import DataFile
         from pyiceberg.typedef import Record
+
         data_file = DataFile.from_args(
             content=DataFileContent.DATA,
             file_path=str(orc_path),
@@ -4336,10 +4363,10 @@ def test_orc_stripe_size_batch_size_compression_interaction(tmp_path):
             row_filter=AlwaysTrue(),
             case_sensitive=True,
         )
-        
+
         batches = list(scan.to_record_batches([scan_task]))
         batch_sizes = [batch.num_rows for batch in batches]
-        
+
         print(f"  PyArrow batches: {len(batches)}")
         print(f"  Batch sizes: {batch_sizes}")
         print(f"  Batches match stripes: {len(batches) == actual_stripes}")
@@ -4367,32 +4394,33 @@ def test_orc_stripe_size_batch_size_compression_interaction(tmp_path):
     print("   behavior depends on ORC's internal algorithms and optimizations!")
 
 
-def test_orc_near_perfect_stripe_size_mapping(tmp_path):
+def test_orc_near_perfect_stripe_size_mapping(tmp_path: Path) -> None:
     """
     Test that demonstrates near-perfect 1:1 mapping between stripe size and actual file size.
-    
+
     This test shows how to achieve ratios of 0.9+ (actual/target) by using:
     1. Large stripe sizes (2-5MB)
-    2. Large datasets (50K+ rows) 
+    2. Large datasets (50K+ rows)
     3. Data that is hard to compress (large random strings)
     4. uncompressed compression setting
-    
+
     This is the closest we can get to having stripe size directly map to number of batches
     without significant ORC encoding overhead.
-    
+
     To run just this test:
         pytest tests/io/test_pyarrow.py -k test_orc_near_perfect_stripe_size_mapping
     """
     import pyarrow as pa
     import pyarrow.orc as orc
-    from pyiceberg.schema import Schema, NestedField
-    from pyiceberg.types import IntegerType, StringType
-    from pyiceberg.manifest import FileFormat, DataFileContent
-    from pyiceberg.table.metadata import TableMetadataV2
-    from pyiceberg.partitioning import PartitionSpec
-    from pyiceberg.io.pyarrow import PyArrowFileIO, ArrowScan
-    from pyiceberg.table import FileScanTask
+
     from pyiceberg.expressions import AlwaysTrue
+    from pyiceberg.io.pyarrow import ArrowScan, PyArrowFileIO
+    from pyiceberg.manifest import DataFileContent, FileFormat
+    from pyiceberg.partitioning import PartitionSpec
+    from pyiceberg.schema import Schema
+    from pyiceberg.table import FileScanTask
+    from pyiceberg.table.metadata import TableMetadataV2
+    from pyiceberg.types import StringType
 
     # Define schema
     schema = Schema(
@@ -4408,7 +4436,7 @@ def test_orc_near_perfect_stripe_size_mapping(tmp_path):
         partition_specs=[PartitionSpec()],
         properties={
             "schema.name-mapping.default": '[{"field-id": 1, "names": ["id"]}]',
-        }
+        },
     )
     io = PyArrowFileIO()
 
@@ -4417,65 +4445,73 @@ def test_orc_near_perfect_stripe_size_mapping(tmp_path):
     print()
 
     # Create large dataset with hard-to-compress data
-    data = pa.table({
-        "id": pa.array([f"very_long_string_value_{i:06d}_with_lots_of_padding_to_make_it_harder_to_compress_{i*7919 % 100000:05d}_more_padding_{i*7919 % 100000:05d}" for i in range(1, 50001)])  # 50K rows
-    })
+    data = pa.table(
+        {
+            "id": pa.array(
+                [
+                    f"very_long_string_value_{i:06d}_with_lots_of_padding_to_make_it_harder_to_compress_{i * 7919 % 100000:05d}_more_padding_{i * 7919 % 100000:05d}"
+                    for i in range(1, 50001)
+                ]
+            )  # 50K rows
+        }
+    )
 
     raw_size = data.nbytes
-    print(f"Test data: 50K rows of large random strings")
-    print(f"Raw data size: {raw_size:,} bytes ({raw_size/1024:.1f}KB)")
+    print("Test data: 50K rows of large random strings")
+    print(f"Raw data size: {raw_size:,} bytes ({raw_size / 1024:.1f}KB)")
     print(f"Bytes per row: {raw_size / len(data):.1f} bytes")
     print()
 
     # Test with large stripe sizes that should give us multiple stripes
     test_cases = [
         (2000000, "2MB stripe size"),
-        (3000000, "3MB stripe size"), 
+        (3000000, "3MB stripe size"),
         (4000000, "4MB stripe size"),
         (5000000, "5MB stripe size"),
     ]
 
     for stripe_size, description in test_cases:
         print(f"Testing: {description}")
-        
+
         # Create ORC file with specific stripe size
         orc_path = tmp_path / f"orc_perfect_test_{stripe_size}.orc"
-        orc.write_table(data, str(orc_path), stripe_size=stripe_size, compression='uncompressed')
-        
+        orc.write_table(data, str(orc_path), stripe_size=stripe_size, compression="uncompressed")
+
         # Analyze the ORC file
         file_size = orc_path.stat().st_size
         orc_file = orc.ORCFile(str(orc_path))
         actual_stripes = orc_file.nstripes
         stripe_sizes_rows = [orc_file.read_stripe(i).num_rows for i in range(actual_stripes)]
-        
-        print(f"  File size: {file_size:,} bytes ({file_size/1024:.1f}KB)")
+
+        print(f"  File size: {file_size:,} bytes ({file_size / 1024:.1f}KB)")
         print(f"  Stripes: {actual_stripes}")
         if len(stripe_sizes_rows) > 3:
             print(f"  Rows per stripe: {stripe_sizes_rows[:3]}...")
         else:
             print(f"  Rows per stripe: {stripe_sizes_rows}")
-        
+
         # Calculate the key ratios
         target_bytes_per_row = stripe_size / stripe_sizes_rows[0] if stripe_sizes_rows else 0
         actual_bytes_per_row = file_size / len(data)
         compression_ratio = raw_size / file_size
         ratio = actual_bytes_per_row / target_bytes_per_row if target_bytes_per_row > 0 else 0
-        
+
         print(f"  Target bytes per row: {target_bytes_per_row:.1f} bytes")
         print(f"  Actual bytes per row: {actual_bytes_per_row:.1f} bytes")
         print(f"  Compression ratio: {compression_ratio:.1f}x")
         print(f"  Ratio (actual/target): {ratio:.2f}")
-        
+
         if ratio > 0.95:
-            print(f"  *** EXCELLENT: Near-perfect 1:1 mapping! ***")
+            print("  *** EXCELLENT: Near-perfect 1:1 mapping! ***")
         elif ratio > 0.9:
-            print(f"  *** VERY GOOD: Close to 1:1 mapping! ***")
+            print("  *** VERY GOOD: Close to 1:1 mapping! ***")
         elif ratio > 0.8:
-            print(f"  *** GOOD: Reasonable mapping! ***")
-        
+            print("  *** GOOD: Reasonable mapping! ***")
+
         # Test PyArrow batching
         from pyiceberg.manifest import DataFile
         from pyiceberg.typedef import Record
+
         data_file = DataFile.from_args(
             content=DataFileContent.DATA,
             file_path=str(orc_path),
@@ -4506,10 +4542,10 @@ def test_orc_near_perfect_stripe_size_mapping(tmp_path):
             row_filter=AlwaysTrue(),
             case_sensitive=True,
         )
-        
+
         batches = list(scan.to_record_batches([scan_task]))
         batch_sizes = [batch.num_rows for batch in batches]
-        
+
         print(f"  PyArrow batches: {len(batches)}")
         print(f"  Batch sizes: {batch_sizes[:3]}{'...' if len(batch_sizes) > 3 else ''}")
         print(f"  Batches match stripes: {len(batches) == actual_stripes}")
@@ -4534,29 +4570,30 @@ def test_orc_near_perfect_stripe_size_mapping(tmp_path):
     print("   values because the exact mapping depends on ORC's internal algorithms.")
 
 
-def test_orc_stripe_based_batching(tmp_path):
+def test_orc_stripe_based_batching(tmp_path: Path) -> None:
     """
     Test ORC stripe-based batching to demonstrate that ORC can have multiple batches per file.
     This corrects the previous understanding that ORC always has 1 batch per file.
-    
+
     This test uses hardcoded expected values based on observed behavior with 10,000 rows:
     - 200KB stripe size: 5 stripes of [2048, 2048, 2048, 2048, 1808] rows
-    - 400KB stripe size: 2 stripes of [7168, 2832] rows  
+    - 400KB stripe size: 2 stripes of [7168, 2832] rows
     - 600KB stripe size: 1 stripe of [10000] rows
-    
+
     To run just this test:
         pytest tests/io/test_pyarrow.py -k test_orc_stripe_based_batching
     """
     import pyarrow as pa
     import pyarrow.orc as orc
-    from pyiceberg.schema import Schema, NestedField
-    from pyiceberg.types import IntegerType, StringType
-    from pyiceberg.manifest import FileFormat, DataFileContent
-    from pyiceberg.table.metadata import TableMetadataV2
-    from pyiceberg.partitioning import PartitionSpec
-    from pyiceberg.io.pyarrow import PyArrowFileIO, ArrowScan
-    from pyiceberg.table import FileScanTask
+
     from pyiceberg.expressions import AlwaysTrue
+    from pyiceberg.io.pyarrow import ArrowScan, PyArrowFileIO
+    from pyiceberg.manifest import DataFileContent, FileFormat
+    from pyiceberg.partitioning import PartitionSpec
+    from pyiceberg.schema import Schema
+    from pyiceberg.table import FileScanTask
+    from pyiceberg.table.metadata import TableMetadataV2
+    from pyiceberg.types import IntegerType, StringType
 
     # Define schema
     schema = Schema(
@@ -4573,7 +4610,7 @@ def test_orc_stripe_based_batching(tmp_path):
         partition_specs=[PartitionSpec()],
         properties={
             "schema.name-mapping.default": '[{"field-id": 1, "names": ["id"]}, {"field-id": 2, "names": ["value"]}]',
-        }
+        },
     )
     io = PyArrowFileIO()
 
@@ -4589,15 +4626,12 @@ def test_orc_stripe_based_batching(tmp_path):
         (400000, "Medium stripes (400KB)", 2, [7168, 2832]),
         (600000, "Large stripes (600KB)", 1, [10000]),
     ]
-    
+
     for stripe_size, description, expected_stripes, expected_stripe_sizes in test_cases:
         print(f"Testing {description}:")
-        
+
         # Create data
-        data = pa.table({
-            "id": pa.array(range(1, 10001), type=pa.int32()),
-            "value": [f"value_{i}" for i in range(1, 10001)]
-        })
+        data = pa.table({"id": pa.array(range(1, 10001), type=pa.int32()), "value": [f"value_{i}" for i in range(1, 10001)]})
 
         # Create ORC file with specific stripe size (in bytes)
         orc_path = tmp_path / f"orc_stripe_test_{stripe_size}.orc"
@@ -4607,7 +4641,7 @@ def test_orc_stripe_based_batching(tmp_path):
         orc_file = orc.ORCFile(str(orc_path))
         actual_stripes = orc_file.nstripes
         actual_stripe_sizes = [orc_file.read_stripe(i).num_rows for i in range(actual_stripes)]
-        
+
         print(f"  Stripe size: {stripe_size} bytes")
         print(f"  Expected stripes: {expected_stripes}")
         print(f"  Actual stripes: {actual_stripes}")
@@ -4617,6 +4651,7 @@ def test_orc_stripe_based_batching(tmp_path):
         # Create DataFile
         from pyiceberg.manifest import DataFile
         from pyiceberg.typedef import Record
+
         data_file = DataFile.from_args(
             content=DataFileContent.DATA,
             file_path=str(orc_path),
@@ -4647,36 +4682,40 @@ def test_orc_stripe_based_batching(tmp_path):
             row_filter=AlwaysTrue(),
             case_sensitive=True,
         )
-        
+
         batches = list(scan.to_record_batches([scan_task]))
         batch_sizes = [batch.num_rows for batch in batches]
-        
+
         print(f"  PyArrow batches: {len(batches)}")
         print(f"  Batch sizes: {batch_sizes}")
         print(f"  Match expected stripes: {len(batches) == expected_stripes}")
         print(f"  Match expected sizes: {batch_sizes == expected_stripe_sizes}")
-        
+
         # CRITICAL: Verify we get multiple batches for a single file (when stripe size is small enough)
         if expected_stripes > 1:
             assert len(batches) > 1, f"Expected multiple batches for single file, got {len(batches)} batches"
             assert actual_stripes > 1, f"Expected multiple stripes for single file, got {actual_stripes} stripes"
         else:  # Large stripe sizes may result in single stripe/batch
             print(f"  Note: Large stripe size ({stripe_size} bytes) resulted in single stripe - this is expected")
-        
+
         # Verify exact batch count matches expected
         assert len(batches) == expected_stripes, f"Expected {expected_stripes} batches, got {len(batches)}"
-        
+
         # Verify batch sizes match expected stripe sizes
-        assert batch_sizes == expected_stripe_sizes, f"Batch sizes {batch_sizes} don't match expected stripe sizes {expected_stripe_sizes}"
-        
+        assert batch_sizes == expected_stripe_sizes, (
+            f"Batch sizes {batch_sizes} don't match expected stripe sizes {expected_stripe_sizes}"
+        )
+
         # Verify actual ORC metadata matches expected
         assert actual_stripes == expected_stripes, f"Expected {expected_stripes} stripes, got {actual_stripes}"
-        assert actual_stripe_sizes == expected_stripe_sizes, f"Expected stripe sizes {expected_stripe_sizes}, got {actual_stripe_sizes}"
-        
+        assert actual_stripe_sizes == expected_stripe_sizes, (
+            f"Expected stripe sizes {expected_stripe_sizes}, got {actual_stripe_sizes}"
+        )
+
         # Verify total rows
         total_rows = sum(batch.num_rows for batch in batches)
         assert total_rows == 10000, f"Expected 10000 total rows, got {total_rows}"
-        
+
         print(f"  ✓ {description}: {len(batches)} batches, {total_rows} total rows")
         print()
 
