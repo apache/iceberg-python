@@ -234,7 +234,7 @@ def test_quoted_column_with_dots() -> None:
     with pytest.raises(ParseException) as exc_info:
         parser.parse("'foo.bar'.baz = 'data'")
 
-    assert "Expected <= | <> | < | >= | > | == | = | !=, found '.'" in str(exc_info.value)
+    assert "Expected '<=' | '<>' | '<' | '>=' | '>' | '==' | '=' | '!=', found '.'" in str(exc_info.value)
 
 
 def test_quoted_column_with_spaces() -> None:
