@@ -26,6 +26,7 @@ from pyiceberg.catalog.memory import InMemoryCatalog
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import (
+    CommitFailedException,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchNamespaceError,
@@ -34,6 +35,7 @@ from pyiceberg.exceptions import (
 )
 from pyiceberg.io import WAREHOUSE
 from pyiceberg.schema import Schema
+from pyiceberg.types import LongType, StringType
 from tests.conftest import clean_up
 
 
@@ -343,3 +345,67 @@ def test_update_namespace_properties(test_catalog: Catalog, database_name: str) 
         else:
             assert k in update_report.removed
     assert "updated test description" == test_catalog.load_namespace_properties(database_name)["comment"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_update_table_schema(test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str) -> None:
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(database_name)
+    table = test_catalog.create_table(identifier, table_schema_nested)
+
+    update = table.update_schema().add_column("new_col", LongType())
+    update.commit()
+
+    loaded = test_catalog.load_table(identifier)
+
+    assert loaded.schema().find_field("new_col", case_sensitive=False)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_update_table_schema_conflict(
+    test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str
+) -> None:
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(database_name)
+    table = test_catalog.create_table(identifier, table_schema_nested)
+
+    update = table.update_schema().add_column("new_col", LongType())
+
+    # update the schema concurrently so that the original update fails
+    concurrent_table = test_catalog.load_table(identifier)
+    # The test schema is assumed to have a `bar` column that can be deleted.
+    concurrent_update = concurrent_table.update_schema(allow_incompatible_changes=True)
+    concurrent_update.set_identifier_fields("foo")
+    concurrent_update.update_column("foo", required=True)
+    concurrent_update.delete_column("bar")
+    concurrent_update.commit()
+
+    # attempt to commit the original update
+    with pytest.raises(CommitFailedException, match="Requirement failed: current schema"):
+        update.commit()
+
+    loaded = test_catalog.load_table(identifier)
+    assert loaded.schema() == concurrent_table.schema()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_update_table_schema_then_revert(
+    test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str
+) -> None:
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(database_name)
+    table = test_catalog.create_table(identifier, table_schema_nested)
+    original_schema_struct = table.schema().as_struct()
+
+    table.update_schema().add_column("col1", StringType()).add_column("col2", StringType()).add_column(
+        "col3", StringType()
+    ).commit()
+
+    table_with_cols = test_catalog.load_table(identifier)
+    table_with_cols.update_schema().delete_column("col1").delete_column("col2").delete_column("col3").commit()
+
+    reverted_table = test_catalog.load_table(identifier)
+    assert reverted_table.schema().as_struct() == original_schema_struct
