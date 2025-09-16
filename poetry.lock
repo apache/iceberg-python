@@ -2250,15 +2250,15 @@ tests = ["pytest"]
 
 [[package]]
 name = "huggingface-hub"
-version = "0.34.4"
+version = "0.34.5"
 description = "Client library to download and publish models, datasets and other repos on the huggingface.co hub"
 optional = true
 python-versions = ">=3.8.0"
 groups = ["main"]
 markers = "extra == \"hf\""
 files = [
-    {file = "huggingface_hub-0.34.4-py3-none-any.whl", hash = "sha256:9b365d781739c93ff90c359844221beef048403f1bc1f1c123c191257c3c890a"},
-    {file = "huggingface_hub-0.34.4.tar.gz", hash = "sha256:a4228daa6fb001be3f4f4bdaf9a0db00e1739235702848df00885c9b5742c85c"},
+    {file = "huggingface_hub-0.34.5-py3-none-any.whl", hash = "sha256:fea377adc6e9b6c239c1450e41a1409cbf2c6364d289c04c31d7dbaa222842e3"},
+    {file = "huggingface_hub-0.34.5.tar.gz", hash = "sha256:f676c6db41bc3fbd4020f520c842a0548f4c9a3f698dbfa6514bd8e41c3ab52a"},
 ]
 
 [package.dependencies]
