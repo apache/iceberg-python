@@ -700,7 +700,9 @@ def schema_to_pyarrow(
 class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
     _metadata: Dict[bytes, bytes]
 
-    def __init__(self, metadata: Dict[bytes, bytes] = EMPTY_DICT, include_field_ids: bool = True, file_format: Optional[FileFormat] = None) -> None:
+    def __init__(
+        self, metadata: Dict[bytes, bytes] = EMPTY_DICT, include_field_ids: bool = True, file_format: Optional[FileFormat] = None
+    ) -> None:
         self._metadata = metadata
         self._include_field_ids = include_field_ids
         self._file_format = file_format
@@ -1022,7 +1024,7 @@ def _get_file_format(file_format: FileFormat, **kwargs: Dict[str, Any]) -> ds.Fi
         return ds.ParquetFileFormat(**kwargs)
     elif file_format == FileFormat.ORC:
         # ORC doesn't support pre_buffer and buffer_size parameters
-        orc_kwargs = {k: v for k, v in kwargs.items() if k not in ['pre_buffer', 'buffer_size']}
+        orc_kwargs = {k: v for k, v in kwargs.items() if k not in ["pre_buffer", "buffer_size"]}
         return ds.OrcFileFormat(**orc_kwargs)
     else:
         raise ValueError(f"Unsupported file format: {file_format}")

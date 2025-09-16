@@ -2471,6 +2471,7 @@ def table_v2(example_table_metadata_v2: Dict[str, Any]) -> Table:
 @pytest.fixture
 def table_v2_orc(example_table_metadata_v2: Dict[str, Any]) -> Table:
     import copy
+
     metadata_dict = copy.deepcopy(example_table_metadata_v2)
     if not metadata_dict["properties"]:
         metadata_dict["properties"] = {}
