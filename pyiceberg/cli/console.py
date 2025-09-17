@@ -368,9 +368,10 @@ def table(ctx: Context, identifier: str, property_name: str, property_value: str
     catalog, output = _catalog_and_output(ctx)
     identifier_tuple = Catalog.identifier_to_tuple(identifier)
 
-    _ = catalog.load_table(identifier_tuple)
-    output.text(f"Setting {property_name}={property_value} on {identifier}")
-    raise NotImplementedError("Writing is WIP")
+    table = catalog.load_table(identifier_tuple)
+    with table.transaction() as tx:
+        tx.set_properties({property_name: property_value})
+    output.text(f"Set {property_name}={property_value} on {identifier}")
 
 
 @properties.group()
@@ -405,8 +406,9 @@ def table(ctx: Context, identifier: str, property_name: str) -> None:  # noqa: F
     catalog, output = _catalog_and_output(ctx)
     table = catalog.load_table(identifier)
     if property_name in table.metadata.properties:
-        output.exception(NotImplementedError("Writing is WIP"))
-        ctx.exit(1)
+        with table.transaction() as tx:
+            tx.remove_properties(property_name)
+        output.text(f"Property {property_name} removed from {identifier}")
     else:
         raise NoSuchPropertyException(f"Property {property_name} does not exist on {identifier}")
 

@@ -30,7 +30,9 @@ from pydantic import (
     RootModel,
     WithJsonSchema,
 )
+from pytest_mock import MockFixture
 
+from pyiceberg.exceptions import NotInstalledError
 from pyiceberg.expressions import (
     AlwaysFalse,
     BooleanExpression,
@@ -1653,6 +1655,12 @@ def test_bucket_pyarrow_transforms(
     assert expected == transform.pyarrow_transform(source_type)(input_arr)
 
 
+def test_bucket_pyarrow_void_transform() -> None:
+    input_arr = pa.chunked_array([pa.array([1, 2], type=pa.int32()), pa.array([3, 4], type=pa.int32())])
+    output_arr = pa.array([None, None, None, None], type=pa.int32())
+    assert output_arr == VoidTransform().pyarrow_transform(IntegerType())(input_arr)
+
+
 @pytest.mark.parametrize(
     "source_type, input_arr, expected, width",
     [
@@ -1668,3 +1676,15 @@ def test_truncate_pyarrow_transforms(
 ) -> None:
     transform: Transform[Any, Any] = TruncateTransform(width=width)
     assert expected == transform.pyarrow_transform(source_type)(input_arr)
+
+
+@pytest.mark.parametrize(
+    "transform", [BucketTransform(num_buckets=5), TruncateTransform(width=5), YearTransform(), MonthTransform(), DayTransform()]
+)
+def test_calling_pyarrow_transform_without_pyiceberg_core_installed_correctly_raises_not_imported_error(
+    transform, mocker: MockFixture
+) -> None:
+    mocker.patch.dict("sys.modules", {"pyiceberg_core": None})
+
+    with pytest.raises(NotInstalledError):
+        transform.pyarrow_transform(StringType())

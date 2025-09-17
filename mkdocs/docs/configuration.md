@@ -127,6 +127,7 @@ For the FileIO there are several configuration options available:
 | s3.request-timeout          | 60.0                       | Configure socket read timeouts on Windows and macOS, in seconds.                                                                                                                                                                                            |
 | s3.force-virtual-addressing | False                      | Whether to use virtual addressing of buckets. If true, then virtual addressing is always enabled. If false, then virtual addressing is only enabled if endpoint_override is empty. This can be used for non-AWS backends that only support virtual hosted-style access. |
 | s3.retry-strategy-impl      | None                       | Ability to set a custom S3 retry strategy. A full path to a class needs to be given that extends the [S3RetryStrategy](https://github.com/apache/arrow/blob/639201bfa412db26ce45e73851432018af6c945e/python/pyarrow/_s3fs.pyx#L110) base class.            |
+| s3.anonymous                | True                       | Configure whether to use anonymous connection. If False (default), uses key/secret if configured or boto's credential resolver. |
 
 <!-- markdown-link-check-enable-->
 
@@ -161,6 +162,7 @@ For the FileIO there are several configuration options available:
 | adls.dfs-storage-authority   | .dfs.core.windows.net                                                                       | The hostname[:port] of the Data Lake Gen 2 Service. Defaults to `.dfs.core.windows.net`. Useful for connecting to a local emulator, like [azurite](https://github.com/azure/azurite). See [AzureFileSystem](https://arrow.apache.org/docs/python/filesystems.html#azure-storage-file-system) for reference                |
 | adls.blob-storage-scheme     | https                                                                                       | Either `http` or `https`. Defaults to `https`. Useful for connecting to a local emulator, like [azurite](https://github.com/azure/azurite). See [AzureFileSystem](https://arrow.apache.org/docs/python/filesystems.html#azure-storage-file-system) for reference                                                      |
 | adls.dfs-storage-scheme      | https                                                                                       | Either `http` or `https`. Defaults to `https`. Useful for connecting to a local emulator, like [azurite](https://github.com/azure/azurite). See [AzureFileSystem](https://arrow.apache.org/docs/python/filesystems.html#azure-storage-file-system) for reference                                                          |
+| adls.token                   | eyJ0eXAiOiJKV1QiLCJhbGci...                                                                 | Static access token for authenticating with ADLS. Used for OAuth2 flows.                                                                                                                                                                       |
 
 <!-- markdown-link-check-enable-->
 
@@ -197,6 +199,7 @@ PyIceberg uses [S3FileSystem](https://arrow.apache.org/docs/python/generated/pya
 | s3.secret-access-key | password                   | Configure the static secret access key used to access the FileIO.                                                                                                                                                                                         |
 | s3.session-token     | AQoDYXdzEJr...             | Configure the static session token used to access the FileIO.                                                                                                                                                                                             |
 | s3.force-virtual-addressing   | True                       | Whether to use virtual addressing of buckets. This is set to `True` by default as OSS can only be accessed with virtual hosted style address.                                                                                                                                                                                                        |
+| s3.anonymous                | True                       | Configure whether to use anonymous connection. If False (default), uses key/secret if configured or standard AWS configuration methods. |
 
 <!-- markdown-link-check-enable-->
 
@@ -339,25 +342,14 @@ catalog:
 
 | Key                 | Example                          | Description                                                                                        |
 | ------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
-| uri                 | <https://rest-catalog/ws>          | URI identifying the REST Server                                                                    |
-| ugi                 | t-1234:secret                    | Hadoop UGI for Hive client.                                                                        |
-| credential          | t-1234:secret                    | Credential to use for OAuth2 credential flow when initializing the catalog                         |
-| token               | FEW23.DFSDF.FSDF                 | Bearer token value to use for `Authorization` header                                               |
-| scope               | openid offline corpds:ds:profile | Desired scope of the requested security token (default : catalog)                                  |
-| resource            | rest_catalog.iceberg.com         | URI for the target resource or service                                                             |
-| audience            | rest_catalog                     | Logical name of target resource or service                                                         |
-| rest.sigv4-enabled  | true                             | Sign requests to the REST Server using AWS SigV4 protocol                                          |
-| rest.signing-region | us-east-1                        | The region to use when SigV4 signing a request                                                     |
-| rest.signing-name   | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
-| oauth2-server-uri   | <https://auth-service/cc>          | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
-| snapshot-loading-mode | refs                             | The snapshots to return in the body of the metadata. Setting the value to `all` would return the full set of snapshots currently valid for the table. Setting the value to `refs` would load all snapshots referenced by branches or tags. |
-| warehouse          | myWarehouse                         | Warehouse location or identifier to request from the catalog service. May be used to determine server-side overrides, such as the warehouse location. |
+| uri                 | <https://rest-catalog/ws>        | URI identifying the REST Server                                                                    |
+| warehouse           | myWarehouse                      | Warehouse location or identifier to request from the catalog service. May be used to determine server-side overrides, such as the warehouse location. |
+| snapshot-loading-mode | refs                           | The snapshots to return in the body of the metadata. Setting the value to `all` would return the full set of snapshots currently valid for the table. Setting the value to `refs` would load all snapshots referenced by branches or tags. |
+| `header.X-Iceberg-Access-Delegation` | `vended-credentials` | Signal to the server that the client supports delegated access via a comma-separated list of access mechanisms. The server may choose to supply access via any or none of the requested mechanisms. When using `vended-credentials`, the server provides temporary credentials to the client. When using `remote-signing`, the server signs requests on behalf of the client. (default: `vended-credentials`) |
 
-<!-- markdown-link-check-enable-->
+#### Headers in REST Catalog
 
-#### Headers in RESTCatalog
-
-To configure custom headers in RESTCatalog, include them in the catalog properties with the prefix `header.`. This
+To configure custom headers in REST Catalog, include them in the catalog properties with `header.<Header-Name>`. This
 ensures that all HTTP requests to the REST service include the specified headers.
 
 ```yaml
@@ -368,11 +360,184 @@ catalog:
     header.content-type: application/vnd.api+json
 ```
 
-Specific headers defined by the RESTCatalog spec include:
+#### Authentication Options
 
-| Key                                  | Options                               | Default              | Description                                                                                                                                                                                        |
-| ------------------------------------ | ------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `header.X-Iceberg-Access-Delegation` | `{vended-credentials,remote-signing}` | `vended-credentials` | Signal to the server that the client supports delegated access via a comma-separated list of access mechanisms. The server may choose to supply access via any or none of the requested mechanisms |
+##### Legacy OAuth2
+
+Legacy OAuth2 Properties will be removed in PyIceberg 1.0 in place of pluggable AuthManager properties below
+
+| Key                 | Example                          | Description                                                                                        |
+| ------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
+| oauth2-server-uri   | <https://auth-service/cc>        | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
+| token               | FEW23.DFSDF.FSDF                 | Bearer token value to use for `Authorization` header |
+| credential          | client_id:client_secret          | Credential to use for OAuth2 credential flow when initializing the catalog                         |
+| scope               | openid offline corpds:ds:profile | Desired scope of the requested security token (default : catalog)                                  |
+| resource            | rest_catalog.iceberg.com         | URI for the target resource or service                                                             |
+| audience            | rest_catalog                     | Logical name of target resource or service                                                         |
+
+##### SigV4
+
+| Key                 | Example                          | Description                                                                                        |
+| ------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
+| rest.sigv4-enabled  | true                             | Sign requests to the REST Server using AWS SigV4 protocol                                          |
+| rest.signing-region | us-east-1                        | The region to use when SigV4 signing a request                                                     |
+| rest.signing-name   | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
+
+##### Pluggable Authentication via AuthManager
+
+The RESTCatalog supports pluggable authentication via the `auth` configuration block. This allows you to specify which how the access token will be fetched and managed for use with the HTTP requests to the RESTCatalog server. The authentication method is selected by setting the `auth.type` property, and additional configuration can be provided as needed for each method.
+
+###### Supported Authentication Types
+
+- `noop`: No authentication (no Authorization header sent).
+- `basic`: HTTP Basic authentication.
+- `oauth2`: OAuth2 client credentials flow.
+- `custom`: Custom authentication manager (requires `auth.impl`).
+- `google`: Google Authentication support
+
+###### Configuration Properties
+
+The `auth` block is structured as follows:
+
+```yaml
+catalog:
+  default:
+    type: rest
+    uri: http://rest-catalog/ws/
+    auth:
+      type: <auth_type>
+      <auth_type>:
+        # Type-specific configuration
+      impl: <custom_class_path>  # Only for custom auth
+```
+
+###### Property Reference
+
+| Property         | Required | Description                                                                                     |
+|------------------|----------|-------------------------------------------------------------------------------------------------|
+| `auth.type`      | Yes      | The authentication type to use (`noop`, `basic`, `oauth2`, or `custom`).                       |
+| `auth.impl`      | Conditionally | The fully qualified class path for a custom AuthManager. Required if `auth.type` is `custom`. |
+| `auth.basic`     | If type is `basic` | Block containing `username` and `password` for HTTP Basic authentication.           |
+| `auth.oauth2`    | If type is `oauth2` | Block containing OAuth2 configuration (see below).                                 |
+| `auth.custom`    | If type is `custom` | Block containing configuration for the custom AuthManager.                          |
+| `auth.google`    | If type is `google` | Block containing `credentials_path` to a service account file (if using). Will default to using Application Default Credentials. |
+
+###### Examples
+
+No Authentication:
+
+```yaml
+auth:
+  type: noop
+```
+
+Basic Authentication:
+
+```yaml
+auth:
+  type: basic
+  basic:
+    username: myuser
+    password: mypass
+```
+
+OAuth2 Authentication:
+
+```yaml
+auth:
+  type: oauth2
+  oauth2:
+    client_id: my-client-id
+    client_secret: my-client-secret
+    token_url: https://auth.example.com/oauth/token
+    scope: read
+    refresh_margin: 60         # (optional) seconds before expiry to refresh
+    expires_in: 3600           # (optional) fallback if server does not provide
+```
+
+Custom Authentication:
+
+```yaml
+auth:
+  type: custom
+  impl: mypackage.module.MyAuthManager
+  custom:
+    property1: value1
+    property2: value2
+```
+
+###### Notes
+
+- If `auth.type` is `custom`, you **must** specify `auth.impl` with the full class path to your custom AuthManager.
+- If `auth.type` is not `custom`, specifying `auth.impl` is not allowed.
+- The configuration block under each type (e.g., `basic`, `oauth2`, `custom`) is passed as keyword arguments to the corresponding AuthManager.
+
+<!-- markdown-link-check-enable-->
+
+#### Common Integrations & Examples
+
+##### AWS Glue
+
+```yaml
+catalog:
+  s3_tables_catalog:
+    type: rest
+    uri: https://glue.<region>.amazonaws.com/iceberg
+    warehouse: <account-id>:s3tablescatalog/<table-bucket-name>
+    rest.sigv4-enabled: true
+    rest.signing-name: glue
+    rest.signing-region: <region>
+```
+
+##### Unity Catalog
+
+```yaml
+catalog:
+  unity_catalog:
+    type: rest
+    uri: https://<workspace-url>/api/2.1/unity-catalog/iceberg-rest
+    warehouse: <uc-catalog-name>
+    token: <databricks-pat-token>
+```
+
+##### R2 Data Catalog
+
+```yaml
+catalog:
+  r2_catalog:
+    type: rest
+    uri: <r2-catalog-uri>
+    warehouse: <r2-warehouse-name>
+    token: <r2-token>
+```
+
+##### Lakekeeper
+
+```yaml
+catalog:
+  lakekeeper_catalog:
+    type: rest
+    uri: <lakekeeper-catalog-uri>
+    warehouse: <lakekeeper-warehouse-name>
+    credential: <client-id>:<client-secret>
+    oauth2-server-uri: http://localhost:30080/realms/<keycloak-realm-name>/protocol/openid-connect/token
+    scope: lakekeeper
+```
+
+##### Apache Polaris
+
+```yaml
+catalog:
+  polaris_catalog:
+    type: rest
+    uri: https://<account>.snowflakecomputing.com/polaris/api/catalog
+    warehouse: <polaris-catalog-name>
+    credential: <client-id>:<client-secret>
+    header.X-Iceberg-Access-Delegation: vended-credentials
+    scope: PRINCIPAL_ROLE:ALL
+    token-refresh-enabled: true
+    py-io-impl: pyiceberg.io.fsspec.FsspecFileIO
+```
 
 ### SQL Catalog
 
@@ -444,6 +609,7 @@ catalog:
 | hive.hive2-compatible        | true    | Using Hive 2.x compatibility mode    |
 | hive.kerberos-authentication | true    | Using authentication via Kerberos    |
 | hive.kerberos-service-name   | hive    | Kerberos service name (default hive) |
+| ugi                 | t-1234:secret                    | Hadoop UGI for Hive client.                                                                        |
 
 When using Hive 2.x, make sure to set the compatibility flag:
 

@@ -46,12 +46,14 @@ You can mix and match optional dependencies depending on your needs:
 | hive-kerberos | Support for Hive metastore in Kerberos environment                       |
 | glue          | Support for AWS Glue                                                      |
 | dynamodb      | Support for AWS DynamoDB                                                  |
+| bigquery      | Support for Google Cloud BigQuery                                        |
 | sql-postgres  | Support for SQL Catalog backed by Postgresql                              |
 | sql-sqlite    | Support for SQL Catalog backed by SQLite                                  |
 | pyarrow       | PyArrow as a FileIO implementation to interact with the object store      |
 | pandas        | Installs both PyArrow and Pandas                                          |
 | duckdb        | Installs both PyArrow and DuckDB                                          |
 | ray           | Installs PyArrow, Pandas, and Ray                                         |
+| bodo          | Installs Bodo                                                             |
 | daft          | Installs Daft                                                             |
 | polars       | Installs Polars                                                           |
 | s3fs          | S3FS as a FileIO implementation to interact with the object store         |

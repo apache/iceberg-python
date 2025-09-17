@@ -21,14 +21,24 @@
 PYTEST_ARGS ?= -v  # Override with e.g. PYTEST_ARGS="-vv --tb=short"
 COVERAGE ?= 0      # Set COVERAGE=1 to enable coverage: make test COVERAGE=1
 COVERAGE_FAIL_UNDER ?= 85  # Minimum coverage % to pass: make coverage-report COVERAGE_FAIL_UNDER=70
+KEEP_COMPOSE ?= 0  # Set KEEP_COMPOSE=1 to keep containers after integration tests
+
+PIP = python -m pip
+
+POETRY_VERSION = 2.1.4
+POETRY = python -m poetry
 
 ifeq ($(COVERAGE),1)
-  TEST_RUNNER = poetry run coverage run --parallel-mode --source=pyiceberg -m
+  TEST_RUNNER = $(POETRY) run coverage run --parallel-mode --source=pyiceberg -m
 else
-  TEST_RUNNER = poetry run
+  TEST_RUNNER = $(POETRY) run
 endif
 
-POETRY_VERSION = 2.1.1
+ifeq ($(KEEP_COMPOSE),1)
+  CLEANUP_COMMAND = echo "Keeping containers running for debugging (KEEP_COMPOSE=1)"
+else
+  CLEANUP_COMMAND = docker compose -f dev/docker-compose-integration.yml down -v --remove-orphans 2>/dev/null || true
+endif
 
 # ============
 # Help Section
@@ -46,21 +56,21 @@ help: ## Display this help message
 ##@ Setup
 
 install-poetry: ## Ensure Poetry is installed at the specified version
-	@if ! command -v poetry &> /dev/null; then \
+	@if ! command -v ${POETRY} &> /dev/null; then \
 		echo "Poetry not found. Installing..."; \
-		pip install --user poetry==$(POETRY_VERSION); \
+		${PIP} install --user poetry==$(POETRY_VERSION); \
 	else \
-		INSTALLED_VERSION=$$(pip show poetry | grep Version | awk '{print $$2}'); \
+		INSTALLED_VERSION=$$(${PIP} show poetry | grep Version | awk '{print $$2}'); \
 		if [ "$$INSTALLED_VERSION" != "$(POETRY_VERSION)" ]; then \
 			echo "Updating Poetry to version $(POETRY_VERSION)..."; \
-			pip install --user --upgrade poetry==$(POETRY_VERSION); \
+			${PIP} install --user --upgrade poetry==$(POETRY_VERSION); \
 		else \
 			echo "Poetry version $(POETRY_VERSION) already installed."; \
 		fi; \
 	fi
 
 install-dependencies: ## Install all dependencies including extras
-	poetry install --all-extras
+	$(POETRY) install --all-extras
 
 install: install-poetry install-dependencies ## Install Poetry and dependencies
 
@@ -74,7 +84,7 @@ check-license: ## Check license headers
 	./dev/check-license
 
 lint: ## Run code linters via pre-commit
-	poetry run pre-commit run --all-files
+	$(POETRY) run pre-commit run --all-files
 
 # ===============
 # Testing Section
@@ -85,7 +95,7 @@ lint: ## Run code linters via pre-commit
 test: ## Run all unit tests (excluding integration)
 	$(TEST_RUNNER) pytest tests/ -m "(unmarked or parametrize) and not integration" $(PYTEST_ARGS)
 
-test-integration: test-integration-setup test-integration-exec ## Run integration tests
+test-integration: test-integration-setup test-integration-exec test-integration-cleanup ## Run integration tests
 
 test-integration-setup: ## Start Docker services for integration tests
 	docker compose -f dev/docker-compose-integration.yml kill
@@ -97,6 +107,12 @@ test-integration-setup: ## Start Docker services for integration tests
 
 test-integration-exec: ## Run integration tests (excluding provision)
 	$(TEST_RUNNER) pytest tests/ -m integration $(PYTEST_ARGS)
+
+test-integration-cleanup: ## Clean up integration test environment
+	@if [ "${KEEP_COMPOSE}" != "1" ]; then \
+		echo "Cleaning up Docker containers..."; \
+	fi
+	$(CLEANUP_COMMAND)
 
 test-integration-rebuild: ## Rebuild integration Docker services from scratch
 	docker compose -f dev/docker-compose-integration.yml kill
@@ -119,10 +135,10 @@ test-coverage: COVERAGE=1
 test-coverage: test test-integration test-s3 test-adls test-gcs coverage-report ## Run all tests with coverage and report
 
 coverage-report: ## Combine and report coverage
-	poetry run coverage combine
-	poetry run coverage report -m --fail-under=$(COVERAGE_FAIL_UNDER)
-	poetry run coverage html
-	poetry run coverage xml
+	${POETRY} run coverage combine
+	${POETRY} run coverage report -m --fail-under=$(COVERAGE_FAIL_UNDER)
+	${POETRY} run coverage html
+	${POETRY} run coverage xml
 
 # ================
 # Documentation
@@ -131,13 +147,13 @@ coverage-report: ## Combine and report coverage
 ##@ Documentation
 
 docs-install: ## Install docs dependencies
-	poetry install --with docs
+	${POETRY} install --with docs
 
 docs-serve: ## Serve local docs preview (hot reload)
-	poetry run mkdocs serve -f mkdocs/mkdocs.yml
+	${POETRY} run mkdocs serve -f mkdocs/mkdocs.yml
 
 docs-build: ## Build the static documentation site
-	poetry run mkdocs build -f mkdocs/mkdocs.yml --strict
+	${POETRY} run mkdocs build -f mkdocs/mkdocs.yml --strict
 
 # ===================
 # Project Maintenance

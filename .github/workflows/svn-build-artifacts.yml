@@ -35,11 +35,11 @@ jobs:
         os: [ ubuntu-22.04, windows-2022, macos-13, macos-14 ]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 1
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: |
             3.9
@@ -57,7 +57,7 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.0.0
+        uses: pypa/cibuildwheel@v3.1.4
         with:
           output-dir: wheelhouse
           config-file: "pyproject.toml"

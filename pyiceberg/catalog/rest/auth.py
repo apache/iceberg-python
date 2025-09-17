@@ -17,9 +17,14 @@
 
 import base64
 import importlib
+import logging
+import threading
+import time
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Type
+from functools import cached_property
+from typing import Any, Dict, List, Optional, Type
 
+import requests
 from requests import HTTPError, PreparedRequest, Session
 from requests.auth import AuthBase
 
@@ -27,6 +32,7 @@ from pyiceberg.catalog.rest.response import TokenResponse, _handle_non_200_respo
 from pyiceberg.exceptions import OAuthError
 
 COLON = ":"
+logger = logging.getLogger(__name__)
 
 
 class AuthManager(ABC):
@@ -42,11 +48,15 @@ class AuthManager(ABC):
 
 
 class NoopAuthManager(AuthManager):
+    """Auth Manager implementation with no auth."""
+
     def auth_header(self) -> Optional[str]:
         return None
 
 
 class BasicAuthManager(AuthManager):
+    """AuthManager implementation that supports basic password auth."""
+
     def __init__(self, username: str, password: str):
         credentials = f"{username}:{password}"
         self._token = base64.b64encode(credentials.encode()).decode()
@@ -56,6 +66,12 @@ class BasicAuthManager(AuthManager):
 
 
 class LegacyOAuth2AuthManager(AuthManager):
+    """Legacy OAuth2 AuthManager implementation.
+
+    This class exists for backward compatibility, and will be removed in
+    PyIceberg 1.0.0 in favor of OAuth2AuthManager.
+    """
+
     _session: Session
     _auth_url: Optional[str]
     _token: Optional[str]
@@ -107,6 +123,127 @@ class LegacyOAuth2AuthManager(AuthManager):
 
     def auth_header(self) -> str:
         return f"Bearer {self._token}"
+
+
+class OAuth2TokenProvider:
+    """Thread-safe OAuth2 token provider with token refresh support."""
+
+    client_id: str
+    client_secret: str
+    token_url: str
+    scope: Optional[str]
+    refresh_margin: int
+    expires_in: Optional[int]
+
+    _token: Optional[str]
+    _expires_at: int
+    _lock: threading.Lock
+
+    def __init__(
+        self,
+        client_id: str,
+        client_secret: str,
+        token_url: str,
+        scope: Optional[str] = None,
+        refresh_margin: int = 60,
+        expires_in: Optional[int] = None,
+    ):
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.token_url = token_url
+        self.scope = scope
+        self.refresh_margin = refresh_margin
+        self.expires_in = expires_in
+
+        self._token = None
+        self._expires_at = 0
+        self._lock = threading.Lock()
+
+    @cached_property
+    def _client_secret_header(self) -> str:
+        creds = f"{self.client_id}:{self.client_secret}"
+        creds_bytes = creds.encode("utf-8")
+        b64_creds = base64.b64encode(creds_bytes).decode("utf-8")
+        return f"Basic {b64_creds}"
+
+    def _refresh_token(self) -> None:
+        data = {"grant_type": "client_credentials"}
+        if self.scope:
+            data["scope"] = self.scope
+
+        response = requests.post(self.token_url, data=data, headers={"Authorization": self._client_secret_header})
+        response.raise_for_status()
+        result = response.json()
+
+        self._token = result["access_token"]
+        expires_in = result.get("expires_in", self.expires_in)
+        if expires_in is None:
+            raise ValueError(
+                "The expiration time of the Token must be provided by the Server in the Access Token Response in `expires_in` field, or by the PyIceberg Client."
+            )
+        self._expires_at = time.monotonic() + expires_in - self.refresh_margin
+
+    def get_token(self) -> str:
+        with self._lock:
+            if not self._token or time.monotonic() >= self._expires_at:
+                self._refresh_token()
+            if self._token is None:
+                raise ValueError("Authorization token is None after refresh")
+            return self._token
+
+
+class OAuth2AuthManager(AuthManager):
+    """Auth Manager implementation that supports OAuth2 as defined in IETF RFC6749."""
+
+    def __init__(
+        self,
+        client_id: str,
+        client_secret: str,
+        token_url: str,
+        scope: Optional[str] = None,
+        refresh_margin: int = 60,
+        expires_in: Optional[int] = None,
+    ):
+        self.token_provider = OAuth2TokenProvider(
+            client_id,
+            client_secret,
+            token_url,
+            scope,
+            refresh_margin,
+            expires_in,
+        )
+
+    def auth_header(self) -> str:
+        return f"Bearer {self.token_provider.get_token()}"
+
+
+class GoogleAuthManager(AuthManager):
+    """An auth manager that is responsible for handling Google credentials."""
+
+    def __init__(self, credentials_path: Optional[str] = None, scopes: Optional[List[str]] = None):
+        """
+        Initialize GoogleAuthManager.
+
+        Args:
+            credentials_path: Optional path to Google credentials JSON file.
+            scopes: Optional list of OAuth2 scopes.
+        """
+        try:
+            import google.auth
+            import google.auth.transport.requests
+        except ImportError as e:
+            raise ImportError("Google Auth libraries not found. Please install 'google-auth'.") from e
+
+        if credentials_path:
+            self.credentials, _ = google.auth.load_credentials_from_file(credentials_path, scopes=scopes)
+        else:
+            logger.info("Using Google Default Application Credentials")
+            self.credentials, _ = google.auth.default(scopes=scopes)
+        self._auth_request = google.auth.transport.requests.Request()
+
+    def auth_header(self) -> str:
+        self.credentials.refresh(self._auth_request)
+        return f"Bearer {self.credentials.token}"
 
 
 class AuthManagerAdapter(AuthBase):
@@ -187,3 +324,5 @@ class AuthManagerFactory:
 AuthManagerFactory.register("noop", NoopAuthManager)
 AuthManagerFactory.register("basic", BasicAuthManager)
 AuthManagerFactory.register("legacyoauth2", LegacyOAuth2AuthManager)
+AuthManagerFactory.register("oauth2", OAuth2AuthManager)
+AuthManagerFactory.register("google", GoogleAuthManager)

@@ -65,6 +65,7 @@ from pyiceberg.table import (
     StagedTable,
     Table,
     TableIdentifier,
+    TableProperties,
 )
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
@@ -79,8 +80,6 @@ from pyiceberg.utils.properties import get_first_property_value, get_header_prop
 
 if TYPE_CHECKING:
     import pyarrow as pa
-
-ICEBERG_REST_SPEC_VERSION = "0.14.1"
 
 
 class Endpoints:
@@ -135,6 +134,8 @@ SIGV4_REGION = "rest.signing-region"
 SIGV4_SERVICE = "rest.signing-name"
 OAUTH2_SERVER_URI = "oauth2-server-uri"
 SNAPSHOT_LOADING_MODE = "snapshot-loading-mode"
+AUTH = "auth"
+CUSTOM = "custom"
 
 NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
 
@@ -248,7 +249,23 @@ class RestCatalog(Catalog):
                 elif ssl_client_cert := ssl_client.get(CERT):
                     session.cert = ssl_client_cert
 
-        session.auth = AuthManagerAdapter(self._create_legacy_oauth2_auth_manager(session))
+        if auth_config := self.properties.get(AUTH):
+            auth_type = auth_config.get("type")
+            if auth_type is None:
+                raise ValueError("auth.type must be defined")
+            auth_type_config = auth_config.get(auth_type, {})
+            auth_impl = auth_config.get("impl")
+
+            if auth_type == CUSTOM and not auth_impl:
+                raise ValueError("auth.impl must be specified when using custom auth.type")
+
+            if auth_type != CUSTOM and auth_impl:
+                raise ValueError("auth.impl can only be specified when using custom auth.type")
+
+            session.auth = AuthManagerAdapter(AuthManagerFactory.create(auth_impl or auth_type, auth_type_config))
+        else:
+            session.auth = AuthManagerAdapter(self._create_legacy_oauth2_auth_manager(session))
+
         # Set HTTP headers
         self._config_headers(session)
 
@@ -467,7 +484,6 @@ class RestCatalog(Catalog):
         header_properties = get_header_properties(self.properties)
         session.headers.update(header_properties)
         session.headers["Content-type"] = "application/json"
-        session.headers["X-Client-Version"] = ICEBERG_REST_SPEC_VERSION
         session.headers["User-Agent"] = f"PyIceberg/{__version__}"
         session.headers.setdefault("X-Iceberg-Access-Delegation", ACCESS_DELEGATION_DEFAULT)
 
@@ -481,7 +497,10 @@ class RestCatalog(Catalog):
         properties: Properties = EMPTY_DICT,
         stage_create: bool = False,
     ) -> TableResponse:
-        iceberg_schema = self._convert_schema_if_needed(schema)
+        iceberg_schema = self._convert_schema_if_needed(
+            schema,
+            int(properties.get(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION)),  # type: ignore
+        )
         fresh_schema = assign_fresh_schema_ids(iceberg_schema)
         fresh_partition_spec = assign_fresh_partition_spec_ids(partition_spec, iceberg_schema, fresh_schema)
         fresh_sort_order = assign_fresh_sort_order_ids(sort_order, iceberg_schema, fresh_schema)
@@ -506,7 +525,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {409: TableAlreadyExistsError})
+            _handle_non_200_response(exc, {409: TableAlreadyExistsError, 404: NoSuchNamespaceError})
         return TableResponse.model_validate_json(response.text)
 
     @retry(**_RETRY_ARGS)
@@ -871,3 +890,10 @@ class RestCatalog(Catalog):
             response.raise_for_status()
         except HTTPError as exc:
             _handle_non_200_response(exc, {404: NoSuchViewError})
+
+    def close(self) -> None:
+        """Close the catalog and release Session connection adapters.
+
+        This method closes mounted HttpAdapters' pooled connections and any active Proxy pooled connections.
+        """
+        self._session.close()
