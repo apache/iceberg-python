@@ -46,6 +46,7 @@ from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import CommitFailedException, NoSuchTableError
 from pyiceberg.expressions import And, EqualTo, GreaterThanOrEqual, In, LessThan, Not
 from pyiceberg.io.pyarrow import UnsupportedPyArrowTypeException, _dataframe_to_data_files
+from pyiceberg.manifest import FileFormat
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
@@ -707,6 +708,81 @@ def test_write_parquet_unsupported_properties(
     tbl = _create_table(session_catalog, identifier, properties, [])
     with pytest.warns(UserWarning, match=r"Parquet writer option.*"):
         tbl.append(arrow_table_with_null)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_spark_writes_orc_pyiceberg_reads(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    """Test that ORC files written by Spark can be read by PyIceberg."""
+    identifier = f"default.spark_writes_orc_pyiceberg_reads_v{format_version}"
+
+    # Create test data
+    test_data = [
+        (1, "Alice", 25, True),
+        (2, "Bob", 30, False),
+        (3, "Charlie", 35, True),
+        (4, "David", 28, True),
+        (5, "Eve", 32, False),
+    ]
+
+    # Create Spark DataFrame
+    spark_df = spark.createDataFrame(test_data, ["id", "name", "age", "is_active"])
+
+    # Create table with Spark using ORC format
+    spark_df.writeTo(identifier).using("iceberg").createOrReplace()
+
+    # Configure table to use ORC format
+    spark.sql(
+        f"""
+        ALTER TABLE {identifier}
+        SET TBLPROPERTIES (
+            'write.format.default' = 'orc',
+            'format-version' = '{format_version}'
+        )
+    """
+    )
+
+    # Write data with ORC format using Spark
+    spark_df.writeTo(identifier).using("iceberg").append()
+
+    # Read with PyIceberg - this is the main focus of our validation
+    tbl = session_catalog.load_table(identifier)
+    pyiceberg_df = tbl.scan().to_pandas()
+
+    # Verify PyIceberg results have the expected number of rows
+    assert len(pyiceberg_df) == 10  # 5 rows from create + 5 rows from append
+
+    # Verify PyIceberg column names
+    assert list(pyiceberg_df.columns) == ["id", "name", "age", "is_active"]
+
+    # Verify PyIceberg data integrity - check the actual data values
+    expected_data = [
+        (1, "Alice", 25, True),
+        (2, "Bob", 30, False),
+        (3, "Charlie", 35, True),
+        (4, "David", 28, True),
+        (5, "Eve", 32, False),
+    ]
+
+    # Verify PyIceberg results contain the expected data (appears twice due to create + append)
+    pyiceberg_data = list(zip(pyiceberg_df["id"], pyiceberg_df["name"], pyiceberg_df["age"], pyiceberg_df["is_active"]))
+    assert pyiceberg_data == expected_data + expected_data  # Data should appear twice
+
+    # Verify PyIceberg data types are correct
+    assert pyiceberg_df["id"].dtype == "int64"
+    assert pyiceberg_df["name"].dtype == "object"  # string
+    assert pyiceberg_df["age"].dtype == "int64"
+    assert pyiceberg_df["is_active"].dtype == "bool"
+
+    # Cross-validate with Spark to ensure consistency
+    spark_result = spark.sql(f"SELECT * FROM {identifier}").toPandas()
+    pandas.testing.assert_frame_equal(spark_result, pyiceberg_df, check_dtype=False)
+
+    # Verify the files are actually ORC format
+    files = list(tbl.scan().plan_files())
+    assert len(files) > 0
+    for file_task in files:
+        assert file_task.file.file_format == FileFormat.ORC
 
 
 @pytest.mark.integration
