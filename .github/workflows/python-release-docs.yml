@@ -31,11 +31,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
-      - name: Install poetry
-        run: make install-poetry
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
+      - name: Install poetry
+        run: make install-poetry
       - name: Install docs
         run: make docs-install
       - name: Build docs
