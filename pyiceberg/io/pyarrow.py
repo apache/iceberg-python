@@ -692,7 +692,7 @@ def schema_to_pyarrow(
     schema: Union[Schema, IcebergType],
     metadata: Dict[bytes, bytes] = EMPTY_DICT,
     include_field_ids: bool = True,
-    file_format: Optional[FileFormat] = None,
+    file_format: FileFormat = FileFormat.PARQUET,
 ) -> pa.schema:
     return visit(schema, _ConvertToArrowSchema(metadata, include_field_ids, file_format))
 
@@ -1253,18 +1253,14 @@ class PyArrowSchemaVisitor(Generic[T], ABC):
 
 def _get_field_id(field: pa.Field) -> Optional[int]:
     """Return the Iceberg field ID from Parquet or ORC metadata if available."""
-    if not field.metadata:
-        return None
+    if field.metadata:
+        # Try Parquet field ID first
+        if field_id_bytes := field.metadata.get(PYARROW_PARQUET_FIELD_ID_KEY):
+            return int(field_id_bytes.decode())
 
-    # Try Parquet field ID first
-    field_id_bytes = field.metadata.get(PYARROW_PARQUET_FIELD_ID_KEY)
-    if field_id_bytes:
-        return int(field_id_bytes.decode())
-
-    # Fallback: try ORC field ID
-    field_id_bytes = field.metadata.get(ORC_FIELD_ID_KEY)
-    if field_id_bytes:
-        return int(field_id_bytes.decode())
+        # Fallback: try ORC field ID
+        if field_id_bytes := field.metadata.get(ORC_FIELD_ID_KEY):
+            return int(field_id_bytes.decode())
 
     return None
 

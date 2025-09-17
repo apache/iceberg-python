@@ -3362,15 +3362,8 @@ def test_orc_record_batching_streaming(tmp_path: Path) -> None:
     # Test 7: Verify batch count matches expected pattern
     # The number of batches should be >= number of files (one batch per file minimum)
     # and could be more if ORC creates multiple fragments per file
-    print(f"Generated {len(batches)} batches from {num_files} files with {total_rows} total rows")
-    print(f"Batch sizes: {[batch.num_rows for batch in batches]}")
-    print(f"Average batch size: {total_rows / len(batches):.1f} rows per batch")
-
     # This validates the end-to-end batching behavior as requested in the PR comment
     # We expect multiple batches based on file size and configured batch size
-    print(f"Expected at least {num_files} batches (1 per file) with PyArrow's default batching")
-    print(f"Actual batch count: {len(batches)}")
-    print(f"Batch sizes: {[batch.num_rows for batch in batches]}")
 
     # Verify we get reasonable batching behavior
     assert len(batches) >= 1, f"Expected at least 1 batch, got {len(batches)}"
@@ -3388,8 +3381,6 @@ def test_orc_batching_exact_counts_single_file(tmp_path: Path) -> None:
     import pyarrow as pa
     import pyarrow.orc as orc
 
-    from pyiceberg.expressions import AlwaysTrue
-    from pyiceberg.io.pyarrow import ArrowScan, PyArrowFileIO
     from pyiceberg.manifest import DataFileContent, FileFormat
     from pyiceberg.partitioning import PartitionSpec
     from pyiceberg.schema import Schema
@@ -3425,9 +3416,7 @@ def test_orc_batching_exact_counts_single_file(tmp_path: Path) -> None:
         (5000, "Very large file (1 stripe)"),
     ]
 
-    for num_rows, description in test_cases:
-        print(f"\n=== Testing {description} with {num_rows} rows ===")
-
+    for num_rows, _description in test_cases:
         # Create data
         data = pa.table(
             {"id": pa.array(range(1, num_rows + 1), type=pa.int32()), "value": [f"value_{i}" for i in range(1, num_rows + 1)]}
@@ -3461,9 +3450,8 @@ def test_orc_batching_exact_counts_single_file(tmp_path: Path) -> None:
             split_offsets=None,
         )
         data_file.spec_id = 0
-        scan_task = FileScanTask(data_file=data_file)
 
-        # Test batching behavior
+        scan_task = FileScanTask(data_file=data_file)
         scan = ArrowScan(
             table_metadata=table_metadata,
             io=io,
@@ -3471,12 +3459,7 @@ def test_orc_batching_exact_counts_single_file(tmp_path: Path) -> None:
             row_filter=AlwaysTrue(),
             case_sensitive=True,
         )
-
         batches = list(scan.to_record_batches([scan_task]))
-
-        print(f"  Rows: {num_rows}")
-        print(f"  Batches: {len(batches)}")
-        print(f"  Batch sizes: {[batch.num_rows for batch in batches]}")
 
         # Verify exact batch count and sizes
         total_batch_rows = sum(batch.num_rows for batch in batches)
@@ -3487,8 +3470,6 @@ def test_orc_batching_exact_counts_single_file(tmp_path: Path) -> None:
         for batch in batches:
             all_ids.extend(batch.column("id").to_pylist())
         assert sorted(all_ids) == list(range(1, num_rows + 1)), f"Data integrity check failed for {num_rows} rows"
-
-        print(f"  ✓ {description}: {len(batches)} batches, {total_batch_rows} total rows")
 
 
 def test_orc_batching_exact_counts_multiple_files(tmp_path: Path) -> None:
@@ -3540,8 +3521,6 @@ def test_orc_batching_exact_counts_multiple_files(tmp_path: Path) -> None:
     ]
 
     for num_files, rows_per_file, description in test_cases:
-        print(f"\n=== Testing {description} ===")
-
         total_rows = num_files * rows_per_file
         scan_tasks = []
 
@@ -3597,12 +3576,6 @@ def test_orc_batching_exact_counts_multiple_files(tmp_path: Path) -> None:
 
         batches = list(scan.to_record_batches(scan_tasks))
 
-        print(f"  Files: {num_files}")
-        print(f"  Rows per file: {rows_per_file}")
-        print(f"  Total rows: {total_rows}")
-        print(f"  Batches: {len(batches)}")
-        print(f"  Batch sizes: {[batch.num_rows for batch in batches]}")
-
         # Verify exact batch count and sizes
         total_batch_rows = sum(batch.num_rows for batch in batches)
         assert total_batch_rows == total_rows, f"Total rows mismatch: expected {total_rows}, got {total_batch_rows}"
@@ -3629,8 +3602,6 @@ def test_orc_batching_exact_counts_multiple_files(tmp_path: Path) -> None:
             assert file_data_counts[file_idx] == rows_per_file, (
                 f"File {file_idx} contributed {file_data_counts[file_idx]} rows, expected {rows_per_file}"
             )
-
-        print(f"  ✓ {description}: {len(batches)} batches, {total_batch_rows} total rows")
 
 
 def test_orc_field_id_extraction() -> None:
@@ -3909,15 +3880,6 @@ def test_orc_batching_behavior_documentation(tmp_path: Path) -> None:
     )
     io = PyArrowFileIO()
 
-    print("\n=== PyArrow ORC Batching Behavior Documentation ===")
-    print("Based on testing, PyArrow's batching behavior for ORC files is:")
-    print("1. Single file: Creates 1 batch per stripe (not per file)")
-    print("2. Multiple files: Creates 1 batch per stripe per file")
-    print("3. Batch size: Each batch contains rows from one stripe")
-    print("4. Stripe-based batching: PyArrow creates multiple batches when ORC has multiple stripes")
-    print("5. Default behavior: Most ORC files have 1 stripe, so 1 batch per file")
-    print()
-
     # Test cases that document the exact behavior (using default ORC writing = 1 stripe per file)
     test_cases = [
         # (file_count, rows_per_file, expected_batches, description)
@@ -3931,8 +3893,6 @@ def test_orc_batching_behavior_documentation(tmp_path: Path) -> None:
     ]
 
     for file_count, rows_per_file, expected_batches, description in test_cases:
-        print(f"Testing: {description} ({file_count} files × {rows_per_file} rows)")
-
         total_rows = file_count * rows_per_file
         scan_tasks = []
 
@@ -4001,16 +3961,6 @@ def test_orc_batching_behavior_documentation(tmp_path: Path) -> None:
             all_ids.extend(batch.column("id").to_pylist())
         assert sorted(all_ids) == list(range(1, total_rows + 1)), f"Data integrity check failed for {description}"
 
-        print(f"  ✓ {description}: {len(batches)} batches, {total_batch_rows} total rows")
-
-    print("\n=== Summary ===")
-    print("PyArrow ORC batching behavior is simple and predictable:")
-    print("- 1 batch per file, regardless of file size")
-    print("- No internal file splitting")
-    print("- Batch size = file size (number of rows in the file)")
-    print("- Total batches = number of files")
-    print("- This behavior is consistent across all file sizes tested (100-5000 rows)")
-
 
 def test_parquet_vs_orc_batching_behavior_comparison(tmp_path: Path) -> None:
     """
@@ -4034,7 +3984,7 @@ def test_parquet_vs_orc_batching_behavior_comparison(tmp_path: Path) -> None:
     from pyiceberg.schema import Schema
     from pyiceberg.table import FileScanTask
     from pyiceberg.table.metadata import TableMetadataV2
-    from pyiceberg.types import IntegerType, StringType
+    from pyiceberg.types import IntegerType, NestedField, StringType
 
     # Define schema
     schema = Schema(
@@ -4055,20 +4005,14 @@ def test_parquet_vs_orc_batching_behavior_comparison(tmp_path: Path) -> None:
     )
     io = PyArrowFileIO()
 
-    print("\n=== PyArrow Batching Behavior Comparison ===")
-    print("PARQUET: 1 FileScanTask → 1 File → 1 PyArrow Fragment → N Batches (based on row groups)")
-    print("ORC: 1 FileScanTask → 1 File → 1 PyArrow Fragment → N Batches (based on stripes)")
-    print()
-
     # Test Parquet with different row group sizes
-    print("Testing PARQUET batching with different row group sizes:")
     parquet_test_cases = [
         (1000, "Small row groups"),
         (2000, "Medium row groups"),
         (5000, "Large row groups"),
     ]
 
-    for row_group_size, description in parquet_test_cases:
+    for row_group_size, _description in parquet_test_cases:
         # Create data
         data = pa.table({"id": pa.array(range(1, 10001), type=pa.int32()), "value": [f"value_{i}" for i in range(1, 10001)]})
 
@@ -4114,8 +4058,6 @@ def test_parquet_vs_orc_batching_behavior_comparison(tmp_path: Path) -> None:
         batches = list(scan.to_record_batches([scan_task]))
         expected_batches = 10000 // row_group_size  # Number of row groups
 
-        print(f"  {description} (row_group_size={row_group_size}): {len(batches)} batches, sizes={[b.num_rows for b in batches]}")
-
         # Verify exact batch count based on row groups
         assert len(batches) == expected_batches, (
             f"Expected {expected_batches} batches for row_group_size={row_group_size}, got {len(batches)}"
@@ -4125,15 +4067,13 @@ def test_parquet_vs_orc_batching_behavior_comparison(tmp_path: Path) -> None:
         total_rows = sum(batch.num_rows for batch in batches)
         assert total_rows == 10000, f"Expected 10000 total rows, got {total_rows}"
 
-    print()
-    print("Testing ORC batching with different file sizes:")
     orc_test_cases = [
         (1000, "Small file"),
         (5000, "Medium file"),
         (10000, "Large file"),
     ]
 
-    for file_size, description in orc_test_cases:
+    for file_size, _description in orc_test_cases:
         # Create data
         data = pa.table(
             {"id": pa.array(range(1, file_size + 1), type=pa.int32()), "value": [f"value_{i}" for i in range(1, file_size + 1)]}
@@ -4180,8 +4120,6 @@ def test_parquet_vs_orc_batching_behavior_comparison(tmp_path: Path) -> None:
 
         batches = list(scan.to_record_batches([scan_task]))
 
-        print(f"  {description} (file_size={file_size}): {len(batches)} batches, sizes={[b.num_rows for b in batches]}")
-
         # Verify ORC creates 1 batch per file (with default stripe configuration)
         # Note: This is because default ORC writing creates 1 stripe per file
         assert len(batches) == 1, (
@@ -4191,38 +4129,6 @@ def test_parquet_vs_orc_batching_behavior_comparison(tmp_path: Path) -> None:
         # Verify total rows
         total_rows = sum(batch.num_rows for batch in batches)
         assert total_rows == file_size, f"Expected {file_size} total rows, got {total_rows}"
-
-    print()
-    print("=== Summary ===")
-    print("PARQUET batching is based on ROW GROUPS:")
-    print("- Number of batches = Number of row groups in the Parquet file")
-    print("- Row group size is configurable when writing Parquet files")
-    print("- PyArrow's scanner creates one batch per row group")
-    print()
-    print("ORC batching is based on STRIPES (like Parquet row groups):")
-    print("- Number of batches = Number of stripes in the ORC file")
-    print("- ORC files with multiple stripes create multiple batches")
-    print("- ORC files with one stripe create one batch")
-    print("- PyArrow's scanner creates one batch per ORC stripe")
-    print()
-    print("This explains why:")
-    print("- Parquet can have multiple batches per file (based on row groups)")
-    print("- ORC can have multiple batches per file (based on stripes)")
-    print("- Both formats use similar batching strategies when configured properly")
-    print("- The difference is in default configuration, not fundamental behavior")
-    print()
-    print("IMPORTANT: PyIceberg Configuration Details:")
-    print("- PyIceberg sets buffer_size=8MB for both Parquet and ORC")
-    print("- Parquet: Gets the 8MB buffer_size parameter (ds.ParquetFileFormat supports it)")
-    print("- ORC: Ignores the 8MB buffer_size parameter (ds.OrcFileFormat doesn't support it)")
-    print("- This means ORC uses PyArrow's default batching behavior (1 batch per file)")
-    print("- Parquet uses the configured buffer size, but batching is still based on row groups")
-    print()
-    print("CORRECTED UNDERSTANDING:")
-    print("- Both Parquet and ORC support multiple batches per file")
-    print("- Parquet: Based on row groups (configurable when writing)")
-    print("- ORC: Based on stripes (configurable when writing)")
-    print("- The key difference is default configuration, not fundamental capability")
 
 
 def test_orc_stripe_size_batch_size_compression_interaction(tmp_path: Path) -> None:
@@ -4242,8 +4148,6 @@ def test_orc_stripe_size_batch_size_compression_interaction(tmp_path: Path) -> N
     import pyarrow as pa
     import pyarrow.orc as orc
 
-    from pyiceberg.expressions import AlwaysTrue
-    from pyiceberg.io.pyarrow import ArrowScan, PyArrowFileIO
     from pyiceberg.manifest import DataFileContent, FileFormat
     from pyiceberg.partitioning import PartitionSpec
     from pyiceberg.schema import Schema
@@ -4270,19 +4174,8 @@ def test_orc_stripe_size_batch_size_compression_interaction(tmp_path: Path) -> N
     )
     io = PyArrowFileIO()
 
-    print("\n=== ORC Stripe Size, Batch Size, and Compression Interaction Test ===")
-    print("Demonstrating how these parameters affect ORC batching behavior")
-    print()
-
     # Create test data
     data = pa.table({"id": pa.array(range(1, 10001), type=pa.int32()), "value": [f"value_{i}" for i in range(1, 10001)]})
-
-    print("Test data analysis:")
-    raw_size = len(data) * 15  # 4 bytes (int32) + 11 bytes (string) per row
-    print(f"  Total rows: {len(data)}")
-    print(f"  Raw data size: {raw_size:,} bytes ({raw_size / 1024:.1f}KB)")
-    print(f"  Estimated bytes per row (raw): {raw_size / len(data):.1f} bytes")
-    print()
 
     # Test different combinations
     test_cases = [
@@ -4297,8 +4190,6 @@ def test_orc_stripe_size_batch_size_compression_interaction(tmp_path: Path) -> N
     ]
 
     for stripe_size, batch_size, compression, description in test_cases:
-        print(f"Testing: {description}")
-
         # Create ORC file with specific parameters
         orc_path = tmp_path / f"orc_test_{hash(description)}.orc"
 
@@ -4314,20 +4205,26 @@ def test_orc_stripe_size_batch_size_compression_interaction(tmp_path: Path) -> N
         file_size = orc_path.stat().st_size
         orc_file = orc.ORCFile(str(orc_path))
         actual_stripes = orc_file.nstripes
-        stripe_sizes_rows = [orc_file.read_stripe(i).num_rows for i in range(actual_stripes)]
 
-        print(f"  File size: {file_size:,} bytes ({file_size / 1024:.1f}KB)")
-        print(f"  Stripes: {actual_stripes}")
-        print(f"  Rows per stripe: {stripe_sizes_rows}")
+        # Assert basic file properties
+        assert file_size > 0, f"ORC file should have non-zero size for {description}"
+        assert actual_stripes > 0, f"ORC file should have at least one stripe for {description}"
 
-        if stripe_size:
-            target_bytes_per_row = stripe_size / stripe_sizes_rows[0] if stripe_sizes_rows else 0
-            print(f"  Target bytes per row (uncompressed): {target_bytes_per_row:.1f} bytes")
-
-        actual_bytes_per_row = file_size / len(data)
-        compression_ratio = raw_size / file_size
-        print(f"  Actual bytes per row: {actual_bytes_per_row:.1f} bytes")
-        print(f"  Compression ratio: {compression_ratio:.1f}x")
+        # Assert stripe count expectations based on stripe_size and compression
+        if stripe_size is not None:
+            # With stripe_size specified, we expect multiple stripes for small sizes
+            # But compression can make the data small enough to fit in one stripe
+            if stripe_size <= 200000 and compression == "uncompressed":  # 200KB or smaller, uncompressed
+                assert actual_stripes > 1, (
+                    f"Expected multiple stripes for small stripe_size={stripe_size} in {description}, got {actual_stripes}"
+                )
+            else:  # Larger stripe sizes or compressed data might result in single stripe
+                assert actual_stripes >= 1, (
+                    f"Expected at least 1 stripe for stripe_size={stripe_size} in {description}, got {actual_stripes}"
+                )
+        else:
+            # Without stripe_size, we expect at least 1 stripe
+            assert actual_stripes >= 1, f"Expected at least 1 stripe for {description}, got {actual_stripes}"
 
         # Test PyArrow batching
         from pyiceberg.manifest import DataFile
@@ -4353,9 +4250,9 @@ def test_orc_stripe_size_batch_size_compression_interaction(tmp_path: Path) -> N
             split_offsets=None,
         )
         data_file.spec_id = 0
-        scan_task = FileScanTask(data_file=data_file)
 
         # Test batching behavior
+        scan_task = FileScanTask(data_file=data_file)
         scan = ArrowScan(
             table_metadata=table_metadata,
             io=io,
@@ -4363,35 +4260,28 @@ def test_orc_stripe_size_batch_size_compression_interaction(tmp_path: Path) -> N
             row_filter=AlwaysTrue(),
             case_sensitive=True,
         )
-
         batches = list(scan.to_record_batches([scan_task]))
-        batch_sizes = [batch.num_rows for batch in batches]
 
-        print(f"  PyArrow batches: {len(batches)}")
-        print(f"  Batch sizes: {batch_sizes}")
-        print(f"  Batches match stripes: {len(batches) == actual_stripes}")
-        print()
+        # Assert batching behavior
+        assert len(batches) > 0, f"Should have at least one batch for {description}"
+        assert len(batches) == actual_stripes, (
+            f"Number of batches should match number of stripes for {description}: {len(batches)} batches vs {actual_stripes} stripes"
+        )
 
-    print("=== Key Insights ===")
-    print("1. STRIPE_SIZE controls the number of stripes (and therefore batches)")
-    print("   - Larger stripe_size → fewer stripes → fewer batches")
-    print("   - stripe_size is a target for UNCOMPRESSED data size")
-    print()
-    print("2. BATCH_SIZE affects stripe creation when stripe_size is small")
-    print("   - When stripe_size is large, batch_size has minimal effect")
-    print("   - When stripe_size is small, batch_size can influence stripe boundaries")
-    print()
-    print("3. COMPRESSION affects file size but not necessarily stripe count")
-    print("   - Snappy compression reduces file size significantly")
-    print("   - But stripe count is determined by uncompressed target size")
-    print()
-    print("4. The relationship between parameters is complex:")
-    print("   - stripe_size=200KB → ~2048 rows per stripe (97.7 bytes/row uncompressed)")
-    print("   - Actual file size is much smaller due to ORC encoding")
-    print("   - PyArrow creates exactly 1 batch per ORC stripe")
-    print()
-    print("5. This is why we hardcode expected values in tests - the actual")
-    print("   behavior depends on ORC's internal algorithms and optimizations!")
+        # Assert data integrity
+        total_rows = sum(batch.num_rows for batch in batches)
+        assert total_rows == 10000, f"Total rows should be 10000 for {description}, got {total_rows}"
+
+        # Assert compression effect
+        if compression == "snappy":
+            # Snappy compression should result in smaller file size than uncompressed
+            uncompressed_size = len(data) * 15  # Rough estimate of uncompressed size
+            assert file_size < uncompressed_size, (
+                f"Snappy compression should reduce file size for {description}: {file_size} vs {uncompressed_size}"
+            )
+        elif compression == "uncompressed":
+            # Uncompressed should be larger than snappy
+            assert file_size > 0, f"Uncompressed file should have size > 0 for {description}"
 
 
 def test_orc_near_perfect_stripe_size_mapping(tmp_path: Path) -> None:
@@ -4420,7 +4310,7 @@ def test_orc_near_perfect_stripe_size_mapping(tmp_path: Path) -> None:
     from pyiceberg.schema import Schema
     from pyiceberg.table import FileScanTask
     from pyiceberg.table.metadata import TableMetadataV2
-    from pyiceberg.types import StringType
+    from pyiceberg.types import NestedField, StringType
 
     # Define schema
     schema = Schema(
@@ -4440,10 +4330,6 @@ def test_orc_near_perfect_stripe_size_mapping(tmp_path: Path) -> None:
     )
     io = PyArrowFileIO()
 
-    print("\n=== ORC Near-Perfect Stripe Size Mapping Test ===")
-    print("Demonstrating how to achieve 0.9+ ratio between stripe size and actual file size")
-    print()
-
     # Create large dataset with hard-to-compress data
     data = pa.table(
         {
@@ -4456,12 +4342,6 @@ def test_orc_near_perfect_stripe_size_mapping(tmp_path: Path) -> None:
         }
     )
 
-    raw_size = data.nbytes
-    print("Test data: 50K rows of large random strings")
-    print(f"Raw data size: {raw_size:,} bytes ({raw_size / 1024:.1f}KB)")
-    print(f"Bytes per row: {raw_size / len(data):.1f} bytes")
-    print()
-
     # Test with large stripe sizes that should give us multiple stripes
     test_cases = [
         (2000000, "2MB stripe size"),
@@ -4470,9 +4350,7 @@ def test_orc_near_perfect_stripe_size_mapping(tmp_path: Path) -> None:
         (5000000, "5MB stripe size"),
     ]
 
-    for stripe_size, description in test_cases:
-        print(f"Testing: {description}")
-
+    for stripe_size, _description in test_cases:
         # Create ORC file with specific stripe size
         orc_path = tmp_path / f"orc_perfect_test_{stripe_size}.orc"
         orc.write_table(data, str(orc_path), stripe_size=stripe_size, compression="uncompressed")
@@ -4481,32 +4359,17 @@ def test_orc_near_perfect_stripe_size_mapping(tmp_path: Path) -> None:
         file_size = orc_path.stat().st_size
         orc_file = orc.ORCFile(str(orc_path))
         actual_stripes = orc_file.nstripes
-        stripe_sizes_rows = [orc_file.read_stripe(i).num_rows for i in range(actual_stripes)]
 
-        print(f"  File size: {file_size:,} bytes ({file_size / 1024:.1f}KB)")
-        print(f"  Stripes: {actual_stripes}")
-        if len(stripe_sizes_rows) > 3:
-            print(f"  Rows per stripe: {stripe_sizes_rows[:3]}...")
-        else:
-            print(f"  Rows per stripe: {stripe_sizes_rows}")
+        # Assert basic file properties
+        assert file_size > 0, f"ORC file should have non-zero size for stripe_size={stripe_size}"
+        assert actual_stripes > 0, f"ORC file should have at least one stripe for stripe_size={stripe_size}"
 
-        # Calculate the key ratios
-        target_bytes_per_row = stripe_size / stripe_sizes_rows[0] if stripe_sizes_rows else 0
-        actual_bytes_per_row = file_size / len(data)
-        compression_ratio = raw_size / file_size
-        ratio = actual_bytes_per_row / target_bytes_per_row if target_bytes_per_row > 0 else 0
-
-        print(f"  Target bytes per row: {target_bytes_per_row:.1f} bytes")
-        print(f"  Actual bytes per row: {actual_bytes_per_row:.1f} bytes")
-        print(f"  Compression ratio: {compression_ratio:.1f}x")
-        print(f"  Ratio (actual/target): {ratio:.2f}")
-
-        if ratio > 0.95:
-            print("  *** EXCELLENT: Near-perfect 1:1 mapping! ***")
-        elif ratio > 0.9:
-            print("  *** VERY GOOD: Close to 1:1 mapping! ***")
-        elif ratio > 0.8:
-            print("  *** GOOD: Reasonable mapping! ***")
+        # Assert that larger stripe sizes result in fewer stripes
+        # With 50K rows of large strings, we expect multiple stripes for smaller stripe sizes
+        if stripe_size <= 3000000:  # 3MB or smaller
+            assert actual_stripes > 1, f"Expected multiple stripes for stripe_size={stripe_size}, got {actual_stripes}"
+        else:  # Larger stripe sizes might result in single stripe
+            assert actual_stripes >= 1, f"Expected at least 1 stripe for stripe_size={stripe_size}, got {actual_stripes}"
 
         # Test PyArrow batching
         from pyiceberg.manifest import DataFile
@@ -4532,9 +4395,9 @@ def test_orc_near_perfect_stripe_size_mapping(tmp_path: Path) -> None:
             split_offsets=None,
         )
         data_file.spec_id = 0
-        scan_task = FileScanTask(data_file=data_file)
 
         # Test batching behavior
+        scan_task = FileScanTask(data_file=data_file)
         scan = ArrowScan(
             table_metadata=table_metadata,
             io=io,
@@ -4542,32 +4405,27 @@ def test_orc_near_perfect_stripe_size_mapping(tmp_path: Path) -> None:
             row_filter=AlwaysTrue(),
             case_sensitive=True,
         )
-
         batches = list(scan.to_record_batches([scan_task]))
-        batch_sizes = [batch.num_rows for batch in batches]
 
-        print(f"  PyArrow batches: {len(batches)}")
-        print(f"  Batch sizes: {batch_sizes[:3]}{'...' if len(batch_sizes) > 3 else ''}")
-        print(f"  Batches match stripes: {len(batches) == actual_stripes}")
-        print()
+        # Assert batching behavior
+        assert len(batches) > 0, f"Should have at least one batch for stripe_size={stripe_size}"
+        assert len(batches) == actual_stripes, (
+            f"Number of batches should match number of stripes for stripe_size={stripe_size}: {len(batches)} batches vs {actual_stripes} stripes"
+        )
 
-    print("=== Key Insights ===")
-    print("1. NEAR-PERFECT MAPPING IS POSSIBLE with the right conditions:")
-    print("   - Large stripe sizes (2-5MB)")
-    print("   - Large datasets (50K+ rows)")
-    print("   - Hard-to-compress data (large random strings)")
-    print("   - uncompressed compression setting")
-    print()
-    print("2. We achieved ratios of 0.91-0.97 (actual/target), which means:")
-    print("   - Stripe size is very close to actual file size")
-    print("   - Number of stripes directly maps to stripe size")
-    print("   - Number of batches directly maps to stripe size")
-    print()
-    print("3. This is the closest we can get to having stripe size directly")
-    print("   control the number of batches without ORC encoding overhead.")
-    print()
-    print("4. Even in this near-perfect case, we still need hardcoded expected")
-    print("   values because the exact mapping depends on ORC's internal algorithms.")
+        # Assert data integrity
+        total_rows = sum(batch.num_rows for batch in batches)
+        assert total_rows == 50000, f"Total rows should be 50000 for stripe_size={stripe_size}, got {total_rows}"
+
+        # Assert compression ratio is reasonable (uncompressed should be close to raw data size)
+        raw_data_size = data.nbytes
+        compression_ratio = raw_data_size / file_size if file_size > 0 else 0
+        assert compression_ratio > 0.5, (
+            f"Compression ratio should be reasonable for stripe_size={stripe_size}: {compression_ratio:.2f}"
+        )
+        assert compression_ratio < 2.0, (
+            f"Compression ratio should not be too high for stripe_size={stripe_size}: {compression_ratio:.2f}"
+        )
 
 
 def test_orc_stripe_based_batching(tmp_path: Path) -> None:
@@ -4593,7 +4451,8 @@ def test_orc_stripe_based_batching(tmp_path: Path) -> None:
     from pyiceberg.schema import Schema
     from pyiceberg.table import FileScanTask
     from pyiceberg.table.metadata import TableMetadataV2
-    from pyiceberg.types import IntegerType, StringType
+    from pyiceberg.typedef import Record
+    from pyiceberg.types import IntegerType, NestedField, StringType
 
     # Define schema
     schema = Schema(
@@ -4614,10 +4473,6 @@ def test_orc_stripe_based_batching(tmp_path: Path) -> None:
     )
     io = PyArrowFileIO()
 
-    print("\n=== ORC Stripe-Based Batching Test ===")
-    print("Demonstrating that ORC can have multiple batches per file based on stripes")
-    print()
-
     # Test ORC with different stripe configurations (stripe_size in bytes)
     # Note: PyArrow ORC ignores stripe_size < 200KB, so we use larger values
     # Expected values are hardcoded based on observed behavior with 10,000 rows
@@ -4627,9 +4482,7 @@ def test_orc_stripe_based_batching(tmp_path: Path) -> None:
         (600000, "Large stripes (600KB)", 1, [10000]),
     ]
 
-    for stripe_size, description, expected_stripes, expected_stripe_sizes in test_cases:
-        print(f"Testing {description}:")
-
+    for stripe_size, _description, expected_stripes, expected_stripe_sizes in test_cases:
         # Create data
         data = pa.table({"id": pa.array(range(1, 10001), type=pa.int32()), "value": [f"value_{i}" for i in range(1, 10001)]})
 
@@ -4642,15 +4495,8 @@ def test_orc_stripe_based_batching(tmp_path: Path) -> None:
         actual_stripes = orc_file.nstripes
         actual_stripe_sizes = [orc_file.read_stripe(i).num_rows for i in range(actual_stripes)]
 
-        print(f"  Stripe size: {stripe_size} bytes")
-        print(f"  Expected stripes: {expected_stripes}")
-        print(f"  Actual stripes: {actual_stripes}")
-        print(f"  Expected stripe sizes: {expected_stripe_sizes}")
-        print(f"  Actual stripe sizes: {actual_stripe_sizes}")
-
         # Create DataFile
         from pyiceberg.manifest import DataFile
-        from pyiceberg.typedef import Record
 
         data_file = DataFile.from_args(
             content=DataFileContent.DATA,
@@ -4672,9 +4518,9 @@ def test_orc_stripe_based_batching(tmp_path: Path) -> None:
             split_offsets=None,
         )
         data_file.spec_id = 0
-        scan_task = FileScanTask(data_file=data_file)
 
         # Test batching behavior
+        scan_task = FileScanTask(data_file=data_file)
         scan = ArrowScan(
             table_metadata=table_metadata,
             io=io,
@@ -4682,26 +4528,18 @@ def test_orc_stripe_based_batching(tmp_path: Path) -> None:
             row_filter=AlwaysTrue(),
             case_sensitive=True,
         )
-
         batches = list(scan.to_record_batches([scan_task]))
-        batch_sizes = [batch.num_rows for batch in batches]
-
-        print(f"  PyArrow batches: {len(batches)}")
-        print(f"  Batch sizes: {batch_sizes}")
-        print(f"  Match expected stripes: {len(batches) == expected_stripes}")
-        print(f"  Match expected sizes: {batch_sizes == expected_stripe_sizes}")
 
         # CRITICAL: Verify we get multiple batches for a single file (when stripe size is small enough)
         if expected_stripes > 1:
             assert len(batches) > 1, f"Expected multiple batches for single file, got {len(batches)} batches"
             assert actual_stripes > 1, f"Expected multiple stripes for single file, got {actual_stripes} stripes"
-        else:  # Large stripe sizes may result in single stripe/batch
-            print(f"  Note: Large stripe size ({stripe_size} bytes) resulted in single stripe - this is expected")
 
         # Verify exact batch count matches expected
         assert len(batches) == expected_stripes, f"Expected {expected_stripes} batches, got {len(batches)}"
 
         # Verify batch sizes match expected stripe sizes
+        batch_sizes = [batch.num_rows for batch in batches]
         assert batch_sizes == expected_stripe_sizes, (
             f"Batch sizes {batch_sizes} don't match expected stripe sizes {expected_stripe_sizes}"
         )
@@ -4715,13 +4553,3 @@ def test_orc_stripe_based_batching(tmp_path: Path) -> None:
         # Verify total rows
         total_rows = sum(batch.num_rows for batch in batches)
         assert total_rows == 10000, f"Expected 10000 total rows, got {total_rows}"
-
-        print(f"  ✓ {description}: {len(batches)} batches, {total_rows} total rows")
-        print()
-
-    print("=== Summary ===")
-    print("ORC batching IS based on stripes, just like Parquet is based on row groups!")
-    print("- When ORC has multiple stripes: PyArrow creates one batch per stripe")
-    print("- When ORC has one stripe: PyArrow creates one batch for the entire file")
-    print("- The key is configuring stripe size when writing ORC files")
-    print("- This corrects the previous understanding that ORC always has 1 batch per file")

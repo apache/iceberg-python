@@ -273,10 +273,6 @@ def test_history(table_v2: Table) -> None:
     ],
 )
 def test_table_scan_select(table_fixture: Table) -> None:
-    import logging
-
-    logger = logging.getLogger(__name__)
-    logger.debug(table_fixture.metadata)
     scan = table_fixture.scan()
     assert scan.selected_fields == ("*",)
     assert scan.select("a", "b").selected_fields == ("a", "b")
