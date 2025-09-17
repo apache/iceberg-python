@@ -1132,7 +1132,6 @@ class ManifestWriter(ABC):
             self._deleted_files += 1
             self._deleted_rows += entry.data_file.record_count
         else:
-            entry
             raise ValueError(f"Unknown entry: {entry.status}")
 
         self._partitions.append(entry.data_file.partition)
