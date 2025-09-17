@@ -770,3 +770,67 @@ def test_transaction_multiple_upserts(catalog: Catalog) -> None:
         {"id": 1, "name": "Alicia"},
         {"id": 2, "name": "Bob"},
     ]
+
+
+def test_stage_only_upsert(catalog: Catalog) -> None:
+    identifier = "default.test_stage_only_dynamic_partition_overwrite_files"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "city", StringType(), required=True),
+        NestedField(2, "inhabitants", IntegerType(), required=True),
+        # Mark City as the identifier field, also known as the primary-key
+        identifier_field_ids=[1],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("city", pa.string(), nullable=False),
+            pa.field("inhabitants", pa.int32(), nullable=False),
+        ]
+    )
+
+    # Write some data
+    df = pa.Table.from_pylist(
+        [
+            {"city": "Amsterdam", "inhabitants": 921402},
+            {"city": "San Francisco", "inhabitants": 808988},
+            {"city": "Drachten", "inhabitants": 45019},
+            {"city": "Paris", "inhabitants": 2103000},
+        ],
+        schema=arrow_schema,
+    )
+
+    tbl.append(df.slice(0, 1))
+    current_snapshot = tbl.metadata.current_snapshot_id
+    assert current_snapshot is not None
+
+    original_count = len(tbl.scan().to_arrow())
+    assert original_count == 1
+
+    # write to staging snapshot
+    upd = tbl.upsert(df, branch=None)
+    assert upd.rows_updated == 0
+    assert upd.rows_inserted == 3
+
+    assert current_snapshot == tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == original_count
+    snapshots = tbl.snapshots()
+    assert len(snapshots) == 2
+
+    # Write to main ref
+    tbl.append(df.slice(1, 1))
+    # Main ref has changed
+    assert current_snapshot != tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == 2
+    snapshots = tbl.snapshots()
+    assert len(snapshots) == 3
+
+    sorted_snapshots = sorted(tbl.snapshots(), key=lambda s: s.timestamp_ms)
+    operations = [snapshot.summary.operation.value if snapshot.summary else None for snapshot in sorted_snapshots]
+    parent_snapshot_id = [snapshot.parent_snapshot_id for snapshot in sorted_snapshots]
+    assert operations == ["append", "append", "append"]
+    # both subsequent parent id should be the first snapshot id
+    assert parent_snapshot_id == [None, current_snapshot, current_snapshot]
