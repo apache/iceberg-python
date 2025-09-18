@@ -29,7 +29,7 @@ permissions:
 jobs:
   stale:
     if: github.repository_owner == 'apache'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/stale@v10.0.0
         with:
