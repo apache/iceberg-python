@@ -27,35 +27,6 @@ class Reference(IcebergRootModel[str]):
     root: str = Field(..., json_schema_extra={"example": "column-name"})
 
 
-class ExpressionType(IcebergRootModel[str]):
-    root: str = Field(
-        ...,
-        json_schema_extra={
-            "example": [
-                "true",
-                "false",
-                "eq",
-                "and",
-                "or",
-                "not",
-                "in",
-                "not-in",
-                "lt",
-                "lt-eq",
-                "gt",
-                "gt-eq",
-                "not-eq",
-                "starts-with",
-                "not-starts-with",
-                "is-null",
-                "not-null",
-                "is-nan",
-                "not-nan",
-            ]
-        },
-    )
-
-
 class TrueExpression(IcebergBaseModel):
     type: Literal["true"] = "true"
 
@@ -75,7 +46,7 @@ class Term(IcebergRootModel[Union[Reference, TransformTerm]]):
 
 
 class AndOrExpression(IcebergBaseModel):
-    type: ExpressionType
+    type: Literal["and", "or"]
     left: "Expression"
     right: "Expression"
 
@@ -86,19 +57,19 @@ class NotExpression(IcebergBaseModel):
 
 
 class SetExpression(IcebergBaseModel):
-    type: ExpressionType
+    type: Literal["in", "not-in"]
     term: Term
     values: List[Dict[str, Any]]
 
 
 class LiteralExpression(IcebergBaseModel):
-    type: ExpressionType
+    type: Literal["lt", "lt-eq", "gt", "gt-eq", "eq", "not-eq", "starts-with", "not-starts-with"]
     term: Term
     value: Dict[str, Any]
 
 
 class UnaryExpression(IcebergBaseModel):
-    type: ExpressionType
+    type: Literal["is-null", "not-null", "is-nan", "not-nan"]
     term: Term
     value: Dict[str, Any]
 
