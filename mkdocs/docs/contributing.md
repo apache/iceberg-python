@@ -155,6 +155,18 @@ make test-integration-rebuild
 
 To rebuild the containers from scratch.
 
+#### Running Integration Tests against REST Catalogs
+
+PyIceberg supports the ability to run our catalog tests against an arbitrary REST Catalog.
+
+To do so, run the catalog integration tests with the `PYICEBERG_REST_CATALOG_PROPERTIES` environment variable.
+
+```sh
+PYICEBERG_REST_CATALOG_PROPERTIES='{"uri": "http://localhost:8181"}' poetry run pytest tests/integration/
+```
+
+`PYICEBERG_REST_CATALOG_PROPERTIES` should be a JSON-encoded string that contains any [catalog properties](https://py.iceberg.apache.org/configuration/#rest-catalog) necessary to interact with your REST Catalog implementation.
+
 ## Code standards
 
 Below are the formalized conventions that we adhere to in the PyIceberg project. The goal of this is to have a common agreement on how to evolve the codebase, but also using it as guidelines for newcomers to the project.

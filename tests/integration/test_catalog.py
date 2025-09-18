@@ -78,8 +78,7 @@ def rest_catalog() -> Generator[Catalog, None, None]:
 
 @pytest.fixture(scope="function")
 def rest_catalog_env() -> Generator[Catalog, None, None]:
-    properties_json = os.environ.get("PYICEBERG_REST_CATALOG_PROPERTIES")
-    if properties_json:
+    if properties_json := os.environ.get("PYICEBERG_REST_CATALOG_PROPERTIES"):
         properties = json.loads(properties_json)
         test_catalog = RestCatalog(
             "rest_env",
