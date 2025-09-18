@@ -60,11 +60,13 @@ def test_serialize_plan_table_scan_request() -> None:
         filter=Expression(root=expression),
         case_sensitive=True,
     )
+    # Assert that JSON matches.
     assert request.model_dump_json(exclude_none=True) == snapshot_json_for_plan_table_scan_request()
 
 
 def test_deserialize_plan_table_scan_request() -> None:
-    """Test deserializing a PlanTableScanRequest from a dict"""
+    """Test deserializing a dict to a PlanTableScanRequest"""
+    model = PlanTableScanRequest.model_validate_json(snapshot_json_for_plan_table_scan_request())
     expression = AndOrExpression(
         type="and",
         left=Expression(
@@ -86,18 +88,22 @@ def test_deserialize_plan_table_scan_request() -> None:
         ),
         right=Expression(root=LiteralExpression(type="gt", term=Term(root="d"), value={"type": "integer", "value": 4})),
     )
-    request = PlanTableScanRequest(
+    expected = PlanTableScanRequest(
         snapshot_id=1,
         select=["a", "b", "c"],
         filter=Expression(root=expression),
         case_sensitive=True,
     )
-    assert request == PlanTableScanRequest.model_validate_json(snapshot_json_for_plan_table_scan_request())
+
+    # Assert that deserialized dict == Python object
+    assert model == expected
 
 
 def test_deserialize_scan_tasks() -> None:
-    """Test deserializing a ScanTasks from a dict"""
+    """Test deserializing dict to ScanTasks"""
     scan_tasks = ScanTasks.model_validate_json(snapshot_json_for_scan_tasks())
+
+    # Assert JSON fields match expected.
     assert len(scan_tasks.file_scan_tasks) == 1
     assert len(scan_tasks.delete_files) == 2
     assert scan_tasks.file_scan_tasks[0].data_file.file_path == "/path/to/data-a.parquet"
@@ -148,6 +154,8 @@ def test_serialize_scan_tasks() -> None:
             ),
         ],
     )
+
+    # Assert that JSON matches.
     assert scan_tasks.model_dump_json(exclude_none=True) == snapshot_json_for_scan_tasks()
 
 
