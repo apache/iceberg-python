@@ -117,6 +117,7 @@ from pyiceberg.table.update import (
 )
 from pyiceberg.table.update.schema import UpdateSchema
 from pyiceberg.table.update.snapshot import ManageSnapshots, UpdateSnapshot, _FastAppendFiles
+from pyiceberg.table.update.sort_order import UpdateSortOrder
 from pyiceberg.table.update.spec import UpdateSpec
 from pyiceberg.table.update.statistics import UpdateStatistics
 from pyiceberg.transforms import IdentityTransform
@@ -432,6 +433,14 @@ class Transaction:
             case_sensitive=case_sensitive,
             name_mapping=self.table_metadata.name_mapping(),
         )
+
+    def update_sort_order(self) -> UpdateSortOrder:
+        """Create a new UpdateSortOrder transaction to alter the sort order of this table.
+
+        Returns:
+            A new UpdateSortOrder.
+        """
+        return UpdateSortOrder(self)
 
     def update_snapshot(
         self, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = MAIN_BRANCH
@@ -1290,6 +1299,14 @@ class Table:
             case_sensitive=case_sensitive,
             name_mapping=self.name_mapping(),
         )
+
+    def update_sort_order(self) -> UpdateSortOrder:
+        """Create a new UpdateSortOrder transaction to alter the sort order of this table.
+
+        Returns:
+            A new UpdateSortOrder.
+        """
+        return UpdateSortOrder(Transaction(self, autocommit=True))
 
     def name_mapping(self) -> Optional[NameMapping]:
         """Return the table's field-id NameMapping."""

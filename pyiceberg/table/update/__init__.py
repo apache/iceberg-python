@@ -119,6 +119,11 @@ class AddSortOrderUpdate(IcebergBaseModel):
     sort_order: SortOrder = Field(alias="sort-order")
 
 
+class SetSortOrderUpdate(IcebergBaseModel):
+    action: Literal["set-sort-order"] = Field(default="set-sort-order")
+    sort_order: SortOrder = Field(alias="sort-order")
+
+
 class SetDefaultSortOrderUpdate(IcebergBaseModel):
     action: Literal["set-default-sort-order"] = Field(default="set-default-sort-order")
     sort_order_id: int = Field(
@@ -542,6 +547,16 @@ def _(update: AddSortOrderUpdate, base_metadata: TableMetadata, context: _TableM
     return base_metadata.model_copy(
         update={
             "sort_orders": base_metadata.sort_orders + [update.sort_order],
+        }
+    )
+
+
+@_apply_table_update.register(SetSortOrderUpdate)
+def _(update: AddSortOrderUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    context.add_update(update)
+    return base_metadata.model_copy(
+        update={
+            "sort_orders": [update.sort_order],
         }
     )
 

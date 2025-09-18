@@ -34,6 +34,7 @@ from pyiceberg.exceptions import (
 )
 from pyiceberg.io import WAREHOUSE
 from pyiceberg.schema import Schema
+from pyiceberg.table.sorting import SortOrder
 from tests.conftest import clean_up
 
 
@@ -343,3 +344,26 @@ def test_update_namespace_properties(test_catalog: Catalog, database_name: str) 
         else:
             assert k in update_report.removed
     assert "updated test description" == test_catalog.load_namespace_properties(database_name)["comment"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_update_sort_order(test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str) -> None:
+    new_database_name = f"{database_name}_new"
+    test_catalog.create_namespace(database_name)
+    test_catalog.create_namespace(new_database_name)
+
+    identifier = (database_name, table_name)
+    table = test_catalog.create_table(identifier, table_schema_nested)
+    new_sort_order = SortOrder(order_id=table.sort_order().order_id + 1)
+
+    print("before")
+    print(table.metadata.sort_orders)
+    table.update_sort_order().set_sort_order(new_sort_order).commit()
+
+    table = table.refresh()
+    print("after")
+    print(table.metadata.sort_orders)
+    print(table.sort_order(), "I error :(")
+
+    assert table.sort_order() == new_sort_order
