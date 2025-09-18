@@ -44,7 +44,7 @@ concurrency:
 
 jobs:
   lint-and-test:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         python: ['3.9', '3.10', '3.11', '3.12']
@@ -68,7 +68,7 @@ jobs:
       run: COVERAGE_FAIL_UNDER=85 make coverage-report
 
   integration-test:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         python: ['3.9', '3.10', '3.11', '3.12']
