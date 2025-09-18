@@ -601,6 +601,8 @@ def test_write_manifest_list(
 
         assert isinstance(entries, list)
 
+        assert len(entries) == 2
+
         entry = entries[0]
 
         assert entry.sequence_number == 0 if format_version == 1 else 3
