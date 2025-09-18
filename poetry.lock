@@ -4787,19 +4787,20 @@ windows-terminal = ["colorama (>=0.4.6)"]
 
 [[package]]
 name = "pyiceberg-core"
-version = "0.7.0"
+version = "0.7.0rc1"
 description = ""
 optional = false
 python-versions = "~=3.9"
 groups = ["main"]
 markers = "extra == \"pyarrow\" or extra == \"pyiceberg-core\""
 files = [
-    {file = "pyiceberg_core-0.7.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:ba5bf8bbbda1877cb9d678c95729c01d183ee5681eba8c759e0f9943c2cfd65e"},
+    {file = "pyiceberg_core-0.7.0rc1-cp39-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:0363a9383e82111f9a6f3d1873663690466f206fb6c3443688e2b98fb92d3b07"},
+    {file = "pyiceberg_core-0.7.0rc1-cp39-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:9245bf61814cb6677feb07358d06fe003732c0ad8ac727acc082b3019ce084bf"},
+    {file = "pyiceberg_core-0.7.0rc1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f9dfc413e50cbd5e69d4b340e9ead2e6fa696b2c5cf8ef1aaed7daba9cbf838a"},
+    {file = "pyiceberg_core-0.7.0rc1-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:d5589b4c3ec282bd56d5f3d68f74cf135ae233c79aa6c5014e33c924c63ad9d8"},
+    {file = "pyiceberg_core-0.7.0rc1-cp39-abi3-win_amd64.whl", hash = "sha256:1802a3c7c2bd7d03a5d809ea656b69a2f5b09d9175e7b4979b011c2568123043"},
+    {file = "pyiceberg_core-0.7.0rc1.tar.gz", hash = "sha256:49334b953d0d73597d12be8d2375ab33d8164193a11e94ea9552f5f51d0a293d"},
 ]
-
-[package.source]
-type = "file"
-url = "../iceberg-rust/bindings/python/dist/pyiceberg_core-0.7.0-cp39-abi3-macosx_11_0_arm64.whl"
 
 [[package]]
 name = "pyjwt"
@@ -6826,4 +6827,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9.2, !=3.9.7"
-content-hash = "647206237e11c6064c36e0f9593c204977299fcc6e0cd4cc32e0a7b0dcd84363"
+content-hash = "630a864642ba00ee510a8f9674e60608e809edd3f30b396643d1ca465936a5ff"
