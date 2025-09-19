@@ -1960,8 +1960,8 @@ class DataScan(TableScan):
             else:
                 raise ValueError(f"Unknown DataFileContent ({data_file.content}): {manifest_entry}")
 
-        return [
-            FileScanTask(
+        def _create_scan_task(data_entry: ManifestEntry) -> FileScanTask:
+            return FileScanTask(
                 data_entry.data_file,
                 delete_files=_match_deletes_to_data_file(
                     data_entry,
@@ -1971,8 +1971,8 @@ class DataScan(TableScan):
                     data_entry.data_file.partition
                 ),
             )
-            for data_entry in data_entries
-        ]
+
+        return list(executor.map(_create_scan_task, data_entries))
 
     def to_arrow(self) -> pa.Table:
         """Read an Arrow table eagerly from this DataScan.
