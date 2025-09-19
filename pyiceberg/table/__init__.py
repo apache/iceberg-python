@@ -1792,6 +1792,28 @@ def _open_manifest(
     ]
 
 
+def _create_scan_task(
+    data_entry: ManifestEntry,
+    positional_delete_entries: SortedList[ManifestEntry],
+    residual_evaluators: Dict[int, Callable[[DataFile], ResidualEvaluator]],
+) -> FileScanTask:
+    """Create a FileScanTask from a ManifestEntry with associated delete files and residual.
+
+    Returns:
+        A FileScanTask for the data entry.
+    """
+    return FileScanTask(
+        data_entry.data_file,
+        delete_files=_match_deletes_to_data_file(
+            data_entry,
+            positional_delete_entries,
+        ),
+        residual=residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(
+            data_entry.data_file.partition
+        ),
+    )
+
+
 def _min_sequence_number(manifests: List[ManifestFile]) -> int:
     try:
         return min(
@@ -1960,19 +1982,19 @@ class DataScan(TableScan):
             else:
                 raise ValueError(f"Unknown DataFileContent ({data_file.content}): {manifest_entry}")
 
-        def _create_scan_task(data_entry: ManifestEntry) -> FileScanTask:
-            return FileScanTask(
-                data_entry.data_file,
-                delete_files=_match_deletes_to_data_file(
-                    data_entry,
-                    positional_delete_entries,
-                ),
-                residual=residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(
-                    data_entry.data_file.partition
-                ),
+        return list(
+            executor.map(
+                lambda args: _create_scan_task(*args),
+                [
+                    (
+                        data_entry,
+                        positional_delete_entries,
+                        residual_evaluators,
+                    )
+                    for data_entry in data_entries
+                ],
             )
-
-        return list(executor.map(_create_scan_task, data_entries))
+        )
 
     def to_arrow(self) -> pa.Table:
         """Read an Arrow table eagerly from this DataScan.
