@@ -58,12 +58,12 @@ help: ## Display this help message
 install-poetry: ## Ensure Poetry is installed at the specified version
 	@if ! command -v ${POETRY} &> /dev/null; then \
 		echo "Poetry not found. Installing..."; \
-		${PIP} install --user poetry==$(POETRY_VERSION); \
+		${PIP} install poetry==$(POETRY_VERSION); \
 	else \
 		INSTALLED_VERSION=$$(${PIP} show poetry | grep Version | awk '{print $$2}'); \
 		if [ "$$INSTALLED_VERSION" != "$(POETRY_VERSION)" ]; then \
 			echo "Updating Poetry to version $(POETRY_VERSION)..."; \
-			${PIP} install --user --upgrade poetry==$(POETRY_VERSION); \
+			${PIP} install --upgrade poetry==$(POETRY_VERSION); \
 		else \
 			echo "Poetry version $(POETRY_VERSION) already installed."; \
 		fi; \
