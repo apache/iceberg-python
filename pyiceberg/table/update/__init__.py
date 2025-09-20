@@ -642,6 +642,12 @@ def update_table_metadata(
         if base_metadata.last_updated_ms == new_metadata.last_updated_ms:
             new_metadata = new_metadata.model_copy(update={"last_updated_ms": datetime_to_millis(datetime.now().astimezone())})
 
+    # Check correctness of partition spec, and sort order
+    PartitionSpec.check_compatibility(new_metadata.spec(), new_metadata.schema())
+
+    if sort_order := new_metadata.sort_order_by_id(new_metadata.default_sort_order_id):
+        SortOrder.check_compatibility(sort_order, new_metadata.schema())
+
     if enforce_validation:
         return TableMetadataUtil.parse_obj(new_metadata.model_dump())
     else:
