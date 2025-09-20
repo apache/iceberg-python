@@ -26,6 +26,7 @@ from pyiceberg.catalog.memory import InMemoryCatalog
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import (
+    CommitFailedException,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchNamespaceError,
@@ -33,7 +34,10 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
 )
 from pyiceberg.io import WAREHOUSE
+from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.transforms import BucketTransform
+from pyiceberg.types import LongType, NestedField, StringType
 from tests.conftest import clean_up
 
 
@@ -96,6 +100,9 @@ CATALOGS = [
     pytest.lazy_fixture("rest_catalog"),
     pytest.lazy_fixture("hive_catalog"),
 ]
+
+
+SIMPLE_SCHEMA = Schema(NestedField(1, "id", LongType(), required=True), NestedField(2, "data", StringType(), required=False))
 
 
 @pytest.mark.integration
@@ -343,3 +350,64 @@ def test_update_namespace_properties(test_catalog: Catalog, database_name: str) 
         else:
             assert k in update_report.removed
     assert "updated test description" == test_catalog.load_namespace_properties(database_name)["comment"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_update_table_spec(test_catalog: Catalog, table_name: str, database_name: str) -> None:
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(database_name)
+    table = test_catalog.create_table(identifier, SIMPLE_SCHEMA)
+
+    with table.update_spec() as update:
+        update.add_field(source_column_name="id", transform=BucketTransform(16), partition_field_name="shard")
+
+    loaded = test_catalog.load_table(identifier)
+    expected_spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=BucketTransform(16), name="shard"), spec_id=1
+    )
+    # The spec ID may not match, so check equality of the fields
+    assert loaded.spec().fields == expected_spec.fields
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_update_table_spec_conflict(test_catalog: Catalog, table_name: str, database_name: str) -> None:
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(database_name)
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=BucketTransform(16), name="id_bucket"))
+    table = test_catalog.create_table(identifier, SIMPLE_SCHEMA, partition_spec=spec)
+
+    update = table.update_spec()
+    update.add_field(source_column_name="data", transform=BucketTransform(16), partition_field_name="shard")
+
+    # concurrent update
+    concurrent_table = test_catalog.load_table(identifier)
+    with concurrent_table.update_spec() as concurrent_update:
+        concurrent_update.remove_field("id_bucket")
+
+    with pytest.raises(CommitFailedException, match="Requirement failed: default partition spec changed|Cannot commit"):
+        update.commit()
+
+    loaded = test_catalog.load_table(identifier)
+    assert loaded.spec() == PartitionSpec(spec_id=1)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_update_table_spec_then_revert(test_catalog: Catalog, table_name: str, database_name: str) -> None:
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(database_name)
+
+    initial_spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=BucketTransform(16), name="id_bucket"))
+
+    table = test_catalog.create_table(identifier, SIMPLE_SCHEMA, partition_spec=initial_spec, properties={"format-version": "2"})
+    assert table.format_version == 2
+
+    with table.update_spec() as update:
+        update.add_identity(source_column_name="id")
+
+    with table.update_spec() as update:
+        update.remove_field("id")
+
+    assert table.spec() == initial_spec
