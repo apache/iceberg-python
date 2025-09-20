@@ -26,8 +26,6 @@ services:
       - rest
       - hive
       - minio
-    volumes:
-      - ./warehouse:/home/iceberg/warehouse
     environment:
       - AWS_ACCESS_KEY_ID=admin
       - AWS_SECRET_ACCESS_KEY=password
