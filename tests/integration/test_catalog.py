@@ -79,7 +79,7 @@ def hive_catalog() -> Generator[Catalog, None, None]:
     test_catalog = HiveCatalog(
         "test_hive_catalog",
         **{
-            "uri": "http://localhost:9083",
+            "uri": "thrift://localhost:9083",
             "s3.endpoint": "http://localhost:9000",
             "s3.access-key-id": "admin",
             "s3.secret-access-key": "password",
