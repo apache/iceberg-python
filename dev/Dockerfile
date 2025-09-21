@@ -43,13 +43,12 @@ ENV ICEBERG_VERSION=1.9.1
 ENV PYICEBERG_VERSION=0.10.0
 
 # Try the primary Apache mirror (downloads.apache.org) first, then fall back to the archive
-# Use -f so curl fails on HTTP errors and && fallback with || to try the archive mirror.
 RUN set -eux; \
   FILE=spark-${SPARK_VERSION}-bin-hadoop3.tgz; \
   URLS="https://downloads.apache.org/spark/spark-${SPARK_VERSION}/${FILE} https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/${FILE}"; \
   for url in $URLS; do \
     echo "Attempting download: $url"; \
-    if curl --retry 5 --retry-delay 5 -f -s -C - "$url" -o "$FILE"; then \
+    if curl --retry 3 --retry-delay 5 -f -s -C - "$url" -o "$FILE"; then \
       echo "Downloaded from: $url"; \
       break; \
     else \
