@@ -31,8 +31,8 @@ services:
       - AWS_SECRET_ACCESS_KEY=password
       - AWS_REGION=us-east-1
     ports:
-      - 8888:8888
-      - 8080:8080
+      - 15002:15002 # Spark Connect
+      - 4040:4040 # Spark UI
     links:
       - rest:rest
       - hive:hive

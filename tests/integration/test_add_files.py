@@ -503,7 +503,7 @@ def test_add_files_to_partitioned_table_fails_with_lower_and_upper_mismatch(
 
 @pytest.mark.integration
 def test_add_files_snapshot_properties(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
-    identifier = f"default.unpartitioned_table_v{format_version}"
+    identifier = f"default.snapshot_properties_v{format_version}"
     tbl = _create_table(session_catalog, identifier, format_version)
 
     file_paths = [f"s3://warehouse/default/unpartitioned/v{format_version}/test-{i}.parquet" for i in range(5)]
