@@ -756,7 +756,7 @@ def test_inspect_history(spark: SparkSession, session_catalog: Catalog, format_v
 
     spark.sql(
         f"""
-        CALL integration.system.rollback_to_snapshot('{identifier}', {snapshot_id})
+        CALL rest.system.rollback_to_snapshot('{identifier}', {snapshot_id})
     """
     )
 

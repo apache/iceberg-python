@@ -18,7 +18,7 @@
 # Configuration Variables
 # ========================
 
-PYTEST_ARGS ?= -v  # Override with e.g. PYTEST_ARGS="-vv --tb=short"
+PYTEST_ARGS ?= -v -x  # Override with e.g. PYTEST_ARGS="-vv --tb=short"
 COVERAGE ?= 0      # Set COVERAGE=1 to enable coverage: make test COVERAGE=1
 COVERAGE_FAIL_UNDER ?= 85  # Minimum coverage % to pass: make coverage-report COVERAGE_FAIL_UNDER=70
 KEEP_COMPOSE ?= 0  # Set KEEP_COMPOSE=1 to keep containers after integration tests
@@ -37,7 +37,7 @@ endif
 ifeq ($(KEEP_COMPOSE),1)
   CLEANUP_COMMAND = echo "Keeping containers running for debugging (KEEP_COMPOSE=1)"
 else
-  CLEANUP_COMMAND = docker compose -f dev/docker-compose-integration.yml down -v --remove-orphans 2>/dev/null || true
+  CLEANUP_COMMAND = docker compose -f dev/docker-compose-integration.yml down -v --remove-orphans --timeout 0 2>/dev/null || true
 endif
 
 # ============

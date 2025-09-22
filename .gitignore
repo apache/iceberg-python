@@ -37,13 +37,6 @@ coverage.xml
 bin/
 .vscode/
 
-# Hive/metastore files
-metastore_db/
-
-# Spark/metastore files
-spark-warehouse/
-derby.log
-
 # Python stuff
 .mypy_cache/
 htmlcov
