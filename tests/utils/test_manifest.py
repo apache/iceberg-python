@@ -308,7 +308,9 @@ def test_write_empty_manifest() -> None:
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
-@pytest.mark.parametrize("compression", ["null", "deflate", "zstd"])
+@pytest.mark.parametrize("compression", ["null", "deflate"])
+# Added in https://github.com/apache/iceberg-rust/pull/1692
+# @pytest.mark.parametrize("compression", ["null", "deflate", "zstd"])
 def test_write_manifest(
     generated_manifest_file_file_v1: str,
     generated_manifest_file_file_v2: str,
