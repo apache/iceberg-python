@@ -723,7 +723,7 @@ class InspectTable:
         snapshots = self.tbl.snapshots()
 
         _all_known_files = {}
-        _all_known_files["manifests"] = set(self.all_manifests(snapshots)["path"].to_pylist())
+        _all_known_files["manifests"] = set([manifest[0] for snapshot in snapshots for manifest in self._get_snapshot(snapshot.snapshot_id).manifests(self.tbl.io)])
         _all_known_files["manifest_lists"] = {snapshot.manifest_list for snapshot in snapshots}
         _all_known_files["statistics"] = {statistic.statistics_path for statistic in self.tbl.metadata.statistics}
         _all_known_files["partition_statistics"] = {
