@@ -866,6 +866,14 @@ class ManifestFile(Record):
                 if not discard_deleted or entry.status != ManifestEntryStatus.DELETED
             ]
 
+    def __eq__(self, other: Any) -> bool:
+        """Return the equality of two instances of the ManifestFile class."""
+        return self.manifest_path == other.manifest_path if isinstance(other, ManifestFile) else False
+
+    def __hash__(self) -> int:
+        """Return the hash of manifest_path."""
+        return hash(self.manifest_path)
+
 
 @cached(cache=LRUCache(maxsize=128), key=lambda io, manifest_list: hashkey(manifest_list))
 def _manifests(io: FileIO, manifest_list: str) -> Tuple[ManifestFile, ...]:
@@ -1079,18 +1087,15 @@ class ManifestWriter(ABC):
         return self
 
     def add(self, entry: ManifestEntry) -> ManifestWriter:
-        if entry.sequence_number is not None and entry.sequence_number >= 0:
-            self.add_entry(
-                ManifestEntry.from_args(
-                    snapshot_id=self._snapshot_id, sequence_number=entry.sequence_number, data_file=entry.data_file
-                )
+        self.add_entry(
+            ManifestEntry.from_args(
+                status=ManifestEntryStatus.ADDED,
+                snapshot_id=self._snapshot_id,
+                sequence_number=entry.sequence_number if entry.sequence_number != UNASSIGNED_SEQ else None,
+                data_file=entry.data_file,
             )
-        else:
-            self.add_entry(
-                ManifestEntry.from_args(
-                    status=ManifestEntryStatus.ADDED, snapshot_id=self._snapshot_id, data_file=entry.data_file
-                )
-            )
+        )
+
         return self
 
     def delete(self, entry: ManifestEntry) -> ManifestWriter:

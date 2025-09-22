@@ -711,8 +711,10 @@ def test_dynamic_partition_overwrite_evolve_partition(spark: SparkSession, sessi
     )
 
     identifier = f"default.partitioned_{format_version}_test_dynamic_partition_overwrite_evolve_partition"
-    with pytest.raises(NoSuchTableError):
+    try:
         session_catalog.drop_table(identifier)
+    except NoSuchTableError:
+        pass
 
     tbl = session_catalog.create_table(
         identifier=identifier,
@@ -978,8 +980,16 @@ def test_append_ymd_transform_partitioned(
     # Given
     identifier = f"default.arrow_table_v{format_version}_with_{str(transform)}_partition_on_col_{part_col}"
     nested_field = TABLE_SCHEMA.find_field(part_col)
+
+    if isinstance(transform, YearTransform):
+        partition_name = f"{part_col}_year"
+    elif isinstance(transform, MonthTransform):
+        partition_name = f"{part_col}_month"
+    elif isinstance(transform, DayTransform):
+        partition_name = f"{part_col}_day"
+
     partition_spec = PartitionSpec(
-        PartitionField(source_id=nested_field.field_id, field_id=1001, transform=transform, name=part_col)
+        PartitionField(source_id=nested_field.field_id, field_id=1001, transform=transform, name=partition_name)
     )
 
     # When
@@ -1035,8 +1045,18 @@ def test_append_transform_partition_verify_partitions_count(
     part_col = "timestamptz"
     identifier = f"default.arrow_table_v{format_version}_with_{str(transform)}_transform_partitioned_on_col_{part_col}"
     nested_field = table_date_timestamps_schema.find_field(part_col)
+
+    if isinstance(transform, YearTransform):
+        partition_name = f"{part_col}_year"
+    elif isinstance(transform, MonthTransform):
+        partition_name = f"{part_col}_month"
+    elif isinstance(transform, DayTransform):
+        partition_name = f"{part_col}_day"
+    elif isinstance(transform, HourTransform):
+        partition_name = f"{part_col}_hour"
+
     partition_spec = PartitionSpec(
-        PartitionField(source_id=nested_field.field_id, field_id=1001, transform=transform, name=part_col),
+        PartitionField(source_id=nested_field.field_id, field_id=1001, transform=transform, name=partition_name),
     )
 
     # When
@@ -1059,7 +1079,7 @@ def test_append_transform_partition_verify_partitions_count(
 
     partitions_table = tbl.inspect.partitions()
     assert partitions_table.num_rows == len(expected_partitions)
-    assert {part[part_col] for part in partitions_table["partition"].to_pylist()} == expected_partitions
+    assert {part[partition_name] for part in partitions_table["partition"].to_pylist()} == expected_partitions
     files_df = spark.sql(
         f"""
             SELECT *
@@ -1131,3 +1151,61 @@ def test_append_multiple_partitions(
         """
     )
     assert files_df.count() == 6
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_stage_only_dynamic_partition_overwrite_files(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = f"default.test_stage_only_dynamic_partition_overwrite_files_v{format_version}"
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+    tbl = session_catalog.create_table(
+        identifier=identifier,
+        schema=TABLE_SCHEMA,
+        partition_spec=PartitionSpec(
+            PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="bool"),
+            PartitionField(source_id=4, field_id=1002, transform=IdentityTransform(), name="int"),
+        ),
+        properties={"format-version": str(format_version)},
+    )
+
+    tbl.append(arrow_table_with_null)
+    current_snapshot = tbl.metadata.current_snapshot_id
+    assert current_snapshot is not None
+
+    original_count = len(tbl.scan().to_arrow())
+    assert original_count == 3
+
+    # write to staging snapshot
+    tbl.dynamic_partition_overwrite(arrow_table_with_null.slice(0, 1), branch=None)
+
+    assert current_snapshot == tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == original_count
+    snapshots = tbl.snapshots()
+    # dynamic partition overwrite will create 2 snapshots, one delete and another append
+    assert len(snapshots) == 3
+
+    # Write to main branch
+    tbl.append(arrow_table_with_null)
+
+    # Main ref has changed
+    assert current_snapshot != tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == 6
+    snapshots = tbl.snapshots()
+    assert len(snapshots) == 4
+
+    rows = spark.sql(
+        f"""
+                    SELECT operation, parent_id, snapshot_id
+                    FROM {identifier}.snapshots
+                    ORDER BY committed_at ASC
+                """
+    ).collect()
+    operations = [row.operation for row in rows]
+    parent_snapshot_id = [row.parent_id for row in rows]
+    assert operations == ["append", "delete", "append", "append"]
+    assert parent_snapshot_id == [None, current_snapshot, current_snapshot, current_snapshot]

@@ -52,6 +52,7 @@ AWS_SECRET_ACCESS_KEY = "client.secret-access-key"
 AWS_SESSION_TOKEN = "client.session-token"
 AWS_ROLE_ARN = "client.role-arn"
 AWS_ROLE_SESSION_NAME = "client.role-session-name"
+S3_ANONYMOUS = "s3.anonymous"
 S3_ENDPOINT = "s3.endpoint"
 S3_ACCESS_KEY_ID = "s3.access-key-id"
 S3_SECRET_ACCESS_KEY = "s3.secret-access-key"
@@ -74,6 +75,7 @@ HDFS_PORT = "hdfs.port"
 HDFS_USER = "hdfs.user"
 HDFS_KERB_TICKET = "hdfs.kerberos_ticket"
 ADLS_CONNECTION_STRING = "adls.connection-string"
+ADLS_CREDENTIAL = "adls.credential"
 ADLS_ACCOUNT_NAME = "adls.account-name"
 ADLS_ACCOUNT_KEY = "adls.account-key"
 ADLS_SAS_TOKEN = "adls.sas-token"
@@ -85,6 +87,7 @@ ADLS_BLOB_STORAGE_AUTHORITY = "adls.blob-storage-authority"
 ADLS_DFS_STORAGE_AUTHORITY = "adls.dfs-storage-authority"
 ADLS_BLOB_STORAGE_SCHEME = "adls.blob-storage-scheme"
 ADLS_DFS_STORAGE_SCHEME = "adls.dfs-storage-scheme"
+ADLS_TOKEN = "adls.token"
 GCS_TOKEN = "gcs.oauth2.token"
 GCS_TOKEN_EXPIRES_AT_MS = "gcs.oauth2.token-expires-at"
 GCS_PROJECT_ID = "gcs.project-id"
@@ -310,8 +313,10 @@ SCHEMA_TO_FILE_IO: Dict[str, List[str]] = {
     "file": [ARROW_FILE_IO, FSSPEC_FILE_IO],
     "hdfs": [ARROW_FILE_IO],
     "viewfs": [ARROW_FILE_IO],
-    "abfs": [FSSPEC_FILE_IO],
-    "abfss": [FSSPEC_FILE_IO],
+    "abfs": [FSSPEC_FILE_IO, ARROW_FILE_IO],
+    "abfss": [FSSPEC_FILE_IO, ARROW_FILE_IO],
+    "wasb": [FSSPEC_FILE_IO, ARROW_FILE_IO],
+    "wasbs": [FSSPEC_FILE_IO, ARROW_FILE_IO],
     "hf": [FSSPEC_FILE_IO],
 }
 

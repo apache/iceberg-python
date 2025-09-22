@@ -18,6 +18,7 @@
 import math
 import os
 import random
+import re
 import time
 import uuid
 from datetime import date, datetime, timedelta
@@ -44,7 +45,7 @@ from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import CommitFailedException, NoSuchTableError
 from pyiceberg.expressions import And, EqualTo, GreaterThanOrEqual, In, LessThan, Not
-from pyiceberg.io.pyarrow import _dataframe_to_data_files
+from pyiceberg.io.pyarrow import UnsupportedPyArrowTypeException, _dataframe_to_data_files
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
@@ -1202,6 +1203,137 @@ def test_sanitize_character_partitioned(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog")])
+def test_sanitize_character_partitioned_avro_bug(catalog: Catalog) -> None:
+    table_name = "default.test_table_partitioned_sanitized_character_avro"
+    try:
+        catalog.drop_table(table_name)
+    except NoSuchTableError:
+        pass
+
+    schema = Schema(
+        NestedField(id=1, name="😎", field_type=StringType(), required=False),
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(
+            source_id=1,
+            field_id=1001,
+            transform=IdentityTransform(),
+            name="😎",
+        )
+    )
+
+    tbl = _create_table(
+        session_catalog=catalog,
+        identifier=table_name,
+        schema=schema,
+        partition_spec=partition_spec,
+        data=[
+            pa.Table.from_arrays(
+                [pa.array([str(i) for i in range(22)])], schema=pa.schema([pa.field("😎", pa.string(), nullable=False)])
+            )
+        ],
+    )
+
+    assert len(tbl.scan().to_arrow()) == 22
+
+    # verify that we can read the table with DuckDB
+    import duckdb
+
+    location = tbl.metadata_location
+    duckdb.sql("INSTALL iceberg; LOAD iceberg;")
+    # Configure S3 settings for DuckDB to match the catalog configuration
+    duckdb.sql("SET s3_endpoint='localhost:9000';")
+    duckdb.sql("SET s3_access_key_id='admin';")
+    duckdb.sql("SET s3_secret_access_key='password';")
+    duckdb.sql("SET s3_use_ssl=false;")
+    duckdb.sql("SET s3_url_style='path';")
+    result = duckdb.sql(f"SELECT * FROM iceberg_scan('{location}')").fetchall()
+    assert len(result) == 22
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_cross_platform_special_character_compatibility(
+    spark: SparkSession, session_catalog: Catalog, format_version: int
+) -> None:
+    """Test cross-platform compatibility with special characters in column names."""
+    identifier = "default.test_cross_platform_special_characters"
+
+    # Test various special characters that need sanitization
+    special_characters = [
+        "😎",  # emoji - Java produces _xD83D_xDE0E, Python produces _x1F60E
+        "a.b",  # dot - both should produce a_x2Eb
+        "a#b",  # hash - both should produce a_x23b
+        "9x",  # starts with digit - both should produce _9x
+        "x_",  # valid - should remain unchanged
+        "letter/abc",  # slash - both should produce letter_x2Fabc
+    ]
+
+    for i, special_char in enumerate(special_characters):
+        table_name = f"{identifier}_{format_version}_{i}"
+        pyiceberg_table_name = f"{identifier}_pyiceberg_{format_version}_{i}"
+
+        try:
+            session_catalog.drop_table(table_name)
+        except Exception:
+            pass
+        try:
+            session_catalog.drop_table(pyiceberg_table_name)
+        except Exception:
+            pass
+
+        try:
+            # Test 1: Spark writes, PyIceberg reads
+            spark_df = spark.createDataFrame([("test_value",)], [special_char])
+            spark_df.writeTo(table_name).using("iceberg").createOrReplace()
+
+            # Read with PyIceberg table scan
+            tbl = session_catalog.load_table(table_name)
+            pyiceberg_df = tbl.scan().to_pandas()
+            assert len(pyiceberg_df) == 1
+            assert special_char in pyiceberg_df.columns
+            assert pyiceberg_df.iloc[0][special_char] == "test_value"
+
+            # Test 2: PyIceberg writes, Spark reads
+            from pyiceberg.schema import Schema
+            from pyiceberg.types import NestedField, StringType
+
+            schema = Schema(NestedField(field_id=1, name=special_char, field_type=StringType(), required=True))
+
+            tbl_pyiceberg = session_catalog.create_table(
+                identifier=pyiceberg_table_name, schema=schema, properties={"format-version": str(format_version)}
+            )
+
+            import pyarrow as pa
+
+            # Create PyArrow schema with required field to match Iceberg schema
+            pa_schema = pa.schema([pa.field(special_char, pa.string(), nullable=False)])
+            data = pa.Table.from_pydict({special_char: ["pyiceberg_value"]}, schema=pa_schema)
+            tbl_pyiceberg.append(data)
+
+            # Read with Spark
+            spark_df_read = spark.table(pyiceberg_table_name)
+            spark_result = spark_df_read.collect()
+
+            # Verify data integrity
+            assert len(spark_result) == 1
+            assert special_char in spark_df_read.columns
+            assert spark_result[0][special_char] == "pyiceberg_value"
+
+        finally:
+            try:
+                session_catalog.drop_table(table_name)
+            except Exception:
+                pass
+            try:
+                session_catalog.drop_table(pyiceberg_table_name)
+            except Exception:
+                pass
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
     identifier = "default.test_table_write_subset_of_schema"
@@ -2115,3 +2247,173 @@ def test_branch_py_write_spark_read(session_catalog: Catalog, spark: SparkSessio
     )
     assert main_df.count() == 3
     assert branch_df.count() == 2
+
+
+@pytest.mark.integration
+def test_nanosecond_support_on_catalog(
+    session_catalog: Catalog, arrow_table_schema_with_all_timestamp_precisions: pa.Schema
+) -> None:
+    identifier = "default.test_nanosecond_support_on_catalog"
+
+    catalog = load_catalog("default", type="in-memory")
+    catalog.create_namespace("ns")
+
+    _create_table(session_catalog, identifier, {"format-version": "3"}, schema=arrow_table_schema_with_all_timestamp_precisions)
+
+    with pytest.raises(NotImplementedError, match="Writing V3 is not yet supported"):
+        catalog.create_table(
+            "ns.table1", schema=arrow_table_schema_with_all_timestamp_precisions, properties={"format-version": "3"}
+        )
+
+    with pytest.raises(
+        UnsupportedPyArrowTypeException, match=re.escape("Column 'timestamp_ns' has an unsupported type: timestamp[ns]")
+    ):
+        _create_table(
+            session_catalog, identifier, {"format-version": "2"}, schema=arrow_table_schema_with_all_timestamp_precisions
+        )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_stage_only_delete(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = f"default.test_stage_only_delete_files_v{format_version}"
+    iceberg_spec = PartitionSpec(
+        *[PartitionField(source_id=4, field_id=1001, transform=IdentityTransform(), name="integer_partition")]
+    )
+    tbl = _create_table(
+        session_catalog, identifier, {"format-version": str(format_version)}, [arrow_table_with_null], iceberg_spec
+    )
+
+    current_snapshot = tbl.metadata.current_snapshot_id
+    assert current_snapshot is not None
+
+    original_count = len(tbl.scan().to_arrow())
+    assert original_count == 3
+
+    tbl.delete("int = 9", branch=None)
+
+    # a new delete snapshot is added
+    snapshots = tbl.snapshots()
+    assert len(snapshots) == 2
+    # snapshot main ref has not changed
+    assert current_snapshot == tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == original_count
+
+    # Write to main branch
+    tbl.append(arrow_table_with_null)
+
+    # Main ref has changed
+    assert current_snapshot != tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == 6
+    snapshots = tbl.snapshots()
+    assert len(snapshots) == 3
+
+    rows = spark.sql(
+        f"""
+                SELECT operation, parent_id
+                FROM {identifier}.snapshots
+                ORDER BY committed_at ASC
+            """
+    ).collect()
+    operations = [row.operation for row in rows]
+    parent_snapshot_id = [row.parent_id for row in rows]
+    assert operations == ["append", "delete", "append"]
+    # both subsequent parent id should be the first snapshot id
+    assert parent_snapshot_id == [None, current_snapshot, current_snapshot]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_stage_only_append(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = f"default.test_stage_only_fast_append_files_v{format_version}"
+    tbl = _create_table(session_catalog, identifier, {"format-version": str(format_version)}, [arrow_table_with_null])
+
+    current_snapshot = tbl.metadata.current_snapshot_id
+    assert current_snapshot is not None
+
+    original_count = len(tbl.scan().to_arrow())
+    assert original_count == 3
+
+    # Write to staging branch
+    tbl.append(arrow_table_with_null, branch=None)
+
+    # Main ref has not changed and data is not yet appended
+    assert current_snapshot == tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == original_count
+    # There should be a new staged snapshot
+    snapshots = tbl.snapshots()
+    assert len(snapshots) == 2
+
+    # Write to main branch
+    tbl.append(arrow_table_with_null)
+
+    # Main ref has changed
+    assert current_snapshot != tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == 6
+    snapshots = tbl.snapshots()
+    assert len(snapshots) == 3
+
+    rows = spark.sql(
+        f"""
+            SELECT operation, parent_id
+            FROM {identifier}.snapshots
+            ORDER BY committed_at ASC
+        """
+    ).collect()
+    operations = [row.operation for row in rows]
+    parent_snapshot_id = [row.parent_id for row in rows]
+    assert operations == ["append", "append", "append"]
+    # both subsequent parent id should be the first snapshot id
+    assert parent_snapshot_id == [None, current_snapshot, current_snapshot]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_stage_only_overwrite_files(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = f"default.test_stage_only_overwrite_files_v{format_version}"
+    tbl = _create_table(session_catalog, identifier, {"format-version": str(format_version)}, [arrow_table_with_null])
+    first_snapshot = tbl.metadata.current_snapshot_id
+
+    # duplicate data with a new insert
+    tbl.append(arrow_table_with_null)
+
+    second_snapshot = tbl.metadata.current_snapshot_id
+    assert second_snapshot is not None
+    original_count = len(tbl.scan().to_arrow())
+    assert original_count == 6
+
+    # write to non-main branch
+    tbl.overwrite(arrow_table_with_null, branch=None)
+    assert second_snapshot == tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == original_count
+    snapshots = tbl.snapshots()
+    # overwrite will create 2 snapshots
+    assert len(snapshots) == 4
+
+    # Write to main branch again
+    tbl.append(arrow_table_with_null)
+
+    # Main ref has changed
+    assert second_snapshot != tbl.metadata.current_snapshot_id
+    assert len(tbl.scan().to_arrow()) == 9
+    snapshots = tbl.snapshots()
+    assert len(snapshots) == 5
+
+    rows = spark.sql(
+        f"""
+                    SELECT operation, parent_id, snapshot_id
+                    FROM {identifier}.snapshots
+                    ORDER BY committed_at ASC
+                """
+    ).collect()
+    operations = [row.operation for row in rows]
+    parent_snapshot_id = [row.parent_id for row in rows]
+    assert operations == ["append", "append", "delete", "append", "append"]
+
+    assert parent_snapshot_id == [None, first_snapshot, second_snapshot, second_snapshot, second_snapshot]

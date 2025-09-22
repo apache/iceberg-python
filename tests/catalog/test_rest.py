@@ -21,6 +21,7 @@ from typing import Any, Callable, Dict, cast
 from unittest import mock
 
 import pytest
+from requests.exceptions import HTTPError
 from requests_mock import Mocker
 
 import pyiceberg
@@ -58,7 +59,6 @@ TEST_RESOURCE = "test_resource"
 
 TEST_HEADERS = {
     "Content-type": "application/json",
-    "X-Client-Version": "0.14.1",
     "User-Agent": f"PyIceberg/{pyiceberg.__version__}",
     "Authorization": f"Bearer {TEST_TOKEN}",
     "X-Iceberg-Access-Delegation": "vended-credentials",
@@ -1121,7 +1121,6 @@ def test_create_staged_table_200(
                     "schema-id": 0,
                     "identifier-field-ids": [],
                 },
-                "last-column-id": 2,
             },
             {"action": "set-current-schema", "schema-id": -1},
             {"action": "add-spec", "spec": {"spec-id": 0, "fields": []}},
@@ -1487,7 +1486,7 @@ def test_update_namespace_properties_invalid_namespace(rest_mock: Mocker) -> Non
     assert "Empty namespace identifier" in str(e.value)
 
 
-def test_request_session_with_ssl_ca_bundle() -> None:
+def test_request_session_with_ssl_ca_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
     # Given
     catalog_properties = {
         "uri": TEST_URI,
@@ -1497,6 +1496,8 @@ def test_request_session_with_ssl_ca_bundle() -> None:
         },
     }
     with pytest.raises(OSError) as e:
+        monkeypatch.delenv("REQUESTS_CA_BUNDLE", raising=False)
+        monkeypatch.delenv("CURL_CA_BUNDLE", raising=False)
         # Missing namespace
         RestCatalog("rest", **catalog_properties)  # type: ignore
     assert "Could not find a suitable TLS CA certificate bundle, invalid path: path_to_ca_bundle" in str(e.value)
@@ -1646,6 +1647,63 @@ def test_rest_catalog_with_unsupported_auth_type() -> None:
     assert "Could not load AuthManager class for 'unsupported'" in str(e.value)
 
 
+def test_rest_catalog_with_oauth2_auth_type(requests_mock: Mocker) -> None:
+    requests_mock.post(
+        f"{TEST_URI}oauth2/token",
+        json={
+            "access_token": "MTQ0NjJkZmQ5OTM2NDE1ZTZjNGZmZjI3",
+            "token_type": "Bearer",
+            "expires_in": 3600,
+            "refresh_token": "IwOGYzYTlmM2YxOTQ5MGE3YmNmMDFkNTVk",
+            "scope": "read",
+        },
+        status_code=200,
+    )
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "oauth2",
+            "oauth2": {
+                "client_id": "some_client_id",
+                "client_secret": "some_client_secret",
+                "token_url": f"{TEST_URI}oauth2/token",
+                "scope": "read",
+            },
+        },
+    }
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert catalog.uri == TEST_URI
+
+
+def test_rest_catalog_oauth2_non_200_token_response(requests_mock: Mocker) -> None:
+    requests_mock.post(
+        f"{TEST_URI}oauth2/token",
+        json={"error": "invalid_client"},
+        status_code=401,
+    )
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "oauth2",
+            "oauth2": {
+                "client_id": "bad_client_id",
+                "client_secret": "bad_client_secret",
+                "token_url": f"{TEST_URI}oauth2/token",
+                "scope": "read",
+            },
+        },
+    }
+
+    with pytest.raises(HTTPError):
+        RestCatalog("rest", **catalog_properties)  # type: ignore
+
+
 EXAMPLE_ENV = {"PYICEBERG_CATALOG__PRODUCTION__URI": TEST_URI}
 
 
@@ -1787,3 +1845,76 @@ def test_rest_catalog_with_google_credentials_path(
     assert len(history) == 1
     actual_headers = history[0].headers
     assert actual_headers["Authorization"] == expected_auth_header
+
+
+class TestRestCatalogClose:
+    """Tests RestCatalog close functionality"""
+
+    EXPECTED_ADAPTERS = 2
+    EXPECTED_ADAPTERS_SIGV4 = 3
+
+    def test_catalog_close(self, rest_mock: Mocker) -> None:
+        rest_mock.get(
+            f"{TEST_URI}v1/config",
+            json={"defaults": {}, "overrides": {}},
+            status_code=200,
+        )
+
+        catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+        catalog.close()
+        # Verify session still exists after close the session pooled connections
+        assert hasattr(catalog, "_session")
+        assert len(catalog._session.adapters) == self.EXPECTED_ADAPTERS
+        # Second close should not raise any exception
+        catalog.close()
+
+    def test_rest_catalog_close_sigv4(self, rest_mock: Mocker) -> None:
+        catalog = None
+        rest_mock.get(
+            f"{TEST_URI}v1/config",
+            json={"defaults": {}, "overrides": {}},
+            status_code=200,
+        )
+
+        catalog = RestCatalog("rest", **{"uri": TEST_URI, "token": TEST_TOKEN, "rest.sigv4-enabled": "true"})
+        catalog.close()
+        assert hasattr(catalog, "_session")
+        assert len(catalog._session.adapters) == self.EXPECTED_ADAPTERS_SIGV4
+
+    def test_rest_catalog_context_manager_with_exception(self, rest_mock: Mocker) -> None:
+        """Test RestCatalog context manager properly closes with exceptions."""
+        catalog = None
+        rest_mock.get(
+            f"{TEST_URI}v1/config",
+            json={"defaults": {}, "overrides": {}},
+            status_code=200,
+        )
+
+        try:
+            with RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN) as cat:
+                catalog = cat
+                raise ValueError("Test exception")
+        except ValueError:
+            pass
+
+        assert catalog is not None and hasattr(catalog, "_session")
+        assert len(catalog._session.adapters) == self.EXPECTED_ADAPTERS
+
+    def test_rest_catalog_context_manager_with_exception_sigv4(self, rest_mock: Mocker) -> None:
+        """Test RestCatalog context manager properly closes with exceptions."""
+        catalog = None
+        rest_mock.get(
+            f"{TEST_URI}v1/config",
+            json={"defaults": {}, "overrides": {}},
+            status_code=200,
+        )
+
+        try:
+            with RestCatalog("rest", **{"uri": TEST_URI, "token": TEST_TOKEN, "rest.sigv4-enabled": "true"}) as cat:
+                catalog = cat
+                raise ValueError("Test exception")
+        except ValueError:
+            pass
+
+        assert catalog is not None and hasattr(catalog, "_session")
+        assert len(catalog._session.adapters) == self.EXPECTED_ADAPTERS_SIGV4

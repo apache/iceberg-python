@@ -2279,6 +2279,13 @@ def database_name() -> str:
 
 
 @pytest.fixture()
+def gcp_dataset_name() -> str:
+    prefix = "my_iceberg_database_"
+    random_tag = "".join(choice(string.ascii_letters) for _ in range(RANDOM_LENGTH))
+    return (prefix + random_tag).lower()
+
+
+@pytest.fixture()
 def database_list(database_name: str) -> List[str]:
     return [f"{database_name}_{idx}" for idx in range(NUM_TABLES)]
 
@@ -2299,6 +2306,13 @@ def hierarchical_namespace_list(hierarchical_namespace_name: str) -> List[str]:
 BUCKET_NAME = "test_bucket"
 TABLE_METADATA_LOCATION_REGEX = re.compile(
     r"""s3://test_bucket/my_iceberg_database-[a-z]{20}.db/
+    my_iceberg_table-[a-z]{20}/metadata/
+    [0-9]{5}-[a-f0-9]{8}-?[a-f0-9]{4}-?4[a-f0-9]{3}-?[89ab][a-f0-9]{3}-?[a-f0-9]{12}.metadata.json""",
+    re.X,
+)
+
+BQ_TABLE_METADATA_LOCATION_REGEX = re.compile(
+    r"""gs://alexstephen-test-bq-bucket/my_iceberg_database_[a-z]{20}.db/
     my_iceberg_table-[a-z]{20}/metadata/
     [0-9]{5}-[a-f0-9]{8}-?[a-f0-9]{4}-?4[a-f0-9]{3}-?[89ab][a-f0-9]{3}-?[a-f0-9]{12}.metadata.json""",
     re.X,
@@ -2325,6 +2339,13 @@ def get_bucket_name() -> str:
     return bucket_name
 
 
+def get_gcs_bucket_name() -> str:
+    bucket_name = os.getenv("GCS_TEST_BUCKET")
+    if bucket_name is None:
+        raise ValueError("Please specify a bucket to run the test by setting environment variable GCS_TEST_BUCKET")
+    return bucket_name
+
+
 def get_glue_endpoint() -> Optional[str]:
     """Set the optional environment variable AWS_TEST_GLUE_ENDPOINT for a glue endpoint to test."""
     return os.getenv("AWS_TEST_GLUE_ENDPOINT")
@@ -2332,6 +2353,16 @@ def get_glue_endpoint() -> Optional[str]:
 
 def get_s3_path(bucket_name: str, database_name: Optional[str] = None, table_name: Optional[str] = None) -> str:
     result_path = f"s3://{bucket_name}"
+    if database_name is not None:
+        result_path += f"/{database_name}.db"
+
+    if table_name is not None:
+        result_path += f"/{table_name}"
+    return result_path
+
+
+def get_gcs_path(bucket_name: str, database_name: Optional[str] = None, table_name: Optional[str] = None) -> str:
+    result_path = f"gcs://{bucket_name}"
     if database_name is not None:
         result_path += f"/{database_name}.db"
 
@@ -2375,8 +2406,10 @@ def data_file(table_schema_simple: Schema, tmp_path: str) -> str:
 
 @pytest.fixture
 def example_task(data_file: str) -> FileScanTask:
+    datafile = DataFile.from_args(file_path=data_file, file_format=FileFormat.PARQUET, file_size_in_bytes=1925)
+    datafile.spec_id = 0
     return FileScanTask(
-        data_file=DataFile.from_args(file_path=data_file, file_format=FileFormat.PARQUET, file_size_in_bytes=1925),
+        data_file=datafile,
     )
 
 
@@ -2501,10 +2534,14 @@ def spark() -> "SparkSession":
     # Remember to also update `dev/Dockerfile`
     spark_version = ".".join(importlib.metadata.version("pyspark").split(".")[:2])
     scala_version = "2.12"
-    iceberg_version = "1.9.0"
+    iceberg_version = "1.9.2"
+    hadoop_version = "3.3.4"
+    aws_sdk_version = "1.12.753"
 
     os.environ["PYSPARK_SUBMIT_ARGS"] = (
         f"--packages org.apache.iceberg:iceberg-spark-runtime-{spark_version}_{scala_version}:{iceberg_version},"
+        f"org.apache.hadoop:hadoop-aws:{hadoop_version},"
+        f"com.amazonaws:aws-java-sdk-bundle:{aws_sdk_version},"
         f"org.apache.iceberg:iceberg-aws-bundle:{iceberg_version} pyspark-shell"
     )
     os.environ["AWS_REGION"] = "us-east-1"
@@ -2519,14 +2556,13 @@ def spark() -> "SparkSession":
         .config("spark.default.parallelism", "1")
         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
         .config("spark.sql.catalog.integration", "org.apache.iceberg.spark.SparkCatalog")
-        .config("spark.sql.catalog.integration.catalog-impl", "org.apache.iceberg.rest.RESTCatalog")
+        .config("spark.sql.catalog.integration.type", "rest")
         .config("spark.sql.catalog.integration.cache-enabled", "false")
         .config("spark.sql.catalog.integration.uri", "http://localhost:8181")
         .config("spark.sql.catalog.integration.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
         .config("spark.sql.catalog.integration.warehouse", "s3://warehouse/wh/")
         .config("spark.sql.catalog.integration.s3.endpoint", "http://localhost:9000")
         .config("spark.sql.catalog.integration.s3.path-style-access", "true")
-        .config("spark.sql.defaultCatalog", "integration")
         .config("spark.sql.catalog.hive", "org.apache.iceberg.spark.SparkCatalog")
         .config("spark.sql.catalog.hive.type", "hive")
         .config("spark.sql.catalog.hive.uri", "http://localhost:9083")
@@ -2534,6 +2570,14 @@ def spark() -> "SparkSession":
         .config("spark.sql.catalog.hive.warehouse", "s3://warehouse/hive/")
         .config("spark.sql.catalog.hive.s3.endpoint", "http://localhost:9000")
         .config("spark.sql.catalog.hive.s3.path-style-access", "true")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.iceberg.spark.SparkSessionCatalog")
+        .config("spark.sql.catalog.spark_catalog.type", "hive")
+        .config("spark.sql.catalog.spark_catalog.uri", "http://localhost:9083")
+        .config("spark.sql.catalog.spark_catalog.warehouse", "s3://warehouse/hive/")
+        .config("spark.hadoop.fs.s3a.endpoint", "http://localhost:9000")
+        .config("spark.hadoop.fs.s3a.path.style.access", "true")
+        .config("spark.sql.catalogImplementation", "hive")
+        .config("spark.sql.defaultCatalog", "integration")
         .config("spark.sql.execution.arrow.pyspark.enabled", "true")
         .getOrCreate()
     )

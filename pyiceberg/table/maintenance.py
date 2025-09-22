@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from pyiceberg.table import Table
+    from pyiceberg.table.update.snapshot import ExpireSnapshots
 
 
 class MaintenanceTable:
@@ -128,3 +129,14 @@ class MaintenanceTable:
                     logger.warning(f"Files:\n{failed_to_delete_files}")
         else:
             logger.info(f"No orphaned files found at {location}!")
+
+    def expire_snapshots(self) -> ExpireSnapshots:
+        """Return an ExpireSnapshots builder for snapshot expiration operations.
+
+        Returns:
+            ExpireSnapshots builder for configuring and executing snapshot expiration.
+        """
+        from pyiceberg.table import Transaction
+        from pyiceberg.table.update.snapshot import ExpireSnapshots
+
+        return ExpireSnapshots(transaction=Transaction(self.tbl, autocommit=True))
