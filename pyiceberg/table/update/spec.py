@@ -32,6 +32,7 @@ from pyiceberg.partitioning import (
 from pyiceberg.schema import Schema
 from pyiceberg.table.update import (
     AddPartitionSpecUpdate,
+    AssertDefaultSpecId,
     AssertLastAssignedPartitionId,
     SetDefaultSpecUpdate,
     TableRequirement,
@@ -169,7 +170,11 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
                 updates = (SetDefaultSpecUpdate(spec_id=new_spec.spec_id),)
 
             required_last_assigned_partitioned_id = self._transaction.table_metadata.last_partition_id
-            requirements = (AssertLastAssignedPartitionId(last_assigned_partition_id=required_last_assigned_partitioned_id),)
+            default_spec_id = self._transaction.table_metadata.default_spec_id
+            requirements = (
+                AssertLastAssignedPartitionId(last_assigned_partition_id=required_last_assigned_partitioned_id),
+                AssertDefaultSpecId(default_spec_id=default_spec_id),
+            )
 
         return updates, requirements
 
