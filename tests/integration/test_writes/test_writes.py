@@ -728,19 +728,15 @@ def test_spark_writes_orc_pyiceberg_reads(spark: SparkSession, session_catalog: 
     # Create Spark DataFrame
     spark_df = spark.createDataFrame(test_data, ["id", "name", "age", "is_active"])
 
-    # Create table with Spark using ORC format
-    spark_df.writeTo(identifier).using("iceberg").createOrReplace()
+    # Ensure a clean slate to avoid replacing a v2 table with v1
+    spark.sql(f"DROP TABLE IF EXISTS {identifier}")
 
-    # Configure table to use ORC format
-    spark.sql(
-        f"""
-        ALTER TABLE {identifier}
-        SET TBLPROPERTIES (
-            'write.format.default' = 'orc',
-            'format-version' = '{format_version}'
-        )
-    """
-    )
+    # Create table with Spark using ORC format and desired format-version
+    spark_df.writeTo(identifier) \
+        .using("iceberg") \
+        .tableProperty("write.format.default", "orc") \
+        .tableProperty("format-version", str(format_version)) \
+        .createOrReplace()
 
     # Write data with ORC format using Spark
     spark_df.writeTo(identifier).using("iceberg").append()
@@ -774,8 +770,11 @@ def test_spark_writes_orc_pyiceberg_reads(spark: SparkSession, session_catalog: 
     assert pyiceberg_df["age"].dtype == "int64"
     assert pyiceberg_df["is_active"].dtype == "bool"
 
-    # Cross-validate with Spark to ensure consistency
+    # Cross-validate with Spark to ensure consistency (ensure deterministic ordering)
     spark_result = spark.sql(f"SELECT * FROM {identifier}").toPandas()
+    sort_cols = ["id", "name", "age", "is_active"]
+    spark_result = spark_result.sort_values(by=sort_cols).reset_index(drop=True)
+    pyiceberg_df = pyiceberg_df.sort_values(by=sort_cols).reset_index(drop=True)
     pandas.testing.assert_frame_equal(spark_result, pyiceberg_df, check_dtype=False)
 
     # Verify the files are actually ORC format
