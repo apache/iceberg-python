@@ -732,11 +732,9 @@ def test_spark_writes_orc_pyiceberg_reads(spark: SparkSession, session_catalog: 
     spark.sql(f"DROP TABLE IF EXISTS {identifier}")
 
     # Create table with Spark using ORC format and desired format-version
-    spark_df.writeTo(identifier) \
-        .using("iceberg") \
-        .tableProperty("write.format.default", "orc") \
-        .tableProperty("format-version", str(format_version)) \
-        .createOrReplace()
+    spark_df.writeTo(identifier).using("iceberg").tableProperty("write.format.default", "orc").tableProperty(
+        "format-version", str(format_version)
+    ).createOrReplace()
 
     # Write data with ORC format using Spark
     spark_df.writeTo(identifier).using("iceberg").append()
