@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import reduce
 from typing import TYPE_CHECKING, Optional, Set, cast
@@ -32,16 +33,17 @@ if TYPE_CHECKING:
     from pyiceberg.table.update.snapshot import ExpireSnapshots
 
 
+@dataclass(kw_only=True)
+class RemoveOrphansResult:
+    deleted_files: Set[str]
+    failed_deletions: Set[str]
+
+
 class MaintenanceTable:
     tbl: Table
 
     def __init__(self, tbl: Table) -> None:
         self.tbl = tbl
-
-        try:
-            import pyarrow as pa  # noqa
-        except ModuleNotFoundError as e:
-            raise ModuleNotFoundError("For metadata operations PyArrow needs to be installed") from e
 
     def _orphaned_files(self, location: str, older_than: Optional[timedelta] = None) -> Set[str]:
         """Get all files which are not referenced in any metadata files of an Iceberg table and can thus be considered "orphaned".
@@ -92,7 +94,7 @@ class MaintenanceTable:
 
         return orphaned_files
 
-    def remove_orphaned_files(self, older_than: Optional[timedelta] = None, dry_run: bool = False) -> None:
+    def remove_orphaned_files(self, older_than: Optional[timedelta] = None, dry_run: bool = False) -> RemoveOrphansResult:
         """Remove files which are not referenced in any metadata files of an Iceberg table and can thus be considered "orphaned".
 
         Args:
@@ -123,12 +125,12 @@ class MaintenanceTable:
                 # exhaust
                 list(deletes)
                 logger.info(f"Deleted {len(deleted_files)} orphaned files at {location}!")
-                logger.info(f"Files:\n{deleted_files}")
                 if failed_to_delete_files:
                     logger.warning(f"Failed to delete {len(failed_to_delete_files)} orphaned files at {location}!")
-                    logger.warning(f"Files:\n{failed_to_delete_files}")
         else:
             logger.info(f"No orphaned files found at {location}!")
+
+        return RemoveOrphansResult(deleted_files=deleted_files, failed_deletions=failed_to_delete_files)
 
     def expire_snapshots(self) -> ExpireSnapshots:
         """Return an ExpireSnapshots builder for snapshot expiration operations.
