@@ -36,11 +36,13 @@ ENV PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/lib/py4j-0.10.9.7-src.zip:$
 RUN mkdir -p ${HADOOP_HOME} && mkdir -p ${SPARK_HOME} && mkdir -p /home/iceberg/spark-events
 WORKDIR ${SPARK_HOME}
 
-# Remember to also update `tests/conftest`'s spark setting
 ENV SPARK_VERSION=3.5.6
-ENV ICEBERG_SPARK_RUNTIME_VERSION=3.5_2.12
-ENV ICEBERG_VERSION=1.9.1
+ENV SCALA_VERSION=2.12
+ENV ICEBERG_SPARK_RUNTIME_VERSION=3.5_${SCALA_VERSION}
+ENV ICEBERG_VERSION=1.9.2
 ENV PYICEBERG_VERSION=0.10.0
+ENV HADOOP_VERSION=3.3.4
+ENV AWS_SDK_VERSION=1.12.753
 
 # Try the primary Apache mirror (downloads.apache.org) first, then fall back to the archive
 RUN set -eux; \
@@ -59,14 +61,25 @@ RUN set -eux; \
   tar xzf "$FILE" --directory /opt/spark --strip-components 1; \
   rm -rf "$FILE"
 
+# Download Spark Connect server JAR
+RUN curl --retry 5 -s -L https://repo1.maven.org/maven2/org/apache/spark/spark-connect_${SCALA_VERSION}/${SPARK_VERSION}/spark-connect_${SCALA_VERSION}-${SPARK_VERSION}.jar \
+      -Lo /opt/spark/jars/spark-connect_${SCALA_VERSION}-${SPARK_VERSION}.jar
+
 # Download iceberg spark runtime
 RUN curl --retry 5 -s https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}/${ICEBERG_VERSION}/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar \
       -Lo /opt/spark/jars/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar
 
-
 # Download AWS bundle
 RUN curl --retry 5 -s https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-aws-bundle/${ICEBERG_VERSION}/iceberg-aws-bundle-${ICEBERG_VERSION}.jar \
       -Lo /opt/spark/jars/iceberg-aws-bundle-${ICEBERG_VERSION}.jar
+
+# Download hadoop-aws (required for S3 support)
+RUN curl --retry 5 -s https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/${HADOOP_VERSION}/hadoop-aws-${HADOOP_VERSION}.jar \
+      -Lo /opt/spark/jars/hadoop-aws-${HADOOP_VERSION}.jar
+
+# Download AWS SDK bundle
+RUN curl --retry 5 -s https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/${AWS_SDK_VERSION}/aws-java-sdk-bundle-${AWS_SDK_VERSION}.jar \
+      -Lo /opt/spark/jars/aws-java-sdk-bundle-${AWS_SDK_VERSION}.jar
 
 COPY spark-defaults.conf /opt/spark/conf
 ENV PATH="/opt/spark/sbin:/opt/spark/bin:${PATH}"
