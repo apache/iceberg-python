@@ -20,6 +20,7 @@ import errno
 import json
 import logging
 import os
+import threading
 from copy import copy
 from functools import lru_cache, partial
 from typing import (
@@ -370,7 +371,7 @@ class FsspecFileIO(FileIO):
     def __init__(self, properties: Properties):
         self._scheme_to_fs = {}
         self._scheme_to_fs.update(SCHEME_TO_FS)
-        self.get_fs: Callable[[str], AbstractFileSystem] = lru_cache(self._get_fs)
+        self._thread_locals = threading.local()
         super().__init__(properties=properties)
 
     def new_input(self, location: str) -> FsspecInputFile:
@@ -416,6 +417,13 @@ class FsspecFileIO(FileIO):
         fs = self.get_fs(uri.scheme)
         fs.rm(str_location)
 
+    def get_fs(self, scheme: str) -> AbstractFileSystem:
+        """Get a filesystem for a specific scheme, cached per thread."""
+        if not hasattr(self._thread_locals, "get_fs_cached"):
+            self._thread_locals.get_fs_cached = lru_cache(self._get_fs)
+
+        return self._thread_locals.get_fs_cached(scheme)
+
     def _get_fs(self, scheme: str) -> AbstractFileSystem:
         """Get a filesystem for a specific scheme."""
         if scheme not in self._scheme_to_fs:
@@ -425,10 +433,10 @@ class FsspecFileIO(FileIO):
     def __getstate__(self) -> Dict[str, Any]:
         """Create a dictionary of the FsSpecFileIO fields used when pickling."""
         fileio_copy = copy(self.__dict__)
-        fileio_copy["get_fs"] = None
+        del fileio_copy["_thread_locals"]
         return fileio_copy
 
     def __setstate__(self, state: Dict[str, Any]) -> None:
         """Deserialize the state into a FsSpecFileIO instance."""
         self.__dict__ = state
-        self.get_fs = lru_cache(self._get_fs)
+        self._thread_locals = threading.local()

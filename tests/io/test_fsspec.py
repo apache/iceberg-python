@@ -18,12 +18,15 @@
 import os
 import pickle
 import tempfile
+import threading
 import uuid
+from typing import List
 from unittest import mock
 
 import pytest
 from botocore.awsrequest import AWSRequest
 from fsspec.implementations.local import LocalFileSystem
+from fsspec.spec import AbstractFileSystem
 from requests_mock import Mocker
 
 from pyiceberg.exceptions import SignError
@@ -52,6 +55,42 @@ def test_fsspec_local_fs_can_create_path_without_parent_dir(fsspec_fileio: Fsspe
                 f.write(b"foo")
         except Exception:
             pytest.fail("Failed to write to file without parent directory")
+
+
+def test_fsspec_get_fs_instance_per_thread_caching(fsspec_fileio: FsspecFileIO) -> None:
+    """Test that filesystem instances are cached per-thread by `FsspecFileIO.get_fs`"""
+    fs_instances: List[AbstractFileSystem] = []
+    start_work_events: List[threading.Event] = [threading.Event() for _ in range(2)]
+
+    def get_fs(start_work_event: threading.Event) -> None:
+        # Wait to be told to actually start getting the filesystem instances
+        start_work_event.wait()
+
+        # Call twice to ensure caching within the same thread
+        for _ in range(2):
+            fs_instances.append(fsspec_fileio.get_fs("file"))
+
+    threads = [threading.Thread(target=get_fs, args=[start_work_event]) for start_work_event in start_work_events]
+
+    # Start both threads (which will immediately block on their `Event`s) as we want to ensure distinct
+    # `threading.get_ident()` values that are used in the `fsspec.spec.AbstractFileSystem`s cache keys..
+    for thread in threads:
+        thread.start()
+
+    # Get the filesystem instances in the first thread and wait for completion
+    start_work_events[0].set()
+    threads[0].join()
+
+    # Get the filesystem instances in the second thread and wait for completion
+    start_work_events[1].set()
+    threads[1].join()
+
+    # Same thread, same instance
+    assert fs_instances[0] is fs_instances[1]
+    assert fs_instances[2] is fs_instances[3]
+
+    # Different threads, different instances
+    assert fs_instances[0] is not fs_instances[2]
 
 
 @pytest.mark.s3
