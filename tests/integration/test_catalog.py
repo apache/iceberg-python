@@ -354,10 +354,10 @@ def test_update_namespace_properties(test_catalog: Catalog, database_name: str) 
 
 @pytest.mark.integration
 @pytest.mark.parametrize("test_catalog", CATALOGS)
-def test_update_table_spec(test_catalog: Catalog, table_name: str, database_name: str) -> None:
+def test_update_table_spec(test_catalog: Catalog, test_schema: Schema, table_name: str, database_name: str) -> None:
     identifier = (database_name, table_name)
     test_catalog.create_namespace(database_name)
-    table = test_catalog.create_table(identifier, SIMPLE_SCHEMA)
+    table = test_catalog.create_table(identifier, test_schema)
 
     with table.update_spec() as update:
         update.add_field(source_column_name="id", transform=BucketTransform(16), partition_field_name="shard")
