@@ -376,11 +376,10 @@ def test_update_table_schema_conflict(
     # update the schema concurrently so that the original update fails
     concurrent_table = test_catalog.load_table(identifier)
     # The test schema is assumed to have a `bar` column that can be deleted.
-    concurrent_update = concurrent_table.update_schema(allow_incompatible_changes=True)
-    concurrent_update.set_identifier_fields("foo")
-    concurrent_update.update_column("foo", required=True)
-    concurrent_update.delete_column("bar")
-    concurrent_update.commit()
+    with concurrent_table.update_schema(allow_incompatible_changes=True) as concurrent_update:
+        concurrent_update.set_identifier_fields("foo")
+        concurrent_update.update_column("foo", required=True)
+        concurrent_update.delete_column("bar")
 
     # attempt to commit the original update
     with pytest.raises(CommitFailedException, match="Requirement failed: current schema"):
