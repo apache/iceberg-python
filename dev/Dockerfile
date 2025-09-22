@@ -44,9 +44,22 @@ ENV PYICEBERG_VERSION=0.10.0
 ENV HADOOP_VERSION=3.3.4
 ENV AWS_SDK_VERSION=1.12.753
 
-RUN curl --retry 5 -s -C - https://downloads.apache.org/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz -o spark-${SPARK_VERSION}-bin-hadoop3.tgz \
- && tar xzf spark-${SPARK_VERSION}-bin-hadoop3.tgz --directory /opt/spark --strip-components 1 \
- && rm -rf spark-${SPARK_VERSION}-bin-hadoop3.tgz
+# Try the primary Apache mirror (downloads.apache.org) first, then fall back to the archive
+RUN set -eux; \
+  FILE=spark-${SPARK_VERSION}-bin-hadoop3.tgz; \
+  URLS="https://downloads.apache.org/spark/spark-${SPARK_VERSION}/${FILE} https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/${FILE}"; \
+  for url in $URLS; do \
+    echo "Attempting download: $url"; \
+    if curl --retry 3 --retry-delay 5 -f -s -C - "$url" -o "$FILE"; then \
+      echo "Downloaded from: $url"; \
+      break; \
+    else \
+      echo "Failed to download from: $url"; \
+    fi; \
+  done; \
+  if [ ! -f "$FILE" ]; then echo "Failed to download Spark from all mirrors" >&2; exit 1; fi; \
+  tar xzf "$FILE" --directory /opt/spark --strip-components 1; \
+  rm -rf "$FILE"
 
 # Download Spark Connect server JAR
 RUN curl --retry 5 -s -L https://repo1.maven.org/maven2/org/apache/spark/spark-connect_${SCALA_VERSION}/${SPARK_VERSION}/spark-connect_${SCALA_VERSION}-${SPARK_VERSION}.jar \
