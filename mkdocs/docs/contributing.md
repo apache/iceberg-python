@@ -159,13 +159,22 @@ To rebuild the containers from scratch.
 
 PyIceberg supports the ability to run our catalog tests against an arbitrary REST Catalog.
 
-To do so, run the catalog integration tests with the `PYICEBERG_REST_CATALOG_PROPERTIES` environment variable.
+You can set the test catalog in the ~/.pyiceberg.yaml file:
 
-```sh
-PYICEBERG_REST_CATALOG_PROPERTIES='{"uri": "http://localhost:8181"}' poetry run pytest tests/integration/
+```yaml
+catalog:
+  test_catalog:
+    uri: http://rest-catalog/ws/
+    credential: t-1234:secret
 ```
 
-`PYICEBERG_REST_CATALOG_PROPERTIES` should be a JSON-encoded string that contains any [catalog properties](https://py.iceberg.apache.org/configuration/#rest-catalog) necessary to interact with your REST Catalog implementation.
+You can additionally set the properties using environment variables
+
+```sh
+export PYICEBERG_CATALOG__TEST_CATALOG__URI=thrift://localhost:9083
+export PYICEBERG_CATALOG__TEST_CATALOG__ACCESS_KEY_ID=username
+export PYICEBERG_CATALOG__TEST_CATALOG__SECRET_ACCESS_KEY=password
+```
 
 ## Code standards
 

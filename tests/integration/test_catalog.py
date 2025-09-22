@@ -15,7 +15,6 @@
 #  specific language governing permissions and limitations
 #  under the License.
 
-import json
 import os
 from pathlib import Path, PosixPath
 from typing import Generator, List
@@ -77,17 +76,13 @@ def rest_catalog() -> Generator[Catalog, None, None]:
 
 
 @pytest.fixture(scope="function")
-def rest_catalog_env() -> Generator[Catalog, None, None]:
-    if properties_json := os.environ.get("PYICEBERG_REST_CATALOG_PROPERTIES"):
-        properties = json.loads(properties_json)
-        test_catalog = RestCatalog(
-            "rest_env",
-            **properties,
-        )
+def test_catalog() -> Generator[Catalog, None, None]:
+    if test_catalog_name := os.environ.get("PYICEBERG_TEST_CATALOG"):
+        test_catalog = RestCatalog(test_catalog_name)
         yield test_catalog
         clean_up(test_catalog)
     else:
-        pytest.skip("REST catalog environment variables not set")
+        pytest.skip("Test catalog environment variables not set")
 
 
 @pytest.fixture(scope="function")
@@ -111,7 +106,7 @@ CATALOGS = [
     pytest.lazy_fixture("sqlite_catalog_file"),
     pytest.lazy_fixture("rest_catalog"),
     pytest.lazy_fixture("hive_catalog"),
-    pytest.lazy_fixture("rest_catalog_env"),
+    pytest.lazy_fixture("test_catalog"),
 ]
 
 
