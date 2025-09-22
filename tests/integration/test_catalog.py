@@ -360,7 +360,7 @@ def test_update_table_spec(test_catalog: Catalog, test_schema: Schema, table_nam
     table = test_catalog.create_table(identifier, test_schema)
 
     with table.update_spec() as update:
-        update.add_field(source_column_name="id", transform=BucketTransform(16), partition_field_name="shard")
+        update.add_field(source_column_name="VendorID", transform=BucketTransform(16), partition_field_name="shard")
 
     loaded = test_catalog.load_table(identifier)
     expected_spec = PartitionSpec(
