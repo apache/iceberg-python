@@ -375,7 +375,7 @@ def test_write_manifest(
             == "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet"
         )
         assert data_file.file_format == FileFormat.PARQUET
-        assert data_file.partition == Record(1, None)
+        assert data_file.partition == Record(1, 1925)
         assert data_file.record_count == 19513
         assert data_file.file_size_in_bytes == 388872
         assert data_file.column_sizes == {
