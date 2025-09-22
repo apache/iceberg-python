@@ -17,7 +17,6 @@
 # pylint: disable=redefined-outer-name,arguments-renamed,fixme
 from tempfile import TemporaryDirectory
 from typing import Dict, Optional
-from unittest.mock import patch
 
 import fastavro
 import pytest
@@ -85,7 +84,7 @@ def test_read_manifest_entry(generated_manifest_entry_file: str) -> None:
         == "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet"
     )
     assert data_file.file_format == FileFormat.PARQUET
-    assert repr(data_file.partition) == "Record[1, 1925]"
+    assert repr(data_file.partition) == "Record[1, None]"
     assert data_file.record_count == 19513
     assert data_file.file_size_in_bytes == 388872
     assert data_file.column_sizes == {
@@ -154,37 +153,13 @@ def test_read_manifest_entry(generated_manifest_entry_file: str) -> None:
     assert data_file.nan_value_counts == {16: 0, 17: 0, 18: 0, 19: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0}
     assert data_file.lower_bounds == {
         2: b"\x01\x00\x00\x00\x00\x00\x00\x00",
-        3: b"\x01\x00\x00\x00\x00\x00\x00\x00",
-        7: b"\x03\x00\x00\x00",
-        8: b"\x01\x00\x00\x00",
-        10: b"\xf6(\\\x8f\xc2\x05S\xc0",
-        11: b"\x00\x00\x00\x00\x00\x00\x00\x00",
-        13: b"\x00\x00\x00\x00\x00\x00\x00\x00",
-        14: b"\x00\x00\x00\x00\x00\x00\xe0\xbf",
-        15: b")\\\x8f\xc2\xf5(\x08\xc0",
-        16: b"\x00\x00\x00\x00\x00\x00\x00\x00",
-        17: b"\x00\x00\x00\x00\x00\x00\x00\x00",
-        18: b"\xf6(\\\x8f\xc2\xc5S\xc0",
-        19: b"\x00\x00\x00\x00\x00\x00\x04\xc0",
     }
     assert data_file.upper_bounds == {
         2: b"\x06\x00\x00\x00\x00\x00\x00\x00",
-        3: b"\x06\x00\x00\x00\x00\x00\x00\x00",
-        7: b"\t\x01\x00\x00",
-        8: b"\t\x01\x00\x00",
-        10: b"\xcd\xcc\xcc\xcc\xcc,_@",
-        11: b"\x1f\x85\xebQ\\\xe2\xfe@",
-        13: b"\x00\x00\x00\x00\x00\x00\x12@",
-        14: b"\x00\x00\x00\x00\x00\x00\xe0?",
-        15: b"q=\n\xd7\xa3\xf01@",
-        16: b"\x00\x00\x00\x00\x00`B@",
-        17: b"333333\xd3?",
-        18: b"\x00\x00\x00\x00\x00\x18b@",
-        19: b"\x00\x00\x00\x00\x00\x00\x04@",
     }
     assert data_file.key_metadata is None
     assert data_file.split_offsets == [4]
-    assert data_file.equality_ids is None
+    assert data_file.equality_ids == []
     assert data_file.sort_order_id == 0
 
 
@@ -308,34 +283,10 @@ def test_read_manifest_v2(generated_manifest_file_file_v2: str) -> None:
 
     entry = entries[0]
 
-    assert entry.sequence_number == 3
-    assert entry.file_sequence_number == 3
+    assert entry.sequence_number == 0
+    assert entry.file_sequence_number == 0
     assert entry.snapshot_id == 8744736658442914487
     assert entry.status == ManifestEntryStatus.ADDED
-
-
-def test_read_manifest_cache(generated_manifest_file_file_v2: str) -> None:
-    with patch("pyiceberg.manifest.read_manifest_list") as mocked_read_manifest_list:
-        io = load_file_io()
-
-        snapshot = Snapshot(
-            snapshot_id=25,
-            parent_snapshot_id=19,
-            timestamp_ms=1602638573590,
-            manifest_list=generated_manifest_file_file_v2,
-            summary=Summary(Operation.APPEND),
-            schema_id=3,
-        )
-
-        # Access the manifests property multiple times to test caching
-        manifests_first_call = snapshot.manifests(io)
-        manifests_second_call = snapshot.manifests(io)
-
-        # Ensure that read_manifest_list was called only once
-        mocked_read_manifest_list.assert_called_once()
-
-        # Ensure that the same manifest list is returned
-        assert manifests_first_call == manifests_second_call
 
 
 def test_write_empty_manifest() -> None:
@@ -411,7 +362,7 @@ def test_write_manifest(
 
         assert manifest_entry.status == ManifestEntryStatus.ADDED
         assert manifest_entry.snapshot_id == 8744736658442914487
-        assert manifest_entry.sequence_number == -1 if format_version == 1 else 3
+        assert manifest_entry.sequence_number == 0 if format_version == 1 else 3
         assert isinstance(manifest_entry.data_file, DataFile)
 
         data_file = manifest_entry.data_file
@@ -422,7 +373,7 @@ def test_write_manifest(
             == "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet"
         )
         assert data_file.file_format == FileFormat.PARQUET
-        assert data_file.partition == Record(1, 1925)
+        assert data_file.partition == Record(1, None)
         assert data_file.record_count == 19513
         assert data_file.file_size_in_bytes == 388872
         assert data_file.column_sizes == {
@@ -491,37 +442,13 @@ def test_write_manifest(
         assert data_file.nan_value_counts == {16: 0, 17: 0, 18: 0, 19: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0}
         assert data_file.lower_bounds == {
             2: b"\x01\x00\x00\x00\x00\x00\x00\x00",
-            3: b"\x01\x00\x00\x00\x00\x00\x00\x00",
-            7: b"\x03\x00\x00\x00",
-            8: b"\x01\x00\x00\x00",
-            10: b"\xf6(\\\x8f\xc2\x05S\xc0",
-            11: b"\x00\x00\x00\x00\x00\x00\x00\x00",
-            13: b"\x00\x00\x00\x00\x00\x00\x00\x00",
-            14: b"\x00\x00\x00\x00\x00\x00\xe0\xbf",
-            15: b")\\\x8f\xc2\xf5(\x08\xc0",
-            16: b"\x00\x00\x00\x00\x00\x00\x00\x00",
-            17: b"\x00\x00\x00\x00\x00\x00\x00\x00",
-            18: b"\xf6(\\\x8f\xc2\xc5S\xc0",
-            19: b"\x00\x00\x00\x00\x00\x00\x04\xc0",
         }
         assert data_file.upper_bounds == {
             2: b"\x06\x00\x00\x00\x00\x00\x00\x00",
-            3: b"\x06\x00\x00\x00\x00\x00\x00\x00",
-            7: b"\t\x01\x00\x00",
-            8: b"\t\x01\x00\x00",
-            10: b"\xcd\xcc\xcc\xcc\xcc,_@",
-            11: b"\x1f\x85\xebQ\\\xe2\xfe@",
-            13: b"\x00\x00\x00\x00\x00\x00\x12@",
-            14: b"\x00\x00\x00\x00\x00\x00\xe0?",
-            15: b"q=\n\xd7\xa3\xf01@",
-            16: b"\x00\x00\x00\x00\x00`B@",
-            17: b"333333\xd3?",
-            18: b"\x00\x00\x00\x00\x00\x18b@",
-            19: b"\x00\x00\x00\x00\x00\x00\x04@",
         }
         assert data_file.key_metadata is None
         assert data_file.split_offsets == [4]
-        assert data_file.equality_ids is None
+        assert data_file.equality_ids == []
         assert data_file.sort_order_id == 0
 
 

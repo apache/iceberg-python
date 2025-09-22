@@ -866,7 +866,7 @@ class ManifestFile(Record):
                 DataFileContent(entry.data_file.content),
                 entry.data_file.file_path,
                 FileFormat(entry.data_file.file_format),
-                [p.value() if p is not None else None for p in entry.data_file.partition],
+                Record(*(p.value() if p is not None else None for p in entry.data_file.partition)),
                 entry.data_file.record_count,
                 entry.data_file.file_size_in_bytes,
                 entry.data_file.column_sizes,
