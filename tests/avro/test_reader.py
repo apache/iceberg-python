@@ -112,7 +112,7 @@ def test_read_header(generated_manifest_entry_file: str, iceberg_manifest_entry_
                                     {
                                         "field-id": 1001,
                                         "default": None,
-                                        "name": "tpep_pickup_datetime",
+                                        "name": "tpep_pickup_day",
                                         "type": ["null", {"type": "int", "logicalType": "date"}],
                                     },
                                 ],

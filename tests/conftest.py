@@ -1178,7 +1178,7 @@ manifest_entry_records = [
         "data_file": {
             "file_path": "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet",
             "file_format": "PARQUET",
-            "partition": {"VendorID": 1, "tpep_pickup_datetime": 1925},
+            "partition": {"VendorID": 1, "tpep_pickup_day": 1925},
             "record_count": 19513,
             "file_size_in_bytes": 388872,
             "block_size_in_bytes": 67108864,
@@ -1677,7 +1677,7 @@ def avro_schema_manifest_entry() -> Dict[str, Any]:
                                     {
                                         "field-id": 1001,
                                         "default": None,
-                                        "name": "tpep_pickup_datetime",
+                                        "name": "tpep_pickup_day",
                                         "type": ["null", {"type": "int", "logicalType": "date"}],
                                     },
                                 ],
@@ -1969,7 +1969,7 @@ def iceberg_manifest_entry_schema() -> Schema:
                         ),
                         NestedField(
                             field_id=1001,
-                            name="tpep_pickup_datetime",
+                            name="tpep_pickup_day",
                             field_type=DateType(),
                             required=False,
                         ),
