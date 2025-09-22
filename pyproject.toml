@@ -84,7 +84,7 @@ sqlalchemy = { version = "^2.0.18", optional = true }
 bodo = { version = ">=2025.7.4", optional = true }
 daft = { version = ">=0.5.0", optional = true }
 cachetools = ">=5.5,<7.0"
-pyiceberg-core = { version = ">=0.5.1,<0.7.0", optional = true }
+pyiceberg-core = { version = "==0.7.0.dev20250921000225", optional = true }
 polars = { version = "^1.21.0", optional = true }
 thrift-sasl = { version = ">=0.4.3", optional = true }
 kerberos = {version = "^1.3.1", optional = true}
@@ -121,6 +121,12 @@ mkdocs-gen-files = "0.5.0"
 mkdocs-material = "9.6.20"
 mkdocs-material-extensions = "1.3.1"
 mkdocs-section-index = "0.3.10"
+
+
+[[tool.poetry.source]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+priority = "supplemental"
 
 [[tool.mypy.overrides]]
 module = "pytest_mock.*"

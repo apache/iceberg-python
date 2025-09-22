@@ -1178,7 +1178,7 @@ manifest_entry_records = [
         "data_file": {
             "file_path": "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet",
             "file_format": "PARQUET",
-            "partition": {"VendorID": 1, "tpep_pickup_datetime": 1925},
+            "partition": {"VendorID": 1, "tpep_pickup_day": 1925},
             "record_count": 19513,
             "file_size_in_bytes": 388872,
             "block_size_in_bytes": 67108864,
@@ -1298,7 +1298,7 @@ manifest_entry_records = [
         "data_file": {
             "file_path": "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=1/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00002.parquet",
             "file_format": "PARQUET",
-            "partition": {"VendorID": 1, "tpep_pickup_datetime": None},
+            "partition": {"VendorID": 1, "tpep_pickup_day": None},
             "record_count": 95050,
             "file_size_in_bytes": 1265950,
             "block_size_in_bytes": 67108864,
@@ -1383,7 +1383,7 @@ manifest_entry_records = [
                 {"key": 3, "value": b"\x01\x00\x00\x00\x00\x00\x00\x00"},
                 {"key": 4, "value": b"\x00\x00\x00\x00"},
                 {"key": 5, "value": b"\x01\x00\x00\x00"},
-                {"key": 6, "value": b"N"},
+                {"key": 6, "value": b"\x01\x00\x00\x00"},
                 {"key": 7, "value": b"\x01\x00\x00\x00"},
                 {"key": 8, "value": b"\x01\x00\x00\x00"},
                 {"key": 9, "value": b"\x01\x00\x00\x00"},
@@ -1403,7 +1403,7 @@ manifest_entry_records = [
                 {"key": 3, "value": b"\x06\x00\x00\x00\x00\x00\x00\x00"},
                 {"key": 4, "value": b"\x06\x00\x00\x00"},
                 {"key": 5, "value": b"c\x00\x00\x00"},
-                {"key": 6, "value": b"Y"},
+                {"key": 6, "value": b"c\x00\x00\x00"},
                 {"key": 7, "value": b"\t\x01\x00\x00"},
                 {"key": 8, "value": b"\t\x01\x00\x00"},
                 {"key": 9, "value": b"\x04\x00\x00\x00"},
@@ -1677,7 +1677,7 @@ def avro_schema_manifest_entry() -> Dict[str, Any]:
                                     {
                                         "field-id": 1001,
                                         "default": None,
-                                        "name": "tpep_pickup_datetime",
+                                        "name": "tpep_pickup_day",
                                         "type": ["null", {"type": "int", "logicalType": "date"}],
                                     },
                                 ],
@@ -1863,7 +1863,25 @@ def simple_map() -> MapType:
 @pytest.fixture(scope="session")
 def test_schema() -> Schema:
     return Schema(
-        NestedField(1, "VendorID", IntegerType(), False), NestedField(2, "tpep_pickup_datetime", TimestampType(), False)
+        NestedField(1, "VendorID", IntegerType(), False),
+        NestedField(2, "tpep_pickup_datetime", TimestampType(), False),
+        NestedField(3, "tpep_dropoff_datetime", TimestampType(), False),
+        NestedField(4, "passenger_count", LongType(), False),
+        NestedField(5, "trip_distance", DoubleType(), False),
+        NestedField(6, "RatecodeID", DoubleType(), False),
+        NestedField(7, "store_and_fwd_flag", StringType(), False),
+        NestedField(8, "PULocationID", IntegerType(), False),
+        NestedField(9, "DOLocationID", IntegerType(), False),
+        NestedField(10, "payment_type", LongType(), False),
+        NestedField(11, "fare_amount", DoubleType(), False),
+        NestedField(12, "extra", DoubleType(), False),
+        NestedField(13, "mta_tax", DoubleType(), False),
+        NestedField(14, "tip_amount", DoubleType(), False),
+        NestedField(15, "tolls_amount", DoubleType(), False),
+        NestedField(16, "improvement_surcharge", DoubleType(), False),
+        NestedField(17, "total_amount", DoubleType(), False),
+        NestedField(18, "congestion_surcharge", DoubleType(), False),
+        NestedField(19, "Airport_fee", DoubleType(), False),
     )
 
 
@@ -1969,7 +1987,7 @@ def iceberg_manifest_entry_schema() -> Schema:
                         ),
                         NestedField(
                             field_id=1001,
-                            name="tpep_pickup_datetime",
+                            name="tpep_pickup_day",
                             field_type=DateType(),
                             required=False,
                         ),
