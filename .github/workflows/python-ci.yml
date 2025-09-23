@@ -44,18 +44,18 @@ concurrency:
 
 jobs:
   lint-and-test:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         python: ['3.9', '3.10', '3.11', '3.12']
 
     steps:
     - uses: actions/checkout@v5
-    - name: Install poetry
-      run: make install-poetry
     - uses: actions/setup-python@v6
       with:
         python-version: ${{ matrix.python }}
+    - name: Install poetry
+      run: make install-poetry
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
     - name: Install
@@ -68,7 +68,7 @@ jobs:
       run: COVERAGE_FAIL_UNDER=85 make coverage-report
 
   integration-test:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         python: ['3.9', '3.10', '3.11', '3.12']

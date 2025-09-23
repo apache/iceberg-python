@@ -50,7 +50,7 @@ catalogs = {
         "hive",
         **{
             "type": "hive",
-            "uri": "http://hive:9083",
+            "uri": "thrift://hive:9083",
             "s3.endpoint": "http://minio:9000",
             "s3.access-key-id": "admin",
             "s3.secret-access-key": "password",

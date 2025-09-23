@@ -1178,7 +1178,7 @@ manifest_entry_records = [
         "data_file": {
             "file_path": "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet",
             "file_format": "PARQUET",
-            "partition": {"VendorID": 1, "tpep_pickup_datetime": 1925},
+            "partition": {"VendorID": 1, "tpep_pickup_day": 1925},
             "record_count": 19513,
             "file_size_in_bytes": 388872,
             "block_size_in_bytes": 67108864,
@@ -1677,7 +1677,7 @@ def avro_schema_manifest_entry() -> Dict[str, Any]:
                                     {
                                         "field-id": 1001,
                                         "default": None,
-                                        "name": "tpep_pickup_datetime",
+                                        "name": "tpep_pickup_day",
                                         "type": ["null", {"type": "int", "logicalType": "date"}],
                                     },
                                 ],
@@ -1969,7 +1969,7 @@ def iceberg_manifest_entry_schema() -> Schema:
                         ),
                         NestedField(
                             field_id=1001,
-                            name="tpep_pickup_datetime",
+                            name="tpep_pickup_day",
                             field_type=DateType(),
                             required=False,
                         ),
@@ -2517,7 +2517,7 @@ def session_catalog_hive() -> Catalog:
         "local",
         **{
             "type": "hive",
-            "uri": "http://localhost:9083",
+            "uri": "thrift://localhost:9083",
             "s3.endpoint": "http://localhost:9000",
             "s3.access-key-id": "admin",
             "s3.secret-access-key": "password",
@@ -2527,60 +2527,10 @@ def session_catalog_hive() -> Catalog:
 
 @pytest.fixture(scope="session")
 def spark() -> "SparkSession":
-    import importlib.metadata
-
     from pyspark.sql import SparkSession
 
-    # Remember to also update `dev/Dockerfile`
-    spark_version = ".".join(importlib.metadata.version("pyspark").split(".")[:2])
-    scala_version = "2.12"
-    iceberg_version = "1.9.2"
-    hadoop_version = "3.3.4"
-    aws_sdk_version = "1.12.753"
-
-    os.environ["PYSPARK_SUBMIT_ARGS"] = (
-        f"--packages org.apache.iceberg:iceberg-spark-runtime-{spark_version}_{scala_version}:{iceberg_version},"
-        f"org.apache.hadoop:hadoop-aws:{hadoop_version},"
-        f"com.amazonaws:aws-java-sdk-bundle:{aws_sdk_version},"
-        f"org.apache.iceberg:iceberg-aws-bundle:{iceberg_version} pyspark-shell"
-    )
-    os.environ["AWS_REGION"] = "us-east-1"
-    os.environ["AWS_ACCESS_KEY_ID"] = "admin"
-    os.environ["AWS_SECRET_ACCESS_KEY"] = "password"
-    os.environ["SPARK_LOCAL_IP"] = "127.0.0.1"
-
-    spark = (
-        SparkSession.builder.appName("PyIceberg integration test")
-        .config("spark.sql.session.timeZone", "UTC")
-        .config("spark.sql.shuffle.partitions", "1")
-        .config("spark.default.parallelism", "1")
-        .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
-        .config("spark.sql.catalog.integration", "org.apache.iceberg.spark.SparkCatalog")
-        .config("spark.sql.catalog.integration.type", "rest")
-        .config("spark.sql.catalog.integration.cache-enabled", "false")
-        .config("spark.sql.catalog.integration.uri", "http://localhost:8181")
-        .config("spark.sql.catalog.integration.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
-        .config("spark.sql.catalog.integration.warehouse", "s3://warehouse/wh/")
-        .config("spark.sql.catalog.integration.s3.endpoint", "http://localhost:9000")
-        .config("spark.sql.catalog.integration.s3.path-style-access", "true")
-        .config("spark.sql.catalog.hive", "org.apache.iceberg.spark.SparkCatalog")
-        .config("spark.sql.catalog.hive.type", "hive")
-        .config("spark.sql.catalog.hive.uri", "http://localhost:9083")
-        .config("spark.sql.catalog.hive.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
-        .config("spark.sql.catalog.hive.warehouse", "s3://warehouse/hive/")
-        .config("spark.sql.catalog.hive.s3.endpoint", "http://localhost:9000")
-        .config("spark.sql.catalog.hive.s3.path-style-access", "true")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.iceberg.spark.SparkSessionCatalog")
-        .config("spark.sql.catalog.spark_catalog.type", "hive")
-        .config("spark.sql.catalog.spark_catalog.uri", "http://localhost:9083")
-        .config("spark.sql.catalog.spark_catalog.warehouse", "s3://warehouse/hive/")
-        .config("spark.hadoop.fs.s3a.endpoint", "http://localhost:9000")
-        .config("spark.hadoop.fs.s3a.path.style.access", "true")
-        .config("spark.sql.catalogImplementation", "hive")
-        .config("spark.sql.defaultCatalog", "integration")
-        .config("spark.sql.execution.arrow.pyspark.enabled", "true")
-        .getOrCreate()
-    )
+    # Create SparkSession against the remote Spark Connect server
+    spark = SparkSession.builder.remote("sc://localhost:15002").getOrCreate()
 
     return spark
 
