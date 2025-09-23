@@ -929,8 +929,7 @@ def test_add_files_hour_transform(session_catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-def test_add_files_to_branch(spark: SparkSession, session_catalog: Catalog) -> None:
-    format_version = 2
+def test_add_files_to_branch(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
     identifier = f"default.test_add_files_branch_v{format_version}"
     branch = "branch1"
 
