@@ -332,7 +332,7 @@ def test_daft_nan(catalog: Catalog) -> None:
 def test_daft_nan_rewritten(catalog: Catalog) -> None:
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     df = table_test_null_nan_rewritten.to_daft()
-    df = df.where(df["col_numeric"].float.is_nan())
+    df = df.where(df["col_numeric"].is_nan())
     df = df.select("idx", "col_numeric")
     assert df.count_rows() == 1
     assert df.to_pydict()["idx"][0] == 1
