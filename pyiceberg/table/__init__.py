@@ -42,8 +42,10 @@ from typing import (
 
 from pydantic import Field
 from sortedcontainers import SortedList
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 import pyiceberg.expressions.parser as parser
+from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.expressions import (
     AlwaysFalse,
     AlwaysTrue,
@@ -859,41 +861,83 @@ class Transaction:
         return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 
     def add_files(
-        self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT, check_duplicate_files: bool = True
+        self,
+        file_paths: List[str],
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        check_duplicate_files: bool = True,
+        **retry_kwargs: Any,
     ) -> None:
         """
         Shorthand API for adding files as data files to the table transaction.
 
         Args:
-            file_paths: The list of full file paths to be added as data files to the table
+            file_paths: List of file paths to add.
+            snapshot_properties: Properties for the snapshot.
+            check_duplicate_files: Whether to explicitly check for duplicate files.
+            retry_kwargs: Additional arguments for retry configuration.
 
         Raises:
-            FileNotFoundError: If the file does not exist.
-            ValueError: Raises a ValueError given file_paths contains duplicate files
-            ValueError: Raises a ValueError given file_paths already referenced by table
+            ValueError: Duplicate file paths provided or files already referenced by table.
+            CommitFailedException: If unable to commit after retries.
         """
+        # Explicit duplicate check on input list
         if len(file_paths) != len(set(file_paths)):
-            raise ValueError("File paths must be unique")
+            raise ValueError("File paths must be unique.")
 
-        if check_duplicate_files:
-            import pyarrow.compute as pc
-
-            expr = pc.field("file_path").isin(file_paths)
-            referenced_files = [file["file_path"] for file in self._table.inspect.data_files().filter(expr).to_pylist()]
-
-            if referenced_files:
-                raise ValueError(f"Cannot add files that are already referenced by table, files: {', '.join(referenced_files)}")
-
+        # Set name mapping if not already set
         if self.table_metadata.name_mapping() is None:
             self.set_properties(
                 **{TableProperties.DEFAULT_NAME_MAPPING: self.table_metadata.schema().name_mapping.model_dump_json()}
             )
-        with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
-            data_files = _parquet_files_to_data_files(
-                table_metadata=self.table_metadata, file_paths=file_paths, io=self._table.io
-            )
-            for data_file in data_files:
-                update_snapshot.append_data_file(data_file)
+
+        @retry(
+            stop=retry_kwargs.get("stop", stop_after_attempt(3)),
+            wait=retry_kwargs.get("wait", wait_exponential(multiplier=1, min=2, max=10)),
+            retry=retry_if_exception_type(CommitFailedException),
+            reraise=True,
+        )
+        def _commit_files(paths_to_add: List[str]) -> None:
+            if check_duplicate_files:
+                # Use existing PyArrow-based check for efficiency
+                import pyarrow.compute as pc
+
+                expr = pc.field("file_path").isin(paths_to_add)
+                referenced_files = [file["file_path"] for file in self._table.inspect.data_files().filter(expr).to_pylist()]
+
+                if referenced_files:
+                    paths_to_add = list(set(paths_to_add) - set(referenced_files))
+                    if not paths_to_add:
+                        return  # All files already exist
+
+            # Attempt to commit
+            try:
+                with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
+                    data_files = _parquet_files_to_data_files(
+                        table_metadata=self.table_metadata, file_paths=paths_to_add, io=self._table.io
+                    )
+                    for data_file in data_files:
+                        update_snapshot.append_data_file(data_file)
+
+            except CommitFailedException:
+                # Refresh explicitly to ensure latest metadata
+                self._table.refresh()
+
+                # Re-query table after refresh
+                import pyarrow.compute as pc
+
+                expr = pc.field("file_path").isin(paths_to_add)
+                referenced_files_after_retry = [
+                    file["file_path"] for file in self._table.inspect.data_files().filter(expr).to_pylist()
+                ]
+                remaining_files = list(set(paths_to_add) - set(referenced_files_after_retry))
+
+                if remaining_files:
+                    raise CommitFailedException("Snapshot changed, retrying commit with remaining files.") from None
+                else:
+                    return  # All files added by concurrent commit.
+
+        # Initiate commit with retries
+        _commit_files(file_paths)
 
     def update_spec(self) -> UpdateSpec:
         """Create a new UpdateSpec to update the partitioning of the table.
