@@ -958,4 +958,4 @@ def test_add_files_to_branch(spark: SparkSession, session_catalog: Catalog, form
     assert branch_df.count() == 6, "Expected 5 rows in branch"
 
     for col in branch_df.columns:
-        assert branch_df.filter(branch_df[col].isNotNull()).count() == 6, "Expected all 5 rows to be non-null"
+        assert branch_df.filter(branch_df[col].isNotNull()).count() == 6, "Expected all 6 rows to be non-null"
