@@ -859,7 +859,11 @@ class Transaction:
         return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 
     def add_files(
-        self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT, check_duplicate_files: bool = True
+        self,
+        file_paths: List[str],
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        check_duplicate_files: bool = True,
+        branch: Optional[str] = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand API for adding files as data files to the table transaction.
@@ -888,12 +892,12 @@ class Transaction:
             self.set_properties(
                 **{TableProperties.DEFAULT_NAME_MAPPING: self.table_metadata.schema().name_mapping.model_dump_json()}
             )
-        with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
+        with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
             data_files = _parquet_files_to_data_files(
                 table_metadata=self.table_metadata, file_paths=file_paths, io=self._table.io
             )
             for data_file in data_files:
-                update_snapshot.append_data_file(data_file)
+                append_files.append_data_file(data_file)
 
     def update_spec(self) -> UpdateSpec:
         """Create a new UpdateSpec to update the partitioning of the table.
@@ -1431,7 +1435,11 @@ class Table:
             )
 
     def add_files(
-        self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT, check_duplicate_files: bool = True
+        self,
+        file_paths: List[str],
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        check_duplicate_files: bool = True,
+        branch: Optional[str] = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand API for adding files as data files to the table.
@@ -1444,7 +1452,10 @@ class Table:
         """
         with self.transaction() as tx:
             tx.add_files(
-                file_paths=file_paths, snapshot_properties=snapshot_properties, check_duplicate_files=check_duplicate_files
+                file_paths=file_paths,
+                snapshot_properties=snapshot_properties,
+                check_duplicate_files=check_duplicate_files,
+                branch=branch,
             )
 
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
