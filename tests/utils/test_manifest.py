@@ -59,6 +59,7 @@ def _verify_metadata_with_fastavro(avro_file: str, expected_metadata: Dict[str, 
             assert metadata[k] == v
 
 
+@pytest.mark.skip("Fix in https://github.com/apache/iceberg-rust/pull/1705")
 def test_read_manifest_entry(generated_manifest_entry_file: str) -> None:
     manifest = ManifestFile.from_args(
         manifest_path=generated_manifest_entry_file,
