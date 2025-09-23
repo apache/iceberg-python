@@ -24,6 +24,7 @@ from pyiceberg.catalog import Catalog
 
 
 @pytest.mark.integration
+@pytest.skip("Waiting on an upstream fix: https://github.com/apache/iceberg/pull/14163")
 def test_migrate_table(
     session_catalog_hive: Catalog,
     spark: SparkSession,
