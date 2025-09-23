@@ -926,3 +926,36 @@ def test_add_files_hour_transform(session_catalog: Catalog) -> None:
             writer.write_table(arrow_table)
 
     tbl.add_files(file_paths=[file_path])
+
+
+@pytest.mark.integration
+def test_add_files_to_branch(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    identifier = f"default.test_add_files_branch_v{format_version}"
+    branch = "branch1"
+
+    tbl = _create_table(session_catalog, identifier, format_version)
+
+    file_paths = [f"s3://warehouse/default/addfile/v{format_version}/test-{i}.parquet" for i in range(5)]
+    # write parquet files
+    for file_path in file_paths:
+        fo = tbl.io.new_output(file_path)
+        with fo.create(overwrite=True) as fos:
+            with pq.ParquetWriter(fos, schema=ARROW_SCHEMA) as writer:
+                writer.write_table(ARROW_TABLE)
+
+    # Dummy write to avoid failures on creating branch in empty table
+    tbl.append(ARROW_TABLE)
+    assert tbl.metadata.current_snapshot_id is not None
+    tbl.manage_snapshots().create_branch(snapshot_id=tbl.metadata.current_snapshot_id, branch_name=branch).commit()
+
+    # add the parquet files as data files
+    tbl.add_files(file_paths=file_paths, branch=branch)
+
+    df = spark.table(identifier)
+    assert df.count() == 1, "Expected 1 row in Main table"
+
+    branch_df = spark.table(f"{identifier}.branch_{branch}")
+    assert branch_df.count() == 6, "Expected 5 rows in branch"
+
+    for col in branch_df.columns:
+        assert branch_df.filter(branch_df[col].isNotNull()).count() == 6, "Expected all 6 rows to be non-null"
