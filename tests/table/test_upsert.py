@@ -448,6 +448,11 @@ def test_create_match_filter_single_condition() -> None:
     "data, expected",
     [
         pytest.param(
+            [{"x": 1.0}, {"x": 2.0}, {"x": 3.0}],
+            In(Reference(name="x"), {DoubleLiteral(1.0), DoubleLiteral(2.0), DoubleLiteral(3.0)}),
+            id="single-column-without-null",
+        ),
+        pytest.param(
             [{"x": 1.0}, {"x": 2.0}, {"x": None}, {"x": 4.0}, {"x": float("nan")}],
             Or(
                 left=IsNull(term=Reference(name="x")),
@@ -456,7 +461,7 @@ def test_create_match_filter_single_condition() -> None:
                     right=In(Reference(name="x"), {DoubleLiteral(1.0), DoubleLiteral(2.0), DoubleLiteral(4.0)}),
                 ),
             ),
-            id="single-column",
+            id="single-column-with-null",
         ),
         pytest.param(
             [
@@ -494,11 +499,11 @@ def test_create_match_filter_single_condition() -> None:
                     ),
                 ),
             ),
-            id="multi-column",
+            id="multi-column-with-null",
         ),
     ],
 )
-def test_create_match_filter_with_nulls(data: list[dict[str, Any]], expected: BooleanExpression) -> None:
+def test_create_match_filter(data: list[dict[str, Any]], expected: BooleanExpression) -> None:
     schema = pa.schema([pa.field("x", pa.float64()), pa.field("y", pa.float64())])
     table = pa.Table.from_pylist(data, schema=schema)
     join_cols = sorted({col for record in data for col in record})
