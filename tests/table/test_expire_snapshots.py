@@ -231,13 +231,9 @@ def test_expire_snapshots_by_ids(table_v2: Table) -> None:
 
 def test_thread_safety_fix() -> None:
     """Test that ExpireSnapshots instances have isolated state."""
-    # Create two mock transactions (representing different tables)
-    transaction1 = Mock()
-    transaction2 = Mock()
-
     # Create two ExpireSnapshots instances
-    expire1 = ExpireSnapshots(transaction1)
-    expire2 = ExpireSnapshots(transaction2)
+    expire1 = ExpireSnapshots(None)
+    expire2 = ExpireSnapshots(None)
 
     # Verify they have separate snapshot sets (this was the bug!)
     # Before fix: both would have the same id (shared class attribute)
