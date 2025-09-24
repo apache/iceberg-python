@@ -194,7 +194,7 @@ class RemoveStatisticsUpdate(IcebergBaseModel):
 
 
 class RemovePartitionSpecsUpdate(IcebergBaseModel):
-    action: Literal["remove-partition-spec"] = Field(default="remove-partition-spec")
+    action: Literal["remove-partition-specs"] = Field(default="remove-partition-specs")
     spec_ids: List[int] = Field(alias="spec-ids")
 
 
