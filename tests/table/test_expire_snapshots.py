@@ -231,8 +231,8 @@ def test_expire_snapshots_by_ids(table_v2: Table) -> None:
 def test_thread_safety_fix() -> None:
     """Test that ExpireSnapshots instances have isolated state."""
     # Create two ExpireSnapshots instances
-    expire1 = ExpireSnapshots(None)
-    expire2 = ExpireSnapshots(None)
+    expire1 = ExpireSnapshots(Mock())
+    expire2 = ExpireSnapshots(Mock())
 
     # Verify they have separate snapshot sets (this was the bug!)
     # Before fix: both would have the same id (shared class attribute)
@@ -255,14 +255,12 @@ def test_concurrent_operations() -> None:
     results: Dict[str, set[int]] = {"expire1_snapshots": set(), "expire2_snapshots": set()}
 
     def worker1() -> None:
-        transaction1 = Mock()
-        expire1 = ExpireSnapshots(transaction1)
+        expire1 = ExpireSnapshots(Mock())
         expire1._snapshot_ids_to_expire.update([1001, 1002, 1003])
         results["expire1_snapshots"] = expire1._snapshot_ids_to_expire.copy()
 
     def worker2() -> None:
-        transaction2 = Mock()
-        expire2 = ExpireSnapshots(transaction2)
+        expire2 = ExpireSnapshots(Mock())
         expire2._snapshot_ids_to_expire.update([2001, 2002, 2003])
         results["expire2_snapshots"] = expire2._snapshot_ids_to_expire.copy()
 
