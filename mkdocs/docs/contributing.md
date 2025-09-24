@@ -157,9 +157,18 @@ To rebuild the containers from scratch.
 
 #### Running Integration Tests against REST Catalogs
 
+!!! warning "Do not run against production catalogs"
+    The integration tests will delete data throughout the entirety of your catalog. Running these integration tests against production catalogs will result in data loss.
+
 PyIceberg supports the ability to run our catalog tests against an arbitrary REST Catalog.
 
-You can set the test catalog in the ~/.pyiceberg.yaml file:
+In order to run the test catalog, you will need to specify which REST catalog to run against with the `PYICEBERG_TEST_CATALOG` environment variable
+
+```sh
+export PYICEBERG_TEST_CATALOG=test_catalog
+```
+
+The catalog in question can be configured either through the ~/.pyiceberg.yaml file or through environment variables.
 
 ```yaml
 catalog:
@@ -167,8 +176,6 @@ catalog:
     uri: http://rest-catalog/ws/
     credential: t-1234:secret
 ```
-
-You can additionally set the properties using environment variables
 
 ```sh
 export PYICEBERG_CATALOG__TEST_CATALOG__URI=thrift://localhost:9083

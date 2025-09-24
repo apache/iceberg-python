@@ -21,7 +21,7 @@ from typing import Generator, List
 
 import pytest
 
-from pyiceberg.catalog import Catalog, MetastoreCatalog
+from pyiceberg.catalog import Catalog, MetastoreCatalog, load_catalog
 from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.memory import InMemoryCatalog
 from pyiceberg.catalog.rest import RestCatalog
@@ -78,7 +78,7 @@ def rest_catalog() -> Generator[Catalog, None, None]:
 @pytest.fixture(scope="function")
 def test_catalog() -> Generator[Catalog, None, None]:
     if test_catalog_name := os.environ.get("PYICEBERG_TEST_CATALOG"):
-        test_catalog = RestCatalog(test_catalog_name)
+        test_catalog = load_catalog(test_catalog_name)
         yield test_catalog
         clean_up(test_catalog)
     else:
