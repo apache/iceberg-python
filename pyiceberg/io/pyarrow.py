@@ -2089,6 +2089,9 @@ class StatsAggregator:
                 physical_type_string == "FLOAT" and expected_physical_type == "DOUBLE"
             ):
                 pass
+            # Allow DECIMAL to be stored as FIXED_LEN_BYTE_ARRAY
+            if (physical_type_string == "FIXED_LEN_BYTE_ARRAY" and expected_physical_type in ("INT32", "INT64")):
+                pass
             else:
                 raise ValueError(
                     f"Unexpected physical type {physical_type_string} for {iceberg_type}, expected {expected_physical_type}"
