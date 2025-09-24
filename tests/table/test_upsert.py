@@ -783,6 +783,20 @@ def test_upsert_with_nulls(catalog: Catalog) -> None:
         schema=schema,
     )
 
+
+def test_upsert_with_nulls_in_join_columns(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_with_nulls_in_join_columns"
+    _drop_table(catalog, identifier)
+
+    schema = pa.schema(
+        [
+            ("foo", pa.string()),
+            ("bar", pa.int32()),
+            ("baz", pa.bool_()),
+        ]
+    )
+    table = catalog.create_table(identifier, schema)
+
     # upsert table with null value
     data_with_null = pa.Table.from_pylist(
         [
@@ -796,8 +810,6 @@ def test_upsert_with_nulls(catalog: Catalog) -> None:
     assert table.scan().to_arrow() == pa.Table.from_pylist(
         [
             {"foo": None, "bar": 1, "baz": False},
-            {"foo": "apple", "bar": 7, "baz": False},
-            {"foo": "banana", "bar": None, "baz": False},
         ],
         schema=schema,
     )
@@ -817,8 +829,6 @@ def test_upsert_with_nulls(catalog: Catalog) -> None:
         [
             {"foo": "lemon", "bar": None, "baz": False},
             {"foo": None, "bar": 1, "baz": True},
-            {"foo": "apple", "bar": 7, "baz": False},
-            {"foo": "banana", "bar": None, "baz": False},
         ],
         schema=schema,
     )
