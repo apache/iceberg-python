@@ -266,8 +266,15 @@ def test_history(table_v2: Table) -> None:
     ]
 
 
-def test_table_scan_select(table_v2: Table) -> None:
-    scan = table_v2.scan()
+@pytest.mark.parametrize(
+    "table_fixture",
+    [
+        pytest.param(pytest.lazy_fixture("table_v2"), id="parquet"),
+        pytest.param(pytest.lazy_fixture("table_v2_orc"), id="orc"),
+    ],
+)
+def test_table_scan_select(table_fixture: Table) -> None:
+    scan = table_fixture.scan()
     assert scan.selected_fields == ("*",)
     assert scan.select("a", "b").selected_fields == ("a", "b")
     assert scan.select("a", "c").select("a").selected_fields == ("a",)

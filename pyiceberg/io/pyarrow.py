@@ -201,6 +201,8 @@ BUFFER_SIZE = "buffer-size"
 ICEBERG_SCHEMA = b"iceberg.schema"
 # The PARQUET: in front means that it is Parquet specific, in this case the field_id
 PYARROW_PARQUET_FIELD_ID_KEY = b"PARQUET:field_id"
+# ORC field ID key for Iceberg field IDs in ORC metadata
+ORC_FIELD_ID_KEY = b"iceberg.id"
 PYARROW_FIELD_DOC_KEY = b"doc"
 LIST_ELEMENT_NAME = "element"
 MAP_KEY_NAME = "key"
@@ -690,16 +692,20 @@ def schema_to_pyarrow(
     schema: Union[Schema, IcebergType],
     metadata: Dict[bytes, bytes] = EMPTY_DICT,
     include_field_ids: bool = True,
+    file_format: FileFormat = FileFormat.PARQUET,
 ) -> pa.schema:
-    return visit(schema, _ConvertToArrowSchema(metadata, include_field_ids))
+    return visit(schema, _ConvertToArrowSchema(metadata, include_field_ids, file_format))
 
 
 class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
     _metadata: Dict[bytes, bytes]
 
-    def __init__(self, metadata: Dict[bytes, bytes] = EMPTY_DICT, include_field_ids: bool = True) -> None:
+    def __init__(
+        self, metadata: Dict[bytes, bytes] = EMPTY_DICT, include_field_ids: bool = True, file_format: Optional[FileFormat] = None
+    ) -> None:
         self._metadata = metadata
         self._include_field_ids = include_field_ids
+        self._file_format = file_format
 
     def schema(self, _: Schema, struct_result: pa.StructType) -> pa.schema:
         return pa.schema(list(struct_result), metadata=self._metadata)
@@ -712,7 +718,12 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         if field.doc:
             metadata[PYARROW_FIELD_DOC_KEY] = field.doc
         if self._include_field_ids:
-            metadata[PYARROW_PARQUET_FIELD_ID_KEY] = str(field.field_id)
+            # Add field ID based on file format
+            if self._file_format == FileFormat.ORC:
+                metadata[ORC_FIELD_ID_KEY] = str(field.field_id)
+            else:
+                # Default to Parquet for backward compatibility
+                metadata[PYARROW_PARQUET_FIELD_ID_KEY] = str(field.field_id)
 
         return pa.field(
             name=field.name,
@@ -1011,6 +1022,10 @@ def _expression_to_complementary_pyarrow(expr: BooleanExpression) -> pc.Expressi
 def _get_file_format(file_format: FileFormat, **kwargs: Dict[str, Any]) -> ds.FileFormat:
     if file_format == FileFormat.PARQUET:
         return ds.ParquetFileFormat(**kwargs)
+    elif file_format == FileFormat.ORC:
+        # ORC doesn't support pre_buffer and buffer_size parameters
+        orc_kwargs = {k: v for k, v in kwargs.items() if k not in ["pre_buffer", "buffer_size"]}
+        return ds.OrcFileFormat(**orc_kwargs)
     else:
         raise ValueError(f"Unsupported file format: {file_format}")
 
@@ -1027,6 +1042,15 @@ def _read_deletes(io: FileIO, data_file: DataFile) -> Dict[str, pa.ChunkedArray]
             file.as_py(): table.filter(pc.field("file_path") == file).column("pos")
             for file in table.column("file_path").chunks[0].dictionary
         }
+    elif data_file.file_format == FileFormat.ORC:
+        with io.new_input(data_file.file_path).open() as fi:
+            delete_fragment = _get_file_format(data_file.file_format).make_fragment(fi)
+            table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
+            # For ORC, file_path columns are not dictionary-encoded, so we use unique() directly
+            return {
+                path.as_py(): table.filter(pc.field("file_path") == path).column("pos")
+                for path in table.column("file_path").unique()
+            }
     elif data_file.file_format == FileFormat.PUFFIN:
         with io.new_input(data_file.file_path).open() as fi:
             payload = fi.read()
@@ -1228,11 +1252,17 @@ class PyArrowSchemaVisitor(Generic[T], ABC):
 
 
 def _get_field_id(field: pa.Field) -> Optional[int]:
-    return (
-        int(field_id_str.decode())
-        if (field.metadata and (field_id_str := field.metadata.get(PYARROW_PARQUET_FIELD_ID_KEY)))
-        else None
-    )
+    """Return the Iceberg field ID from Parquet or ORC metadata if available."""
+    if field.metadata:
+        # Try Parquet field ID first
+        if field_id_bytes := field.metadata.get(PYARROW_PARQUET_FIELD_ID_KEY):
+            return int(field_id_bytes.decode())
+
+        # Fallback: try ORC field ID
+        if field_id_bytes := field.metadata.get(ORC_FIELD_ID_KEY):
+            return int(field_id_bytes.decode())
+
+    return None
 
 
 class _HasIds(PyArrowSchemaVisitor[bool]):
@@ -1495,7 +1525,7 @@ def _task_to_record_batches(
     format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
     downcast_ns_timestamp_to_us: Optional[bool] = None,
 ) -> Iterator[pa.RecordBatch]:
-    arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
+    arrow_format = _get_file_format(task.file.file_format, pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
     with io.new_input(task.file.file_path).open() as fin:
         fragment = arrow_format.make_fragment(fin)
         physical_schema = fragment.physical_schema
@@ -1845,6 +1875,8 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
         if field.doc:
             metadata[PYARROW_FIELD_DOC_KEY] = field.doc
         if self._include_field_ids:
+            # For projection visitor, we don't know the file format, so default to Parquet
+            # This is used for schema conversion during reads, not writes
             metadata[PYARROW_PARQUET_FIELD_ID_KEY] = str(field.field_id)
 
         return pa.field(
