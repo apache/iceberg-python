@@ -76,13 +76,13 @@ def rest_catalog() -> Generator[Catalog, None, None]:
 
 
 @pytest.fixture(scope="function")
-def test_catalog() -> Generator[Catalog, None, None]:
+def rest_test_catalog() -> Generator[Catalog, None, None]:
     if test_catalog_name := os.environ.get("PYICEBERG_TEST_CATALOG"):
         test_catalog = load_catalog(test_catalog_name)
         yield test_catalog
         clean_up(test_catalog)
     else:
-        pytest.skip("Test catalog environment variables not set")
+        pytest.skip("PYICEBERG_TEST_CATALOG environment variables not set")
 
 
 @pytest.fixture(scope="function")
@@ -106,7 +106,7 @@ CATALOGS = [
     pytest.lazy_fixture("sqlite_catalog_file"),
     pytest.lazy_fixture("rest_catalog"),
     pytest.lazy_fixture("hive_catalog"),
-    pytest.lazy_fixture("test_catalog"),
+    pytest.lazy_fixture("rest_test_catalog"),
 ]
 
 
