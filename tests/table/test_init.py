@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
+import base64
 import json
 import uuid
 from copy import copy
@@ -49,6 +50,7 @@ from pyiceberg.table import (
     TableIdentifier,
     _match_deletes_to_data_file,
 )
+from pyiceberg.table.encryption import EncryptedKey
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
@@ -66,6 +68,7 @@ from pyiceberg.table.sorting import (
 )
 from pyiceberg.table.statistics import BlobMetadata, PartitionStatisticsFile, StatisticsFile
 from pyiceberg.table.update import (
+    AddEncryptedKeyUpdate,
     AddSnapshotUpdate,
     AddSortOrderUpdate,
     AssertCreate,
@@ -76,6 +79,7 @@ from pyiceberg.table.update import (
     AssertLastAssignedPartitionId,
     AssertRefSnapshotId,
     AssertTableUUID,
+    RemoveEncryptedKeyUpdate,
     RemovePartitionStatisticsUpdate,
     RemovePropertiesUpdate,
     RemoveSchemasUpdate,
@@ -1477,3 +1481,45 @@ def test_remove_partition_statistics_update_with_invalid_snapshot_id(table_v2_wi
             table_v2_with_statistics.metadata,
             (RemovePartitionStatisticsUpdate(snapshot_id=123456789),),
         )
+
+
+def test_add_encryption_key(table_v3: Table) -> None:
+    update = AddEncryptedKeyUpdate(key=EncryptedKey(key_id="test", encrypted_key_metadata=base64.b64encode(b"hello")))
+
+    expected = """
+    {
+      "key-id": "test",
+      "encrypted-key-metadata": "aGVsbG8="
+    }"""
+
+    assert table_v3.metadata.encryption_keys == []
+    add_metadata = update_table_metadata(table_v3.metadata, (update,))
+    assert len(add_metadata.encryption_keys) == 1
+
+    assert json.loads(add_metadata.encryption_keys[0].model_dump_json()) == json.loads(expected)
+
+
+def test_remove_encryption_key(table_v3: Table) -> None:
+    update_add = AddEncryptedKeyUpdate(key=EncryptedKey(key_id="test", encrypted_key_metadata=base64.b64encode(b"hello")))
+    add_metadata = update_table_metadata(table_v3.metadata, (update_add,))
+    assert len(add_metadata.encryption_keys) == 1
+
+    update_remove = RemoveEncryptedKeyUpdate(key_id="test")
+    remove_metadata = update_table_metadata(add_metadata, (update_remove,))
+    assert len(remove_metadata.encryption_keys) == 0
+
+
+def test_remove_non_existent_encryption_key(table_v3: Table) -> None:
+    update_add = AddEncryptedKeyUpdate(key=EncryptedKey(key_id="test", encrypted_key_metadata=base64.b64encode(b"hello")))
+    add_metadata = update_table_metadata(table_v3.metadata, (update_add,))
+    assert len(add_metadata.encryption_keys) == 1
+
+    update_remove = RemoveEncryptedKeyUpdate(key_id="non_existent_key")
+    with pytest.raises(ValueError, match=r"Encryption key non_existent_key not found"):
+        update_table_metadata(add_metadata, (update_remove,))
+
+
+def test_add_remove_encryption_key_v2_table(table_v2: Table) -> None:
+    update_add = AddEncryptedKeyUpdate(key=EncryptedKey(key_id="test_v2", encrypted_key_metadata=base64.b64encode(b"hello_v2")))
+    with pytest.raises(ValueError, match=r"Cannot add encryption keys to Iceberg v1 or v2 table"):
+        update_table_metadata(table_v2.metadata, (update_add,))
