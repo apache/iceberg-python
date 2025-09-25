@@ -2090,7 +2090,7 @@ class StatsAggregator:
             ):
                 pass
             # Allow DECIMAL to be stored as FIXED_LEN_BYTE_ARRAY
-            if (physical_type_string == "FIXED_LEN_BYTE_ARRAY" and expected_physical_type in ("INT32", "INT64")):
+            elif physical_type_string == "FIXED_LEN_BYTE_ARRAY" and expected_physical_type in ("INT32", "INT64"):
                 pass
             else:
                 raise ValueError(
