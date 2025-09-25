@@ -67,6 +67,7 @@ from pyiceberg.io import (
     HF_ENDPOINT,
     HF_TOKEN,
     S3_ACCESS_KEY_ID,
+    S3_ADDRESSING_STYLE,
     S3_ANONYMOUS,
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
@@ -167,6 +168,9 @@ def _s3(properties: Properties) -> AbstractFileSystem:
 
     if request_timeout := properties.get(S3_REQUEST_TIMEOUT):
         config_kwargs["read_timeout"] = float(request_timeout)
+
+    if addressing_style := properties.get(S3_ADDRESSING_STYLE):
+        config_kwargs["s3"] = {"addressing_style": addressing_style}
 
     if s3_anonymous := properties.get(S3_ANONYMOUS):
         anon = strtobool(s3_anonymous)
