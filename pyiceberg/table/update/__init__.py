@@ -623,7 +623,7 @@ def _(update: RemoveEncryptedKeyUpdate, base_metadata: TableMetadata, context: _
     context.add_update(update)
 
     if base_metadata.format_version <= 2:
-        raise ValueError("Cannot add encryption keys to Iceberg v1 or v2 tables")
+        raise ValueError("Cannot remove encryption keys from Iceberg v1 or v2 tables")
 
     encryption_keys = [key for key in base_metadata.encryption_keys if key.key_id != update.key_id]
     if len(encryption_keys) == len(base_metadata.encryption_keys):
