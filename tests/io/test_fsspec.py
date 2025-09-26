@@ -306,9 +306,9 @@ def test_fsspec_s3_session_properties() -> None:
         )
 
 
-def test_fsspec_s3_session_properties_with_addressing_style() -> None:
+def test_fsspec_s3_session_properties_force_virtual_addressing() -> None:
     session_properties: Properties = {
-        "s3.addressing-style": "virtual",
+        "s3.force-virtual-addressing": True,
         "s3.endpoint": "http://localhost:9000",
         "s3.access-key-id": "admin",
         "s3.secret-access-key": "password",
