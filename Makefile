@@ -84,7 +84,7 @@ check-license: ## Check license headers
 	./dev/check-license
 
 lint: ## Run code linters via prek (pre-commit hooks)
-	prek run -a
+	$(POETRY) run prek run -a
 
 # ===============
 # Testing Section
