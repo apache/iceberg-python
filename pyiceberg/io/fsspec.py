@@ -70,6 +70,7 @@ from pyiceberg.io import (
     S3_ANONYMOUS,
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
+    S3_FORCE_VIRTUAL_ADDRESSING,
     S3_PROXY_URI,
     S3_REGION,
     S3_REQUEST_TIMEOUT,
@@ -167,6 +168,9 @@ def _s3(properties: Properties) -> AbstractFileSystem:
 
     if request_timeout := properties.get(S3_REQUEST_TIMEOUT):
         config_kwargs["read_timeout"] = float(request_timeout)
+
+    if _force_virtual_addressing := properties.get(S3_FORCE_VIRTUAL_ADDRESSING):
+        config_kwargs["s3"] = {"addressing_style": "virtual"}
 
     if s3_anonymous := properties.get(S3_ANONYMOUS):
         anon = strtobool(s3_anonymous)
