@@ -810,8 +810,13 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
        ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
     """
 
-    _updates: Tuple[TableUpdate, ...] = ()
-    _requirements: Tuple[TableRequirement, ...] = ()
+    _updates: Tuple[TableUpdate, ...]
+    _requirements: Tuple[TableRequirement, ...]
+
+    def __init__(self, transaction: Transaction) -> None:
+        super().__init__(transaction)
+        self._updates = ()
+        self._requirements = ()
 
     def _commit(self) -> UpdatesAndRequirements:
         """Apply the pending changes and commit."""
@@ -924,9 +929,15 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
     Pending changes are applied on commit.
     """
 
-    _snapshot_ids_to_expire: Set[int] = set()
-    _updates: Tuple[TableUpdate, ...] = ()
-    _requirements: Tuple[TableRequirement, ...] = ()
+    _updates: Tuple[TableUpdate, ...]
+    _requirements: Tuple[TableRequirement, ...]
+    _snapshot_ids_to_expire: Set[int]
+
+    def __init__(self, transaction: Transaction) -> None:
+        super().__init__(transaction)
+        self._updates = ()
+        self._requirements = ()
+        self._snapshot_ids_to_expire = set()
 
     def _commit(self) -> UpdatesAndRequirements:
         """

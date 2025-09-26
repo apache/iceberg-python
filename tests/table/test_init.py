@@ -66,6 +66,7 @@ from pyiceberg.table.sorting import (
 )
 from pyiceberg.table.statistics import BlobMetadata, PartitionStatisticsFile, StatisticsFile
 from pyiceberg.table.update import (
+    AddPartitionSpecUpdate,
     AddSnapshotUpdate,
     AddSortOrderUpdate,
     AssertCreate,
@@ -76,6 +77,7 @@ from pyiceberg.table.update import (
     AssertLastAssignedPartitionId,
     AssertRefSnapshotId,
     AssertTableUUID,
+    RemovePartitionSpecsUpdate,
     RemovePartitionStatisticsUpdate,
     RemovePropertiesUpdate,
     RemoveSchemasUpdate,
@@ -1292,6 +1294,38 @@ def test_update_metadata_log_overflow(table_v2: Table) -> None:
         table_v2.metadata_location,
     )
     assert len(new_metadata.metadata_log) == 1
+
+
+def test_remove_partition_spec_update(table_v2: Table) -> None:
+    base_metadata = table_v2.metadata
+    new_spec = PartitionSpec(PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="y"), spec_id=1)
+    metadata_with_new_spec = update_table_metadata(base_metadata, (AddPartitionSpecUpdate(spec=new_spec),))
+
+    assert len(metadata_with_new_spec.partition_specs) == 2
+
+    update = RemovePartitionSpecsUpdate(spec_ids=[1])
+    updated_metadata = update_table_metadata(
+        metadata_with_new_spec,
+        (update,),
+    )
+
+    assert len(updated_metadata.partition_specs) == 1
+
+
+def test_remove_partition_spec_update_spec_does_not_exist(table_v2: Table) -> None:
+    update = RemovePartitionSpecsUpdate(
+        spec_ids=[123],
+    )
+    with pytest.raises(ValueError, match="Partition spec with id 123 does not exist"):
+        update_table_metadata(table_v2.metadata, (update,))
+
+
+def test_remove_partition_spec_update_default_spec(table_v2: Table) -> None:
+    update = RemovePartitionSpecsUpdate(
+        spec_ids=[0],
+    )
+    with pytest.raises(ValueError, match="Cannot remove default partition spec: 0"):
+        update_table_metadata(table_v2.metadata, (update,))
 
 
 def test_remove_schemas_update(table_v2: Table) -> None:
