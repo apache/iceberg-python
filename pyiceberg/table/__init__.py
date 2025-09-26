@@ -569,7 +569,7 @@ class Transaction:
         An overwrite may produce zero or more snapshots based on the operation:
 
             - DELETE: In case existing Parquet files can be dropped completely.
-            - REPLACE: In case existing Parquet files need to be rewritten.
+            - OVERWRITE: In case existing Parquet files need to be rewritten to drop rows that match the overwrite filter.
             - APPEND: In case new data is being inserted into the table.
 
         Args:
@@ -629,7 +629,7 @@ class Transaction:
         A delete may produce zero or more snapshots based on the operation:
 
             - DELETE: In case existing Parquet files can be dropped completely.
-            - REPLACE: In case existing Parquet files need to be rewritten
+            - OVERWRITE: In case existing Parquet files need to be rewritten to drop rows that match the delete filter.
 
         Args:
             delete_filter: A boolean expression to delete rows from a table
@@ -1396,7 +1396,7 @@ class Table:
         An overwrite may produce zero or more snapshots based on the operation:
 
             - DELETE: In case existing Parquet files can be dropped completely.
-            - REPLACE: In case existing Parquet files need to be rewritten.
+            - OVERWRITE: In case existing Parquet files need to be rewritten to drop rows that match the overwrite filter..
             - APPEND: In case new data is being inserted into the table.
 
         Args:
