@@ -73,6 +73,7 @@ from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
 from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2
+from pyiceberg.table.sorting import NullOrder, SortField, SortOrder
 from pyiceberg.transforms import DayTransform, IdentityTransform
 from pyiceberg.types import (
     BinaryType,
@@ -1873,6 +1874,11 @@ def test_partition_spec() -> Schema:
         PartitionField(1, 1000, IdentityTransform(), "VendorID"),
         PartitionField(2, 1001, DayTransform(), "tpep_pickup_day"),
     )
+
+
+@pytest.fixture(scope="session")
+def test_sort_order() -> SortOrder:
+    return SortOrder(SortField(source_id=1, transform=IdentityTransform(), null_order=NullOrder.NULLS_FIRST))
 
 
 @pytest.fixture(scope="session")
