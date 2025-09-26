@@ -170,3 +170,7 @@ clean: ## Remove build artifacts and caches
 	@find . -name "*.pyd" -exec echo Deleting {} \; -delete
 	@find . -name "*.pyo" -exec echo Deleting {} \; -delete
 	@echo "Cleanup complete."
+
+notebook: ## Launch Jupyter Notebook
+	${POETRY} run pip install jupyter
+	${POETRY} run jupyter notebook
