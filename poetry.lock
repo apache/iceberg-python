@@ -59,7 +59,7 @@ description = "Happy Eyeballs for asyncio"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""
+markers = "extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""
 files = [
     {file = "aiohappyeyeballs-2.6.1-py3-none-any.whl", hash = "sha256:f349ba8f4b75cb25c99c5c2d84e997e485204d2902a9597802b0371f09331fb8"},
     {file = "aiohappyeyeballs-2.6.1.tar.gz", hash = "sha256:c3f9d0113123803ccadfdf3f0faa505bc78e6a72d1cc4806cbd719826e943558"},
@@ -72,7 +72,7 @@ description = "Async http client/server framework (asyncio)"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""
+markers = "extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""
 files = [
     {file = "aiohttp-3.12.12-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:6f25e9d274d6abbb15254f76f100c3984d6b9ad6e66263cc60a465dd5c7e48f5"},
     {file = "aiohttp-3.12.12-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:b8ec3c1a1c13d24941b5b913607e57b9364e4c0ea69d5363181467492c4b2ba6"},
@@ -202,7 +202,7 @@ description = "aiosignal: a list of registered asynchronous callbacks"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"ray\" or extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""
+markers = "extra == \"ray\" or extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""
 files = [
     {file = "aiosignal-1.3.2-py2.py3-none-any.whl", hash = "sha256:45cde58e409a301715980c2b01d0c28bdde3770d8290b5eb2173759d9acb31a5"},
     {file = "aiosignal-1.3.2.tar.gz", hash = "sha256:a8c255c66fafb1e499c9351d0bf32ff2d8a0321595ebac3b93713656d2436f54"},
@@ -254,7 +254,7 @@ description = "Timeout context manager for asyncio programs"
 optional = true
 python-versions = ">=3.8"
 groups = ["main"]
-markers = "(extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\") and python_version <= \"3.10\""
+markers = "(extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\") and python_version <= \"3.10\""
 files = [
     {file = "async_timeout-5.0.1-py3-none-any.whl", hash = "sha256:39e3809566ff85354557ec2398b55e096c8364bacac9405a7a1fa429e77fe76c"},
     {file = "async_timeout-5.0.1.tar.gz", hash = "sha256:d9321a7a3d5a6a5e187e824d2fa0793ce379a202935782d555d6e9d2735677d3"},
@@ -271,7 +271,7 @@ files = [
     {file = "attrs-25.3.0-py3-none-any.whl", hash = "sha256:427318ce031701fea540783410126f03899a97ffc6f61596ad581ac2e40e3bc3"},
     {file = "attrs-25.3.0.tar.gz", hash = "sha256:75d7cefc7fb576747b2c81b4442d4d4a1ce0900973527c011d1030fd3bf4af1b"},
 ]
-markers = {main = "extra == \"ray\" or extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""}
+markers = {main = "extra == \"ray\" or extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""}
 
 [package.extras]
 benchmark = ["cloudpickle ; platform_python_implementation == \"CPython\"", "hypothesis", "mypy (>=1.11.1) ; platform_python_implementation == \"CPython\" and python_version >= \"3.10\"", "pympler", "pytest (>=4.3.0)", "pytest-codspeed", "pytest-mypy-plugins ; platform_python_implementation == \"CPython\" and python_version >= \"3.10\"", "pytest-xdist[psutil]"]
@@ -530,7 +530,7 @@ files = [
     {file = "boto3-1.40.18-py3-none-any.whl", hash = "sha256:daa776ba1251a7458c9d6c7627873d0c2460c8e8272d35759065580e9193700a"},
     {file = "boto3-1.40.18.tar.gz", hash = "sha256:64301d39adecc154e3e595eaf0d4f28998ef0a5551f1d033aeac51a9e1a688e5"},
 ]
-markers = {main = "extra == \"dynamodb\" or extra == \"glue\" or extra == \"rest-sigv4\""}
+markers = {main = "extra == \"glue\" or extra == \"dynamodb\" or extra == \"rest-sigv4\""}
 
 [package.dependencies]
 botocore = ">=1.40.18,<1.41.0"
@@ -551,7 +551,7 @@ files = [
     {file = "botocore-1.40.18-py3-none-any.whl", hash = "sha256:57025c46ca00cf8cec25de07a759521bfbfb3036a0f69b272654a354615dc45f"},
     {file = "botocore-1.40.18.tar.gz", hash = "sha256:afd69bdadd8c55cc89d69de0799829e555193a352d87867f746e19020271cc0f"},
 ]
-markers = {main = "extra == \"dynamodb\" or extra == \"glue\" or extra == \"rest-sigv4\" or extra == \"s3fs\""}
+markers = {main = "extra == \"glue\" or extra == \"dynamodb\" or extra == \"rest-sigv4\" or extra == \"s3fs\""}
 
 [package.dependencies]
 jmespath = ">=0.7.1,<2.0.0"
@@ -695,18 +695,6 @@ markers = {main = "extra == \"adlfs\"", dev = "platform_python_implementation !=
 
 [package.dependencies]
 pycparser = "*"
-
-[[package]]
-name = "cfgv"
-version = "3.4.0"
-description = "Validate configuration and produce human readable error messages."
-optional = false
-python-versions = ">=3.8"
-groups = ["dev"]
-files = [
-    {file = "cfgv-3.4.0-py2.py3-none-any.whl", hash = "sha256:b7265b1f29fd3316bfcd2b330d63d024f2bfd8bcb8b0272f8e19a504856c48f9"},
-    {file = "cfgv-3.4.0.tar.gz", hash = "sha256:e52591d4c5f5dead8e0f673fb16db7949d2cfb3f7da4582893288f0ded8fe560"},
-]
 
 [[package]]
 name = "cfn-lint"
@@ -1617,7 +1605,7 @@ description = "A list-like structure which implements collections.abc.MutableSeq
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"ray\" or extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""
+markers = "extra == \"ray\" or extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""
 files = [
     {file = "frozenlist-1.7.0-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:cc4df77d638aa2ed703b878dd093725b72a824c3c546c076e8fdf276f78ee84a"},
     {file = "frozenlist-1.7.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:716a9973a2cc963160394f701964fe25012600f3d311f60c790400b00e568b61"},
@@ -1816,7 +1804,7 @@ description = "Google API client core library"
 optional = true
 python-versions = ">=3.7"
 groups = ["main"]
-markers = "extra == \"gcsfs\" or extra == \"bigquery\""
+markers = "extra == \"bigquery\" or extra == \"gcsfs\""
 files = [
     {file = "google_api_core-2.25.0-py3-none-any.whl", hash = "sha256:1db79d1281dcf9f3d10023283299ba38f3dc9f639ec41085968fd23e5bcf512e"},
     {file = "google_api_core-2.25.0.tar.gz", hash = "sha256:9b548e688702f82a34ed8409fb8a6961166f0b7795032f0be8f48308dff4333a"},
@@ -1853,7 +1841,7 @@ description = "Google Authentication Library"
 optional = true
 python-versions = ">=3.7"
 groups = ["main"]
-markers = "extra == \"gcsfs\" or extra == \"bigquery\" or extra == \"gcp-auth\""
+markers = "extra == \"gcp-auth\" or extra == \"bigquery\" or extra == \"gcsfs\""
 files = [
     {file = "google_auth-2.40.3-py2.py3-none-any.whl", hash = "sha256:1370d4593e86213563547f97a92752fc658456fe4514c809544f330fed45a7ca"},
     {file = "google_auth-2.40.3.tar.gz", hash = "sha256:500c3a29adedeb36ea9cf24b8d10858e152f2412e3ca37829b3fa18e33d63b77"},
@@ -1935,7 +1923,7 @@ description = "Google Cloud API client core library"
 optional = true
 python-versions = ">=3.7"
 groups = ["main"]
-markers = "extra == \"gcsfs\" or extra == \"bigquery\""
+markers = "extra == \"bigquery\" or extra == \"gcsfs\""
 files = [
     {file = "google_cloud_core-2.4.3-py2.py3-none-any.whl", hash = "sha256:5130f9f4c14b4fafdff75c79448f9495cfade0d8775facf1b09c3bf67e027f6e"},
     {file = "google_cloud_core-2.4.3.tar.gz", hash = "sha256:1fab62d7102844b278fe6dead3af32408b1df3eb06f5c7e8634cbd40edc4da53"},
@@ -1980,7 +1968,7 @@ description = "A python wrapper of the C library 'Google CRC32C'"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"gcsfs\" or extra == \"bigquery\""
+markers = "extra == \"bigquery\" or extra == \"gcsfs\""
 files = [
     {file = "google_crc32c-1.7.1-cp310-cp310-macosx_12_0_arm64.whl", hash = "sha256:b07d48faf8292b4db7c3d64ab86f950c2e94e93a11fd47271c28ba458e4a0d76"},
     {file = "google_crc32c-1.7.1-cp310-cp310-macosx_12_0_x86_64.whl", hash = "sha256:7cc81b3a2fbd932a4313eb53cc7d9dde424088ca3a0337160f35d91826880c1d"},
@@ -2028,7 +2016,7 @@ description = "Utilities for Google Media Downloads and Resumable Uploads"
 optional = true
 python-versions = ">=3.7"
 groups = ["main"]
-markers = "extra == \"gcsfs\" or extra == \"bigquery\""
+markers = "extra == \"bigquery\" or extra == \"gcsfs\""
 files = [
     {file = "google_resumable_media-2.7.2-py2.py3-none-any.whl", hash = "sha256:3ce7551e9fe6d99e9a126101d2536612bb73486721951e9562fee0f90c6ababa"},
     {file = "google_resumable_media-2.7.2.tar.gz", hash = "sha256:5280aed4629f2b60b847b0d42f9857fd4935c11af266744df33d8074cae92fe0"},
@@ -2052,7 +2040,7 @@ files = [
     {file = "googleapis_common_protos-1.70.0-py3-none-any.whl", hash = "sha256:b8bfcca8c25a2bb253e0e0b0adaf8c00773e5e6af6fd92397576680b807e0fd8"},
     {file = "googleapis_common_protos-1.70.0.tar.gz", hash = "sha256:0e1b44e0ea153e6594f9f394fef15193a68aaaea2d843f83e2742717ca753257"},
 ]
-markers = {main = "python_version >= \"3.11\" and (extra == \"bigquery\" or extra == \"gcsfs\") or extra == \"gcsfs\" or extra == \"bigquery\""}
+markers = {main = "extra == \"bigquery\" or extra == \"gcsfs\""}
 
 [package.dependencies]
 protobuf = ">=3.20.2,<4.21.1 || >4.21.1,<4.21.2 || >4.21.2,<4.21.3 || >4.21.3,<4.21.4 || >4.21.4,<4.21.5 || >4.21.5,<7.0.0"
@@ -2305,21 +2293,6 @@ torch = ["safetensors[torch]", "torch"]
 typing = ["types-PyYAML", "types-requests", "types-simplejson", "types-toml", "types-tqdm", "types-urllib3", "typing-extensions (>=4.8.0)"]
 
 [[package]]
-name = "identify"
-version = "2.6.12"
-description = "File identification library for Python"
-optional = false
-python-versions = ">=3.9"
-groups = ["dev"]
-files = [
-    {file = "identify-2.6.12-py2.py3-none-any.whl", hash = "sha256:ad9672d5a72e0d2ff7c5c8809b62dfa60458626352fb0eb7b55e69bdc45334a2"},
-    {file = "identify-2.6.12.tar.gz", hash = "sha256:d8de45749f1efb108badef65ee8386f0f7bb19a7f26185f74de6367bffbaf0e6"},
-]
-
-[package.extras]
-license = ["ukkonen"]
-
-[[package]]
 name = "idna"
 version = "3.10"
 description = "Internationalized Domain Names in Applications (IDNA)"
@@ -2491,7 +2464,7 @@ files = [
     {file = "jmespath-1.0.1-py3-none-any.whl", hash = "sha256:02e2e4cc71b5bcab88332eebf907519190dd9e6e82107fa7f83b1003a6252980"},
     {file = "jmespath-1.0.1.tar.gz", hash = "sha256:90261b206d6defd58fdd5e85f478bf633a2901798906be2ad389150c5c60edbe"},
 ]
-markers = {main = "extra == \"dynamodb\" or extra == \"glue\" or extra == \"rest-sigv4\" or extra == \"s3fs\""}
+markers = {main = "extra == \"glue\" or extra == \"dynamodb\" or extra == \"rest-sigv4\" or extra == \"s3fs\""}
 
 [[package]]
 name = "joserfc"
@@ -3391,7 +3364,7 @@ description = "multidict implementation"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""
+markers = "extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""
 files = [
     {file = "multidict-6.4.4-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:8adee3ac041145ffe4488ea73fa0a622b464cc25340d98be76924d0cda8545ff"},
     {file = "multidict-6.4.4-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:b61e98c3e2a861035aaccd207da585bdcacef65fe01d7a0d07478efac005e028"},
@@ -3612,18 +3585,6 @@ test = ["pytest (>=7.2)", "pytest-cov (>=4.0)", "pytest-xdist (>=3.0)"]
 test-extras = ["pytest-mpl", "pytest-randomly"]
 
 [[package]]
-name = "nodeenv"
-version = "1.9.1"
-description = "Node.js virtual environment builder"
-optional = false
-python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,!=3.5.*,!=3.6.*,>=2.7"
-groups = ["dev"]
-files = [
-    {file = "nodeenv-1.9.1-py2.py3-none-any.whl", hash = "sha256:ba11c9782d29c27c70ffbdda2d7415098754709be8a7056d79a737cd901155c9"},
-    {file = "nodeenv-1.9.1.tar.gz", hash = "sha256:6ec12890a2dab7946721edbfbcd91f3319c6ccc9aec47be7c7e6b7011ee6645f"},
-]
-
-[[package]]
 name = "numba"
 version = "0.60.0"
 description = "compiling Python code using LLVM"
@@ -3740,7 +3701,7 @@ files = [
     {file = "numpy-1.26.4-pp39-pypy39_pp73-win_amd64.whl", hash = "sha256:7e50d0a0cc3189f9cb0aeb3a6a6af18c16f59f004b866cd2be1c14b36134a4a0"},
     {file = "numpy-1.26.4.tar.gz", hash = "sha256:2a02aba9ed12e4ac4eb3ea9421c420301a0c6460d9830d74a9df87efa4912010"},
 ]
-markers = {main = "extra == \"bodo\" or extra == \"pandas\" or extra == \"ray\""}
+markers = {main = "extra == \"pandas\" or extra == \"ray\" or extra == \"bodo\""}
 
 [[package]]
 name = "oauthlib"
@@ -3875,7 +3836,7 @@ files = [
     {file = "pandas-2.3.2-cp39-cp39-win_amd64.whl", hash = "sha256:a9d7ec92d71a420185dec44909c32e9a362248c4ae2238234b76d5be37f208cc"},
     {file = "pandas-2.3.2.tar.gz", hash = "sha256:ab7b58f8f82706890924ccdfb5f48002b83d2b5a3845976a9fb705d36c34dcdb"},
 ]
-markers = {main = "extra == \"bodo\" or extra == \"pandas\" or extra == \"ray\""}
+markers = {main = "extra == \"pandas\" or extra == \"ray\" or extra == \"bodo\""}
 
 [package.dependencies]
 numpy = [
@@ -4027,23 +3988,33 @@ xlsx2csv = ["xlsx2csv (>=0.8.0)"]
 xlsxwriter = ["xlsxwriter"]
 
 [[package]]
-name = "pre-commit"
-version = "4.3.0"
-description = "A framework for managing and maintaining multi-language pre-commit hooks."
+name = "prek"
+version = "0.2.1"
+description = "Better `pre-commit`, re-engineered in Rust"
 optional = false
-python-versions = ">=3.9"
-groups = ["dev"]
+python-versions = ">=3.8"
+groups = ["main"]
 files = [
-    {file = "pre_commit-4.3.0-py2.py3-none-any.whl", hash = "sha256:2b0747ad7e6e967169136edffee14c16e148a778a54e4f967921aa1ebf2308d8"},
-    {file = "pre_commit-4.3.0.tar.gz", hash = "sha256:499fe450cc9d42e9d58e606262795ecb64dd05438943c62b66f6a8673da30b16"},
+    {file = "prek-0.2.1-py3-none-linux_armv6l.whl", hash = "sha256:bdd0e71ab6a63a9b81c268539ec249bfe1cd2b50fc39823727b256b0ba67d342"},
+    {file = "prek-0.2.1-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:99c1611aea27c75cb76d23f7ca68440478b4372b2184e4c383af06a3ea9e8b8e"},
+    {file = "prek-0.2.1-py3-none-macosx_11_0_arm64.whl", hash = "sha256:46ec9a2dc2f536ddc3381f9bc9461afbb48b767fe0159687b9a8302a0d910f9c"},
+    {file = "prek-0.2.1-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.musllinux_1_1_aarch64.whl", hash = "sha256:dd97d0f8d9ec3f1749d3b1c8c3310d2d946976d1ad58e54b1dce3e177b09cbb7"},
+    {file = "prek-0.2.1-py3-none-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:38c22c63bd18a29b27d4c56804fe10e5ae7e2a2b9d1ec2bcdbaebda9d80b2f86"},
+    {file = "prek-0.2.1-py3-none-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:e198ddf56591cbe455ffa2106caa6aa8f0df11348a328a68e46e9a0e877f80f6"},
+    {file = "prek-0.2.1-py3-none-manylinux_2_17_ppc64.manylinux2014_ppc64.whl", hash = "sha256:5be95c28c65249576e43f7894869f09db7ed62602b70b456c777881304abebf5"},
+    {file = "prek-0.2.1-py3-none-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:0355c6c67afe7aa376685cb5747a45e3ba9bcc091d82547ec3725ceafbe139da"},
+    {file = "prek-0.2.1-py3-none-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:b784eb070ac3cfea9598f8590f8aafcdae5a871a9bcfd88535c6f6f71f315252"},
+    {file = "prek-0.2.1-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:300ace6901a78a203030e76750d62cff1bdc9d64b08a998029a160a2435a5575"},
+    {file = "prek-0.2.1-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:0b214b14d9c1cb4a3324206486cd2ea19e0c960bd2770785c49dbdaa2476a292"},
+    {file = "prek-0.2.1-py3-none-manylinux_2_31_riscv64.whl", hash = "sha256:a087ad088e08633469fe5b35411b6fcbc7c1bc78163f3fe2105142550917b581"},
+    {file = "prek-0.2.1-py3-none-musllinux_1_1_armv7l.whl", hash = "sha256:e3b9f592af89d95b6a189f90f9f5c694086d340c79725ad165ae526a3be0be49"},
+    {file = "prek-0.2.1-py3-none-musllinux_1_1_i686.whl", hash = "sha256:194e7d898742f0e6565049f8e907e1237e5921b09c4c39ea572176e06296a745"},
+    {file = "prek-0.2.1-py3-none-musllinux_1_1_x86_64.whl", hash = "sha256:483aa6f021874d887553cda5d651d989b2fa38f2334faffd53438a46999fc7ad"},
+    {file = "prek-0.2.1-py3-none-win32.whl", hash = "sha256:fbe488b478b47d9a7134d145b6564b90bfa1a1f7fec6bc7d7945aaa9a85f80cb"},
+    {file = "prek-0.2.1-py3-none-win_amd64.whl", hash = "sha256:f066681ffb0f4de4c3a74dfb56cf417751ee2df2c38e2ed6af78d5e15262aa5d"},
+    {file = "prek-0.2.1-py3-none-win_arm64.whl", hash = "sha256:97c8367e226930600dfad28405f091a0bc88cc601bfa66ace42ce1cd38e3ee92"},
+    {file = "prek-0.2.1.tar.gz", hash = "sha256:60543afbf72ad9ce27a5fc4301179f75f473dc4cc221ff53b2bad18ff6eac998"},
 ]
-
-[package.dependencies]
-cfgv = ">=2.0.0"
-identify = ">=1.0.0"
-nodeenv = ">=0.11.1"
-pyyaml = ">=5.1"
-virtualenv = ">=20.10.0"
 
 [[package]]
 name = "propcache"
@@ -4052,7 +4023,7 @@ description = "Accelerated property cache"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""
+markers = "extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""
 files = [
     {file = "propcache-0.3.2-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:22d9962a358aedbb7a2e36187ff273adeaab9743373a272976d2e348d08c7770"},
     {file = "propcache-0.3.2-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:0d0fda578d1dc3f77b6b5a5dce3b9ad69a8250a891760a548df850a5e8da87f3"},
@@ -4161,7 +4132,7 @@ description = "Beautiful, Pythonic protocol buffers"
 optional = true
 python-versions = ">=3.7"
 groups = ["main"]
-markers = "python_version >= \"3.13\" and (extra == \"gcsfs\" or extra == \"bigquery\") or extra == \"bigquery\" or extra == \"gcsfs\""
+markers = "extra == \"bigquery\" or extra == \"gcsfs\""
 files = [
     {file = "proto_plus-1.26.1-py3-none-any.whl", hash = "sha256:13285478c2dcf2abb829db158e1047e2f1e8d63a077d94263c2b88b043c75a66"},
     {file = "proto_plus-1.26.1.tar.gz", hash = "sha256:21a515a4c4c0088a773899e23c7bbade3d18f9c66c73edd4c7ee3816bc96a012"},
@@ -4191,7 +4162,7 @@ files = [
     {file = "protobuf-6.31.1-py3-none-any.whl", hash = "sha256:720a6c7e6b77288b85063569baae8536671b39f15cc22037ec7045658d80489e"},
     {file = "protobuf-6.31.1.tar.gz", hash = "sha256:d8cac4c982f0b957a4dc73a80e2ea24fab08e679c0de9deb835f4a12d69aca9a"},
 ]
-markers = {main = "python_version >= \"3.11\" and (extra == \"ray\" or extra == \"bigquery\" or extra == \"gcsfs\") or extra == \"ray\" or extra == \"gcsfs\" or extra == \"bigquery\""}
+markers = {main = "extra == \"ray\" or extra == \"bigquery\" or extra == \"gcsfs\""}
 
 [[package]]
 name = "psutil"
@@ -4391,7 +4362,7 @@ files = [
     {file = "pyarrow-19.0.1-cp39-cp39-win_amd64.whl", hash = "sha256:8464c9fbe6d94a7fe1599e7e8965f350fd233532868232ab2596a71586c5a429"},
     {file = "pyarrow-19.0.1.tar.gz", hash = "sha256:3bf266b485df66a400f282ac0b6d1b500b9d2ae73314a153dbe97d6d5cc8a99e"},
 ]
-markers = {main = "extra == \"bodo\" or extra == \"daft\" or extra == \"datafusion\" or extra == \"duckdb\" or extra == \"pandas\" or extra == \"pyarrow\" or extra == \"ray\""}
+markers = {main = "extra == \"pyarrow\" or extra == \"pandas\" or extra == \"duckdb\" or extra == \"ray\" or extra == \"bodo\" or extra == \"daft\" or extra == \"datafusion\""}
 
 [package.extras]
 test = ["cffi", "hypothesis", "pandas", "pytest", "pytz"]
@@ -4403,7 +4374,7 @@ description = "Pure-Python implementation of ASN.1 types and DER/BER/CER codecs 
 optional = true
 python-versions = ">=3.8"
 groups = ["main"]
-markers = "extra == \"gcsfs\" or extra == \"bigquery\" or extra == \"gcp-auth\""
+markers = "extra == \"gcp-auth\" or extra == \"bigquery\" or extra == \"gcsfs\""
 files = [
     {file = "pyasn1-0.6.1-py3-none-any.whl", hash = "sha256:0d632f46f2ba09143da3a8afe9e33fb6f92fa2320ab7e886e2d0f7672af84629"},
     {file = "pyasn1-0.6.1.tar.gz", hash = "sha256:6f580d2bdd84365380830acf45550f2511469f673cb4a5ae3857a3170128b034"},
@@ -4416,7 +4387,7 @@ description = "A collection of ASN.1-based protocols modules"
 optional = true
 python-versions = ">=3.8"
 groups = ["main"]
-markers = "extra == \"gcsfs\" or extra == \"bigquery\" or extra == \"gcp-auth\""
+markers = "extra == \"gcp-auth\" or extra == \"bigquery\" or extra == \"gcsfs\""
 files = [
     {file = "pyasn1_modules-0.4.2-py3-none-any.whl", hash = "sha256:29253a9207ce32b64c3ac6600edc75368f98473906e8fd1043bd6b5b1de2c14a"},
     {file = "pyasn1_modules-0.4.2.tar.gz", hash = "sha256:677091de870a80aae844b1ca6134f54652fa2c8c5a52aa396440ac3106e941e6"},
@@ -4911,7 +4882,7 @@ files = [
     {file = "pytz-2025.2-py2.py3-none-any.whl", hash = "sha256:5ddf76296dd8c44c26eb8f4b6f35488f3ccbf6fbbd7adee0b7262d43f0ec2f00"},
     {file = "pytz-2025.2.tar.gz", hash = "sha256:360b9e3dbb49a209c21ad61809c7fb453643e048b38924c765813546746e81c3"},
 ]
-markers = {main = "extra == \"bodo\" or extra == \"pandas\" or extra == \"ray\""}
+markers = {main = "extra == \"pandas\" or extra == \"ray\" or extra == \"bodo\""}
 
 [[package]]
 name = "pywin32"
@@ -5466,7 +5437,7 @@ description = "Pure-Python RSA implementation"
 optional = true
 python-versions = "<4,>=3.6"
 groups = ["main"]
-markers = "extra == \"gcsfs\" or extra == \"bigquery\" or extra == \"gcp-auth\""
+markers = "extra == \"gcp-auth\" or extra == \"bigquery\" or extra == \"gcsfs\""
 files = [
     {file = "rsa-4.9.1-py3-none-any.whl", hash = "sha256:68635866661c6836b8d39430f97a996acbd61bfa49406748ea243539fe239762"},
     {file = "rsa-4.9.1.tar.gz", hash = "sha256:e7bdbfdb5497da4c07dfd35530e1a902659db6ff241e39d9953cad06ebd0ae75"},
@@ -5508,7 +5479,7 @@ files = [
     {file = "s3transfer-0.13.1-py3-none-any.whl", hash = "sha256:a981aa7429be23fe6dfc13e80e4020057cbab622b08c0315288758d67cabc724"},
     {file = "s3transfer-0.13.1.tar.gz", hash = "sha256:c3fdba22ba1bd367922f27ec8032d6a1cf5f10c934fb5d68cf60fd5a23d936cf"},
 ]
-markers = {main = "extra == \"dynamodb\" or extra == \"glue\" or extra == \"rest-sigv4\""}
+markers = {main = "extra == \"glue\" or extra == \"dynamodb\" or extra == \"rest-sigv4\""}
 
 [package.dependencies]
 botocore = ">=1.37.4,<2.0a.0"
@@ -5940,7 +5911,7 @@ description = "Fast, Extensible Progress Meter"
 optional = true
 python-versions = ">=3.7"
 groups = ["main"]
-markers = "extra == \"daft\" or extra == \"hf\""
+markers = "extra == \"hf\" or extra == \"daft\""
 files = [
     {file = "tqdm-4.67.1-py3-none-any.whl", hash = "sha256:26445eca388f82e72884e0d580d5464cd801a3ea01e63e5601bdff9ba6a48de2"},
     {file = "tqdm-4.67.1.tar.gz", hash = "sha256:f8aef9c52c08c13a65f30ea34f4e5aac3fd1a34959879d7e59e63027286627f2"},
@@ -5995,7 +5966,7 @@ files = [
     {file = "tzdata-2025.2-py2.py3-none-any.whl", hash = "sha256:1a403fada01ff9221ca8044d701868fa132215d84beb92242d9acd2147f667a8"},
     {file = "tzdata-2025.2.tar.gz", hash = "sha256:b60a638fcc0daffadf82fe0f57e53d06bdec2f36c4df66280ae79bce6bd6f2b9"},
 ]
-markers = {main = "extra == \"bodo\" or extra == \"pandas\" or extra == \"ray\""}
+markers = {main = "extra == \"pandas\" or extra == \"ray\" or extra == \"bodo\""}
 
 [[package]]
 name = "urllib3"
@@ -6225,7 +6196,7 @@ description = "Yet another URL library"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"s3fs\""
+markers = "extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\""
 files = [
     {file = "yarl-1.20.1-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:6032e6da6abd41e4acda34d75a816012717000fa6839f37124a47fcefc49bec4"},
     {file = "yarl-1.20.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:2c7b34d804b8cf9b214f05015c4fee2ebe7ed05cf581e7192c06555c71f4446a"},
@@ -6501,4 +6472,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9.2, !=3.9.7"
-content-hash = "032fdffa14389dbb4b622f6262d6a604860c94522881d8ffe117dfc4bc837d07"
+content-hash = "53adf86fc7f348d0dedcbc0b7f1889b19b0055e576938a23b6342797571a7ea7"
