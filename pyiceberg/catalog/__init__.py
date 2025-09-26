@@ -482,8 +482,8 @@ class Catalog(ABC):
         """Register a new table using existing metadata.
 
         Args:
-            identifier Union[str, Identifier]: Table identifier for the table
-            metadata_location str: The location to the metadata
+            identifier (Union[str, Identifier]): Table identifier for the table
+            metadata_location (str): The location to the metadata
 
         Returns:
             Table: The newly registered table
@@ -689,7 +689,7 @@ class Catalog(ABC):
         """Extract table name from a table identifier.
 
         Args:
-            identifier (str | Identifier: a table identifier.
+            identifier (str | Identifier): a table identifier.
 
         Returns:
             str: Table name.
