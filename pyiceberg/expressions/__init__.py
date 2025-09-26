@@ -32,6 +32,8 @@ from typing import (
     Union,
 )
 
+from pydantic import Field
+
 from pyiceberg.expressions.literals import (
     AboveMax,
     BelowMin,
@@ -39,7 +41,7 @@ from pyiceberg.expressions.literals import (
     literal,
 )
 from pyiceberg.schema import Accessor, Schema
-from pyiceberg.typedef import L, StructProtocol
+from pyiceberg.typedef import L, StructProtocol, IcebergRootModel
 from pyiceberg.types import DoubleType, FloatType, NestedField
 from pyiceberg.utils.singleton import Singleton
 
@@ -362,9 +364,10 @@ class Not(BooleanExpression):
         return (self.child,)
 
 
-class AlwaysTrue(BooleanExpression, Singleton):
+class AlwaysTrue(IcebergRootModel, BooleanExpression, Singleton):
     """TRUE expression."""
 
+    root: str = Field(default="true")
     def __invert__(self) -> AlwaysFalse:
         """Transform the Expression into its negated version."""
         return AlwaysFalse()
@@ -378,9 +381,10 @@ class AlwaysTrue(BooleanExpression, Singleton):
         return "AlwaysTrue()"
 
 
-class AlwaysFalse(BooleanExpression, Singleton):
+class AlwaysFalse(IcebergRootModel, BooleanExpression, Singleton):
     """FALSE expression."""
 
+    root: str = Field(default="false")
     def __invert__(self) -> AlwaysTrue:
         """Transform the Expression into its negated version."""
         return AlwaysTrue()
