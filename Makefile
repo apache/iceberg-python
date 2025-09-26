@@ -25,7 +25,7 @@ KEEP_COMPOSE ?= 0  # Set KEEP_COMPOSE=1 to keep containers after integration tes
 
 PIP = python -m pip
 
-POETRY_VERSION = 2.1.4
+POETRY_VERSION = 2.2.1
 POETRY = python -m poetry
 
 ifeq ($(COVERAGE),1)
