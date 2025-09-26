@@ -39,9 +39,10 @@ from pyiceberg.expressions.literals import (
     literal,
 )
 from pyiceberg.schema import Accessor, Schema
-from pyiceberg.typedef import L, StructProtocol
+from pyiceberg.typedef import L, StructProtocol, IcebergBaseModel, IcebergRootModel
 from pyiceberg.types import DoubleType, FloatType, NestedField
 from pyiceberg.utils.singleton import Singleton
+from pydantic import model_serializer
 
 
 def _to_unbound_term(term: Union[str, UnboundTerm[Any]]) -> UnboundTerm[Any]:
@@ -362,8 +363,9 @@ class Not(BooleanExpression):
         return (self.child,)
 
 
-class AlwaysTrue(BooleanExpression, Singleton):
+class AlwaysTrue(BooleanExpression, Singleton, IcebergRootModel):
     """TRUE expression."""
+    root: str = "true"
 
     def __invert__(self) -> AlwaysFalse:
         """Transform the Expression into its negated version."""
@@ -378,8 +380,9 @@ class AlwaysTrue(BooleanExpression, Singleton):
         return "AlwaysTrue()"
 
 
-class AlwaysFalse(BooleanExpression, Singleton):
+class AlwaysFalse(BooleanExpression, Singleton, IcebergRootModel):
     """FALSE expression."""
+    root: str = "false"
 
     def __invert__(self) -> AlwaysTrue:
         """Transform the Expression into its negated version."""
