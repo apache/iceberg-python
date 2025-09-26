@@ -3993,7 +3993,7 @@ version = "0.2.1"
 description = "Better `pre-commit`, re-engineered in Rust"
 optional = false
 python-versions = ">=3.8"
-groups = ["main"]
+groups = ["dev"]
 files = [
     {file = "prek-0.2.1-py3-none-linux_armv6l.whl", hash = "sha256:bdd0e71ab6a63a9b81c268539ec249bfe1cd2b50fc39823727b256b0ba67d342"},
     {file = "prek-0.2.1-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:99c1611aea27c75cb76d23f7ca68440478b4372b2184e4c383af06a3ea9e8b8e"},
@@ -6472,4 +6472,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9.2, !=3.9.7"
-content-hash = "53adf86fc7f348d0dedcbc0b7f1889b19b0055e576938a23b6342797571a7ea7"
+content-hash = "28a378b8c429d1c25ca12a40870e6727fe39884c23cb57df19308e8fc3b6389c"
