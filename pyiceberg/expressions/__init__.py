@@ -39,7 +39,7 @@ from pyiceberg.expressions.literals import (
     literal,
 )
 from pyiceberg.schema import Accessor, Schema
-from pyiceberg.typedef import L, StructProtocol, IcebergBaseModel, IcebergRootModel
+from pyiceberg.typedef import L, StructProtocol, IcebergRootModel
 from pyiceberg.types import DoubleType, FloatType, NestedField
 from pyiceberg.utils.singleton import Singleton
 from pydantic import model_serializer
