@@ -42,7 +42,6 @@ from pyiceberg.schema import Accessor, Schema
 from pyiceberg.typedef import L, StructProtocol, IcebergRootModel
 from pyiceberg.types import DoubleType, FloatType, NestedField
 from pyiceberg.utils.singleton import Singleton
-from pydantic import model_serializer
 
 
 def _to_unbound_term(term: Union[str, UnboundTerm[Any]]) -> UnboundTerm[Any]:
