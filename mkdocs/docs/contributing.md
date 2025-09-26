@@ -88,7 +88,7 @@ make lint
 
 `prek` will automatically fix the violations such as import orders, formatting etc. Pylint errors you need to fix yourself.
 
-In contrast to the name suggest, it doesn't run the checks on the commit. If this is something that you like, you can set this up by running `prek install`.
+In addition to manually running `make lint`, you can install the pre-commit hooks in your local repo with `prek install`. By doing this, linting is run automatically every time you make a commit.
 
 You can bump the integrations to the latest version using `prek auto-update`. This will check if there is a newer version of `{black,mypy,isort,...}` and update the yaml.
 
