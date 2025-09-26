@@ -15,12 +15,13 @@
 #  specific language governing permissions and limitations
 #  under the License.
 
+import os
 from pathlib import Path, PosixPath
 from typing import Generator, List
 
 import pytest
 
-from pyiceberg.catalog import Catalog, MetastoreCatalog
+from pyiceberg.catalog import Catalog, MetastoreCatalog, load_catalog
 from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.memory import InMemoryCatalog
 from pyiceberg.catalog.rest import RestCatalog
@@ -75,6 +76,16 @@ def rest_catalog() -> Generator[Catalog, None, None]:
 
 
 @pytest.fixture(scope="function")
+def rest_test_catalog() -> Generator[Catalog, None, None]:
+    if test_catalog_name := os.environ.get("PYICEBERG_TEST_CATALOG"):
+        test_catalog = load_catalog(test_catalog_name)
+        yield test_catalog
+        clean_up(test_catalog)
+    else:
+        pytest.skip("PYICEBERG_TEST_CATALOG environment variables not set")
+
+
+@pytest.fixture(scope="function")
 def hive_catalog() -> Generator[Catalog, None, None]:
     test_catalog = HiveCatalog(
         "test_hive_catalog",
@@ -95,6 +106,7 @@ CATALOGS = [
     pytest.lazy_fixture("sqlite_catalog_file"),
     pytest.lazy_fixture("rest_catalog"),
     pytest.lazy_fixture("hive_catalog"),
+    pytest.lazy_fixture("rest_test_catalog"),
 ]
 
 
