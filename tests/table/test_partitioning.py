@@ -20,7 +20,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-
+from pyiceberg.expressions import AlwaysTrue, AlwaysFalse
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import (
@@ -32,7 +32,7 @@ from pyiceberg.transforms import (
     TruncateTransform,
     YearTransform,
 )
-from pyiceberg.typedef import Record
+from pyiceberg.typedef import Record, IcebergBaseModel
 from pyiceberg.types import (
     BinaryType,
     DateType,
@@ -111,6 +111,36 @@ def test_unpartitioned() -> None:
 
 def test_serialize_unpartitioned_spec() -> None:
     assert UNPARTITIONED_PARTITION_SPEC.model_dump_json() == """{"spec-id":0,"fields":[]}"""
+
+def test_always_true_serializes_to_json_true():
+    expr = AlwaysTrue()
+    assert expr.model_dump_json() == "true"
+
+def test_always_false_serializes_to_json_false():
+    expr = AlwaysFalse()
+    assert expr.model_dump_json() == "false"
+
+def test_serialize_partition_spec_trye() -> None:
+    partitioned = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate"),
+        PartitionField(source_id=2, field_id=1001, transform=BucketTransform(num_buckets=25), name="int_bucket"),
+        spec_id=3,
+    )
+    assert (
+        partitioned.model_dump_json()
+        == """{"spec-id":3,"fields":[{"source-id":1,"field-id":1000,"transform":"truncate[19]","name":"str_truncate"},{"source-id":2,"field-id":1001,"transform":"bucket[25]","name":"int_bucket"}]}"""
+    )
+
+def test_serialize_partition_spec() -> None:
+    partitioned = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate"),
+        PartitionField(source_id=2, field_id=1001, transform=BucketTransform(num_buckets=25), name="int_bucket"),
+        spec_id=3,
+    )
+    assert (
+        partitioned.model_dump_json()
+        == """{"spec-id":3,"fields":[{"source-id":1,"field-id":1000,"transform":"truncate[19]","name":"str_truncate"},{"source-id":2,"field-id":1001,"transform":"bucket[25]","name":"int_bucket"}]}"""
+    )
 
 
 def test_serialize_partition_spec() -> None:
