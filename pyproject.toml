@@ -68,8 +68,8 @@ google-auth = { version = ">=2.4.0", optional = true }
 pandas = { version = ">=1.0.0,<3.0.0", optional = true }
 duckdb = { version = ">=0.5.0,<2.0.0", optional = true }
 ray = [
-  { version = "==2.10.0", python = "<3.9", optional = true },
-  { version = ">=2.10.0,<=2.44.0", python = ">=3.9", optional = true },
+  { version = ">=2.10.0,<=2.44.0", python = ">=3.9,<3.13", optional = true },
+  { version = ">=2.49.2", python = ">=3.13", optional = true },
 ]
 python-snappy = { version = ">=0.6.0,<1.0.0", optional = true }
 thrift = { version = ">=0.13.0,<1.0.0", optional = true }
@@ -356,6 +356,8 @@ filterwarnings = [
   "ignore:datetime.datetime.utcnow\\(\\) is deprecated and scheduled for removal in a future version.",
   # Latest PySpark version (v3.5.3) throws this error, remove in a future release of PySpark (possibly v4.0.0).
   "ignore:is_datetime64tz_dtype is deprecated and will be removed in a future version.",
+  # Unclosed sqlite3 database warnings introduced in Python 3.13 https://docs.python.org/3/library/sqlite3.html#sqlite3.Connection
+  "ignore:unclosed database",
 ]
 
 [tool.black]
