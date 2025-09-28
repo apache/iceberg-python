@@ -895,6 +895,88 @@ class Transaction:
             for data_file in data_files:
                 update_snapshot.append_data_file(data_file)
 
+    def _is_valid_object_path(self, path: str) -> bool:
+        """
+        Simple check to validate if a string is a potentially valid object path.
+        """
+        if not isinstance(path, str) or not path.strip():
+            return False
+
+        from urllib.parse import urlparse
+        parsed = urlparse(path)
+
+        if parsed.scheme:
+            # It's a URL-like path (e.g., s3://, gs://, file://)
+            return True
+        else:
+            return False
+
+    def _does_file_exist(self, path: str) -> bool:
+        """
+        Check if a file exists at the given path using the table's IO.
+        """
+        if not self._is_valid_object_path(path):
+            return False
+        
+        try:
+            with self._table.io.new_input(path).open():
+                return True
+        except Exception:
+            return False
+
+    def get_data_files_from_objects(self, list_of_objects: List[Union[str, pa.Table]]) -> List[DataFile]:
+        """
+        Convert a list of objects (uris or dataframes) to DataFile objects.
+        Args:
+            list_of_objects: List of object paths (strings) or PyArrow tables.
+        Returns:
+            List of DataFile objects.
+        """
+        from pyiceberg.io.pyarrow import _dataframe_to_data_files
+        data_files = []
+        for obj in list_of_objects:
+            if isinstance(obj, str) and self._is_valid_object_path(obj):
+                file_paths = [obj]
+                data_files.extend(
+                    _parquet_files_to_data_files(
+                        table_metadata=self.table_metadata,
+                        file_paths=file_paths,
+                        io=self._table.io,
+                    )
+                )
+            elif isinstance(obj, pa.Table):
+                data_files.extend(
+                    list(
+                        _dataframe_to_data_files(
+                            table_metadata=self.table_metadata,
+                            write_uuid=uuid.uuid4(),
+                            df=obj,
+                            io=self._table.io,
+                        )
+                    )
+                )
+            raise ValueError(f"Unsupported object type: {type(obj)}. Must be a valid path string or PyArrow Table.")
+        return data_files
+
+    def add_data_files(
+        self, data_files: List[DataFile], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+        """Shorthand API for adding DataFile objects to the table transaction.
+        """
+        if not data_files:
+            return  # No files to add
+
+        # Set name mapping if not already set
+        if self.table_metadata.name_mapping() is None:
+            self.set_properties(
+                **{TableProperties.DEFAULT_NAME_MAPPING: self.table_metadata.schema().name_mapping.model_dump_json()}
+            )
+
+        with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
+            for data_file in data_files:
+                update_snapshot.append_data_file(data_file)
+
+
+
     def update_spec(self) -> UpdateSpec:
         """Create a new UpdateSpec to update the partitioning of the table.
 
