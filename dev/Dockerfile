@@ -87,10 +87,6 @@ ENV PATH="/opt/spark/sbin:/opt/spark/bin:${PATH}"
 RUN chmod u+x /opt/spark/sbin/* && \
     chmod u+x /opt/spark/bin/*
 
-RUN pip3 install -q ipython
-
-RUN pip3 install "pyiceberg[s3fs,hive,pyarrow]==${PYICEBERG_VERSION}"
-
 COPY entrypoint.sh .
 
 ENTRYPOINT ["./entrypoint.sh"]
