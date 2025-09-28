@@ -16,7 +16,6 @@
 # under the License.
 
 src = ['pyiceberg','tests']
-extend-exclude = ["dev/provision.py"]
 
 # Exclude a variety of commonly ignored directories.
 exclude = [

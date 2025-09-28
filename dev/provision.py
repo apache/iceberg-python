@@ -14,7 +14,6 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-import math
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import current_date, date_add, expr
@@ -28,7 +27,7 @@ spark = SparkSession.builder.remote("sc://localhost:15002").getOrCreate()
 
 
 catalogs = {
-    'rest': load_catalog(
+    "rest": load_catalog(
         "rest",
         **{
             "type": "rest",
@@ -38,7 +37,7 @@ catalogs = {
             "s3.secret-access-key": "password",
         },
     ),
-    'hive': load_catalog(
+    "hive": load_catalog(
         "hive",
         **{
             "type": "hive",
@@ -111,7 +110,7 @@ for catalog_name, catalog in catalogs.items():
     #   v3: Using deletion vectors
 
     for format_version in [2, 3]:
-        identifier = f'{catalog_name}.default.test_positional_mor_deletes_v{format_version}'
+        identifier = f"{catalog_name}.default.test_positional_mor_deletes_v{format_version}"
         spark.sql(
             f"""
         CREATE OR REPLACE TABLE {identifier} (
@@ -156,7 +155,7 @@ for catalog_name, catalog in catalogs.items():
 
         spark.sql(f"DELETE FROM {identifier} WHERE number = 9")
 
-        identifier = f'{catalog_name}.default.test_positional_mor_double_deletes_v{format_version}'
+        identifier = f"{catalog_name}.default.test_positional_mor_double_deletes_v{format_version}"
 
         spark.sql(
             f"""
