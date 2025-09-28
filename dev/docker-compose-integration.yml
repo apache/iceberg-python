@@ -37,7 +37,7 @@ services:
       - hive:hive
       - minio:minio
     healthcheck:
-      test: ["CMD", "sh", "-c", "ss -tuln | grep :15002 || nc -z localhost 15002"]
+      test: ["CMD", "sh", "-c", "netstat -an | grep 15002 | grep LISTEN"]
       interval: 30s
       timeout: 10s
       retries: 5
