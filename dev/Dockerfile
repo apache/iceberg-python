@@ -92,7 +92,6 @@ RUN pip3 install -q ipython
 RUN pip3 install "pyiceberg[s3fs,hive,pyarrow]==${PYICEBERG_VERSION}"
 
 COPY entrypoint.sh .
-COPY provision.py .
 
 ENTRYPOINT ["./entrypoint.sh"]
 CMD ["notebook"]
