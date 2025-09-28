@@ -13,10 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG IMAGE_SPARK_VERSION=3.5.6
+ARG BASE_IMAGE_SPARK_VERSION=3.5.6
 
-FROM apache/spark:${IMAGE_SPARK_VERSION}
+FROM apache/spark:${BASE_IMAGE_SPARK_VERSION}
 
+# Dependency versions - keep these compatible
 ARG SPARK_VERSION=3.5.6
 ARG SCALA_VERSION=2.12
 ARG ICEBERG_SPARK_RUNTIME_VERSION=3.5_2.12
@@ -25,54 +26,48 @@ ARG HADOOP_VERSION=3.3.4
 ARG AWS_SDK_VERSION=1.12.753
 ARG MAVEN_MIRROR=https://repo.maven.apache.org/maven2
 
-# Install dependencies and download JARs in single layer
 USER root
+WORKDIR ${SPARK_HOME}
+
+# Install curl for JAR downloads
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        wget \
-        curl && \
-    # Create temporary directory for downloads
-    mkdir -p /tmp/jars && \
-    cd /tmp/jars && \
-    # Download JARs with error handling
-    for url in \
-        "${MAVEN_MIRROR}/org/apache/spark/spark-connect_${SCALA_VERSION}/${SPARK_VERSION}/spark-connect_${SCALA_VERSION}-${SPARK_VERSION}.jar" \
-        "${MAVEN_MIRROR}/org/apache/iceberg/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}/${ICEBERG_VERSION}/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar" \
-        "${MAVEN_MIRROR}/org/apache/iceberg/iceberg-aws-bundle/${ICEBERG_VERSION}/iceberg-aws-bundle-${ICEBERG_VERSION}.jar" \
-        "${MAVEN_MIRROR}/org/apache/hadoop/hadoop-aws/${HADOOP_VERSION}/hadoop-aws-${HADOOP_VERSION}.jar" \
-        "${MAVEN_MIRROR}/com/amazonaws/aws-java-sdk-bundle/${AWS_SDK_VERSION}/aws-java-sdk-bundle-${AWS_SDK_VERSION}.jar" \
-    ; do \
-        echo "Downloading: ${url}" && \
-        wget --progress=dot:giga --retry-connrefused --waitretry=1 --timeout=60 "${url}" || exit 1; \
+    apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy configuration (early for better caching)
+COPY --chown=spark:spark spark-defaults.conf ${SPARK_HOME}/conf/
+
+# Create event log directory
+RUN mkdir -p /home/iceberg/spark-events && \
+    chown -R spark:spark /home/iceberg
+
+# Required JAR dependencies
+ENV JARS_TO_DOWNLOAD="\
+    org/apache/spark/spark-connect_${SCALA_VERSION}/${SPARK_VERSION}/spark-connect_${SCALA_VERSION}-${SPARK_VERSION}.jar \
+    org/apache/iceberg/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}/${ICEBERG_VERSION}/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar \
+    org/apache/iceberg/iceberg-aws-bundle/${ICEBERG_VERSION}/iceberg-aws-bundle-${ICEBERG_VERSION}.jar \
+    org/apache/hadoop/hadoop-aws/${HADOOP_VERSION}/hadoop-aws-${HADOOP_VERSION}.jar \
+    com/amazonaws/aws-java-sdk-bundle/${AWS_SDK_VERSION}/aws-java-sdk-bundle-${AWS_SDK_VERSION}.jar"
+
+# Download JARs with retry logic
+RUN set -e && \
+    cd "${SPARK_HOME}/jars" && \
+    for jar_path in ${JARS_TO_DOWNLOAD}; do \
+        jar_name=$(basename "${jar_path}") && \
+        echo "Downloading ${jar_name}..." && \
+        curl -fsSL --retry 3 --retry-delay 5 \
+             -o "${jar_name}" \
+             "${MAVEN_MIRROR}/${jar_path}" && \
+        echo "✓ Downloaded ${jar_name}"; \
     done && \
-    # Move JARs to Spark directory
-    mv *.jar "${SPARK_HOME}/jars/" && \
-    chown spark:spark "${SPARK_HOME}/jars"/*.jar && \
-    # Create Spark events directory
-    mkdir -p "/home/iceberg/spark-events" && \
-    chown spark:spark "/home/iceberg/spark-events" && \
-    # Cleanup
-    cd / && \
-    rm -rf /tmp/jars && \
-    apt-get remove -y wget && \
-    apt-get autoremove -y && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    chown -R spark:spark "${SPARK_HOME}/jars"
 
-# Switch back to spark user
 USER spark
+WORKDIR ${SPARK_HOME}
 
-# Working directory
-WORKDIR "${SPARK_HOME}"
-
-# Copy Spark configuration
-COPY spark-defaults.conf "${SPARK_HOME}/conf/"
-
-# Create healthcheck
+# Health check for Spark Connect server
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:15002/ || exit 1
+    CMD curl -sf http://localhost:15002/ || exit 1
 
-# Expose Spark Connect port (default is 15002)
-EXPOSE 15002
-
-CMD ["/bin/bash", "-c", "${SPARK_HOME}/sbin/start-connect-server.sh && tail -f /dev/null"]
+# Start Spark Connect server
+CMD ["sh", "-c", "SPARK_NO_DAEMONIZE=true ${SPARK_HOME}/sbin/start-connect-server.sh"]
