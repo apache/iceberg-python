@@ -36,6 +36,12 @@ services:
       - rest:rest
       - hive:hive
       - minio:minio
+    healthcheck:
+      test: ["CMD", "sh", "-c", "ss -tuln | grep :15002 || nc -z localhost 15002"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
   rest:
     image: apache/iceberg-rest-fixture
     container_name: pyiceberg-rest

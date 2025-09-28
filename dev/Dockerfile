@@ -65,9 +65,5 @@ RUN set -e && \
 USER spark
 WORKDIR ${SPARK_HOME}
 
-# Health check for Spark Connect server
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -sf http://localhost:15002/ || exit 1
-
 # Start Spark Connect server
 CMD ["sh", "-c", "SPARK_NO_DAEMONIZE=true ${SPARK_HOME}/sbin/start-connect-server.sh"]
