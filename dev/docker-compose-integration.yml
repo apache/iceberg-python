@@ -86,7 +86,7 @@ services:
       "
   hive:
     build: hive/
-    container_name: hive
+    container_name: pyiceberg-hive
     hostname: hive
     networks:
       iceberg_net:

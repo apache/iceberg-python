@@ -13,81 +13,66 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM python:3.12-bullseye
+ARG IMAGE_SPARK_VERSION=3.5.6
 
-RUN apt-get -qq update && \
-    apt-get -qq install -y --no-install-recommends \
-      sudo \
-      curl \
-      vim \
-      unzip \
-      openjdk-11-jdk \
-      build-essential \
-      software-properties-common \
-      ssh && \
-    apt-get -qq clean && \
-    rm -rf /var/lib/apt/lists/*
+FROM apache/spark:${IMAGE_SPARK_VERSION}
 
-# Optional env variables
-ENV SPARK_HOME=${SPARK_HOME:-"/opt/spark"}
-ENV HADOOP_HOME=${HADOOP_HOME:-"/opt/hadoop"}
-ENV PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/lib/py4j-0.10.9.7-src.zip:$PYTHONPATH
+ARG SPARK_VERSION=3.5.6
+ARG SCALA_VERSION=2.12
+ARG ICEBERG_SPARK_RUNTIME_VERSION=3.5_2.12
+ARG ICEBERG_VERSION=1.10.0
+ARG HADOOP_VERSION=3.3.4
+ARG AWS_SDK_VERSION=1.12.753
+ARG MAVEN_MIRROR=https://repo.maven.apache.org/maven2
 
-RUN mkdir -p ${HADOOP_HOME} && mkdir -p ${SPARK_HOME} && mkdir -p /home/iceberg/spark-events
-WORKDIR ${SPARK_HOME}
+# Install dependencies and download JARs in single layer
+USER root
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        wget \
+        curl && \
+    # Create temporary directory for downloads
+    mkdir -p /tmp/jars && \
+    cd /tmp/jars && \
+    # Download JARs with error handling
+    for url in \
+        "${MAVEN_MIRROR}/org/apache/spark/spark-connect_${SCALA_VERSION}/${SPARK_VERSION}/spark-connect_${SCALA_VERSION}-${SPARK_VERSION}.jar" \
+        "${MAVEN_MIRROR}/org/apache/iceberg/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}/${ICEBERG_VERSION}/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar" \
+        "${MAVEN_MIRROR}/org/apache/iceberg/iceberg-aws-bundle/${ICEBERG_VERSION}/iceberg-aws-bundle-${ICEBERG_VERSION}.jar" \
+        "${MAVEN_MIRROR}/org/apache/hadoop/hadoop-aws/${HADOOP_VERSION}/hadoop-aws-${HADOOP_VERSION}.jar" \
+        "${MAVEN_MIRROR}/com/amazonaws/aws-java-sdk-bundle/${AWS_SDK_VERSION}/aws-java-sdk-bundle-${AWS_SDK_VERSION}.jar" \
+    ; do \
+        echo "Downloading: ${url}" && \
+        wget --progress=dot:giga --retry-connrefused --waitretry=1 --timeout=60 "${url}" || exit 1; \
+    done && \
+    # Move JARs to Spark directory
+    mv *.jar "${SPARK_HOME}/jars/" && \
+    chown spark:spark "${SPARK_HOME}/jars"/*.jar && \
+    # Create Spark events directory
+    mkdir -p "/home/iceberg/spark-events" && \
+    chown spark:spark "/home/iceberg/spark-events" && \
+    # Cleanup
+    cd / && \
+    rm -rf /tmp/jars && \
+    apt-get remove -y wget && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-ENV SPARK_VERSION=3.5.6
-ENV SCALA_VERSION=2.12
-ENV ICEBERG_SPARK_RUNTIME_VERSION=3.5_${SCALA_VERSION}
-ENV ICEBERG_VERSION=1.10.0
-ENV PYICEBERG_VERSION=0.10.0
-ENV HADOOP_VERSION=3.3.4
-ENV AWS_SDK_VERSION=1.12.753
+# Switch back to spark user
+USER spark
 
-# Try the primary Apache mirror (downloads.apache.org) first, then fall back to the archive
-RUN set -eux; \
-  FILE=spark-${SPARK_VERSION}-bin-hadoop3.tgz; \
-  URLS="https://downloads.apache.org/spark/spark-${SPARK_VERSION}/${FILE} https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/${FILE}"; \
-  for url in $URLS; do \
-    echo "Attempting download: $url"; \
-    if curl --retry 3 --retry-delay 5 -f -s -C - "$url" -o "$FILE"; then \
-      echo "Downloaded from: $url"; \
-      break; \
-    else \
-      echo "Failed to download from: $url"; \
-    fi; \
-  done; \
-  if [ ! -f "$FILE" ]; then echo "Failed to download Spark from all mirrors" >&2; exit 1; fi; \
-  tar xzf "$FILE" --directory /opt/spark --strip-components 1; \
-  rm -rf "$FILE"
+# Working directory
+WORKDIR "${SPARK_HOME}"
 
-# Download Spark Connect server JAR
-RUN curl --retry 5 -s -L https://repo1.maven.org/maven2/org/apache/spark/spark-connect_${SCALA_VERSION}/${SPARK_VERSION}/spark-connect_${SCALA_VERSION}-${SPARK_VERSION}.jar \
-      -Lo /opt/spark/jars/spark-connect_${SCALA_VERSION}-${SPARK_VERSION}.jar
+# Copy Spark configuration
+COPY spark-defaults.conf "${SPARK_HOME}/conf/"
 
-# Download iceberg spark runtime
-RUN curl --retry 5 -s https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}/${ICEBERG_VERSION}/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar \
-      -Lo /opt/spark/jars/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar
+# Create healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:15002/ || exit 1
 
-# Download AWS bundle
-RUN curl --retry 5 -s https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-aws-bundle/${ICEBERG_VERSION}/iceberg-aws-bundle-${ICEBERG_VERSION}.jar \
-      -Lo /opt/spark/jars/iceberg-aws-bundle-${ICEBERG_VERSION}.jar
+# Expose Spark Connect port (default is 15002)
+EXPOSE 15002
 
-# Download hadoop-aws (required for S3 support)
-RUN curl --retry 5 -s https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/${HADOOP_VERSION}/hadoop-aws-${HADOOP_VERSION}.jar \
-      -Lo /opt/spark/jars/hadoop-aws-${HADOOP_VERSION}.jar
-
-# Download AWS SDK bundle
-RUN curl --retry 5 -s https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/${AWS_SDK_VERSION}/aws-java-sdk-bundle-${AWS_SDK_VERSION}.jar \
-      -Lo /opt/spark/jars/aws-java-sdk-bundle-${AWS_SDK_VERSION}.jar
-
-COPY spark-defaults.conf /opt/spark/conf
-ENV PATH="/opt/spark/sbin:/opt/spark/bin:${PATH}"
-
-RUN chmod u+x /opt/spark/sbin/* && \
-    chmod u+x /opt/spark/bin/*
-
-COPY entrypoint.sh .
-
-ENTRYPOINT ["./entrypoint.sh"]
-CMD ["notebook"]
+CMD ["/bin/bash", "-c", "${SPARK_HOME}/sbin/start-connect-server.sh && tail -f /dev/null"]
