@@ -113,11 +113,11 @@ class S3RequestSigner(abc.ABC):
 class S3V4RestSigner(S3RequestSigner):
     """An S3 request signer that uses an external REST signing service to sign requests."""
 
-    session: requests.Session
+    _session: requests.Session
 
     def __init__(self, properties: Properties) -> None:
         super().__init__(properties)
-        self.session = requests.Session()
+        self._session = requests.Session()
 
     def __call__(self, request: "AWSRequest", **_: Any) -> None:
         signer_url = self.properties.get(S3_SIGNER_URI, self.properties[URI]).rstrip("/")  # type: ignore
@@ -135,7 +135,7 @@ class S3V4RestSigner(S3RequestSigner):
             "headers": {key: [val] for key, val in request.headers.items()},
         }
 
-        response = self.session.post(
+        response = self._session.post(
             f"{signer_url}/{signer_endpoint.strip()}", headers=signer_headers, json=signer_body
         )
         try:
