@@ -19,7 +19,7 @@ from __future__ import annotations
 import concurrent.futures
 import itertools
 import uuid
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from collections import defaultdict
 from concurrent.futures import Future
 from datetime import datetime
@@ -822,7 +822,7 @@ class BranchMergeStrategy(Enum):
     """A special type of merge where the target branch pointer is simply moved forward to point to the source branch's head, without creating a merge commit. This is only possible if there are no new commits on the target branch."""
 
 
-class _BaseBranchMergeStrategy:
+class _BaseBranchMergeStrategy(ABC):
     """Base class for branch merge strategy implementations."""
 
     @abstractmethod
