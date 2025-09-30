@@ -135,9 +135,7 @@ class S3V4RestSigner(S3RequestSigner):
             "headers": {key: [val] for key, val in request.headers.items()},
         }
 
-        response = self._session.post(
-            f"{signer_url}/{signer_endpoint.strip()}", headers=signer_headers, json=signer_body
-        )
+        response = self._session.post(f"{signer_url}/{signer_endpoint.strip()}", headers=signer_headers, json=signer_body)
         try:
             response.raise_for_status()
             response_json = response.json()
