@@ -35,13 +35,7 @@ coverage.xml
 .project
 .settings
 bin/
-
-# Hive/metastore files
-metastore_db/
-
-# Spark/metastore files
-spark-warehouse/
-derby.log
+.vscode/
 
 # Python stuff
 .mypy_cache/

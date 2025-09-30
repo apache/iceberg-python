@@ -503,7 +503,7 @@ def test_add_files_to_partitioned_table_fails_with_lower_and_upper_mismatch(
 
 @pytest.mark.integration
 def test_add_files_snapshot_properties(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
-    identifier = f"default.unpartitioned_table_v{format_version}"
+    identifier = f"default.test_add_files_snapshot_properties_v{format_version}"
     tbl = _create_table(session_catalog, identifier, format_version)
 
     file_paths = [f"s3://warehouse/default/unpartitioned/v{format_version}/test-{i}.parquet" for i in range(5)]
@@ -737,7 +737,7 @@ def test_add_files_with_valid_upcast(
         with pq.ParquetWriter(fos, schema=pyarrow_schema_with_promoted_types) as writer:
             writer.write_table(pyarrow_table_with_promoted_types)
 
-    tbl.add_files(file_paths=[file_path])
+    tbl.add_files(file_paths=[file_path], check_duplicate_files=False)
     # table's long field should cast to long on read
     written_arrow_table = tbl.scan().to_arrow()
     assert written_arrow_table == pyarrow_table_with_promoted_types.cast(
@@ -747,7 +747,7 @@ def test_add_files_with_valid_upcast(
                 pa.field("list", pa.list_(pa.int64()), nullable=False),
                 pa.field("map", pa.map_(pa.string(), pa.int64()), nullable=False),
                 pa.field("double", pa.float64(), nullable=True),
-                pa.field("uuid", pa.binary(length=16), nullable=True),  # can UUID is read as fixed length binary of length 16
+                pa.field("uuid", pa.uuid(), nullable=True),
             )
         )
     )
@@ -926,3 +926,36 @@ def test_add_files_hour_transform(session_catalog: Catalog) -> None:
             writer.write_table(arrow_table)
 
     tbl.add_files(file_paths=[file_path])
+
+
+@pytest.mark.integration
+def test_add_files_to_branch(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    identifier = f"default.test_add_files_branch_v{format_version}"
+    branch = "branch1"
+
+    tbl = _create_table(session_catalog, identifier, format_version)
+
+    file_paths = [f"s3://warehouse/default/addfile/v{format_version}/test-{i}.parquet" for i in range(5)]
+    # write parquet files
+    for file_path in file_paths:
+        fo = tbl.io.new_output(file_path)
+        with fo.create(overwrite=True) as fos:
+            with pq.ParquetWriter(fos, schema=ARROW_SCHEMA) as writer:
+                writer.write_table(ARROW_TABLE)
+
+    # Dummy write to avoid failures on creating branch in empty table
+    tbl.append(ARROW_TABLE)
+    assert tbl.metadata.current_snapshot_id is not None
+    tbl.manage_snapshots().create_branch(snapshot_id=tbl.metadata.current_snapshot_id, branch_name=branch).commit()
+
+    # add the parquet files as data files
+    tbl.add_files(file_paths=file_paths, branch=branch)
+
+    df = spark.table(identifier)
+    assert df.count() == 1, "Expected 1 row in Main table"
+
+    branch_df = spark.table(f"{identifier}.branch_{branch}")
+    assert branch_df.count() == 6, "Expected 5 rows in branch"
+
+    for col in branch_df.columns:
+        assert branch_df.filter(branch_df[col].isNotNull()).count() == 6, "Expected all 6 rows to be non-null"

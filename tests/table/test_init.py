@@ -50,7 +50,7 @@ from pyiceberg.table import (
     _match_deletes_to_data_file,
 )
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
-from pyiceberg.table.refs import SnapshotRef
+from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     MetadataLogEntry,
     Operation,
@@ -64,8 +64,9 @@ from pyiceberg.table.sorting import (
     SortField,
     SortOrder,
 )
-from pyiceberg.table.statistics import BlobMetadata, StatisticsFile
+from pyiceberg.table.statistics import BlobMetadata, PartitionStatisticsFile, StatisticsFile
 from pyiceberg.table.update import (
+    AddPartitionSpecUpdate,
     AddSnapshotUpdate,
     AddSortOrderUpdate,
     AssertCreate,
@@ -76,11 +77,15 @@ from pyiceberg.table.update import (
     AssertLastAssignedPartitionId,
     AssertRefSnapshotId,
     AssertTableUUID,
+    RemovePartitionSpecsUpdate,
+    RemovePartitionStatisticsUpdate,
     RemovePropertiesUpdate,
+    RemoveSchemasUpdate,
     RemoveSnapshotRefUpdate,
     RemoveSnapshotsUpdate,
     RemoveStatisticsUpdate,
     SetDefaultSortOrderUpdate,
+    SetPartitionStatisticsUpdate,
     SetPropertiesUpdate,
     SetSnapshotRefUpdate,
     SetStatisticsUpdate,
@@ -263,8 +268,15 @@ def test_history(table_v2: Table) -> None:
     ]
 
 
-def test_table_scan_select(table_v2: Table) -> None:
-    scan = table_v2.scan()
+@pytest.mark.parametrize(
+    "table_fixture",
+    [
+        pytest.param(pytest.lazy_fixture("table_v2"), id="parquet"),
+        pytest.param(pytest.lazy_fixture("table_v2_orc"), id="orc"),
+    ],
+)
+def test_table_scan_select(table_fixture: Table) -> None:
+    scan = table_fixture.scan()
     assert scan.selected_fields == ("*",)
     assert scan.select("a", "b").selected_fields == ("a", "b")
     assert scan.select("a", "c").select("a").selected_fields == ("a",)
@@ -511,15 +523,15 @@ def test_update_column(table_v1: Table, table_v2: Table) -> None:
         assert new_schema3.find_field("z").required is False, "failed to update existing field required"
 
         # assert the above two updates also works with union_by_name
-        assert (
-            table.update_schema().union_by_name(new_schema)._apply() == new_schema
-        ), "failed to update existing field doc with union_by_name"
-        assert (
-            table.update_schema().union_by_name(new_schema2)._apply() == new_schema2
-        ), "failed to remove existing field doc with union_by_name"
-        assert (
-            table.update_schema().union_by_name(new_schema3)._apply() == new_schema3
-        ), "failed to update existing field required with union_by_name"
+        assert table.update_schema().union_by_name(new_schema)._apply() == new_schema, (
+            "failed to update existing field doc with union_by_name"
+        )
+        assert table.update_schema().union_by_name(new_schema2)._apply() == new_schema2, (
+            "failed to remove existing field doc with union_by_name"
+        )
+        assert table.update_schema().union_by_name(new_schema3)._apply() == new_schema3, (
+            "failed to update existing field required with union_by_name"
+        )
 
 
 def test_add_primitive_type_column(table_v2: Table) -> None:
@@ -1000,28 +1012,45 @@ def test_assert_table_uuid(table_v2: Table) -> None:
 
 def test_assert_ref_snapshot_id(table_v2: Table) -> None:
     base_metadata = table_v2.metadata
-    AssertRefSnapshotId(ref="main", snapshot_id=base_metadata.current_snapshot_id).validate(base_metadata)
+    AssertRefSnapshotId(ref=MAIN_BRANCH, snapshot_id=base_metadata.current_snapshot_id).validate(base_metadata)
 
     with pytest.raises(CommitFailedException, match="Requirement failed: current table metadata is missing"):
-        AssertRefSnapshotId(ref="main", snapshot_id=1).validate(None)
+        AssertRefSnapshotId(ref=MAIN_BRANCH, snapshot_id=1).validate(None)
 
     with pytest.raises(
         CommitFailedException,
-        match="Requirement failed: branch main was created concurrently",
+        match=f"Requirement failed: branch {MAIN_BRANCH} was created concurrently",
     ):
-        AssertRefSnapshotId(ref="main", snapshot_id=None).validate(base_metadata)
+        AssertRefSnapshotId(ref=MAIN_BRANCH, snapshot_id=None).validate(base_metadata)
 
     with pytest.raises(
         CommitFailedException,
-        match="Requirement failed: branch main has changed: expected id 1, found 3055729675574597004",
+        match=f"Requirement failed: branch {MAIN_BRANCH} has changed: expected id 1, found 3055729675574597004",
     ):
-        AssertRefSnapshotId(ref="main", snapshot_id=1).validate(base_metadata)
+        AssertRefSnapshotId(ref=MAIN_BRANCH, snapshot_id=1).validate(base_metadata)
+
+    non_existing_ref = "not_exist_branch_or_tag"
+    assert table_v2.refs().get("not_exist_branch_or_tag") is None
 
     with pytest.raises(
         CommitFailedException,
-        match="Requirement failed: branch or tag not_exist is missing, expected 1",
+        match=f"Requirement failed: branch or tag {non_existing_ref} is missing, expected 1",
     ):
-        AssertRefSnapshotId(ref="not_exist", snapshot_id=1).validate(base_metadata)
+        AssertRefSnapshotId(ref=non_existing_ref, snapshot_id=1).validate(base_metadata)
+
+    # existing Tag in metadata: test
+    ref_tag = table_v2.refs().get("test")
+    assert ref_tag is not None
+    assert ref_tag.snapshot_ref_type == SnapshotRefType.TAG, "TAG test should be present in table to be tested"
+
+    with pytest.raises(
+        CommitFailedException,
+        match="Requirement failed: tag test has changed: expected id 3055729675574597004, found 3051729675574597004",
+    ):
+        AssertRefSnapshotId(ref="test", snapshot_id=3055729675574597004).validate(base_metadata)
+
+    expected_json = '{"type":"assert-ref-snapshot-id","ref":"main","snapshot-id":null}'
+    assert AssertRefSnapshotId(ref="main").model_dump_json() == expected_json
 
 
 def test_assert_last_assigned_field_id(table_v2: Table) -> None:
@@ -1267,6 +1296,67 @@ def test_update_metadata_log_overflow(table_v2: Table) -> None:
     assert len(new_metadata.metadata_log) == 1
 
 
+def test_remove_partition_spec_update(table_v2: Table) -> None:
+    base_metadata = table_v2.metadata
+    new_spec = PartitionSpec(PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="y"), spec_id=1)
+    metadata_with_new_spec = update_table_metadata(base_metadata, (AddPartitionSpecUpdate(spec=new_spec),))
+
+    assert len(metadata_with_new_spec.partition_specs) == 2
+
+    update = RemovePartitionSpecsUpdate(spec_ids=[1])
+    updated_metadata = update_table_metadata(
+        metadata_with_new_spec,
+        (update,),
+    )
+
+    assert len(updated_metadata.partition_specs) == 1
+
+
+def test_remove_partition_spec_update_spec_does_not_exist(table_v2: Table) -> None:
+    update = RemovePartitionSpecsUpdate(
+        spec_ids=[123],
+    )
+    with pytest.raises(ValueError, match="Partition spec with id 123 does not exist"):
+        update_table_metadata(table_v2.metadata, (update,))
+
+
+def test_remove_partition_spec_update_default_spec(table_v2: Table) -> None:
+    update = RemovePartitionSpecsUpdate(
+        spec_ids=[0],
+    )
+    with pytest.raises(ValueError, match="Cannot remove default partition spec: 0"):
+        update_table_metadata(table_v2.metadata, (update,))
+
+
+def test_remove_schemas_update(table_v2: Table) -> None:
+    base_metadata = table_v2.metadata
+    assert len(base_metadata.schemas) == 2
+
+    update = RemoveSchemasUpdate(schema_ids=[0])
+    updated_metadata = update_table_metadata(
+        base_metadata,
+        (update,),
+    )
+
+    assert len(updated_metadata.schemas) == 1
+
+
+def test_remove_schemas_update_schema_does_not_exist(table_v2: Table) -> None:
+    update = RemoveSchemasUpdate(
+        schema_ids=[123],
+    )
+    with pytest.raises(ValueError, match="Schema with schema id 123 does not exist"):
+        update_table_metadata(table_v2.metadata, (update,))
+
+
+def test_remove_schemas_update_current_schema(table_v2: Table) -> None:
+    update = RemoveSchemasUpdate(
+        schema_ids=[1],
+    )
+    with pytest.raises(ValueError, match="Cannot remove current schema with id 1"):
+        update_table_metadata(table_v2.metadata, (update,))
+
+
 def test_set_statistics_update(table_v2_with_statistics: Table) -> None:
     snapshot_id = table_v2_with_statistics.metadata.current_snapshot_id
 
@@ -1344,4 +1434,80 @@ def test_remove_statistics_update(table_v2_with_statistics: Table) -> None:
         update_table_metadata(
             table_v2_with_statistics.metadata,
             (RemoveStatisticsUpdate(snapshot_id=123456789),),
+        )
+
+
+def test_set_partition_statistics_update(table_v2_with_statistics: Table) -> None:
+    snapshot_id = table_v2_with_statistics.metadata.current_snapshot_id
+
+    partition_statistics_file = PartitionStatisticsFile(
+        snapshot_id=snapshot_id,
+        statistics_path="s3://bucket/warehouse/stats.puffin",
+        file_size_in_bytes=124,
+    )
+
+    update = SetPartitionStatisticsUpdate(
+        partition_statistics=partition_statistics_file,
+    )
+
+    new_metadata = update_table_metadata(
+        table_v2_with_statistics.metadata,
+        (update,),
+    )
+
+    expected = """
+    {
+      "snapshot-id": 3055729675574597004,
+      "statistics-path": "s3://bucket/warehouse/stats.puffin",
+      "file-size-in-bytes": 124
+    }"""
+
+    assert len(new_metadata.partition_statistics) == 1
+
+    updated_statistics = [stat for stat in new_metadata.partition_statistics if stat.snapshot_id == snapshot_id]
+
+    assert len(updated_statistics) == 1
+    assert json.loads(updated_statistics[0].model_dump_json()) == json.loads(expected)
+
+
+def test_remove_partition_statistics_update(table_v2_with_statistics: Table) -> None:
+    # Add partition statistics file.
+    snapshot_id = table_v2_with_statistics.metadata.current_snapshot_id
+
+    partition_statistics_file = PartitionStatisticsFile(
+        snapshot_id=snapshot_id,
+        statistics_path="s3://bucket/warehouse/stats.puffin",
+        file_size_in_bytes=124,
+    )
+
+    update = SetPartitionStatisticsUpdate(
+        partition_statistics=partition_statistics_file,
+    )
+
+    new_metadata = update_table_metadata(
+        table_v2_with_statistics.metadata,
+        (update,),
+    )
+    assert len(new_metadata.partition_statistics) == 1
+
+    # Remove the same partition statistics file.
+    remove_update = RemovePartitionStatisticsUpdate(snapshot_id=snapshot_id)
+
+    remove_metadata = update_table_metadata(
+        new_metadata,
+        (remove_update,),
+    )
+
+    assert len(remove_metadata.partition_statistics) == 0
+
+
+def test_remove_partition_statistics_update_with_invalid_snapshot_id(table_v2_with_statistics: Table) -> None:
+    # Remove the same partition statistics file.
+    with pytest.raises(
+        ValueError,
+        match="Partition Statistics with snapshot id 123456789 does not exist",
+    ):
+        update_table_metadata(
+            table_v2_with_statistics.metadata,
+            (RemovePartitionStatisticsUpdate(snapshot_id=123456789),),
         )

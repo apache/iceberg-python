@@ -47,11 +47,18 @@ from typing import (
 import boto3
 import pytest
 from moto import mock_aws
+from pydantic_core import to_json
 
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.expressions import BoundReference
 from pyiceberg.io import (
+    ADLS_ACCOUNT_KEY,
+    ADLS_ACCOUNT_NAME,
+    ADLS_BLOB_STORAGE_AUTHORITY,
+    ADLS_BLOB_STORAGE_SCHEME,
+    ADLS_DFS_STORAGE_AUTHORITY,
+    ADLS_DFS_STORAGE_SCHEME,
     GCS_PROJECT_ID,
     GCS_SERVICE_HOST,
     GCS_TOKEN,
@@ -61,10 +68,12 @@ from pyiceberg.io import (
 )
 from pyiceberg.io.fsspec import FsspecFileIO
 from pyiceberg.manifest import DataFile, FileFormat
+from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
 from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2
+from pyiceberg.transforms import DayTransform, IdentityTransform
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -346,6 +355,11 @@ def table_schema_with_all_types() -> Schema:
         schema_id=1,
         identifier_field_ids=[2],
     )
+
+
+@pytest.fixture(params=["abfs", "abfss", "wasb", "wasbs"])
+def adls_scheme(request: pytest.FixtureRequest) -> str:
+    return request.param
 
 
 @pytest.fixture(scope="session")
@@ -1164,7 +1178,7 @@ manifest_entry_records = [
         "data_file": {
             "file_path": "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet",
             "file_format": "PARQUET",
-            "partition": {"VendorID": 1, "tpep_pickup_datetime": 1925},
+            "partition": {"VendorID": 1, "tpep_pickup_day": 1925},
             "record_count": 19513,
             "file_size_in_bytes": 388872,
             "block_size_in_bytes": 67108864,
@@ -1244,8 +1258,8 @@ manifest_entry_records = [
                 {"key": 15, "value": 0},
             ],
             "lower_bounds": [
-                {"key": 2, "value": b"2020-04-01 00:00"},
-                {"key": 3, "value": b"2020-04-01 00:12"},
+                {"key": 2, "value": b"\x01\x00\x00\x00\x00\x00\x00\x00"},
+                {"key": 3, "value": b"\x01\x00\x00\x00\x00\x00\x00\x00"},
                 {"key": 7, "value": b"\x03\x00\x00\x00"},
                 {"key": 8, "value": b"\x01\x00\x00\x00"},
                 {"key": 10, "value": b"\xf6(\\\x8f\xc2\x05S\xc0"},
@@ -1259,8 +1273,8 @@ manifest_entry_records = [
                 {"key": 19, "value": b"\x00\x00\x00\x00\x00\x00\x04\xc0"},
             ],
             "upper_bounds": [
-                {"key": 2, "value": b"2020-04-30 23:5:"},
-                {"key": 3, "value": b"2020-05-01 00:41"},
+                {"key": 2, "value": b"\x06\x00\x00\x00\x00\x00\x00\x00"},
+                {"key": 3, "value": b"\x06\x00\x00\x00\x00\x00\x00\x00"},
                 {"key": 7, "value": b"\t\x01\x00\x00"},
                 {"key": 8, "value": b"\t\x01\x00\x00"},
                 {"key": 10, "value": b"\xcd\xcc\xcc\xcc\xcc,_@"},
@@ -1365,8 +1379,8 @@ manifest_entry_records = [
             ],
             "lower_bounds": [
                 {"key": 1, "value": b"\x01\x00\x00\x00"},
-                {"key": 2, "value": b"2020-04-01 00:00"},
-                {"key": 3, "value": b"2020-04-01 00:03"},
+                {"key": 2, "value": b"\x01\x00\x00\x00\x00\x00\x00\x00"},
+                {"key": 3, "value": b"\x01\x00\x00\x00\x00\x00\x00\x00"},
                 {"key": 4, "value": b"\x00\x00\x00\x00"},
                 {"key": 5, "value": b"\x01\x00\x00\x00"},
                 {"key": 6, "value": b"N"},
@@ -1385,8 +1399,8 @@ manifest_entry_records = [
             ],
             "upper_bounds": [
                 {"key": 1, "value": b"\x01\x00\x00\x00"},
-                {"key": 2, "value": b"2020-04-30 23:5:"},
-                {"key": 3, "value": b"2020-05-01 00:1:"},
+                {"key": 2, "value": b"\x06\x00\x00\x00\x00\x00\x00\x00"},
+                {"key": 3, "value": b"\x06\x00\x00\x00\x00\x00\x00\x00"},
                 {"key": 4, "value": b"\x06\x00\x00\x00"},
                 {"key": 5, "value": b"c\x00\x00\x00"},
                 {"key": 6, "value": b"Y"},
@@ -1663,7 +1677,7 @@ def avro_schema_manifest_entry() -> Dict[str, Any]:
                                     {
                                         "field-id": 1001,
                                         "default": None,
-                                        "name": "tpep_pickup_datetime",
+                                        "name": "tpep_pickup_day",
                                         "type": ["null", {"type": "int", "logicalType": "date"}],
                                     },
                                 ],
@@ -1847,7 +1861,24 @@ def simple_map() -> MapType:
 
 
 @pytest.fixture(scope="session")
-def generated_manifest_entry_file(avro_schema_manifest_entry: Dict[str, Any]) -> Generator[str, None, None]:
+def test_schema() -> Schema:
+    return Schema(
+        NestedField(1, "VendorID", IntegerType(), False), NestedField(2, "tpep_pickup_datetime", TimestampType(), False)
+    )
+
+
+@pytest.fixture(scope="session")
+def test_partition_spec() -> Schema:
+    return PartitionSpec(
+        PartitionField(1, 1000, IdentityTransform(), "VendorID"),
+        PartitionField(2, 1001, DayTransform(), "tpep_pickup_day"),
+    )
+
+
+@pytest.fixture(scope="session")
+def generated_manifest_entry_file(
+    avro_schema_manifest_entry: Dict[str, Any], test_schema: Schema, test_partition_spec: PartitionSpec
+) -> Generator[str, None, None]:
     from fastavro import parse_schema, writer
 
     parsed_schema = parse_schema(avro_schema_manifest_entry)
@@ -1855,7 +1886,15 @@ def generated_manifest_entry_file(avro_schema_manifest_entry: Dict[str, Any]) ->
     with TemporaryDirectory() as tmpdir:
         tmp_avro_file = tmpdir + "/manifest.avro"
         with open(tmp_avro_file, "wb") as out:
-            writer(out, parsed_schema, manifest_entry_records)
+            writer(
+                out,
+                parsed_schema,
+                manifest_entry_records,
+                metadata={
+                    "schema": test_schema.model_dump_json(),
+                    "partition-spec": to_json(test_partition_spec.fields).decode("utf-8"),
+                },
+            )
         yield tmp_avro_file
 
 
@@ -1930,7 +1969,7 @@ def iceberg_manifest_entry_schema() -> Schema:
                         ),
                         NestedField(
                             field_id=1001,
-                            name="tpep_pickup_datetime",
+                            name="tpep_pickup_day",
                             field_type=DateType(),
                             required=False,
                         ),
@@ -2089,6 +2128,26 @@ def fsspec_fileio_gcs(request: pytest.FixtureRequest) -> FsspecFileIO:
 
 
 @pytest.fixture
+def adls_fsspec_fileio(request: pytest.FixtureRequest) -> Generator[FsspecFileIO, None, None]:
+    from azure.storage.blob import BlobServiceClient
+
+    azurite_url = request.config.getoption("--adls.endpoint")
+    azurite_account_name = request.config.getoption("--adls.account-name")
+    azurite_account_key = request.config.getoption("--adls.account-key")
+    azurite_connection_string = f"DefaultEndpointsProtocol=http;AccountName={azurite_account_name};AccountKey={azurite_account_key};BlobEndpoint={azurite_url}/{azurite_account_name};"
+    properties = {
+        "adls.connection-string": azurite_connection_string,
+        "adls.account-name": azurite_account_name,
+    }
+
+    bbs = BlobServiceClient.from_connection_string(conn_str=azurite_connection_string)
+    bbs.create_container("tests")
+    yield fsspec.FsspecFileIO(properties=properties)
+    bbs.delete_container("tests")
+    bbs.close()
+
+
+@pytest.fixture
 def pyarrow_fileio_gcs(request: pytest.FixtureRequest) -> "PyArrowFileIO":
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
@@ -2099,6 +2158,34 @@ def pyarrow_fileio_gcs(request: pytest.FixtureRequest) -> "PyArrowFileIO":
         GCS_TOKEN_EXPIRES_AT_MS: datetime_to_millis(datetime.now()) + 60 * 1000,
     }
     return PyArrowFileIO(properties=properties)
+
+
+@pytest.fixture
+def pyarrow_fileio_adls(request: pytest.FixtureRequest) -> Generator[Any, None, None]:
+    from azure.storage.blob import BlobServiceClient
+
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
+    azurite_url = request.config.getoption("--adls.endpoint")
+    azurite_scheme, azurite_authority = azurite_url.split("://", 1)
+
+    azurite_account_name = request.config.getoption("--adls.account-name")
+    azurite_account_key = request.config.getoption("--adls.account-key")
+    azurite_connection_string = f"DefaultEndpointsProtocol=http;AccountName={azurite_account_name};AccountKey={azurite_account_key};BlobEndpoint={azurite_url}/{azurite_account_name};"
+    properties = {
+        ADLS_ACCOUNT_NAME: azurite_account_name,
+        ADLS_ACCOUNT_KEY: azurite_account_key,
+        ADLS_BLOB_STORAGE_AUTHORITY: azurite_authority,
+        ADLS_DFS_STORAGE_AUTHORITY: azurite_authority,
+        ADLS_BLOB_STORAGE_SCHEME: azurite_scheme,
+        ADLS_DFS_STORAGE_SCHEME: azurite_scheme,
+    }
+
+    bbs = BlobServiceClient.from_connection_string(conn_str=azurite_connection_string)
+    bbs.create_container("warehouse")
+    yield PyArrowFileIO(properties=properties)
+    bbs.delete_container("warehouse")
+    bbs.close()
 
 
 def aws_credentials() -> None:
@@ -2162,26 +2249,6 @@ def fixture_dynamodb(_aws_credentials: None) -> Generator[boto3.client, None, No
         yield boto3.client("dynamodb", region_name="us-east-1")
 
 
-@pytest.fixture
-def adls_fsspec_fileio(request: pytest.FixtureRequest) -> Generator[FsspecFileIO, None, None]:
-    from azure.storage.blob import BlobServiceClient
-
-    azurite_url = request.config.getoption("--adls.endpoint")
-    azurite_account_name = request.config.getoption("--adls.account-name")
-    azurite_account_key = request.config.getoption("--adls.account-key")
-    azurite_connection_string = f"DefaultEndpointsProtocol=http;AccountName={azurite_account_name};AccountKey={azurite_account_key};BlobEndpoint={azurite_url}/{azurite_account_name};"
-    properties = {
-        "adls.connection-string": azurite_connection_string,
-        "adls.account-name": azurite_account_name,
-    }
-
-    bbs = BlobServiceClient.from_connection_string(conn_str=azurite_connection_string)
-    bbs.create_container("tests")
-    yield fsspec.FsspecFileIO(properties=properties)
-    bbs.delete_container("tests")
-    bbs.close()
-
-
 @pytest.fixture(scope="session")
 def empty_home_dir_path(tmp_path_factory: pytest.TempPathFactory) -> str:
     home_path = str(tmp_path_factory.mktemp("home"))
@@ -2212,6 +2279,13 @@ def database_name() -> str:
 
 
 @pytest.fixture()
+def gcp_dataset_name() -> str:
+    prefix = "my_iceberg_database_"
+    random_tag = "".join(choice(string.ascii_letters) for _ in range(RANDOM_LENGTH))
+    return (prefix + random_tag).lower()
+
+
+@pytest.fixture()
 def database_list(database_name: str) -> List[str]:
     return [f"{database_name}_{idx}" for idx in range(NUM_TABLES)]
 
@@ -2232,6 +2306,13 @@ def hierarchical_namespace_list(hierarchical_namespace_name: str) -> List[str]:
 BUCKET_NAME = "test_bucket"
 TABLE_METADATA_LOCATION_REGEX = re.compile(
     r"""s3://test_bucket/my_iceberg_database-[a-z]{20}.db/
+    my_iceberg_table-[a-z]{20}/metadata/
+    [0-9]{5}-[a-f0-9]{8}-?[a-f0-9]{4}-?4[a-f0-9]{3}-?[89ab][a-f0-9]{3}-?[a-f0-9]{12}.metadata.json""",
+    re.X,
+)
+
+BQ_TABLE_METADATA_LOCATION_REGEX = re.compile(
+    r"""gs://alexstephen-test-bq-bucket/my_iceberg_database_[a-z]{20}.db/
     my_iceberg_table-[a-z]{20}/metadata/
     [0-9]{5}-[a-f0-9]{8}-?[a-f0-9]{4}-?4[a-f0-9]{3}-?[89ab][a-f0-9]{3}-?[a-f0-9]{12}.metadata.json""",
     re.X,
@@ -2258,6 +2339,13 @@ def get_bucket_name() -> str:
     return bucket_name
 
 
+def get_gcs_bucket_name() -> str:
+    bucket_name = os.getenv("GCS_TEST_BUCKET")
+    if bucket_name is None:
+        raise ValueError("Please specify a bucket to run the test by setting environment variable GCS_TEST_BUCKET")
+    return bucket_name
+
+
 def get_glue_endpoint() -> Optional[str]:
     """Set the optional environment variable AWS_TEST_GLUE_ENDPOINT for a glue endpoint to test."""
     return os.getenv("AWS_TEST_GLUE_ENDPOINT")
@@ -2265,6 +2353,16 @@ def get_glue_endpoint() -> Optional[str]:
 
 def get_s3_path(bucket_name: str, database_name: Optional[str] = None, table_name: Optional[str] = None) -> str:
     result_path = f"s3://{bucket_name}"
+    if database_name is not None:
+        result_path += f"/{database_name}.db"
+
+    if table_name is not None:
+        result_path += f"/{table_name}"
+    return result_path
+
+
+def get_gcs_path(bucket_name: str, database_name: Optional[str] = None, table_name: Optional[str] = None) -> str:
+    result_path = f"gcs://{bucket_name}"
     if database_name is not None:
         result_path += f"/{database_name}.db"
 
@@ -2285,7 +2383,7 @@ def clean_up(test_catalog: Catalog) -> None:
         database_name = database_tuple[0]
         if "my_iceberg_database-" in database_name:
             for identifier in test_catalog.list_tables(database_name):
-                test_catalog.purge_table(identifier)
+                test_catalog.drop_table(identifier)
             test_catalog.drop_namespace(database_name)
 
 
@@ -2308,8 +2406,36 @@ def data_file(table_schema_simple: Schema, tmp_path: str) -> str:
 
 @pytest.fixture
 def example_task(data_file: str) -> FileScanTask:
+    datafile = DataFile.from_args(file_path=data_file, file_format=FileFormat.PARQUET, file_size_in_bytes=1925)
+    datafile.spec_id = 0
     return FileScanTask(
-        data_file=DataFile.from_args(file_path=data_file, file_format=FileFormat.PARQUET, file_size_in_bytes=1925),
+        data_file=datafile,
+    )
+
+
+@pytest.fixture
+def data_file_orc(table_schema_simple: Schema, tmp_path: str) -> str:
+    import pyarrow as pa
+    import pyarrow.orc as orc
+
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+    table = pa.table(
+        {"foo": ["a", "b", "c"], "bar": [1, 2, 3], "baz": [True, False, None]},
+        schema=schema_to_pyarrow(table_schema_simple),
+    )
+
+    file_path = f"{tmp_path}/0000-data.orc"
+    orc.write_table(table=table, where=file_path)
+    return file_path
+
+
+@pytest.fixture
+def example_task_orc(data_file_orc: str) -> FileScanTask:
+    datafile = DataFile.from_args(file_path=data_file_orc, file_format=FileFormat.ORC, file_size_in_bytes=1925)
+    datafile.spec_id = 0
+    return FileScanTask(
+        data_file=datafile,
     )
 
 
@@ -2335,6 +2461,24 @@ def table_v2(example_table_metadata_v2: Dict[str, Any]) -> Table:
     table_metadata = TableMetadataV2(**example_table_metadata_v2)
     return Table(
         identifier=("database", "table"),
+        metadata=table_metadata,
+        metadata_location=f"{table_metadata.location}/uuid.metadata.json",
+        io=load_file_io(),
+        catalog=NoopCatalog("NoopCatalog"),
+    )
+
+
+@pytest.fixture
+def table_v2_orc(example_table_metadata_v2: Dict[str, Any]) -> Table:
+    import copy
+
+    metadata_dict = copy.deepcopy(example_table_metadata_v2)
+    if not metadata_dict["properties"]:
+        metadata_dict["properties"] = {}
+    metadata_dict["properties"]["write.format.default"] = "ORC"
+    table_metadata = TableMetadataV2(**metadata_dict)
+    return Table(
+        identifier=("database", "table_orc"),
         metadata=table_metadata,
         metadata_location=f"{table_metadata.location}/uuid.metadata.json",
         io=load_file_io(),
@@ -2417,7 +2561,7 @@ def session_catalog_hive() -> Catalog:
         "local",
         **{
             "type": "hive",
-            "uri": "http://localhost:9083",
+            "uri": "thrift://localhost:9083",
             "s3.endpoint": "http://localhost:9000",
             "s3.access-key-id": "admin",
             "s3.secret-access-key": "password",
@@ -2427,48 +2571,10 @@ def session_catalog_hive() -> Catalog:
 
 @pytest.fixture(scope="session")
 def spark() -> "SparkSession":
-    import importlib.metadata
-
     from pyspark.sql import SparkSession
 
-    # Remember to also update `dev/Dockerfile`
-    spark_version = ".".join(importlib.metadata.version("pyspark").split(".")[:2])
-    scala_version = "2.12"
-    iceberg_version = "1.9.0"
-
-    os.environ["PYSPARK_SUBMIT_ARGS"] = (
-        f"--packages org.apache.iceberg:iceberg-spark-runtime-{spark_version}_{scala_version}:{iceberg_version},"
-        f"org.apache.iceberg:iceberg-aws-bundle:{iceberg_version} pyspark-shell"
-    )
-    os.environ["AWS_REGION"] = "us-east-1"
-    os.environ["AWS_ACCESS_KEY_ID"] = "admin"
-    os.environ["AWS_SECRET_ACCESS_KEY"] = "password"
-
-    spark = (
-        SparkSession.builder.appName("PyIceberg integration test")
-        .config("spark.sql.session.timeZone", "UTC")
-        .config("spark.sql.shuffle.partitions", "1")
-        .config("spark.default.parallelism", "1")
-        .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
-        .config("spark.sql.catalog.integration", "org.apache.iceberg.spark.SparkCatalog")
-        .config("spark.sql.catalog.integration.catalog-impl", "org.apache.iceberg.rest.RESTCatalog")
-        .config("spark.sql.catalog.integration.cache-enabled", "false")
-        .config("spark.sql.catalog.integration.uri", "http://localhost:8181")
-        .config("spark.sql.catalog.integration.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
-        .config("spark.sql.catalog.integration.warehouse", "s3://warehouse/wh/")
-        .config("spark.sql.catalog.integration.s3.endpoint", "http://localhost:9000")
-        .config("spark.sql.catalog.integration.s3.path-style-access", "true")
-        .config("spark.sql.defaultCatalog", "integration")
-        .config("spark.sql.catalog.hive", "org.apache.iceberg.spark.SparkCatalog")
-        .config("spark.sql.catalog.hive.type", "hive")
-        .config("spark.sql.catalog.hive.uri", "http://localhost:9083")
-        .config("spark.sql.catalog.hive.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
-        .config("spark.sql.catalog.hive.warehouse", "s3://warehouse/hive/")
-        .config("spark.sql.catalog.hive.s3.endpoint", "http://localhost:9000")
-        .config("spark.sql.catalog.hive.s3.path-style-access", "true")
-        .config("spark.sql.execution.arrow.pyspark.enabled", "true")
-        .getOrCreate()
-    )
+    # Create SparkSession against the remote Spark Connect server
+    spark = SparkSession.builder.remote("sc://localhost:15002").getOrCreate()
 
     return spark
 
@@ -2787,7 +2893,7 @@ def pyarrow_schema_with_promoted_types() -> "pa.Schema":
             pa.field("list", pa.list_(pa.int32()), nullable=False),  # can support upcasting integer to long
             pa.field("map", pa.map_(pa.string(), pa.int32()), nullable=False),  # can support upcasting integer to long
             pa.field("double", pa.float32(), nullable=True),  # can support upcasting float to double
-            pa.field("uuid", pa.binary(length=16), nullable=True),  # can support upcasting float to double
+            pa.field("uuid", pa.binary(length=16), nullable=True),  # can support upcasting fixed to uuid
         )
     )
 
@@ -2803,7 +2909,10 @@ def pyarrow_table_with_promoted_types(pyarrow_schema_with_promoted_types: "pa.Sc
             "list": [[1, 1], [2, 2]],
             "map": [{"a": 1}, {"b": 2}],
             "double": [1.1, 9.2],
-            "uuid": [b"qZx\xefNS@\x89\x9b\xf9:\xd0\xee\x9b\xf5E", b"\x97]\x87T^JDJ\x96\x97\xf4v\xe4\x03\x0c\xde"],
+            "uuid": [
+                uuid.UUID("00000000-0000-0000-0000-000000000000").bytes,
+                uuid.UUID("11111111-1111-1111-1111-111111111111").bytes,
+            ],
         },
         schema=pyarrow_schema_with_promoted_types,
     )

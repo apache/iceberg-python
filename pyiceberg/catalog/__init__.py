@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import (
     TYPE_CHECKING,
+    Any,
     Callable,
     Dict,
     List,
@@ -70,6 +71,7 @@ from pyiceberg.typedef import (
     Identifier,
     Properties,
     RecursiveDict,
+    TableVersion,
 )
 from pyiceberg.utils.config import Config, merge_config
 from pyiceberg.utils.properties import property_as_bool
@@ -117,6 +119,7 @@ class CatalogType(Enum):
     DYNAMODB = "dynamodb"
     SQL = "sql"
     IN_MEMORY = "in-memory"
+    BIGQUERY = "bigquery"
 
 
 def load_rest(name: str, conf: Properties) -> Catalog:
@@ -172,6 +175,15 @@ def load_in_memory(name: str, conf: Properties) -> Catalog:
         raise NotInstalledError("SQLAlchemy support not installed: pip install 'pyiceberg[sql-sqlite]'") from exc
 
 
+def load_bigquery(name: str, conf: Properties) -> Catalog:
+    try:
+        from pyiceberg.catalog.bigquery_metastore import BigQueryMetastoreCatalog
+
+        return BigQueryMetastoreCatalog(name, **conf)
+    except ImportError as exc:
+        raise NotInstalledError("BigQuery support not installed: pip install 'pyiceberg[bigquery]'") from exc
+
+
 AVAILABLE_CATALOGS: dict[CatalogType, Callable[[str, Properties], Catalog]] = {
     CatalogType.REST: load_rest,
     CatalogType.HIVE: load_hive,
@@ -179,6 +191,7 @@ AVAILABLE_CATALOGS: dict[CatalogType, Callable[[str, Properties], Catalog]] = {
     CatalogType.DYNAMODB: load_dynamodb,
     CatalogType.SQL: load_sql,
     CatalogType.IN_MEMORY: load_in_memory,
+    CatalogType.BIGQUERY: load_bigquery,
 }
 
 
@@ -195,7 +208,7 @@ def infer_catalog_type(name: str, catalog_properties: RecursiveDict) -> Optional
     Raises:
         ValueError: Raises a ValueError in case properties are missing, or the wrong type.
     """
-    if uri := catalog_properties.get("uri"):
+    if uri := catalog_properties.get(URI):
         if isinstance(uri, str):
             if uri.startswith("http"):
                 return CatalogType.REST
@@ -260,6 +273,10 @@ def load_catalog(name: Optional[str] = None, **properties: Optional[str]) -> Cat
         return AVAILABLE_CATALOGS[catalog_type](name, cast(Dict[str, str], conf))
 
     raise ValueError(f"Could not initialize catalog with the following properties: {properties}")
+
+
+def list_catalogs() -> List[str]:
+    return _ENV_CONFIG.get_known_catalogs()
 
 
 def delete_files(io: FileIO, files_to_delete: Set[str], file_type: str) -> None:
@@ -465,8 +482,8 @@ class Catalog(ABC):
         """Register a new table using existing metadata.
 
         Args:
-            identifier Union[str, Identifier]: Table identifier for the table
-            metadata_location str: The location to the metadata
+            identifier (Union[str, Identifier]): Table identifier for the table
+            metadata_location (str): The location to the metadata
 
         Returns:
             Table: The newly registered table
@@ -672,7 +689,7 @@ class Catalog(ABC):
         """Extract table name from a table identifier.
 
         Args:
-            identifier (str | Identifier: a table identifier.
+            identifier (str | Identifier): a table identifier.
 
         Returns:
             str: Table name.
@@ -739,7 +756,9 @@ class Catalog(ABC):
         return load_file_io({**self.properties, **properties}, location)
 
     @staticmethod
-    def _convert_schema_if_needed(schema: Union[Schema, "pa.Schema"]) -> Schema:
+    def _convert_schema_if_needed(
+        schema: Union[Schema, "pa.Schema"], format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION
+    ) -> Schema:
         if isinstance(schema, Schema):
             return schema
         try:
@@ -750,7 +769,10 @@ class Catalog(ABC):
             downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
             if isinstance(schema, pa.Schema):
                 schema: Schema = visit_pyarrow(  # type: ignore
-                    schema, _ConvertToIcebergWithoutIDs(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
+                    schema,
+                    _ConvertToIcebergWithoutIDs(
+                        downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version
+                    ),
                 )
                 return schema
         except ModuleNotFoundError:
@@ -771,6 +793,33 @@ class Catalog(ABC):
             current_metadata_files: set[str] = {log.metadata_file for log in metadata.metadata_log}
             removed_previous_metadata_files.difference_update(current_metadata_files)
             delete_files(io, removed_previous_metadata_files, METADATA)
+
+    def close(self) -> None:  # noqa: B027
+        """Close the catalog and release any resources.
+
+        This method should be called when the catalog is no longer needed to ensure
+        proper cleanup of resources like database connections, file handles, etc.
+
+        Default implementation does nothing. Override in subclasses that need cleanup.
+        """
+
+    def __enter__(self) -> "Catalog":
+        """Enter the context manager.
+
+        Returns:
+            Catalog: The catalog instance.
+        """
+        return self
+
+    def __exit__(self, exc_type: Optional[type], exc_val: Optional[BaseException], exc_tb: Optional[Any]) -> None:
+        """Exit the context manager and close the catalog.
+
+        Args:
+            exc_type: Exception type if an exception occurred.
+            exc_val: Exception value if an exception occurred.
+            exc_tb: Exception traceback if an exception occurred.
+        """
+        self.close()
 
     def __repr__(self) -> str:
         """Return the string representation of the Catalog class."""
@@ -843,7 +892,10 @@ class MetastoreCatalog(Catalog, ABC):
         Returns:
             StagedTable: the created staged table instance.
         """
-        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
+        schema: Schema = self._convert_schema_if_needed(  # type: ignore
+            schema,
+            int(properties.get(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION)),  # type: ignore
+        )
 
         database_name, table_name = self.identifier_to_database_and_table(identifier)
 
@@ -923,6 +975,20 @@ class MetastoreCatalog(Catalog, ABC):
         return location.rstrip("/")
 
     def _get_default_warehouse_location(self, database_name: str, table_name: str) -> str:
+        """Return the default warehouse location using the convention of `warehousePath/databaseName/tableName`."""
+        database_properties = self.load_namespace_properties(database_name)
+        if database_location := database_properties.get(LOCATION):
+            database_location = database_location.rstrip("/")
+            return f"{database_location}/{table_name}"
+
+        if warehouse_path := self.properties.get(WAREHOUSE_LOCATION):
+            warehouse_path = warehouse_path.rstrip("/")
+            return f"{warehouse_path}/{database_name}/{table_name}"
+
+        raise ValueError("No default path is set, please specify a location when creating a table")
+
+    def _get_hive_style_warehouse_location(self, database_name: str, table_name: str) -> str:
+        """Return the default warehouse location following the Hive convention of `warehousePath/databaseName.db/tableName`."""
         database_properties = self.load_namespace_properties(database_name)
         if database_location := database_properties.get(LOCATION):
             database_location = database_location.rstrip("/")

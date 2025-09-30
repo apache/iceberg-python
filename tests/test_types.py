@@ -260,9 +260,9 @@ def test_nested_field_primitive_type_as_str() -> None:
             type_str,
             required=True,
         )
-        assert isinstance(
-            field_var.field_type, type_class
-        ), f"Expected {type_class.__name__}, got {field_var.field_type.__class__.__name__}"
+        assert isinstance(field_var.field_type, type_class), (
+            f"Expected {type_class.__name__}, got {field_var.field_type.__class__.__name__}"
+        )
 
     # Test that passing 'bool' raises a ValueError, as it should be 'boolean'
     with pytest.raises(ValueError) as exc_info:
@@ -523,6 +523,21 @@ def test_str_decimal() -> None:
 
 def test_repr_decimal() -> None:
     assert repr(DecimalType(19, 25)) == "DecimalType(precision=19, scale=25)"
+
+
+def test_repr_nested_field_default_nones_should_not_appear() -> None:
+    assert (
+        repr(NestedField(1, "required_field", StringType(), required=False, initial_default=None, write_default=None))
+        == "NestedField(field_id=1, name='required_field', field_type=StringType(), required=False)"
+    )
+    assert (
+        repr(NestedField(1, "required_field", StringType(), required=False, initial_default="hello", write_default=None))
+        == "NestedField(field_id=1, name='required_field', field_type=StringType(), required=False, initial_default='hello')"
+    )
+    assert (
+        repr(NestedField(1, "required_field", StringType(), required=False, initial_default="hello", write_default="bye"))
+        == "NestedField(field_id=1, name='required_field', field_type=StringType(), required=False, initial_default='hello', write_default='bye')"
+    )
 
 
 def test_serialization_nestedfield() -> None:

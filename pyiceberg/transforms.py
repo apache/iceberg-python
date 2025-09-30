@@ -17,7 +17,9 @@
 
 import base64
 import datetime as py_datetime
+import importlib
 import struct
+import types
 from abc import ABC, abstractmethod
 from enum import IntEnum
 from functools import singledispatch
@@ -28,6 +30,7 @@ from uuid import UUID
 import mmh3
 from pydantic import Field, PositiveInt, PrivateAttr
 
+from pyiceberg.exceptions import NotInstalledError
 from pyiceberg.expressions import (
     BoundEqualTo,
     BoundGreaterThan,
@@ -106,9 +109,50 @@ BUCKET_PARSER = ParseNumberFromBrackets(BUCKET)
 TRUNCATE_PARSER = ParseNumberFromBrackets(TRUNCATE)
 
 
+def _try_import(module_name: str, extras_name: Optional[str] = None) -> types.ModuleType:
+    try:
+        return importlib.import_module(module_name)
+    except ImportError:
+        if extras_name:
+            msg = f'{module_name} needs to be installed. pip install "pyiceberg[{extras_name}]"'
+        else:
+            msg = f"{module_name} needs to be installed."
+        raise NotInstalledError(msg) from None
+
+
 def _transform_literal(func: Callable[[L], L], lit: Literal[L]) -> Literal[L]:
     """Small helper to upwrap the value from the literal, and wrap it again."""
     return literal(func(lit.value))
+
+
+def _pyiceberg_transform_wrapper(
+    transform_func: Callable[["ArrayLike", Any], "ArrayLike"],
+    *args: Any,
+    expected_type: Optional["pa.DataType"] = None,
+) -> Callable[["ArrayLike"], "ArrayLike"]:
+    try:
+        import pyarrow as pa
+    except ModuleNotFoundError as e:
+        raise ModuleNotFoundError("For partition transforms, PyArrow needs to be installed") from e
+
+    def _transform(array: "ArrayLike") -> "ArrayLike":
+        def _cast_if_needed(arr: "ArrayLike") -> "ArrayLike":
+            if expected_type is not None:
+                return arr.cast(expected_type)
+            else:
+                return arr
+
+        if isinstance(array, pa.Array):
+            return _cast_if_needed(transform_func(array, *args))
+        elif isinstance(array, pa.ChunkedArray):
+            result_chunks = []
+            for arr in array.iterchunks():
+                result_chunks.append(_cast_if_needed(transform_func(arr, *args)))
+            return pa.chunked_array(result_chunks)
+        else:
+            raise ValueError(f"PyArrow array can only be of type pa.Array or pa.ChunkedArray, but found {type(array)}")
+
+    return _transform
 
 
 class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
@@ -168,33 +212,8 @@ class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
             return self.root == other.root
         return False
 
-    @property
-    def supports_pyarrow_transform(self) -> bool:
-        return False
-
     @abstractmethod
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]": ...
-
-    def _pyiceberg_transform_wrapper(
-        self, transform_func: Callable[["ArrayLike", Any], "ArrayLike"], *args: Any
-    ) -> Callable[["ArrayLike"], "ArrayLike"]:
-        try:
-            import pyarrow as pa
-        except ModuleNotFoundError as e:
-            raise ModuleNotFoundError("For bucket/truncate transforms, PyArrow needs to be installed") from e
-
-        def _transform(array: "ArrayLike") -> "ArrayLike":
-            if isinstance(array, pa.Array):
-                return transform_func(array, *args)
-            elif isinstance(array, pa.ChunkedArray):
-                result_chunks = []
-                for arr in array.iterchunks():
-                    result_chunks.append(transform_func(arr, *args))
-                return pa.chunked_array(result_chunks)
-            else:
-                raise ValueError(f"PyArrow array can only be of type pa.Array or pa.ChunkedArray, but found {type(array)}")
-
-        return _transform
 
 
 def parse_transform(v: Any) -> Transform[Any, Any]:
@@ -373,13 +392,8 @@ class BucketTransform(Transform[S, int]):
         return f"BucketTransform(num_buckets={self._num_buckets})"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        from pyiceberg_core import transform as pyiceberg_core_transform
-
-        return self._pyiceberg_transform_wrapper(pyiceberg_core_transform.bucket, self._num_buckets)
-
-    @property
-    def supports_pyarrow_transform(self) -> bool:
-        return True
+        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
+        return _pyiceberg_transform_wrapper(pyiceberg_core_transform.bucket, self._num_buckets)
 
 
 class TimeResolution(IntEnum):
@@ -440,10 +454,6 @@ class TimeTransform(Transform[S, int], Generic[S], Singleton):
     def preserves_order(self) -> bool:
         return True
 
-    @property
-    def supports_pyarrow_transform(self) -> bool:
-        return True
-
 
 class YearTransform(TimeTransform[S]):
     """Transforms a datetime value into a year value.
@@ -500,23 +510,9 @@ class YearTransform(TimeTransform[S]):
         return "YearTransform()"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        import pyarrow as pa
-        import pyarrow.compute as pc
-
-        if isinstance(source, DateType):
-            epoch = pa.scalar(datetime.EPOCH_DATE)
-        elif isinstance(source, TimestampType):
-            epoch = pa.scalar(datetime.EPOCH_TIMESTAMP)
-        elif isinstance(source, TimestamptzType):
-            epoch = pa.scalar(datetime.EPOCH_TIMESTAMPTZ)
-        elif isinstance(source, TimestampNanoType):
-            epoch = pa.scalar(datetime.EPOCH_TIMESTAMP).cast(pa.timestamp("ns"))
-        elif isinstance(source, TimestamptzNanoType):
-            epoch = pa.scalar(datetime.EPOCH_TIMESTAMPTZ).cast(pa.timestamp("ns"))
-        else:
-            raise ValueError(f"Cannot apply year transform for type: {source}")
-
-        return lambda v: pc.years_between(epoch, v) if v is not None else None
+        pa = _try_import("pyarrow")
+        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
+        return _pyiceberg_transform_wrapper(pyiceberg_core_transform.year, expected_type=pa.int32())
 
 
 class MonthTransform(TimeTransform[S]):
@@ -574,29 +570,10 @@ class MonthTransform(TimeTransform[S]):
         return "MonthTransform()"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        import pyarrow as pa
-        import pyarrow.compute as pc
+        pa = _try_import("pyarrow")
+        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
 
-        if isinstance(source, DateType):
-            epoch = pa.scalar(datetime.EPOCH_DATE)
-        elif isinstance(source, TimestampType):
-            epoch = pa.scalar(datetime.EPOCH_TIMESTAMP)
-        elif isinstance(source, TimestamptzType):
-            epoch = pa.scalar(datetime.EPOCH_TIMESTAMPTZ)
-        elif isinstance(source, TimestampNanoType):
-            epoch = pa.scalar(datetime.EPOCH_TIMESTAMP).cast(pa.timestamp("ns"))
-        elif isinstance(source, TimestamptzNanoType):
-            epoch = pa.scalar(datetime.EPOCH_TIMESTAMPTZ).cast(pa.timestamp("ns"))
-        else:
-            raise ValueError(f"Cannot apply month transform for type: {source}")
-
-        def month_func(v: pa.Array) -> pa.Array:
-            return pc.add(
-                pc.multiply(pc.years_between(epoch, v), pa.scalar(12)),
-                pc.add(pc.month(v), pa.scalar(-1)),
-            )
-
-        return lambda v: month_func(v) if v is not None else None
+        return _pyiceberg_transform_wrapper(pyiceberg_core_transform.month, expected_type=pa.int32())
 
 
 class DayTransform(TimeTransform[S]):
@@ -662,23 +639,10 @@ class DayTransform(TimeTransform[S]):
         return "DayTransform()"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        import pyarrow as pa
-        import pyarrow.compute as pc
+        pa = _try_import("pyarrow", extras_name="pyarrow")
+        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
 
-        if isinstance(source, DateType):
-            epoch = pa.scalar(datetime.EPOCH_DATE)
-        elif isinstance(source, TimestampType):
-            epoch = pa.scalar(datetime.EPOCH_TIMESTAMP)
-        elif isinstance(source, TimestamptzType):
-            epoch = pa.scalar(datetime.EPOCH_TIMESTAMPTZ)
-        elif isinstance(source, TimestampNanoType):
-            epoch = pa.scalar(datetime.EPOCH_TIMESTAMP).cast(pa.timestamp("ns"))
-        elif isinstance(source, TimestamptzNanoType):
-            epoch = pa.scalar(datetime.EPOCH_TIMESTAMPTZ).cast(pa.timestamp("ns"))
-        else:
-            raise ValueError(f"Cannot apply day transform for type: {source}")
-
-        return lambda v: pc.days_between(epoch, v) if v is not None else None
+        return _pyiceberg_transform_wrapper(pyiceberg_core_transform.day, expected_type=pa.int32())
 
 
 class HourTransform(TimeTransform[S]):
@@ -728,21 +692,9 @@ class HourTransform(TimeTransform[S]):
         return "HourTransform()"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        import pyarrow as pa
-        import pyarrow.compute as pc
+        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
 
-        if isinstance(source, TimestampType):
-            epoch = pa.scalar(datetime.EPOCH_TIMESTAMP)
-        elif isinstance(source, TimestamptzType):
-            epoch = pa.scalar(datetime.EPOCH_TIMESTAMPTZ)
-        elif isinstance(source, TimestampNanoType):
-            epoch = pa.scalar(datetime.EPOCH_TIMESTAMP).cast(pa.timestamp("ns"))
-        elif isinstance(source, TimestamptzNanoType):
-            epoch = pa.scalar(datetime.EPOCH_TIMESTAMPTZ).cast(pa.timestamp("ns"))
-        else:
-            raise ValueError(f"Cannot apply hour transform for type: {source}")
-
-        return lambda v: pc.hours_between(epoch, v) if v is not None else None
+        return _pyiceberg_transform_wrapper(pyiceberg_core_transform.hour)
 
 
 def _base64encode(buffer: bytes) -> str:
@@ -816,10 +768,6 @@ class IdentityTransform(Transform[S, S]):
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
         return lambda v: v
-
-    @property
-    def supports_pyarrow_transform(self) -> bool:
-        return True
 
 
 class TruncateTransform(Transform[S, S]):
@@ -963,13 +911,9 @@ class TruncateTransform(Transform[S, S]):
         return f"TruncateTransform(width={self._width})"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        from pyiceberg_core import transform as pyiceberg_core_transform
+        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
 
-        return self._pyiceberg_transform_wrapper(pyiceberg_core_transform.truncate, self._width)
-
-    @property
-    def supports_pyarrow_transform(self) -> bool:
-        return True
+        return _pyiceberg_transform_wrapper(pyiceberg_core_transform.truncate, self._width)
 
 
 @singledispatch
@@ -1085,7 +1029,12 @@ class VoidTransform(Transform[S, None], Singleton):
         return "VoidTransform()"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        raise NotImplementedError()
+        try:
+            import pyarrow as pa
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For partition transforms, PyArrow needs to be installed") from e
+
+        return lambda arr: pa.nulls(len(arr), type=arr.type)
 
 
 def _truncate_number(
@@ -1097,11 +1046,11 @@ def _truncate_number(
         raise ValueError(f"Expected a numeric literal, got: {type(boundary)}")
 
     if isinstance(pred, BoundLessThan):
-        return LessThanOrEqual(Reference(name), _transform_literal(transform, boundary.decrement()))  # type: ignore
+        return LessThanOrEqual(Reference(name), _transform_literal(transform, boundary.decrement()))
     elif isinstance(pred, BoundLessThanOrEqual):
         return LessThanOrEqual(Reference(name), _transform_literal(transform, boundary))
     elif isinstance(pred, BoundGreaterThan):
-        return GreaterThanOrEqual(Reference(name), _transform_literal(transform, boundary.increment()))  # type: ignore
+        return GreaterThanOrEqual(Reference(name), _transform_literal(transform, boundary.increment()))
     elif isinstance(pred, BoundGreaterThanOrEqual):
         return GreaterThanOrEqual(Reference(name), _transform_literal(transform, boundary))
     elif isinstance(pred, BoundEqualTo):
@@ -1121,11 +1070,11 @@ def _truncate_number_strict(
     if isinstance(pred, BoundLessThan):
         return LessThan(Reference(name), _transform_literal(transform, boundary))
     elif isinstance(pred, BoundLessThanOrEqual):
-        return LessThan(Reference(name), _transform_literal(transform, boundary.increment()))  # type: ignore
+        return LessThan(Reference(name), _transform_literal(transform, boundary.increment()))
     elif isinstance(pred, BoundGreaterThan):
         return GreaterThan(Reference(name), _transform_literal(transform, boundary))
     elif isinstance(pred, BoundGreaterThanOrEqual):
-        return GreaterThan(Reference(name), _transform_literal(transform, boundary.decrement()))  # type: ignore
+        return GreaterThan(Reference(name), _transform_literal(transform, boundary.decrement()))
     elif isinstance(pred, BoundNotEqualTo):
         return NotEqualTo(Reference(name), _transform_literal(transform, boundary))
     elif isinstance(pred, BoundEqualTo):

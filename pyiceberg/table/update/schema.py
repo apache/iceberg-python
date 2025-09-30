@@ -48,7 +48,7 @@ from pyiceberg.table.update import (
     UpdatesAndRequirements,
     UpdateTableMetadata,
 )
-from pyiceberg.typedef import L
+from pyiceberg.typedef import L, TableVersion
 from pyiceberg.types import IcebergType, ListType, MapType, NestedField, PrimitiveType, StructType
 
 if TYPE_CHECKING:
@@ -142,11 +142,16 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         self._case_sensitive = case_sensitive
         return self
 
-    def union_by_name(self, new_schema: Union[Schema, "pa.Schema"]) -> UpdateSchema:
+    def union_by_name(
+        # TODO: Move TableProperties.DEFAULT_FORMAT_VERSION to separate file and set that as format_version default.
+        self,
+        new_schema: Union[Schema, "pa.Schema"],
+        format_version: TableVersion = 2,
+    ) -> UpdateSchema:
         from pyiceberg.catalog import Catalog
 
         visit_with_partner(
-            Catalog._convert_schema_if_needed(new_schema),
+            Catalog._convert_schema_if_needed(new_schema, format_version=format_version),
             -1,
             _UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),
             # type: ignore
@@ -629,9 +634,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         if existing_schema_id != self._schema.schema_id:
             requirements += (AssertCurrentSchemaId(current_schema_id=self._schema.schema_id),)
             if existing_schema_id is None:
-                last_column_id = max(self._transaction.table_metadata.last_column_id, new_schema.highest_field_id)
                 updates += (
-                    AddSchemaUpdate(schema=new_schema, last_column_id=last_column_id),
+                    AddSchemaUpdate(schema=new_schema),
                     SetCurrentSchemaUpdate(schema_id=-1),
                 )
             else:
@@ -658,6 +662,13 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         # Check the field-ids
         new_schema = Schema(*struct.fields)
+        from pyiceberg.partitioning import validate_partition_name
+
+        for spec in self._transaction.table_metadata.partition_specs:
+            for partition_field in spec.fields:
+                validate_partition_name(
+                    partition_field.name, partition_field.transform, partition_field.source_id, new_schema, set()
+                )
         field_ids = set()
         for name in self._identifier_field_names:
             try:

@@ -39,7 +39,7 @@ try:
                     if not chunk:
                         break
                     uncompressed.extend(chunk)
-            return uncompressed
+            return bytes(uncompressed)
 
 except ImportError:
 

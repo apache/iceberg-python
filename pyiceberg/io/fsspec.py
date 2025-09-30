@@ -20,6 +20,7 @@ import errno
 import json
 import logging
 import os
+import threading
 from copy import copy
 from functools import lru_cache, partial
 from typing import (
@@ -36,15 +37,19 @@ from fsspec import AbstractFileSystem
 from fsspec.implementations.local import LocalFileSystem
 from requests import HTTPError
 
-from pyiceberg.catalog import TOKEN
+from pyiceberg.catalog import TOKEN, URI
 from pyiceberg.exceptions import SignError
 from pyiceberg.io import (
+    ADLS_ACCOUNT_HOST,
     ADLS_ACCOUNT_KEY,
     ADLS_ACCOUNT_NAME,
     ADLS_CLIENT_ID,
+    ADLS_CLIENT_SECRET,
     ADLS_CONNECTION_STRING,
+    ADLS_CREDENTIAL,
     ADLS_SAS_TOKEN,
     ADLS_TENANT_ID,
+    ADLS_TOKEN,
     AWS_ACCESS_KEY_ID,
     AWS_REGION,
     AWS_SECRET_ACCESS_KEY,
@@ -59,9 +64,13 @@ from pyiceberg.io import (
     GCS_SESSION_KWARGS,
     GCS_TOKEN,
     GCS_VERSION_AWARE,
+    HF_ENDPOINT,
+    HF_TOKEN,
     S3_ACCESS_KEY_ID,
+    S3_ANONYMOUS,
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
+    S3_FORCE_VIRTUAL_ADDRESSING,
     S3_PROXY_URI,
     S3_REGION,
     S3_REQUEST_TIMEOUT,
@@ -71,7 +80,6 @@ from pyiceberg.io import (
     S3_SIGNER_ENDPOINT,
     S3_SIGNER_ENDPOINT_DEFAULT,
     S3_SIGNER_URI,
-    ADLS_ClIENT_SECRET,
     FileIO,
     InputFile,
     InputStream,
@@ -79,6 +87,7 @@ from pyiceberg.io import (
     OutputStream,
 )
 from pyiceberg.typedef import Properties
+from pyiceberg.types import strtobool
 from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool
 
 logger = logging.getLogger(__name__)
@@ -88,7 +97,7 @@ if TYPE_CHECKING:
 
 
 def s3v4_rest_signer(properties: Properties, request: "AWSRequest", **_: Any) -> "AWSRequest":
-    signer_url = properties.get(S3_SIGNER_URI, properties["uri"]).rstrip("/")
+    signer_url = properties.get(S3_SIGNER_URI, properties[URI]).rstrip("/")  # type: ignore
     signer_endpoint = properties.get(S3_SIGNER_ENDPOINT, S3_SIGNER_ENDPOINT_DEFAULT)
 
     signer_headers = {}
@@ -160,9 +169,18 @@ def _s3(properties: Properties) -> AbstractFileSystem:
     if request_timeout := properties.get(S3_REQUEST_TIMEOUT):
         config_kwargs["read_timeout"] = float(request_timeout)
 
-    fs = S3FileSystem(client_kwargs=client_kwargs, config_kwargs=config_kwargs)
+    if _force_virtual_addressing := properties.get(S3_FORCE_VIRTUAL_ADDRESSING):
+        config_kwargs["s3"] = {"addressing_style": "virtual"}
+
+    if s3_anonymous := properties.get(S3_ANONYMOUS):
+        anon = strtobool(s3_anonymous)
+    else:
+        anon = False
+
+    fs = S3FileSystem(anon=anon, client_kwargs=client_kwargs, config_kwargs=config_kwargs)
 
     for event_name, event_function in register_events.items():
+        fs.s3.meta.events.unregister(event_name, unique_id=1925)
         fs.s3.meta.events.register_last(event_name, event_function, unique_id=1925)
 
     return fs
@@ -187,24 +205,57 @@ def _gs(properties: Properties) -> AbstractFileSystem:
 
 
 def _adls(properties: Properties) -> AbstractFileSystem:
+    # https://fsspec.github.io/adlfs/api/
+
     from adlfs import AzureBlobFileSystem
+    from azure.core.credentials import AccessToken
+    from azure.core.credentials_async import AsyncTokenCredential
 
     for key, sas_token in {
-        key.replace(f"{ADLS_SAS_TOKEN}.", ""): value for key, value in properties.items() if key.startswith(ADLS_SAS_TOKEN)
+        key.replace(f"{ADLS_SAS_TOKEN}.", ""): value for key, value in properties.items() if key.startswith(f"{ADLS_SAS_TOKEN}.")
     }.items():
         if ADLS_ACCOUNT_NAME not in properties:
             properties[ADLS_ACCOUNT_NAME] = key.split(".")[0]
         if ADLS_SAS_TOKEN not in properties:
             properties[ADLS_SAS_TOKEN] = sas_token
 
+    class StaticTokenCredential(AsyncTokenCredential):
+        _DEFAULT_EXPIRY_SECONDS = 3600
+
+        def __init__(self, token_string: str) -> None:
+            self._token = token_string
+
+        async def get_token(self, *scopes: str, **kwargs: Any) -> AccessToken:
+            import time
+
+            # Set expiration 1 hour from now
+            expires_on = int(time.time()) + self._DEFAULT_EXPIRY_SECONDS
+            return AccessToken(self._token, expires_on)
+
+    if token := properties.get(ADLS_TOKEN):
+        credential = StaticTokenCredential(token)
+    else:
+        credential = properties.get(ADLS_CREDENTIAL)  # type: ignore
+
     return AzureBlobFileSystem(
         connection_string=properties.get(ADLS_CONNECTION_STRING),
+        credential=credential,
         account_name=properties.get(ADLS_ACCOUNT_NAME),
         account_key=properties.get(ADLS_ACCOUNT_KEY),
         sas_token=properties.get(ADLS_SAS_TOKEN),
         tenant_id=properties.get(ADLS_TENANT_ID),
         client_id=properties.get(ADLS_CLIENT_ID),
-        client_secret=properties.get(ADLS_ClIENT_SECRET),
+        client_secret=properties.get(ADLS_CLIENT_SECRET),
+        account_host=properties.get(ADLS_ACCOUNT_HOST),
+    )
+
+
+def _hf(properties: Properties) -> AbstractFileSystem:
+    from huggingface_hub import HfFileSystem
+
+    return HfFileSystem(
+        endpoint=properties.get(HF_ENDPOINT),
+        token=properties.get(HF_TOKEN),
     )
 
 
@@ -218,6 +269,7 @@ SCHEME_TO_FS = {
     "abfss": _adls,
     "gs": _gs,
     "gcs": _gs,
+    "hf": _hf,
 }
 
 
@@ -323,7 +375,7 @@ class FsspecFileIO(FileIO):
     def __init__(self, properties: Properties):
         self._scheme_to_fs = {}
         self._scheme_to_fs.update(SCHEME_TO_FS)
-        self.get_fs: Callable[[str], AbstractFileSystem] = lru_cache(self._get_fs)
+        self._thread_locals = threading.local()
         super().__init__(properties=properties)
 
     def new_input(self, location: str) -> FsspecInputFile:
@@ -369,6 +421,13 @@ class FsspecFileIO(FileIO):
         fs = self.get_fs(uri.scheme)
         fs.rm(str_location)
 
+    def get_fs(self, scheme: str) -> AbstractFileSystem:
+        """Get a filesystem for a specific scheme, cached per thread."""
+        if not hasattr(self._thread_locals, "get_fs_cached"):
+            self._thread_locals.get_fs_cached = lru_cache(self._get_fs)
+
+        return self._thread_locals.get_fs_cached(scheme)
+
     def _get_fs(self, scheme: str) -> AbstractFileSystem:
         """Get a filesystem for a specific scheme."""
         if scheme not in self._scheme_to_fs:
@@ -378,10 +437,10 @@ class FsspecFileIO(FileIO):
     def __getstate__(self) -> Dict[str, Any]:
         """Create a dictionary of the FsSpecFileIO fields used when pickling."""
         fileio_copy = copy(self.__dict__)
-        fileio_copy["get_fs"] = None
+        del fileio_copy["_thread_locals"]
         return fileio_copy
 
     def __setstate__(self, state: Dict[str, Any]) -> None:
         """Deserialize the state into a FsSpecFileIO instance."""
         self.__dict__ = state
-        self.get_fs = lru_cache(self._get_fs)
+        self._thread_locals = threading.local()

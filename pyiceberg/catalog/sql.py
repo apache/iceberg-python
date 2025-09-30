@@ -44,6 +44,7 @@ from sqlalchemy.orm import (
 
 from pyiceberg.catalog import (
     METADATA_LOCATION,
+    URI,
     Catalog,
     MetastoreCatalog,
     PropertiesUpdateSummary,
@@ -61,7 +62,7 @@ from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableResponse, Table
+from pyiceberg.table import CommitTableResponse, Table, TableProperties
 from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
@@ -119,7 +120,7 @@ class SqlCatalog(MetastoreCatalog):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
 
-        if not (uri_prop := self.properties.get("uri")):
+        if not (uri_prop := self.properties.get(URI)):
             raise NoSuchPropertyException("SQL connection URI is required")
 
         echo_str = str(self.properties.get("echo", DEFAULT_ECHO_VALUE)).lower()
@@ -199,7 +200,10 @@ class SqlCatalog(MetastoreCatalog):
             ValueError: If the identifier is invalid, or no path is given to store metadata.
 
         """
-        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
+        schema: Schema = self._convert_schema_if_needed(  # type: ignore
+            schema,
+            int(properties.get(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION)),  # type: ignore
+        )
 
         namespace_identifier = Catalog.namespace_from(identifier)
         table_name = Catalog.table_name_from(identifier)
@@ -237,8 +241,8 @@ class SqlCatalog(MetastoreCatalog):
         """Register a new table using existing metadata.
 
         Args:
-            identifier Union[str, Identifier]: Table identifier for the table
-            metadata_location str: The location to the metadata
+            identifier (Union[str, Identifier]): Table identifier for the table
+            metadata_location (str): The location to the metadata
 
         Returns:
             Table: The newly registered table
@@ -729,3 +733,14 @@ class SqlCatalog(MetastoreCatalog):
 
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError
+
+    def close(self) -> None:
+        """Close the catalog and release database connections.
+
+        This method closes the SQLAlchemy engine and disposes of all connection pools.
+        This ensures that any cached connections are properly closed, which is especially
+        important for blobfuse scenarios where file handles need to be closed for
+        data to be flushed to persistent storage.
+        """
+        if hasattr(self, "engine"):
+            self.engine.dispose()

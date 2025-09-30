@@ -48,7 +48,7 @@ from pyiceberg.table.update import (
 )
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties
-from pyiceberg.types import IntegerType, LongType, NestedField
+from pyiceberg.types import IntegerType, LongType, NestedField, StringType
 
 
 @pytest.fixture
@@ -486,7 +486,7 @@ def test_commit_table(catalog: InMemoryCatalog) -> None:
     response = given_table.catalog.commit_table(
         given_table,
         updates=(
-            AddSchemaUpdate(schema=new_schema, last_column_id=new_schema.highest_field_id),
+            AddSchemaUpdate(schema=new_schema),
             SetCurrentSchemaUpdate(schema_id=-1),
         ),
         requirements=(),
@@ -631,3 +631,24 @@ def test_table_metadata_writes_reflect_latest_path(catalog: InMemoryCatalog) -> 
     table.transaction().set_properties({TableProperties.WRITE_METADATA_PATH: new_metadata_path}).commit_transaction()
 
     assert table.location_provider().new_metadata_location("metadata.json") == f"{new_metadata_path}/metadata.json"
+
+
+class TestCatalogClose:
+    """Test catalog close functionality."""
+
+    def test_in_memory_catalog_close(self, catalog: InMemoryCatalog) -> None:
+        """Test that InMemoryCatalog close method works."""
+        # Should not raise any exception
+        catalog.close()
+
+    def test_in_memory_catalog_context_manager(self, catalog: InMemoryCatalog) -> None:
+        """Test that InMemoryCatalog works as a context manager."""
+        with InMemoryCatalog("test") as cat:
+            assert cat.name == "test"
+            # Create a namespace and table to test functionality
+            cat.create_namespace("test_db")
+            schema = Schema(NestedField(1, "name", StringType(), required=True))
+            cat.create_table(("test_db", "test_table"), schema)
+
+        # InMemoryCatalog inherits close from SqlCatalog, so engine should be disposed
+        assert hasattr(cat, "engine")
