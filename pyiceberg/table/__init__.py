@@ -122,7 +122,6 @@ from pyiceberg.table.update.snapshot import (
     _FastAppendFiles,
 )
 from pyiceberg.table.update.sorting import UpdateSortOrder
-from pyiceberg.table.update.snapshot import ManageSnapshots, UpdateSnapshot, _FastAppendFiles
 from pyiceberg.table.update.spec import UpdateSpec
 from pyiceberg.table.update.statistics import UpdateStatistics
 from pyiceberg.transforms import IdentityTransform
@@ -456,7 +455,9 @@ class Transaction:
             case_sensitive=case_sensitive,
         )
 
-    def update_snapshot(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> UpdateSnapshot:
+    def update_snapshot(
+        self, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = MAIN_BRANCH
+    ) -> UpdateSnapshot:
         """Create a new UpdateSnapshot to produce a new snapshot for the table.
 
         Returns:
