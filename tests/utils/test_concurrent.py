@@ -18,7 +18,7 @@
 import multiprocessing
 import os
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from typing import Dict, Optional
+from typing import Dict, Generator, Optional
 from unittest import mock
 
 import pytest
@@ -29,8 +29,9 @@ EMPTY_ENV: Dict[str, Optional[str]] = {}
 VALID_ENV = {"PYICEBERG_MAX_WORKERS": "5"}
 INVALID_ENV = {"PYICEBERG_MAX_WORKERS": "invalid"}
 
+
 @pytest.fixture
-def fork_process():
+def fork_process() -> Generator[None, None, None]:
     original = multiprocessing.get_start_method()
     allowed = multiprocessing.get_all_start_methods()
 
@@ -44,7 +45,7 @@ def fork_process():
 
 
 @pytest.fixture
-def spawn_process():
+def spawn_process() -> Generator[None, None, None]:
     original = multiprocessing.get_start_method()
     allowed = multiprocessing.get_all_start_methods()
 
@@ -57,7 +58,8 @@ def spawn_process():
     multiprocessing.set_start_method(original, force=True)
 
 
-def _use_executor_to_return(value):
+def _use_executor_to_return(value: int) -> int:
+    # Module level function to enabling pickling for use with ProcessPoolExecutor.
     executor = ExecutorFactory.get_or_create()
     future = executor.submit(lambda: value)
     return future.result()
@@ -87,7 +89,7 @@ def test_max_workers_invalid() -> None:
 
 
 @pytest.mark.parametrize(
-    "fixture",
+    "fixture_name",
     [
         pytest.param(
             "fork_process",
@@ -103,12 +105,14 @@ def test_max_workers_invalid() -> None:
         ),
     ],
 )
-def test_use_executor_in_different_process(fixture, request):
-    # Use the fixture
-    request.getfixturevalue(fixture)
+def test_use_executor_in_different_process(fixture_name: str, request: pytest.FixtureRequest) -> None:
+    # Use the fixture, which sets up fork or spawn process start method.
+    request.getfixturevalue(fixture_name)
 
+    # Use executor in main process to ensure the singleton is initialized.
     main_value = _use_executor_to_return(10)
 
+    # Use two separate ProcessPoolExecutors to ensure different processes are used.
     with ProcessPoolExecutor() as process_executor:
         future1 = process_executor.submit(_use_executor_to_return, 20)
     with ProcessPoolExecutor() as process_executor:
@@ -117,7 +121,3 @@ def test_use_executor_in_different_process(fixture, request):
     assert main_value == 10
     assert future1.result() == 20
     assert future2.result() == 30
-
-
-if __name__ == "__main__":
-    pytest.main([__file__])
