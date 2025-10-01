@@ -25,7 +25,6 @@ from pyiceberg.types import FixedType, NestedField, UUIDType
 # Create SparkSession against the remote Spark Connect server
 spark = SparkSession.builder.remote("sc://localhost:15002").getOrCreate()
 
-
 catalogs = {
     "rest": load_catalog(
         "rest",
@@ -128,10 +127,8 @@ for catalog_name, catalog in catalogs.items():
         """
         )
 
-        spark.sql(
-            f"""
-        INSERT INTO {identifier}
-        VALUES
+        spark.sql("""
+        SELECT * FROM VALUES
             (CAST('2023-03-01' AS date), 1, 'a'),
             (CAST('2023-03-02' AS date), 2, 'b'),
             (CAST('2023-03-03' AS date), 3, 'c'),
@@ -143,9 +140,9 @@ for catalog_name, catalog in catalogs.items():
             (CAST('2023-03-09' AS date), 9, 'i'),
             (CAST('2023-03-10' AS date), 10, 'j'),
             (CAST('2023-03-11' AS date), 11, 'k'),
-            (CAST('2023-03-12' AS date), 12, 'l');
-        """
-        )
+            (CAST('2023-03-12' AS date), 12, 'l')
+        AS t(dt, number, letter)
+        """).coalesce(1).writeTo(identifier).append()
 
         spark.sql(f"ALTER TABLE {identifier} CREATE TAG tag_12")
 
@@ -169,15 +166,13 @@ for catalog_name, catalog in catalogs.items():
             'write.delete.mode'='merge-on-read',
             'write.update.mode'='merge-on-read',
             'write.merge.mode'='merge-on-read',
-            'format-version'='2'
+            'format-version'='{format_version}'
           );
         """
         )
 
-        spark.sql(
-            f"""
-        INSERT INTO {identifier}
-        VALUES
+        spark.sql("""
+        SELECT * FROM VALUES
             (CAST('2023-03-01' AS date), 1, 'a'),
             (CAST('2023-03-02' AS date), 2, 'b'),
             (CAST('2023-03-03' AS date), 3, 'c'),
@@ -189,9 +184,9 @@ for catalog_name, catalog in catalogs.items():
             (CAST('2023-03-09' AS date), 9, 'i'),
             (CAST('2023-03-10' AS date), 10, 'j'),
             (CAST('2023-03-11' AS date), 11, 'k'),
-            (CAST('2023-03-12' AS date), 12, 'l');
-        """
-        )
+            (CAST('2023-03-12' AS date), 12, 'l')
+        AS t(dt, number, letter)
+        """).coalesce(1).writeTo(identifier).append()
 
         # Perform two deletes, should produce:
         #   v2: two positional delete files in v2
