@@ -36,7 +36,7 @@ class ExecutorFactory:
     def get_or_create() -> Executor:
         """Return the same executor in each call."""
         # ThreadPoolExecutor cannot be shared across processes.  If a new pid is found it means
-        # there has been a fork so a new executor is needed.  Otherwise, the executor may be in
+        # there is a new process so a new executor is needed.  Otherwise, the executor may be in
         # an invalid state and tasks submitted will not be started.
         if ExecutorFactory._instance_pid != os.getpid():
             ExecutorFactory._instance_pid = os.getpid()
