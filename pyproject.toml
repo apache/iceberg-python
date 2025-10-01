@@ -26,7 +26,6 @@ license = "Apache License 2.0"
 classifiers = [
   "License :: OSI Approved :: Apache Software License",
   "Operating System :: OS Independent",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
@@ -50,7 +49,7 @@ include = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.9.2, !=3.9.7"
+python = ">=3.10,<3.13"
 mmh3 = ">=4.0.0,<6.0.0"
 requests = ">=2.20.0,<3.0.0"
 click = ">=7.1.1,<9.0.0"
