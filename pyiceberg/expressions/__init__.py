@@ -44,7 +44,7 @@ from pyiceberg.types import DoubleType, FloatType, NestedField
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.typedef import IcebergBaseModel
 from pydantic import Field
-
+from typing import Literal as TypingLiteral
 
 def _to_unbound_term(term: Union[str, UnboundTerm[Any]]) -> UnboundTerm[Any]:
     return Reference(term) if isinstance(term, str) else term
