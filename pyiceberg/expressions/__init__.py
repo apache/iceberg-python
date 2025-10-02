@@ -39,7 +39,7 @@ from pyiceberg.expressions.literals import (
     literal,
 )
 from pyiceberg.schema import Accessor, Schema
-from pyiceberg.typedef import L, StructProtocol
+from pyiceberg.typedef import IcebergRootModel, L, StructProtocol
 from pyiceberg.types import DoubleType, FloatType, NestedField
 from pyiceberg.utils.singleton import Singleton
 
@@ -361,9 +361,13 @@ class Not(BooleanExpression):
         """Pickle the Not class."""
         return (self.child,)
 
-
-class AlwaysTrue(BooleanExpression, Singleton):
     """TRUE expression."""
+
+
+class AlwaysTrue(BooleanExpression, Singleton, IcebergRootModel[str]):
+    """TRUE expression."""
+
+    root: str = "true"
 
     def __invert__(self) -> AlwaysFalse:
         """Transform the Expression into its negated version."""
@@ -378,8 +382,10 @@ class AlwaysTrue(BooleanExpression, Singleton):
         return "AlwaysTrue()"
 
 
-class AlwaysFalse(BooleanExpression, Singleton):
+class AlwaysFalse(BooleanExpression, Singleton, IcebergRootModel[str]):
     """FALSE expression."""
+
+    root: str = "false"
 
     def __invert__(self) -> AlwaysTrue:
         """Transform the Expression into its negated version."""
@@ -732,14 +738,14 @@ class LiteralPredicate(UnboundPredicate[L], ABC):
 
         if isinstance(lit, AboveMax):
             if isinstance(self, (LessThan, LessThanOrEqual, NotEqualTo)):
-                return AlwaysTrue()  # type: ignore
+                return AlwaysTrue()
             elif isinstance(self, (GreaterThan, GreaterThanOrEqual, EqualTo)):
-                return AlwaysFalse()  # type: ignore
+                return AlwaysFalse()
         elif isinstance(lit, BelowMin):
             if isinstance(self, (GreaterThan, GreaterThanOrEqual, NotEqualTo)):
-                return AlwaysTrue()  # type: ignore
+                return AlwaysTrue()
             elif isinstance(self, (LessThan, LessThanOrEqual, EqualTo)):
-                return AlwaysFalse()  # type: ignore
+                return AlwaysFalse()
 
         return self.as_bound(bound_term, lit)
 
