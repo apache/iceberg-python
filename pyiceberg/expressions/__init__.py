@@ -720,7 +720,7 @@ class NotIn(SetPredicate[L], ABC):
 
     def __invert__(self) -> In[L]:
         """Transform the Expression into its negated version."""
-        return In[L](self.term, self._literals)
+        return NotIn[L](self.term, self.literals)
 
     @property
     def as_bound(self) -> Type[BoundNotIn[L]]:
