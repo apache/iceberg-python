@@ -679,7 +679,7 @@ class BoundNotIn(BoundSetPredicate[L]):
 
 
 class In(SetPredicate[L]):
-    type: Literal["in"] = Field(default="in", alias="type")
+    type: TypingLiteral["in"] = Field(default="in", alias="type")
 
     def __new__(  # type: ignore  # pylint: disable=W0221
         cls, term: Union[str, UnboundTerm[Any]], literals: Union[Iterable[L], Iterable[Literal[L]]]
