@@ -42,6 +42,8 @@ from pyiceberg.schema import Accessor, Schema
 from pyiceberg.typedef import L, StructProtocol
 from pyiceberg.types import DoubleType, FloatType, NestedField
 from pyiceberg.utils.singleton import Singleton
+from pyiceberg.utils.pydantic import IcebergBaseModel
+from pydantic import Field
 
 
 def _to_unbound_term(term: Union[str, UnboundTerm[Any]]) -> UnboundTerm[Any]:
@@ -559,12 +561,19 @@ class NotNaN(UnaryPredicate):
         return BoundNotNaN[L]
 
 
-class SetPredicate(UnboundPredicate[L], ABC):
-    literals: Set[Literal[L]]
+class SetPredicate(UnboundPredicate[L], IcebergBaseModel, ABC):
+    type: str = Field(default="in", alias="type")
+    term: str
+    value: list[Any]
 
     def __init__(self, term: Union[str, UnboundTerm[Any]], literals: Union[Iterable[L], Iterable[Literal[L]]]):
-        super().__init__(term)
-        self.literals = _to_literal_set(literals)
+        # Convert term to string for serialization
+        term_str = term.name if isinstance(term, Reference) else str(term)
+        literals_set = _to_literal_set(literals)
+        value_list = [lit.value for lit in literals_set]
+        super().__init__(term=term_str, value=value_list)
+        self.literals = literals_set
+        self.term_obj = term 
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundSetPredicate[L]:
         bound_term = self.term.bind(schema, case_sensitive)
@@ -676,6 +685,8 @@ class BoundNotIn(BoundSetPredicate[L]):
 
 
 class In(SetPredicate[L]):
+    type: str = Field(default="in", alias="type")
+
     def __new__(  # type: ignore  # pylint: disable=W0221
         cls, term: Union[str, UnboundTerm[Any]], literals: Union[Iterable[L], Iterable[Literal[L]]]
     ) -> BooleanExpression:
@@ -698,6 +709,8 @@ class In(SetPredicate[L]):
 
 
 class NotIn(SetPredicate[L], ABC):
+    type: str = Field(default="not-in", alias="type")
+
     def __new__(  # type: ignore  # pylint: disable=W0221
         cls, term: Union[str, UnboundTerm[Any]], literals: Union[Iterable[L], Iterable[Literal[L]]]
     ) -> BooleanExpression:
@@ -712,7 +725,7 @@ class NotIn(SetPredicate[L], ABC):
 
     def __invert__(self) -> In[L]:
         """Transform the Expression into its negated version."""
-        return In[L](self.term, self.literals)
+        return In[L](self.term, self._literals)
 
     @property
     def as_bound(self) -> Type[BoundNotIn[L]]:
