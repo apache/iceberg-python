@@ -55,8 +55,10 @@ from pyiceberg.expressions import (
     NotIn,
     NotNaN,
     NotNull,
+    NotStartsWith,
     Or,
     Reference,
+    StartsWith,
     UnboundPredicate,
 )
 from pyiceberg.expressions.literals import Literal, literal
@@ -915,6 +917,7 @@ def test_bound_less_than_or_equal(term: BoundReference[Any]) -> None:
 
 def test_equal_to() -> None:
     equal_to = EqualTo(Reference("a"), literal("a"))
+    assert equal_to.model_dump_json() == '{"type":"eq","term":"a","value":"a"}'
     assert str(equal_to) == "EqualTo(term=Reference(name='a'), literal=literal('a'))"
     assert repr(equal_to) == "EqualTo(term=Reference(name='a'), literal=literal('a'))"
     assert equal_to == eval(repr(equal_to))
@@ -923,6 +926,7 @@ def test_equal_to() -> None:
 
 def test_not_equal_to() -> None:
     not_equal_to = NotEqualTo(Reference("a"), literal("a"))
+    assert not_equal_to.model_dump_json() == '{"type":"not-eq","term":"a","value":"a"}'
     assert str(not_equal_to) == "NotEqualTo(term=Reference(name='a'), literal=literal('a'))"
     assert repr(not_equal_to) == "NotEqualTo(term=Reference(name='a'), literal=literal('a'))"
     assert not_equal_to == eval(repr(not_equal_to))
@@ -931,6 +935,7 @@ def test_not_equal_to() -> None:
 
 def test_greater_than_or_equal_to() -> None:
     greater_than_or_equal_to = GreaterThanOrEqual(Reference("a"), literal("a"))
+    assert greater_than_or_equal_to.model_dump_json() == '{"type":"gt-eq","term":"a","value":"a"}'
     assert str(greater_than_or_equal_to) == "GreaterThanOrEqual(term=Reference(name='a'), literal=literal('a'))"
     assert repr(greater_than_or_equal_to) == "GreaterThanOrEqual(term=Reference(name='a'), literal=literal('a'))"
     assert greater_than_or_equal_to == eval(repr(greater_than_or_equal_to))
@@ -939,6 +944,7 @@ def test_greater_than_or_equal_to() -> None:
 
 def test_greater_than() -> None:
     greater_than = GreaterThan(Reference("a"), literal("a"))
+    assert greater_than.model_dump_json() == '{"type":"gt","term":"a","value":"a"}'
     assert str(greater_than) == "GreaterThan(term=Reference(name='a'), literal=literal('a'))"
     assert repr(greater_than) == "GreaterThan(term=Reference(name='a'), literal=literal('a'))"
     assert greater_than == eval(repr(greater_than))
@@ -947,14 +953,26 @@ def test_greater_than() -> None:
 
 def test_less_than() -> None:
     less_than = LessThan(Reference("a"), literal("a"))
+    assert less_than.model_dump_json() == '{"type":"lt","term":"a","value":"a"}'
     assert str(less_than) == "LessThan(term=Reference(name='a'), literal=literal('a'))"
     assert repr(less_than) == "LessThan(term=Reference(name='a'), literal=literal('a'))"
     assert less_than == eval(repr(less_than))
     assert less_than == pickle.loads(pickle.dumps(less_than))
 
 
+def test_starts_with() -> None:
+    starts_with = StartsWith(Reference("a"), literal("a"))
+    assert starts_with.model_dump_json() == '{"type":"starts-with","term":"a","value":"a"}'
+
+
+def test_not_starts_with() -> None:
+    not_starts_with = NotStartsWith(Reference("a"), literal("a"))
+    assert not_starts_with.model_dump_json() == '{"type":"not-starts-with","term":"a","value":"a"}'
+
+
 def test_less_than_or_equal() -> None:
     less_than_or_equal = LessThanOrEqual(Reference("a"), literal("a"))
+    assert less_than_or_equal.model_dump_json() == '{"type":"lt-eq","term":"a","value":"a"}'
     assert str(less_than_or_equal) == "LessThanOrEqual(term=Reference(name='a'), literal=literal('a'))"
     assert repr(less_than_or_equal) == "LessThanOrEqual(term=Reference(name='a'), literal=literal('a'))"
     assert less_than_or_equal == eval(repr(less_than_or_equal))
