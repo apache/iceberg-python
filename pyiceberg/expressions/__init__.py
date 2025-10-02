@@ -696,7 +696,7 @@ class In(SetPredicate[L]):
 
     def __invert__(self) -> NotIn[L]:
         """Transform the Expression into its negated version."""
-        return NotIn[L](self.term, self._literals)
+        return NotIn[L](self.term, self.literals)
 
     @property
     def as_bound(self) -> Type[BoundIn[L]]:
