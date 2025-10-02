@@ -872,7 +872,7 @@ def test_serialize_in() -> None:
     pred = In(term="foo", literals=[1, 2, 3])
     assert pred.model_dump_json() == '{"type":"in","term":"foo","value":[1,2,3]}'
 
-def test_serialize_not_in():
+def test_serialize_not_in() -> None:
     pred = NotIn(term="foo", literals=[1, 2, 3])
     assert pred.model_dump_json() == '{"type":"not-in","term":"foo","value":[1,2,3]}'
 
