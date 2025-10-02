@@ -32,6 +32,8 @@ from typing import (
     Union,
 )
 
+from pydantic import Field
+
 from pyiceberg.expressions.literals import (
     AboveMax,
     BelowMin,
@@ -39,7 +41,7 @@ from pyiceberg.expressions.literals import (
     literal,
 )
 from pyiceberg.schema import Accessor, Schema
-from pyiceberg.typedef import L, StructProtocol
+from pyiceberg.typedef import IcebergBaseModel, L, StructProtocol
 from pyiceberg.types import DoubleType, FloatType, NestedField
 from pyiceberg.utils.singleton import Singleton
 
@@ -247,9 +249,10 @@ class Reference(UnboundTerm[Any]):
         return BoundReference[L]
 
 
-class And(BooleanExpression):
+class And(BooleanExpression, IcebergBaseModel):
     """AND operation expression - logical conjunction."""
 
+    type: str = Field(default="and", alias="type")
     left: BooleanExpression
     right: BooleanExpression
 
@@ -288,6 +291,12 @@ class And(BooleanExpression):
     def __getnewargs__(self) -> Tuple[BooleanExpression, BooleanExpression]:
         """Pickle the And class."""
         return (self.left, self.right)
+
+    class Config:
+        """Pydantic configuration for And expression serialization."""
+
+        arbitrary_types_allowed = True
+        json_encoders = {BooleanExpression: lambda v: v.model_dump(by_alias=True) if isinstance(v, IcebergBaseModel) else str(v)}
 
 
 class Or(BooleanExpression):
