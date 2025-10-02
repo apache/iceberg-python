@@ -563,7 +563,6 @@ class NotNaN(UnaryPredicate):
 
 class SetPredicate(UnboundPredicate[L], IcebergBaseModel, ABC):
     type: str = Field(default="in", alias="type")
-    term: str
     literals: Set[Literal[L]] = Field(alias="items")
 
     def __init__(self, term: Union[str, UnboundTerm[Any]], literals: Union[Iterable[L], Iterable[Literal[L]]]):
