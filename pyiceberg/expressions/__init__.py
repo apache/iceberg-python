@@ -567,13 +567,8 @@ class SetPredicate(UnboundPredicate[L], IcebergBaseModel, ABC):
     literals: Set[Literal[L]] = Field(alias="items")
 
     def __init__(self, term: Union[str, UnboundTerm[Any]], literals: Union[Iterable[L], Iterable[Literal[L]]]):
-        # Convert term to string for serialization
-        term_str = term.name if isinstance(term, Reference) else str(term)
-        literals_set = _to_literal_set(literals)
-        value_list = [lit.value for lit in literals_set]
-        super().__init__(term=term_str, value=value_list)
-        self.literals = literals_set
-        self.term_obj = term 
+        super().__init__(term)
+        self.literals = _to_literal_set(literals)
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundSetPredicate[L]:
         bound_term = self.term.bind(schema, case_sensitive)
