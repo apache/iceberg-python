@@ -703,7 +703,7 @@ class In(SetPredicate[L]):
 
 
 class NotIn(SetPredicate[L], ABC):
-    type: str = Field(default="not-in", alias="type")
+    type: TypingLiteral["not-in"] = Field(default="not-in", alias="type")
 
     def __new__(  # type: ignore  # pylint: disable=W0221
         cls, term: Union[str, UnboundTerm[Any]], literals: Union[Iterable[L], Iterable[Literal[L]]]
