@@ -35,6 +35,8 @@ from typing import Literal as TypingLiteral
 
 from pydantic import Field
 
+from pydantic import Field
+
 from pyiceberg.expressions.literals import (
     AboveMax,
     BelowMin,
@@ -749,6 +751,39 @@ class LiteralPredicate(UnboundPredicate[L], ABC):
     def __init__(self, term: Union[str, UnboundTerm[Any]], literal: Union[L, Literal[L]]):  # pylint: disable=W0621
         super().__init__(term)
         self.literal = _to_literal(literal)  # pylint: disable=W0621
+
+    # ---- JSON (Pydantic) serialization helpers ----
+
+    class _LiteralPredicateModel(IcebergBaseModel):
+        type: str = Field(alias="type")
+        term: str
+        value: Any
+
+    def _json_op(self) -> str:
+        mapping = {
+            EqualTo: "eq",
+            NotEqualTo: "not-eq",
+            LessThan: "lt",
+            LessThanOrEqual: "lt-eq",
+            GreaterThan: "gt",
+            GreaterThanOrEqual: "gt-eq",
+            StartsWith: "starts-with",
+            NotStartsWith: "not-starts-with",
+        }
+        for cls, op in mapping.items():
+            if isinstance(self, cls):
+                return op
+        raise ValueError(f"Unknown LiteralPredicate: {type(self).__name__}")
+
+    def model_dump(self, **kwargs: Any) -> dict:
+        term_name = getattr(self.term, "name", str(self.term))
+        return self._LiteralPredicateModel(type=self._json_op(), term=term_name, value=self.literal.value).model_dump(**kwargs)
+
+    def model_dump_json(self, **kwargs: Any) -> str:
+        term_name = getattr(self.term, "name", str(self.term))
+        return self._LiteralPredicateModel(type=self._json_op(), term=term_name, value=self.literal.value).model_dump_json(
+            **kwargs
+        )
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundLiteralPredicate[L]:
         bound_term = self.term.bind(schema, case_sensitive)
