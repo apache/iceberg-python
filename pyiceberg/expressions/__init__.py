@@ -42,7 +42,7 @@ from pyiceberg.schema import Accessor, Schema
 from pyiceberg.typedef import L, StructProtocol
 from pyiceberg.types import DoubleType, FloatType, NestedField
 from pyiceberg.utils.singleton import Singleton
-from pyiceberg.utils.pydantic import IcebergBaseModel
+from pyiceberg.typedef import IcebergBaseModel
 from pydantic import Field
 
 
