@@ -365,6 +365,8 @@ class Not(BooleanExpression):
 
 
 class AlwaysTrue(BooleanExpression, Singleton, IcebergRootModel[str]):
+    """TRUE expression."""
+
     root: str = "true"
 
     def __invert__(self) -> AlwaysFalse:
