@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import typing
 from abc import ABC, abstractmethod
 from functools import cached_property
 from typing import (
@@ -32,6 +33,8 @@ from typing import (
     Union,
 )
 
+from pydantic import ConfigDict, Field, field_serializer
+
 from pyiceberg.expressions.literals import (
     AboveMax,
     BelowMin,
@@ -39,7 +42,7 @@ from pyiceberg.expressions.literals import (
     literal,
 )
 from pyiceberg.schema import Accessor, Schema
-from pyiceberg.typedef import IcebergRootModel, L, StructProtocol
+from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel, L, StructProtocol
 from pyiceberg.types import DoubleType, FloatType, NestedField
 from pyiceberg.utils.singleton import Singleton
 
@@ -290,11 +293,17 @@ class And(BooleanExpression):
         return (self.left, self.right)
 
 
-class Or(BooleanExpression):
+class Or(IcebergBaseModel, BooleanExpression):
     """OR operation expression - logical disjunction."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    type: str = Field(default="or", repr=False)
     left: BooleanExpression
     right: BooleanExpression
+
+    def __init__(self, left: typing.Union[BooleanExpression, Or], right: typing.Union[BooleanExpression, Or], *rest: Any):
+        return super().__init__(left=left, right=right)
 
     def __new__(cls, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> BooleanExpression:  # type: ignore
         if rest:
@@ -307,9 +316,24 @@ class Or(BooleanExpression):
             return left
         else:
             obj = super().__new__(cls)
-            obj.left = left
-            obj.right = right
+            super(Or, obj).__init__(left=left, right=right)
             return obj
+
+    @field_serializer("left")
+    def ser_left(self, left: BooleanExpression) -> str:
+        if isinstance(left, IcebergRootModel):
+            return left.root
+        return str(left)
+
+    @field_serializer("right")
+    def ser_right(self, right: BooleanExpression) -> str:
+        if isinstance(right, IcebergRootModel):
+            return right.root
+        return str(right)
+
+    def __str__(self) -> str:
+        """Return the string representation of the Or class."""
+        return f"{str(self.__class__.__name__)}(left={repr(self.left)}, right={repr(self.right)})"
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the Or class."""
