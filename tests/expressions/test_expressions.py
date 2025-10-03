@@ -705,6 +705,10 @@ def test_or() -> None:
     # Some syntactic sugar
     assert or_ == null | nan
 
+    assert (
+        or_.model_dump_json()
+        == '{"type":"or","left":"IsNull(term=Reference(name=\'a\'))","right":"IsNaN(term=Reference(name=\'b\'))"}'
+    )
     assert str(or_) == f"Or(left={str(null)}, right={str(nan)})"
     assert repr(or_) == f"Or(left={repr(null)}, right={repr(nan)})"
     assert or_ == eval(repr(or_))
