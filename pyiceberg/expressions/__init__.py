@@ -31,6 +31,9 @@ from typing import (
     TypeVar,
     Union,
 )
+from typing import Literal as TypingLiteral
+
+from pydantic import Field
 
 from pyiceberg.expressions.literals import (
     AboveMax,
@@ -39,12 +42,15 @@ from pyiceberg.expressions.literals import (
     literal,
 )
 from pyiceberg.schema import Accessor, Schema
-from pyiceberg.typedef import L, StructProtocol
+from pyiceberg.typedef import IcebergBaseModel, L, StructProtocol
 from pyiceberg.types import DoubleType, FloatType, NestedField
 from pyiceberg.utils.singleton import Singleton
-from pyiceberg.typedef import IcebergBaseModel
-from pydantic import Field
-from typing import Literal as TypingLiteral
+
+try:
+    from pydantic import ConfigDict
+except ImportError:
+    ConfigDict = dict
+
 
 def _to_unbound_term(term: Union[str, UnboundTerm[Any]]) -> UnboundTerm[Any]:
     return Reference(term) if isinstance(term, str) else term
