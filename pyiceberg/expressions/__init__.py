@@ -31,6 +31,9 @@ from typing import (
     TypeVar,
     Union,
 )
+from typing import Literal as TypingLiteral
+
+from pydantic import Field, ConfigDict
 
 from pyiceberg.expressions.literals import (
     AboveMax,
@@ -565,8 +568,11 @@ class NotNaN(UnaryPredicate):
         return BoundNotNaN[L]
 
 
-class SetPredicate(UnboundPredicate[L], ABC):
-    literals: Set[Literal[L]]
+class SetPredicate(UnboundPredicate[L], IcebergBaseModel, ABC):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    type: TypingLiteral["in", "not-in"] = Field(default="in", alias="type")
+    literals: Set[Literal[L]] = Field(alias="items")
 
     def __init__(self, term: Union[str, UnboundTerm[Any]], literals: Union[Iterable[L], Iterable[Literal[L]]]):
         super().__init__(term)
@@ -682,6 +688,8 @@ class BoundNotIn(BoundSetPredicate[L]):
 
 
 class In(SetPredicate[L]):
+    type: TypingLiteral["in"] = Field(default="in", alias="type")
+
     def __new__(  # type: ignore  # pylint: disable=W0221
         cls, term: Union[str, UnboundTerm[Any]], literals: Union[Iterable[L], Iterable[Literal[L]]]
     ) -> BooleanExpression:
@@ -704,6 +712,8 @@ class In(SetPredicate[L]):
 
 
 class NotIn(SetPredicate[L], ABC):
+    type: TypingLiteral["not-in"] = Field(default="not-in", alias="type")
+
     def __new__(  # type: ignore  # pylint: disable=W0221
         cls, term: Union[str, UnboundTerm[Any]], literals: Union[Iterable[L], Iterable[Literal[L]]]
     ) -> BooleanExpression:
