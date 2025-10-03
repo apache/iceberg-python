@@ -17,11 +17,13 @@
 
 from __future__ import annotations
 
+import typing
 from abc import ABC, abstractmethod
 from functools import cached_property
 from typing import (
     Any,
     Callable,
+    ClassVar,
     Generic,
     Iterable,
     Sequence,
@@ -35,7 +37,7 @@ from typing import Literal as TypingLiteral
 
 from pydantic import Field
 
-from pydantic import Field
+from pydantic import ConfigDict, Field, field_serializer, field_validator
 
 from pyiceberg.expressions.literals import (
     AboveMax,
@@ -745,45 +747,37 @@ class NotIn(SetPredicate[L], ABC):
         return BoundNotIn[L]
 
 
-class LiteralPredicate(UnboundPredicate[L], ABC):
-    literal: Literal[L]
+class LiteralPredicate(IcebergBaseModel, UnboundPredicate[L], ABC):
+    op: str = Field(
+        default="",
+        alias="type",
+        validation_alias="type",
+        serialization_alias="type",
+        repr=False,
+    )
+    term: Term[L]
+    literal: Literal[L] = Field(serialization_alias="value")
+
+    __op__: ClassVar[str] = ""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def __init__(self, term: Union[str, UnboundTerm[Any]], literal: Union[L, Literal[L]]):  # pylint: disable=W0621
-        super().__init__(term)
-        self.literal = _to_literal(literal)  # pylint: disable=W0621
+        super().__init__(term=_to_unbound_term(term), literal=_to_literal(literal))
 
-    # ---- JSON (Pydantic) serialization helpers ----
+    def model_post_init(self, __context: Any) -> None:
+        if not self.op:
+            object.__setattr__(self, "op", self.__op__)
+        elif self.op != self.__op__:
+            raise ValueError(f"Invalid type {self.op!r}; expected {self.__op__!r}")
 
-    class _LiteralPredicateModel(IcebergBaseModel):
-        type: str = Field(alias="type")
-        term: str
-        value: Any
+    @field_serializer("term")
+    def ser_term(self, v: Term[L]) -> str:
+        return v.name
 
-    def _json_op(self) -> str:
-        mapping = {
-            EqualTo: "eq",
-            NotEqualTo: "not-eq",
-            LessThan: "lt",
-            LessThanOrEqual: "lt-eq",
-            GreaterThan: "gt",
-            GreaterThanOrEqual: "gt-eq",
-            StartsWith: "starts-with",
-            NotStartsWith: "not-starts-with",
-        }
-        for cls, op in mapping.items():
-            if isinstance(self, cls):
-                return op
-        raise ValueError(f"Unknown LiteralPredicate: {type(self).__name__}")
-
-    def model_dump(self, **kwargs: Any) -> dict:
-        term_name = getattr(self.term, "name", str(self.term))
-        return self._LiteralPredicateModel(type=self._json_op(), term=term_name, value=self.literal.value).model_dump(**kwargs)
-
-    def model_dump_json(self, **kwargs: Any) -> str:
-        term_name = getattr(self.term, "name", str(self.term))
-        return self._LiteralPredicateModel(type=self._json_op(), term=term_name, value=self.literal.value).model_dump_json(
-            **kwargs
-        )
+    @field_serializer("literal")
+    def ser_literal(self, literal: Literal[L]) -> str:
+        return "Any"
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundLiteralPredicate[L]:
         bound_term = self.term.bind(schema, case_sensitive)
@@ -807,6 +801,10 @@ class LiteralPredicate(UnboundPredicate[L], ABC):
         if isinstance(other, self.__class__):
             return self.term == other.term and self.literal == other.literal
         return False
+
+    def __str__(self) -> str:
+        """Return the string representation of the LiteralPredicate class."""
+        return f"{str(self.__class__.__name__)}(term={repr(self.term)}, literal={repr(self.literal)})"
 
     def __repr__(self) -> str:
         """Return the string representation of the LiteralPredicate class."""
@@ -921,6 +919,8 @@ class BoundNotStartsWith(BoundLiteralPredicate[L]):
 
 
 class EqualTo(LiteralPredicate[L]):
+    __op__ = "eq"
+
     def __invert__(self) -> NotEqualTo[L]:
         """Transform the Expression into its negated version."""
         return NotEqualTo[L](self.term, self.literal)
@@ -931,6 +931,8 @@ class EqualTo(LiteralPredicate[L]):
 
 
 class NotEqualTo(LiteralPredicate[L]):
+    __op__ = "not-eq"
+
     def __invert__(self) -> EqualTo[L]:
         """Transform the Expression into its negated version."""
         return EqualTo[L](self.term, self.literal)
@@ -941,6 +943,8 @@ class NotEqualTo(LiteralPredicate[L]):
 
 
 class LessThan(LiteralPredicate[L]):
+    __op__ = "lt"
+
     def __invert__(self) -> GreaterThanOrEqual[L]:
         """Transform the Expression into its negated version."""
         return GreaterThanOrEqual[L](self.term, self.literal)
@@ -951,6 +955,8 @@ class LessThan(LiteralPredicate[L]):
 
 
 class GreaterThanOrEqual(LiteralPredicate[L]):
+    __op__ = "gt-eq"
+
     def __invert__(self) -> LessThan[L]:
         """Transform the Expression into its negated version."""
         return LessThan[L](self.term, self.literal)
@@ -961,6 +967,8 @@ class GreaterThanOrEqual(LiteralPredicate[L]):
 
 
 class GreaterThan(LiteralPredicate[L]):
+    __op__ = "gt"
+
     def __invert__(self) -> LessThanOrEqual[L]:
         """Transform the Expression into its negated version."""
         return LessThanOrEqual[L](self.term, self.literal)
@@ -971,6 +979,8 @@ class GreaterThan(LiteralPredicate[L]):
 
 
 class LessThanOrEqual(LiteralPredicate[L]):
+    __op__ = "lt-eq"
+
     def __invert__(self) -> GreaterThan[L]:
         """Transform the Expression into its negated version."""
         return GreaterThan[L](self.term, self.literal)
@@ -981,6 +991,8 @@ class LessThanOrEqual(LiteralPredicate[L]):
 
 
 class StartsWith(LiteralPredicate[L]):
+    __op__ = "starts-with"
+
     def __invert__(self) -> NotStartsWith[L]:
         """Transform the Expression into its negated version."""
         return NotStartsWith[L](self.term, self.literal)
@@ -991,6 +1003,8 @@ class StartsWith(LiteralPredicate[L]):
 
 
 class NotStartsWith(LiteralPredicate[L]):
+    __op__ = "not-starts-with"
+
     def __invert__(self) -> StartsWith[L]:
         """Transform the Expression into its negated version."""
         return StartsWith[L](self.term, self.literal)
