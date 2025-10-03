@@ -33,7 +33,7 @@ from typing import (
 )
 from typing import Literal as TypingLiteral
 
-from pydantic import Field
+from pydantic import Field, ConfigDict
 
 from pyiceberg.expressions.literals import (
     AboveMax,
