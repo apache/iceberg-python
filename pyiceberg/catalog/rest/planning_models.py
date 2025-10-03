@@ -22,6 +22,7 @@ from uuid import UUID
 from pydantic import Field
 
 from pyiceberg.catalog.rest.expression import Expression
+from pyiceberg.catalog.rest.response import ErrorResponse as IcebergErrorResponse
 from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel
 
 
@@ -345,3 +346,37 @@ class ScanTasks(IcebergBaseModel):
     )
     file_scan_tasks: Optional[List[FileScanTask]] = Field(None, alias="file-scan-tasks")
     plan_tasks: Optional[List[PlanTask]] = Field(None, alias="plan-tasks")
+
+
+class FailedPlanningResult(IcebergErrorResponse):
+    """Failed server-side planning result."""
+
+    status: Literal["failed"]
+
+
+class AsyncPlanningResult(IcebergBaseModel):
+    status: Literal["submitted"]
+    plan_id: str = Field(..., alias="plan-id", description="ID used to track a planning request")
+
+
+class CancelledPlanningResult(IcebergBaseModel):
+    """A cancelled planning result."""
+
+    status: Literal["cancelled"]
+
+
+class CompletedPlanningWithIDResult(ScanTasks):
+    """Completed server-side planning result."""
+
+    status: Literal["completed"]
+    plan_id: Optional[str] = Field(None, alias="plan-id", description="ID used to track a planning request")
+
+
+class PlanTableScanResult(
+    IcebergRootModel[Union[CompletedPlanningWithIDResult, FailedPlanningResult, AsyncPlanningResult, CancelledPlanningResult]]
+):
+    """Result of server-side scan planning for planTableScan."""
+
+    root: Union[CompletedPlanningWithIDResult, FailedPlanningResult, AsyncPlanningResult, CancelledPlanningResult] = Field(
+        ..., discriminator="status"
+    )
