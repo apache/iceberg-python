@@ -328,6 +328,7 @@ class Or(IcebergBaseModel, BooleanExpression):
             return left
         else:
             obj = super().__new__(cls)
+            super(Or, obj).__init__(left=left, right=right)
             return obj
 
     @field_serializer("left")
