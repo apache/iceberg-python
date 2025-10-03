@@ -432,6 +432,8 @@ def test_pyarrow_deletes(catalog: Catalog, format_version: int) -> None:
     #  (11, 'k'),
     #  (12, 'l')
     test_positional_mor_deletes = catalog.load_table(f"default.test_positional_mor_deletes_v{format_version}")
+    if format_version == 2:
+        assert len(test_positional_mor_deletes.inspect.delete_files()) > 0, "Table should produce position delete files"
     arrow_table = test_positional_mor_deletes.scan().to_arrow()
     assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12]
 
@@ -470,6 +472,8 @@ def test_pyarrow_deletes_double(catalog: Catalog, format_version: int) -> None:
     #  (11, 'k'),
     #  (12, 'l')
     test_positional_mor_double_deletes = catalog.load_table(f"default.test_positional_mor_double_deletes_v{format_version}")
+    if format_version == 2:
+        assert len(test_positional_mor_double_deletes.inspect.delete_files()) > 0, "Table should produce position delete files"
     arrow_table = test_positional_mor_double_deletes.scan().to_arrow()
     assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 7, 8, 10, 11, 12]
 
@@ -508,6 +512,8 @@ def test_pyarrow_batches_deletes(catalog: Catalog, format_version: int) -> None:
     #  (11, 'k'),
     #  (12, 'l')
     test_positional_mor_deletes = catalog.load_table(f"default.test_positional_mor_deletes_v{format_version}")
+    if format_version == 2:
+        assert len(test_positional_mor_deletes.inspect.delete_files()) > 0, "Table should produce position delete files"
     arrow_table = test_positional_mor_deletes.scan().to_arrow_batch_reader().read_all()
     assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12]
 
@@ -550,6 +556,8 @@ def test_pyarrow_batches_deletes_double(catalog: Catalog, format_version: int) -
     #  (11, 'k'),
     #  (12, 'l')
     test_positional_mor_double_deletes = catalog.load_table(f"default.test_positional_mor_double_deletes_v{format_version}")
+    if format_version == 2:
+        assert len(test_positional_mor_double_deletes.inspect.delete_files()) > 0, "Table should produce position delete files"
     arrow_table = test_positional_mor_double_deletes.scan().to_arrow_batch_reader().read_all()
     assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 7, 8, 10, 11, 12]
 
