@@ -562,6 +562,8 @@ class NotNaN(UnaryPredicate):
 
 
 class SetPredicate(UnboundPredicate[L], IcebergBaseModel, ABC):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     type: TypingLiteral["in", "not-in"] = Field(default="in", alias="type")
     literals: Set[Literal[L]] = Field(alias="items")
 
