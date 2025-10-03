@@ -18,7 +18,7 @@
 services:
   spark-iceberg:
     container_name: pyiceberg-spark
-    build: .
+    build: spark/
     networks:
       iceberg_net:
     depends_on:
