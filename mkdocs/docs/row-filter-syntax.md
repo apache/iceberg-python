@@ -102,11 +102,13 @@ column NOT LIKE 'prefix%'
 
 ## BETWEEN
 
-The BETWEEN operator filters a numeric value against an inclusive range, e.g. `a between 1 and 2` is equivalent to `a >= 1 and a <= 2`.
+The BETWEEN operator filters a column against an inclusive range of two comparable literals, e.g. `a between 1 and 2` is equivalent to `a >= 1 and a <= 2`.
 
 ```sql
 column BETWEEN 1 AND 2
 column BETWEEN 1.0 AND 2.0
+column BETWEEN '2025-01-01' AND '2025-01-02'
+column BETWEEN '2025-01-01T00:00:00.000000' AND '2025-01-01T00:00:00.000000'
 ```
 
 ## Logical Operations
