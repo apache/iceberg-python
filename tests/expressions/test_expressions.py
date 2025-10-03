@@ -691,6 +691,8 @@ def test_reference() -> None:
     assert repr(ref) == "Reference(name='abc')"
     assert ref == eval(repr(ref))
     assert ref == pickle.loads(pickle.dumps(ref))
+    assert ref.model_dump_json() == '"abc"'
+    assert Reference.model_validate_json('"abc"') == ref
 
 
 def test_and() -> None:
