@@ -20,6 +20,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Dict,
+    Iterator,
     List,
     Optional,
     Set,
@@ -96,7 +97,6 @@ if TYPE_CHECKING:
     from mypy_boto3_glue.type_defs import (
         ColumnTypeDef,
         DatabaseInputTypeDef,
-        DatabaseTypeDef,
         StorageDescriptorTypeDef,
         TableInputTypeDef,
         TableTypeDef,
@@ -710,20 +710,19 @@ class GlueCatalog(MetastoreCatalog):
                 )
         self.glue.delete_database(Name=database_name)
 
-    def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def list_tables(self, namespace: Union[str, Identifier]) -> Iterator[Identifier]:
         """List Iceberg tables under the given namespace in the catalog.
 
         Args:
             namespace (str | Identifier): Namespace identifier to search.
 
         Returns:
-            List[Identifier]: list of table identifiers.
+            Iterator[Identifier]: iterator of table identifiers.
 
         Raises:
             NoSuchNamespaceError: If a namespace with the given name does not exist, or the identifier is invalid.
         """
         database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
-        table_list: List["TableTypeDef"] = []
         next_token: Optional[str] = None
         try:
             while True:
@@ -732,36 +731,35 @@ class GlueCatalog(MetastoreCatalog):
                     if not next_token
                     else self.glue.get_tables(DatabaseName=database_name, NextToken=next_token)
                 )
-                table_list.extend(table_list_response["TableList"])
+                for table in table_list_response["TableList"]:
+                    if self.__is_iceberg_table(table):
+                        yield (database_name, table["Name"])
                 next_token = table_list_response.get("NextToken")
                 if not next_token:
                     break
 
         except self.glue.exceptions.EntityNotFoundException as e:
             raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
-        return [(database_name, table["Name"]) for table in table_list if self.__is_iceberg_table(table)]
 
-    def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
+    def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> Iterator[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
 
         Returns:
-            List[Identifier]: a List of namespace identifiers.
+            Iterator[Identifier]: iterator of namespace identifiers.
         """
         # Hierarchical namespace is not supported. Return an empty list
         if namespace:
-            return []
+            return
 
-        database_list: List["DatabaseTypeDef"] = []
         next_token: Optional[str] = None
 
         while True:
             databases_response = self.glue.get_databases() if not next_token else self.glue.get_databases(NextToken=next_token)
-            database_list.extend(databases_response["DatabaseList"])
+            for database in databases_response["DatabaseList"]:
+                yield self.identifier_to_tuple(database["Name"])
             next_token = databases_response.get("NextToken")
             if not next_token:
                 break
-
-        return [self.identifier_to_tuple(database["Name"]) for database in database_list]
 
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
         """Get properties for a namespace.
@@ -817,7 +815,7 @@ class GlueCatalog(MetastoreCatalog):
 
         return properties_update_summary
 
-    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def list_views(self, namespace: Union[str, Identifier]) -> Iterator[Identifier]:
         raise NotImplementedError
 
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
