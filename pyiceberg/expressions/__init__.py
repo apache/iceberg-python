@@ -46,11 +46,6 @@ from pyiceberg.typedef import IcebergRootModel, L, StructProtocol
 from pyiceberg.types import DoubleType, FloatType, NestedField
 from pyiceberg.utils.singleton import Singleton
 
-try:
-    from pydantic import ConfigDict
-except ImportError:
-    ConfigDict = dict
-
 
 def _to_unbound_term(term: Union[str, UnboundTerm[Any]]) -> UnboundTerm[Any]:
     return Reference(term) if isinstance(term, str) else term
