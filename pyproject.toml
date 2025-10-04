@@ -346,8 +346,6 @@ markers = [
 # Turns a warning into an error
 filterwarnings = [
   "error",
-  "ignore:A plugin raised an exception during an old-style hookwrapper teardown.",
-  "ignore:unclosed <socket.socket",
   # Remove this in a future release of PySpark.
   "ignore:distutils Version classes are deprecated. Use packaging.version instead.",
   # Remove this in a future release of PySpark. https://github.com/apache/iceberg-python/issues/1349
