@@ -204,7 +204,7 @@ class SaslServer(threading.Thread):
         self._response = response
         self._port = None
         self._port_bound = threading.Event()
-        self._clients: list = []  # Track accepted client connections
+        self._clients: list[thrift.transport.TSocket.TSocket] = []  # Track accepted client connections
 
     def run(self) -> None:
         self._socket.listen()
