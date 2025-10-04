@@ -37,7 +37,12 @@ repos:
     hooks:
       - id: mypy
         args:
-          [--install-types, --non-interactive, --config=pyproject.toml]
+          [--config=pyproject.toml]
+        additional_dependencies:
+          - types-cachetools
+          - types-pytest-lazy-fixture
+          - types-pytz
+          - types-requests
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.45.0
     hooks:
