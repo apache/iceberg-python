@@ -349,10 +349,6 @@ filterwarnings = [
   "error",
   "ignore:A plugin raised an exception during an old-style hookwrapper teardown.",
   "ignore:unclosed <socket.socket",
-  # Remove this in a future release of PySpark.
-  "ignore:distutils Version classes are deprecated. Use packaging.version instead.",
-  # Latest PySpark version (v3.5.3) throws this error, remove in a future release of PySpark (possibly v4.0.0).
-  "ignore:is_datetime64tz_dtype is deprecated and will be removed in a future version.",
 ]
 
 [tool.black]
