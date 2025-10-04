@@ -204,6 +204,7 @@ class SaslServer(threading.Thread):
         self._response = response
         self._port = None
         self._port_bound = threading.Event()
+        self._clients: list = []  # Track accepted client connections
 
     def run(self) -> None:
         self._socket.listen()
@@ -222,6 +223,7 @@ class SaslServer(threading.Thread):
             try:
                 client = self._socket.accept()
                 if client:
+                    self._clients.append(client)  # Track the client
                     client.write(self._response)
                     client.flush()
             except Exception:
@@ -233,6 +235,12 @@ class SaslServer(threading.Thread):
         return self._port
 
     def close(self) -> None:
+        # Close all client connections first
+        for client in self._clients:
+            try:
+                client.close()
+            except Exception:
+                pass
         self._socket.close()
 
 
@@ -1392,6 +1400,7 @@ def test_create_hive_client_with_kerberos_using_context_manager(
         with client as open_client:
             assert open_client._iprot.trans.isOpen()
 
+        assert not open_client._iprot.trans.isOpen()
         # Use the context manager a second time to see if
         # closing and re-opening work as expected.
         with client as open_client:
