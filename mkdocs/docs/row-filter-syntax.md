@@ -108,7 +108,7 @@ The BETWEEN operator filters a column against an inclusive range of two comparab
 column BETWEEN 1 AND 2
 column BETWEEN 1.0 AND 2.0
 column BETWEEN '2025-01-01' AND '2025-01-02'
-column BETWEEN '2025-01-01T00:00:00.000000' AND '2025-01-01T00:00:00.000000'
+column BETWEEN '2025-01-01T00:00:00.000000' AND '2025-01-02T12:00:00.000000'
 ```
 
 ## Logical Operations
