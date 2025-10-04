@@ -101,7 +101,8 @@ requests-mock = "1.12.1"
 moto = { version = "^5.0.2", extras = ["server"] }
 typing-extensions = "4.15.0"
 pytest-mock = "3.15.1"
-pyspark = { version = "3.5.6", extras = ["connect"] }
+pyspark = { version = "4.0.1", extras = ["connect"] }
+protobuf = "5.29.1" # match Spark Connect's gencode
 cython = "3.1.4"
 deptry = ">=0.14,<0.24"
 docutils = "!=0.21.post1"   # https://github.com/python-poetry/poetry/issues/9248#issuecomment-2026240520
