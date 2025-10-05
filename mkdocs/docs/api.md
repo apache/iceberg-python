@@ -1350,6 +1350,62 @@ with table.manage_snapshots() as ms:
     ms.create_branch(snapshot_id1, "Branch_A").create_tag(snapshot_id2, "tag789")
 ```
 
+### Tags
+
+Tags are named references to snapshots that are immutable. They can be used to mark important snapshots for long-term retention or to reference specific table versions.
+
+Create a tag pointing to a specific snapshot:
+
+```python
+# Create a tag with default retention
+table.manage_snapshots().create_tag(
+    snapshot_id=snapshot_id,
+    tag_name="v1.0.0"
+).commit()
+
+# Create a tag with custom max reference age
+table.manage_snapshots().create_tag(
+    snapshot_id=snapshot_id,
+    tag_name="v1.0.0",
+    max_ref_age_ms=604800000  # 7 days
+).commit()
+```
+
+Remove an existing tag:
+
+```python
+table.manage_snapshots().remove_tag("v1.0.0").commit()
+```
+
+### Branching
+
+Branches are mutable named references to snapshots that can be updated over time. They allow for independent lineages of table changes, enabling use cases like development branches, testing environments, or parallel workflows.
+
+Create a branch pointing to a specific snapshot:
+
+```python
+# Create a branch with default settings
+table.manage_snapshots().create_branch(
+    snapshot_id=snapshot_id,
+    branch_name="dev"
+).commit()
+
+# Create a branch with retention policies
+table.manage_snapshots().create_branch(
+    snapshot_id=snapshot_id,
+    branch_name="dev",
+    max_ref_age_ms=604800000,        # Max age of the branch reference (7 days)
+    max_snapshot_age_ms=259200000,   # Max age of snapshots to keep (3 days)
+    min_snapshots_to_keep=10         # Minimum number of snapshots to retain
+).commit()
+```
+
+Remove an existing branch:
+
+```python
+table.manage_snapshots().remove_branch("dev").commit()
+```
+
 ## Table Maintenance
 
 PyIceberg provides table maintenance operations through the `table.maintenance` API. This provides a clean interface for performing maintenance tasks like snapshot expiration.
