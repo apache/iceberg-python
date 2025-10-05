@@ -17,9 +17,8 @@
 
 services:
   spark-iceberg:
-    image: python-integration
     container_name: pyiceberg-spark
-    build: .
+    build: spark/
     networks:
       iceberg_net:
     depends_on:
@@ -37,6 +36,12 @@ services:
       - rest:rest
       - hive:hive
       - minio:minio
+    healthcheck:
+      test: ["CMD", "sh", "-c", "netstat -an | grep 15002 | grep LISTEN"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
   rest:
     image: apache/iceberg-rest-fixture
     container_name: pyiceberg-rest
@@ -87,7 +92,7 @@ services:
       "
   hive:
     build: hive/
-    container_name: hive
+    container_name: pyiceberg-hive
     hostname: hive
     networks:
       iceberg_net:
