@@ -6491,7 +6491,7 @@ pandas = ["pandas", "pyarrow"]
 polars = ["polars"]
 pyarrow = ["pyarrow", "pyiceberg-core"]
 pyiceberg-core = ["pyiceberg-core"]
-ray = ["pandas", "pyarrow", "ray", "ray"]
+ray = ["pandas", "pyarrow", "ray"]
 rest-sigv4 = ["boto3"]
 s3fs = ["s3fs"]
 snappy = ["python-snappy"]
@@ -6502,4 +6502,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9.2, !=3.9.7"
-content-hash = "21456aae4eb5ae5bf02826b4513e03a74d3c95c293bfd14ea19cb17c15c3c9f5"
+content-hash = "70a6c2e5d8267ae00dda7525b0b5dc195182d3416780bee02c834c5f9900729e"
