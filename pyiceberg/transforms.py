@@ -72,6 +72,8 @@ from pyiceberg.types import (
     DateType,
     DecimalType,
     FixedType,
+    GeographyType,
+    GeometryType,
     IcebergType,
     IntegerType,
     LongType,
@@ -368,7 +370,7 @@ class BucketTransform(Transform[S, int]):
             def hash_func(v: Any) -> int:
                 return mmh3.hash(decimal_to_bytes(v))
 
-        elif isinstance(source, (StringType, FixedType, BinaryType)):
+        elif isinstance(source, (StringType, FixedType, BinaryType, GeographyType, GeometryType)):
 
             def hash_func(v: Any) -> int:
                 return mmh3.hash(v)
