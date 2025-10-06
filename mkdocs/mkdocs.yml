@@ -35,6 +35,7 @@ plugins:
 
 theme:
   name: material
+  custom_dir: overrides
   logo: assets/images/iceberg-logo-icon.png
   favicon: assets/images/iceberg-logo-icon.png
   font:
