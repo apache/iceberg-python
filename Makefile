@@ -83,8 +83,8 @@ install: install-poetry install-dependencies ## Install Poetry and dependencies
 check-license: ## Check license headers
 	./dev/check-license
 
-lint: ## Run code linters via pre-commit
-	$(POETRY) run pre-commit run --all-files
+lint: ## Run code linters via prek (pre-commit hooks)
+	$(POETRY) run prek run -a
 
 # ===============
 # Testing Section
