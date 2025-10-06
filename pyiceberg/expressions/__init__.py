@@ -696,7 +696,7 @@ class In(SetPredicate[L]):
         if count == 0:
             return AlwaysFalse()
         elif count == 1:
-            return EqualTo(term, next(iter(literals)))  # type: ignore
+            return EqualTo(term, next(iter(literals)))
         else:
             return super().__new__(cls)
 
