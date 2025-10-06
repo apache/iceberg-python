@@ -35,8 +35,6 @@ from typing import Literal as TypingLiteral
 
 from pydantic import Field
 
-from pydantic import Field
-
 from pyiceberg.expressions.literals import (
     AboveMax,
     BelowMin,
@@ -44,7 +42,7 @@ from pyiceberg.expressions.literals import (
     literal,
 )
 from pyiceberg.schema import Accessor, Schema
-from pyiceberg.typedef import IcebergRootModel, L, StructProtocol
+from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel, L, StructProtocol
 from pyiceberg.types import DoubleType, FloatType, NestedField
 from pyiceberg.utils.singleton import Singleton
 
