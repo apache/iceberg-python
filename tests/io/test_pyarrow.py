@@ -1541,7 +1541,7 @@ def test_projection_maps_of_structs(schema_map_of_structs: Schema, file_map_of_s
     assert (
         repr(result_table.schema)
         == """locations: map<string, struct<latitude: double not null, longitude: double not null, altitude: double>>
-  child 0, entries: struct<key: string not null, value: struct<latitude: double not null, longitude: double not null, altitude: double> not null> not null
+  child 0, entries: struct<key: string not null, value: struct<latitude: double not null, longitude: double not null, al (... 25 chars omitted) not null
       child 0, key: string not null
       child 1, value: struct<latitude: double not null, longitude: double not null, altitude: double> not null
           child 0, latitude: double not null
