@@ -31,6 +31,7 @@ from typing import (
     Callable,
     Dict,
     Iterable,
+    Iterator,
     List,
     Optional,
     Set,
@@ -1942,11 +1943,11 @@ class DataScan(TableScan):
             and (manifest.sequence_number or INITIAL_SEQUENCE_NUMBER) >= min_sequence_number
         )
 
-    def plan_files(self) -> Iterable[FileScanTask]:
-        """Plans the relevant files by filtering on the PartitionSpecs.
+    def scan_plan_helper(self) -> Iterator[ManifestEntry]:
+        """Filter and return manifest entries based on partition and metrics evaluators.
 
         Returns:
-            List of FileScanTasks that contain both data and delete files.
+            Iterator of ManifestEntry objects that match the scan's partition filter.
         """
         snapshot = self.snapshot()
         if not snapshot:
@@ -1956,8 +1957,6 @@ class DataScan(TableScan):
         # the filter depends on the partition spec used to write the manifest file, so create a cache of filters for each spec id
 
         manifest_evaluators: Dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
-
-        residual_evaluators: Dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
 
         manifests = [
             manifest_file
@@ -1972,11 +1971,9 @@ class DataScan(TableScan):
 
         min_sequence_number = _min_sequence_number(manifests)
 
-        data_entries: List[ManifestEntry] = []
-        positional_delete_entries = SortedList(key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER)
-
         executor = ExecutorFactory.get_or_create()
-        for manifest_entry in chain(
+
+        return chain(
             *executor.map(
                 lambda args: _open_manifest(*args),
                 [
@@ -1990,7 +1987,20 @@ class DataScan(TableScan):
                     if self._check_sequence_number(min_sequence_number, manifest)
                 ],
             )
-        ):
+        )
+
+    def plan_files(self) -> Iterable[FileScanTask]:
+        """Plans the relevant files by filtering on the PartitionSpecs.
+
+        Returns:
+            List of FileScanTasks that contain both data and delete files.
+        """
+        data_entries: List[ManifestEntry] = []
+        positional_delete_entries = SortedList(key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER)
+
+        residual_evaluators: Dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
+
+        for manifest_entry in self.scan_plan_helper():
             data_file = manifest_entry.data_file
             if data_file.content == DataFileContent.DATA:
                 data_entries.append(manifest_entry)
