@@ -32,6 +32,8 @@ from typing import (
     Union,
 )
 
+from pydantic import Field
+
 from pyiceberg.expressions.literals import (
     AboveMax,
     BelowMin,
@@ -39,7 +41,7 @@ from pyiceberg.expressions.literals import (
     literal,
 )
 from pyiceberg.schema import Accessor, Schema
-from pyiceberg.typedef import L, StructProtocol
+from pyiceberg.typedef import IcebergRootModel, L, StructProtocol
 from pyiceberg.types import DoubleType, FloatType, NestedField
 from pyiceberg.utils.singleton import Singleton
 
@@ -202,7 +204,7 @@ class UnboundTerm(Term[Any], Unbound[BoundTerm[L]], ABC):
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundTerm[L]: ...
 
 
-class Reference(UnboundTerm[Any]):
+class Reference(UnboundTerm[Any], IcebergRootModel[str]):
     """A reference not yet bound to a field in a schema.
 
     Args:
@@ -212,18 +214,18 @@ class Reference(UnboundTerm[Any]):
         An unbound reference is sometimes referred to as a "named" reference.
     """
 
-    name: str
+    root: str = Field()
 
     def __init__(self, name: str) -> None:
-        self.name = name
+        super().__init__(name)
 
     def __repr__(self) -> str:
         """Return the string representation of the Reference class."""
-        return f"Reference(name={repr(self.name)})"
+        return f"Reference(name={repr(self.root)})"
 
-    def __eq__(self, other: Any) -> bool:
-        """Return the equality of two instances of the Reference class."""
-        return self.name == other.name if isinstance(other, Reference) else False
+    def __str__(self) -> str:
+        """Return the string representation of the Reference class."""
+        return f"Reference(name={repr(self.root)})"
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundReference[L]:
         """Bind the reference to an Iceberg schema.
@@ -241,6 +243,10 @@ class Reference(UnboundTerm[Any]):
         field = schema.find_field(name_or_id=self.name, case_sensitive=case_sensitive)
         accessor = schema.accessor_for_field(field.field_id)
         return self.as_bound(field=field, accessor=accessor)  # type: ignore
+
+    @property
+    def name(self) -> str:
+        return self.root
 
     @property
     def as_bound(self) -> Type[BoundReference[L]]:
@@ -361,9 +367,13 @@ class Not(BooleanExpression):
         """Pickle the Not class."""
         return (self.child,)
 
-
-class AlwaysTrue(BooleanExpression, Singleton):
     """TRUE expression."""
+
+
+class AlwaysTrue(BooleanExpression, Singleton, IcebergRootModel[str]):
+    """TRUE expression."""
+
+    root: str = "true"
 
     def __invert__(self) -> AlwaysFalse:
         """Transform the Expression into its negated version."""
@@ -378,8 +388,10 @@ class AlwaysTrue(BooleanExpression, Singleton):
         return "AlwaysTrue()"
 
 
-class AlwaysFalse(BooleanExpression, Singleton):
+class AlwaysFalse(BooleanExpression, Singleton, IcebergRootModel[str]):
     """FALSE expression."""
+
+    root: str = "false"
 
     def __invert__(self) -> AlwaysTrue:
         """Transform the Expression into its negated version."""
@@ -732,14 +744,14 @@ class LiteralPredicate(UnboundPredicate[L], ABC):
 
         if isinstance(lit, AboveMax):
             if isinstance(self, (LessThan, LessThanOrEqual, NotEqualTo)):
-                return AlwaysTrue()  # type: ignore
+                return AlwaysTrue()
             elif isinstance(self, (GreaterThan, GreaterThanOrEqual, EqualTo)):
-                return AlwaysFalse()  # type: ignore
+                return AlwaysFalse()
         elif isinstance(lit, BelowMin):
             if isinstance(self, (GreaterThan, GreaterThanOrEqual, NotEqualTo)):
-                return AlwaysTrue()  # type: ignore
+                return AlwaysTrue()
             elif isinstance(self, (LessThan, LessThanOrEqual, EqualTo)):
-                return AlwaysFalse()  # type: ignore
+                return AlwaysFalse()
 
         return self.as_bound(bound_term, lit)
 

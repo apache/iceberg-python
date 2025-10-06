@@ -16,6 +16,7 @@
 # under the License.
 """Concurrency concepts that support efficient multi-threading."""
 
+import os
 from concurrent.futures import Executor, ThreadPoolExecutor
 from typing import Optional
 
@@ -24,6 +25,7 @@ from pyiceberg.utils.config import Config
 
 class ExecutorFactory:
     _instance: Optional[Executor] = None
+    _instance_pid: Optional[int] = None
 
     @staticmethod
     def max_workers() -> Optional[int]:
@@ -33,6 +35,13 @@ class ExecutorFactory:
     @staticmethod
     def get_or_create() -> Executor:
         """Return the same executor in each call."""
+        # ThreadPoolExecutor cannot be shared across processes.  If a new pid is found it means
+        # there is a new process so a new executor is needed.  Otherwise, the executor may be in
+        # an invalid state and tasks submitted will not be started.
+        if ExecutorFactory._instance_pid != os.getpid():
+            ExecutorFactory._instance_pid = os.getpid()
+            ExecutorFactory._instance = None
+
         if ExecutorFactory._instance is None:
             max_workers = ExecutorFactory.max_workers()
             ExecutorFactory._instance = ThreadPoolExecutor(max_workers=max_workers)

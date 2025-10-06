@@ -100,10 +100,8 @@ test-integration: test-integration-setup test-integration-exec test-integration-
 test-integration-setup: ## Start Docker services for integration tests
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
-	docker compose -f dev/docker-compose-integration.yml up -d
-	sleep 10
-	docker compose -f dev/docker-compose-integration.yml cp ./dev/provision.py spark-iceberg:/opt/spark/provision.py
-	docker compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
+	docker compose -f dev/docker-compose-integration.yml up -d --wait
+	$(POETRY) run python dev/provision.py
 
 test-integration-exec: ## Run integration tests (excluding provision)
 	$(TEST_RUNNER) pytest tests/ -m integration $(PYTEST_ARGS)
