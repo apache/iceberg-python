@@ -1596,6 +1596,7 @@ def _task_to_record_batches(
                 current_batch,
                 downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
                 projected_missing_fields=projected_missing_fields,
+                format_version=format_version,
             )
 
 
@@ -1788,13 +1789,18 @@ def _to_requested_schema(
     downcast_ns_timestamp_to_us: bool = False,
     include_field_ids: bool = False,
     projected_missing_fields: Dict[int, Any] = EMPTY_DICT,
+    format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
 ) -> pa.RecordBatch:
     # We could reuse some of these visitors
     struct_array = visit_with_partner(
         requested_schema,
         batch,
         ArrowProjectionVisitor(
-            file_schema, downcast_ns_timestamp_to_us, include_field_ids, projected_missing_fields=projected_missing_fields
+            file_schema,
+            downcast_ns_timestamp_to_us,
+            include_field_ids,
+            projected_missing_fields=projected_missing_fields,
+            format_version=format_version,
         ),
         ArrowAccessor(file_schema),
     )
@@ -1808,6 +1814,8 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
     _use_large_types: Optional[bool]
     _projected_missing_fields: Dict[int, Any]
 
+    _format_version: TableVersion
+
     def __init__(
         self,
         file_schema: Schema,
@@ -1815,12 +1823,14 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
         include_field_ids: bool = False,
         use_large_types: Optional[bool] = None,
         projected_missing_fields: Dict[int, Any] = EMPTY_DICT,
+        format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
     ) -> None:
         self._file_schema = file_schema
         self._include_field_ids = include_field_ids
         self._downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
         self._use_large_types = use_large_types
         self._projected_missing_fields = projected_missing_fields
+        self._format_version = format_version
 
         if use_large_types is not None:
             deprecation_message(
@@ -1862,7 +1872,8 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
 
             if field.field_type != file_field.field_type:
                 target_schema = schema_to_pyarrow(
-                    promote(file_field.field_type, field.field_type), include_field_ids=self._include_field_ids
+                    promote(file_field.field_type, field.field_type, format_version=self._format_version),
+                    include_field_ids=self._include_field_ids,
                 )
                 if self._use_large_types is False:
                     target_schema = _pyarrow_schema_ensure_small_types(target_schema)
@@ -2568,6 +2579,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
                 batch=batch,
                 downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
                 include_field_ids=True,
+                format_version=table_metadata.format_version,
             )
             for batch in task.record_batches
         ]
@@ -2658,7 +2670,7 @@ def _check_pyarrow_schema_compatible(
         raise ValueError(
             f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. Update the schema first (hint, use union_by_name)."
         ) from e
-    _check_schema_compatible(requested_schema, provided_schema)
+    _check_schema_compatible(requested_schema, provided_schema, format_version=format_version)
 
 
 def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_paths: Iterator[str]) -> Iterator[DataFile]:

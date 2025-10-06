@@ -52,6 +52,7 @@ from pyiceberg.types import (
     PrimitiveType,
     StringType,
     StructType,
+    TimestampNanoType,
     TimestampType,
     TimestamptzType,
     TimeType,
@@ -1687,3 +1688,47 @@ def test_arrow_schema() -> None:
     )
 
     assert base_schema.as_arrow() == expected_schema
+
+
+def test_promote_date_to_timestamp(table_v3: Table) -> None:
+    """Test promoting a DateType to a TimestampType"""
+    current_schema = Schema(NestedField(field_id=1, name="a_date", field_type=DateType(), required=False))
+    new_schema = Schema(NestedField(field_id=1, name="a_date", field_type=TimestampType(), required=False))
+
+    transaction = table_v3.transaction()
+    applied = UpdateSchema(transaction=transaction, schema=current_schema).union_by_name(new_schema)._apply()
+
+    assert applied.as_struct() == new_schema.as_struct()
+    assert len(applied.fields) == 1
+    assert isinstance(applied.fields[0].field_type, TimestampType)
+
+
+def test_promote_date_to_timestampnano(table_v3: Table) -> None:
+    """Test promoting a DateType to a TimestampNanoType"""
+    current_schema = Schema(NestedField(field_id=1, name="a_date", field_type=DateType(), required=False))
+    new_schema = Schema(NestedField(field_id=1, name="a_date", field_type=TimestampNanoType(), required=False))
+
+    transaction = table_v3.transaction()
+    applied = UpdateSchema(transaction=transaction, schema=current_schema).union_by_name(new_schema)._apply()
+
+    assert applied.as_struct() == new_schema.as_struct()
+    assert len(applied.fields) == 1
+    assert isinstance(applied.fields[0].field_type, TimestampNanoType)
+
+
+def test_promote_date_fails_for_v1_table(table_v1: Table) -> None:
+    """Test that promoting a DateType fails for a v1 table"""
+    current_schema = Schema(NestedField(field_id=1, name="a_date", field_type=DateType(), required=False))
+    new_schema = Schema(NestedField(field_id=1, name="a_date", field_type=TimestampType(), required=False))
+
+    with pytest.raises(ValidationError, match="Cannot change column type: a_date: date -> timestamp"):
+        _ = UpdateSchema(transaction=Transaction(table_v1), schema=current_schema).union_by_name(new_schema)._apply()
+
+
+def test_promote_date_fails_for_v2_table(table_v2: Table) -> None:
+    """Test that promoting a DateType fails for a v2 table"""
+    current_schema = Schema(NestedField(field_id=1, name="a_date", field_type=DateType(), required=False))
+    new_schema = Schema(NestedField(field_id=1, name="a_date", field_type=TimestampType(), required=False))
+
+    with pytest.raises(ValidationError, match="Cannot change column type: a_date: date -> timestamp"):
+        _ = UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).union_by_name(new_schema)._apply()
