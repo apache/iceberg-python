@@ -654,6 +654,11 @@ class RestCatalog(Catalog):
             "source": self._split_identifier_for_json(from_identifier),
             "destination": self._split_identifier_for_json(to_identifier),
         }
+
+        # Ensure that namespaces exist on source and destination.
+        self.namespace_exists(self._split_identifier_for_json(from_identifier)["namespace"])
+        self.namespace_exists(self._split_identifier_for_json(to_identifier)["namespace"])
+
         response = self._session.post(self.url(Endpoints.rename_table), json=payload)
         try:
             response.raise_for_status()
