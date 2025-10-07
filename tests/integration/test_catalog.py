@@ -35,7 +35,7 @@ from pyiceberg.exceptions import (
 )
 from pyiceberg.io import WAREHOUSE
 from pyiceberg.schema import Schema
-from pyiceberg.types import LongType, StringType
+from pyiceberg.types import BooleanType, FloatType, IntegerType, ListType, LongType, MapType, NestedField, StringType, StructType
 from tests.conftest import clean_up
 
 
@@ -373,23 +373,75 @@ def test_update_table_schema_conflict(
 
     # update the schema concurrently so that the original update fails
     concurrent_table = test_catalog.load_table(identifier)
-    # The test schema is assumed to have a `bar` column that can be deleted.
+
     with concurrent_table.update_schema(allow_incompatible_changes=True) as concurrent_update:
-        concurrent_update.set_identifier_fields("foo")
-        concurrent_update.update_column("foo", required=True)
-        concurrent_update.delete_column("bar")
+        concurrent_update.add_column("new_col", StringType())
 
     # attempt to commit the original update
     with pytest.raises(CommitFailedException, match="Requirement failed: current schema"):
         update.commit()
 
-    loaded = test_catalog.load_table(identifier)
-    assert loaded.schema() == concurrent_table.schema()
+    assert concurrent_table.schema() == Schema(
+        NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
+        NestedField(
+            field_id=4,
+            name="qux",
+            field_type=ListType(type="list", element_id=8, element_type=StringType(), element_required=True),
+            required=True,
+        ),
+        NestedField(
+            field_id=5,
+            name="quux",
+            field_type=MapType(
+                type="map",
+                key_id=9,
+                key_type=StringType(),
+                value_id=10,
+                value_type=MapType(
+                    type="map", key_id=11, key_type=StringType(), value_id=12, value_type=IntegerType(), value_required=True
+                ),
+                value_required=True,
+            ),
+            required=True,
+        ),
+        NestedField(
+            field_id=6,
+            name="location",
+            field_type=ListType(
+                type="list",
+                element_id=13,
+                element_type=StructType(
+                    fields=(
+                        NestedField(field_id=14, name="latitude", field_type=FloatType(), required=False),
+                        NestedField(field_id=15, name="longitude", field_type=FloatType(), required=False),
+                    )
+                ),
+                element_required=True,
+            ),
+            required=True,
+        ),
+        NestedField(
+            field_id=7,
+            name="person",
+            field_type=StructType(
+                fields=(
+                    NestedField(field_id=16, name="name", field_type=StringType(), required=False),
+                    NestedField(field_id=17, name="age", field_type=IntegerType(), required=True),
+                )
+            ),
+            required=False,
+        ),
+        NestedField(field_id=18, name="new_col", field_type=StringType(), required=False),
+        schema_id=1,
+        identifier_field_ids=[2],
+    )
 
 
 @pytest.mark.integration
 @pytest.mark.parametrize("test_catalog", CATALOGS)
-def test_update_table_schema_then_revert(
+def test_update_table_schema_then_change_back(
     test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str
 ) -> None:
     identifier = (database_name, table_name)
