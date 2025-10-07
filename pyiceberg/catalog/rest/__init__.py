@@ -885,6 +885,16 @@ class RestCatalog(Catalog):
             "source": self._split_identifier_for_json(from_identifier),
             "destination": self._split_identifier_for_json(to_identifier),
         }
+
+        # Ensure source and destination namespaces exist before rename.
+        source_namespace = self._split_identifier_for_json(from_identifier)["namespace"]
+        dest_namespace = self._split_identifier_for_path(to_identifier)["namespace"]
+
+        if not self.namespace_exists(source_namespace):
+            raise NoSuchNamespaceError(f"Source namespace does not exist: {source_namespace}")
+        if not self.namespace_exists(dest_namespace):
+            raise NoSuchNamespaceError(f"Destination namespace does not exist: {dest_namespace}")
+
         response = self._session.post(self.url(Endpoints.rename_view), json=payload)
         try:
             response.raise_for_status()
