@@ -357,9 +357,7 @@ def test_update_table_schema(test_catalog: Catalog, table_schema_nested: Schema,
     with table.update_schema() as update:
         update.add_column("new_col", LongType())
 
-    loaded = test_catalog.load_table(identifier)
-
-    assert loaded.schema().find_field("new_col", case_sensitive=False)
+    assert table.schema().find_field("new_col", case_sensitive=False)
 
 
 @pytest.mark.integration
