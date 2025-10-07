@@ -107,7 +107,6 @@ boolean = one_of(["true", "false"], caseless=True).set_results_name("boolean")
 string = sgl_quoted_string.set_results_name("raw_quoted_string")
 decimal = common.real().set_results_name("decimal")
 integer = common.signed_integer().set_results_name("integer")
-number = common.number().set_results_name("number")
 literal = Group(string | decimal | integer | boolean).set_results_name("literal")
 literal_set = Group(
     DelimitedList(string) | DelimitedList(decimal) | DelimitedList(integer) | DelimitedList(boolean)
@@ -151,7 +150,7 @@ comparison_op = one_of(["<", "<=", ">", ">=", "=", "==", "!=", "<>"], caseless=T
 left_ref = column + comparison_op + literal
 right_ref = literal + comparison_op + column
 comparison = left_ref | right_ref
-between = column + BETWEEN + number + AND + number
+between = column + BETWEEN + literal + AND + literal
 
 
 @between.set_parse_action
