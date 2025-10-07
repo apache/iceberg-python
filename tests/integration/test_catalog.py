@@ -354,8 +354,8 @@ def test_update_table_schema(test_catalog: Catalog, table_schema_nested: Schema,
     test_catalog.create_namespace(database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
 
-    update = table.update_schema().add_column("new_col", LongType())
-    update.commit()
+    with table.update_schema() as update:
+        update.add_column("new_col", LongType())
 
     loaded = test_catalog.load_table(identifier)
 
