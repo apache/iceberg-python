@@ -449,11 +449,9 @@ def test_update_table_schema_then_change_back(
     table = test_catalog.create_table(identifier, table_schema_nested)
     original_schema_struct = table.schema().as_struct()
 
-    table.update_schema() \
-        .add_column("col1", StringType()) \
-        .add_column("col2", StringType()) \
-        .add_column("col3", StringType()) \
-        .commit()
+    table.update_schema().add_column("col1", StringType()).add_column("col2", StringType()).add_column(
+        "col3", StringType()
+    ).commit()
 
     table_with_cols = test_catalog.load_table(identifier)
     table_with_cols.update_schema().delete_column("col1").delete_column("col2").delete_column("col3").commit()
