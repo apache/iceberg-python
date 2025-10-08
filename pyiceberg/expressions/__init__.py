@@ -577,15 +577,14 @@ class NotNaN(UnaryPredicate):
         return BoundNotNaN[L]
 
 
-class SetPredicate(UnboundPredicate[L], IcebergBaseModel, ABC):
+class SetPredicate(IcebergBaseModel, UnboundPredicate[L], ABC):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    type: TypingLiteral["in", "not-in"] = Field(default="in", alias="type")
+    type: TypingLiteral["in", "not-in"] = Field(default="in")
     literals: Set[Literal[L]] = Field(alias="items")
 
     def __init__(self, term: Union[str, UnboundTerm[Any]], literals: Union[Iterable[L], Iterable[Literal[L]]]):
-        super().__init__(term)
-        self.literals = _to_literal_set(literals)
+        super().__init__(term=_to_unbound_term(term), items=_to_literal_set(literals))  # type: ignore
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundSetPredicate[L]:
         bound_term = self.term.bind(schema, case_sensitive)
@@ -737,7 +736,7 @@ class NotIn(SetPredicate[L], ABC):
 
     def __invert__(self) -> In[L]:
         """Transform the Expression into its negated version."""
-        return NotIn[L](self.term, self.literals)
+        return In[L](self.term, self.literals)
 
     @property
     def as_bound(self) -> Type[BoundNotIn[L]]:
