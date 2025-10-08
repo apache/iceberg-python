@@ -355,3 +355,48 @@ def test_update_namespace_properties(test_catalog: Catalog, database_name: str) 
         else:
             assert k in update_report.removed
     assert "updated test description" == test_catalog.load_namespace_properties(database_name)["comment"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_register_table(
+    test_catalog: Catalog,
+    table_name: str,
+    database_name: str
+) -> None:
+    identifier = (database_name, table_name)
+
+    test_catalog.create_namespace_if_not_exists(database_name)
+
+    table = test_catalog.create_table(
+        identifier=identifier,
+        schema=Schema(),
+    )
+
+    assert test_catalog.table_exists(identifier)
+    test_catalog.drop_table(identifier)
+    assert not test_catalog.table_exists(identifier)
+    test_catalog.register_table((database_name, "register_table"), metadata_location=table.metadata_location)
+    assert test_catalog.table_exists((database_name, "register_table"))
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_register_table_existing(
+        test_catalog: Catalog,
+        table_name: str,
+        database_name: str
+) -> None:
+    identifier = (database_name, table_name)
+
+    test_catalog.create_namespace_if_not_exists(database_name)
+
+    table = test_catalog.create_table(
+        identifier=identifier,
+        schema=Schema(),
+    )
+
+    assert test_catalog.table_exists(identifier)
+    # Assert that registering the table again raises TableAlreadyExistsError
+    with pytest.raises(TableAlreadyExistsError):
+        test_catalog.register_table(identifier, metadata_location=table.metadata_location)
