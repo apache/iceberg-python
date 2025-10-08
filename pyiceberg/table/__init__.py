@@ -29,8 +29,13 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    ClassVar,
     Iterable,
     Iterator,
+    List,
+    Set,
+    Tuple,
+    Type,
     TypeVar,
 )
 
@@ -1020,13 +1025,33 @@ class CreateTableTransaction(Transaction):
         return self._table
 
 
-class Namespace(IcebergRootModel[list[str]]):
+class Namespace(IcebergRootModel[tuple[str, ...]]):
     """Reference to one or more levels of a namespace."""
 
-    root: list[str] = Field(
+    root: tuple[str, ...] = Field(
         ...,
         description="Reference to one or more levels of a namespace",
     )
+
+    def __len__(self) -> int:
+        """Fetch the size of Namespace."""
+        return len(self.root)
+
+    def __getitem__(self, index: int) -> str:
+        """Fetch a value from a Namespace."""
+        return self.root[index]
+
+    def __iter__(self) -> Iterator[str]:
+        """Return an iterator over the elements in the root of the table."""
+        return iter(self.root)
+
+    def levels(self) -> int:
+        """Return the number of levels in this namespace."""
+        return len(self.root)
+
+    def __repr__(self) -> str:
+        """Return a string representation of the namespace."""
+        return f"Namespace({self.root})"
 
 
 class TableIdentifier(IcebergBaseModel):
@@ -1034,6 +1059,36 @@ class TableIdentifier(IcebergBaseModel):
 
     namespace: Namespace
     name: str
+    _separator: ClassVar[str] = "."
+
+    @classmethod
+    def from_string(cls, identifier: str) -> TableIdentifier:
+        """Create a TableIdentifier from a separator.
+
+        Args:
+            identifier: A separator representing the table identifier, e.g., "db.schema.table".
+
+        Returns:
+            A TableIdentifier instance.
+        """
+        parts = identifier.split(cls._separator)
+        return cls.from_tuple(parts)
+
+    @classmethod
+    def from_tuple(cls, identifier: Sequence[str]) -> TableIdentifier:
+        """Create a TableIdentifier from a tuple.
+
+        Args:
+            identifier: A tuple representing the table identifier, e.g., ("db", "schema", "table").
+
+        Returns:
+            A TableIdentifier instance.
+        """
+        if len(identifier) < 2:
+            raise ValueError("Identifier must include at least a namespace and a table name.")
+        namespace = Namespace(root=tuple(identifier[:-1]))
+        name = identifier[-1]
+        return cls(namespace=namespace, name=name)
 
 
 class CommitTableRequest(IcebergBaseModel):
