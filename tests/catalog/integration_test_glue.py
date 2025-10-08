@@ -226,7 +226,7 @@ def test_list_tables(test_catalog: Catalog, table_schema_nested: Schema, databas
     test_catalog.create_namespace(database_name)
     for table_name in table_list:
         test_catalog.create_table((database_name, table_name), table_schema_nested)
-    identifier_list = test_catalog.list_tables(database_name)
+    identifier_list = list(test_catalog.list_tables(database_name))
     assert len(identifier_list) == LIST_TEST_NUMBER
     for table_name in table_list:
         assert (database_name, table_name) in identifier_list
@@ -315,10 +315,10 @@ def test_create_namespace_with_comment_and_location(test_catalog: Catalog, datab
 def test_list_namespaces(test_catalog: Catalog, database_list: List[str]) -> None:
     for database_name in database_list:
         test_catalog.create_namespace(database_name)
-    db_list = test_catalog.list_namespaces()
+    db_list = list(test_catalog.list_namespaces())
     for database_name in database_list:
         assert (database_name,) in db_list
-    assert len(test_catalog.list_namespaces(list(database_list)[0])) == 0
+    assert len(list(test_catalog.list_namespaces(list(database_list)[0]))) == 0
 
 
 def test_drop_namespace(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_name: str) -> None:
