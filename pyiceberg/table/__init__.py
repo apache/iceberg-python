@@ -1998,7 +1998,7 @@ class DataScan(TableScan):
 
         residual_evaluators: Dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
 
-        for manifest_entry in chain(*self.scan_plan_helper()):
+        for manifest_entry in chain.from_iterable(self.scan_plan_helper()):
             data_file = manifest_entry.data_file
             if data_file.content == DataFileContent.DATA:
                 data_entries.append(manifest_entry)
