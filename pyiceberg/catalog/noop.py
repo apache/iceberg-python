@@ -128,3 +128,6 @@ class NoopCatalog(Catalog):
 
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError
+
+    def rename_view(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> None:
+        raise NotImplementedError
