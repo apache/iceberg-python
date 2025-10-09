@@ -866,8 +866,7 @@ def test_summaries_with_only_nulls(
 @pytest.mark.integration
 def test_duckdb_url_import(warehouse: Path, arrow_table_with_null: pa.Table) -> None:
     os.environ["TZ"] = "Etc/UTC"
-    if hasattr(time, "tzset"):
-        time.tzset()
+    time.tzset()
     tz = pytz.timezone(os.environ["TZ"])
 
     catalog = SqlCatalog("test_sql_catalog", uri="sqlite:///:memory:", warehouse=f"/{warehouse}")
