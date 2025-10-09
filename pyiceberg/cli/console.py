@@ -31,7 +31,7 @@ from click import Context
 from pyiceberg import __version__
 from pyiceberg.catalog import URI, Catalog, load_catalog
 from pyiceberg.cli.output import ConsoleOutput, JsonOutput, Output
-from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchPropertyException, NoSuchTableError
+from pyiceberg.exceptions import NoCatalogError, NoSuchNamespaceError, NoSuchPropertyException, NoSuchTableError
 from pyiceberg.table import TableProperties
 from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
 from pyiceberg.utils.properties import property_as_int
@@ -42,9 +42,13 @@ def catch_exception() -> Callable:  # type: ignore
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any):  # type: ignore
             try:
-                return func(*args, **kwargs)
-            except Exception as e:
                 ctx: Context = click.get_current_context(silent=True)
+                return func(*args, **kwargs)
+            except NoCatalogError as e:
+                ctx.obj["output"].exception(e)
+                ctx.exit(1)
+
+            except Exception as e:
                 _, output = _catalog_and_output(ctx)
                 output.exception(e)
                 ctx.exit(1)
@@ -86,10 +90,18 @@ def run(
         ctx.obj["output"] = JsonOutput(verbose=verbose)
 
     try:
-        ctx.obj["catalog"] = load_catalog(catalog, **properties)
+        ctx.obj["first_level_catalog"] = catalog
+        ctx.obj["second_level_catalog"] = None
+        ctx.obj["properties"] = properties
+
     except Exception as e:
         ctx.obj["output"].exception(e)
         ctx.exit(1)
+
+
+def _load_the_catalog_with_first_level_catalog(ctx: Context) -> None:
+    catalog_option = ctx.obj.get("first_level_catalog", None) or ctx.obj.get("second_level_catalog", None)
+    ctx.obj["catalog"] = load_catalog(catalog_option, **ctx.obj["properties"])
 
     if not isinstance(ctx.obj["catalog"], Catalog):
         ctx.obj["output"].exception(
@@ -99,25 +111,32 @@ def run(
 
 
 def _catalog_and_output(ctx: Context) -> Tuple[Catalog, Output]:
-    """Small helper to set the types."""
+    """Small helper to set the types and load the catalog."""
+    _load_the_catalog_with_first_level_catalog(ctx)
     return ctx.obj["catalog"], ctx.obj["output"]
 
 
-@run.command()
+@run.command(name="list")
+@click.option("--catalog")
 @click.pass_context
 @click.argument("parent", required=False)
 @catch_exception()
-def list(ctx: Context, parent: Optional[str]) -> None:  # pylint: disable=redefined-builtin
+def list_entities(ctx: Context, catalog: Optional[str], parent: Optional[str]) -> None:  # pylint: disable=redefined-builtin
     """List tables or namespaces."""
-    catalog, output = _catalog_and_output(ctx)
+    if ctx.obj["first_level_catalog"] is None:
+        ctx.obj["second_level_catalog"] = catalog
+
+    catalog_obj, output = _catalog_and_output(ctx)
 
     identifiers = []
+
     if parent:
         # Do we have tables under parent namespace?
-        identifiers = catalog.list_tables(parent)
+        identifiers = catalog_obj.list_tables(parent)
+
     if not identifiers:
         # List hierarchical namespaces if parent, root namespaces otherwise.
-        identifiers = catalog.list_namespaces(parent or ())
+        identifiers = catalog_obj.list_namespaces(parent or ())
     output.identifiers(identifiers)
 
 
