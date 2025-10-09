@@ -1943,7 +1943,7 @@ class DataScan(TableScan):
             and (manifest.sequence_number or INITIAL_SEQUENCE_NUMBER) >= min_sequence_number
         )
 
-    def scan_plan_helper(self) -> Iterator[ManifestEntry]:
+    def scan_plan_helper(self) -> Iterator[List[ManifestEntry]]:
         """Filter and return manifest entries based on partition and metrics evaluators.
 
         Returns:
@@ -1973,20 +1973,18 @@ class DataScan(TableScan):
 
         executor = ExecutorFactory.get_or_create()
 
-        return chain(
-            *executor.map(
-                lambda args: _open_manifest(*args),
-                [
-                    (
-                        self.io,
-                        manifest,
-                        partition_evaluators[manifest.partition_spec_id],
-                        self._build_metrics_evaluator(),
-                    )
-                    for manifest in manifests
-                    if self._check_sequence_number(min_sequence_number, manifest)
-                ],
-            )
+        return executor.map(
+            lambda args: _open_manifest(*args),
+            [
+                (
+                    self.io,
+                    manifest,
+                    partition_evaluators[manifest.partition_spec_id],
+                    self._build_metrics_evaluator(),
+                )
+                for manifest in manifests
+                if self._check_sequence_number(min_sequence_number, manifest)
+            ],
         )
 
     def plan_files(self) -> Iterable[FileScanTask]:
@@ -2000,7 +1998,7 @@ class DataScan(TableScan):
 
         residual_evaluators: Dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
 
-        for manifest_entry in self.scan_plan_helper():
+        for manifest_entry in chain(*self.scan_plan_helper()):
             data_file = manifest_entry.data_file
             if data_file.content == DataFileContent.DATA:
                 data_entries.append(manifest_entry)

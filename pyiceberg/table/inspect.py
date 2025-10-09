@@ -16,6 +16,7 @@
 # under the License.
 from __future__ import annotations
 
+import itertools
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Set, Tuple, Union
 
@@ -309,7 +310,7 @@ class InspectTable:
 
         partitions_map: Dict[Tuple[str, Any], Any] = {}
 
-        for entry in scan.scan_plan_helper():
+        for entry in itertools.chain(*scan.scan_plan_helper()):
             partition = entry.data_file.partition
             partition_record_dict = {
                 field.name: partition[pos] for pos, field in enumerate(self.tbl.metadata.specs()[entry.data_file.spec_id].fields)
