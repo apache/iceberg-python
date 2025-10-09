@@ -31,6 +31,7 @@ from typing import (
     TypeVar,
     Union,
 )
+from typing import Literal as TypingLiteral
 
 from pydantic import Field
 
@@ -41,9 +42,14 @@ from pyiceberg.expressions.literals import (
     literal,
 )
 from pyiceberg.schema import Accessor, Schema
-from pyiceberg.typedef import IcebergRootModel, L, StructProtocol
+from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel, L, StructProtocol
 from pyiceberg.types import DoubleType, FloatType, NestedField
 from pyiceberg.utils.singleton import Singleton
+
+try:
+    from pydantic import ConfigDict
+except ImportError:
+    ConfigDict = dict
 
 
 def _to_unbound_term(term: Union[str, UnboundTerm[Any]]) -> UnboundTerm[Any]:
@@ -571,12 +577,14 @@ class NotNaN(UnaryPredicate):
         return BoundNotNaN[L]
 
 
-class SetPredicate(UnboundPredicate[L], ABC):
-    literals: Set[Literal[L]]
+class SetPredicate(IcebergBaseModel, UnboundPredicate[L], ABC):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    type: TypingLiteral["in", "not-in"] = Field(default="in")
+    literals: Set[Literal[L]] = Field(alias="items")
 
     def __init__(self, term: Union[str, UnboundTerm[Any]], literals: Union[Iterable[L], Iterable[Literal[L]]]):
-        super().__init__(term)
-        self.literals = _to_literal_set(literals)
+        super().__init__(term=_to_unbound_term(term), items=_to_literal_set(literals))  # type: ignore
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundSetPredicate[L]:
         bound_term = self.term.bind(schema, case_sensitive)
@@ -688,6 +696,8 @@ class BoundNotIn(BoundSetPredicate[L]):
 
 
 class In(SetPredicate[L]):
+    type: TypingLiteral["in"] = Field(default="in", alias="type")
+
     def __new__(  # type: ignore  # pylint: disable=W0221
         cls, term: Union[str, UnboundTerm[Any]], literals: Union[Iterable[L], Iterable[Literal[L]]]
     ) -> BooleanExpression:
@@ -710,6 +720,8 @@ class In(SetPredicate[L]):
 
 
 class NotIn(SetPredicate[L], ABC):
+    type: TypingLiteral["not-in"] = Field(default="not-in", alias="type")
+
     def __new__(  # type: ignore  # pylint: disable=W0221
         cls, term: Union[str, UnboundTerm[Any]], literals: Union[Iterable[L], Iterable[Literal[L]]]
     ) -> BooleanExpression:
