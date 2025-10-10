@@ -152,11 +152,16 @@ _RETRY_ARGS = {
 }
 
 
+class StorageCredential(IcebergBaseModel):
+    prefix: str = Field()
+    config: Properties = Field()
+
+
 class TableResponse(IcebergBaseModel):
     metadata_location: Optional[str] = Field(alias="metadata-location", default=None)
     metadata: TableMetadata
     config: Properties = Field(default_factory=dict)
-    storage_credentials: Optional[Properties] = Field(alias="storage-credentials", default=None)
+    storage_credentials: Optional[List[StorageCredential]] = Field(alias="storage-credentials", default=None)
 
 
 class CreateTableRequest(IcebergBaseModel):
@@ -457,7 +462,7 @@ class RestCatalog(Catalog):
             io=self._load_file_io(
                 {
                     **table_response.metadata.properties,
-                    **(table_response.storage_credentials or table_response.config),
+                    **self._get_credentials(table_response.storage_credentials, table_response.config),
                 },
                 table_response.metadata_location,
             ),
@@ -473,12 +478,26 @@ class RestCatalog(Catalog):
             io=self._load_file_io(
                 {
                     **table_response.metadata.properties,
-                    **(table_response.storage_credentials or table_response.config),
+                    **self._get_credentials(table_response.storage_credentials, table_response.config),
                 },
                 table_response.metadata_location,
             ),
             catalog=self,
         )
+
+    def _get_credentials(self, storage_credentials: List[StorageCredential], config: Properties) -> Properties:
+        if storage_credentials:
+            return self._get_storage_credentials(storage_credentials)
+        else:
+            return config
+
+    @staticmethod
+    def _get_storage_credentials(storage_credentials: List[StorageCredential]) -> Properties:
+        credentials: List[StorageCredential] = [sc for sc in storage_credentials if sc.prefix.startswith("s3")]
+        if len(credentials) > 1:
+            raise ValueError("Multiple S3 storage credentials found")
+        elif len(credentials) == 1:
+            return credentials[0].config
 
     def _refresh_token(self) -> None:
         # Reactive token refresh is atypical - we should proactively refresh tokens in a separate thread

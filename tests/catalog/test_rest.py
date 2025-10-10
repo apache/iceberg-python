@@ -865,9 +865,14 @@ def test_storage_credentials_over_config(rest_mock: Mocker, example_table_metada
         "config": {
             AWS_ACCESS_KEY_ID: "from_config",
         },
-        "storage-credentials": {
-            AWS_ACCESS_KEY_ID: "from_storage_credentials",
-        },
+        "storage-credentials": [
+            {
+                "prefix": "s3://warehouse/database/",
+                "config": {
+                    AWS_ACCESS_KEY_ID: "from_storage_credentials",
+                },
+            }
+        ],
     }
 
     rest_mock.get(
