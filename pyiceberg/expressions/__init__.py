@@ -17,13 +17,11 @@
 
 from __future__ import annotations
 
-import typing
 from abc import ABC, abstractmethod
 from functools import cached_property
 from typing import (
     Any,
     Callable,
-    ClassVar,
     Generic,
     Iterable,
     Sequence,
@@ -35,9 +33,7 @@ from typing import (
 )
 from typing import Literal as TypingLiteral
 
-from pydantic import Field
-
-from pydantic import ConfigDict, Field, field_serializer, field_validator
+from pydantic import ConfigDict, Field, field_serializer
 
 from pyiceberg.expressions.literals import (
     AboveMax,
@@ -748,28 +744,14 @@ class NotIn(SetPredicate[L], ABC):
 
 
 class LiteralPredicate(IcebergBaseModel, UnboundPredicate[L], ABC):
-    op: str = Field(
-        default="",
-        alias="type",
-        validation_alias="type",
-        serialization_alias="type",
-        repr=False,
-    )
+    type: TypingLiteral["lt-eq", "gt", "gt-eq", "eq", "not-eq", "starts-with", "not-starts-with"] = Field(alias="type")
     term: Term[L]
     literal: Literal[L] = Field(serialization_alias="value")
-
-    __op__: ClassVar[str] = ""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def __init__(self, term: Union[str, UnboundTerm[Any]], literal: Union[L, Literal[L]]):  # pylint: disable=W0621
         super().__init__(term=_to_unbound_term(term), literal=_to_literal(literal))
-
-    def model_post_init(self, __context: Any) -> None:
-        if not self.op:
-            object.__setattr__(self, "op", self.__op__)
-        elif self.op != self.__op__:
-            raise ValueError(f"Invalid type {self.op!r}; expected {self.__op__!r}")
 
     @field_serializer("term")
     def ser_term(self, v: Term[L]) -> str:
@@ -919,7 +901,7 @@ class BoundNotStartsWith(BoundLiteralPredicate[L]):
 
 
 class EqualTo(LiteralPredicate[L]):
-    __op__ = "eq"
+    type: TypingLiteral["eq"] = Field(default="eq", alias="type")
 
     def __invert__(self) -> NotEqualTo[L]:
         """Transform the Expression into its negated version."""
@@ -931,7 +913,7 @@ class EqualTo(LiteralPredicate[L]):
 
 
 class NotEqualTo(LiteralPredicate[L]):
-    __op__ = "not-eq"
+    type: TypingLiteral["not-eq"] = Field(default="not-eq", alias="type")
 
     def __invert__(self) -> EqualTo[L]:
         """Transform the Expression into its negated version."""
@@ -943,7 +925,7 @@ class NotEqualTo(LiteralPredicate[L]):
 
 
 class LessThan(LiteralPredicate[L]):
-    __op__ = "lt"
+    type: TypingLiteral["lt"] = Field(default="lt", alias="type")
 
     def __invert__(self) -> GreaterThanOrEqual[L]:
         """Transform the Expression into its negated version."""
@@ -955,7 +937,7 @@ class LessThan(LiteralPredicate[L]):
 
 
 class GreaterThanOrEqual(LiteralPredicate[L]):
-    __op__ = "gt-eq"
+    type: TypingLiteral["gt-eq"] = Field(default="gt-eq", alias="type")
 
     def __invert__(self) -> LessThan[L]:
         """Transform the Expression into its negated version."""
@@ -967,7 +949,7 @@ class GreaterThanOrEqual(LiteralPredicate[L]):
 
 
 class GreaterThan(LiteralPredicate[L]):
-    __op__ = "gt"
+    type: TypingLiteral["gt"] = Field(default="gt", alias="type")
 
     def __invert__(self) -> LessThanOrEqual[L]:
         """Transform the Expression into its negated version."""
@@ -979,7 +961,7 @@ class GreaterThan(LiteralPredicate[L]):
 
 
 class LessThanOrEqual(LiteralPredicate[L]):
-    __op__ = "lt-eq"
+    type: TypingLiteral["lt-eq"] = Field(default="lt-eq", alias="type")
 
     def __invert__(self) -> GreaterThan[L]:
         """Transform the Expression into its negated version."""
@@ -991,7 +973,7 @@ class LessThanOrEqual(LiteralPredicate[L]):
 
 
 class StartsWith(LiteralPredicate[L]):
-    __op__ = "starts-with"
+    type: TypingLiteral["starts-with"] = Field(default="starts-with", alias="type")
 
     def __invert__(self) -> NotStartsWith[L]:
         """Transform the Expression into its negated version."""
@@ -1003,7 +985,7 @@ class StartsWith(LiteralPredicate[L]):
 
 
 class NotStartsWith(LiteralPredicate[L]):
-    __op__ = "not-starts-with"
+    type: TypingLiteral["not-starts-with"] = Field(default="not-starts-with", alias="type")
 
     def __invert__(self) -> StartsWith[L]:
         """Transform the Expression into its negated version."""
