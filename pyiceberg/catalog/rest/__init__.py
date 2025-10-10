@@ -488,8 +488,7 @@ class RestCatalog(Catalog):
     def _get_credentials(self, storage_credentials: List[StorageCredential], config: Properties) -> Properties:
         if storage_credentials:
             return self._get_storage_credentials(storage_credentials)
-        else:
-            return config
+        return config
 
     @staticmethod
     def _get_storage_credentials(storage_credentials: List[StorageCredential]) -> Properties:
