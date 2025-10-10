@@ -57,7 +57,7 @@ jobs:
       # Publish the source distribution with the version that's in
       # the repository, otherwise the tests will fail
       - name: Compile source distribution
-        run: python3 -m poetry build --format=sdist
+        run: uv build --sdist --wheel
         if: startsWith(matrix.os, 'ubuntu')
 
       - name: Build wheels

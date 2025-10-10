@@ -61,7 +61,7 @@ install-uv: ## Ensure uv is installed
 setup-venv: ## Create virtual environment
 	@if [ ! -d .venv ]; then \
 		echo "Creating virtual environment."; \
-		uv venv --python $(PYTHON_VERSION); \
+		uv venv; \
 	else \
 		echo "Virtual environment already exists."; \
 	fi
