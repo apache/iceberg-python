@@ -389,10 +389,6 @@ Run the [`Release Docs` Github Action](https://github.com/apache/iceberg-python/
 
 Make sure to create a PR to update the [GitHub issues template](https://github.com/apache/iceberg-python/blob/main/.github/ISSUE_TEMPLATE/iceberg_bug_report.yml) with the latest version.
 
-### Update the integration tests
-
-Ensure to update the `PYICEBERG_VERSION` in the [Dockerfile](https://github.com/apache/iceberg-python/blob/main/dev/Dockerfile).
-
 ## Misc
 
 ### Set up GPG key and Upload to Apache Iceberg KEYS file

@@ -80,17 +80,17 @@ pip install "git+https://github.com/apache/iceberg-python.git#egg=pyiceberg[pyar
 
 ## Linting
 
-`pre-commit` is used for autoformatting and linting:
+`prek` is used for autoformatting and linting:
 
 ```bash
 make lint
 ```
 
-Pre-commit will automatically fix the violations such as import orders, formatting etc. Pylint errors you need to fix yourself.
+`prek` will automatically fix the violations such as import orders, formatting etc. Pylint errors you need to fix yourself.
 
-In contrast to the name suggest, it doesn't run the checks on the commit. If this is something that you like, you can set this up by running `pre-commit install`.
+In addition to manually running `make lint`, you can install the pre-commit hooks in your local repo with `prek install`. By doing this, linting is run automatically every time you make a commit.
 
-You can bump the integrations to the latest version using `pre-commit autoupdate`. This will check if there is a newer version of `{black,mypy,isort,...}` and update the yaml.
+You can bump the integrations to the latest version using `prek auto-update`. This will check if there is a newer version of `{black,mypy,isort,...}` and update the yaml.
 
 ## Cleaning
 

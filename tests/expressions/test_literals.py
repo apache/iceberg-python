@@ -319,8 +319,8 @@ def test_string_to_time_literal() -> None:
 
     avro_val = 51661919000
 
-    assert isinstance(time_lit, TimeLiteral)  # type: ignore
-    assert avro_val == time_lit.value  # type: ignore
+    assert isinstance(time_lit, TimeLiteral)
+    assert avro_val == time_lit.value
 
 
 def test_string_to_timestamp_literal() -> None:
@@ -428,8 +428,8 @@ def test_python_date_conversion() -> None:
 
     from_str_lit = literal(one_day_str).to(DateType())
 
-    assert isinstance(from_str_lit, DateLiteral)  # type: ignore
-    assert from_str_lit.value == 19079  # type: ignore
+    assert isinstance(from_str_lit, DateLiteral)
+    assert from_str_lit.value == 19079
 
 
 @pytest.mark.parametrize(
@@ -911,7 +911,7 @@ def test_uuid_to_fixed() -> None:
     with pytest.raises(TypeError) as e:
         uuid_literal.to(FixedType(15))
     assert "Cannot convert UUIDLiteral into fixed[15], different length: 15 <> 16" in str(e.value)
-    assert isinstance(fixed_literal, FixedLiteral)  # type: ignore
+    assert isinstance(fixed_literal, FixedLiteral)
 
 
 def test_uuid_to_binary() -> None:
@@ -919,7 +919,7 @@ def test_uuid_to_binary() -> None:
     uuid_literal = literal(test_uuid)
     binary_literal = uuid_literal.to(BinaryType())
     assert test_uuid.bytes == binary_literal.value
-    assert isinstance(binary_literal, BinaryLiteral)  # type: ignore
+    assert isinstance(binary_literal, BinaryLiteral)
 
 
 def test_literal_from_datetime() -> None:
@@ -928,6 +928,22 @@ def test_literal_from_datetime() -> None:
 
 def test_literal_from_date() -> None:
     assert isinstance(literal(datetime.date.today()), DateLiteral)
+
+
+def test_to_json() -> None:
+    assert literal(True).model_dump_json() == "true"
+    assert literal(float(123)).model_dump_json() == "123.0"
+    assert literal(123).model_dump_json() == "123"
+    assert literal("vo").model_dump_json() == '"vo"'
+    assert (
+        literal(uuid.UUID("f79c3e09-677c-4bbd-a479-3f349cb785e7")).model_dump_json() == '"f79c3e09-677c-4bbd-a479-3f349cb785e7"'
+    )
+    assert literal(bytes([0x01, 0x02, 0x03])).model_dump_json() == '"010203"'
+    assert literal(Decimal("19.25")).model_dump_json() == '"19.25"'
+    assert literal(datetime.date.fromisoformat("2022-03-28")).model_dump_json() == '"2022-03-28"'
+    assert (
+        literal(datetime.datetime.fromisoformat("1970-11-22T00:00:00.000000+00:00")).model_dump_json() == '"1970-11-22T00:00:00"'
+    )
 
 
 #   __  __      ___
