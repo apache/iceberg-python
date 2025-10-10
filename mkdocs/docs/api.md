@@ -1928,7 +1928,7 @@ PyIceberg integrates with [Apache DataFusion](https://datafusion.apache.org/) th
 <!-- prettier-ignore-start -->
 
 !!! note "Requirements"
-    This requires [`datafusion` to be installed](index.md).
+    This requires [`datafusion` and `pyiceberg-core` to be installed](index.md).
 
 <!-- prettier-ignore-end -->
 
