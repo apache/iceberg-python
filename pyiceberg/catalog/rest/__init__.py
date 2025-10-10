@@ -462,7 +462,12 @@ class RestCatalog(Catalog):
             io=self._load_file_io(
                 {
                     **table_response.metadata.properties,
-                    **self._get_credentials(table_response.storage_credentials, table_response.config),
+                    **self._get_credentials(
+                        table_response.storage_credentials,
+                        table_response.config,
+                        table_response.metadata_location,
+                        getattr(table_response.metadata, "location", None),
+                    ),
                 },
                 table_response.metadata_location,
             ),
@@ -478,25 +483,39 @@ class RestCatalog(Catalog):
             io=self._load_file_io(
                 {
                     **table_response.metadata.properties,
-                    **self._get_credentials(table_response.storage_credentials, table_response.config),
+                    **self._get_credentials(
+                        table_response.storage_credentials,
+                        table_response.config,
+                        table_response.metadata_location,
+                        getattr(table_response.metadata, "location", None),
+                    ),
                 },
                 table_response.metadata_location,
             ),
             catalog=self,
         )
 
-    def _get_credentials(self, storage_credentials: List[StorageCredential], config: Properties) -> Properties:
-        if storage_credentials:
-            return self._get_storage_credentials(storage_credentials)
-        return config
-
     @staticmethod
-    def _get_storage_credentials(storage_credentials: List[StorageCredential]) -> Properties:
-        credentials: List[StorageCredential] = [sc for sc in storage_credentials if sc.prefix.startswith("s3")]
-        if len(credentials) > 1:
-            raise ValueError("Multiple S3 storage credentials found")
-        elif len(credentials) == 1:
-            return credentials[0].config
+    def _get_credentials(
+        storage_credentials: Optional[List[StorageCredential]],
+        config: Properties,
+        metadata_location: Optional[str],
+        table_location: Optional[str],
+    ) -> Properties:
+        if not storage_credentials:
+            return config
+
+        target = metadata_location or table_location
+        if not target:
+            return config
+
+        # Choose the most specific (longest) matching prefix
+        matching: List[StorageCredential] = [sc for sc in storage_credentials if target.startswith(sc.prefix)]
+        if not matching:
+            return config
+
+        selected = max(matching, key=lambda sc: len(sc.prefix))
+        return selected.config
 
     def _refresh_token(self) -> None:
         # Reactive token refresh is atypical - we should proactively refresh tokens in a separate thread
