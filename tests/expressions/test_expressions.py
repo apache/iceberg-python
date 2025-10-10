@@ -691,6 +691,8 @@ def test_reference() -> None:
     assert repr(ref) == "Reference(name='abc')"
     assert ref == eval(repr(ref))
     assert ref == pickle.loads(pickle.dumps(ref))
+    assert ref.model_dump_json() == '"abc"'
+    assert Reference.model_validate_json('"abc"') == ref
 
 
 def test_and() -> None:
@@ -761,6 +763,7 @@ def test_not_json_serialization_and_deserialization() -> None:
 
 def test_always_true() -> None:
     always_true = AlwaysTrue()
+    assert always_true.model_dump_json() == '"true"'
     assert str(always_true) == "AlwaysTrue()"
     assert repr(always_true) == "AlwaysTrue()"
     assert always_true == eval(repr(always_true))
@@ -769,6 +772,7 @@ def test_always_true() -> None:
 
 def test_always_false() -> None:
     always_false = AlwaysFalse()
+    assert always_false.model_dump_json() == '"false"'
     assert str(always_false) == "AlwaysFalse()"
     assert repr(always_false) == "AlwaysFalse()"
     assert always_false == eval(repr(always_false))
@@ -890,6 +894,16 @@ def test_not_in() -> None:
     assert repr(not_in) == f"NotIn({repr(ref)}, {{literal('a'), literal('b'), literal('c')}})"
     assert not_in == eval(repr(not_in))
     assert not_in == pickle.loads(pickle.dumps(not_in))
+
+
+def test_serialize_in() -> None:
+    pred = In(term="foo", literals=[1, 2, 3])
+    assert pred.model_dump_json() == '{"term":"foo","type":"in","items":[1,2,3]}'
+
+
+def test_serialize_not_in() -> None:
+    pred = NotIn(term="foo", literals=[1, 2, 3])
+    assert pred.model_dump_json() == '{"term":"foo","type":"not-in","items":[1,2,3]}'
 
 
 def test_bound_equal_to(term: BoundReference[Any]) -> None:
