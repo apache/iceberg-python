@@ -46,13 +46,13 @@ jobs:
             3.11
             3.12
 
-      - name: Install poetry
-        run: make install-poetry
+      - name: Install UV
+        run: make install-uv
 
       - name: Set version with RC
         env:
           VERSION: ${{ inputs.VERSION }}
-        run: python -m poetry version "${{ env.VERSION }}"
+        run: python -m uv version "${{ env.VERSION }}"
 
       # Publish the source distribution with the version that's in
       # the repository, otherwise the tests will fail
