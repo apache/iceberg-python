@@ -359,14 +359,14 @@ def test_update_namespace_properties(test_catalog: Catalog, database_name: str) 
 
 @pytest.mark.integration
 @pytest.mark.parametrize("test_catalog", CATALOGS)
-def test_register_table(test_catalog: Catalog, table_name: str, database_name: str) -> None:
+def test_register_table(test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str) -> None:
     identifier = (database_name, table_name)
 
     test_catalog.create_namespace_if_not_exists(database_name)
 
     table = test_catalog.create_table(
         identifier=identifier,
-        schema=Schema(),
+        schema=table_schema_nested,
     )
 
     assert test_catalog.table_exists(identifier)
@@ -378,14 +378,14 @@ def test_register_table(test_catalog: Catalog, table_name: str, database_name: s
 
 @pytest.mark.integration
 @pytest.mark.parametrize("test_catalog", CATALOGS)
-def test_register_table_existing(test_catalog: Catalog, table_name: str, database_name: str) -> None:
+def test_register_table_existing(test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str) -> None:
     identifier = (database_name, table_name)
 
     test_catalog.create_namespace_if_not_exists(database_name)
 
     table = test_catalog.create_table(
         identifier=identifier,
-        schema=Schema(),
+        schema=table_schema_nested,
     )
 
     assert test_catalog.table_exists(identifier)
