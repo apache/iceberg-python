@@ -872,7 +872,7 @@ def test_storage_credentials_over_config(rest_mock: Mocker, example_table_metada
                     AWS_ACCESS_KEY_ID: "from_storage_credentials",
                 },
             }
-        ],
+        ]
     }
 
     rest_mock.get(
