@@ -156,6 +156,7 @@ class TableResponse(IcebergBaseModel):
     metadata_location: Optional[str] = Field(alias="metadata-location", default=None)
     metadata: TableMetadata
     config: Properties = Field(default_factory=dict)
+    storage_credentials: Optional[Properties] = Field(alias="storage-credentials", default=None)
 
 
 class CreateTableRequest(IcebergBaseModel):
@@ -454,7 +455,11 @@ class RestCatalog(Catalog):
             metadata_location=table_response.metadata_location,  # type: ignore
             metadata=table_response.metadata,
             io=self._load_file_io(
-                {**table_response.metadata.properties, **table_response.config}, table_response.metadata_location
+                {
+                    **table_response.metadata.properties,
+                    **(table_response.storage_credentials or table_response.config),
+                },
+                table_response.metadata_location,
             ),
             catalog=self,
             config=table_response.config,
@@ -466,7 +471,11 @@ class RestCatalog(Catalog):
             metadata_location=table_response.metadata_location,  # type: ignore
             metadata=table_response.metadata,
             io=self._load_file_io(
-                {**table_response.metadata.properties, **table_response.config}, table_response.metadata_location
+                {
+                    **table_response.metadata.properties,
+                    **(table_response.storage_credentials or table_response.config),
+                },
+                table_response.metadata_location,
             ),
             catalog=self,
         )

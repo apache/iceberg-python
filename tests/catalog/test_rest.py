@@ -18,6 +18,7 @@
 import base64
 import os
 from typing import Any, Callable, Dict, cast
+from copy import deepcopy
 from unittest import mock
 
 import pytest
@@ -856,6 +857,42 @@ def test_load_table_200(rest_mock: Mocker, example_table_metadata_with_snapshot_
     # First compare the dicts
     assert actual.metadata.model_dump() == expected.metadata.model_dump()
     assert actual == expected
+
+
+def test_load_table_prefers_storage_credentials_over_config(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    table_resp = deepcopy(example_table_metadata_with_snapshot_v1_rest_json)
+    table_resp["config"] = {"some.key": "from-config", "only.config": "only-config"}
+    table_resp["storage-credentials"] = {"some.key": "from-cred", "only.creds": "only-creds"}
+
+    table_resp["metadata"].setdefault("properties", {})["meta.key"] = "from-metadata"
+
+    captured: Dict[str, Any] = {}
+
+    def _capture_io(_self: Any, properties: Dict[str, Any], location: Any) -> Any:  # type: ignore
+        captured["properties"] = dict(properties)
+        captured["location"] = location
+        class _DummyIO:
+            pass
+        return _DummyIO()
+
+    monkeypatch.setattr(RestCatalog, "_load_file_io", _capture_io, raising=True)
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json=table_resp,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    _ = catalog.load_table(("fokko", "table"))
+
+    props = cast(Dict[str, Any], captured["properties"])
+    assert props["meta.key"] == "from-metadata"
+    assert props["some.key"] == "from-cred"
+    assert props["only.creds"] == "only-creds"
 
 
 def test_load_table_200_loading_mode(
