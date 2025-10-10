@@ -32,7 +32,7 @@ from typing import (
     Union,
 )
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
 from pyiceberg.expressions.literals import (
     AboveMax,
