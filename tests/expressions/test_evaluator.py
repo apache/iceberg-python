@@ -683,7 +683,7 @@ def data_file_nan() -> DataFile:
 
 
 def test_inclusive_metrics_evaluator_less_than_and_less_than_equal(schema_data_file_nan: Schema, data_file_nan: DataFile) -> None:
-    for operator in [LessThan, LessThanOrEqual]:  # type: ignore
+    for operator in [LessThan, LessThanOrEqual]:
         should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("all_nan", 1)).eval(data_file_nan)  # type: ignore[arg-type]
         assert not should_read, "Should not match: all nan column doesn't contain number"
 
@@ -711,7 +711,7 @@ def test_inclusive_metrics_evaluator_less_than_and_less_than_equal(schema_data_f
 def test_inclusive_metrics_evaluator_greater_than_and_greater_than_equal(
     schema_data_file_nan: Schema, data_file_nan: DataFile
 ) -> None:
-    for operator in [GreaterThan, GreaterThanOrEqual]:  # type: ignore
+    for operator in [GreaterThan, GreaterThanOrEqual]:
         should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("all_nan", 1)).eval(data_file_nan)  # type: ignore[arg-type]
         assert not should_read, "Should not match: all nan column doesn't contain number"
 
