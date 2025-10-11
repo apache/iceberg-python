@@ -52,7 +52,7 @@ jobs:
       # Publish the source distribution with the version that's in
       # the repository, otherwise the tests will fail
       - name: Compile source distribution
-        run: uv build --sdist --wheel
+        run: uv build --sdist
         if: startsWith(matrix.os, 'ubuntu')
 
       - name: Build wheels

@@ -18,54 +18,58 @@
 import os
 import shutil
 from pathlib import Path
+from typing import Any
+
+from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
 allowed_to_fail = os.environ.get("CIBUILDWHEEL", "0") != "1"
 
 
-def build_cython_extensions() -> None:
-    import Cython.Compiler.Options
-    from Cython.Build import build_ext, cythonize
-    from setuptools import Extension
-    from setuptools.dist import Distribution
+class CythonBuildHook(BuildHookInterface):
+    def build_cython_extensions(self) -> None:
+        import Cython.Compiler.Options
+        from Cython.Build import build_ext, cythonize
+        from setuptools import Extension
+        from setuptools.dist import Distribution
 
-    Cython.Compiler.Options.annotate = True
+        Cython.Compiler.Options.annotate = True
 
-    if os.name == "nt":  # Windows
-        extra_compile_args = [
-            "/O2",
-        ]
-    else:  # UNIX-based systems
-        extra_compile_args = [
-            "-O3",
-        ]
+        if os.name == "nt":  # Windows
+            extra_compile_args = [
+                "/O2",
+            ]
+        else:  # UNIX-based systems
+            extra_compile_args = [
+                "-O3",
+            ]
 
-    package_path = "pyiceberg"
+        package_path = "pyiceberg"
 
-    extension = Extension(
-        # Your .pyx file will be available to cpython at this location.
-        name="pyiceberg.avro.decoder_fast",
-        sources=[
-            os.path.join(package_path, "avro", "decoder_fast.pyx"),
-        ],
-        extra_compile_args=extra_compile_args,
-        language="c",
-    )
+        extension = Extension(
+            # Your .pyx file will be available to cpython at this location.
+            name="pyiceberg.avro.decoder_fast",
+            sources=[
+                os.path.join(package_path, "avro", "decoder_fast.pyx"),
+            ],
+            extra_compile_args=extra_compile_args,
+            language="c",
+        )
 
-    ext_modules = cythonize([extension], include_path=list(package_path), language_level=3, annotate=True)
-    dist = Distribution({"ext_modules": ext_modules})
-    cmd = build_ext(dist)
-    cmd.ensure_finalized()
+        ext_modules = cythonize([extension], include_path=list(package_path), language_level=3, annotate=True)
+        dist = Distribution({"ext_modules": ext_modules})
+        cmd = build_ext(dist)
+        cmd.ensure_finalized()
 
-    cmd.run()
+        cmd.run()
 
-    for output in cmd.get_outputs():
-        output = Path(output)
-        relative_extension = output.relative_to(cmd.build_lib)
-        shutil.copyfile(output, relative_extension)
+        for output in cmd.get_outputs():
+            output = Path(output)
+            relative_extension = output.relative_to(cmd.build_lib)
+            shutil.copyfile(output, relative_extension)
 
-
-try:
-    build_cython_extensions()
-except Exception:
-    if not allowed_to_fail:
-        raise
+    def initialize(self, version: str, build_data: dict[str, Any]) -> None:
+        try:
+            self.build_cython_extensions()
+        except Exception:
+            if not allowed_to_fail:
+                raise
