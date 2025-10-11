@@ -45,3 +45,5 @@ jobs:
         run: make docs-install
       - name: Build docs
         run: make docs-build
+      - name: Run linters
+        run: make lint
