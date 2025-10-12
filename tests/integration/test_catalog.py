@@ -28,7 +28,6 @@ from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import (
     CommitFailedException,
-    CommitFailedException,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchNamespaceError,
@@ -37,12 +36,10 @@ from pyiceberg.exceptions import (
 )
 from pyiceberg.io import WAREHOUSE
 from pyiceberg.partitioning import PartitionField, PartitionSpec
-from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import INITIAL_SCHEMA_ID, Schema
-from pyiceberg.transforms import BucketTransform
 from pyiceberg.table.metadata import INITIAL_SPEC_ID
 from pyiceberg.table.sorting import INITIAL_SORT_ORDER_ID, SortField, SortOrder
-from pyiceberg.transforms import DayTransform, IdentityTransform
+from pyiceberg.transforms import BucketTransform, DayTransform, IdentityTransform
 from pyiceberg.types import IntegerType, LongType, NestedField, TimestampType, UUIDType
 from tests.conftest import clean_up
 
@@ -92,6 +89,7 @@ def rest_test_catalog() -> Generator[Catalog, None, None]:
         clean_up(test_catalog)
     else:
         pytest.skip("PYICEBERG_TEST_CATALOG environment variables not set")
+
 
 @pytest.fixture(scope="function")
 def hive_catalog() -> Generator[Catalog, None, None]:
