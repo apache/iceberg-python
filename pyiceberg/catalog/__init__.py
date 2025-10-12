@@ -670,6 +670,21 @@ class Catalog(ABC):
             NoSuchViewError: If a view with the given name does not exist.
         """
 
+    @abstractmethod
+    def rename_view(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> None:
+        """Rename a fully classified view name.
+
+        Args:
+            from_identifier (str | Identifier): Existing view identifier.
+            to_identifier (str | Identifier): New view identifier.
+
+        Returns:
+            Table: the updated table instance with its metadata.
+
+        Raises:
+            NoSuchViewError: If a table with the name does not exist.
+        """
+
     @staticmethod
     def identifier_to_tuple(identifier: Union[str, Identifier]) -> Identifier:
         """Parse an identifier to a tuple.
