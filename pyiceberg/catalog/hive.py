@@ -23,6 +23,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Dict,
+    Iterator,
     List,
     Optional,
     Set,
@@ -474,7 +475,7 @@ class HiveCatalog(MetastoreCatalog):
 
         return self._convert_hive_into_iceberg(hive_table)
 
-    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def list_views(self, namespace: Union[str, Identifier]) -> Iterator[Identifier]:
         raise NotImplementedError
 
     def view_exists(self, identifier: Union[str, Identifier]) -> bool:
@@ -720,7 +721,7 @@ class HiveCatalog(MetastoreCatalog):
         except MetaException as e:
             raise NoSuchNamespaceError(f"Database does not exists: {database_name}") from e
 
-    def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def list_tables(self, namespace: Union[str, Identifier]) -> Iterator[Identifier]:
         """List Iceberg tables under the given namespace in the catalog.
 
         When the database doesn't exist, it will just return an empty list.
@@ -729,14 +730,14 @@ class HiveCatalog(MetastoreCatalog):
             namespace: Database to list.
 
         Returns:
-            List[Identifier]: list of table identifiers.
+            Iterator[Identifier]: iterator of table identifiers.
 
         Raises:
             NoSuchNamespaceError: If a namespace with the given name does not exist, or the identifier is invalid.
         """
         database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
         with self._client as open_client:
-            return [
+            yield from [
                 (database_name, table.tableName)
                 for table in open_client.get_table_objects_by_name(
                     dbname=database_name, tbl_names=open_client.get_all_tables(db_name=database_name)
@@ -744,18 +745,18 @@ class HiveCatalog(MetastoreCatalog):
                 if table.parameters.get(TABLE_TYPE, "").lower() == ICEBERG
             ]
 
-    def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
+    def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> Iterator[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
 
         Returns:
-            List[Identifier]: a List of namespace identifiers.
+            Iterator[Identifier]: an iterator of namespace identifiers.
         """
         # Hierarchical namespace is not supported. Return an empty list
         if namespace:
-            return []
+            return iter([])
 
         with self._client as open_client:
-            return list(map(self.identifier_to_tuple, open_client.get_all_databases()))
+            return iter(map(self.identifier_to_tuple, open_client.get_all_databases()))
 
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
         """Get properties for a namespace.
