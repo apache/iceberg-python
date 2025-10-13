@@ -4,3 +4,4 @@ build
 .git
 .gitignore
 poetry.lock
+mkdocs/*

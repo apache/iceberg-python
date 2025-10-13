@@ -1353,6 +1353,11 @@ def test_rename_table_200(rest_mock: Mocker, example_table_metadata_with_snapsho
         status_code=200,
         request_headers=TEST_HEADERS,
     )
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/pdames",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
     from_identifier = ("pdames", "source")
     to_identifier = ("pdames", "destination")
@@ -1396,6 +1401,11 @@ def test_rename_table_from_self_identifier_200(
         status_code=200,
         request_headers=TEST_HEADERS,
     )
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/pdames",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
     actual = catalog.rename_table(table.name(), to_identifier)
     expected = Table(
         identifier=("pdames", "destination"),
@@ -1406,6 +1416,48 @@ def test_rename_table_from_self_identifier_200(
     )
     assert actual.metadata.model_dump() == expected.metadata.model_dump()
     assert actual == expected
+
+
+def test_rename_table_source_namespace_does_not_exist(rest_mock: Mocker) -> None:
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    from_identifier = ("invalid", "source")
+    to_identifier = ("pdames", "destination")
+
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/invalid",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/pdames",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(NoSuchNamespaceError) as e:
+        catalog.rename_table(from_identifier, to_identifier)
+    assert "Source namespace does not exist" in str(e.value)
+
+
+def test_rename_table_destination_namespace_does_not_exist(rest_mock: Mocker) -> None:
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    from_identifier = ("pdames", "source")
+    to_identifier = ("invalid", "destination")
+
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/pdames",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/invalid",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(NoSuchNamespaceError) as e:
+        catalog.rename_table(from_identifier, to_identifier)
+    assert "Destination namespace does not exist" in str(e.value)
 
 
 def test_delete_table_404(rest_mock: Mocker) -> None:
