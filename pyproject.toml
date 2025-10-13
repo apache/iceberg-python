@@ -6,7 +6,7 @@
 # "License"); you may not use this file except in compliance
 # with the License.  You may obtain a copy of the License at
 #
-#   http://www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing,
 # software distributed under the License is distributed on an
@@ -14,324 +14,692 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+
+[build-system]
+build-backend = "poetry.core.masonry.api"
+requires = ["poetry-core>=1.0.0", "wheel", "Cython>=3.0.0", "setuptools"]
+
+[tool.black]
+line-length = 130
+target-version = ['py38']
+
+[tool.coverage.run]
+source = ['pyiceberg/']
+
+[tool.mypy]
+disallow_any_generics = true
+disallow_untyped_defs = true
+implicit_reexport = false
+mypy_path = "python"
+namespace_packages = false
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unreachable = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pytest_mock.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pyarrow.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "google.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pandas.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "snappy.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "zstandard.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pydantic.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pydantic_core.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pytest.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "fastavro.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "mmh3.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "hive_metastore.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "thrift.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "requests_mock.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "click.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "rich.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "fsspec.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "s3fs.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "azure.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "adlfs.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "gcsfs.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "packaging.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "tests.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "boto3"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "botocore.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "mypy_boto3_glue.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "mypy_boto3_dynamodb.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "moto"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "aiobotocore.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "aiohttp.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "duckdb.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "ray.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "daft.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pyparsing.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pyspark.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "strictyaml.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "sortedcontainers.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "sqlalchemy.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "Cython.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "setuptools.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "tenacity.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pyiceberg_core.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "google.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pyarrow.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pandas.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "snappy.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "zstandard.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pydantic.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pydantic_core.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pytest.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "fastavro.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "mmh3.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "hive_metastore.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "thrift.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "requests_mock.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "click.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "rich.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "fsspec.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "s3fs.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "azure.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "adlfs.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "gcsfs.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "huggingface_hub.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "packaging.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "tests.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "boto3"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "botocore.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "mypy_boto3_glue.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "moto"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "aiobotocore.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "aiohttp.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "duckdb.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "ray.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "daft.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "bodo.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pyparsing.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pyspark.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "strictyaml.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "sortedcontainers.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "sqlalchemy.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "Cython.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "setuptools.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "tenacity.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "polars.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "datafusion.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pyroaring.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pyarrow.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pandas.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "snappy.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "zstandard.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pydantic.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pydantic_core.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pytest.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "fastavro.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "mmh3.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "hive_metastore.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "thrift.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "requests_mock.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "click.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "rich.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "fsspec.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "s3fs.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "azure.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "adlfs.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "gcsfs.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "huggingface_hub.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "packaging.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "tests.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "boto3"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "botocore.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "mypy_boto3_glue.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "moto"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "aiobotocore.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "aiohttp.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "duckdb.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "ray.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "daft.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "bodo.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pyparsing.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pyspark.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "strictyaml.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "sortedcontainers.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "sqlalchemy.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "Cython.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "setuptools.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "tenacity.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "polars.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "datafusion.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "pyroaring.*"
+
 [tool.poetry]
-name = "pyiceberg"
-version = "0.10.0"
-readme = "README.md"
-homepage = "https://py.iceberg.apache.org/"
-repository = "https://github.com/apache/iceberg-python"
-description = "Apache Iceberg is an open table format for huge analytic datasets"
 authors = ["Apache Software Foundation <dev@iceberg.apache.org>"]
-license = "Apache License 2.0"
 classifiers = [
   "License :: OSI Approved :: Apache Software License",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.12"
 ]
-packages = [
-  { include = "pyiceberg" },
-  { from = "vendor", include = "fb303" },
-  { from = "vendor", include = "hive_metastore" },
-  { include = "tests", format = "sdist" },
-  { include = "Makefile", format = "sdist" },
-  { include = "NOTICE", format = [
-    "sdist",
-    "wheel",
-  ] },
-]
+description = "Apache Iceberg is an open table format for huge analytic datasets"
+homepage = "https://py.iceberg.apache.org/"
 include = [
-  { path = "dev", format = "sdist" },
-  { path = "pyiceberg/**/*.so", format = "wheel" },
-  { path = "pyiceberg/**/*.pyd", format = "wheel" },
-  { path = "poetry.lock", format = "sdist" },
+  {path = "dev", format = "sdist"},
+  {path = "pyiceberg/**/*.so", format = "wheel"},
+  {path = "pyiceberg/**/*.pyd", format = "wheel"},
+  {path = "poetry.lock", format = "sdist"}
 ]
-
-[tool.poetry.dependencies]
-python = "^3.9.2, !=3.9.7"
-mmh3 = ">=4.0.0,<6.0.0"
-requests = ">=2.20.0,<3.0.0"
-click = ">=7.1.1,<9.0.0"
-rich = ">=10.11.0,<15.0.0"
-strictyaml = ">=1.7.0,<2.0.0" # CVE-2020-14343 was fixed in 5.4.
-pydantic = ">=2.0,<3.0,!=2.4.0,!=2.4.1,<2.12.0" # 2.4.0, 2.4.1, 2.12.0 has a critical bug
-sortedcontainers = "2.4.0"
-fsspec = ">=2023.1.0"
-pyparsing = ">=3.1.0,<4.0.0"
-zstandard = ">=0.13.0,<1.0.0"
-tenacity = ">=8.2.3,<10.0.0"
-pyroaring = ">=1.0.0,<2.0.0"
-pyarrow = { version = ">=17.0.0", optional = true }
-google-auth = { version = ">=2.4.0", optional = true }
-pandas = { version = ">=1.0.0,<3.0.0", optional = true }
-duckdb = { version = ">=0.5.0,<2.0.0", optional = true }
-ray = { version = ">=2.10.0,<=2.44.0", optional = true }
-python-snappy = { version = ">=0.6.0,<1.0.0", optional = true }
-thrift = { version = ">=0.13.0,<1.0.0", optional = true }
-boto3 = { version = ">=1.24.59", optional = true }
-google-cloud-bigquery = { version = "^3.33.0", optional = true }
-s3fs = { version = ">=2023.1.0", optional = true }
-adlfs = { version = ">=2024.7.0", optional = true }
-gcsfs = { version = ">=2023.1.0", optional = true }
-huggingface-hub = { version = ">=0.24.0", optional = true }
-psycopg2-binary = { version = ">=2.9.6", optional = true }
-sqlalchemy = { version = "^2.0.18", optional = true }
-bodo = { version = ">=2025.7.4", optional = true }
-daft = { version = ">=0.5.0", optional = true }
-cachetools = ">=5.5,<7.0"
-pyiceberg-core = { version = ">=0.5.1,<0.7.0", optional = true }
-polars = { version = "^1.21.0", optional = true }
-thrift-sasl = { version = ">=0.4.3", optional = true }
-kerberos = {version = "^1.3.1", optional = true}
-datafusion = { version = ">=45,<49", optional = true }
-
-[tool.poetry.group.dev.dependencies]
-pytest = "7.4.4"
-pytest-checkdocs = "2.13.0"
-prek = "^0.2.1"
-pytest-lazy-fixture = "0.6.3"
-fastavro = "1.12.0"
-coverage = { version = "^7.4.2", extras = ["toml"] }
-requests-mock = "1.12.1"
-moto = { version = "^5.0.2", extras = ["server"] }
-typing-extensions = "4.15.0"
-pytest-mock = "3.15.1"
-pyspark = { version = "4.0.1", extras = ["connect"] }
-protobuf = "5.29.5" # match Spark Connect's gencode
-cython = "3.1.4"
-deptry = ">=0.14,<0.24"
-docutils = "!=0.21.post1"   # https://github.com/python-poetry/poetry/issues/9248#issuecomment-2026240520
-mypy-boto3-glue = ">=1.28.18"
-mypy-boto3-dynamodb = ">=1.28.18"
-
-[tool.poetry.group.docs.dependencies]
-# for mkdocs
-mkdocs = "1.6.1"
-griffe = "1.14.0"
-jinja2 = "3.1.6"
-mkdocstrings = "0.30.1"
-mkdocstrings-python = "1.18.2"
-mkdocs-literate-nav = "0.6.2"
-mkdocs-autorefs = "1.4.3"
-mkdocs-gen-files = "0.5.0"
-mkdocs-material = "9.6.21"
-mkdocs-material-extensions = "1.3.1"
-mkdocs-section-index = "0.3.10"
-
-[[tool.mypy.overrides]]
-module = "pytest_mock.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "pyarrow.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "google.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "pandas.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "snappy.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "zstandard.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "pydantic.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "pydantic_core.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "pytest.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "fastavro.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "mmh3.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "hive_metastore.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "thrift.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "requests_mock.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "click.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "rich.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "fsspec.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "s3fs.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "azure.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "adlfs.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "gcsfs.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "packaging.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "tests.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "boto3"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "botocore.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "mypy_boto3_glue.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "mypy_boto3_dynamodb.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "moto"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "aiobotocore.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "aiohttp.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "duckdb.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "ray.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "daft.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "pyparsing.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "pyspark.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "strictyaml.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "sortedcontainers.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "sqlalchemy.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "Cython.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "setuptools.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "tenacity.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "pyiceberg_core.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "google.*"
-ignore_missing_imports = true
-
-[tool.poetry.scripts]
-pyiceberg = "pyiceberg.cli.console:run"
-
-[build-system]
-requires = ["poetry-core>=1.0.0", "wheel", "Cython>=3.0.0", "setuptools"]
-build-backend = "poetry.core.masonry.api"
+license = "Apache License 2.0"
+name = "pyiceberg"
+packages = [
+  {include = "pyiceberg"},
+  {from = "vendor", include = "fb303"},
+  {from = "vendor", include = "hive_metastore"},
+  {include = "tests", format = "sdist"},
+  {include = "Makefile", format = "sdist"},
+  {include = "NOTICE", format = [
+    "sdist",
+    "wheel"
+  ]}
+]
+readme = "README.md"
+repository = "https://github.com/apache/iceberg-python"
+version = "0.10.0"
 
 [tool.poetry.build]
 generate-setup-file = false
 script = "build-module.py"
 
+[tool.poetry.dependencies]
+adlfs = {version = ">=2024.7.0", optional = true}
+bodo = {version = ">=2025.7.4", optional = true}
+boto3 = {version = ">=1.24.59", optional = true}
+cachetools = ">=5.5,<7.0"
+click = ">=7.1.1,<9.0.0"
+daft = {version = ">=0.5.0", optional = true}
+datafusion = {version = ">=45,<49", optional = true}
+duckdb = {version = ">=0.5.0,<2.0.0", optional = true}
+fsspec = ">=2023.1.0"
+gcsfs = {version = ">=2023.1.0", optional = true}
+google-auth = {version = ">=2.4.0", optional = true}
+google-cloud-bigquery = {version = "^3.33.0", optional = true}
+huggingface-hub = {version = ">=0.24.0", optional = true}
+kerberos = {version = "^1.3.1", optional = true}
+mmh3 = ">=4.0.0,<6.0.0"
+pandas = {version = ">=1.0.0,<3.0.0", optional = true}
+polars = {version = "^1.21.0", optional = true}
+psycopg2-binary = {version = ">=2.9.6", optional = true}
+pyarrow = {version = ">=17.0.0", optional = true}
+pydantic = ">=2.0,<3.0,!=2.4.0,!=2.4.1,<2.12.0"  # 2.4.0, 2.4.1, 2.12.0 has a critical bug
+pyiceberg-core = {version = ">=0.5.1,<0.7.0", optional = true}
+pyparsing = ">=3.1.0,<4.0.0"
+pyroaring = ">=1.0.0,<2.0.0"
+python = "^3.9.2, !=3.9.7"
+python-snappy = {version = ">=0.6.0,<1.0.0", optional = true}
+ray = {version = ">=2.10.0,<=2.44.0", optional = true}
+requests = ">=2.20.0,<3.0.0"
+rich = ">=10.11.0,<15.0.0"
+s3fs = {version = ">=2023.1.0", optional = true}
+sortedcontainers = "2.4.0"
+sqlalchemy = {version = "^2.0.18", optional = true}
+strictyaml = ">=1.7.0,<2.0.0"  # CVE-2020-14343 was fixed in 5.4.
+tenacity = ">=8.2.3,<10.0.0"
+thrift = {version = ">=0.13.0,<1.0.0", optional = true}
+thrift-sasl = {version = ">=0.4.3", optional = true}
+zstandard = ">=0.13.0,<1.0.0"
+
 [tool.poetry.extras]
-pyarrow = ["pyarrow", "pyiceberg-core"]
-pandas = ["pandas", "pyarrow"]
-duckdb = ["duckdb", "pyarrow"]
-ray = ["ray", "pyarrow", "pandas"]
+adlfs = ["adlfs"]
+bigquery = ["google-cloud-bigquery"]
 bodo = ["bodo"]
 daft = ["daft"]
-polars = ["polars"]
-snappy = ["python-snappy"]
+datafusion = ["datafusion"]
+duckdb = ["duckdb", "pyarrow"]
+dynamodb = ["boto3"]
+gcp-auth = ["google-auth"]
+gcsfs = ["gcsfs"]
+glue = ["boto3"]
+hf = ["huggingface-hub"]
 hive = ["thrift"]
 hive-kerberos = ["thrift", "thrift_sasl", "kerberos"]
+pandas = ["pandas", "pyarrow"]
+polars = ["polars"]
+pyarrow = ["pyarrow", "pyiceberg-core"]
+pyiceberg-core = ["pyiceberg-core"]
+ray = ["ray", "pyarrow", "pandas"]
+rest-sigv4 = ["boto3"]
 s3fs = ["s3fs"]
-glue = ["boto3"]
-adlfs = ["adlfs"]
-dynamodb = ["boto3"]
-bigquery = ["google-cloud-bigquery"]
-zstandard = ["zstandard"]
+snappy = ["python-snappy"]
 sql-postgres = ["sqlalchemy", "psycopg2-binary"]
 sql-sqlite = ["sqlalchemy"]
-gcsfs = ["gcsfs"]
-rest-sigv4 = ["boto3"]
-hf = ["huggingface-hub"]
-pyiceberg-core = ["pyiceberg-core"]
-datafusion = ["datafusion"]
-gcp-auth = ["google-auth"]
+zstandard = ["zstandard"]
+
+[tool.poetry.group.dev.dependencies]
+coverage = {version = "^7.4.2", extras = ["toml"]}
+cython = "3.1.4"
+deptry = ">=0.14,<0.24"
+docutils = "!=0.21.post1"  # https://github.com/python-poetry/poetry/issues/9248#issuecomment-2026240520
+fastavro = "1.12.0"
+moto = {version = "^5.0.2", extras = ["server"]}
+mypy-boto3-dynamodb = ">=1.28.18"
+mypy-boto3-glue = ">=1.28.18"
+prek = "^0.2.1"
+protobuf = "5.29.5"  # match Spark Connect's gencode
+pyspark = {version = "4.0.1", extras = ["connect"]}
+pytest = "7.4.4"
+pytest-checkdocs = "2.13.0"
+pytest-lazy-fixture = "0.6.3"
+pytest-mock = "3.15.1"
+requests-mock = "1.12.1"
+typing-extensions = "4.15.0"
+
+[tool.poetry.group.docs.dependencies]
+griffe = "1.14.0"
+jinja2 = "3.1.6"
+# for mkdocs
+mkdocs = "1.6.1"
+mkdocs-autorefs = "1.4.3"
+mkdocs-gen-files = "0.5.0"
+mkdocs-literate-nav = "0.6.2"
+mkdocs-material = "9.6.21"
+mkdocs-material-extensions = "1.3.1"
+mkdocs-section-index = "0.3.10"
+mkdocstrings = "0.30.1"
+mkdocstrings-python = "1.18.2"
+
+[tool.poetry.scripts]
+pyiceberg = "pyiceberg.cli.console:run"
+
+[tool.pycln]
+all = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-
+# Turns a warning into an error
+filterwarnings = [
+  "error"
+]
 markers = [
   "unmarked: marks a test as a unittest",
   "s3: marks a test as requiring access to s3 compliant storage (use with --aws-access-key-id, --aws-secret-access-key, and --endpoint args)",
@@ -340,201 +708,4 @@ markers = [
   "gcs: marks a test as requiring access to gcs compliant storage (use with --gs.token, --gs.project, and --gs.endpoint)",
   "benchmark: collection of tests to validate read/write performance before and after a change"
 ]
-
-# Turns a warning into an error
-filterwarnings = [
-  "error",
-]
-
-[tool.black]
-line-length = 130
-target-version = ['py38']
-
-[tool.pycln]
-all = true
-
-[tool.mypy]
-mypy_path = "python"
-no_implicit_optional = true
-namespace_packages = false
-warn_redundant_casts = true
-warn_unreachable = true
-warn_unused_ignores = true
-disallow_any_generics = true
-disallow_untyped_defs = true
-implicit_reexport = false
-
-[[tool.mypy.overrides]]
-module = "pyarrow.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "pandas.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "snappy.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "zstandard.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "pydantic.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "pydantic_core.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "pytest.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "fastavro.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "mmh3.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "hive_metastore.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "thrift.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "requests_mock.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "click.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "rich.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "fsspec.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "s3fs.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "azure.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "adlfs.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "gcsfs.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "huggingface_hub.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "packaging.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "tests.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "boto3"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "botocore.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "mypy_boto3_glue.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "moto"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "aiobotocore.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "aiohttp.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "duckdb.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "ray.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "daft.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "bodo.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "pyparsing.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "pyspark.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "strictyaml.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "sortedcontainers.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "sqlalchemy.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "Cython.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "setuptools.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "tenacity.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "polars.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "datafusion.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "pyroaring.*"
-ignore_missing_imports = true
-
-[tool.coverage.run]
-source = ['pyiceberg/']
+testpaths = ["tests"]
