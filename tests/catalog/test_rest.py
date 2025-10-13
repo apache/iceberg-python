@@ -759,6 +759,28 @@ def test_load_namespace_properties_404(rest_mock: Mocker) -> None:
         RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).load_namespace_properties(namespace)
     assert "Namespace does not exist" in str(e.value)
 
+def test_load_namespace_properties_400_invalid_format(rest_mock: Mocker) -> None:
+    """Test that 400 Bad Request for invalid namespace format is treated as NoSuchNamespaceError."""
+    # Simulate what happens with multi-element identifier
+    # ("namespace", "table") gets joined with \x1f separator
+    namespace_encoded = "namespace%1Ftable"  # URL encoded \x1f
+    
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace_encoded}",
+        json={
+            "error": {
+                "message": "Invalid namespace name.",
+                "type": "IllegalArgumentException",
+                "code": 400,
+            }
+        },
+        status_code=400,
+        request_headers=TEST_HEADERS,
+    )
+    with pytest.raises(NoSuchNamespaceError) as e:
+        # Pass a tuple that will be joined with \x1f
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).load_namespace_properties(("namespace", "table"))
+    assert "Invalid namespace name" in str(e.value)
 
 def test_update_namespace_properties_200(rest_mock: Mocker) -> None:
     rest_mock.post(
