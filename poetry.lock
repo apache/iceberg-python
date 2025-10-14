@@ -4936,19 +4936,19 @@ windows-terminal = ["colorama (>=0.4.6)"]
 
 [[package]]
 name = "pyiceberg-core"
-version = "0.6.0"
+version = "0.7.0"
 description = ""
 optional = true
 python-versions = "~=3.9"
 groups = ["main"]
 markers = "extra == \"pyarrow\" or extra == \"pyiceberg-core\""
 files = [
-    {file = "pyiceberg_core-0.6.0-cp39-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:2f228a54a2a69912378be18f98ea866bb4a08d265c875856f99cd81f2f7299ba"},
-    {file = "pyiceberg_core-0.6.0-cp39-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:edb41a1f182774085b11352a1f44955d561e21453f00973021244471873fbbd7"},
-    {file = "pyiceberg_core-0.6.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:5cf869d225d57254a54bc3778841cffea4193319bc0a849767a15e05e75c9b36"},
-    {file = "pyiceberg_core-0.6.0-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:18c12fe1ac5b4725b673cf0d1d0ab3e9475644ac0dae871a2e9a293c2622f0a8"},
-    {file = "pyiceberg_core-0.6.0-cp39-abi3-win_amd64.whl", hash = "sha256:d3249eeae5e1d1f1d2c8bd8d6eced98da002afa7c48c751cb22d8dbd4b091a1e"},
-    {file = "pyiceberg_core-0.6.0.tar.gz", hash = "sha256:ce2cac8cf8a85da6e682cec032165fcf387256257971f0f84bc6d50c0941f261"},
+    {file = "pyiceberg_core-0.7.0-cp39-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:99e23463c30c4180329719fe1f120e779b20616a36bbdd42042b70063a13bd39"},
+    {file = "pyiceberg_core-0.7.0-cp39-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:94fe0281f09c84cdd4e56d217865ef1d81e0cb0b708ba6eb2f4c5ae8bf86f0ba"},
+    {file = "pyiceberg_core-0.7.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:74543885cc97e8d976707f97dd01e8f03dce8a5d3a01e41ada0aaefa13c742f9"},
+    {file = "pyiceberg_core-0.7.0-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:2303276b0d8b57b8ce4a3ef9e5050ffdefd9561684728cd0a9a72a9ad0a6a74d"},
+    {file = "pyiceberg_core-0.7.0-cp39-abi3-win_amd64.whl", hash = "sha256:64dd3c3c7af6d39097e1d070161e98118e5dd423392992a9074e1ab813fd467b"},
+    {file = "pyiceberg_core-0.7.0.tar.gz", hash = "sha256:8166883ace30a388d2f659634bec87731cad7bc52341c997fcdd4e13780e4345"},
 ]
 
 [[package]]
@@ -6963,4 +6963,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9.2, !=3.9.7"
-content-hash = "954867cbbfb3d54aab260357a2deaa783c46d456b38136f49ccec257edddbad1"
+content-hash = "6652d8c3f117a1b76734ea924cedb8ca650749fe0e50b975af77919c68b13609"
