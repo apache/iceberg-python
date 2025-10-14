@@ -92,7 +92,7 @@ pytest = "7.4.4"
 pytest-checkdocs = "2.13.0"
 prek = "^0.2.1"
 pytest-lazy-fixture = "0.6.3"
-fastavro = "1.12.0"
+fastavro = "1.12.1"
 coverage = { version = "^7.4.2", extras = ["toml"] }
 requests-mock = "1.12.1"
 moto = { version = "^5.0.2", extras = ["server"] }
