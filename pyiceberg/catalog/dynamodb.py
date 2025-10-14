@@ -108,6 +108,7 @@ DYNAMODB_REGION = "dynamodb.region"
 DYNAMODB_ACCESS_KEY_ID = "dynamodb.access-key-id"
 DYNAMODB_SECRET_ACCESS_KEY = "dynamodb.secret-access-key"
 DYNAMODB_SESSION_TOKEN = "dynamodb.session-token"
+DYNAMODB_ENDPOINT_URL = "dynamodb.endpoint"
 
 # Enhancement configuration properties
 DYNAMODB_CACHE_ENABLED = "dynamodb.cache.enabled"
@@ -273,7 +274,9 @@ class DynamoDbCatalog(MetastoreCatalog):
                 aws_secret_access_key=get_first_property_value(properties, DYNAMODB_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
                 aws_session_token=get_first_property_value(properties, DYNAMODB_SESSION_TOKEN, AWS_SESSION_TOKEN),
             )
-            self.dynamodb = session.client(DYNAMODB_CLIENT)
+            # Get endpoint URL if specified (for LocalStack or custom endpoints)
+            endpoint_url = properties.get(DYNAMODB_ENDPOINT_URL)
+            self.dynamodb = session.client(DYNAMODB_CLIENT, endpoint_url=endpoint_url)
 
         self.dynamodb_table_name = self.properties.get(DYNAMODB_TABLE_NAME, DYNAMODB_TABLE_NAME_DEFAULT)
 
