@@ -14,7 +14,7 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
-from typing import List
+from typing import Any, Dict, List
 from unittest import mock
 
 import boto3
@@ -29,6 +29,9 @@ from pyiceberg.catalog.dynamodb import (
     DYNAMODB_COL_IDENTIFIER,
     DYNAMODB_COL_NAMESPACE,
     DYNAMODB_TABLE_NAME_DEFAULT,
+    CatalogCache,
+    CatalogEvent,
+    CatalogEventContext,
     DynamoDbCatalog,
     _add_property_prefix,
 )
@@ -634,3 +637,412 @@ def test_dynamodb_client_override() -> None:
     test_client = boto3.client("dynamodb", region_name="us-west-2")
     test_catalog = DynamoDbCatalog(catalog_name, test_client)
     assert test_catalog.dynamodb is test_client
+
+
+# ============================================================================
+# Enhancement Tests: Callback Hooks, Metadata Caching, Retry Strategy
+# ============================================================================
+
+
+def test_catalog_cache_operations() -> None:
+    """Test CatalogCache class basic operations."""
+    cache = CatalogCache(ttl_seconds=300)
+
+    # Test set and get
+    cache.set("key1", "value1")
+    assert cache.get("key1") == "value1"
+
+    # Test get on non-existent key
+    assert cache.get("nonexistent") is None
+
+    # Test invalidate
+    cache.set("key2", "value2")
+    cache.invalidate("key2")
+    assert cache.get("key2") is None
+
+    # Test size
+    cache.set("k1", "v1")
+    cache.set("k2", "v2")
+    cache.set("k3", "v3")
+    assert cache.size() == 4  # k1, k2, k3, plus key1 from earlier
+
+    # Test clear
+    cache.clear()
+    assert cache.size() == 0
+    assert cache.get("k1") is None
+
+
+def test_catalog_cache_ttl_expiration() -> None:
+    """Test CatalogCache TTL expiration."""
+    import time
+
+    # Create cache with 1 second TTL
+    cache = CatalogCache(ttl_seconds=1)
+
+    # Set value
+    cache.set("key", "value")
+    assert cache.get("key") == "value"
+
+    # Wait for expiration
+    time.sleep(1.1)
+
+    # Value should be expired
+    assert cache.get("key") is None
+
+
+def test_catalog_event_context_creation() -> None:
+    """Test CatalogEventContext dataclass creation."""
+    # Test basic context
+    ctx = CatalogEventContext(
+        event=CatalogEvent.PRE_CREATE_TABLE,
+        catalog_name="test_catalog",
+        identifier=("db", "table"),
+        metadata_location="s3://bucket/metadata.json",
+    )
+
+    assert ctx.event == CatalogEvent.PRE_CREATE_TABLE
+    assert ctx.catalog_name == "test_catalog"
+    assert ctx.identifier == ("db", "table")
+    assert ctx.metadata_location == "s3://bucket/metadata.json"
+    assert ctx.error is None
+    assert isinstance(ctx.extra, dict)
+
+    # Test with error
+    test_error = ValueError("test error")
+    error_ctx = CatalogEventContext(
+        event=CatalogEvent.ON_ERROR,
+        catalog_name="test",
+        error=test_error,
+    )
+    assert error_ctx.error == test_error
+
+    # Test with extra data
+    extra_ctx = CatalogEventContext(
+        event=CatalogEvent.POST_COMMIT,
+        catalog_name="test",
+        extra={"key": "value", "count": 42},
+    )
+    assert extra_ctx.extra["key"] == "value"
+    assert extra_ctx.extra["count"] == 42
+
+
+def test_catalog_event_enum() -> None:
+    """Test CatalogEvent enum completeness."""
+    # Test all event types exist
+    events = [
+        CatalogEvent.PRE_CREATE_TABLE,
+        CatalogEvent.POST_CREATE_TABLE,
+        CatalogEvent.PRE_UPDATE_TABLE,
+        CatalogEvent.POST_UPDATE_TABLE,
+        CatalogEvent.PRE_DROP_TABLE,
+        CatalogEvent.POST_DROP_TABLE,
+        CatalogEvent.PRE_COMMIT,
+        CatalogEvent.POST_COMMIT,
+        CatalogEvent.PRE_REGISTER_TABLE,
+        CatalogEvent.POST_REGISTER_TABLE,
+        CatalogEvent.ON_ERROR,
+        CatalogEvent.ON_CONCURRENT_CONFLICT,
+    ]
+
+    assert len(events) == 12
+
+    # Test event values
+    assert CatalogEvent.PRE_CREATE_TABLE.value == "pre_create_table"
+    assert CatalogEvent.POST_COMMIT.value == "post_commit"
+    assert CatalogEvent.ON_ERROR.value == "on_error"
+
+
+@mock_aws
+def test_catalog_hook_registration(_dynamodb, _bucket_initialize: None) -> None:  # type: ignore
+    """Test hook registration and triggering."""
+    # Track hook calls
+    hook_calls: List[Dict[str, Any]] = []
+
+    def test_hook(ctx: CatalogEventContext) -> None:
+        hook_calls.append(
+            {
+                "event": ctx.event.value,
+                "catalog": ctx.catalog_name,
+                "identifier": ctx.identifier,
+            }
+        )
+
+    # Create catalog
+    catalog = DynamoDbCatalog("test_catalog")
+
+    # Register hooks
+    catalog.register_hook(CatalogEvent.PRE_CREATE_TABLE, test_hook)
+    catalog.register_hook(CatalogEvent.POST_CREATE_TABLE, test_hook)
+    catalog.register_hook(CatalogEvent.ON_ERROR, test_hook)
+
+    assert len(catalog._event_hooks[CatalogEvent.PRE_CREATE_TABLE]) == 1
+    assert len(catalog._event_hooks[CatalogEvent.POST_CREATE_TABLE]) == 1
+
+    # Trigger a hook manually
+    test_ctx = CatalogEventContext(
+        event=CatalogEvent.PRE_CREATE_TABLE,
+        catalog_name="test_catalog",
+        identifier=("db", "table"),
+    )
+    catalog._trigger_hooks(CatalogEvent.PRE_CREATE_TABLE, test_ctx)
+
+    assert len(hook_calls) == 1
+    assert hook_calls[0]["event"] == "pre_create_table"
+    assert hook_calls[0]["identifier"] == ("db", "table")
+
+    # Test multiple hooks for same event
+    hook_calls_2: List[str] = []
+    catalog.register_hook(CatalogEvent.PRE_CREATE_TABLE, lambda ctx: hook_calls_2.append(ctx.event.value))
+
+    catalog._trigger_hooks(CatalogEvent.PRE_CREATE_TABLE, test_ctx)
+    assert len(hook_calls) == 2  # First hook called again
+    assert len(hook_calls_2) == 1  # Second hook called
+
+
+@mock_aws
+def test_catalog_hooks_on_create_table(
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
+    """Test that hooks are triggered during create_table operation."""
+    events_fired: List[str] = []
+
+    def audit_hook(ctx: CatalogEventContext) -> None:
+        events_fired.append(ctx.event.value)
+
+    identifier = (database_name, table_name)
+    catalog = DynamoDbCatalog("test_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
+
+    # Register hooks
+    catalog.register_hook(CatalogEvent.PRE_CREATE_TABLE, audit_hook)
+    catalog.register_hook(CatalogEvent.POST_CREATE_TABLE, audit_hook)
+
+    # Create namespace and table
+    catalog.create_namespace(namespace=database_name)
+    catalog.create_table(identifier, table_schema_nested)
+
+    # Verify hooks were triggered
+    assert "pre_create_table" in events_fired
+    assert "post_create_table" in events_fired
+
+
+@mock_aws
+def test_catalog_hooks_on_drop_table(
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
+    """Test that hooks are triggered during drop_table operation."""
+    events_fired: List[str] = []
+
+    def audit_hook(ctx: CatalogEventContext) -> None:
+        events_fired.append(ctx.event.value)
+
+    identifier = (database_name, table_name)
+    catalog = DynamoDbCatalog("test_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
+
+    # Register hooks
+    catalog.register_hook(CatalogEvent.PRE_DROP_TABLE, audit_hook)
+    catalog.register_hook(CatalogEvent.POST_DROP_TABLE, audit_hook)
+
+    # Create and drop table
+    catalog.create_namespace(namespace=database_name)
+    catalog.create_table(identifier, table_schema_nested)
+    catalog.drop_table(identifier)
+
+    # Verify hooks were triggered
+    assert "pre_drop_table" in events_fired
+    assert "post_drop_table" in events_fired
+
+
+@mock_aws
+def test_cache_configuration_enabled(_dynamodb, _bucket_initialize: None) -> None:  # type: ignore
+    """Test catalog with cache enabled."""
+    properties: Properties = {
+        "warehouse": f"s3://{BUCKET_NAME}",
+        "dynamodb.cache.enabled": "true",
+        "dynamodb.cache.ttl-seconds": "600",
+    }
+    catalog = DynamoDbCatalog("test_catalog", **properties)
+    assert catalog._cache is not None
+    assert catalog._cache.ttl.total_seconds() == 600
+
+
+@mock_aws
+def test_cache_configuration_disabled(_dynamodb, _bucket_initialize: None) -> None:  # type: ignore
+    """Test catalog with cache disabled."""
+    properties: Properties = {
+        "warehouse": f"s3://{BUCKET_NAME}",
+        "dynamodb.cache.enabled": "false",
+    }
+    catalog = DynamoDbCatalog("test_catalog", **properties)
+    assert catalog._cache is None
+
+
+@mock_aws
+def test_cache_default_configuration(_dynamodb, _bucket_initialize: None) -> None:  # type: ignore
+    """Test catalog cache default configuration."""
+    catalog = DynamoDbCatalog("test_catalog")
+    assert catalog._cache is not None  # Cache enabled by default
+    assert catalog._cache.ttl.total_seconds() == 300  # Default TTL
+
+
+@mock_aws
+def test_cache_helper_methods(_dynamodb, _bucket_initialize: None) -> None:  # type: ignore
+    """Test catalog cache helper methods."""
+    catalog = DynamoDbCatalog("test_catalog")
+
+    # Test cache key generation
+    key1 = catalog._get_cache_key(("db", "table"))
+    assert key1 == "table:db.table"
+
+    key2 = catalog._get_cache_key("db.table")
+    assert key2 == "table:db.table"
+
+    # Test cache invalidation helper (cache should be enabled by default)
+    assert catalog._cache is not None
+    catalog._cache.set(key1, "test_value")
+    assert catalog._cache.get(key1) == "test_value"
+
+    catalog._invalidate_cache(("db", "table"))
+    assert catalog._cache.get(key1) is None
+
+
+@mock_aws
+def test_cache_on_load_table(
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
+    """Test that load_table uses cache when enabled."""
+    identifier = (database_name, table_name)
+    catalog = DynamoDbCatalog(
+        "test_catalog",
+        **{
+            "warehouse": f"s3://{BUCKET_NAME}",
+            "s3.endpoint": moto_endpoint_url,
+            "dynamodb.cache.enabled": "true",
+        },
+    )
+
+    # Create table
+    catalog.create_namespace(namespace=database_name)
+    catalog.create_table(identifier, table_schema_nested)
+
+    # First load - should populate cache
+    table1 = catalog.load_table(identifier)
+    cache_key = catalog._get_cache_key(identifier)
+    assert catalog._cache is not None
+    assert catalog._cache.get(cache_key) is not None
+
+    # Second load - should use cache
+    table2 = catalog.load_table(identifier)
+    assert table1.metadata_location == table2.metadata_location
+
+
+@mock_aws
+def test_cache_invalidation_on_drop(
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
+    """Test that cache is invalidated when table is dropped."""
+    identifier = (database_name, table_name)
+    catalog = DynamoDbCatalog(
+        "test_catalog",
+        **{
+            "warehouse": f"s3://{BUCKET_NAME}",
+            "s3.endpoint": moto_endpoint_url,
+            "dynamodb.cache.enabled": "true",
+        },
+    )
+
+    # Create and load table (populates cache)
+    catalog.create_namespace(namespace=database_name)
+    catalog.create_table(identifier, table_schema_nested)
+    catalog.load_table(identifier)
+
+    cache_key = catalog._get_cache_key(identifier)
+    assert catalog._cache is not None
+    assert catalog._cache.get(cache_key) is not None
+
+    # Drop table - should invalidate cache
+    catalog.drop_table(identifier)
+    assert catalog._cache.get(cache_key) is None
+
+
+@mock_aws
+def test_retry_strategy_default_configuration(_dynamodb, _bucket_initialize: None) -> None:  # type: ignore
+    """Test default retry strategy configuration."""
+    catalog = DynamoDbCatalog("test_catalog")
+    assert catalog._max_retries == 5
+    assert catalog._retry_multiplier == 1.5
+    assert catalog._retry_min_wait == 0.1  # 100ms converted to seconds
+    assert catalog._retry_max_wait == 10.0  # 10000ms converted to seconds
+
+
+@mock_aws
+def test_retry_strategy_custom_configuration(_dynamodb, _bucket_initialize: None) -> None:  # type: ignore
+    """Test custom retry strategy configuration."""
+    properties: Properties = {
+        "warehouse": f"s3://{BUCKET_NAME}",
+        "dynamodb.max-retries": "3",
+        "dynamodb.retry-multiplier": "2.0",
+        "dynamodb.retry-min-wait-ms": "50",
+        "dynamodb.retry-max-wait-ms": "5000",
+    }
+    catalog = DynamoDbCatalog("test_catalog", **properties)
+    assert catalog._max_retries == 3
+    assert catalog._retry_multiplier == 2.0
+    assert catalog._retry_min_wait == 0.05  # 50ms
+    assert catalog._retry_max_wait == 5.0  # 5000ms
+
+
+@mock_aws
+def test_all_enhancements_integrated(
+    _dynamodb: Any,
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    table_schema_nested: Schema,
+    database_name: str,
+    table_name: str,
+) -> None:
+    """Test that all three enhancements work together."""
+    events: List[str] = []
+
+    def track_event(ctx: CatalogEventContext) -> None:
+        events.append(ctx.event.value)
+
+    identifier = (database_name, table_name)
+    properties: Properties = {
+        "warehouse": f"s3://{BUCKET_NAME}",
+        "s3.endpoint": moto_endpoint_url,
+        "dynamodb.cache.enabled": "true",
+        "dynamodb.cache.ttl-seconds": "600",
+        "dynamodb.max-retries": "3",
+        "dynamodb.retry-multiplier": "2.0",
+    }
+    catalog = DynamoDbCatalog("test_catalog", **properties)
+
+    # Register hooks
+    catalog.register_hook(CatalogEvent.PRE_CREATE_TABLE, track_event)
+    catalog.register_hook(CatalogEvent.POST_CREATE_TABLE, track_event)
+    catalog.register_hook(CatalogEvent.PRE_DROP_TABLE, track_event)
+    catalog.register_hook(CatalogEvent.POST_DROP_TABLE, track_event)
+
+    # Verify all enhancements are active
+    assert catalog._cache is not None, "Cache should be enabled"
+    assert catalog._max_retries == 3, "Retry max should be 3"
+    assert len(catalog._event_hooks[CatalogEvent.PRE_CREATE_TABLE]) == 1, "Hook should be registered"
+
+    # Perform operations
+    catalog.create_namespace(namespace=database_name)
+    catalog.create_table(identifier, table_schema_nested)
+
+    # Load table (should use cache)
+    catalog.load_table(identifier)
+    cache_key = catalog._get_cache_key(identifier)
+    assert catalog._cache.get(cache_key) is not None
+
+    # Drop table (should trigger hooks and invalidate cache)
+    catalog.drop_table(identifier)
+    assert catalog._cache.get(cache_key) is None
+
+    # Verify hooks were triggered
+    assert "pre_create_table" in events
+    assert "post_create_table" in events
+    assert "pre_drop_table" in events
+    assert "post_drop_table" in events
