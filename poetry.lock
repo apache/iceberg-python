@@ -27,29 +27,29 @@ tests = ["arrow", "dask[dataframe]", "docker", "pytest", "pytest-mock"]
 
 [[package]]
 name = "aiobotocore"
-version = "2.24.2"
+version = "2.25.0"
 description = "Async client for aws services using botocore and aiohttp"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
 markers = "extra == \"s3fs\""
 files = [
-    {file = "aiobotocore-2.24.2-py3-none-any.whl", hash = "sha256:808c63b2bd344b91e2f2acb874831118a9f53342d248acd16a68455a226e283a"},
-    {file = "aiobotocore-2.24.2.tar.gz", hash = "sha256:dfb21bdb2610e8de4d22f401e91a24d50f1330a302d03c62c485757becd439a9"},
+    {file = "aiobotocore-2.25.0-py3-none-any.whl", hash = "sha256:0524fd36f6d522ddc9d013df2c19fb56369ffdfbffd129895918fbfe95216dad"},
+    {file = "aiobotocore-2.25.0.tar.gz", hash = "sha256:169d07de312fd51292292f2c8faf8f67d0f466f525cea03855fe065ddc85f79d"},
 ]
 
 [package.dependencies]
 aiohttp = ">=3.9.2,<4.0.0"
 aioitertools = ">=0.5.1,<1.0.0"
-botocore = ">=1.40.15,<1.40.19"
+botocore = ">=1.40.46,<1.40.50"
 jmespath = ">=0.7.1,<2.0.0"
 multidict = ">=6.0.0,<7.0.0"
 python-dateutil = ">=2.1,<3.0.0"
 wrapt = ">=1.10.10,<2.0.0"
 
 [package.extras]
-awscli = ["awscli (>=1.42.15,<1.42.19)"]
-boto3 = ["boto3 (>=1.40.15,<1.40.19)"]
+awscli = ["awscli (>=1.42.46,<1.42.50)"]
+boto3 = ["boto3 (>=1.40.46,<1.40.50)"]
 httpx = ["httpx (>=0.25.1,<0.29)"]
 
 [[package]]
@@ -549,35 +549,35 @@ snowflake = ["snowflake-connector-python"]
 
 [[package]]
 name = "boto3"
-version = "1.40.18"
+version = "1.40.49"
 description = "The AWS SDK for Python"
 optional = false
 python-versions = ">=3.9"
 groups = ["main", "dev"]
 files = [
-    {file = "boto3-1.40.18-py3-none-any.whl", hash = "sha256:daa776ba1251a7458c9d6c7627873d0c2460c8e8272d35759065580e9193700a"},
-    {file = "boto3-1.40.18.tar.gz", hash = "sha256:64301d39adecc154e3e595eaf0d4f28998ef0a5551f1d033aeac51a9e1a688e5"},
+    {file = "boto3-1.40.49-py3-none-any.whl", hash = "sha256:64eb7af5f66998b34ad629786ff4a7f81d74c2d4ef9e42f69d99499dbee46d07"},
+    {file = "boto3-1.40.49.tar.gz", hash = "sha256:ea37d133548fbae543092ada61aeb08bced8f9aecd2e96e803dc8237459a80a0"},
 ]
 markers = {main = "extra == \"dynamodb\" or extra == \"glue\" or extra == \"rest-sigv4\""}
 
 [package.dependencies]
-botocore = ">=1.40.18,<1.41.0"
+botocore = ">=1.40.49,<1.41.0"
 jmespath = ">=0.7.1,<2.0.0"
-s3transfer = ">=0.13.0,<0.14.0"
+s3transfer = ">=0.14.0,<0.15.0"
 
 [package.extras]
 crt = ["botocore[crt] (>=1.21.0,<2.0a0)"]
 
 [[package]]
 name = "botocore"
-version = "1.40.18"
+version = "1.40.49"
 description = "Low-level, data-driven core of boto 3."
 optional = false
 python-versions = ">=3.9"
 groups = ["main", "dev"]
 files = [
-    {file = "botocore-1.40.18-py3-none-any.whl", hash = "sha256:57025c46ca00cf8cec25de07a759521bfbfb3036a0f69b272654a354615dc45f"},
-    {file = "botocore-1.40.18.tar.gz", hash = "sha256:afd69bdadd8c55cc89d69de0799829e555193a352d87867f746e19020271cc0f"},
+    {file = "botocore-1.40.49-py3-none-any.whl", hash = "sha256:bf1089d0e77e4fc2e195d81c519b194ab62a4d4dd3e7113ee4e2bf903b0b75ab"},
+    {file = "botocore-1.40.49.tar.gz", hash = "sha256:fe8d4cbcc22de84c20190ae728c46b931bafeb40fce247010fb071c31b6532b5"},
 ]
 markers = {main = "extra == \"dynamodb\" or extra == \"glue\" or extra == \"rest-sigv4\" or extra == \"s3fs\""}
 
@@ -5929,14 +5929,14 @@ boto3 = ["aiobotocore[boto3] (>=2.5.4,<3.0.0)"]
 
 [[package]]
 name = "s3transfer"
-version = "0.13.1"
+version = "0.14.0"
 description = "An Amazon S3 Transfer Manager"
 optional = false
 python-versions = ">=3.9"
 groups = ["main", "dev"]
 files = [
-    {file = "s3transfer-0.13.1-py3-none-any.whl", hash = "sha256:a981aa7429be23fe6dfc13e80e4020057cbab622b08c0315288758d67cabc724"},
-    {file = "s3transfer-0.13.1.tar.gz", hash = "sha256:c3fdba22ba1bd367922f27ec8032d6a1cf5f10c934fb5d68cf60fd5a23d936cf"},
+    {file = "s3transfer-0.14.0-py3-none-any.whl", hash = "sha256:ea3b790c7077558ed1f02a3072fb3cb992bbbd253392f4b6e9e8976941c7d456"},
+    {file = "s3transfer-0.14.0.tar.gz", hash = "sha256:eff12264e7c8b4985074ccce27a3b38a485bb7f7422cc8046fee9be4983e4125"},
 ]
 markers = {main = "extra == \"dynamodb\" or extra == \"glue\" or extra == \"rest-sigv4\""}
 
