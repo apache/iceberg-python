@@ -1623,9 +1623,9 @@ class StaticTable(Table):
         if content.endswith(".metadata.json"):
             return os.path.join(metadata_location, "metadata", content)
         elif content.isnumeric():
-            return os.path.join(metadata_location, "metadata", "v%s.metadata.json").format(content)
+            return os.path.join(metadata_location, "metadata", f"v{content}.metadata.json")
         else:
-            return os.path.join(metadata_location, "metadata", "%s.metadata.json").format(content)
+            return os.path.join(metadata_location, "metadata", f"{content}.metadata.json")
 
     @classmethod
     def from_metadata(cls, metadata_location: str, properties: Properties = EMPTY_DICT) -> StaticTable:

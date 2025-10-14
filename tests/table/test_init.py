@@ -356,10 +356,20 @@ def test_static_table_gz_same_as_table(table_v2: Table, metadata_location_gz: st
     assert static_table.metadata == table_v2.metadata
 
 
-def test_static_table_version_hint_same_as_table(table_v2: Table, table_location: str) -> None:
-    static_table = StaticTable.from_metadata(table_location)
-    assert isinstance(static_table, Table)
-    assert static_table.metadata == table_v2.metadata
+def test_static_table_version_hint_same_as_table(
+    table_v2: Table,
+    table_location_with_version_hint_full: str,
+    table_location_with_version_hint_numeric: str,
+    table_location_with_version_hint_non_numeric: str,
+) -> None:
+    for table_location in [
+        table_location_with_version_hint_full,
+        table_location_with_version_hint_numeric,
+        table_location_with_version_hint_non_numeric,
+    ]:
+        static_table = StaticTable.from_metadata(table_location)
+        assert isinstance(static_table, Table)
+        assert static_table.metadata == table_v2.metadata
 
 
 def test_static_table_io_does_not_exist(metadata_location: str) -> None:
