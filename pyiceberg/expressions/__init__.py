@@ -30,10 +30,11 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    cast,
 )
 from typing import Literal as TypingLiteral
 
-from pydantic import ConfigDict, Field, field_serializer, field_validator
+from pydantic import ConfigDict, Field, field_validator
 
 from pyiceberg.expressions.literals import (
     AboveMax,
@@ -751,31 +752,50 @@ class NotIn(SetPredicate[L], ABC):
 
 class LiteralPredicate(IcebergBaseModel, UnboundPredicate[L], ABC):
     type: TypingLiteral["lt", "lt-eq", "gt", "gt-eq", "eq", "not-eq", "starts-with", "not-starts-with"] = Field(alias="type")
-    term: UnboundTerm[L]
-    literal: Literal[L] = Field(serialization_alias="value")
+    term: UnboundTerm[Any]
+    value: Literal[L] = Field(alias="literal", serialization_alias="value")
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(populate_by_name=True, frozen=True, arbitrary_types_allowed=True)
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        if args:
-            if len(args) != 2:
-                raise TypeError("Expected (term, literal)")
-            kwargs = {"term": args[0], "literal": args[1], **kwargs}
-        super().__init__(**kwargs)
+    def __init__(
+        self,
+        term: Union[str, UnboundTerm[Any], BoundReference[Any]],
+        literal: Union[L, Literal[L], None] = None,
+        **data: Any,
+    ) -> None:  # pylint: disable=W0621
+        extra = dict(data)
+
+        literal_candidates = []
+        if literal is not None:
+            literal_candidates.append(literal)
+        if "literal" in extra:
+            literal_candidates.append(extra.pop("literal"))
+        if "value" in extra:
+            literal_candidates.append(extra.pop("value"))
+
+        literal_candidates = [candidate for candidate in literal_candidates if candidate is not None]
+
+        if not literal_candidates:
+            raise TypeError("LiteralPredicate requires a literal or value argument")
+        if len(literal_candidates) > 1:
+            raise TypeError("literal/value provided multiple times")
+
+        init = cast("Callable[..., None]", IcebergBaseModel.__init__)
+        init(self, term=_to_unbound_term(term), literal=_to_literal(literal_candidates[0]), **extra)
 
     @field_validator("term", mode="before")
     @classmethod
-    def _coerce_term(cls, v: Any) -> UnboundTerm[Any]:
-        return _to_unbound_term(v)
+    def _convert_term(cls, value: Any) -> UnboundTerm[Any]:
+        return _to_unbound_term(value)
 
-    @field_validator("literal", mode="before")
+    @field_validator("value", mode="before")
     @classmethod
-    def _coerce_literal(cls, v: Union[L, Literal[L]]) -> Literal[L]:
-        return _to_literal(v)
+    def _convert_value(cls, value: Any) -> Literal[Any]:
+        return _to_literal(value)
 
-    @field_serializer("literal")
-    def ser_literal(self, literal: Literal[L]) -> str:
-        return "Any"
+    @property
+    def literal(self) -> Literal[L]:
+        return self.value
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundLiteralPredicate[L]:
         bound_term = self.term.bind(schema, case_sensitive)
