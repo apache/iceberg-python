@@ -677,7 +677,7 @@ class Transaction:
         # Check if there are any files that require an actual rewrite of a data file
         if delete_snapshot.rewrites_needed is True:
             bound_delete_filter = bind(self.table_metadata.schema(), delete_filter, case_sensitive)
-            preserve_row_filter = _expression_to_complementary_pyarrow(bound_delete_filter)
+            preserve_row_filter = _expression_to_complementary_pyarrow(bound_delete_filter, self.table_metadata.schema())
 
             file_scan = self._scan(row_filter=delete_filter, case_sensitive=case_sensitive)
             if branch is not None:

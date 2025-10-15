@@ -248,6 +248,58 @@ def test_ref_binding_case_insensitive_failure(table_schema_simple: Schema) -> No
         ref.bind(table_schema_simple, case_sensitive=False)
 
 
+def test_ref_binding_nested_struct_field() -> None:
+    """Test binding references to nested struct fields (issue #953)."""
+    schema = Schema(
+        NestedField(field_id=1, name="age", field_type=IntegerType(), required=True),
+        NestedField(
+            field_id=2,
+            name="employment",
+            field_type=StructType(
+                NestedField(field_id=3, name="status", field_type=StringType(), required=False),
+                NestedField(field_id=4, name="company", field_type=StringType(), required=False),
+            ),
+            required=False,
+        ),
+        NestedField(
+            field_id=5,
+            name="contact",
+            field_type=StructType(
+                NestedField(field_id=6, name="email", field_type=StringType(), required=False),
+            ),
+            required=False,
+        ),
+        schema_id=1,
+    )
+
+    # Test that nested field names are in the index
+    assert "employment.status" in schema._name_to_id
+    assert "employment.company" in schema._name_to_id
+    assert "contact.email" in schema._name_to_id
+
+    # Test binding a reference to nested fields
+    ref = Reference("employment.status")
+    bound = ref.bind(schema, case_sensitive=True)
+    assert bound.field.field_id == 3
+    assert bound.field.name == "status"
+
+    # Test with different nested field
+    ref2 = Reference("contact.email")
+    bound2 = ref2.bind(schema, case_sensitive=True)
+    assert bound2.field.field_id == 6
+    assert bound2.field.name == "email"
+
+    # Test case-insensitive binding
+    ref3 = Reference("EMPLOYMENT.STATUS")
+    bound3 = ref3.bind(schema, case_sensitive=False)
+    assert bound3.field.field_id == 3
+
+    # Test that binding fails for non-existent nested field
+    ref4 = Reference("employment.department")
+    with pytest.raises(ValueError):
+        ref4.bind(schema, case_sensitive=True)
+
+
 def test_in_to_eq() -> None:
     assert In("x", (34.56,)) == EqualTo("x", 34.56)
 

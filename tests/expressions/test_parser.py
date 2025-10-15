@@ -225,6 +225,9 @@ def test_with_function() -> None:
 def test_nested_fields() -> None:
     assert EqualTo("foo.bar", "data") == parser.parse("foo.bar = 'data'")
     assert LessThan("location.x", DecimalLiteral(Decimal(52.00))) == parser.parse("location.x < 52.00")
+    # Test issue #953 scenario - nested struct field filtering
+    assert EqualTo("employment.status", "Employed") == parser.parse("employment.status = 'Employed'")
+    assert EqualTo("contact.email", "test@example.com") == parser.parse("contact.email = 'test@example.com'")
 
 
 def test_quoted_column_with_dots() -> None:
