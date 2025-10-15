@@ -15,7 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 from pathlib import PosixPath
-from typing import Any
 
 import pyarrow as pa
 import pytest
@@ -24,7 +23,7 @@ from pyarrow import Table as pa_table
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
-from pyiceberg.expressions import AlwaysTrue, And, BooleanExpression, EqualTo, In, IsNaN, IsNull, Or, Reference
+from pyiceberg.expressions import AlwaysTrue, And, EqualTo, In, IsNaN, IsNull, Or, Reference
 from pyiceberg.expressions.literals import DoubleLiteral, LongLiteral
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema
@@ -444,73 +443,80 @@ def test_create_match_filter_single_condition() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    "data, expected",
-    [
-        pytest.param(
-            [{"x": 1.0}, {"x": 2.0}, {"x": 3.0}],
-            In(Reference(name="x"), {DoubleLiteral(1.0), DoubleLiteral(2.0), DoubleLiteral(3.0)}),
-            id="single-column-without-null",
+def test_create_match_filter_single_column_without_null() -> None:
+    data = [{"x": 1.0}, {"x": 2.0}, {"x": 3.0}]
+
+    schema = pa.schema([pa.field("x", pa.float64())])
+    table = pa.Table.from_pylist(data, schema=schema)
+
+    expr = create_match_filter(table, join_cols=["x"])
+
+    assert expr == In(Reference(name="x"), {DoubleLiteral(1.0), DoubleLiteral(2.0), DoubleLiteral(3.0)})
+
+
+def test_create_match_filter_single_column_with_null() -> None:
+    data = [
+        {"x": 1.0},
+        {"x": 2.0},
+        {"x": None},
+        {"x": 4.0},
+        {"x": float("nan")},
+    ]
+    schema = pa.schema([pa.field("x", pa.float64())])
+    table = pa.Table.from_pylist(data, schema=schema)
+
+    expr = create_match_filter(table, join_cols=["x"])
+
+    assert expr == Or(
+        left=IsNull(term=Reference(name="x")),
+        right=Or(
+            left=IsNaN(term=Reference(name="x")),
+            right=In(Reference(name="x"), {DoubleLiteral(1.0), DoubleLiteral(2.0), DoubleLiteral(4.0)}),
         ),
-        pytest.param(
-            [{"x": 1.0}, {"x": 2.0}, {"x": None}, {"x": 4.0}, {"x": float("nan")}],
-            Or(
-                left=IsNull(term=Reference(name="x")),
-                right=Or(
-                    left=IsNaN(term=Reference(name="x")),
-                    right=In(Reference(name="x"), {DoubleLiteral(1.0), DoubleLiteral(2.0), DoubleLiteral(4.0)}),
-                ),
-            ),
-            id="single-column-with-null",
-        ),
-        pytest.param(
-            [
-                {"x": 1.0, "y": 9.0},
-                {"x": 2.0, "y": None},
-                {"x": None, "y": 7.0},
-                {"x": 4.0, "y": float("nan")},
-                {"x": float("nan"), "y": 0.0},
-            ],
-            Or(
-                left=Or(
-                    left=And(
-                        left=EqualTo(term=Reference(name="x"), literal=DoubleLiteral(1.0)),
-                        right=EqualTo(term=Reference(name="y"), literal=DoubleLiteral(9.0)),
-                    ),
-                    right=And(
-                        left=EqualTo(term=Reference(name="x"), literal=DoubleLiteral(2.0)),
-                        right=IsNull(term=Reference(name="y")),
-                    ),
-                ),
-                right=Or(
-                    left=And(
-                        left=IsNull(term=Reference(name="x")),
-                        right=EqualTo(term=Reference(name="y"), literal=DoubleLiteral(7.0)),
-                    ),
-                    right=Or(
-                        left=And(
-                            left=EqualTo(term=Reference(name="x"), literal=DoubleLiteral(4.0)),
-                            right=IsNaN(term=Reference(name="y")),
-                        ),
-                        right=And(
-                            left=IsNaN(term=Reference(name="x")),
-                            right=EqualTo(term=Reference(name="y"), literal=DoubleLiteral(0.0)),
-                        ),
-                    ),
-                ),
-            ),
-            id="multi-column-with-null",
-        ),
-    ],
-)
-def test_create_match_filter(data: list[dict[str, Any]], expected: BooleanExpression) -> None:
+    )
+
+
+def test_create_match_filter_multi_column_with_null() -> None:
+    data = [
+        {"x": 1.0, "y": 9.0},
+        {"x": 2.0, "y": None},
+        {"x": None, "y": 7.0},
+        {"x": 4.0, "y": float("nan")},
+        {"x": float("nan"), "y": 0.0},
+    ]
     schema = pa.schema([pa.field("x", pa.float64()), pa.field("y", pa.float64())])
     table = pa.Table.from_pylist(data, schema=schema)
-    join_cols = sorted({col for record in data for col in record})
 
-    expr = create_match_filter(table, join_cols)
+    expr = create_match_filter(table, join_cols=["x", "y"])
 
-    assert expr == expected
+    assert expr == Or(
+        left=Or(
+            left=And(
+                left=EqualTo(term=Reference(name="x"), literal=DoubleLiteral(1.0)),
+                right=EqualTo(term=Reference(name="y"), literal=DoubleLiteral(9.0)),
+            ),
+            right=And(
+                left=EqualTo(term=Reference(name="x"), literal=DoubleLiteral(2.0)),
+                right=IsNull(term=Reference(name="y")),
+            ),
+        ),
+        right=Or(
+            left=And(
+                left=IsNull(term=Reference(name="x")),
+                right=EqualTo(term=Reference(name="y"), literal=DoubleLiteral(7.0)),
+            ),
+            right=Or(
+                left=And(
+                    left=EqualTo(term=Reference(name="x"), literal=DoubleLiteral(4.0)),
+                    right=IsNaN(term=Reference(name="y")),
+                ),
+                right=And(
+                    left=IsNaN(term=Reference(name="x")),
+                    right=EqualTo(term=Reference(name="y"), literal=DoubleLiteral(0.0)),
+                ),
+            ),
+        ),
+    )
 
 
 def test_upsert_with_duplicate_rows_in_table(catalog: Catalog) -> None:
