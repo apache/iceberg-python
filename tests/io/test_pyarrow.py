@@ -2188,6 +2188,43 @@ def test_stats_aggregator_update_max(vals: List[Any], primitive_type: PrimitiveT
     assert stats.current_max == expected_result
 
 
+@pytest.mark.parametrize(
+    "iceberg_type, physical_type_string",
+    [
+        # Exact match
+        (IntegerType(), "INT32"),
+        # Allowed INT32 -> INT64 promotion
+        (LongType(), "INT32"),
+        # Allowed FLOAT -> DOUBLE promotion
+        (DoubleType(), "FLOAT"),
+        # Allowed FIXED_LEN_BYTE_ARRAY -> INT32
+        (DecimalType(precision=2, scale=2), "FIXED_LEN_BYTE_ARRAY"),
+        # Allowed FIXED_LEN_BYTE_ARRAY -> INT64
+        (DecimalType(precision=12, scale=2), "FIXED_LEN_BYTE_ARRAY"),
+    ],
+)
+def test_stats_aggregator_conditionally_allowed_types_pass(iceberg_type: PrimitiveType, physical_type_string: str) -> None:
+    stats = StatsAggregator(iceberg_type, physical_type_string)
+
+    assert stats.primitive_type == iceberg_type
+    assert stats.current_min is None
+    assert stats.current_max is None
+
+
+@pytest.mark.parametrize(
+    "iceberg_type, physical_type_string",
+    [
+        # Fail case: INT64 cannot be cast to INT32
+        (IntegerType(), "INT64"),
+    ],
+)
+def test_stats_aggregator_physical_type_does_not_match_expected_raise_error(
+    iceberg_type: PrimitiveType, physical_type_string: str
+) -> None:
+    with pytest.raises(ValueError, match="Unexpected physical type"):
+        StatsAggregator(iceberg_type, physical_type_string)
+
+
 def test_bin_pack_arrow_table(arrow_table_with_null: pa.Table) -> None:
     # default packs to 1 bin since the table is small
     bin_packed = bin_pack_arrow_table(
