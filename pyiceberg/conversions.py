@@ -51,6 +51,8 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    GeometryType,
+    GeographyType,
     IntegerType,
     LongType,
     PrimitiveType,
@@ -167,6 +169,8 @@ def _(_: UUIDType, value_str: str) -> uuid.UUID:
 
 @partition_to_py.register(FixedType)
 @partition_to_py.register(BinaryType)
+@partition_to_py.register(GeographyType)
+@partition_to_py.register(GeometryType)
 @handle_none
 def _(_: PrimitiveType, value_str: str) -> bytes:
     return bytes(value_str, UTF8)
@@ -275,6 +279,8 @@ def _(_: UUIDType, value: Union[uuid.UUID, bytes]) -> bytes:
 
 @to_bytes.register(BinaryType)
 @to_bytes.register(FixedType)
+@to_bytes.register(GeographyType)
+@to_bytes.register(GeometryType)
 def _(_: PrimitiveType, value: bytes) -> bytes:
     return value
 
@@ -355,6 +361,8 @@ def _(_: StringType, b: bytes) -> str:
 
 @from_bytes.register(BinaryType)
 @from_bytes.register(FixedType)
+@from_bytes.register(GeographyType)
+@from_bytes.register(GeometryType)
 @from_bytes.register(UUIDType)
 def _(_: PrimitiveType, b: bytes) -> bytes:
     return b
@@ -453,6 +461,8 @@ def _(t: FixedType, b: bytes) -> str:
 
 
 @to_json.register(BinaryType)
+@to_json.register(GeographyType)
+@to_json.register(GeometryType)
 def _(_: BinaryType, b: bytes) -> str:
     """Python bytes serializes into hexadecimal encoded string."""
     return codecs.encode(b, "hex").decode(UTF8)
@@ -578,6 +588,16 @@ def _(_: BinaryType, val: Union[bytes, str]) -> bytes:
         return codecs.decode(val.encode(UTF8), "hex")
     else:
         return val
+
+
+@from_json.register(GeographyType)
+def _(_: GeographyType, val: bytes) -> bytes:
+    return val
+
+
+@from_json.register(GeometryType)
+def _(_: GeometryType, val: bytes) -> bytes:
+    return val
 
 
 @from_json.register(DecimalType)

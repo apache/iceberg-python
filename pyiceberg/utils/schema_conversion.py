@@ -42,6 +42,8 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IcebergType,
     IntegerType,
     ListType,
@@ -377,6 +379,10 @@ class AvroSchemaConversion:
         physical_type = avro_logical_type["type"]
         if logical_type == "decimal":
             return self._convert_logical_decimal_type(avro_logical_type)
+        elif logical_type == "geography":
+            return self._convert_logical_geography_type(avro_logical_type)
+        elif logical_type == "geometry":
+            return self._convert_logical_geometry_type(avro_logical_type)
         elif logical_type == "map":
             return self._convert_logical_map_type(avro_logical_type)
         elif logical_type == "timestamp-micros":
@@ -415,6 +421,58 @@ class AvroSchemaConversion:
             A Iceberg DecimalType.
         """
         return DecimalType(precision=avro_type["precision"], scale=avro_type["scale"])
+
+    def _convert_logical_geography_type(self, avro_type: Dict[str, Any]) -> GeographyType:
+        """Convert an avro type to an Iceberg GeographyType.
+
+        Args:
+            avro_type: The Avro type.
+
+        Examples:
+            >>> from pyiceberg.utils.schema_conversion import AvroSchemaConversion
+            >>> avro_geography_type = {
+            ...     "type": "bytes",
+            ...     "logicalType": "geography",
+            ...     "crs": 'OGC:CRS84',
+            ...     "edge_algorithm": 'spherical'
+            ... }
+            >>> actual = AvroSchemaConversion()._convert_logical_decimal_type(geography)
+            >>> expected = GeographyType(
+            ...     crs='OGC:CRS84',
+            ...     edge_algorithm=EdgeAlgorithm.SPHERICAL
+            ... )
+            >>> actual == expected
+            True
+
+        Returns:
+            A Iceberg GeographyType.
+        """
+        return GeographyType(crs=avro_type["crs"], edge_algorithm=avro_type["edge_algorithm"])
+
+    def _convert_logical_geometry_type(self, avro_type: Dict[str, Any]) -> GeometryType:
+        """Convert an avro type to an Iceberg GeometryType.
+
+        Args:
+            avro_type: The Avro type.
+
+        Examples:
+            >>> from pyiceberg.utils.schema_conversion import AvroSchemaConversion
+            >>> avro_geometry_type = {
+            ...     "type": "bytes",
+            ...     "logicalType": "geometry",
+            ...     "crs": "OGC:CRS84
+            ... }
+            >>> actual = AvroSchemaConversion()._convert_logical_decimal_type(avro_geometry_type)
+            >>> expected = GeometryType(
+            ...     crs="OGC:CRS84"
+            ... )
+            >>> actual == expected
+            True
+
+        Returns:
+            A Iceberg GeometryType.
+        """
+        return GeometryType(crs=avro_type["crs"])
 
     def _convert_logical_map_type(self, avro_type: Dict[str, Any]) -> MapType:
         """Convert an avro map type to an Iceberg MapType.
@@ -638,6 +696,21 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
 
     def visit_binary(self, binary_type: BinaryType) -> AvroType:
         return "bytes"
+
+    def visit_geography(self, geography_type: GeographyType) -> AvroType:
+        return {
+            "type": "bytes",
+            "logicalType": "geography",
+            "crs": geography_type.crs,
+            "edge_algorithm": geography_type.edge_algorithm,
+        }
+
+    def visit_geometry(self, geometry_type: GeometryType) -> AvroType:
+        return {
+            "type": "bytes",
+            "logicalType": "geometry",
+            "crs": geometry_type.crs,
+        }
 
     def visit_unknown(self, unknown_type: UnknownType) -> AvroType:
         return "null"
