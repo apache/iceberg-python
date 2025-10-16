@@ -9,12 +9,12 @@ through a standard REST interface.
 
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
+import uvicorn
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-import uvicorn
 
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.exceptions import (
@@ -22,12 +22,7 @@ from pyiceberg.exceptions import (
     NamespaceNotEmptyError,
     NoSuchNamespaceError,
     NoSuchTableError,
-    TableAlreadyExistsError,
 )
-from pyiceberg.partitioning import PartitionSpec, UNPARTITIONED_PARTITION_SPEC
-from pyiceberg.schema import Schema
-from pyiceberg.table.sorting import SortOrder, UNSORTED_SORT_ORDER
-from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 
 # ============================================================================
 # Configuration
@@ -68,39 +63,38 @@ def get_catalog() -> Catalog:
     try:
         # Special handling for DynamoDB catalog with LocalStack
         # This works around credential issues by pre-creating the boto3 client
-        import yaml
         import os
-        
+
+        import yaml
+
         # Load the PyIceberg configuration
         config_path = os.path.expanduser("~/.pyiceberg.yaml")
         if os.path.exists(config_path):
-            with open(config_path, 'r') as f:
+            with open(config_path) as f:
                 config = yaml.safe_load(f)
-                catalog_config = config.get('catalog', {}).get(CATALOG_NAME, {})
-                
+                catalog_config = config.get("catalog", {}).get(CATALOG_NAME, {})
+
                 # Check if this is a DynamoDB catalog with endpoint (LocalStack)
-                if catalog_config.get('type') == 'dynamodb' and catalog_config.get('dynamodb.endpoint'):
+                if catalog_config.get("type") == "dynamodb" and catalog_config.get("dynamodb.endpoint"):
                     import boto3
+
                     from pyiceberg.catalog.dynamodb import DynamoDbCatalog
-                    
-                    logger.info(f"Creating DynamoDB catalog with pre-configured boto3 client for LocalStack")
-                    
+
+                    logger.info("Creating DynamoDB catalog with pre-configured boto3 client for LocalStack")
+
                     # Create boto3 client with explicit credentials
                     session = boto3.Session(
-                        region_name=catalog_config.get('dynamodb.region', 'us-east-1'),
-                        aws_access_key_id=catalog_config.get('dynamodb.access-key-id', 'test'),
-                        aws_secret_access_key=catalog_config.get('dynamodb.secret-access-key', 'test'),
+                        region_name=catalog_config.get("dynamodb.region", "us-east-1"),
+                        aws_access_key_id=catalog_config.get("dynamodb.access-key-id", "test"),
+                        aws_secret_access_key=catalog_config.get("dynamodb.secret-access-key", "test"),
                     )
-                    dynamodb_client = session.client(
-                        'dynamodb',
-                        endpoint_url=catalog_config.get('dynamodb.endpoint')
-                    )
-                    
+                    dynamodb_client = session.client("dynamodb", endpoint_url=catalog_config.get("dynamodb.endpoint"))
+
                     # Create catalog with pre-configured client
                     catalog = DynamoDbCatalog(CATALOG_NAME, client=dynamodb_client, **catalog_config)
                     logger.info(f"Loaded DynamoDB catalog: {CATALOG_NAME}")
                     return catalog
-        
+
         # Default: use standard load_catalog for all other catalog types
         catalog = load_catalog(CATALOG_NAME)
         logger.info(f"Loaded catalog: {CATALOG_NAME} (type: {catalog.properties.get('type', 'unknown')})")
