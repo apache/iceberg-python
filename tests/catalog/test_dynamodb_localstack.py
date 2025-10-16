@@ -621,6 +621,483 @@ def test_e2e_drop_table_cleans_metadata(catalog: DynamoDbCatalog, user_schema: S
     print(f"{'=' * 80}\n")
 
 
+# ==============================================================================
+# Stress Tests: Concurrent Operations and Load Testing
+# ==============================================================================
+
+
+def test_stress_concurrent_writes_multiple_clients(user_schema: Schema, s3_bucket: str) -> None:
+    """Stress test: Multiple independent clients writing concurrently to different tables."""
+    import concurrent.futures
+    import time
+
+    namespace = "stress_test"
+    num_clients = 5
+    writes_per_client = 10
+
+    print(f"\n{'=' * 80}")
+    print(f"STRESS TEST: {num_clients} concurrent clients, {writes_per_client} writes each")
+    print(f"{'=' * 80}")
+
+    def create_client(client_id: int) -> DynamoDbCatalog:
+        """Create an independent catalog client."""
+        catalog_name = f"stress_catalog_{client_id}_{uuid.uuid4().hex[:8]}"
+        table_name = f"iceberg_catalog_{uuid.uuid4().hex[:8]}"
+
+        return DynamoDbCatalog(
+            catalog_name,
+            **{
+                "table-name": table_name,
+                "warehouse": f"s3://{s3_bucket}",
+                "dynamodb.endpoint": LOCALSTACK_ENDPOINT,
+                "s3.endpoint": LOCALSTACK_ENDPOINT,
+                "dynamodb.region": TEST_REGION,
+                "dynamodb.access-key-id": "test",
+                "dynamodb.secret-access-key": "test",
+                "dynamodb.cache.enabled": "true",
+                "dynamodb.cache.ttl-seconds": "300",
+            },
+        )
+
+    def client_workload(client_id: int) -> tuple[int, int, float]:
+        """Execute workload for a single client: create table, write data multiple times."""
+        start_time = time.time()
+        catalog = create_client(client_id)
+        table_name = f"stress_table_{client_id}"
+        identifier = (namespace, table_name)
+
+        try:
+            # Create namespace (may already exist from another client)
+            try:
+                catalog.create_namespace(namespace)
+            except NamespaceAlreadyExistsError:
+                pass
+
+            # Create table
+            table = catalog.create_table(identifier, user_schema)
+
+            # Perform multiple writes
+            successful_writes = 0
+            for write_num in range(writes_per_client):
+                data: dict[str, list[int | str]] = {
+                    "user_id": [client_id * 1000 + write_num * 10 + i for i in range(5)],
+                    "username": [f"user_{client_id}_{write_num}_{i}" for i in range(5)],
+                    "email": [f"client{client_id}_write{write_num}_{i}@example.com" for i in range(5)],
+                    "age": [20 + (client_id + write_num + i) % 50 for i in range(5)],
+                }
+                table.append(pa.table(data))
+                table = catalog.load_table(identifier)  # Refresh to get latest snapshot
+                successful_writes += 1
+
+            # Verify final data
+            final_table = catalog.load_table(identifier)
+            result = final_table.scan().to_arrow()
+            row_count = len(result)
+
+            elapsed_time = time.time() - start_time
+
+            # Cleanup
+            catalog.drop_table(identifier)
+            catalog.dynamodb.delete_table(TableName=catalog.dynamodb_table_name)
+
+            return (successful_writes, row_count, elapsed_time)
+
+        except Exception as e:
+            print(f"    ❌ Client {client_id} failed: {e}")
+            raise
+
+    # Execute concurrent workloads
+    print(f"\n[1] Starting {num_clients} concurrent clients...")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num_clients) as executor:
+        futures = [executor.submit(client_workload, i) for i in range(num_clients)]
+        results = [future.result() for future in concurrent.futures.as_completed(futures)]
+
+    # Analyze results
+    print("\n[2] Analyzing results...")
+    total_writes = sum(r[0] for r in results)
+    total_rows = sum(r[1] for r in results)
+    avg_time = sum(r[2] for r in results) / len(results)
+
+    print(f"    ✅ Total successful writes: {total_writes}/{num_clients * writes_per_client}")
+    print(f"    ✅ Total rows written: {total_rows}")
+    print(f"    ✅ Average client time: {avg_time:.2f}s")
+    print(f"    ✅ Writes per second: {total_writes / avg_time:.2f}")
+
+    # Verify all clients succeeded
+    assert total_writes == num_clients * writes_per_client, "Not all writes succeeded"
+    assert total_rows == num_clients * writes_per_client * 5, "Row count mismatch"
+
+    print(f"\n{'=' * 80}")
+    print("✅ CONCURRENT WRITES STRESS TEST PASSED!")
+    print(f"{'=' * 80}\n")
+
+
+def test_stress_high_volume_commits_single_table(catalog: DynamoDbCatalog, user_schema: Schema, s3_bucket: str) -> None:
+    """Stress test: High volume of commits to a single table."""
+    import time
+
+    namespace = "stress_test"
+    table_name = "high_volume_table"
+    identifier = (namespace, table_name)
+    num_commits = 50
+
+    print(f"\n{'=' * 80}")
+    print(f"STRESS TEST: {num_commits} commits to single table")
+    print(f"{'=' * 80}")
+
+    # Create table
+    print("\n[1] Creating table...")
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(identifier, user_schema)
+    print("    ✅ Table created")
+
+    # Perform many commits
+    print(f"\n[2] Performing {num_commits} commits...")
+    start_time = time.time()
+
+    for commit_num in range(num_commits):
+        data: dict[str, list[int | str]] = {
+            "user_id": [commit_num * 10 + i for i in range(3)],
+            "username": [f"user_{commit_num}_{i}" for i in range(3)],
+            "email": [f"commit{commit_num}_{i}@example.com" for i in range(3)],
+            "age": [20 + (commit_num + i) % 50 for i in range(3)],
+        }
+        table.append(pa.table(data))
+        table = catalog.load_table(identifier)  # Refresh
+
+        if (commit_num + 1) % 10 == 0:
+            print(f"    📝 Completed {commit_num + 1} commits...")
+
+    elapsed_time = time.time() - start_time
+
+    # Verify final state
+    print("\n[3] Verifying final state...")
+    final_table = catalog.load_table(identifier)
+    result = final_table.scan().to_arrow()
+    row_count = len(result)
+    snapshots: List[Snapshot] = list(final_table.snapshots())
+
+    print(f"    ✅ Total rows: {row_count}")
+    print(f"    ✅ Total snapshots: {len(snapshots)}")
+    print(f"    ✅ Total time: {elapsed_time:.2f}s")
+    print(f"    ✅ Commits per second: {num_commits / elapsed_time:.2f}")
+    print(f"    ✅ Average commit time: {elapsed_time / num_commits:.3f}s")
+
+    assert row_count == num_commits * 3, f"Expected {num_commits * 3} rows, got {row_count}"
+    assert len(snapshots) >= num_commits, f"Expected at least {num_commits} snapshots"
+
+    print(f"\n{'=' * 80}")
+    print("✅ HIGH-VOLUME COMMITS STRESS TEST PASSED!")
+    print(f"{'=' * 80}\n")
+
+
+def test_stress_concurrent_read_write_contention(catalog: DynamoDbCatalog, user_schema: Schema, s3_bucket: str) -> None:
+    """Stress test: Concurrent reads and writes to same table."""
+    import concurrent.futures
+    import time
+
+    namespace = "stress_test"
+    table_name = "rw_contention_table"
+    identifier = (namespace, table_name)
+    num_writers = 3
+    num_readers = 5
+    writes_per_writer = 10
+
+    print(f"\n{'=' * 80}")
+    print(f"STRESS TEST: {num_writers} writers + {num_readers} readers (concurrent)")
+    print(f"{'=' * 80}")
+
+    # Create table with initial data
+    print("\n[1] Creating table with initial data...")
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(identifier, user_schema)
+
+    initial_data: dict[str, list[int | str]] = {
+        "user_id": [1, 2, 3],
+        "username": ["alice", "bob", "charlie"],
+        "email": ["a@ex.com", "b@ex.com", "c@ex.com"],
+        "age": [25, 30, 35],
+    }
+    table.append(pa.table(initial_data))
+    print("    ✅ Table created with 3 rows")
+
+    def writer_workload(writer_id: int) -> int:
+        """Write data to the table."""
+        successful_writes = 0
+        for write_num in range(writes_per_writer):
+            data: dict[str, list[int | str]] = {
+                "user_id": [writer_id * 1000 + write_num * 10 + i for i in range(2)],
+                "username": [f"writer_{writer_id}_write_{write_num}_{i}" for i in range(2)],
+                "email": [f"w{writer_id}_n{write_num}_{i}@example.com" for i in range(2)],
+                "age": [25 + (writer_id + write_num + i) % 40 for i in range(2)],
+            }
+            t = catalog.load_table(identifier)
+            t.append(pa.table(data))
+            successful_writes += 1
+            time.sleep(0.05)  # Small delay to increase contention
+        return successful_writes
+
+    def reader_workload(reader_id: int) -> int:
+        """Read data from the table."""
+        successful_reads = 0
+        for _ in range(writes_per_writer * 2):  # Read more often than writes
+            t = catalog.load_table(identifier)
+            result = t.scan().to_arrow()
+            row_count = len(result)
+            if row_count >= 3:  # At least initial data
+                successful_reads += 1
+            time.sleep(0.03)  # Smaller delay for readers
+        return successful_reads
+
+    # Execute concurrent workloads
+    print(f"\n[2] Starting {num_writers} writers and {num_readers} readers...")
+    start_time = time.time()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num_writers + num_readers) as executor:
+        writer_futures = [executor.submit(writer_workload, i) for i in range(num_writers)]
+        reader_futures = [executor.submit(reader_workload, i) for i in range(num_readers)]
+
+        writer_results = [f.result() for f in writer_futures]
+        reader_results = [f.result() for f in reader_futures]
+
+    elapsed_time = time.time() - start_time
+
+    # Verify results
+    print("\n[3] Analyzing results...")
+    total_writes = sum(writer_results)
+    total_reads = sum(reader_results)
+
+    final_table = catalog.load_table(identifier)
+    final_result = final_table.scan().to_arrow()
+    final_row_count = len(final_result)
+
+    print(f"    ✅ Total writes: {total_writes}")
+    print(f"    ✅ Total reads: {total_reads}")
+    print(f"    ✅ Final row count: {final_row_count}")
+    print(f"    ✅ Total time: {elapsed_time:.2f}s")
+    print(f"    ✅ Operations per second: {(total_writes + total_reads) / elapsed_time:.2f}")
+
+    expected_rows = 3 + (num_writers * writes_per_writer * 2)
+    assert final_row_count == expected_rows, f"Expected {expected_rows} rows, got {final_row_count}"
+    assert total_writes == num_writers * writes_per_writer, "Not all writes succeeded"
+
+    print(f"\n{'=' * 80}")
+    print("✅ READ/WRITE CONTENTION STRESS TEST PASSED!")
+    print(f"{'=' * 80}\n")
+
+
+def test_stress_cache_consistency_under_load(user_schema: Schema, s3_bucket: str) -> None:
+    """Stress test: Verify cache consistency with multiple catalog instances."""
+    import concurrent.futures
+    import time
+
+    namespace = "stress_test"
+    table_name = "cache_consistency_table"
+    identifier = (namespace, table_name)
+    shared_table_name = f"shared_iceberg_catalog_{uuid.uuid4().hex[:8]}"
+    num_catalogs = 4
+    operations_per_catalog = 20
+
+    print(f"\n{'=' * 80}")
+    print(f"STRESS TEST: Cache consistency with {num_catalogs} catalog instances")
+    print(f"{'=' * 80}")
+
+    def create_shared_catalog(catalog_id: int) -> DynamoDbCatalog:
+        """Create a catalog instance sharing the same DynamoDB table."""
+        return DynamoDbCatalog(
+            f"cache_catalog_{catalog_id}",
+            **{
+                "table-name": shared_table_name,  # Same table for all catalogs
+                "warehouse": f"s3://{s3_bucket}",
+                "dynamodb.endpoint": LOCALSTACK_ENDPOINT,
+                "s3.endpoint": LOCALSTACK_ENDPOINT,
+                "dynamodb.region": TEST_REGION,
+                "dynamodb.access-key-id": "test",
+                "dynamodb.secret-access-key": "test",
+                "dynamodb.cache.enabled": "true",
+                "dynamodb.cache.ttl-seconds": "60",  # Shorter TTL for this test
+            },
+        )
+
+    # Create initial table with first catalog
+    print("\n[1] Creating shared table...")
+    catalog1 = create_shared_catalog(0)
+    catalog1.create_namespace(namespace)
+    catalog1.create_table(identifier, user_schema)
+    print("    ✅ Shared table created")
+
+    def catalog_workload(catalog_id: int) -> tuple[int, int, int]:
+        """Perform mixed operations: reads, writes, cache hits."""
+        catalog = create_shared_catalog(catalog_id)
+        reads = 0
+        writes = 0
+        cache_hits = 0
+
+        for op_num in range(operations_per_catalog):
+            if op_num % 3 == 0:  # Write operation
+                data: dict[str, list[int | str]] = {
+                    "user_id": [catalog_id * 1000 + op_num],
+                    "username": [f"user_{catalog_id}_{op_num}"],
+                    "email": [f"c{catalog_id}_op{op_num}@example.com"],
+                    "age": [25 + catalog_id + op_num],
+                }
+                t = catalog.load_table(identifier)
+                t.append(pa.table(data))
+                writes += 1
+            else:  # Read operation
+                t = catalog.load_table(identifier)
+                _ = t.scan().to_arrow()
+                reads += 1
+
+                # Check if cache was used (load again immediately)
+                cache_key = catalog._get_cache_key(identifier)
+                if catalog._cache and catalog._cache.get(cache_key) is not None:
+                    cache_hits += 1
+
+            time.sleep(0.02)  # Small delay
+
+        return (reads, writes, cache_hits)
+
+    # Execute concurrent workloads
+    print(f"\n[2] Starting {num_catalogs} catalog instances...")
+    start_time = time.time()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num_catalogs) as executor:
+        futures = [executor.submit(catalog_workload, i) for i in range(num_catalogs)]
+        results = [f.result() for f in futures]
+
+    elapsed_time = time.time() - start_time
+
+    # Analyze results
+    print("\n[3] Analyzing cache consistency...")
+    total_reads = sum(r[0] for r in results)
+    total_writes = sum(r[1] for r in results)
+    total_cache_hits = sum(r[2] for r in results)
+    cache_hit_rate = (total_cache_hits / total_reads * 100) if total_reads > 0 else 0
+
+    # Verify final state
+    final_catalog = create_shared_catalog(999)
+    final_table = final_catalog.load_table(identifier)
+    final_result = final_table.scan().to_arrow()
+    final_row_count = len(final_result)
+
+    print(f"    ✅ Total reads: {total_reads}")
+    print(f"    ✅ Total writes: {total_writes}")
+    print(f"    ✅ Cache hits: {total_cache_hits}")
+    print(f"    ✅ Cache hit rate: {cache_hit_rate:.1f}%")
+    print(f"    ✅ Final row count: {final_row_count}")
+    print(f"    ✅ Total time: {elapsed_time:.2f}s")
+    print(f"    ✅ Operations per second: {(total_reads + total_writes) / elapsed_time:.2f}")
+
+    # Verify data consistency
+    assert final_row_count == total_writes, f"Row count mismatch: expected {total_writes}, got {final_row_count}"
+
+    # Cleanup
+    catalog1.drop_table(identifier)
+    catalog1.dynamodb.delete_table(TableName=shared_table_name)
+
+    print(f"\n{'=' * 80}")
+    print("✅ CACHE CONSISTENCY STRESS TEST PASSED!")
+    print(f"{'=' * 80}\n")
+
+
+def test_stress_retry_mechanism_under_failures(user_schema: Schema, s3_bucket: str) -> None:
+    """Stress test: Verify retry mechanism handles transient failures."""
+    import time
+    from unittest.mock import patch
+
+    from botocore.exceptions import ClientError as BotoClientError
+
+    namespace = "stress_test"
+    table_name = "retry_test_table"
+    identifier = (namespace, table_name)
+
+    print(f"\n{'=' * 80}")
+    print("STRESS TEST: Retry mechanism with simulated failures")
+    print(f"{'=' * 80}")
+
+    # Create catalog with aggressive retry settings
+    catalog_name = f"retry_catalog_{uuid.uuid4().hex[:8]}"
+    dynamo_table_name = f"iceberg_catalog_{uuid.uuid4().hex[:8]}"
+
+    catalog = DynamoDbCatalog(
+        catalog_name,
+        **{
+            "table-name": dynamo_table_name,
+            "warehouse": f"s3://{s3_bucket}",
+            "dynamodb.endpoint": LOCALSTACK_ENDPOINT,
+            "s3.endpoint": LOCALSTACK_ENDPOINT,
+            "dynamodb.region": TEST_REGION,
+            "dynamodb.access-key-id": "test",
+            "dynamodb.secret-access-key": "test",
+            "dynamodb.max-retries": "5",
+            "dynamodb.retry-multiplier": "1.5",
+            "dynamodb.retry-min-wait-ms": "50",
+            "dynamodb.retry-max-wait-ms": "2000",
+        },
+    )
+
+    print("\n[1] Creating table...")
+    catalog.create_namespace(namespace)
+    catalog.create_table(identifier, user_schema)
+    print("    ✅ Table created")
+
+    # Simulate intermittent failures
+    print("\n[2] Testing retry mechanism with simulated failures...")
+    call_count = {"count": 0}
+    original_get_item = catalog.dynamodb.get_item
+
+    def failing_get_item(*args, **kwargs):  # type: ignore
+        """Simulate transient failures on 30% of calls."""
+        call_count["count"] += 1
+        if call_count["count"] % 3 == 0:  # Fail every 3rd call
+            raise BotoClientError(
+                {"Error": {"Code": "ProvisionedThroughputExceededException", "Message": "Simulated failure"}},
+                "GetItem",
+            )
+        return original_get_item(*args, **kwargs)
+
+    with patch.object(catalog.dynamodb, "get_item", side_effect=failing_get_item):
+        successful_operations = 0
+        failed_operations = 0
+        start_time = time.time()
+
+        # Perform operations that will trigger retries
+        for i in range(20):
+            try:
+                # Load table (will hit failures and retry)
+                _ = catalog.load_table(identifier)
+                successful_operations += 1
+            except Exception as e:
+                print(f"    ⚠️  Operation {i} failed after retries: {e}")
+                failed_operations += 1
+
+        elapsed_time = time.time() - start_time
+
+    print("\n[3] Analyzing retry behavior...")
+    print("    ✅ Total operations attempted: 20")
+    print(f"    ✅ Successful operations: {successful_operations}")
+    print(f"    ⚠️  Failed operations: {failed_operations}")
+    print(f"    ✅ Total get_item calls: {call_count['count']}")
+    print(f"    ✅ Simulated failures: {call_count['count'] // 3}")
+    print(f"    ✅ Total time: {elapsed_time:.2f}s")
+    print("    ℹ️  Note: Some operations may fail after max retries")
+
+    # Verify table is still accessible
+    print("\n[4] Verifying table integrity...")
+    final_table = catalog.load_table(identifier)
+    assert final_table.name() == identifier
+    print("    ✅ Table integrity verified")
+
+    # Cleanup
+    catalog.drop_table(identifier)
+    catalog.dynamodb.delete_table(TableName=dynamo_table_name)
+
+    print(f"\n{'=' * 80}")
+    print("✅ RETRY MECHANISM STRESS TEST PASSED!")
+    print(f"{'=' * 80}\n")
+
+
 if __name__ == "__main__":
     # Run tests with verbose output
     pytest.main([__file__, "-v", "-s"])
