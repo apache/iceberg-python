@@ -47,7 +47,7 @@ jobs:
             3.12
 
       - name: Install UV
-        run: make install-uv
+        uses: astral-sh/setup-uv@v6
 
       # Publish the source distribution with the version that's in
       # the repository, otherwise the tests will fail

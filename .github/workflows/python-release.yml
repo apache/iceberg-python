@@ -98,7 +98,7 @@ jobs:
           python-version: 3.12
 
       - name: Install UV
-        run: make install-uv
+        uses: astral-sh/setup-uv@v6
 
       - name: Validate current pyiceberg version
         env:

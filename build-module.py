@@ -25,7 +25,7 @@ from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 allowed_to_fail = os.environ.get("CIBUILDWHEEL", "0") != "1"
 
 
-class CythonBuildHook(BuildHookInterface):
+class BuildHook(BuildHookInterface):
     def build_cython_extensions(self) -> None:
         import Cython.Compiler.Options
         from Cython.Build import build_ext, cythonize
@@ -55,7 +55,13 @@ class CythonBuildHook(BuildHookInterface):
             language="c",
         )
 
-        ext_modules = cythonize([extension], include_path=list(package_path), language_level=3, annotate=True)
+        ext_modules = cythonize(
+            [extension],
+            include_path=[package_path],
+            language_level=3,
+            annotate=True,
+        )
+        print("Extensions generated:", [e.name for e in ext_modules])
         dist = Distribution({"ext_modules": ext_modules})
         cmd = build_ext(dist)
         cmd.ensure_finalized()
@@ -70,6 +76,9 @@ class CythonBuildHook(BuildHookInterface):
     def initialize(self, version: str, build_data: dict[str, Any]) -> None:
         try:
             self.build_cython_extensions()
+            # only set if Cython build succeeds
+            build_data["pure_python"] = False
+            build_data["infer_tag"] = True
         except Exception:
             if not allowed_to_fail:
                 raise
