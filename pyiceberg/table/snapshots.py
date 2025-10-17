@@ -237,12 +237,6 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
 
 
 class Snapshot(IcebergBaseModel):
-    """Represents a snapshot of an Iceberg table at a specific point in time.
-
-    A snapshot tracks the state of a table, including all data and delete files,
-    at the time the snapshot was created.
-    """
-
     snapshot_id: int = Field(alias="snapshot-id")
     parent_snapshot_id: Optional[int] = Field(alias="parent-snapshot-id", default=None)
     sequence_number: Optional[int] = Field(alias="sequence-number", default=INITIAL_SEQUENCE_NUMBER)
