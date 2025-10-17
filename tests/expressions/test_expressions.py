@@ -427,51 +427,33 @@ def test_bound_less_than_or_equal_invert(table_schema_simple: Schema) -> None:
 
 def test_not_equal_to_invert() -> None:
     bound = NotEqualTo(
-        term=BoundReference(  # type: ignore
-            field=NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-            accessor=Accessor(position=0, inner=None),
-        ),
+        term=Reference("foo"),
         literal="hello",
     )
     assert ~bound == EqualTo(
-        term=BoundReference(  # type: ignore
-            field=NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-            accessor=Accessor(position=0, inner=None),
-        ),
+        term=Reference("foo"),
         literal="hello",
     )
 
 
 def test_greater_than_or_equal_invert() -> None:
     bound = GreaterThanOrEqual(
-        term=BoundReference(  # type: ignore
-            field=NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-            accessor=Accessor(position=0, inner=None),
-        ),
+        term=Reference("foo"),
         literal="hello",
     )
     assert ~bound == LessThan(
-        term=BoundReference(  # type: ignore
-            field=NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-            accessor=Accessor(position=0, inner=None),
-        ),
+        term=Reference("foo"),
         literal="hello",
     )
 
 
 def test_less_than_or_equal_invert() -> None:
     bound = LessThanOrEqual(
-        term=BoundReference(  # type: ignore
-            field=NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-            accessor=Accessor(position=0, inner=None),
-        ),
+        term=Reference("foo"),
         literal="hello",
     )
     assert ~bound == GreaterThan(
-        term=BoundReference(  # type: ignore
-            field=NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-            accessor=Accessor(position=0, inner=None),
-        ),
+        term=Reference("foo"),
         literal="hello",
     )
 
