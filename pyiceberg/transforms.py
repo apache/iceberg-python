@@ -120,7 +120,7 @@ def _try_import(module_name: str, extras_name: Optional[str] = None) -> types.Mo
         raise NotInstalledError(msg) from None
 
 
-def _transform_literal(func: Callable[[L], L], lit: Literal[L]) -> Literal[L]:
+def _transform_literal(func: Callable[[Any], Any], lit: Literal[L]) -> Literal[L]:
     """Small helper to upwrap the value from the literal, and wrap it again."""
     return literal(func(lit.value))
 
