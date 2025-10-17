@@ -22,7 +22,7 @@ from collections import defaultdict
 from enum import Enum
 from typing import TYPE_CHECKING, Any, DefaultDict, Dict, Iterable, List, Mapping, Optional
 
-from pydantic import Field, PrivateAttr, model_serializer
+from pydantic import Field, PrivateAttr, field_validator, model_serializer, model_validator
 
 from pyiceberg.io import FileIO
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, _manifests
@@ -237,13 +237,54 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
 
 
 class Snapshot(IcebergBaseModel):
+    """Represents a snapshot of an Iceberg table at a specific point in time.
+
+    A snapshot tracks the state of a table, including all data and delete files,
+    at the time the snapshot was created.
+    """
+
     snapshot_id: int = Field(alias="snapshot-id")
     parent_snapshot_id: Optional[int] = Field(alias="parent-snapshot-id", default=None)
     sequence_number: Optional[int] = Field(alias="sequence-number", default=INITIAL_SEQUENCE_NUMBER)
     timestamp_ms: int = Field(alias="timestamp-ms", default_factory=lambda: int(time.time() * 1000))
     manifest_list: str = Field(alias="manifest-list", description="Location of the snapshot's manifest list file")
+    first_row_id: Optional[int] = Field(
+        alias="first-row-id",
+        default=None,
+        description="The row-id of the first newly added row in this snapshot. Returns None when row lineage is not supported.",
+    )
+    added_rows: Optional[int] = Field(
+        alias="added-rows",
+        default=None,
+        description=(
+            "The upper bound of number of rows with assigned row IDs in this snapshot. Returns None if the value was not stored."
+        ),
+    )
     summary: Optional[Summary] = Field(default=None)
     schema_id: Optional[int] = Field(alias="schema-id", default=None)
+
+    @field_validator("first_row_id")
+    @classmethod
+    def validate_first_row_id(cls, v: Optional[int]) -> Optional[int]:
+        """Validate that first_row_id is non-negative if provided."""
+        if v is not None and v < 0:
+            raise ValueError(f"Invalid first-row-id (cannot be negative): {v}")
+        return v
+
+    @field_validator("added_rows")
+    @classmethod
+    def validate_added_rows(cls, v: Optional[int]) -> Optional[int]:
+        """Validate that added_rows is non-negative if provided."""
+        if v is not None and v < 0:
+            raise ValueError(f"Invalid added-rows (cannot be negative): {v}")
+        return v
+
+    @model_validator(mode="after")
+    def validate_row_lineage_fields(self) -> "Snapshot":
+        """Validate that added_rows is required when first_row_id is set."""
+        if self.first_row_id is not None and self.added_rows is None:
+            raise ValueError("Invalid added-rows (required when first-row-id is set): None")
+        return self
 
     def __str__(self) -> str:
         """Return the string representation of the Snapshot class."""

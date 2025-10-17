@@ -456,3 +456,78 @@ def test_ancestors_between(table_v2_with_extensive_snapshots: Table) -> None:
         )
         == 2000
     )
+
+
+def test_snapshot_v3_fields() -> None:
+    snapshot = Snapshot(
+        **{
+            "snapshot-id": 1,
+            "timestamp-ms": 1234567890,
+            "manifest-list": "s3:/a/b/c.avro",
+            "first-row-id": 100,
+            "added-rows": 1000,
+            "summary": {"operation": "append"},
+        }
+    )
+
+    assert snapshot.first_row_id == 100
+    assert snapshot.added_rows == 1000
+
+    actual = snapshot.model_dump_json()
+    expected = """{"snapshot-id":1,"sequence-number":0,"timestamp-ms":1234567890,"manifest-list":"s3:/a/b/c.avro","first-row-id":100,"added-rows":1000,"summary":{"operation":"append"}}"""
+    assert actual == expected
+
+
+def test_snapshot_v3_fields_validation_negative_first_row_id() -> None:
+    with pytest.raises(ValueError, match="Invalid first-row-id \\(cannot be negative\\): -1"):
+        Snapshot(
+            **{
+                "snapshot-id": 1,
+                "timestamp-ms": 1234567890,
+                "manifest-list": "s3:/a/b/c.avro",
+                "first-row-id": -1,
+                "added-rows": 1000,
+                "summary": {"operation": "append"},
+            }
+        )
+
+
+def test_snapshot_v3_fields_validation_negative_added_rows() -> None:
+    with pytest.raises(ValueError, match="Invalid added-rows \\(cannot be negative\\): -1"):
+        Snapshot(
+            **{
+                "snapshot-id": 1,
+                "timestamp-ms": 1234567890,
+                "manifest-list": "s3:/a/b/c.avro",
+                "first-row-id": 100,
+                "added-rows": -1,
+                "summary": {"operation": "append"},
+            }
+        )
+
+
+def test_snapshot_v3_fields_validation_first_row_id_requires_added_rows() -> None:
+    with pytest.raises(ValueError, match="Invalid added-rows \\(required when first-row-id is set\\): None"):
+        Snapshot(
+            **{
+                "snapshot-id": 1,
+                "timestamp-ms": 1234567890,
+                "manifest-list": "s3:/a/b/c.avro",
+                "first-row-id": 100,
+                "summary": {"operation": "append"},
+            }
+        )
+
+
+def test_snapshot_v3_fields_added_rows_without_first_row_id() -> None:
+    snapshot = Snapshot(
+        **{
+            "snapshot-id": 1,
+            "timestamp-ms": 1234567890,
+            "manifest-list": "s3:/a/b/c.avro",
+            "added-rows": 1000,
+            "summary": {"operation": "append"},
+        }
+    )
+    assert snapshot.first_row_id is None
+    assert snapshot.added_rows == 1000
