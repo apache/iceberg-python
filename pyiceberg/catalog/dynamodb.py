@@ -175,7 +175,7 @@ class CatalogCache:
         self._cache: Dict[str, Tuple[Any, datetime]] = {}
         self._lock = threading.Lock()
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         """
         Get a value from cache if not expired.
 
@@ -286,7 +286,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         # Enhancement 2: Initialize caching if enabled
         cache_enabled = properties.get(DYNAMODB_CACHE_ENABLED, "true").lower() == "true"
         cache_ttl = int(properties.get(DYNAMODB_CACHE_TTL_SECONDS, "300"))
-        self._cache: Optional[CatalogCache] = CatalogCache(ttl_seconds=cache_ttl) if cache_enabled else None
+        self._cache: CatalogCache | None = CatalogCache(ttl_seconds=cache_ttl) if cache_enabled else None
 
         # Enhancement 3: Configure retry strategy
         self._max_retries = int(properties.get(DYNAMODB_MAX_RETRIES, "5"))
@@ -363,12 +363,12 @@ class DynamoDbCatalog(MetastoreCatalog):
                 # Log but don't fail the operation due to hook errors
                 logger.warning(f"Hook failed for {event.value}: {e}", exc_info=True)
 
-    def _get_cache_key(self, identifier: Union[str, Identifier]) -> str:
+    def _get_cache_key(self, identifier: str | Identifier) -> str:
         """Generate cache key for an identifier."""
         database_name, table_name = self.identifier_to_database_and_table(identifier)
         return f"table:{database_name}.{table_name}"
 
-    def _invalidate_cache(self, identifier: Union[str, Identifier]) -> None:
+    def _invalidate_cache(self, identifier: str | Identifier) -> None:
         """Invalidate cache entry for an identifier."""
         if self._cache:
             cache_key = self._get_cache_key(identifier)
@@ -417,9 +417,9 @@ class DynamoDbCatalog(MetastoreCatalog):
 
     def create_table(
         self,
-        identifier: Union[str, Identifier],
+        identifier: str | Identifier,
         schema: Union[Schema, "pa.Schema"],
-        location: Optional[str] = None,
+        location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
@@ -522,7 +522,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return table
 
-    def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
+    def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
         """Register a new table using existing metadata.
 
         Args:
@@ -637,9 +637,9 @@ class DynamoDbCatalog(MetastoreCatalog):
             ),
         )
 
-        current_table: Optional[Table]
-        current_dynamo_table_item: Optional[Dict[str, Any]]
-        current_version_id: Optional[str]
+        current_table: Table | None
+        current_dynamo_table_item: Dict[str, Any] | None
+        current_version_id: str | None
 
         try:
             current_dynamo_table_item = self._get_iceberg_table_item(database_name=database_name, table_name=table_name)
@@ -688,7 +688,7 @@ class DynamoDbCatalog(MetastoreCatalog):
                     expression_attribute_values={":current_version": {"S": current_version_id}},
                 )
             except ConditionalCheckFailedException as e:
-                # Trigger concurrent conflict hook
+                # Concurrent conflict - trigger hook and raise
                 self._trigger_hooks(
                     CatalogEvent.ON_CONCURRENT_CONFLICT,
                     CatalogEventContext(
@@ -728,7 +728,7 @@ class DynamoDbCatalog(MetastoreCatalog):
                     condition_expression=f"attribute_not_exists({DYNAMODB_COL_IDENTIFIER})",
                 )
             except ConditionalCheckFailedException as e:
-                # Trigger error hook
+                # Table already exists error - trigger hook and raise
                 self._trigger_hooks(
                     CatalogEvent.ON_ERROR,
                     CatalogEventContext(
@@ -771,7 +771,7 @@ class DynamoDbCatalog(MetastoreCatalog):
             metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
         )
 
-    def load_table(self, identifier: Union[str, Identifier]) -> Table:
+    def load_table(self, identifier: str | Identifier) -> Table:
         """
         Load the table's metadata and returns the table instance.
 
@@ -812,7 +812,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return table
 
-    def drop_table(self, identifier: Union[str, Identifier]) -> None:
+    def drop_table(self, identifier: str | Identifier) -> None:
         """Drop a table.
 
         Args:
@@ -865,7 +865,7 @@ class DynamoDbCatalog(MetastoreCatalog):
             ),
         )
 
-    def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
+    def rename_table(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> Table:
         """Rename a fully classified table name.
 
         This method can only rename Iceberg tables in AWS Glue.
@@ -931,7 +931,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return self.load_table(to_identifier)
 
-    def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
+    def create_namespace(self, namespace: str | Identifier, properties: Properties = EMPTY_DICT) -> None:
         """Create a namespace in the catalog.
 
         Args:
@@ -952,7 +952,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         except ConditionalCheckFailedException as e:
             raise NamespaceAlreadyExistsError(f"Database {database_name} already exists") from e
 
-    def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
+    def drop_namespace(self, namespace: str | Identifier) -> None:
         """Drop a namespace.
 
         A Glue namespace can only be dropped if it is empty.
@@ -979,7 +979,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         except ConditionalCheckFailedException as e:
             raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
 
-    def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> List[Identifier]:
         """List Iceberg tables under the given namespace in the catalog.
 
         Args:
@@ -1023,7 +1023,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return table_identifiers
 
-    def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> List[Identifier]:
         """List top-level namespaces from the catalog.
 
         We do not support hierarchical namespace.
@@ -1065,7 +1065,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return database_identifiers
 
-    def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
+    def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
         """
         Get properties for a namespace.
 
@@ -1084,7 +1084,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         return _get_namespace_properties(namespace_dict=namespace_dict)
 
     def update_namespace_properties(
-        self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = EMPTY_DICT
+        self, namespace: str | Identifier, removals: Set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
         """
         Remove or update provided property keys for a namespace.
@@ -1120,13 +1120,13 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return properties_update_summary
 
-    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> List[Identifier]:
         raise NotImplementedError
 
-    def drop_view(self, identifier: Union[str, Identifier]) -> None:
+    def drop_view(self, identifier: str | Identifier) -> None:
         raise NotImplementedError
 
-    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
+    def view_exists(self, identifier: str | Identifier) -> bool:
         raise NotImplementedError
 
     def _get_iceberg_table_item(self, database_name: str, table_name: str) -> Dict[str, Any]:
@@ -1172,7 +1172,7 @@ class DynamoDbCatalog(MetastoreCatalog):
             raise GenericDynamoDbError(e.message) from e
 
     def _put_dynamo_item(
-        self, item: Dict[str, Any], condition_expression: str, expression_attribute_values: Optional[Dict[str, Any]] = None
+        self, item: Dict[str, Any], condition_expression: str, expression_attribute_values: Dict[str, Any] | None = None
     ) -> None:
         try:
             put_item_params = {

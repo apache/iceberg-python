@@ -14,8 +14,10 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+import uuid
 from typing import Any, Dict, List
 from unittest import mock
+from unittest.mock import MagicMock, patch
 
 import boto3
 import pyarrow as pa
@@ -28,6 +30,7 @@ from pyiceberg.catalog.dynamodb import (
     DYNAMODB_COL_CREATED_AT,
     DYNAMODB_COL_IDENTIFIER,
     DYNAMODB_COL_NAMESPACE,
+    DYNAMODB_COL_VERSION,
     DYNAMODB_TABLE_NAME_DEFAULT,
     CatalogCache,
     CatalogEvent,
@@ -36,6 +39,8 @@ from pyiceberg.catalog.dynamodb import (
     _add_property_prefix,
 )
 from pyiceberg.exceptions import (
+    CommitFailedException,
+    ConditionalCheckFailedException,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchIcebergTableError,
@@ -45,6 +50,7 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
 )
 from pyiceberg.schema import Schema
+from pyiceberg.table import Table
 from pyiceberg.typedef import Properties
 from tests.conftest import (
     BUCKET_NAME,
@@ -417,9 +423,9 @@ def test_list_namespaces(_bucket_initialize: None, database_list: List[str]) -> 
         assert (database_name,) in loaded_database_list
 
 
-@mock_aws
-def test_create_namespace_no_properties(_bucket_initialize: None, database_name: str) -> None:
-    test_catalog = DynamoDbCatalog("test_ddb_catalog")
+def test_create_namespace_no_properties(_dynamodb: Any, _bucket_initialize: None, database_name: str) -> None:
+    # Use unique table name to avoid cross-test contamination
+    test_catalog = DynamoDbCatalog("test_ddb_catalog", **{"table-name": f"test_table_{database_name}"})
     test_catalog.create_namespace(namespace=database_name)
     loaded_database_list = test_catalog.list_namespaces()
     assert len(loaded_database_list) == 1
@@ -428,14 +434,14 @@ def test_create_namespace_no_properties(_bucket_initialize: None, database_name:
     assert properties == {}
 
 
-@mock_aws
-def test_create_namespace_with_comment_and_location(_bucket_initialize: None, database_name: str) -> None:
+def test_create_namespace_with_comment_and_location(_dynamodb: Any, _bucket_initialize: None, database_name: str) -> None:
     test_location = f"s3://{BUCKET_NAME}/{database_name}.db"
     test_properties = {
         "comment": "this is a test description",
         "location": test_location,
     }
-    test_catalog = DynamoDbCatalog("test_ddb_catalog")
+    # Use unique table name to avoid cross-test contamination
+    test_catalog = DynamoDbCatalog("test_ddb_catalog", **{"table-name": f"test_table_{database_name}"})
     test_catalog.create_namespace(namespace=database_name, properties=test_properties)
     loaded_database_list = test_catalog.list_namespaces()
     assert len(loaded_database_list) == 1
@@ -445,9 +451,9 @@ def test_create_namespace_with_comment_and_location(_bucket_initialize: None, da
     assert properties["location"] == test_location
 
 
-@mock_aws
-def test_create_duplicated_namespace(_bucket_initialize: None, database_name: str) -> None:
-    test_catalog = DynamoDbCatalog("test_ddb_catalog")
+def test_create_duplicated_namespace(_dynamodb: Any, _bucket_initialize: None, database_name: str) -> None:
+    # Use unique table name to avoid cross-test contamination
+    test_catalog = DynamoDbCatalog("test_ddb_catalog", **{"table-name": f"test_table_{database_name}"})
     test_catalog.create_namespace(namespace=database_name)
     loaded_database_list = test_catalog.list_namespaces()
     assert len(loaded_database_list) == 1
@@ -456,9 +462,9 @@ def test_create_duplicated_namespace(_bucket_initialize: None, database_name: st
         test_catalog.create_namespace(namespace=database_name, properties={"test": "test"})
 
 
-@mock_aws
-def test_drop_namespace(_bucket_initialize: None, database_name: str) -> None:
-    test_catalog = DynamoDbCatalog("test_ddb_catalog")
+def test_drop_namespace(_dynamodb: Any, _bucket_initialize: None, database_name: str) -> None:
+    # Use unique table name to avoid cross-test contamination
+    test_catalog = DynamoDbCatalog("test_ddb_catalog", **{"table-name": f"test_table_{database_name}"})
     test_catalog.create_namespace(namespace=database_name)
     loaded_database_list = test_catalog.list_namespaces()
     assert len(loaded_database_list) == 1
@@ -1046,3 +1052,114 @@ def test_all_enhancements_integrated(
     assert "post_create_table" in events
     assert "pre_drop_table" in events
     assert "post_drop_table" in events
+
+
+# ============================================================================
+# Idempotent Commits Tests
+# ============================================================================
+
+
+@mock_aws
+def test_genuine_concurrent_update_still_fails(
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
+    """Test that genuine concurrent updates (non-idempotent) still fail correctly."""
+    identifier = (database_name, table_name)
+    catalog = DynamoDbCatalog("test_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
+
+    catalog.create_namespace(namespace=database_name)
+
+    with patch.object(catalog, "_get_iceberg_table_item") as mock_get_item, patch.object(
+        catalog, "_put_dynamo_item"
+    ) as mock_put_item, patch.object(catalog, "_write_metadata"):
+        initial_metadata_location = f"s3://{BUCKET_NAME}/metadata/v1-{uuid.uuid4()}.metadata.json"
+        our_metadata_location = f"s3://{BUCKET_NAME}/metadata/v2-{uuid.uuid4()}.metadata.json"
+        other_metadata_location = f"s3://{BUCKET_NAME}/metadata/v3-{uuid.uuid4()}.metadata.json"  # Different!
+
+        # Mock put_item to fail
+        mock_put_item.side_effect = ConditionalCheckFailedException("Condition expression check failed")
+
+        # Mock get_item to return DIFFERENT metadata location (genuine conflict)
+        def get_item_side_effect(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+            return {
+                DYNAMODB_COL_IDENTIFIER: {"S": f"{database_name}.{table_name}"},
+                DYNAMODB_COL_VERSION: {"S": str(uuid.uuid4())},
+                _add_property_prefix("metadata_location"): {"S": other_metadata_location},  # Different!
+            }
+
+        mock_get_item.side_effect = get_item_side_effect
+
+        # Mock the initial table state
+        with patch.object(catalog, "_convert_dynamo_table_item_to_iceberg_table") as mock_convert:
+            initial_mock_table = MagicMock(spec=Table)
+            initial_mock_table.metadata_location = initial_metadata_location
+            initial_mock_table.metadata = MagicMock()
+            mock_convert.return_value = initial_mock_table
+
+            # Mock _update_and_stage_table
+            with patch.object(catalog, "_update_and_stage_table") as mock_stage:
+                staged_table = MagicMock()
+                staged_table.metadata_location = our_metadata_location
+                staged_table.metadata = MagicMock()
+                staged_table.properties = {}
+                staged_table.io = MagicMock()
+                mock_stage.return_value = staged_table
+
+                # Create mock table
+                mock_table = MagicMock(spec=Table)
+                mock_table.name.return_value = identifier
+                mock_table.metadata_location = initial_metadata_location
+                mock_table.metadata = MagicMock()
+
+                # This should raise CommitFailedException (genuine conflict)
+                with pytest.raises(CommitFailedException, match="concurrent update"):
+                    catalog.commit_table(mock_table, requirements=(), updates=())
+
+
+@mock_aws
+def test_genuine_table_already_exists_still_fails(
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
+    """Test that genuine table already exists errors still fail correctly."""
+    identifier = (database_name, table_name)
+    metadata_location = f"s3://{BUCKET_NAME}/metadata/v1-{uuid.uuid4()}.metadata.json"
+    different_metadata_location = f"s3://{BUCKET_NAME}/metadata/v2-{uuid.uuid4()}.metadata.json"
+
+    catalog = DynamoDbCatalog("test_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
+    catalog.create_namespace(namespace=database_name)
+
+    with patch.object(catalog, "_get_iceberg_table_item") as mock_get_item, patch.object(
+        catalog, "_put_dynamo_item"
+    ) as mock_put_item, patch.object(catalog, "_write_metadata"), patch.object(
+        catalog, "load_table"
+    ) as mock_load_table:
+        # Mock table doesn't exist initially
+        from pyiceberg.exceptions import NoSuchTableError
+
+        mock_get_item.side_effect = NoSuchTableError("Table does not exist")
+
+        # Mock put_item to fail
+        mock_put_item.side_effect = ConditionalCheckFailedException("Condition expression check failed")
+
+        # Mock load_table to return a table with DIFFERENT metadata_location
+        mock_existing_table = MagicMock(spec=Table)
+        mock_existing_table.metadata_location = different_metadata_location  # Different!
+        mock_load_table.return_value = mock_existing_table
+
+        # Mock _update_and_stage_table
+        with patch.object(catalog, "_update_and_stage_table") as mock_stage:
+            staged_table = MagicMock()
+            staged_table.metadata_location = metadata_location
+            staged_table.metadata = MagicMock()
+            staged_table.properties = {}
+            staged_table.io = MagicMock()
+            mock_stage.return_value = staged_table
+
+            # Create mock table
+            mock_table = MagicMock(spec=Table)
+            mock_table.name.return_value = identifier
+            mock_table.metadata_location = None
+
+            # This should raise TableAlreadyExistsError (genuine conflict)
+            with pytest.raises(TableAlreadyExistsError, match="already exists"):
+                catalog.commit_table(mock_table, requirements=(), updates=())
