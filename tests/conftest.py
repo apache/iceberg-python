@@ -2250,6 +2250,24 @@ def fixture_dynamodb(_aws_credentials: None) -> Generator[boto3.client, None, No
 
 
 @pytest.fixture(scope="session")
+def localstack_endpoint_url() -> str:
+    """Return LocalStack endpoint URL."""
+    return "http://localhost:4566"
+
+
+@pytest.fixture(name="_dynamodb_localstack")
+def fixture_dynamodb_localstack(localstack_endpoint_url: str) -> boto3.client:
+    """Yield a DynamoDB client connected to LocalStack."""
+    return boto3.client(
+        "dynamodb",
+        region_name="us-east-1",
+        endpoint_url=localstack_endpoint_url,
+        aws_access_key_id="test",
+        aws_secret_access_key="test",
+    )
+
+
+@pytest.fixture(scope="session")
 def empty_home_dir_path(tmp_path_factory: pytest.TempPathFactory) -> str:
     home_path = str(tmp_path_factory.mktemp("home"))
     return home_path

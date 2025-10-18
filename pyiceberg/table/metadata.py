@@ -363,8 +363,8 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
         return cleanup_snapshot_id(data)
 
     @model_validator(mode="after")
-    def construct_refs(cls, data: TableMetadataV1) -> TableMetadataV1:
-        return construct_refs(data)
+    def construct_refs(self) -> TableMetadataV1:
+        return construct_refs(self)
 
     @model_validator(mode="before")
     def set_v2_compatible_defaults(cls, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -492,20 +492,20 @@ class TableMetadataV2(TableMetadataCommonFields, IcebergBaseModel):
         return cleanup_snapshot_id(data)
 
     @model_validator(mode="after")
-    def check_schemas(cls, table_metadata: TableMetadata) -> TableMetadata:
-        return check_schemas(table_metadata)
+    def check_schemas(self) -> TableMetadata:
+        return check_schemas(self)
 
     @model_validator(mode="after")
-    def check_partition_specs(cls, table_metadata: TableMetadata) -> TableMetadata:
-        return check_partition_specs(table_metadata)
+    def check_partition_specs(self) -> TableMetadata:
+        return check_partition_specs(self)
 
     @model_validator(mode="after")
-    def check_sort_orders(cls, table_metadata: TableMetadata) -> TableMetadata:
-        return check_sort_orders(table_metadata)
+    def check_sort_orders(self) -> TableMetadata:
+        return check_sort_orders(self)
 
     @model_validator(mode="after")
-    def construct_refs(cls, table_metadata: TableMetadata) -> TableMetadata:
-        return construct_refs(table_metadata)
+    def construct_refs(self) -> TableMetadata:
+        return construct_refs(self)
 
     format_version: Literal[2] = Field(alias="format-version", default=2)
     """An integer version number for the format. Implementations must throw
@@ -536,20 +536,20 @@ class TableMetadataV3(TableMetadataCommonFields, IcebergBaseModel):
         return cleanup_snapshot_id(data)
 
     @model_validator(mode="after")
-    def check_schemas(cls, table_metadata: TableMetadata) -> TableMetadata:
-        return check_schemas(table_metadata)
+    def check_schemas(self) -> TableMetadata:
+        return check_schemas(self)
 
     @model_validator(mode="after")
-    def check_partition_specs(cls, table_metadata: TableMetadata) -> TableMetadata:
-        return check_partition_specs(table_metadata)
+    def check_partition_specs(self) -> TableMetadata:
+        return check_partition_specs(self)
 
     @model_validator(mode="after")
-    def check_sort_orders(cls, table_metadata: TableMetadata) -> TableMetadata:
-        return check_sort_orders(table_metadata)
+    def check_sort_orders(self) -> TableMetadata:
+        return check_sort_orders(self)
 
     @model_validator(mode="after")
-    def construct_refs(cls, table_metadata: TableMetadata) -> TableMetadata:
-        return construct_refs(table_metadata)
+    def construct_refs(self) -> TableMetadata:
+        return construct_refs(self)
 
     format_version: Literal[3] = Field(alias="format-version", default=3)
     """An integer version number for the format. Implementations must throw
