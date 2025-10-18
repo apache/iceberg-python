@@ -35,6 +35,8 @@ from typing import Literal as TypingLiteral
 
 from pydantic import Field
 
+from pydantic import Field, model_validator
+
 from pyiceberg.expressions.literals import (
     AboveMax,
     BelowMin,
@@ -341,21 +343,27 @@ class Or(BooleanExpression):
         return (self.left, self.right)
 
 
-class Not(BooleanExpression):
+class Not(IcebergBaseModel, BooleanExpression):
     """NOT operation expression - logical negation."""
 
     child: BooleanExpression
 
-    def __new__(cls, child: BooleanExpression) -> BooleanExpression:  # type: ignore
+    @model_validator(mode="before")
+    def _before(cls, values: Any) -> Any:
+        if isinstance(values, BooleanExpression):
+            return {"child": values}
+        return values
+
+    @model_validator(mode="after")
+    def _normalize(cls, model: Any) -> Any:
+        child = model.child
         if child is AlwaysTrue():
             return AlwaysFalse()
         elif child is AlwaysFalse():
             return AlwaysTrue()
         elif isinstance(child, Not):
             return child.child
-        obj = super().__new__(cls)
-        obj.child = child
-        return obj
+        return model
 
     def __repr__(self) -> str:
         """Return the string representation of the Not class."""
