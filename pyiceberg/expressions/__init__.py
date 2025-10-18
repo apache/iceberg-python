@@ -429,9 +429,11 @@ class UnboundPredicate(Generic[L], Unbound[BooleanExpression], BooleanExpression
     def as_bound(self) -> Type[BoundPredicate[L]]: ...
 
 
-class UnaryPredicate(UnboundPredicate[Any], IcebergBaseModel, ABC):
+class UnaryPredicate(IcebergBaseModel, UnboundPredicate[Any], ABC):
     type: str
     column: str
+
+    model_config = {"arbitrary_types_allowed": True}
 
     def __init__(self, term: Union[str, UnboundTerm[Any]]):
         if isinstance(term, Reference):
