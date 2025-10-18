@@ -117,6 +117,8 @@ class SqlCatalog(MetastoreCatalog):
     The `SqlCatalog` has a different convention where a `TableIdentifier` requires a `Namespace`.
     """
 
+    _support_namespaces: bool = True
+
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
 
