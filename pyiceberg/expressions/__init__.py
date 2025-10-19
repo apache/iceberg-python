@@ -17,7 +17,6 @@
 
 from __future__ import annotations
 
-import typing
 from abc import ABC, abstractmethod
 from functools import cached_property
 from typing import (
@@ -33,8 +32,6 @@ from typing import (
     Union,
 )
 from typing import Literal as TypingLiteral
-
-from pydantic import Field
 
 from pydantic import ConfigDict, Field, field_serializer
 
@@ -310,12 +307,13 @@ class Or(IcebergBaseModel, BooleanExpression):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    type: str = Field(default="or", repr=False)
+    type: TypingLiteral["str"] = Field(default="or", alias="type")
     left: BooleanExpression
     right: BooleanExpression
 
-    def __init__(self, left: typing.Union[BooleanExpression, Or], right: typing.Union[BooleanExpression, Or], *rest: Any):
-        return super().__init__(left=left, right=right)
+    def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> None:
+        if isinstance(self, Or) and not hasattr(self, "left") and not hasattr(self, "right"):
+            super().__init__(left=left, right=right)
 
     def __new__(cls, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> BooleanExpression:  # type: ignore
         if rest:
@@ -328,7 +326,6 @@ class Or(IcebergBaseModel, BooleanExpression):
             return left
         else:
             obj = super().__new__(cls)
-            super(Or, obj).__init__(left=left, right=right)
             return obj
 
     @field_serializer("left")
