@@ -52,14 +52,8 @@ except ImportError:
     ConfigDict = dict
 
 
-def _to_unbound_term(term: Union[str, UnboundTerm[Any], BoundReference[Any]]) -> UnboundTerm[Any]:
-    if isinstance(term, str):
-        return Reference(term)
-    if isinstance(term, UnboundTerm):
-        return term
-    if isinstance(term, BoundReference):
-        return Reference(term.field.name)
-    raise ValueError(f"Expected UnboundTerm | BoundReference | str, got {type(term).__name__}")
+def _to_unbound_term(term: Union[str, UnboundTerm[Any]]) -> UnboundTerm[Any]:
+    return Reference(term) if isinstance(term, str) else term
 
 
 def _to_literal_set(values: Union[Iterable[L], Iterable[Literal[L]]]) -> Set[Literal[L]]:
@@ -755,7 +749,7 @@ class LiteralPredicate(IcebergBaseModel, UnboundPredicate[L], ABC):
     value: Literal[L] = Field()
     model_config = ConfigDict(populate_by_name=True, frozen=True, arbitrary_types_allowed=True)
 
-    def __init__(self, term: Union[str, UnboundTerm[Any], BoundReference[Any]], literal: Union[L, Literal[L]]):
+    def __init__(self, term: Union[str, UnboundTerm[Any]], literal: Union[L, Literal[L]]):
         super().__init__(term=_to_unbound_term(term), value=_to_literal(literal))  # type: ignore[call-arg]
 
     @property
