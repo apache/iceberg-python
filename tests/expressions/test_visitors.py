@@ -417,19 +417,21 @@ def test_and_expression_binding(
                     ),
                     {literal("bar"), literal("baz")},
                 ),
-                BoundIn(
-                    BoundReference(
-                        field=NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-                        accessor=Accessor(position=0, inner=None),
+                Or(
+                    BoundIn(
+                        BoundReference(
+                            field=NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
+                            accessor=Accessor(position=0, inner=None),
+                        ),
+                        {literal("bar")},
                     ),
-                    {literal("bar")},
-                ),
-                BoundIn(
-                    BoundReference(
-                        field=NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-                        accessor=Accessor(position=0, inner=None),
+                    BoundIn(
+                        BoundReference(
+                            field=NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
+                            accessor=Accessor(position=0, inner=None),
+                        ),
+                        {literal("baz")},
                     ),
-                    {literal("baz")},
                 ),
             ),
         ),
