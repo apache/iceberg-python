@@ -1224,6 +1224,9 @@ def _assert_literal_predicate_type(expr: LiteralPredicate[L]) -> None:
 
 
 _assert_literal_predicate_type(EqualTo("a", "b"))
+_assert_literal_predicate_type(In("a", ("a", "b", "c")))
+_assert_literal_predicate_type(In("a", (1, 2, 3)))
+_assert_literal_predicate_type(NotIn("a", ("a", "b", "c")))
 assert_type(In("a", ("a", "b", "c")), In[str])
 assert_type(In("a", (1, 2, 3)), In[int])
 assert_type(NotIn("a", ("a", "b", "c")), NotIn[str])
