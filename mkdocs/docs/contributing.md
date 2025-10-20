@@ -234,8 +234,6 @@ Deprecated in 0.1.0, will be removed in 0.2.0. The old_property is deprecated. P
 
 For the type annotation the types from the `Typing` package are used.
 
-PyIceberg offers support from Python 3.9 onwards, we can't use the [type hints from the standard collections](https://peps.python.org/pep-0585/).
-
 ### Third party libraries
 
 PyIceberg naturally integrates into the rich Python ecosystem, however it is important to be hesitant adding third party packages. Adding a lot of packages makes the library heavyweight, and causes incompatibilities with other projects if they use a different version of the library. Also, big libraries such as `s3fs`, `adlfs`, `pyarrow`, `thrift` should be optional to avoid downloading everything, while not being sure if is actually being used.
