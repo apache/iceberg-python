@@ -1310,23 +1310,24 @@ files = [
 
 [[package]]
 name = "daft"
-version = "0.6.5"
+version = "0.6.7"
 description = "Distributed Dataframes for Multimodal Data"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
 markers = "extra == \"daft\""
 files = [
-    {file = "daft-0.6.5-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:30ba2b87cd665a1a64b600045bba59178f26dd0db35e88997eb835f57a8a61f4"},
-    {file = "daft-0.6.5-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:95850d58d3cac6908b8f354eaedee759f0426fda0f86740514a9dbe080389339"},
-    {file = "daft-0.6.5-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:aeca1ad86f3e0c69056cc089614364b81b61e2a786fd529bba8a7fe77f6205e4"},
-    {file = "daft-0.6.5-cp39-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:143056d57138fc38e2b504da0e10df3a9915e8c86df7742a458102bdc6c2074e"},
-    {file = "daft-0.6.5-cp39-abi3-win_amd64.whl", hash = "sha256:39515043c3487f1e9ced724a77abaf73f199ce3e42d0c85152732ed5caebdcaa"},
-    {file = "daft-0.6.5.tar.gz", hash = "sha256:924f5f68c2e72b1fff1b9440f3753beff09ec20ab469a7b4c661977941cf2ae3"},
+    {file = "daft-0.6.7-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:be5e444d5cdbc438087e211735ef63e55070448165ea7b7f36fca3e13d89c961"},
+    {file = "daft-0.6.7-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:c20a28037c07bfe6041519eb91e9b02330d43f66275bdeb9c4e749cc1ae753fd"},
+    {file = "daft-0.6.7-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:1fee22c827ddb59cf8e899c4b54ddcfe90da5441182e29ca517cb283784d1a10"},
+    {file = "daft-0.6.7-cp39-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:438734389796f06220ed361086d9f45a57ec55f729005245064b9e0a4ef9bff6"},
+    {file = "daft-0.6.7-cp39-abi3-win_amd64.whl", hash = "sha256:e7158f789306a538f490843b4fd1b69d10b0446f22a440aafe32501fa0f744aa"},
+    {file = "daft-0.6.7.tar.gz", hash = "sha256:468fb0bc7c6d70f3cf4a4df2caa657263517a01aa22e23bf6987e3a613db0283"},
 ]
 
 [package.dependencies]
 fsspec = "*"
+packaging = "*"
 pyarrow = ">=8.0.0"
 tqdm = "*"
 typing-extensions = ">=4.0.0"
@@ -1335,15 +1336,15 @@ typing-extensions = ">=4.0.0"
 all = ["daft[aws,azure,clickhouse,deltalake,gcp,hudi,huggingface,iceberg,lance,numpy,openai,pandas,ray,sentence-transformers,spark,sql,transformers,turbopuffer,unity]"]
 aws = ["boto3"]
 clickhouse = ["clickhouse-connect"]
-deltalake = ["deltalake", "packaging"]
+deltalake = ["deltalake"]
 hudi = ["pyarrow (>=8.0.0)"]
 huggingface = ["huggingface-hub"]
-iceberg = ["packaging", "pyiceberg (>=0.7.0,<0.9.1)"]
+iceberg = ["pyiceberg (>=0.7.0,<0.9.1)"]
 lance = ["pylance"]
 numpy = ["numpy"]
 openai = ["openai"]
 pandas = ["pandas"]
-ray = ["packaging", "ray[client,data] (>=2.0.0,<2.48.0) ; platform_system != \"Windows\"", "ray[client,data] (>=2.10.0,<2.48.0) ; platform_system == \"Windows\""]
+ray = ["ray[client,data] (>=2.0.0,<2.48.0) ; platform_system != \"Windows\"", "ray[client,data] (>=2.10.0,<2.48.0) ; platform_system == \"Windows\""]
 sentence-transformers = ["sentence-transformers"]
 spark = ["googleapis-common-protos (>=1.56.4)", "grpcio (>=1.48)", "grpcio-status (>=1.48)", "numpy (>=1.15)", "pandas (>=1.0.5)", "py4j (>=0.10.9.7)", "pyspark (==3.5.5)"]
 sql = ["connectorx", "sqlalchemy", "sqlglot"]
@@ -3877,7 +3878,7 @@ files = [
     {file = "packaging-25.0-py3-none-any.whl", hash = "sha256:29572ef2b1f17581046b3a2227d5c611fb25ec70ca1ba8554b24b0e69331a484"},
     {file = "packaging-25.0.tar.gz", hash = "sha256:d443872c98d677bf60f6a1f2f8c1cb748e8fe762d2bf9d3148b5599295b0fc4f"},
 ]
-markers = {main = "extra == \"bigquery\" or extra == \"hf\" or extra == \"ray\""}
+markers = {main = "extra == \"daft\" or extra == \"bigquery\" or extra == \"hf\" or extra == \"ray\""}
 
 [[package]]
 name = "paginate"
