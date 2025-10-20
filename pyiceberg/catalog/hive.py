@@ -185,6 +185,11 @@ class _HiveClient:
             try:
                 self._transport.open()
             except (TypeError, TTransport.TTransportException):
+                # Close the old transport before reinitializing to prevent resource leaks
+                try:
+                    self._transport.close()
+                except Exception:
+                    pass
                 # reinitialize _transport
                 self._transport = self._init_thrift_transport()
                 self._transport.open()
