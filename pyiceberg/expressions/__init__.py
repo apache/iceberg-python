@@ -431,19 +431,12 @@ class UnboundPredicate(Generic[L], Unbound[BooleanExpression], BooleanExpression
 
 class UnaryPredicate(IcebergBaseModel, UnboundPredicate[Any], ABC):
     type: str
-    column: str
 
     model_config = {"arbitrary_types_allowed": True}
 
     def __init__(self, term: Union[str, UnboundTerm[Any]]):
-        if isinstance(term, Reference):
-            term_name = term.name
-        elif isinstance(term, str):
-            term_name = term
-        else:
-            raise ValueError("term must be a string or Reference")
-        super().__init__(term=Reference(term_name))
-        self.column = term_name
+        unbound = _to_unbound_term(term)
+        super().__init__(term=unbound)
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundUnaryPredicate[Any]:
         bound_term = self.term.bind(schema, case_sensitive)
