@@ -490,33 +490,33 @@ files = [
 
 [[package]]
 name = "bodo"
-version = "2025.10"
+version = "2025.10.1"
 description = "High-Performance Python Compute Engine for Data and AI"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
 markers = "extra == \"bodo\""
 files = [
-    {file = "bodo-2025.10-cp310-cp310-macosx_11_0_x86_64.whl", hash = "sha256:98acab8c68ae55275da34bb73eec03731f312abb0b714c7d8be1d50b06040cb1"},
-    {file = "bodo-2025.10-cp310-cp310-macosx_12_0_arm64.whl", hash = "sha256:f0997178aec503a5bce185d5fea3e15f77cb1b6f45285abe1c4b6172cd7527c0"},
-    {file = "bodo-2025.10-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:24dfac948bbfb09ca24d603f2ea5346b313b5fe46bb0eef05568c876721bf72a"},
-    {file = "bodo-2025.10-cp310-cp310-win_amd64.whl", hash = "sha256:781f8f76444bc9c03360f4ab033beb8bab18248c379842a2db73f6ee5d44dbbb"},
-    {file = "bodo-2025.10-cp311-cp311-macosx_11_0_x86_64.whl", hash = "sha256:445710e76e90d0b57b5ab247762454b132d294e2ad36b0a02fee6df29fceb2d1"},
-    {file = "bodo-2025.10-cp311-cp311-macosx_12_0_arm64.whl", hash = "sha256:382d964b5df3033e6a05e98d8c598ed6277a06adfa430ff2a0d600fb4b077dfc"},
-    {file = "bodo-2025.10-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:f677d2970fa5b34883ccbbaafe1cbf545548cc76b77fa16f2390350d082f8374"},
-    {file = "bodo-2025.10-cp311-cp311-win_amd64.whl", hash = "sha256:348dc31fd35eb85923b29afb07f3531dbfe90fb5d0e4dfc728598868d99b141e"},
-    {file = "bodo-2025.10-cp312-cp312-macosx_11_0_x86_64.whl", hash = "sha256:1a4e29818821379b004dea41a7a9555a77f76e7b28c9b6de23dd0e29da69d5d7"},
-    {file = "bodo-2025.10-cp312-cp312-macosx_12_0_arm64.whl", hash = "sha256:15911a06e97895788c7cb87b8a65ec9872152da5595d5b63c42737974d62d3ae"},
-    {file = "bodo-2025.10-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:fa9abcc19510dbc3179439b6c8e7b3dcb3c8f1445d7502ff86cbf480660d4ac0"},
-    {file = "bodo-2025.10-cp312-cp312-win_amd64.whl", hash = "sha256:b437f38692311af645e36d3984f5b643b8fd2d348f67d15bcf8884b8834754c1"},
-    {file = "bodo-2025.10-cp313-cp313-macosx_11_0_x86_64.whl", hash = "sha256:15d608ab5a1954d7338a24c050ca4744c1a5c89d355dd8cb3b73c1588df65cce"},
-    {file = "bodo-2025.10-cp313-cp313-macosx_12_0_arm64.whl", hash = "sha256:b101aacf1126ba0fb204152e24e8ba4db9468dc5f29dbeee26cb9253f2a2755b"},
-    {file = "bodo-2025.10-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:33ea8d9b830ebd6958e801f019c6daf748db58aaf2390427e7bb6635265c9132"},
-    {file = "bodo-2025.10-cp313-cp313-win_amd64.whl", hash = "sha256:92ca17444219b2c22744c6e8f3b56931560b3892ac12587ce449795d68209094"},
-    {file = "bodo-2025.10-cp39-cp39-macosx_11_0_x86_64.whl", hash = "sha256:285e2ca416ef19bb6aa14f4ec76de4a4c6930673de8202a0ec7f883e875a6d3f"},
-    {file = "bodo-2025.10-cp39-cp39-macosx_12_0_arm64.whl", hash = "sha256:7ea09c516bfaa1df3c654dce9d762a86f186ed4b65e56d61ea81c37226a94987"},
-    {file = "bodo-2025.10-cp39-cp39-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:8392b2227f99e6a5dd91f969fcab0700d48afe71c6003bf1e6d36c4c197f6775"},
-    {file = "bodo-2025.10-cp39-cp39-win_amd64.whl", hash = "sha256:f77c094805a692b2b8762af11cf020130ac73ec5797e3effaf45135c4565a684"},
+    {file = "bodo-2025.10.1-cp310-cp310-macosx_11_0_x86_64.whl", hash = "sha256:4d41fc101b91a649feeabd2c8211bfd7363c60272acd26a0f703c6c51f109524"},
+    {file = "bodo-2025.10.1-cp310-cp310-macosx_12_0_arm64.whl", hash = "sha256:c4ac7350955c570e79efe14d3585a697d953eeddc3d607f0d9510599c3b1fc1e"},
+    {file = "bodo-2025.10.1-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:261bdffafc7844808270a02f2f2cfe01f09cac04056ab55aaf5dd2de2eb672ac"},
+    {file = "bodo-2025.10.1-cp310-cp310-win_amd64.whl", hash = "sha256:9993ae50923048a18538675e4ca42174929021898734d7a14c66d07d6a18f1c7"},
+    {file = "bodo-2025.10.1-cp311-cp311-macosx_11_0_x86_64.whl", hash = "sha256:a83d89ad23b6e9ac49474ebbf8c51441a66cacffd179f3367bc3c1cddb6fdb43"},
+    {file = "bodo-2025.10.1-cp311-cp311-macosx_12_0_arm64.whl", hash = "sha256:21d23be6ff5b6b4b657fdac52a1a2e6604fd50c9df76dcc6a98f36d093b9b03a"},
+    {file = "bodo-2025.10.1-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:32dc91c3078cb8776d91d4a40d321db5a026134569c1484027f411a62afdf3bc"},
+    {file = "bodo-2025.10.1-cp311-cp311-win_amd64.whl", hash = "sha256:095f0bb77a9f7ba9f1c47aa8c573100af77f0a0ceb502a538fd8228e4de78544"},
+    {file = "bodo-2025.10.1-cp312-cp312-macosx_11_0_x86_64.whl", hash = "sha256:4e68ce4cfeff2669687aea11bd0b3ea19b73c970e29d4e5456417f0be50e657d"},
+    {file = "bodo-2025.10.1-cp312-cp312-macosx_12_0_arm64.whl", hash = "sha256:cb05e5e99c1f6d6f7c9d9488b543a69ff452b3420f227a69335246d3e6e27a93"},
+    {file = "bodo-2025.10.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:ba70af5f50e5e45949f901cae9e32e3b32efc491983b04d7c689b0734db047c7"},
+    {file = "bodo-2025.10.1-cp312-cp312-win_amd64.whl", hash = "sha256:2187360fd8cf7204cec3f154ba809e49ba3cc61ed45daa10296c53cd1824c8f4"},
+    {file = "bodo-2025.10.1-cp313-cp313-macosx_11_0_x86_64.whl", hash = "sha256:17bf6a1daa203184717d82cd25db3436cba9b9f4e680eab420c8679c352ca280"},
+    {file = "bodo-2025.10.1-cp313-cp313-macosx_12_0_arm64.whl", hash = "sha256:28b8daca70f3aa2d9ae7a5618d547e6fdf349ef97bd191e46ef0decebd9a8016"},
+    {file = "bodo-2025.10.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:7c566f83413a61493ad374097cb96755a2d33568c28235d2afe022735c88f593"},
+    {file = "bodo-2025.10.1-cp313-cp313-win_amd64.whl", hash = "sha256:f4a7e1de41f2b569391034755020f1e31a1e08741aecfd60aaf3d24408146165"},
+    {file = "bodo-2025.10.1-cp39-cp39-macosx_11_0_x86_64.whl", hash = "sha256:91f0eef2738459bf55d3b5d7e5ab8c1b38e9fc5a94e3a5ca8e0f1aeb504b69ac"},
+    {file = "bodo-2025.10.1-cp39-cp39-macosx_12_0_arm64.whl", hash = "sha256:cb30e2cbee55cb7e1f716768ede2d47a37b711e7ece0938483f01e6249afd894"},
+    {file = "bodo-2025.10.1-cp39-cp39-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:a8c4e129fec9fc6f26d07eafbc9c3a99a27729eaab5ee8f2739035348b6d90d4"},
+    {file = "bodo-2025.10.1-cp39-cp39-win_amd64.whl", hash = "sha256:fe9ace3acf3e9d2073ff3286751e6501ca3f1c0f6f56fbf7e6d648b2c9567ba3"},
 ]
 
 [package.dependencies]
