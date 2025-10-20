@@ -99,7 +99,7 @@ typing-extensions = "4.15.0"
 pytest-mock = "3.15.1"
 pyspark = { version = "4.0.1", extras = ["connect"] }
 protobuf = "5.29.5" # match Spark Connect's gencode
-cython = "3.1.4"
+cython = "3.1.5"
 deptry = ">=0.14,<0.24"
 docutils = "!=0.21.post1"   # https://github.com/python-poetry/poetry/issues/9248#issuecomment-2026240520
 mypy-boto3-glue = ">=1.28.18"
