@@ -1135,20 +1135,41 @@ def example_table_metadata_v3() -> Dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_V3
 
 
-@pytest.fixture(scope="session")
-def table_location(tmp_path_factory: pytest.TempPathFactory) -> str:
+def generate_table_location_with_version_hint(
+    tmp_path_factory: pytest.TempPathFactory, content_in_version_hint: str, metadata_filename: str
+) -> str:
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
-    metadata_filename = f"{uuid.uuid4()}.metadata.json"
     metadata_location = str(tmp_path_factory.getbasetemp() / "metadata" / metadata_filename)
     version_hint_location = str(tmp_path_factory.getbasetemp() / "metadata" / "version-hint.text")
     metadata = TableMetadataV2(**EXAMPLE_TABLE_METADATA_V2)
     ToOutputFile.table_metadata(metadata, PyArrowFileIO().new_output(location=metadata_location), overwrite=True)
 
     with PyArrowFileIO().new_output(location=version_hint_location).create(overwrite=True) as s:
-        s.write(metadata_filename.encode("utf-8"))
+        s.write(content_in_version_hint.encode("utf-8"))
 
     return str(tmp_path_factory.getbasetemp())
+
+
+@pytest.fixture(scope="session")
+def table_location_with_version_hint_full(tmp_path_factory: pytest.TempPathFactory) -> str:
+    content_in_version_hint = str(uuid.uuid4())
+    metadata_filename = f"{content_in_version_hint}.metadata.json"
+    return generate_table_location_with_version_hint(tmp_path_factory, content_in_version_hint, metadata_filename)
+
+
+@pytest.fixture(scope="session")
+def table_location_with_version_hint_numeric(tmp_path_factory: pytest.TempPathFactory) -> str:
+    content_in_version_hint = "1234567890"
+    metadata_filename = f"v{content_in_version_hint}.metadata.json"
+    return generate_table_location_with_version_hint(tmp_path_factory, content_in_version_hint, metadata_filename)
+
+
+@pytest.fixture(scope="session")
+def table_location_with_version_hint_non_numeric(tmp_path_factory: pytest.TempPathFactory) -> str:
+    content_in_version_hint = "non_numberic"
+    metadata_filename = f"{content_in_version_hint}.metadata.json"
+    return generate_table_location_with_version_hint(tmp_path_factory, content_in_version_hint, metadata_filename)
 
 
 @pytest.fixture(scope="session")
