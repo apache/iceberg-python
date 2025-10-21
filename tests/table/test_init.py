@@ -1522,6 +1522,7 @@ def test_remove_partition_statistics_update_with_invalid_snapshot_id(table_v2_wi
             (RemovePartitionStatisticsUpdate(snapshot_id=123456789),),
         )
 
+
 def test_add_snapshot_update_fails_without_first_row_id(table_v3: Table) -> None:
     new_snapshot = Snapshot(
         snapshot_id=25,

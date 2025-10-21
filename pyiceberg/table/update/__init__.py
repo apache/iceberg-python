@@ -648,6 +648,7 @@ def _(update: RemoveSchemasUpdate, base_metadata: TableMetadata, context: _Table
 
     return base_metadata.model_copy(update={"schemas": schemas})
 
+
 @_apply_table_update.register(SetPartitionStatisticsUpdate)
 def _(update: SetPartitionStatisticsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     partition_statistics = filter_statistics_by_snapshot_id(

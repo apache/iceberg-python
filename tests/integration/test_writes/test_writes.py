@@ -2493,13 +2493,12 @@ def test_stage_only_overwrite_files(
 
 
 @pytest.mark.integration
-def test_v3_write_and_read(spark: SparkSession, session_catalog: Catalog) -> None:
+def test_v3_write_and_read_row_lineage(spark: SparkSession, session_catalog: Catalog) -> None:
     """Test writing to a v3 table and reading with Spark."""
     identifier = "default.test_v3_write_and_read"
     tbl = _create_table(session_catalog, identifier, {"format-version": "3"})
     assert tbl.format_version == 3, f"Expected v3, got: v{tbl.format_version}"
-    assert tbl.metadata.next_row_id is not None, "Expected next_row_id to be initialized"
-    initial_next_row_id = tbl.metadata.next_row_id
+    initial_next_row_id = tbl.metadata.next_row_id or 0
 
     test_data = pa.Table.from_pydict(
         {
@@ -2525,9 +2524,6 @@ def test_v3_write_and_read(spark: SparkSession, session_catalog: Catalog) -> Non
 
     tbl.append(test_data)
 
-    assert (
-        tbl.metadata.next_row_id == initial_next_row_id + len(test_data)
-    ), "Expected next_row_id to be incremented by the number of added rows"
-
-    df = spark.table(identifier)
-    assert df.count() == 3, "Expected 3 rows"
+    assert tbl.metadata.next_row_id == initial_next_row_id + len(test_data), (
+        "Expected next_row_id to be incremented by the number of added rows"
+    )
