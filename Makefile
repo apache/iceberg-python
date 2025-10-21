@@ -25,7 +25,7 @@ KEEP_COMPOSE ?= 0  # Set KEEP_COMPOSE=1 to keep containers after integration tes
 
 PIP = python -m pip
 
-POETRY_VERSION = 2.1.4
+POETRY_VERSION = 2.2.1
 POETRY = python -m poetry
 
 ifeq ($(COVERAGE),1)
@@ -83,8 +83,8 @@ install: install-poetry install-dependencies ## Install Poetry and dependencies
 check-license: ## Check license headers
 	./dev/check-license
 
-lint: ## Run code linters via pre-commit
-	$(POETRY) run pre-commit run --all-files
+lint: ## Run code linters via prek (pre-commit hooks)
+	$(POETRY) run prek run -a
 
 # ===============
 # Testing Section
@@ -100,10 +100,8 @@ test-integration: test-integration-setup test-integration-exec test-integration-
 test-integration-setup: ## Start Docker services for integration tests
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
-	docker compose -f dev/docker-compose-integration.yml up -d
-	sleep 10
-	docker compose -f dev/docker-compose-integration.yml cp ./dev/provision.py spark-iceberg:/opt/spark/provision.py
-	docker compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
+	docker compose -f dev/docker-compose-integration.yml up -d --wait
+	$(POETRY) run python dev/provision.py
 
 test-integration-exec: ## Run integration tests (excluding provision)
 	$(TEST_RUNNER) pytest tests/ -m integration $(PYTEST_ARGS)

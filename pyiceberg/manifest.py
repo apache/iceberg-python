@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import math
+import threading
 from abc import ABC, abstractmethod
 from copy import copy
 from enum import Enum
@@ -904,7 +905,7 @@ class ManifestFile(Record):
         return hash(self.manifest_path)
 
 
-@cached(cache=LRUCache(maxsize=128), key=lambda io, manifest_list: hashkey(manifest_list))
+@cached(cache=LRUCache(maxsize=128), key=lambda io, manifest_list: hashkey(manifest_list), lock=threading.RLock())
 def _manifests(io: FileIO, manifest_list: str) -> Tuple[ManifestFile, ...]:
     """Read and cache manifests from the given manifest list, returning a tuple to prevent modification."""
     bs = io.new_input(manifest_list).open().read()

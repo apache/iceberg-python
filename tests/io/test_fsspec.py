@@ -31,7 +31,7 @@ from requests_mock import Mocker
 
 from pyiceberg.exceptions import SignError
 from pyiceberg.io import fsspec
-from pyiceberg.io.fsspec import FsspecFileIO, s3v4_rest_signer
+from pyiceberg.io.fsspec import FsspecFileIO, S3V4RestSigner
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.typedef import Properties
 from tests.conftest import UNIFIED_AWS_SESSION_PROPERTIES
@@ -844,10 +844,11 @@ def test_s3v4_rest_signer(requests_mock: Mocker) -> None:
         "retries": {"attempt": 1, "invocation-id": "75d143fb-0219-439b-872c-18213d1c8d54"},
     }
 
-    signed_request = s3v4_rest_signer({"token": "abc", "uri": TEST_URI, "header.X-Custom-Header": "value"}, request)
+    signer = S3V4RestSigner(properties={"token": "abc", "uri": TEST_URI, "header.X-Custom-Header": "value"})
+    signer(request)
 
-    assert signed_request.url == new_uri
-    assert dict(signed_request.headers) == {
+    assert request.url == new_uri
+    assert dict(request.headers) == {
         "Authorization": "AWS4-HMAC-SHA256 Credential=ASIAQPRZZYGHUT57DL3I/20221017/us-west-2/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-security-token, Signature=430582a17d61ab02c272896fa59195f277af4bdf2121c441685e589f044bbe02",
         "Host": "bucket.s3.us-west-2.amazonaws.com",
         "User-Agent": "Botocore/1.27.59 Python/3.10.7 Darwin/21.5.0",
@@ -898,10 +899,11 @@ def test_s3v4_rest_signer_endpoint(requests_mock: Mocker) -> None:
         "retries": {"attempt": 1, "invocation-id": "75d143fb-0219-439b-872c-18213d1c8d54"},
     }
 
-    signed_request = s3v4_rest_signer({"token": "abc", "uri": TEST_URI, "s3.signer.endpoint": endpoint}, request)
+    signer = S3V4RestSigner(properties={"token": "abc", "uri": TEST_URI, "s3.signer.endpoint": endpoint})
+    signer(request)
 
-    assert signed_request.url == new_uri
-    assert dict(signed_request.headers) == {
+    assert request.url == new_uri
+    assert dict(request.headers) == {
         "Authorization": "AWS4-HMAC-SHA256 Credential=ASIAQPRZZYGHUT57DL3I/20221017/us-west-2/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-security-token, Signature=430582a17d61ab02c272896fa59195f277af4bdf2121c441685e589f044bbe02",
         "Host": "bucket.s3.us-west-2.amazonaws.com",
         "User-Agent": "Botocore/1.27.59 Python/3.10.7 Darwin/21.5.0",
@@ -939,8 +941,9 @@ def test_s3v4_rest_signer_forbidden(requests_mock: Mocker) -> None:
         "retries": {"attempt": 1, "invocation-id": "75d143fb-0219-439b-872c-18213d1c8d54"},
     }
 
+    signer = S3V4RestSigner(properties={"token": "abc", "uri": TEST_URI})
     with pytest.raises(SignError) as exc_info:
-        _ = s3v4_rest_signer({"token": "abc", "uri": TEST_URI}, request)
+        signer(request)
 
     assert (
         """Failed to sign request 401: {'method': 'HEAD', 'region': 'us-west-2', 'uri': 'https://bucket/metadata/snap-8048355899640248710-1-a5c8ea2d-aa1f-48e8-89f4-1fa69db8c742.avro', 'headers': {'User-Agent': ['Botocore/1.27.59 Python/3.10.7 Darwin/21.5.0']}}"""
