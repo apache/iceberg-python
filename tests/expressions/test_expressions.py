@@ -782,12 +782,12 @@ def test_not_null() -> None:
 
 def test_serialize_is_null() -> None:
     pred = IsNull(term="foo")
-    assert pred.model_dump_json() == '{"type":"is-null","term":"foo"}'
+    assert pred.model_dump_json() == '{"term":"foo","type":"is-null"}'
 
 
 def test_serialize_not_null() -> None:
     pred = NotNull(term="foo")
-    assert pred.model_dump_json() == '{"type":"not-null","term":"foo"}'
+    assert pred.model_dump_json() == '{"term":"foo","type":"not-null"}'
 
 
 def test_bound_is_nan(accessor: Accessor) -> None:
