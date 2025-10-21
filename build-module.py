@@ -22,6 +22,19 @@ from pathlib import Path
 allowed_to_fail = os.environ.get("CIBUILDWHEEL", "0") != "1"
 
 
+def generate_version_file() -> None:
+    """Generate the _version.py file using setuptools_scm."""
+    try:
+        from setuptools_scm import get_version  # type: ignore[import-not-found]
+
+        version = get_version(root=".", relative_to=__file__)
+        print(f"Generated version: {version}")
+    except Exception as e:
+        if not allowed_to_fail:
+            raise
+        print(f"Warning: Could not generate version file: {e}")
+
+
 def build_cython_extensions() -> None:
     import Cython.Compiler.Options
     from Cython.Build import build_ext, cythonize
@@ -65,6 +78,7 @@ def build_cython_extensions() -> None:
 
 
 try:
+    generate_version_file()
     build_cython_extensions()
 except Exception:
     if not allowed_to_fail:
