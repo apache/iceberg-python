@@ -33,7 +33,7 @@ from typing import (
 )
 from typing import Literal as TypingLiteral
 
-from pydantic import ConfigDict, Field, field_serializer
+from pydantic import ConfigDict, Field
 
 from pyiceberg.expressions.literals import (
     AboveMax,
@@ -327,22 +327,6 @@ class Or(IcebergBaseModel, BooleanExpression):
         else:
             obj = super().__new__(cls)
             return obj
-
-    @field_serializer("left")
-    def ser_left(self, left: BooleanExpression) -> Any:
-        if isinstance(left, IcebergRootModel):
-            return left.root
-        if isinstance(left, IcebergBaseModel):
-            return left.model_dump()
-        return str(left)
-
-    @field_serializer("right")
-    def ser_right(self, right: BooleanExpression) -> Any:
-        if isinstance(right, IcebergRootModel):
-            return right.root
-        if isinstance(right, IcebergBaseModel):
-            return right.model_dump()
-        return str(right)
 
     def __str__(self) -> str:
         """Return the string representation of the Or class."""
