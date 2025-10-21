@@ -329,15 +329,19 @@ class Or(IcebergBaseModel, BooleanExpression):
             return obj
 
     @field_serializer("left")
-    def ser_left(self, left: BooleanExpression) -> str:
+    def ser_left(self, left: BooleanExpression) -> Any:
         if isinstance(left, IcebergRootModel):
             return left.root
+        if isinstance(left, IcebergBaseModel):
+            return left.model_dump()
         return str(left)
 
     @field_serializer("right")
-    def ser_right(self, right: BooleanExpression) -> str:
+    def ser_right(self, right: BooleanExpression) -> Any:
         if isinstance(right, IcebergRootModel):
             return right.root
+        if isinstance(right, IcebergBaseModel):
+            return right.model_dump()
         return str(right)
 
     def __str__(self) -> str:
