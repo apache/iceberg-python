@@ -705,10 +705,6 @@ def test_or() -> None:
     # Some syntactic sugar
     assert or_ == null | nan
 
-    assert (
-        or_.model_dump_json()
-        == '{"type":"or","left":"IsNull(term=Reference(name=\'a\'))","right":"IsNaN(term=Reference(name=\'b\'))"}'
-    )
     assert str(or_) == f"Or(left={str(null)}, right={str(nan)})"
     assert repr(or_) == f"Or(left={repr(null)}, right={repr(nan)})"
     assert or_ == eval(repr(or_))
@@ -716,6 +712,17 @@ def test_or() -> None:
 
     with pytest.raises(ValueError, match="Expected BooleanExpression, got: abc"):
         null | "abc"  # type: ignore
+
+
+def test_or_serialization() -> None:
+    left = EqualTo("a", 10)
+    right = EqualTo("b", 20)
+    or_ = Or(left, right)
+
+    assert (
+        or_.model_dump_json()
+        == '{"type":"or","left":{"term":"a","type":"eq","value":10},"right":{"term":"b","type":"eq","value":20}}'
+    )
 
 
 def test_not() -> None:
