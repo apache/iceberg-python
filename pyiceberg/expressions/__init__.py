@@ -307,7 +307,7 @@ class Or(IcebergBaseModel, BooleanExpression):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    type: TypingLiteral["str"] = Field(default="or", alias="type")
+    type: TypingLiteral["or"] = Field(default="or", alias="type")
     left: BooleanExpression
     right: BooleanExpression
 
