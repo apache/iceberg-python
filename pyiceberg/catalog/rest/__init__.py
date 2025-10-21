@@ -74,6 +74,7 @@ from pyiceberg.table.update import (
 )
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
 from pyiceberg.types import transform_dict_value_to_str
+from pyiceberg.utils.build_info import git_commit_short_id
 from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool
 
@@ -484,6 +485,8 @@ class RestCatalog(Catalog):
         session.headers.update(header_properties)
         session.headers["Content-type"] = "application/json"
         session.headers["User-Agent"] = f"PyIceberg/{__version__}"
+        session.headers["X-Client-Version"] = __version__
+        session.headers["X-Client-Git-Commit-Short"] = git_commit_short_id()
         session.headers.setdefault("X-Iceberg-Access-Delegation", ACCESS_DELEGATION_DEFAULT)
 
     def _create_table(
