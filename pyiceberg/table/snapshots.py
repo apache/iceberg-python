@@ -247,7 +247,7 @@ class Snapshot(IcebergBaseModel):
     first_row_id: Optional[int] = Field(
         alias="first-row-id", default=None, description="assigned to the first row in the first data file in the first manifest"
     )
-    _added_rows: Optional[int] = PrivateAttr()
+    added_rows: Optional[int] = Field(alias="added-rows", default=None, description="The upper bound of the number of rows with assigned row IDs")
 
     def __str__(self) -> str:
         """Return the string representation of the Snapshot class."""
@@ -260,10 +260,6 @@ class Snapshot(IcebergBaseModel):
     def manifests(self, io: FileIO) -> List[ManifestFile]:
         """Return the manifests for the given snapshot."""
         return list(_manifests(io, self.manifest_list))
-
-    @property
-    def added_rows(self) -> Optional[int]:
-        return self._added_rows
 
 
 class MetadataLogEntry(IcebergBaseModel):
