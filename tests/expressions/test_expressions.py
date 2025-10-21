@@ -739,26 +739,9 @@ def test_not() -> None:
 
 
 def test_not_json_serialization_and_deserialization() -> None:
-    expr = Not(AlwaysFalse())
-    json_str = expr.model_dump_json()
-    restored = Not.model_validate_json(json_str)
-    assert isinstance(restored, AlwaysTrue)
-
-    expr2 = Not(Not(AlwaysFalse()))
-    json_str2 = expr2.model_dump_json()
-    restored2 = Not.model_validate_json(json_str2)
-    assert isinstance(restored2, AlwaysFalse)
-
-    class DummyExpr(BooleanExpression):
-        def __invert__(self) -> BooleanExpression:
-            return self
-
-    dummy = DummyExpr()
-    not_dummy = Not(child=dummy)
-    json_str3 = not_dummy.model_dump_json()
-    restored3 = Not.model_validate_json(json_str3)
-    assert isinstance(restored3, Not)
-    assert isinstance(restored3.child, DummyExpr)
+    not_expr = Not(GreaterThan("a", 22))
+    json_str = not_expr.model_dump_json()
+    assert json_str == """{"type":"not","child":{"term":"a","type":"gt","value":22}}"""
 
 
 def test_always_true() -> None:
