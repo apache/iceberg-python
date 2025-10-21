@@ -152,7 +152,6 @@ def _inspect_files_asserts(df: pa.Table, spark_df: DataFrame) -> None:
     assert_frame_equal(lhs_subset, rhs_subset, check_dtype=False, check_categorical=False)
 
     for column in df.column_names:
-
         if column == "equality_ids":
             # Fixed in https://github.com/apache/iceberg-rust/pull/1705
             continue
