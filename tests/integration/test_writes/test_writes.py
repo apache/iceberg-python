@@ -2492,6 +2492,7 @@ def test_stage_only_overwrite_files(
     assert parent_snapshot_id == [None, first_snapshot, second_snapshot, second_snapshot, second_snapshot]
 
 
+@pytest.skip("V3 writer support is not enabled.")
 @pytest.mark.integration
 def test_v3_write_and_read_row_lineage(spark: SparkSession, session_catalog: Catalog) -> None:
     """Test writing to a v3 table and reading with Spark."""
