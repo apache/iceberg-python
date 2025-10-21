@@ -77,29 +77,6 @@ from pyiceberg.types import (
     StringType,
     StructType,
 )
-from pyiceberg.utils.singleton import Singleton
-
-
-class ExpressionA(BooleanExpression, Singleton):
-    def __invert__(self) -> BooleanExpression:
-        return ExpressionB()
-
-    def __repr__(self) -> str:
-        return "ExpressionA()"
-
-    def __str__(self) -> str:
-        return "testexpra"
-
-
-class ExpressionB(BooleanExpression, Singleton):
-    def __invert__(self) -> BooleanExpression:
-        return ExpressionA()
-
-    def __repr__(self) -> str:
-        return "ExpressionB()"
-
-    def __str__(self) -> str:
-        return "testexprb"
 
 
 def test_isnull_inverse() -> None:
@@ -504,18 +481,18 @@ def test_bind_case_insensitive(pred: UnboundPredicate[Any], table_schema_simple:
     "exp, testexpra, testexprb",
     [
         (
-            And(ExpressionA(), ExpressionB()),
-            And(ExpressionA(), ExpressionB()),
-            Or(ExpressionA(), ExpressionB()),
+            And(IsNull("a"), IsNull("b")),
+            And(IsNull("a"), IsNull("b")),
+            Or(IsNull("a"), IsNull("b")),
         ),
         (
-            Or(ExpressionA(), ExpressionB()),
-            Or(ExpressionA(), ExpressionB()),
-            And(ExpressionA(), ExpressionB()),
+            Or(IsNull("a"), IsNull("b")),
+            Or(IsNull("a"), IsNull("b")),
+            And(IsNull("a"), IsNull("b")),
         ),
-        (Not(ExpressionA()), Not(ExpressionA()), ExpressionB()),
-        (ExpressionA(), ExpressionA(), ExpressionB()),
-        (ExpressionB(), ExpressionB(), ExpressionA()),
+        (Not(IsNull("a")), Not(IsNull("a")), IsNull("b")),
+        (IsNull("a"), IsNull("a"), IsNull("b")),
+        (IsNull("b"), IsNull("b"), IsNull("a")),
         (
             In(Reference("foo"), ("hello", "world")),
             In(Reference("foo"), ("hello", "world")),
@@ -536,16 +513,16 @@ def test_eq(exp: BooleanExpression, testexpra: BooleanExpression, testexprb: Boo
     "lhs, rhs",
     [
         (
-            And(ExpressionA(), ExpressionB()),
-            Or(ExpressionB(), ExpressionA()),
+            And(IsNull("a"), IsNull("b")),
+            Or(NotNull("a"), NotNull("b")),
         ),
         (
-            Or(ExpressionA(), ExpressionB()),
-            And(ExpressionB(), ExpressionA()),
+            Or(IsNull("a"), IsNull("b")),
+            And(NotNull("a"), NotNull("b")),
         ),
         (
-            Not(ExpressionA()),
-            ExpressionA(),
+            Not(IsNull("a")),
+            IsNull("a"),
         ),
         (
             In(Reference("foo"), ("hello", "world")),
@@ -559,8 +536,8 @@ def test_eq(exp: BooleanExpression, testexpra: BooleanExpression, testexprb: Boo
         (LessThan(Reference("foo"), 5), GreaterThanOrEqual(Reference("foo"), 5)),
         (EqualTo(Reference("foo"), 5), NotEqualTo(Reference("foo"), 5)),
         (
-            ExpressionA(),
-            ExpressionB(),
+            IsNull("a"),
+            NotNull("a"),
         ),
     ],
 )
@@ -572,14 +549,14 @@ def test_negate(lhs: BooleanExpression, rhs: BooleanExpression) -> None:
     "lhs, rhs",
     [
         (
-            And(ExpressionA(), ExpressionB(), ExpressionA()),
-            And(ExpressionA(), And(ExpressionB(), ExpressionA())),
+            And(IsNull("a"), IsNull("b"), IsNull("a")),
+            And(IsNull("a"), And(IsNull("b"), IsNull("a"))),
         ),
         (
-            Or(ExpressionA(), ExpressionB(), ExpressionA()),
-            Or(ExpressionA(), Or(ExpressionB(), ExpressionA())),
+            Or(IsNull("a"), IsNull("b"), IsNull("a")),
+            Or(IsNull("a"), Or(IsNull("b"), IsNull("a"))),
         ),
-        (Not(Not(ExpressionA())), ExpressionA()),
+        (Not(Not(IsNull("a"))), IsNull("a")),
     ],
 )
 def test_reduce(lhs: BooleanExpression, rhs: BooleanExpression) -> None:
@@ -589,13 +566,13 @@ def test_reduce(lhs: BooleanExpression, rhs: BooleanExpression) -> None:
 @pytest.mark.parametrize(
     "lhs, rhs",
     [
-        (And(AlwaysTrue(), ExpressionB()), ExpressionB()),
-        (And(AlwaysFalse(), ExpressionB()), AlwaysFalse()),
-        (And(ExpressionB(), AlwaysTrue()), ExpressionB()),
-        (Or(AlwaysTrue(), ExpressionB()), AlwaysTrue()),
-        (Or(AlwaysFalse(), ExpressionB()), ExpressionB()),
-        (Or(ExpressionA(), AlwaysFalse()), ExpressionA()),
-        (Not(Not(ExpressionA())), ExpressionA()),
+        (And(AlwaysTrue(), IsNull("b")), IsNull("b")),
+        (And(AlwaysFalse(), IsNull("b")), AlwaysFalse()),
+        (And(IsNull("b"), AlwaysTrue()), IsNull("b")),
+        (Or(AlwaysTrue(), IsNull("b")), AlwaysTrue()),
+        (Or(AlwaysFalse(), IsNull("b")), IsNull("b")),
+        (Or(IsNull("a"), AlwaysFalse()), IsNull("a")),
+        (Not(Not(IsNull("a"))), IsNull("a")),
         (Not(AlwaysTrue()), AlwaysFalse()),
         (Not(AlwaysFalse()), AlwaysTrue()),
     ],
