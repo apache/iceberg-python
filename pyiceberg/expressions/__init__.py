@@ -33,7 +33,7 @@ from typing import (
 )
 from typing import Literal as TypingLiteral
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from pyiceberg.expressions.literals import (
     AboveMax,
@@ -302,11 +302,18 @@ class And(BooleanExpression):
         return (self.left, self.right)
 
 
-class Or(BooleanExpression):
+class Or(IcebergBaseModel, BooleanExpression):
     """OR operation expression - logical disjunction."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    type: TypingLiteral["or"] = Field(default="or", alias="type")
     left: BooleanExpression
     right: BooleanExpression
+
+    def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> None:
+        if isinstance(self, Or) and not hasattr(self, "left") and not hasattr(self, "right"):
+            super().__init__(left=left, right=right)
 
     def __new__(cls, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> BooleanExpression:  # type: ignore
         if rest:
@@ -319,9 +326,11 @@ class Or(BooleanExpression):
             return left
         else:
             obj = super().__new__(cls)
-            obj.left = left
-            obj.right = right
             return obj
+
+    def __str__(self) -> str:
+        """Return the string representation of the Or class."""
+        return f"{str(self.__class__.__name__)}(left={repr(self.left)}, right={repr(self.right)})"
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the Or class."""
