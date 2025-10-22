@@ -694,7 +694,7 @@ def test_and() -> None:
     assert and_ == pickle.loads(pickle.dumps(and_))
 
     with pytest.raises(ValueError, match="Expected BooleanExpression, got: abc"):
-        null & "abc"  # type: ignore
+        null & "abc"
 
 
 def test_or() -> None:
@@ -711,7 +711,7 @@ def test_or() -> None:
     assert or_ == pickle.loads(pickle.dumps(or_))
 
     with pytest.raises(ValueError, match="Expected BooleanExpression, got: abc"):
-        null | "abc"  # type: ignore
+        null | "abc"
 
 
 def test_or_serialization() -> None:
@@ -789,6 +789,16 @@ def test_not_null() -> None:
     assert repr(non_null) == f"NotNull(term={repr(ref)})"
     assert non_null == eval(repr(non_null))
     assert non_null == pickle.loads(pickle.dumps(non_null))
+
+
+def test_serialize_is_null() -> None:
+    pred = IsNull(term="foo")
+    assert pred.model_dump_json() == '{"term":"foo","type":"is-null"}'
+
+
+def test_serialize_not_null() -> None:
+    pred = NotNull(term="foo")
+    assert pred.model_dump_json() == '{"term":"foo","type":"not-null"}'
 
 
 def test_bound_is_nan(accessor: Accessor) -> None:

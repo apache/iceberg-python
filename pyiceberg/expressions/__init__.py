@@ -454,7 +454,20 @@ class UnboundPredicate(Generic[L], Unbound[BooleanExpression], BooleanExpression
     def as_bound(self) -> Type[BoundPredicate[L]]: ...
 
 
-class UnaryPredicate(UnboundPredicate[Any], ABC):
+class UnaryPredicate(IcebergBaseModel, UnboundPredicate[Any], ABC):
+    type: str
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    def __init__(self, term: Union[str, UnboundTerm[Any]]):
+        unbound = _to_unbound_term(term)
+        super().__init__(term=unbound)
+
+    def __str__(self) -> str:
+        """Return the string representation of the UnaryPredicate class."""
+        # Sort to make it deterministic
+        return f"{str(self.__class__.__name__)}(term={str(self.term)})"
+
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundUnaryPredicate[Any]:
         bound_term = self.term.bind(schema, case_sensitive)
         return self.as_bound(bound_term)
@@ -513,6 +526,8 @@ class BoundNotNull(BoundUnaryPredicate[L]):
 
 
 class IsNull(UnaryPredicate):
+    type: str = "is-null"
+
     def __invert__(self) -> NotNull:
         """Transform the Expression into its negated version."""
         return NotNull(self.term)
@@ -523,6 +538,8 @@ class IsNull(UnaryPredicate):
 
 
 class NotNull(UnaryPredicate):
+    type: str = "not-null"
+
     def __invert__(self) -> IsNull:
         """Transform the Expression into its negated version."""
         return IsNull(self.term)
@@ -565,6 +582,8 @@ class BoundNotNaN(BoundUnaryPredicate[L]):
 
 
 class IsNaN(UnaryPredicate):
+    type: str = "is-nan"
+
     def __invert__(self) -> NotNaN:
         """Transform the Expression into its negated version."""
         return NotNaN(self.term)
@@ -575,6 +594,8 @@ class IsNaN(UnaryPredicate):
 
 
 class NotNaN(UnaryPredicate):
+    type: str = "not-nan"
+
     def __invert__(self) -> IsNaN:
         """Transform the Expression into its negated version."""
         return IsNaN(self.term)
