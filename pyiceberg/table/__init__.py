@@ -1926,6 +1926,30 @@ class DataScan(TableScan):
             )
         )
 
+    def _should_keep_file_with_bloom_filter(self, data_file: DataFile) -> bool:
+        """Check if a data file should be kept based on bloom filter evaluation.
+
+        Args:
+            data_file: The data file to evaluate.
+
+        Returns:
+            True if the file should be kept, False if it can be pruned.
+        """
+        if data_file.bloom_filter_bytes is None:
+            # No bloom filter for this file
+            return True
+
+        try:
+            from pyiceberg.expressions.bloom_filter import BloomFilterEvaluator
+            from pyiceberg.expressions.visitors import visit
+
+            # Use the bloom filter evaluator to check if the file might contain matching rows
+            evaluator = BloomFilterEvaluator(data_file, self.table_metadata.schema())
+            return visit(self.row_filter, evaluator)
+        except Exception:
+            # If there's any error evaluating bloom filters, be conservative and keep the file
+            return True
+
     @staticmethod
     def _check_sequence_number(min_sequence_number: int, manifest: ManifestFile) -> bool:
         """Ensure that no manifests are loaded that contain deletes that are older than the data.
@@ -2001,6 +2025,10 @@ class DataScan(TableScan):
         for manifest_entry in chain.from_iterable(self.scan_plan_helper()):
             data_file = manifest_entry.data_file
             if data_file.content == DataFileContent.DATA:
+                # Apply bloom filter evaluation to prune files that definitely don't match the filter
+                if not self._should_keep_file_with_bloom_filter(data_file):
+                    # Skip this file as it cannot contain matching rows
+                    continue
                 data_entries.append(manifest_entry)
             elif data_file.content == DataFileContent.POSITION_DELETES:
                 positional_delete_entries.add(manifest_entry)

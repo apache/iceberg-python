@@ -290,6 +290,13 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
             required=False,
             doc="ID representing sort order for this file",
         ),
+        NestedField(
+            field_id=146,
+            name="bloom_filter_bytes",
+            field_type=MapType(key_id=147, key_type=IntegerType(), value_id=148, value_type=BinaryType()),
+            required=False,
+            doc="Map of column id to bloom filter",
+        ),
     ),
     3: StructType(
         NestedField(
@@ -413,6 +420,13 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
             required=False,
             doc="The length of a referenced content stored in the file; required if content_offset is present",
         ),
+        NestedField(
+            field_id=146,
+            name="bloom_filter_bytes",
+            field_type=MapType(key_id=147, key_type=IntegerType(), value_id=148, value_type=BinaryType()),
+            required=False,
+            doc="Map of column id to bloom filter",
+        ),
     ),
 }
 
@@ -516,6 +530,17 @@ class DataFile(Record):
     def sort_order_id(self) -> Optional[int]:
         return self._data[15]
 
+    @property
+    def bloom_filter_bytes(self) -> Dict[int, bytes] | None:
+        """Get bloom filter bytes for all columns.
+
+        Returns a dict mapping column ID to bloom filter bytes.
+        """
+        # Get bloom_filter_bytes which is the last field in the struct
+        if len(self._data) > 16:
+            return self._data[16]
+        return None
+
     # Spec ID should not be stored in the file
     _spec_id: int
 
@@ -537,6 +562,19 @@ class DataFile(Record):
     def __hash__(self) -> int:
         """Return the hash of the file path."""
         return hash(self.file_path)
+
+    def get_bloom_filter(self, column_id: int) -> bytes | None:
+        """Get bloom filter bytes for a specific column.
+
+        Args:
+            column_id: The column ID to get the bloom filter for.
+
+        Returns:
+            Bloom filter bytes for the column, or None if not available.
+        """
+        if self.bloom_filter_bytes and column_id in self.bloom_filter_bytes:
+            return self.bloom_filter_bytes[column_id]
+        return None
 
     def __eq__(self, other: Any) -> bool:
         """Compare the datafile with another object.
