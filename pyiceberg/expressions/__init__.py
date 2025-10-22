@@ -373,8 +373,6 @@ class Not(BooleanExpression):
         """Pickle the Not class."""
         return (self.child,)
 
-    """TRUE expression."""
-
 
 class AlwaysTrue(BooleanExpression, Singleton, IcebergRootModel[str]):
     """TRUE expression."""
