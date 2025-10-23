@@ -349,10 +349,10 @@ class Not(IcebergBaseModel, BooleanExpression):
     type: TypingLiteral["not"] = Field(default="not")
     child: BooleanExpression = Field()
 
-    def __init__(self, child: BooleanExpression, **_) -> None:
+    def __init__(self, child: BooleanExpression, **_: Any) -> None:
         super().__init__(child=child)
 
-    def __new__(cls, child: BooleanExpression, **_) -> BooleanExpression:  # type: ignore
+    def __new__(cls, child: BooleanExpression, **_: Any) -> BooleanExpression:  # type: ignore
         if child is AlwaysTrue():
             return AlwaysFalse()
         elif child is AlwaysFalse():
