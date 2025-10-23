@@ -362,6 +362,10 @@ class Not(IcebergBaseModel, BooleanExpression):
         obj = super().__new__(cls)
         return obj
 
+    def __str__(self) -> str:
+        """Return the string representation of the Not class."""
+        return f"Not(child={self.child})"
+
     def __repr__(self) -> str:
         """Return the string representation of the Not class."""
         return f"Not(child={repr(self.child)})"
