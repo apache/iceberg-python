@@ -350,12 +350,18 @@ class Or(IcebergBaseModel, BooleanExpression):
         return (self.left, self.right)
 
 
-class Not(BooleanExpression):
+class Not(IcebergBaseModel, BooleanExpression):
     """NOT operation expression - logical negation."""
 
-    child: BooleanExpression
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    def __new__(cls, child: BooleanExpression) -> BooleanExpression:  # type: ignore
+    type: TypingLiteral["not"] = Field(default="not")
+    child: BooleanExpression = Field()
+
+    def __init__(self, child: BooleanExpression, **_: Any) -> None:
+        super().__init__(child=child)
+
+    def __new__(cls, child: BooleanExpression, **_: Any) -> BooleanExpression:  # type: ignore
         if child is AlwaysTrue():
             return AlwaysFalse()
         elif child is AlwaysFalse():
@@ -363,8 +369,11 @@ class Not(BooleanExpression):
         elif isinstance(child, Not):
             return child.child
         obj = super().__new__(cls)
-        obj.child = child
         return obj
+
+    def __str__(self) -> str:
+        """Return the string representation of the Not class."""
+        return f"Not(child={self.child})"
 
     def __repr__(self) -> str:
         """Return the string representation of the Not class."""

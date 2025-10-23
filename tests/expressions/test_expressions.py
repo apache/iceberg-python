@@ -711,6 +711,12 @@ def test_not() -> None:
     assert not_ == pickle.loads(pickle.dumps(not_))
 
 
+def test_not_json_serialization_and_deserialization() -> None:
+    not_expr = Not(GreaterThan("a", 22))
+    json_str = not_expr.model_dump_json()
+    assert json_str == """{"type":"not","child":{"term":"a","type":"gt","value":22}}"""
+
+
 def test_always_true() -> None:
     always_true = AlwaysTrue()
     assert always_true.model_dump_json() == '"true"'
