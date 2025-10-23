@@ -836,8 +836,8 @@ class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
             if full_name is not None:
                 # If the field name contains dots, it's a nested field
                 # Convert "parent.child" to ("parent", "child") for PyArrow
-                if '.' in full_name:
-                    return tuple(full_name.split('.'))
+                if "." in full_name:
+                    return tuple(full_name.split("."))
                 return full_name
         # Fallback to just the field name if schema is not available
         return term.ref().field.name
