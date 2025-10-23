@@ -35,8 +35,6 @@ from typing import Literal as TypingLiteral
 
 from pydantic import Field
 
-from pydantic import Field
-
 from pyiceberg.expressions.literals import (
     AboveMax,
     BelowMin,
