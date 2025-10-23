@@ -33,7 +33,7 @@ from typing import (
 )
 from typing import Literal as TypingLiteral
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from pyiceberg.expressions.literals import (
     AboveMax,
@@ -302,11 +302,18 @@ class And(BooleanExpression):
         return (self.left, self.right)
 
 
-class Or(BooleanExpression):
+class Or(IcebergBaseModel, BooleanExpression):
     """OR operation expression - logical disjunction."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    type: TypingLiteral["or"] = Field(default="or", alias="type")
     left: BooleanExpression
     right: BooleanExpression
+
+    def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> None:
+        if isinstance(self, Or) and not hasattr(self, "left") and not hasattr(self, "right"):
+            super().__init__(left=left, right=right)
 
     def __new__(cls, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> BooleanExpression:  # type: ignore
         if rest:
@@ -319,9 +326,11 @@ class Or(BooleanExpression):
             return left
         else:
             obj = super().__new__(cls)
-            obj.left = left
-            obj.right = right
             return obj
+
+    def __str__(self) -> str:
+        """Return the string representation of the Or class."""
+        return f"{str(self.__class__.__name__)}(left={repr(self.left)}, right={repr(self.right)})"
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the Or class."""
@@ -341,12 +350,18 @@ class Or(BooleanExpression):
         return (self.left, self.right)
 
 
-class Not(BooleanExpression):
+class Not(IcebergBaseModel, BooleanExpression):
     """NOT operation expression - logical negation."""
 
-    child: BooleanExpression
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    def __new__(cls, child: BooleanExpression) -> BooleanExpression:  # type: ignore
+    type: TypingLiteral["not"] = Field(default="not")
+    child: BooleanExpression = Field()
+
+    def __init__(self, child: BooleanExpression, **_: Any) -> None:
+        super().__init__(child=child)
+
+    def __new__(cls, child: BooleanExpression, **_: Any) -> BooleanExpression:  # type: ignore
         if child is AlwaysTrue():
             return AlwaysFalse()
         elif child is AlwaysFalse():
@@ -354,8 +369,11 @@ class Not(BooleanExpression):
         elif isinstance(child, Not):
             return child.child
         obj = super().__new__(cls)
-        obj.child = child
         return obj
+
+    def __str__(self) -> str:
+        """Return the string representation of the Not class."""
+        return f"Not(child={self.child})"
 
     def __repr__(self) -> str:
         """Return the string representation of the Not class."""
@@ -372,8 +390,6 @@ class Not(BooleanExpression):
     def __getnewargs__(self) -> Tuple[BooleanExpression]:
         """Pickle the Not class."""
         return (self.child,)
-
-    """TRUE expression."""
 
 
 class AlwaysTrue(BooleanExpression, Singleton, IcebergRootModel[str]):
@@ -447,7 +463,20 @@ class UnboundPredicate(Generic[L], Unbound[BooleanExpression], BooleanExpression
     def as_bound(self) -> Type[BoundPredicate[L]]: ...
 
 
-class UnaryPredicate(UnboundPredicate[Any], ABC):
+class UnaryPredicate(IcebergBaseModel, UnboundPredicate[Any], ABC):
+    type: str
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    def __init__(self, term: Union[str, UnboundTerm[Any]]):
+        unbound = _to_unbound_term(term)
+        super().__init__(term=unbound)
+
+    def __str__(self) -> str:
+        """Return the string representation of the UnaryPredicate class."""
+        # Sort to make it deterministic
+        return f"{str(self.__class__.__name__)}(term={str(self.term)})"
+
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundUnaryPredicate[Any]:
         bound_term = self.term.bind(schema, case_sensitive)
         return self.as_bound(bound_term)
@@ -506,6 +535,8 @@ class BoundNotNull(BoundUnaryPredicate[L]):
 
 
 class IsNull(UnaryPredicate):
+    type: str = "is-null"
+
     def __invert__(self) -> NotNull:
         """Transform the Expression into its negated version."""
         return NotNull(self.term)
@@ -516,6 +547,8 @@ class IsNull(UnaryPredicate):
 
 
 class NotNull(UnaryPredicate):
+    type: str = "not-null"
+
     def __invert__(self) -> IsNull:
         """Transform the Expression into its negated version."""
         return IsNull(self.term)
@@ -558,6 +591,8 @@ class BoundNotNaN(BoundUnaryPredicate[L]):
 
 
 class IsNaN(UnaryPredicate):
+    type: str = "is-nan"
+
     def __invert__(self) -> NotNaN:
         """Transform the Expression into its negated version."""
         return NotNaN(self.term)
@@ -568,6 +603,8 @@ class IsNaN(UnaryPredicate):
 
 
 class NotNaN(UnaryPredicate):
+    type: str = "not-nan"
+
     def __invert__(self) -> IsNaN:
         """Transform the Expression into its negated version."""
         return IsNaN(self.term)

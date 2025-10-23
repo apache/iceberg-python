@@ -244,6 +244,12 @@ class Snapshot(IcebergBaseModel):
     manifest_list: str = Field(alias="manifest-list", description="Location of the snapshot's manifest list file")
     summary: Optional[Summary] = Field(default=None)
     schema_id: Optional[int] = Field(alias="schema-id", default=None)
+    first_row_id: Optional[int] = Field(
+        alias="first-row-id", default=None, description="assigned to the first row in the first data file in the first manifest"
+    )
+    added_rows: Optional[int] = Field(
+        alias="added-rows", default=None, description="The upper bound of the number of rows with assigned row IDs"
+    )
 
     def __str__(self) -> str:
         """Return the string representation of the Snapshot class."""
@@ -252,6 +258,22 @@ class Snapshot(IcebergBaseModel):
         schema_id = f", schema_id={self.schema_id}" if self.schema_id is not None else ""
         result_str = f"{operation}id={self.snapshot_id}{parent_id}{schema_id}"
         return result_str
+
+    def __repr__(self) -> str:
+        """Return the string representation of the Snapshot class."""
+        fields = [
+            f"snapshot_id={self.snapshot_id}",
+            f"parent_snapshot_id={self.parent_snapshot_id}",
+            f"sequence_number={self.sequence_number}",
+            f"timestamp_ms={self.timestamp_ms}",
+            f"manifest_list='{self.manifest_list}'",
+            f"summary={repr(self.summary)}" if self.summary else None,
+            f"schema_id={self.schema_id}" if self.schema_id is not None else None,
+            f"first_row_id={self.first_row_id}" if self.first_row_id is not None else None,
+            f"added_rows={self.added_rows}" if self.added_rows is not None else None,
+        ]
+        filtered_fields = [field for field in fields if field is not None]
+        return f"Snapshot({', '.join(filtered_fields)})"
 
     def manifests(self, io: FileIO) -> List[ManifestFile]:
         """Return the manifests for the given snapshot."""

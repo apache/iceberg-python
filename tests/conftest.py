@@ -72,7 +72,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
-from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2
+from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2, TableMetadataV3
 from pyiceberg.transforms import DayTransform, IdentityTransform
 from pyiceberg.types import (
     BinaryType,
@@ -920,6 +920,7 @@ EXAMPLE_TABLE_METADATA_V3 = {
     "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
     "location": "s3://bucket/test/location",
     "last-sequence-number": 34,
+    "next-row-id": 1,
     "last-updated-ms": 1602638573590,
     "last-column-id": 3,
     "current-schema-id": 1,
@@ -2480,6 +2481,18 @@ def table_v1(example_table_metadata_v1: Dict[str, Any]) -> Table:
 @pytest.fixture
 def table_v2(example_table_metadata_v2: Dict[str, Any]) -> Table:
     table_metadata = TableMetadataV2(**example_table_metadata_v2)
+    return Table(
+        identifier=("database", "table"),
+        metadata=table_metadata,
+        metadata_location=f"{table_metadata.location}/uuid.metadata.json",
+        io=load_file_io(),
+        catalog=NoopCatalog("NoopCatalog"),
+    )
+
+
+@pytest.fixture
+def table_v3(example_table_metadata_v3: Dict[str, Any]) -> Table:
+    table_metadata = TableMetadataV3(**example_table_metadata_v3)
     return Table(
         identifier=("database", "table"),
         metadata=table_metadata,
