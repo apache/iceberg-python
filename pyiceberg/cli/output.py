@@ -19,6 +19,7 @@ from abc import ABC, abstractmethod
 from typing import (
     Any,
     Dict,
+    Iterator,
     List,
     Optional,
     Tuple,
@@ -44,7 +45,7 @@ class Output(ABC):
     def exception(self, ex: Exception) -> None: ...
 
     @abstractmethod
-    def identifiers(self, identifiers: List[Identifier]) -> None: ...
+    def identifiers(self, identifiers: Iterator[Identifier]) -> None: ...
 
     @abstractmethod
     def describe_table(self, table: Table) -> None: ...
@@ -92,7 +93,7 @@ class ConsoleOutput(Output):
         else:
             Console(stderr=True).print(ex)
 
-    def identifiers(self, identifiers: List[Identifier]) -> None:
+    def identifiers(self, identifiers: Iterator[Identifier]) -> None:
         table = self._table
         for identifier in identifiers:
             table.add_row(".".join(identifier))
@@ -203,7 +204,7 @@ class JsonOutput(Output):
     def exception(self, ex: Exception) -> None:
         self._out({"type": ex.__class__.__name__, "message": str(ex)})
 
-    def identifiers(self, identifiers: List[Identifier]) -> None:
+    def identifiers(self, identifiers: Iterator[Identifier]) -> None:
         self._out([".".join(identifier) for identifier in identifiers])
 
     def describe_table(self, table: Table) -> None:

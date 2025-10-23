@@ -19,6 +19,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Dict,
+    Iterator,
     List,
     Optional,
     Set,
@@ -185,6 +186,7 @@ class ConfigResponse(IcebergBaseModel):
 
 class ListNamespaceResponse(IcebergBaseModel):
     namespaces: List[Identifier] = Field()
+    next_page_token: Optional[str] = Field(alias="next-page-token", default=None)
 
 
 class NamespaceResponse(IcebergBaseModel):
@@ -210,10 +212,12 @@ class ListViewResponseEntry(IcebergBaseModel):
 
 class ListTablesResponse(IcebergBaseModel):
     identifiers: List[ListTableResponseEntry] = Field()
+    next_page_token: Optional[str] = Field(alias="next-page-token", default=None)
 
 
 class ListViewsResponse(IcebergBaseModel):
     identifiers: List[ListViewResponseEntry] = Field()
+    next_page_token: Optional[str] = Field(alias="next-page-token", default=None)
 
 
 class RestCatalog(Catalog):
@@ -603,15 +607,43 @@ class RestCatalog(Catalog):
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
     @retry(**_RETRY_ARGS)
-    def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
-        namespace_tuple = self._check_valid_namespace_identifier(namespace)
+    def list_tables_raw(
+        self, namespace: Union[str, Identifier], page_size: Optional[int] = None, next_page_token: Optional[str] = None
+    ) -> ListTablesResponse:
+        """List Tables, optionally provide page size and next page token.
+
+        Args:
+            namespace (Union[str, Identifier]): Namespace to list against
+            page_size (int): Number of namespaces to return per request.
+            next_page_token (Optional[str]): Token for pagination.
+
+        Returns:
+            ListTablesResponse: List of tables.
+        """
+        namespace_tuple = self.identifier_to_tuple(namespace)
         namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
-        response = self._session.get(self.url(Endpoints.list_tables, namespace=namespace_concat))
+        params: Dict[str, Any] = {}
+        if next_page_token is not None:
+            params["pageToken"] = next_page_token
+        if page_size is not None:
+            params["pageSize"] = page_size
+        response = self._session.get(self.url(Endpoints.list_tables, namespace=namespace_concat), params=params)
         try:
             response.raise_for_status()
         except HTTPError as exc:
             _handle_non_200_response(exc, {404: NoSuchNamespaceError})
-        return [(*table.namespace, table.name) for table in ListTablesResponse.model_validate_json(response.text).identifiers]
+        return ListTablesResponse.model_validate_json(response.text)
+
+    def list_tables(self, namespace: Union[str, Identifier], page_size: Optional[int] = None) -> Iterator[Identifier]:
+        """Lazily iterate over tables in a namespace."""
+        next_page_token = None
+        while True:
+            list_tables_response = self.list_tables_raw(namespace=namespace, page_size=page_size, next_page_token=next_page_token)
+            yield from ((*table.namespace, table.name) for table in list_tables_response.identifiers)
+            if list_tables_response.next_page_token is None:
+                break
+            else:
+                next_page_token = list_tables_response.next_page_token
 
     @retry(**_RETRY_ARGS)
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
@@ -684,15 +716,44 @@ class RestCatalog(Catalog):
         return table_request
 
     @retry(**_RETRY_ARGS)
-    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def list_views_raw(
+        self, namespace: Union[str, Identifier], page_size: Optional[int] = None, next_page_token: Optional[str] = None
+    ) -> ListViewsResponse:
+        """List Views, optionally provide page size and next page token.
+
+        Args:
+            namespace (Union[str, Identifier]): Namespace to list against
+            page_size (int): Number of namespaces to return per request.
+            next_page_token (Optional[str]): Token for pagination.
+
+        Returns:
+            ListViewsResponse: List of views.
+        """
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
-        response = self._session.get(self.url(Endpoints.list_views, namespace=namespace_concat))
+        params: Dict[str, Any] = {}
+        if next_page_token is not None:
+            params["pageToken"] = next_page_token
+        if page_size is not None:
+            params["pageSize"] = page_size
+        response = self._session.get(self.url(Endpoints.list_views, namespace=namespace_concat), params=params)
         try:
             response.raise_for_status()
         except HTTPError as exc:
             _handle_non_200_response(exc, {404: NoSuchNamespaceError})
-        return [(*view.namespace, view.name) for view in ListViewsResponse.model_validate_json(response.text).identifiers]
+
+        return ListViewsResponse.model_validate_json(response.text)
+
+    def list_views(self, namespace: Union[str, Identifier], page_size: Optional[int] = None) -> Iterator[Identifier]:
+        """Lazily iterate over views in a namespace."""
+        next_page_token = None
+        while True:
+            list_views_response = self.list_views_raw(namespace=namespace, page_size=page_size, next_page_token=next_page_token)
+            yield from ((*view.namespace, view.name) for view in list_views_response.identifiers)
+            if list_views_response.next_page_token is None:
+                break
+            else:
+                next_page_token = list_views_response.next_page_token
 
     @retry(**_RETRY_ARGS)
     def commit_table(
@@ -761,21 +822,53 @@ class RestCatalog(Catalog):
             _handle_non_200_response(exc, {404: NoSuchNamespaceError, 409: NamespaceNotEmptyError})
 
     @retry(**_RETRY_ARGS)
-    def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
+    def list_namespaces_raw(
+        self, namespace: Union[str, Identifier] = (), page_size: Optional[int] = None, next_page_token: Optional[str] = None
+    ) -> ListNamespaceResponse:
+        """List namespaces, optionally provide page size and next page token.
+
+        Args:
+            namespace (Union[str, Identifier]): Namespace to list sub-namespaces for.
+            page_size (int): Number of namespaces to return per request.
+            next_page_token (Optional[str]): Token for pagination.
+
+        Returns:
+            ListNamespaceResponse: List of namespaces.
+        """
         namespace_tuple = self.identifier_to_tuple(namespace)
+        params: Dict[str, Any] = {}
+        if next_page_token is not None:
+            params["pageToken"] = next_page_token
+        if page_size is not None:
+            params["pageSize"] = page_size
+
         response = self._session.get(
             self.url(
                 f"{Endpoints.list_namespaces}?parent={NAMESPACE_SEPARATOR.join(namespace_tuple)}"
                 if namespace_tuple
                 else Endpoints.list_namespaces
             ),
+            params=params,
         )
         try:
             response.raise_for_status()
         except HTTPError as exc:
             _handle_non_200_response(exc, {404: NoSuchNamespaceError})
 
-        return ListNamespaceResponse.model_validate_json(response.text).namespaces
+        return ListNamespaceResponse.model_validate_json(response.text)
+
+    def list_namespaces(self, namespace: Union[str, Identifier] = (), page_size: Optional[int] = None) -> Iterator[Identifier]:
+        """Lazily iterate over namespaces."""
+        next_page_token = None
+        while True:
+            list_namespace_response = self.list_namespaces_raw(
+                namespace=namespace, page_size=page_size, next_page_token=next_page_token
+            )
+            yield from list_namespace_response.namespaces
+            if list_namespace_response.next_page_token is None:
+                break
+            else:
+                next_page_token = list_namespace_response.next_page_token
 
     @retry(**_RETRY_ARGS)
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
