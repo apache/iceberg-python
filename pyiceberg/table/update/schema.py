@@ -470,7 +470,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
             if not self._allow_incompatible_changes and field.field_type != field_type:
                 try:
-                    promote(field.field_type, field_type)
+                    promote(field.field_type, field_type, format_version=self._transaction.table_metadata.format_version)
                 except ResolveError as e:
                     raise ValidationError(f"Cannot change column type: {full_name}: {field.field_type} -> {field_type}") from e
 
@@ -894,7 +894,9 @@ class _UnionByNameVisitor(SchemaWithPartnerVisitor[int, bool]):
             try:
                 # If the current type is wider than the new type, then
                 # we perform a noop
-                _ = promote(field.field_type, existing_field.field_type)
+                _ = promote(
+                    field.field_type, existing_field.field_type, self.update_schema._transaction.table_metadata.format_version
+                )
             except ResolveError:
                 # If this is not the case, perform the type evolution
                 self.update_schema.update_column(full_name, field_type=field.field_type)

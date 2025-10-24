@@ -39,7 +39,7 @@ from typing import (
 from pydantic import Field, PrivateAttr, model_validator
 
 from pyiceberg.exceptions import ResolveError
-from pyiceberg.typedef import EMPTY_DICT, IcebergBaseModel, StructProtocol
+from pyiceberg.typedef import EMPTY_DICT, IcebergBaseModel, StructProtocol, TableVersion
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -1622,7 +1622,10 @@ class _PruneColumnsVisitor(SchemaVisitor[Optional[IcebergType]]):
 
 
 @singledispatch
-def promote(file_type: IcebergType, read_type: IcebergType) -> IcebergType:
+def promote(file_type: IcebergType, read_type: IcebergType, format_version: Optional[TableVersion] = None) -> IcebergType:
+    from pyiceberg.table import TableProperties
+
+    format_version = format_version or TableProperties.DEFAULT_FORMAT_VERSION
     """Promotes reading a file type to a read type.
 
     Args:
@@ -1692,6 +1695,22 @@ def _(file_type: FixedType, read_type: IcebergType) -> IcebergType:
         raise ResolveError(f"Cannot promote {file_type} to {read_type}")
 
 
+@promote.register(DateType)
+def _(file_type: DateType, read_type: IcebergType, format_version: Optional[TableVersion] = None) -> IcebergType:
+    from pyiceberg.table import TableProperties
+
+    format_version = format_version or TableProperties.DEFAULT_FORMAT_VERSION
+    if format_version < 3:
+        raise ResolveError("DateType promotions can only occur on v3 tables.")
+
+    if isinstance(read_type, TimestampType):
+        return read_type
+    elif isinstance(read_type, TimestampNanoType):
+        return read_type
+    else:
+        raise ResolveError(f"Cannot promote {file_type} to {read_type}")
+
+
 @promote.register(UnknownType)
 def _(file_type: UnknownType, read_type: IcebergType) -> IcebergType:
     # Per V3 Spec, "Unknown" can be promoted to any Primitive type
@@ -1701,7 +1720,12 @@ def _(file_type: UnknownType, read_type: IcebergType) -> IcebergType:
         raise ResolveError(f"Cannot promote {file_type} to {read_type}")
 
 
-def _check_schema_compatible(requested_schema: Schema, provided_schema: Schema) -> None:
+def _check_schema_compatible(
+    requested_schema: Schema, provided_schema: Schema, format_version: Optional[TableVersion] = None
+) -> None:
+    from pyiceberg.table import TableProperties
+
+    format_version = format_version or TableProperties.DEFAULT_FORMAT_VERSION
     """
     Check if the `provided_schema` is compatible with `requested_schema`.
 
@@ -1715,17 +1739,19 @@ def _check_schema_compatible(requested_schema: Schema, provided_schema: Schema) 
     Raises:
         ValueError: If the schemas are not compatible.
     """
-    pre_order_visit(requested_schema, _SchemaCompatibilityVisitor(provided_schema))
+    pre_order_visit(requested_schema, _SchemaCompatibilityVisitor(provided_schema, format_version=format_version))
 
 
 class _SchemaCompatibilityVisitor(PreOrderSchemaVisitor[bool]):
     provided_schema: Schema
+    format_version: TableVersion
 
-    def __init__(self, provided_schema: Schema):
+    def __init__(self, provided_schema: Schema, format_version: TableVersion):
         from rich.console import Console
         from rich.table import Table as RichTable
 
         self.provided_schema = provided_schema
+        self.format_version = format_version
         self.rich_table = RichTable(show_header=True, header_style="bold")
         self.rich_table.add_column("")
         self.rich_table.add_column("Table field")
@@ -1766,7 +1792,7 @@ class _SchemaCompatibilityVisitor(PreOrderSchemaVisitor[bool]):
             try:
                 # If type can be promoted to the requested schema
                 # it is considered compatible
-                promote(rhs.field_type, lhs.field_type)
+                promote(rhs.field_type, lhs.field_type, format_version=self.format_version)
                 self.rich_table.add_row("✅", str(lhs), str(rhs))
                 return True
             except ResolveError:
