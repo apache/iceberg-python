@@ -38,6 +38,7 @@ from pyiceberg.exceptions import (
     OAuthError,
     ServerError,
     TableAlreadyExistsError,
+    ViewAlreadyExistsError,
 )
 from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -1992,3 +1993,122 @@ class TestRestCatalogClose:
 
         assert catalog is not None and hasattr(catalog, "_session")
         assert len(catalog._session.adapters) == self.EXPECTED_ADAPTERS_SIGV4
+
+
+def test_rename_view_204(rest_mock: Mocker) -> None:
+    from_identifier = ("some_namespace", "old_view")
+    to_identifier = ("some_namespace", "new_view")
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/some_namespace",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/views/rename",
+        json={
+            "source": {"namespace": ["some_namespace"], "name": "old_view"},
+            "destination": {"namespace": ["some_namespace"], "name": "new_view"},
+        },
+        status_code=204,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    catalog.rename_view(from_identifier, to_identifier)
+    assert (
+        rest_mock.last_request.text
+        == '''{"source": {"namespace": ["some_namespace"], "name": "old_view"}, "destination": {"namespace": ["some_namespace"], "name": "new_view"}}'''
+    )
+
+
+def test_rename_view_404(rest_mock: Mocker) -> None:
+    from_identifier = ("some_namespace", "non_existent_view")
+    to_identifier = ("some_namespace", "new_view")
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/some_namespace",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/views/rename",
+        json={
+            "error": {
+                "message": "View does not exist: some_namespace.non_existent_view",
+                "type": "NoSuchViewException",
+                "code": 404,
+            }
+        },
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(NoSuchViewError) as exc_info:
+        catalog.rename_view(from_identifier, to_identifier)
+    assert "View does not exist: some_namespace.non_existent_view" in str(exc_info.value)
+
+
+def test_rename_view_409(rest_mock: Mocker) -> None:
+    from_identifier = ("some_namespace", "old_view")
+    to_identifier = ("some_namespace", "existing_view")
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/some_namespace",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/views/rename",
+        json={
+            "error": {
+                "message": "View already exists: some_namespace.existing_view",
+                "type": "ViewAlreadyExistsException",
+                "code": 409,
+            }
+        },
+        status_code=409,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(ViewAlreadyExistsError) as exc_info:
+        catalog.rename_view(from_identifier, to_identifier)
+    assert "View already exists: some_namespace.existing_view" in str(exc_info.value)
+
+
+def test_rename_view_source_namespace_does_not_exist(rest_mock: Mocker) -> None:
+    from_identifier = ("non_existent_namespace", "old_view")
+    to_identifier = ("some_namespace", "new_view")
+
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/non_existent_namespace",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/some_namespace",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(NoSuchNamespaceError) as exc_info:
+        catalog.rename_view(from_identifier, to_identifier)
+    assert "Source namespace does not exist: ('non_existent_namespace',)" in str(exc_info.value)
+
+
+def test_rename_view_destination_namespace_does_not_exist(rest_mock: Mocker) -> None:
+    from_identifier = ("some_namespace", "old_view")
+    to_identifier = ("non_existent_namespace", "new_view")
+
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/some_namespace",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/non_existent_namespace",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(NoSuchNamespaceError) as exc_info:
+        catalog.rename_view(from_identifier, to_identifier)
+    assert "Destination namespace does not exist: non_existent_namespace" in str(exc_info.value)
