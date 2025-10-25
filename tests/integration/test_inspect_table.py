@@ -1183,3 +1183,105 @@ def test_inspect_files_partitioned(spark: SparkSession, session_catalog: Catalog
         .reset_index()
     )
     assert_frame_equal(lhs, rhs, check_dtype=False)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_inspect_all_entries(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    identifier = "default.table_metadata_all_entries"
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    spark.sql(
+        f"""
+        CREATE TABLE {identifier} (
+            id int,
+            data string
+        )
+        PARTITIONED BY (data)
+        TBLPROPERTIES ('write.update.mode'='merge-on-read',
+                       'write.delete.mode'='merge-on-read')
+    """
+    )
+    tbl = session_catalog.load_table(identifier)
+
+    spark.sql(f"INSERT INTO {identifier} VALUES (1, 'a')")
+    spark.sql(f"INSERT INTO {identifier} VALUES (2, 'b')")
+
+    spark.sql(f"UPDATE {identifier} SET data = 'c' WHERE id = 1")
+
+    spark.sql(f"DELETE FROM {identifier} WHERE id = 2")
+
+    spark.sql(f"INSERT OVERWRITE {identifier} VALUES (1, 'a')")
+
+    def check_pyiceberg_df_equals_spark_df(df: pa.Table, spark_df: DataFrame) -> None:
+        assert df.column_names == [
+            "status",
+            "snapshot_id",
+            "sequence_number",
+            "file_sequence_number",
+            "data_file",
+            "readable_metrics",
+        ]
+
+        # Check first 4 columns are of the correct type
+        for int_column in ["status", "snapshot_id", "sequence_number", "file_sequence_number"]:
+            for value in df[int_column]:
+                assert isinstance(value.as_py(), int)
+
+        # The rest of the code checks the data_file and readable_metrics columns
+        # Convert both dataframes to pandas and sort them the same way for comparison
+        lhs = df.to_pandas()
+        rhs = spark_df.toPandas()
+        for df_to_check in [lhs, rhs]:
+            df_to_check["content"] = df_to_check["data_file"].apply(lambda x: x.get("content"))
+            df_to_check["file_path"] = df_to_check["data_file"].apply(lambda x: x.get("file_path"))
+            df_to_check.sort_values(["status", "snapshot_id", "sequence_number", "content", "file_path"], inplace=True)
+            df_to_check.drop(columns=["file_path", "content"], inplace=True)
+
+        for column in df.column_names:
+            for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+                if column == "data_file":
+                    for df_column in left.keys():
+                        if df_column == "partition":
+                            # Spark leaves out the partition if the table is unpartitioned
+                            continue
+
+                        df_lhs = left[df_column]
+                        df_rhs = right[df_column]
+                        if isinstance(df_rhs, dict):
+                            # Arrow turns dicts into lists of tuple
+                            df_lhs = dict(df_lhs)
+
+                        assert df_lhs == df_rhs, f"Difference in data_file column {df_column}: {df_lhs} != {df_rhs}"
+                elif column == "readable_metrics":
+                    assert list(left.keys()) == ["id", "data"]
+
+                    assert left.keys() == right.keys()
+
+                    for rm_column in left.keys():
+                        rm_lhs = left[rm_column]
+                        rm_rhs = right[rm_column]
+
+                        assert rm_lhs["column_size"] == rm_rhs["column_size"]
+                        assert rm_lhs["value_count"] == rm_rhs["value_count"]
+                        assert rm_lhs["null_value_count"] == rm_rhs["null_value_count"]
+                        assert rm_lhs["nan_value_count"] == rm_rhs["nan_value_count"]
+
+                        if rm_column == "timestamptz":
+                            # PySpark does not correctly set the timstamptz
+                            rm_rhs["lower_bound"] = rm_rhs["lower_bound"].replace(tzinfo=pytz.utc)
+                            rm_rhs["upper_bound"] = rm_rhs["upper_bound"].replace(tzinfo=pytz.utc)
+
+                        assert rm_lhs["lower_bound"] == rm_rhs["lower_bound"]
+                        assert rm_lhs["upper_bound"] == rm_rhs["upper_bound"]
+                else:
+                    assert left == right, f"Difference in column {column}: {left} != {right}"
+
+    tbl.refresh()
+
+    df = tbl.inspect.all_entries()
+    spark_df = spark.table(f"{identifier}.all_entries")
+    check_pyiceberg_df_equals_spark_df(df, spark_df)
