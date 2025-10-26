@@ -29,8 +29,7 @@ This guide outlines the process for releasing PyIceberg in accordance with the [
 
 ## Requirements
 
-* A GPG key must be registered and published in the [Apache Iceberg KEYS file](https://downloads.apache.org/iceberg/KEYS). Follow [the instructions for setting up a GPG key and uploading it to the KEYS file]
-(#set-up-gpg-key-and-upload-to-apache-iceberg-keys-file).
+* A GPG key must be registered and published in the [Apache Iceberg KEYS file](https://downloads.apache.org/iceberg/KEYS). Follow [the instructions for setting up a GPG key and uploading it to the KEYS file](#set-up-gpg-key-and-upload-to-apache-iceberg-keys-file).
     * Permission to update the `KEYS` artifact in the [Apache release distribution](https://dist.apache.org/repos/dist/release/iceberg/) (requires Iceberg PMC privileges).
 * SVN Access
     * Permission to upload artifacts to the [Apache development distribution](https://dist.apache.org/repos/dist/dev/iceberg/) (requires Apache Committer access).
