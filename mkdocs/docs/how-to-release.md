@@ -409,7 +409,7 @@ cd icebergsvn
 echo "" >> KEYS # append a newline
 gpg --list-sigs <YOUR KEY ID HERE> >> KEYS # append signatures
 gpg --armor --export <YOUR KEY ID HERE> >> KEYS # append public key block
-svn commit -m "add key for <YOUR NAME HERE>" # this requires Apache PMC access
+svn commit -m "add key for <YOUR NAME HERE>" # this requires Iceberg PMC privileges
 ```
 
 <!-- prettier-ignore-start -->
