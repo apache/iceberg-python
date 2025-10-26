@@ -854,18 +854,47 @@ class ManifestFile(Record):
         Returns:
             An Iterator of manifest entries.
         """
-        input_file = io.new_input(self.manifest_path)
-        with AvroFile[ManifestEntry](
-            input_file,
-            MANIFEST_ENTRY_SCHEMAS[DEFAULT_READ_VERSION],
-            read_types={-1: ManifestEntry, 2: DataFile},
-            read_enums={0: ManifestEntryStatus, 101: FileFormat, 134: DataFileContent},
-        ) as reader:
-            return [
-                _inherit_from_manifest(entry, self)
-                for entry in reader
-                if not discard_deleted or entry.status != ManifestEntryStatus.DELETED
-            ]
+        from pyiceberg_core import manifest
+
+        bs = io.new_input(self.manifest_path).open().read()
+        manifest = manifest.read_manifest_entries(bs)
+
+        # TODO: Don't convert the types
+        # but this is the easiest for now until we
+        # have the write part in there as well
+        def _convert_entry(entry: Any) -> ManifestEntry:
+            data_file = DataFile(
+                DataFileContent(entry.data_file.content),
+                entry.data_file.file_path,
+                FileFormat(entry.data_file.file_format),
+                Record(*(p.value() if p is not None else None for p in entry.data_file.partition)),
+                entry.data_file.record_count,
+                entry.data_file.file_size_in_bytes,
+                entry.data_file.column_sizes,
+                entry.data_file.value_counts,
+                entry.data_file.null_value_counts,
+                entry.data_file.nan_value_counts,
+                entry.data_file.lower_bounds,
+                entry.data_file.upper_bounds,
+                entry.data_file.key_metadata,
+                entry.data_file.split_offsets,
+                entry.data_file.equality_ids,
+                entry.data_file.sort_order_id,
+            )
+
+            return ManifestEntry(
+                ManifestEntryStatus(entry.status),
+                entry.snapshot_id,
+                entry.sequence_number,
+                entry.file_sequence_number,
+                data_file,
+            )
+
+        return [
+            _inherit_from_manifest(_convert_entry(entry), self)
+            for entry in manifest.entries()
+            if not discard_deleted or entry.status != ManifestEntryStatus.DELETED
+        ]
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the ManifestFile class."""
@@ -879,8 +908,38 @@ class ManifestFile(Record):
 @cached(cache=LRUCache(maxsize=128), key=lambda io, manifest_list: hashkey(manifest_list), lock=threading.RLock())
 def _manifests(io: FileIO, manifest_list: str) -> Tuple[ManifestFile, ...]:
     """Read and cache manifests from the given manifest list, returning a tuple to prevent modification."""
-    file = io.new_input(manifest_list)
-    return tuple(read_manifest_list(file))
+    bs = io.new_input(manifest_list).open().read()
+    from pyiceberg_core import manifest
+
+    entries = list(manifest.read_manifest_list(bs).entries())
+    return tuple(
+        ManifestFile(
+            manifest.manifest_path,
+            manifest.manifest_length,
+            manifest.partition_spec_id,
+            manifest.content,
+            manifest.sequence_number,
+            manifest.min_sequence_number,
+            manifest.added_snapshot_id,
+            manifest.added_files_count,
+            manifest.existing_files_count,
+            manifest.deleted_files_count,
+            manifest.added_rows_count,
+            manifest.existing_rows_count,
+            manifest.deleted_rows_count,
+            [
+                PartitionFieldSummary(
+                    partition.contains_null,
+                    partition.contains_nan,
+                    partition.lower_bound,
+                    partition.upper_bound,
+                )
+                for partition in manifest.partitions
+            ],
+            manifest.key_metadata,
+        )
+        for manifest in entries
+    )
 
 
 def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
@@ -926,12 +985,12 @@ def _inherit_from_manifest(entry: ManifestEntry, manifest: ManifestFile) -> Mani
 
     # in v1 tables, the sequence number is not persisted and can be safely defaulted to 0
     # in v2 tables, the sequence number should be inherited iff the entry status is ADDED
-    if entry.sequence_number is None and (manifest.sequence_number == 0 or entry.status == ManifestEntryStatus.ADDED):
+    if entry.sequence_number is None and entry.status == ManifestEntryStatus.ADDED:
         entry.sequence_number = manifest.sequence_number
 
     # in v1 tables, the file sequence number is not persisted and can be safely defaulted to 0
     # in v2 tables, the file sequence number should be inherited iff the entry status is ADDED
-    if entry.file_sequence_number is None and (manifest.sequence_number == 0 or entry.status == ManifestEntryStatus.ADDED):
+    if entry.file_sequence_number is None and entry.status == ManifestEntryStatus.ADDED:
         # Only available in V2, always 0 in V1
         entry.file_sequence_number = manifest.sequence_number
 

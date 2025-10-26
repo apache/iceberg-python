@@ -119,6 +119,11 @@ mkdocs-material = "9.6.22"
 mkdocs-material-extensions = "1.3.1"
 mkdocs-section-index = "0.3.10"
 
+[[tool.poetry.source]]
+name = "test"
+url = "https://test.pypi.org/simple/"
+priority = "supplemental"
+
 [[tool.mypy.overrides]]
 module = "pytest_mock.*"
 ignore_missing_imports = true
