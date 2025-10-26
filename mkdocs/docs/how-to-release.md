@@ -415,6 +415,6 @@ svn commit -m "add key for <YOUR NAME HERE>" # this requires Iceberg PMC privile
 <!-- prettier-ignore-start -->
 
 !!! note
-    Updating the `KEYS` artifact in the `release/` distribution requires Apache PMC access. Please work with a PMC member to update the file.
+    Updating the `KEYS` artifact in the `release/` distribution requires Iceberg PMC privileges. Please work with a PMC member to update the file.
 
 <!-- prettier-ignore-end -->
