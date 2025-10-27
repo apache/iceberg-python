@@ -31,8 +31,9 @@ from typing import (
     TypeVar,
     Union,
 )
+from typing import Literal as TypingLiteral
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from pyiceberg.expressions.literals import (
     AboveMax,
@@ -249,12 +250,17 @@ class Reference(UnboundTerm[Any]):
         return BoundReference[L]
 
 
-class And(BooleanExpression, IcebergBaseModel):
+class And(IcebergBaseModel, BooleanExpression):
     """AND operation expression - logical conjunction."""
 
-    type: str = Field(default="and", alias="type")
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    type: TypingLiteral["and"] = Field(default="and", alias="type")
     left: BooleanExpression
     right: BooleanExpression
+
+    def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> None:
+        super().__init__(left=left, right=right)
 
     def __new__(cls, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> BooleanExpression:  # type: ignore
         if rest:
@@ -291,12 +297,6 @@ class And(BooleanExpression, IcebergBaseModel):
     def __getnewargs__(self) -> Tuple[BooleanExpression, BooleanExpression]:
         """Pickle the And class."""
         return (self.left, self.right)
-
-    class Config:
-        """Pydantic configuration for And expression serialization."""
-
-        arbitrary_types_allowed = True
-        json_encoders = {BooleanExpression: lambda v: v.model_dump(by_alias=True) if isinstance(v, IcebergBaseModel) else str(v)}
 
 
 class Or(BooleanExpression):
