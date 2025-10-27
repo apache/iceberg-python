@@ -272,10 +272,7 @@ class And(IcebergBaseModel, BooleanExpression):
         elif right is AlwaysTrue():
             return left
         else:
-            obj = super().__new__(cls)
-            obj.left = left
-            obj.right = right
-            return obj
+            return cls(left=left, right=right)
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the And class."""
