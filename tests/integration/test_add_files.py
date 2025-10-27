@@ -47,6 +47,7 @@ from pyiceberg.types import (
     LongType,
     NestedField,
     StringType,
+    StructType,
     TimestampType,
     TimestamptzType,
 )
@@ -216,14 +217,14 @@ def test_add_files_to_unpartitioned_table_raises_file_not_found(
 
 
 @pytest.mark.integration
-def test_add_files_to_unpartitioned_table_raises_has_field_ids(
+def test_add_files_to_unpartitioned_table_with_field_ids(
     spark: SparkSession, session_catalog: Catalog, format_version: int
 ) -> None:
-    identifier = f"default.unpartitioned_raises_field_ids_v{format_version}"
+    identifier = f"default.unpartitioned_with_field_ids_v{format_version}"
     tbl = _create_table(session_catalog, identifier, format_version)
 
-    file_paths = [f"s3://warehouse/default/unpartitioned_raises_field_ids/v{format_version}/test-{i}.parquet" for i in range(5)]
-    # write parquet files
+    file_paths = [f"s3://warehouse/default/unpartitioned_with_field_ids/v{format_version}/test-{i}.parquet" for i in range(5)]
+    # write parquet files with field IDs matching the table schema
     for file_path in file_paths:
         fo = tbl.io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
@@ -231,8 +232,135 @@ def test_add_files_to_unpartitioned_table_raises_has_field_ids(
                 writer.write_table(ARROW_TABLE_WITH_IDS)
 
     # add the parquet files as data files
-    with pytest.raises(NotImplementedError):
-        tbl.add_files(file_paths=file_paths)
+    tbl.add_files(file_paths=file_paths)
+
+    # NameMapping should still be set even though files have field IDs
+    assert tbl.name_mapping() is not None
+
+    # Verify files were added successfully
+    rows = spark.sql(
+        f"""
+        SELECT added_data_files_count, existing_data_files_count, deleted_data_files_count
+        FROM {identifier}.all_manifests
+    """
+    ).collect()
+
+    assert [row.added_data_files_count for row in rows] == [5]
+    assert [row.existing_data_files_count for row in rows] == [0]
+    assert [row.deleted_data_files_count for row in rows] == [0]
+
+    # Verify data can be read back correctly
+    df = spark.table(identifier).toPandas()
+    assert len(df) == 5
+    assert all(df["foo"] == True)  # noqa: E712
+    assert all(df["bar"] == "bar_string")
+    assert all(df["baz"] == 123)
+    assert all(df["qux"] == date(2024, 3, 7))
+
+
+@pytest.mark.integration
+def test_add_files_with_mismatched_field_ids(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    identifier = f"default.unpartitioned_mismatched_field_ids_v{format_version}"
+    tbl = _create_table(session_catalog, identifier, format_version)
+
+    # Create schema with field IDs that don't match the table schema
+    # Table has: 1=foo, 2=bar, 3=baz, 4=qux (assigned by catalog)
+    # This file has: 1=foo, 2=bar, 5=baz, 6=qux (wrong IDs for baz and qux)
+    mismatched_schema = pa.schema(
+        [
+            pa.field("foo", pa.bool_(), nullable=False, metadata={"PARQUET:field_id": "1"}),
+            pa.field("bar", pa.string(), nullable=False, metadata={"PARQUET:field_id": "2"}),
+            pa.field("baz", pa.int32(), nullable=False, metadata={"PARQUET:field_id": "5"}),  # Wrong: should be 3
+            pa.field("qux", pa.date32(), nullable=False, metadata={"PARQUET:field_id": "6"}),  # Wrong: should be 4
+        ]
+    )
+
+    file_path = f"s3://warehouse/default/unpartitioned_mismatched_field_ids/v{format_version}/test.parquet"
+    fo = tbl.io.new_output(file_path)
+    with fo.create(overwrite=True) as fos:
+        with pq.ParquetWriter(fos, schema=mismatched_schema) as writer:
+            writer.write_table(ARROW_TABLE_WITH_IDS)
+
+    # Adding files with mismatched field IDs should fail
+    with pytest.raises(ValueError, match="Field IDs in Parquet file do not match table schema"):
+        tbl.add_files(file_paths=[file_path])
+
+
+@pytest.mark.integration
+def test_add_files_with_mismatched_nested_field_ids(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    """Test that files with mismatched nested (struct) field IDs are rejected."""
+    identifier = f"default.nested_mismatched_field_ids_v{format_version}"
+
+    # Create a table with a nested struct field
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    nested_schema = Schema(
+        NestedField(1, "id", IntegerType(), required=False),
+        NestedField(
+            2,
+            "user",
+            StructType(
+                NestedField(3, "name", StringType(), required=False),
+                NestedField(4, "age", IntegerType(), required=False),
+            ),
+            required=False,
+        ),
+        schema_id=0,
+    )
+
+    tbl = session_catalog.create_table(
+        identifier=identifier,
+        schema=nested_schema,
+        properties={"format-version": str(format_version)},
+    )
+
+    # Create PyArrow schema with MISMATCHED nested field IDs
+    # The table expects: id=1, user=2, user.name=3, user.age=4
+    # This file has: id=1, user=2, user.name=99, user.age=100 (wrong nested IDs)
+    pa_schema_mismatched = pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=True, metadata={b"PARQUET:field_id": b"1"}),
+            pa.field(
+                "user",
+                pa.struct(
+                    [
+                        pa.field("name", pa.string(), nullable=True, metadata={b"PARQUET:field_id": b"99"}),  # Wrong!
+                        pa.field("age", pa.int32(), nullable=True, metadata={b"PARQUET:field_id": b"100"}),  # Wrong!
+                    ]
+                ),
+                nullable=True,
+                metadata={b"PARQUET:field_id": b"2"},
+            ),
+        ]
+    )
+
+    pa_table = pa.table(
+        {
+            "id": pa.array([1, 2, 3], type=pa.int32()),
+            "user": pa.array(
+                [
+                    {"name": "Alice", "age": 30},
+                    {"name": "Bob", "age": 25},
+                    {"name": "Charlie", "age": 35},
+                ],
+                type=pa_schema_mismatched.field("user").type,
+            ),
+        },
+        schema=pa_schema_mismatched,
+    )
+
+    file_path = f"s3://warehouse/default/nested_mismatched_field_ids/v{format_version}/test.parquet"
+    fo = tbl.io.new_output(file_path)
+    with fo.create(overwrite=True) as fos:
+        with pq.ParquetWriter(fos, schema=pa_schema_mismatched) as writer:
+            writer.write_table(pa_table)
+
+    # Adding files with mismatched nested field IDs should fail
+    with pytest.raises(ValueError, match="Field IDs in Parquet file do not match table schema"):
+        tbl.add_files(file_paths=[file_path])
 
 
 @pytest.mark.integration

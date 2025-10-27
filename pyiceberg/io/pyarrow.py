@@ -2610,7 +2610,10 @@ def _check_pyarrow_schema_compatible(
     Raises:
         ValueError: If the schemas are not compatible.
     """
+    # Check if the PyArrow schema has explicit field IDs
+    has_field_ids = visit_pyarrow(provided_schema, _HasIds())
     name_mapping = requested_schema.name_mapping
+
     try:
         provided_schema = pyarrow_to_schema(
             provided_schema,
@@ -2624,8 +2627,41 @@ def _check_pyarrow_schema_compatible(
         )
         additional_names = set(provided_schema._name_to_id.keys()) - set(requested_schema._name_to_id.keys())
         raise ValueError(
-            f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. Update the schema first (hint, use union_by_name)."
+            f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. "
+            "Update the schema first (hint, use union_by_name)."
         ) from e
+
+    # If the file has explicit field IDs, validate they match the table schema exactly
+    if has_field_ids:
+        # Build mappings for both schemas (including nested fields)
+        requested_id_to_name = requested_schema._lazy_id_to_name
+        provided_id_to_name = provided_schema._lazy_id_to_name
+
+        # Also build reverse mapping: path -> field_id for the table
+        requested_name_to_id = {path: field_id for field_id, path in requested_id_to_name.items()}
+
+        # Check that all field paths in the file have matching field IDs in the table
+        mismatched_fields = []
+        for field_id, provided_path in provided_id_to_name.items():
+            # Check if this path exists in the table schema
+            expected_field_id = requested_name_to_id.get(provided_path)
+            if expected_field_id is None:
+                # The file has a field path that doesn't exist in the table at all
+                # This will be caught by _check_schema_compatible later, so skip it here
+                continue
+            elif expected_field_id != field_id:
+                # Same path, different field ID - this is the critical error
+                mismatched_fields.append(
+                    f"'{provided_path}': table expects field_id={expected_field_id}, file has field_id={field_id}"
+                )
+
+        if mismatched_fields:
+            raise ValueError(
+                "Field IDs in Parquet file do not match table schema. When field IDs are explicitly set in the "
+                "Parquet metadata, they must match the Iceberg table schema.\nMismatched fields:\n"
+                + "\n".join(f"  - {field}" for field in mismatched_fields)
+            )
+
     _check_schema_compatible(requested_schema, provided_schema)
 
 
