@@ -2641,10 +2641,6 @@ def parquet_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_pa
         parquet_metadata = pq.read_metadata(input_stream)
 
     arrow_schema = parquet_metadata.schema.to_arrow_schema()
-    if visit_pyarrow(arrow_schema, _HasIds()):
-        raise NotImplementedError(
-            f"Cannot add file {file_path} because it has field IDs. `add_files` only supports addition of files without field_ids"
-        )
 
     schema = table_metadata.schema()
     _check_pyarrow_schema_compatible(schema, arrow_schema, format_version=table_metadata.format_version)
