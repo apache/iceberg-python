@@ -253,7 +253,7 @@ class Reference(UnboundTerm[Any]):
 class And(IcebergBaseModel, BooleanExpression):
     """AND operation expression - logical conjunction."""
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=False)
 
     type: TypingLiteral["and"] = Field(default="and", alias="type")
     left: BooleanExpression
