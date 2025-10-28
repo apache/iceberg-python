@@ -96,6 +96,8 @@ DYNAMODB_SESSION_TOKEN = "dynamodb.session-token"
 
 
 class DynamoDbCatalog(MetastoreCatalog):
+    _support_namespaces: bool = True
+
     def __init__(self, name: str, client: Optional["DynamoDBClient"] = None, **properties: str):
         """Dynamodb catalog.
 
@@ -445,16 +447,23 @@ class DynamoDbCatalog(MetastoreCatalog):
         return table_identifiers
 
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
-        """List top-level namespaces from the catalog.
-
-        We do not support hierarchical namespace.
+        """List namespaces from the catalog.
 
         Returns:
             List[Identifier]: a List of namespace identifiers.
         """
-        # Hierarchical namespace is not supported. Return an empty list
+        level = self.namespace_level(namespace)
+        conditions = f"{DYNAMODB_COL_IDENTIFIER} = :identifier"
+        expression_attribute_values = {
+            ":identifier": {
+                "S": DYNAMODB_NAMESPACE,
+            }
+        }
         if namespace:
-            return []
+            conditions += f" AND begins_with({DYNAMODB_COL_NAMESPACE},:ns)"
+            expression_attribute_values[":ns"] = {
+                "S": self.namespace_to_string(namespace) + ".",
+            }
 
         paginator = self.dynamodb.get_paginator("query")
 
@@ -462,12 +471,8 @@ class DynamoDbCatalog(MetastoreCatalog):
             page_iterator = paginator.paginate(
                 TableName=self.dynamodb_table_name,
                 ConsistentRead=True,
-                KeyConditionExpression=f"{DYNAMODB_COL_IDENTIFIER} = :identifier",
-                ExpressionAttributeValues={
-                    ":identifier": {
-                        "S": DYNAMODB_NAMESPACE,
-                    }
-                },
+                KeyConditionExpression=conditions,
+                ExpressionAttributeValues=expression_attribute_values,
             )
         except (
             self.dynamodb.exceptions.ProvisionedThroughputExceededException,
@@ -477,14 +482,14 @@ class DynamoDbCatalog(MetastoreCatalog):
         ) as e:
             raise GenericDynamoDbError(e.message) from e
 
-        database_identifiers = []
+        database_identifiers = set()
         for page in page_iterator:
             for item in page["Items"]:
                 _dict = _convert_dynamo_item_to_regular_dict(item)
                 namespace_col = _dict[DYNAMODB_COL_NAMESPACE]
-                database_identifiers.append(self.identifier_to_tuple(namespace_col))
+                database_identifiers.add(self.identifier_to_tuple(namespace_col)[:level])
 
-        return database_identifiers
+        return list(database_identifiers)
 
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
         """

@@ -354,6 +354,7 @@ class Catalog(ABC):
 
     name: str
     properties: Properties
+    _support_namespaces: bool = False
 
     def __init__(self, name: str, **properties: str):
         self.name = name
@@ -732,25 +733,44 @@ class Catalog(ABC):
         return ".".join(segment.strip() for segment in tuple_identifier)
 
     @staticmethod
+    def namespace_level(identifier: Union[str, Identifier]) -> int:
+        """Get the level of a namespace identifier.
+
+        Args:
+            identifier (Union[str, Identifier]): a namespace identifier.
+
+        Returns:
+            int: The level of the namespace.
+        """
+        if not identifier:
+            return 1
+        tuple_identifier = Catalog.identifier_to_tuple(identifier)
+        return len(tuple_identifier) + 1
+
+    @classmethod
     def identifier_to_database(
-        identifier: Union[str, Identifier], err: Union[Type[ValueError], Type[NoSuchNamespaceError]] = ValueError
+        cls, identifier: Union[str, Identifier], err: Union[Type[ValueError], Type[NoSuchNamespaceError]] = ValueError
     ) -> str:
         tuple_identifier = Catalog.identifier_to_tuple(identifier)
-        if len(tuple_identifier) != 1:
-            raise err(f"Invalid database, hierarchical namespaces are not supported: {identifier}")
 
-        return tuple_identifier[0]
+        if not cls._support_namespaces:
+            if len(tuple_identifier) != 1:
+                raise err(f"Invalid database, hierarchical namespaces are not supported: {identifier}")
+            else:
+                return tuple_identifier[0]
 
-    @staticmethod
+        return ".".join(tuple_identifier)
+
+    @classmethod
     def identifier_to_database_and_table(
+        cls,
         identifier: Union[str, Identifier],
         err: Union[Type[ValueError], Type[NoSuchTableError], Type[NoSuchNamespaceError]] = ValueError,
     ) -> Tuple[str, str]:
         tuple_identifier = Catalog.identifier_to_tuple(identifier)
-        if len(tuple_identifier) != 2:
+        if not cls._support_namespaces and len(tuple_identifier) != 2:
             raise err(f"Invalid path, hierarchical namespaces are not supported: {identifier}")
-
-        return tuple_identifier[0], tuple_identifier[1]
+        return ".".join(tuple_identifier[:-1]), tuple_identifier[-1]
 
     def _load_file_io(self, properties: Properties = EMPTY_DICT, location: Optional[str] = None) -> FileIO:
         return load_file_io({**self.properties, **properties}, location)
