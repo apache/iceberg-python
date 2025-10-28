@@ -2790,11 +2790,9 @@ def _dataframe_to_data_files(
         yield from write_file(
             io=io,
             table_metadata=table_metadata,
-            tasks=iter(
-                [
-                    WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=task_schema)
-                    for batches in bin_pack_arrow_table(df, target_file_size)
-                ]
+            tasks=(
+                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=task_schema)
+                for batches in bin_pack_arrow_table(df, target_file_size)
             ),
         )
     else:
@@ -2802,18 +2800,16 @@ def _dataframe_to_data_files(
         yield from write_file(
             io=io,
             table_metadata=table_metadata,
-            tasks=iter(
-                [
-                    WriteTask(
-                        write_uuid=write_uuid,
-                        task_id=next(counter),
-                        record_batches=batches,
-                        partition_key=partition.partition_key,
-                        schema=task_schema,
-                    )
-                    for partition in partitions
-                    for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
-                ]
+            tasks=(
+                WriteTask(
+                    write_uuid=write_uuid,
+                    task_id=next(counter),
+                    record_batches=batches,
+                    partition_key=partition.partition_key,
+                    schema=task_schema,
+                )
+                for partition in partitions
+                for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
             ),
         )
 
@@ -2824,7 +2820,7 @@ class _TablePartition:
     arrow_table_partition: pa.Table
 
 
-def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.Table) -> List[_TablePartition]:
+def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.Table) -> Iterable[_TablePartition]:
     """Based on the iceberg table partition spec, filter the arrow table into partitions with their keys.
 
     Example:
@@ -2852,7 +2848,6 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
 
     unique_partition_fields = arrow_table.select(partition_fields).group_by(partition_fields).aggregate([])
 
-    table_partitions = []
     # TODO: As a next step, we could also play around with yielding instead of materializing the full list
     for unique_partition in unique_partition_fields.to_pylist():
         partition_key = PartitionKey(
@@ -2880,11 +2875,10 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
 
         # The combine_chunks seems to be counter-intuitive to do, but it actually returns
         # fresh buffers that don't interfere with each other when it is written out to file
-        table_partitions.append(
-            _TablePartition(partition_key=partition_key, arrow_table_partition=filtered_table.combine_chunks())
+        yield _TablePartition(
+            partition_key=partition_key,
+            arrow_table_partition=filtered_table.combine_chunks(),
         )
-
-    return table_partitions
 
 
 def _get_field_from_arrow_table(arrow_table: pa.Table, field_path: str) -> pa.Array:
