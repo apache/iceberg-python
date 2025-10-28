@@ -539,6 +539,18 @@ catalog:
     py-io-impl: pyiceberg.io.fsspec.FsspecFileIO
 ```
 
+##### Apache Gravitino
+
+```yaml
+catalog:
+  gravitino_catalog:
+    type: rest
+    uri: <gravitino-catalog-uri>
+    header.X-Iceberg-Access-Delegation: vended-credentials
+    auth:
+      type: noop
+```
+
 ### SQL Catalog
 
 The SQL catalog requires a database for its backend. PyIceberg supports PostgreSQL and SQLite through psycopg2. The database connection has to be configured using the `uri` property. The init_catalog_tables is optional and defaults to True. If it is set to False, the catalog tables will not be created when the SQLCatalog is initialized. See SQLAlchemy's [documentation for URL format](https://docs.sqlalchemy.org/en/20/core/engines.html#backend-specific-urls):

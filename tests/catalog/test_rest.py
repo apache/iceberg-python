@@ -1353,6 +1353,11 @@ def test_rename_table_200(rest_mock: Mocker, example_table_metadata_with_snapsho
         status_code=200,
         request_headers=TEST_HEADERS,
     )
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/pdames",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
     from_identifier = ("pdames", "source")
     to_identifier = ("pdames", "destination")
@@ -1396,6 +1401,11 @@ def test_rename_table_from_self_identifier_200(
         status_code=200,
         request_headers=TEST_HEADERS,
     )
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/pdames",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
     actual = catalog.rename_table(table.name(), to_identifier)
     expected = Table(
         identifier=("pdames", "destination"),
@@ -1406,6 +1416,48 @@ def test_rename_table_from_self_identifier_200(
     )
     assert actual.metadata.model_dump() == expected.metadata.model_dump()
     assert actual == expected
+
+
+def test_rename_table_source_namespace_does_not_exist(rest_mock: Mocker) -> None:
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    from_identifier = ("invalid", "source")
+    to_identifier = ("pdames", "destination")
+
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/invalid",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/pdames",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(NoSuchNamespaceError) as e:
+        catalog.rename_table(from_identifier, to_identifier)
+    assert "Source namespace does not exist" in str(e.value)
+
+
+def test_rename_table_destination_namespace_does_not_exist(rest_mock: Mocker) -> None:
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    from_identifier = ("pdames", "source")
+    to_identifier = ("invalid", "destination")
+
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/pdames",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/invalid",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(NoSuchNamespaceError) as e:
+        catalog.rename_table(from_identifier, to_identifier)
+    assert "Destination namespace does not exist" in str(e.value)
 
 
 def test_delete_table_404(rest_mock: Mocker) -> None:
@@ -1845,6 +1897,28 @@ def test_rest_catalog_with_google_credentials_path(
     assert len(history) == 1
     actual_headers = history[0].headers
     assert actual_headers["Authorization"] == expected_auth_header
+
+
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+)
+def test_auth_header(rest_mock: Mocker) -> None:
+    mock_request = rest_mock.post(
+        f"{TEST_URI}v1/oauth/tokens",
+        json={
+            "access_token": TEST_TOKEN,
+            "token_type": "Bearer",
+            "expires_in": 86400,
+            "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "scope": "openid offline",
+            "refresh_token": "refresh_token",
+        },
+        status_code=200,
+        request_headers={**OAUTH_TEST_HEADERS, "Custom": "Value"},
+    )
+
+    RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, audience="", resource="", **{"header.Custom": "Value"})
+    assert mock_request.last_request.text == "grant_type=client_credentials&client_id=client&client_secret=secret&scope=catalog"
 
 
 class TestRestCatalogClose:

@@ -64,7 +64,7 @@ from pyiceberg.types import (
     StringType,
     UUIDType,
 )
-from utils import _create_table
+from utils import TABLE_SCHEMA, _create_table
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -2490,3 +2490,41 @@ def test_stage_only_overwrite_files(
     assert operations == ["append", "append", "delete", "append", "append"]
 
     assert parent_snapshot_id == [None, first_snapshot, second_snapshot, second_snapshot, second_snapshot]
+
+
+@pytest.mark.skip("V3 writer support is not enabled.")
+@pytest.mark.integration
+def test_v3_write_and_read_row_lineage(spark: SparkSession, session_catalog: Catalog) -> None:
+    """Test writing to a v3 table and reading with Spark."""
+    identifier = "default.test_v3_write_and_read"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "3"})
+    assert tbl.format_version == 3, f"Expected v3, got: v{tbl.format_version}"
+    initial_next_row_id = tbl.metadata.next_row_id or 0
+
+    test_data = pa.Table.from_pydict(
+        {
+            "bool": [True, False, True],
+            "string": ["a", "b", "c"],
+            "string_long": ["a_long", "b_long", "c_long"],
+            "int": [1, 2, 3],
+            "long": [11, 22, 33],
+            "float": [1.1, 2.2, 3.3],
+            "double": [1.11, 2.22, 3.33],
+            "timestamp": [datetime(2023, 1, 1, 1, 1, 1), datetime(2023, 2, 2, 2, 2, 2), datetime(2023, 3, 3, 3, 3, 3)],
+            "timestamptz": [
+                datetime(2023, 1, 1, 1, 1, 1, tzinfo=pytz.utc),
+                datetime(2023, 2, 2, 2, 2, 2, tzinfo=pytz.utc),
+                datetime(2023, 3, 3, 3, 3, 3, tzinfo=pytz.utc),
+            ],
+            "date": [date(2023, 1, 1), date(2023, 2, 2), date(2023, 3, 3)],
+            "binary": [b"\x01", b"\x02", b"\x03"],
+            "fixed": [b"1234567890123456", b"1234567890123456", b"1234567890123456"],
+        },
+        schema=TABLE_SCHEMA.as_arrow(),
+    )
+
+    tbl.append(test_data)
+
+    assert tbl.metadata.next_row_id == initial_next_row_id + len(test_data), (
+        "Expected next_row_id to be incremented by the number of added rows"
+    )

@@ -30,6 +30,7 @@ This guide outlines the process for releasing PyIceberg in accordance with the [
 ## Requirements
 
 * A GPG key must be registered and published in the [Apache Iceberg KEYS file](https://downloads.apache.org/iceberg/KEYS). Follow [the instructions for setting up a GPG key and uploading it to the KEYS file](#set-up-gpg-key-and-upload-to-apache-iceberg-keys-file).
+    * Permission to update the `KEYS` artifact in the [Apache release distribution](https://dist.apache.org/repos/dist/release/iceberg/) (requires Iceberg PMC privileges).
 * SVN Access
     * Permission to upload artifacts to the [Apache development distribution](https://dist.apache.org/repos/dist/dev/iceberg/) (requires Apache Committer access).
     * Permission to upload artifacts to the [Apache release distribution](https://dist.apache.org/repos/dist/release/iceberg/) (requires Apache PMC access).
@@ -389,10 +390,6 @@ Run the [`Release Docs` Github Action](https://github.com/apache/iceberg-python/
 
 Make sure to create a PR to update the [GitHub issues template](https://github.com/apache/iceberg-python/blob/main/.github/ISSUE_TEMPLATE/iceberg_bug_report.yml) with the latest version.
 
-### Update the integration tests
-
-Ensure to update the `PYICEBERG_VERSION` in the [Dockerfile](https://github.com/apache/iceberg-python/blob/main/dev/Dockerfile).
-
 ## Misc
 
 ### Set up GPG key and Upload to Apache Iceberg KEYS file
@@ -409,5 +406,12 @@ cd icebergsvn
 echo "" >> KEYS # append a newline
 gpg --list-sigs <YOUR KEY ID HERE> >> KEYS # append signatures
 gpg --armor --export <YOUR KEY ID HERE> >> KEYS # append public key block
-svn commit -m "add key for <YOUR NAME HERE>"
+svn commit -m "add key for <YOUR NAME HERE>" # this requires Iceberg PMC privileges
 ```
+
+<!-- prettier-ignore-start -->
+
+!!! note
+    Updating the `KEYS` artifact in the `release/` distribution requires Iceberg PMC privileges. Please work with a PMC member to update the file.
+
+<!-- prettier-ignore-end -->

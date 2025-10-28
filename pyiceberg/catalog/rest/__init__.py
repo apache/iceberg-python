@@ -238,6 +238,9 @@ class RestCatalog(Catalog):
         """Create a request session with provided catalog configuration."""
         session = Session()
 
+        # Set HTTP headers
+        self._config_headers(session)
+
         # Sets the client side and server side SSL cert verification, if provided as properties.
         if ssl_config := self.properties.get(SSL):
             if ssl_ca_bundle := ssl_config.get(CA_BUNDLE):
@@ -264,9 +267,6 @@ class RestCatalog(Catalog):
             session.auth = AuthManagerAdapter(AuthManagerFactory.create(auth_impl or auth_type, auth_type_config))
         else:
             session.auth = AuthManagerAdapter(self._create_legacy_oauth2_auth_manager(session))
-
-        # Set HTTP headers
-        self._config_headers(session)
 
         # Configure SigV4 Request Signing
         if property_as_bool(self.properties, SIGV4, False):
@@ -654,6 +654,16 @@ class RestCatalog(Catalog):
             "source": self._split_identifier_for_json(from_identifier),
             "destination": self._split_identifier_for_json(to_identifier),
         }
+
+        # Ensure that namespaces exist on source and destination.
+        source_namespace = self._split_identifier_for_json(from_identifier)["namespace"]
+        if not self.namespace_exists(source_namespace):
+            raise NoSuchNamespaceError(f"Source namespace does not exist: {source_namespace}")
+
+        destination_namespace = self._split_identifier_for_json(to_identifier)["namespace"]
+        if not self.namespace_exists(destination_namespace):
+            raise NoSuchNamespaceError(f"Destination namespace does not exist: {destination_namespace}")
+
         response = self._session.post(self.url(Endpoints.rename_table), json=payload)
         try:
             response.raise_for_status()
