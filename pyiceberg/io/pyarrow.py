@@ -2848,7 +2848,6 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
 
     unique_partition_fields = arrow_table.select(partition_fields).group_by(partition_fields).aggregate([])
 
-    # TODO: As a next step, we could also play around with yielding instead of materializing the full list
     for unique_partition in unique_partition_fields.to_pylist():
         partition_key = PartitionKey(
             field_values=[
