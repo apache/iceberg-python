@@ -18,7 +18,7 @@
 
 
 from pathlib import PosixPath
-from typing import Union
+from typing import Generator, Union
 
 import pyarrow as pa
 import pytest
@@ -52,8 +52,10 @@ from pyiceberg.types import IntegerType, LongType, NestedField, StringType
 
 
 @pytest.fixture
-def catalog(tmp_path: PosixPath) -> InMemoryCatalog:
-    return InMemoryCatalog("test.in_memory.catalog", **{WAREHOUSE: tmp_path.absolute().as_posix(), "test.key": "test.value"})
+def catalog(tmp_path: PosixPath) -> Generator[InMemoryCatalog, None, None]:
+    catalog = InMemoryCatalog("test.in_memory.catalog", **{WAREHOUSE: tmp_path.absolute().as_posix(), "test.key": "test.value"})
+    yield catalog
+    catalog.close()
 
 
 TEST_TABLE_IDENTIFIER = ("com", "organization", "department", "my_table")
