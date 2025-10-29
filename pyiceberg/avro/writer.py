@@ -162,6 +162,18 @@ class BinaryWriter(Writer):
 
 
 @dataclass(frozen=True)
+class GeographyWriter(Writer):
+    def write(self, encoder: BinaryEncoder, val: Any) -> None:
+        encoder.write_bytes(val)
+
+
+@dataclass(frozen=True)
+class GeometryWriter(Writer):
+    def write(self, encoder: BinaryEncoder, val: Any) -> None:
+        encoder.write_bytes(val)
+
+
+@dataclass(frozen=True)
 class DecimalWriter(Writer):
     precision: int = dataclassfield()
     scale: int = dataclassfield()

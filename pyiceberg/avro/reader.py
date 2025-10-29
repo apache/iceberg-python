@@ -260,6 +260,16 @@ class BinaryReader(Reader):
         decoder.skip_bytes()
 
 
+class GeographyReader(BinaryReader):
+    """Reads a geography from the stream.
+    """
+
+
+class GeometryReader(BinaryReader):
+    """Reads a geometry from the stream.
+    """
+
+
 @dataclass(frozen=True, init=False)
 class DecimalReader(Reader):
     """Reads a value as a decimal.

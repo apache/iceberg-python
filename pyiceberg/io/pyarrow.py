@@ -164,6 +164,8 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IcebergType,
     IntegerType,
     ListType,
@@ -800,6 +802,12 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.null()
 
     def visit_binary(self, _: BinaryType) -> pa.DataType:
+        return pa.large_binary()
+
+    def visit_geography(self, _: GeographyType) -> pa.DataType:
+        return pa.large_binary()
+
+    def visit_geometry(self, _: GeometryType) -> pa.DataType:
         return pa.large_binary()
 
 
@@ -2062,6 +2070,12 @@ class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
         return "FIXED_LEN_BYTE_ARRAY"
 
     def visit_binary(self, binary_type: BinaryType) -> str:
+        return "BYTE_ARRAY"
+
+    def visit_geography(self, geography_type: GeographyType) -> str:
+        return "BYTE_ARRAY"
+
+    def visit_geometry(self, geometry_type: GeometryType) -> str:
         return "BYTE_ARRAY"
 
     def visit_unknown(self, unknown_type: UnknownType) -> str:

@@ -100,6 +100,8 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IntegerType,
     LongType,
     NestedField,
@@ -168,6 +170,16 @@ from pyiceberg.utils.datetime import (
             TimestamptzNanoType(),
             -1207196810,
         ),
+        (
+            b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\xf0?\x00\x00\x00\x00\x00\x00\xf0?", # POINT (1 1) in WKB
+            GeographyType(),
+            -1769831280
+        ),
+        (
+            b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\xf0?\x00\x00\x00\x00\x00\x00\xf0?", # POINT (1 1) in WKB
+            GeometryType(),
+            -1769831280
+        )
     ],
 )
 def test_bucket_hash_values(test_input: Any, test_type: PrimitiveType, expected: Any) -> None:

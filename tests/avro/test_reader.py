@@ -31,6 +31,8 @@ from pyiceberg.avro.reader import (
     DoubleReader,
     FixedReader,
     FloatReader,
+    GeographyReader,
+    GeometryReader,
     IntegerReader,
     StringReader,
     StructReader,
@@ -55,6 +57,8 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IntegerType,
     LongType,
     NestedField,
@@ -335,6 +339,14 @@ def test_string_reader() -> None:
 
 def test_binary_reader() -> None:
     assert construct_reader(BinaryType()) == BinaryReader()
+
+
+def test_geography_reader() -> None:
+    assert construct_reader(GeographyType()) == GeographyReader()
+
+
+def test_geometry_reader() -> None:
+    assert construct_reader(GeometryType()) == GeometryReader()
 
 
 def test_unknown_type() -> None:

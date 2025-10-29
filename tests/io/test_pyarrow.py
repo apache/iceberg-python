@@ -98,6 +98,8 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IntegerType,
     ListType,
     LongType,
@@ -593,6 +595,16 @@ def test_string_type_to_pyarrow() -> None:
 
 def test_binary_type_to_pyarrow() -> None:
     iceberg_type = BinaryType()
+    assert visit(iceberg_type, _ConvertToArrowSchema()) == pa.large_binary()
+
+
+def test_geography_type_to_pyarrow() -> None:
+    iceberg_type = GeographyType()
+    assert visit(iceberg_type, _ConvertToArrowSchema()) == pa.large_binary()
+
+
+def test_geometry_type_to_pyarrow() -> None:
+    iceberg_type = GeometryType()
     assert visit(iceberg_type, _ConvertToArrowSchema()) == pa.large_binary()
 
 
