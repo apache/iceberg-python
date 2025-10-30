@@ -16,7 +16,7 @@
 #  under the License.
 from typing import (
     TYPE_CHECKING,
-    List,
+    Iterator,
     Optional,
     Set,
     Tuple,
@@ -106,10 +106,10 @@ class NoopCatalog(Catalog):
     def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
         raise NotImplementedError
 
-    def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def list_tables(self, namespace: Union[str, Identifier]) -> Iterator[Identifier]:
         raise NotImplementedError
 
-    def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
+    def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> Iterator[Identifier]:
         raise NotImplementedError
 
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
@@ -120,7 +120,7 @@ class NoopCatalog(Catalog):
     ) -> PropertiesUpdateSummary:
         raise NotImplementedError
 
-    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def list_views(self, namespace: Union[str, Identifier]) -> Iterator[Identifier]:
         raise NotImplementedError
 
     def view_exists(self, identifier: Union[str, Identifier]) -> bool:
