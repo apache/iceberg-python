@@ -1,0 +1,68 @@
+# Example PyIceberg Configuration for REST Server
+#
+# Copy this file to ~/.pyiceberg.yaml or ./.pyiceberg.yaml
+# Set ICEBERG_CATALOG_NAME environment variable to select which catalog to use
+
+catalog:
+  # ========================================================================
+  # DynamoDB Catalog with LocalStack (for local development)
+  # ========================================================================
+  dynamodb-local:
+    type: dynamodb
+    table-name: iceberg
+    dynamodb.region: us-east-1
+    dynamodb.endpoint: http://localstack:4566
+    dynamodb.access-key-id: test
+    dynamodb.secret-access-key: test
+    s3.region: us-east-1
+    s3.endpoint: http://localstack:4566
+    s3.access-key-id: test
+    s3.secret-access-key: test
+    warehouse: s3://warehouse/
+
+  # ========================================================================
+  # DynamoDB Catalog (production)
+  # ========================================================================
+  dynamodb-prod:
+    type: dynamodb
+    table-name: iceberg-production
+    dynamodb.region: us-east-1
+    s3.region: us-east-1
+    warehouse: s3://my-production-warehouse/
+
+  # ========================================================================
+  # In-Memory Catalog (for testing, no persistence)
+  # ========================================================================
+  test:
+    type: in-memory
+    warehouse: memory://test/
+
+  # ========================================================================
+  # PostgreSQL Catalog (for local development)
+  # ========================================================================
+  postgres:
+    type: sql
+    uri: postgresql://localhost:5432/iceberg
+    warehouse: s3://warehouse/
+    # Optional S3 configuration
+    s3.endpoint: http://localhost:9000
+    s3.access-key-id: admin
+    s3.secret-access-key: password
+
+  # ========================================================================
+  # AWS Glue Catalog (AWS native)
+  # ========================================================================
+  glue-prod:
+    type: glue
+    warehouse: s3://my-glue-warehouse/
+    # AWS credentials from environment or IAM role
+
+  # ========================================================================
+  # Hive Metastore Catalog (for on-premises)
+  # ========================================================================
+  hive-prod:
+    type: hive
+    uri: thrift://localhost:9083
+    warehouse: hdfs://namenode:9000/warehouse
+    # Or with S3
+    # warehouse: s3://my-hive-warehouse/

@@ -14,11 +14,18 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+import logging
+import threading
 import uuid
+from collections import defaultdict
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from enum import Enum
 from time import time
 from typing import (
     TYPE_CHECKING,
     Any,
+    Callable,
     Dict,
     List,
     Optional,
@@ -28,6 +35,13 @@ from typing import (
 )
 
 import boto3
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from pyiceberg.catalog import (
     BOTOCORE_SESSION,
@@ -39,6 +53,7 @@ from pyiceberg.catalog import (
     PropertiesUpdateSummary,
 )
 from pyiceberg.exceptions import (
+    CommitFailedException,
     ConditionalCheckFailedException,
     GenericDynamoDbError,
     NamespaceAlreadyExistsError,
@@ -93,6 +108,149 @@ DYNAMODB_REGION = "dynamodb.region"
 DYNAMODB_ACCESS_KEY_ID = "dynamodb.access-key-id"
 DYNAMODB_SECRET_ACCESS_KEY = "dynamodb.secret-access-key"
 DYNAMODB_SESSION_TOKEN = "dynamodb.session-token"
+DYNAMODB_ENDPOINT_URL = "dynamodb.endpoint"
+
+# Enhancement configuration properties
+DYNAMODB_CACHE_ENABLED = "dynamodb.cache.enabled"
+DYNAMODB_CACHE_TTL_SECONDS = "dynamodb.cache.ttl-seconds"
+DYNAMODB_MAX_RETRIES = "dynamodb.max-retries"
+DYNAMODB_RETRY_MULTIPLIER = "dynamodb.retry-multiplier"
+DYNAMODB_RETRY_MIN_WAIT_MS = "dynamodb.retry-min-wait-ms"
+DYNAMODB_RETRY_MAX_WAIT_MS = "dynamodb.retry-max-wait-ms"
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Enhancement 1: Callback Hooks & Event System
+# ============================================================================
+
+
+class CatalogEvent(Enum):
+    """Catalog operation events for hook callbacks."""
+
+    PRE_CREATE_TABLE = "pre_create_table"
+    POST_CREATE_TABLE = "post_create_table"
+    PRE_UPDATE_TABLE = "pre_update_table"
+    POST_UPDATE_TABLE = "post_update_table"
+    PRE_DROP_TABLE = "pre_drop_table"
+    POST_DROP_TABLE = "post_drop_table"
+    PRE_COMMIT = "pre_commit"
+    POST_COMMIT = "post_commit"
+    PRE_REGISTER_TABLE = "pre_register_table"
+    POST_REGISTER_TABLE = "post_register_table"
+    ON_ERROR = "on_error"
+    ON_CONCURRENT_CONFLICT = "on_concurrent_conflict"
+
+
+@dataclass
+class CatalogEventContext:
+    """Context passed to event callbacks."""
+
+    event: CatalogEvent
+    catalog_name: str
+    identifier: str | Identifier | None = None
+    metadata_location: str | None = None
+    error: Exception | None = None
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    extra: Dict[str, Any] = field(default_factory=dict)
+
+
+# ============================================================================
+# Enhancement 2: Metadata Caching Layer
+# ============================================================================
+
+
+class CatalogCache:
+    """Thread-safe cache for catalog metadata with TTL expiration."""
+
+    def __init__(self, ttl_seconds: int = 300) -> None:
+        """
+        Initialize the cache.
+
+        Args:
+            ttl_seconds: Time-to-live for cached entries in seconds.
+        """
+        self.ttl = timedelta(seconds=ttl_seconds)
+        self._cache: Dict[str, Tuple[Any, datetime]] = {}
+        self._lock = threading.Lock()
+
+    def get(self, key: str) -> Any | None:
+        """
+        Get a value from cache if not expired.
+
+        Args:
+            key: Cache key.
+
+        Returns:
+            Cached value if found and not expired, None otherwise.
+        """
+        with self._lock:
+            if key in self._cache:
+                value, expiry = self._cache[key]
+                if datetime.now(timezone.utc) < expiry:
+                    return value
+                else:
+                    del self._cache[key]
+        return None
+
+    def set(self, key: str, value: Any) -> None:
+        """
+        Store a value in cache with TTL.
+
+        Args:
+            key: Cache key.
+            value: Value to cache.
+        """
+        with self._lock:
+            self._cache[key] = (value, datetime.now(timezone.utc) + self.ttl)
+
+    def invalidate(self, key: str) -> None:
+        """
+        Remove a specific key from cache.
+
+        Args:
+            key: Cache key to invalidate.
+        """
+        with self._lock:
+            self._cache.pop(key, None)
+
+    def clear(self) -> None:
+        """Clear all cached entries."""
+        with self._lock:
+            self._cache.clear()
+
+    def size(self) -> int:
+        """Get the current size of the cache."""
+        with self._lock:
+            return len(self._cache)
+
+
+# ============================================================================
+# Enhancement 3: Retry Strategy with Exponential Backoff
+# ============================================================================
+
+
+def _get_retry_decorator(max_attempts: int, multiplier: float, min_wait: float, max_wait: float) -> Any:
+    """
+    Create a retry decorator with exponential backoff.
+
+    Args:
+        max_attempts: Maximum number of retry attempts.
+        multiplier: Exponential backoff multiplier.
+        min_wait: Minimum wait time in seconds.
+        max_wait: Maximum wait time in seconds.
+
+    Returns:
+        Configured retry decorator.
+    """
+    return retry(
+        retry=retry_if_exception_type(Exception),  # Will be filtered in the method
+        stop=stop_after_attempt(max_attempts),
+        wait=wait_exponential(multiplier=multiplier, min=min_wait, max=max_wait),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        reraise=True,
+    )
 
 
 class DynamoDbCatalog(MetastoreCatalog):
@@ -116,9 +274,26 @@ class DynamoDbCatalog(MetastoreCatalog):
                 aws_secret_access_key=get_first_property_value(properties, DYNAMODB_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
                 aws_session_token=get_first_property_value(properties, DYNAMODB_SESSION_TOKEN, AWS_SESSION_TOKEN),
             )
-            self.dynamodb = session.client(DYNAMODB_CLIENT)
+            # Get endpoint URL if specified (for LocalStack or custom endpoints)
+            endpoint_url = properties.get(DYNAMODB_ENDPOINT_URL)
+            self.dynamodb = session.client(DYNAMODB_CLIENT, endpoint_url=endpoint_url)
 
         self.dynamodb_table_name = self.properties.get(DYNAMODB_TABLE_NAME, DYNAMODB_TABLE_NAME_DEFAULT)
+
+        # Enhancement 1: Initialize event hooks
+        self._event_hooks: Dict[CatalogEvent, List[Callable[[CatalogEventContext], None]]] = defaultdict(list)
+
+        # Enhancement 2: Initialize caching if enabled
+        cache_enabled = properties.get(DYNAMODB_CACHE_ENABLED, "true").lower() == "true"
+        cache_ttl = int(properties.get(DYNAMODB_CACHE_TTL_SECONDS, "300"))
+        self._cache: CatalogCache | None = CatalogCache(ttl_seconds=cache_ttl) if cache_enabled else None
+
+        # Enhancement 3: Configure retry strategy
+        self._max_retries = int(properties.get(DYNAMODB_MAX_RETRIES, "5"))
+        self._retry_multiplier = float(properties.get(DYNAMODB_RETRY_MULTIPLIER, "1.5"))
+        self._retry_min_wait = float(properties.get(DYNAMODB_RETRY_MIN_WAIT_MS, "100")) / 1000  # Convert to seconds
+        self._retry_max_wait = float(properties.get(DYNAMODB_RETRY_MAX_WAIT_MS, "10000")) / 1000  # Convert to seconds
+
         self._ensure_catalog_table_exists_or_create()
 
     def _ensure_catalog_table_exists_or_create(self) -> None:
@@ -153,11 +328,98 @@ class DynamoDbCatalog(MetastoreCatalog):
         else:
             return True
 
+    # ========================================================================
+    # Enhancement Methods: Hooks, Caching, Retry
+    # ========================================================================
+
+    def register_hook(self, event: CatalogEvent, callback: Callable[[CatalogEventContext], None]) -> None:
+        """
+        Register a callback hook for a specific catalog event.
+
+        Args:
+            event: The catalog event to hook into.
+            callback: Function to call when event occurs. Should accept CatalogEventContext.
+
+        Example:
+            def audit_hook(ctx: CatalogEventContext):
+                logger.info(f"Event: {ctx.event}, Table: {ctx.identifier}")
+
+            catalog.register_hook(CatalogEvent.POST_CREATE_TABLE, audit_hook)
+        """
+        self._event_hooks[event].append(callback)
+
+    def _trigger_hooks(self, event: CatalogEvent, context: CatalogEventContext) -> None:
+        """
+        Trigger all registered hooks for an event.
+
+        Args:
+            event: The catalog event that occurred.
+            context: Context information about the event.
+        """
+        for hook in self._event_hooks[event]:
+            try:
+                hook(context)
+            except Exception as e:
+                # Log but don't fail the operation due to hook errors
+                logger.warning(f"Hook failed for {event.value}: {e}", exc_info=True)
+
+    def _get_cache_key(self, identifier: str | Identifier) -> str:
+        """Generate cache key for an identifier."""
+        database_name, table_name = self.identifier_to_database_and_table(identifier)
+        return f"table:{database_name}.{table_name}"
+
+    def _invalidate_cache(self, identifier: str | Identifier) -> None:
+        """Invalidate cache entry for an identifier."""
+        if self._cache:
+            cache_key = self._get_cache_key(identifier)
+            self._cache.invalidate(cache_key)
+
+    def _retry_dynamodb_operation(self, operation: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        """
+        Execute a DynamoDB operation with retry logic.
+
+        Args:
+            operation: The operation to execute.
+            *args: Positional arguments for the operation.
+            **kwargs: Keyword arguments for the operation.
+
+        Returns:
+            Result of the operation.
+        """
+        retry_decorator = _get_retry_decorator(
+            max_attempts=self._max_retries,
+            multiplier=self._retry_multiplier,
+            min_wait=self._retry_min_wait,
+            max_wait=self._retry_max_wait,
+        )
+
+        @retry_decorator
+        def _execute() -> Any:
+            try:
+                return operation(*args, **kwargs)
+            except (
+                self.dynamodb.exceptions.ProvisionedThroughputExceededException,
+                self.dynamodb.exceptions.RequestLimitExceeded,
+                self.dynamodb.exceptions.InternalServerError,
+            ) as e:
+                # Log and re-raise for retry
+                logger.warning(f"DynamoDB transient error: {e}, will retry...")
+                raise
+            except Exception:
+                # Don't retry other exceptions
+                raise
+
+        return _execute()
+
+    # ========================================================================
+    # Catalog Methods (Enhanced with Hooks, Caching, Retry)
+    # ========================================================================
+
     def create_table(
         self,
-        identifier: Union[str, Identifier],
+        identifier: str | Identifier,
         schema: Union[Schema, "pa.Schema"],
-        location: Optional[str] = None,
+        location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
@@ -200,6 +462,18 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         self._ensure_namespace_exists(database_name=database_name)
 
+        # Trigger pre-create hook
+        self._trigger_hooks(
+            CatalogEvent.PRE_CREATE_TABLE,
+            CatalogEventContext(
+                event=CatalogEvent.PRE_CREATE_TABLE,
+                catalog_name=self.name,
+                identifier=identifier,
+                metadata_location=metadata_location,
+                extra={"schema": schema, "location": location},
+            ),
+        )
+
         try:
             self._put_dynamo_item(
                 item=_get_create_table_item(
@@ -208,11 +482,47 @@ class DynamoDbCatalog(MetastoreCatalog):
                 condition_expression=f"attribute_not_exists({DYNAMODB_COL_IDENTIFIER})",
             )
         except ConditionalCheckFailedException as e:
+            # Trigger error hook
+            self._trigger_hooks(
+                CatalogEvent.ON_ERROR,
+                CatalogEventContext(
+                    event=CatalogEvent.ON_ERROR,
+                    catalog_name=self.name,
+                    identifier=identifier,
+                    error=e,
+                ),
+            )
             raise TableAlreadyExistsError(f"Table {database_name}.{table_name} already exists") from e
+        except Exception as e:
+            # Trigger error hook for other exceptions
+            self._trigger_hooks(
+                CatalogEvent.ON_ERROR,
+                CatalogEventContext(
+                    event=CatalogEvent.ON_ERROR,
+                    catalog_name=self.name,
+                    identifier=identifier,
+                    error=e,
+                ),
+            )
+            raise
 
-        return self.load_table(identifier=identifier)
+        table = self.load_table(identifier=identifier)
 
-    def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
+        # Trigger post-create hook
+        self._trigger_hooks(
+            CatalogEvent.POST_CREATE_TABLE,
+            CatalogEventContext(
+                event=CatalogEvent.POST_CREATE_TABLE,
+                catalog_name=self.name,
+                identifier=identifier,
+                metadata_location=metadata_location,
+                extra={"table": table},
+            ),
+        )
+
+        return table
+
+    def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
         """Register a new table using existing metadata.
 
         Args:
@@ -225,7 +535,75 @@ class DynamoDbCatalog(MetastoreCatalog):
         Raises:
             TableAlreadyExistsError: If the table already exists
         """
-        raise NotImplementedError
+        database_name, table_name = self.identifier_to_database_and_table(identifier)
+
+        # Trigger pre-register hook
+        self._trigger_hooks(
+            CatalogEvent.PRE_REGISTER_TABLE,
+            CatalogEventContext(
+                event=CatalogEvent.PRE_REGISTER_TABLE,
+                catalog_name=self.name,
+                identifier=identifier,
+                metadata_location=metadata_location,
+            ),
+        )
+
+        io = load_file_io(properties=self.properties, location=metadata_location)
+        file = io.new_input(metadata_location)
+        metadata = FromInputFile.table_metadata(file)
+
+        self._ensure_namespace_exists(database_name=database_name)
+
+        try:
+            self._put_dynamo_item(
+                item=_get_create_table_item(
+                    database_name=database_name,
+                    table_name=table_name,
+                    properties=metadata.properties,
+                    metadata_location=metadata_location,
+                ),
+                condition_expression=f"attribute_not_exists({DYNAMODB_COL_IDENTIFIER})",
+            )
+        except ConditionalCheckFailedException as e:
+            # Trigger error hook
+            self._trigger_hooks(
+                CatalogEvent.ON_ERROR,
+                CatalogEventContext(
+                    event=CatalogEvent.ON_ERROR,
+                    catalog_name=self.name,
+                    identifier=identifier,
+                    error=e,
+                ),
+            )
+            raise TableAlreadyExistsError(f"Table {database_name}.{table_name} already exists") from e
+        except Exception as e:
+            # Trigger error hook
+            self._trigger_hooks(
+                CatalogEvent.ON_ERROR,
+                CatalogEventContext(
+                    event=CatalogEvent.ON_ERROR,
+                    catalog_name=self.name,
+                    identifier=identifier,
+                    error=e,
+                ),
+            )
+            raise
+
+        table = self.load_table(identifier=identifier)
+
+        # Trigger post-register hook
+        self._trigger_hooks(
+            CatalogEvent.POST_REGISTER_TABLE,
+            CatalogEventContext(
+                event=CatalogEvent.POST_REGISTER_TABLE,
+                catalog_name=self.name,
+                identifier=identifier,
+                metadata_location=metadata_location,
+                extra={"table": table},
+            ),
+        )
+
+        return table
 
     def commit_table(
         self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
@@ -244,9 +622,156 @@ class DynamoDbCatalog(MetastoreCatalog):
             NoSuchTableError: If a table with the given identifier does not exist.
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
-        raise NotImplementedError
+        table_identifier = table.name()
+        database_name, table_name = self.identifier_to_database_and_table(table_identifier, NoSuchTableError)
 
-    def load_table(self, identifier: Union[str, Identifier]) -> Table:
+        # Trigger pre-commit hook
+        self._trigger_hooks(
+            CatalogEvent.PRE_COMMIT,
+            CatalogEventContext(
+                event=CatalogEvent.PRE_COMMIT,
+                catalog_name=self.name,
+                identifier=table_identifier,
+                metadata_location=table.metadata_location,
+                extra={"requirements": requirements, "updates": updates},
+            ),
+        )
+
+        current_table: Table | None
+        current_dynamo_table_item: Dict[str, Any] | None
+        current_version_id: str | None
+
+        try:
+            current_dynamo_table_item = self._get_iceberg_table_item(database_name=database_name, table_name=table_name)
+            current_table = self._convert_dynamo_table_item_to_iceberg_table(dynamo_table_item=current_dynamo_table_item)
+            # Extract the current version for optimistic locking
+            current_version_id = _convert_dynamo_item_to_regular_dict(current_dynamo_table_item).get(DYNAMODB_COL_VERSION)
+        except NoSuchTableError:
+            current_dynamo_table_item = None
+            current_table = None
+            current_version_id = None
+
+        updated_staged_table = self._update_and_stage_table(current_table, table_identifier, requirements, updates)
+
+        if current_table and updated_staged_table.metadata == current_table.metadata:
+            # No changes, do nothing
+            return CommitTableResponse(metadata=current_table.metadata, metadata_location=current_table.metadata_location)
+
+        self._write_metadata(
+            metadata=updated_staged_table.metadata,
+            io=updated_staged_table.io,
+            metadata_path=updated_staged_table.metadata_location,
+        )
+
+        if current_table:
+            # Table exists, update it with optimistic locking
+            if not current_version_id:
+                raise ValueError(f"Cannot commit {database_name}.{table_name} because version ID is missing from DynamoDB item")
+
+            # Ensure we have the DynamoDB item (should always be present if current_table exists)
+            if current_dynamo_table_item is None:
+                raise ValueError(f"Cannot commit {database_name}.{table_name} because DynamoDB item is missing")
+
+            # Create updated item with new version and metadata location
+            updated_item = _get_update_table_item(
+                current_dynamo_table_item=current_dynamo_table_item,
+                metadata_location=updated_staged_table.metadata_location,
+                prev_metadata_location=current_table.metadata_location,
+                properties=updated_staged_table.properties,
+            )
+
+            # Use conditional expression for optimistic locking based on version
+            try:
+                self._put_dynamo_item(
+                    item=updated_item,
+                    condition_expression=f"{DYNAMODB_COL_VERSION} = :current_version",
+                    expression_attribute_values={":current_version": {"S": current_version_id}},
+                )
+            except ConditionalCheckFailedException as e:
+                # Concurrent conflict - trigger hook and raise
+                self._trigger_hooks(
+                    CatalogEvent.ON_CONCURRENT_CONFLICT,
+                    CatalogEventContext(
+                        event=CatalogEvent.ON_CONCURRENT_CONFLICT,
+                        catalog_name=self.name,
+                        identifier=table_identifier,
+                        error=e,
+                        extra={"current_version": current_version_id},
+                    ),
+                )
+                raise CommitFailedException(
+                    f"Cannot commit {database_name}.{table_name} because DynamoDB detected concurrent update (version mismatch)"
+                ) from e
+            except Exception as e:
+                # Trigger error hook
+                self._trigger_hooks(
+                    CatalogEvent.ON_ERROR,
+                    CatalogEventContext(
+                        event=CatalogEvent.ON_ERROR,
+                        catalog_name=self.name,
+                        identifier=table_identifier,
+                        error=e,
+                    ),
+                )
+                raise
+        else:
+            # Table does not exist, create it
+            create_table_item = _get_create_table_item(
+                database_name=database_name,
+                table_name=table_name,
+                properties=updated_staged_table.properties,
+                metadata_location=updated_staged_table.metadata_location,
+            )
+            try:
+                self._put_dynamo_item(
+                    item=create_table_item,
+                    condition_expression=f"attribute_not_exists({DYNAMODB_COL_IDENTIFIER})",
+                )
+            except ConditionalCheckFailedException as e:
+                # Table already exists error - trigger hook and raise
+                self._trigger_hooks(
+                    CatalogEvent.ON_ERROR,
+                    CatalogEventContext(
+                        event=CatalogEvent.ON_ERROR,
+                        catalog_name=self.name,
+                        identifier=table_identifier,
+                        error=e,
+                    ),
+                )
+                raise TableAlreadyExistsError(f"Table {database_name}.{table_name} already exists") from e
+            except Exception as e:
+                # Trigger error hook
+                self._trigger_hooks(
+                    CatalogEvent.ON_ERROR,
+                    CatalogEventContext(
+                        event=CatalogEvent.ON_ERROR,
+                        catalog_name=self.name,
+                        identifier=table_identifier,
+                        error=e,
+                    ),
+                )
+                raise
+
+        # Invalidate cache after successful commit
+        self._invalidate_cache(table_identifier)
+
+        # Trigger post-commit hook
+        self._trigger_hooks(
+            CatalogEvent.POST_COMMIT,
+            CatalogEventContext(
+                event=CatalogEvent.POST_COMMIT,
+                catalog_name=self.name,
+                identifier=table_identifier,
+                metadata_location=updated_staged_table.metadata_location,
+                extra={"metadata": updated_staged_table.metadata},
+            ),
+        )
+
+        return CommitTableResponse(
+            metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
+        )
+
+    def load_table(self, identifier: str | Identifier) -> Table:
         """
         Load the table's metadata and returns the table instance.
 
@@ -262,11 +787,32 @@ class DynamoDbCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
         """
-        database_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
-        dynamo_table_item = self._get_iceberg_table_item(database_name=database_name, table_name=table_name)
-        return self._convert_dynamo_table_item_to_iceberg_table(dynamo_table_item=dynamo_table_item)
+        # Check cache first
+        if self._cache:
+            cache_key = self._get_cache_key(identifier)
+            cached_table = self._cache.get(cache_key)
+            if cached_table:
+                logger.debug(f"Cache hit for table {identifier}")
+                return cached_table
 
-    def drop_table(self, identifier: Union[str, Identifier]) -> None:
+        # Load from DynamoDB with retry
+        database_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
+
+        def _load_from_dynamodb() -> Table:
+            dynamo_table_item = self._get_iceberg_table_item(database_name=database_name, table_name=table_name)
+            return self._convert_dynamo_table_item_to_iceberg_table(dynamo_table_item=dynamo_table_item)
+
+        table = self._retry_dynamodb_operation(_load_from_dynamodb)
+
+        # Cache the loaded table
+        if self._cache:
+            cache_key = self._get_cache_key(identifier)
+            self._cache.set(cache_key, table)
+            logger.debug(f"Cached table {identifier}")
+
+        return table
+
+    def drop_table(self, identifier: str | Identifier) -> None:
         """Drop a table.
 
         Args:
@@ -277,6 +823,16 @@ class DynamoDbCatalog(MetastoreCatalog):
         """
         database_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
 
+        # Trigger pre-drop hook
+        self._trigger_hooks(
+            CatalogEvent.PRE_DROP_TABLE,
+            CatalogEventContext(
+                event=CatalogEvent.PRE_DROP_TABLE,
+                catalog_name=self.name,
+                identifier=identifier,
+            ),
+        )
+
         try:
             self._delete_dynamo_item(
                 namespace=database_name,
@@ -284,9 +840,32 @@ class DynamoDbCatalog(MetastoreCatalog):
                 condition_expression=f"attribute_exists({DYNAMODB_COL_IDENTIFIER})",
             )
         except ConditionalCheckFailedException as e:
+            # Trigger error hook
+            self._trigger_hooks(
+                CatalogEvent.ON_ERROR,
+                CatalogEventContext(
+                    event=CatalogEvent.ON_ERROR,
+                    catalog_name=self.name,
+                    identifier=identifier,
+                    error=e,
+                ),
+            )
             raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}") from e
 
-    def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
+        # Invalidate cache
+        self._invalidate_cache(identifier)
+
+        # Trigger post-drop hook
+        self._trigger_hooks(
+            CatalogEvent.POST_DROP_TABLE,
+            CatalogEventContext(
+                event=CatalogEvent.POST_DROP_TABLE,
+                catalog_name=self.name,
+                identifier=identifier,
+            ),
+        )
+
+    def rename_table(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> Table:
         """Rename a fully classified table name.
 
         This method can only rename Iceberg tables in AWS Glue.
@@ -352,7 +931,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return self.load_table(to_identifier)
 
-    def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
+    def create_namespace(self, namespace: str | Identifier, properties: Properties = EMPTY_DICT) -> None:
         """Create a namespace in the catalog.
 
         Args:
@@ -373,7 +952,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         except ConditionalCheckFailedException as e:
             raise NamespaceAlreadyExistsError(f"Database {database_name} already exists") from e
 
-    def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
+    def drop_namespace(self, namespace: str | Identifier) -> None:
         """Drop a namespace.
 
         A Glue namespace can only be dropped if it is empty.
@@ -400,7 +979,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         except ConditionalCheckFailedException as e:
             raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
 
-    def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> List[Identifier]:
         """List Iceberg tables under the given namespace in the catalog.
 
         Args:
@@ -444,7 +1023,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return table_identifiers
 
-    def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> List[Identifier]:
         """List top-level namespaces from the catalog.
 
         We do not support hierarchical namespace.
@@ -486,7 +1065,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return database_identifiers
 
-    def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
+    def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
         """
         Get properties for a namespace.
 
@@ -505,7 +1084,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         return _get_namespace_properties(namespace_dict=namespace_dict)
 
     def update_namespace_properties(
-        self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = EMPTY_DICT
+        self, namespace: str | Identifier, removals: Set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
         """
         Remove or update provided property keys for a namespace.
@@ -541,13 +1120,13 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return properties_update_summary
 
-    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> List[Identifier]:
         raise NotImplementedError
 
-    def drop_view(self, identifier: Union[str, Identifier]) -> None:
+    def drop_view(self, identifier: str | Identifier) -> None:
         raise NotImplementedError
 
-    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
+    def view_exists(self, identifier: str | Identifier) -> bool:
         raise NotImplementedError
 
     def _get_iceberg_table_item(self, database_name: str, table_name: str) -> Dict[str, Any]:
@@ -592,9 +1171,19 @@ class DynamoDbCatalog(MetastoreCatalog):
         ) as e:
             raise GenericDynamoDbError(e.message) from e
 
-    def _put_dynamo_item(self, item: Dict[str, Any], condition_expression: str) -> None:
+    def _put_dynamo_item(
+        self, item: Dict[str, Any], condition_expression: str, expression_attribute_values: Dict[str, Any] | None = None
+    ) -> None:
         try:
-            self.dynamodb.put_item(TableName=self.dynamodb_table_name, Item=item, ConditionExpression=condition_expression)
+            put_item_params = {
+                "TableName": self.dynamodb_table_name,
+                "Item": item,
+                "ConditionExpression": condition_expression,
+            }
+            if expression_attribute_values:
+                put_item_params["ExpressionAttributeValues"] = expression_attribute_values
+
+            self.dynamodb.put_item(**put_item_params)
         except self.dynamodb.exceptions.ConditionalCheckFailedException as e:
             raise ConditionalCheckFailedException(f"Condition expression check failed: {condition_expression} - {item}") from e
         except (
@@ -709,6 +1298,33 @@ def _get_rename_table_item(from_dynamo_table_item: Dict[str, Any], to_database_n
     _dict[DYNAMODB_COL_NAMESPACE]["S"] = to_database_name
     _dict[DYNAMODB_COL_VERSION]["S"] = str(uuid.uuid4())
     _dict[DYNAMODB_COL_UPDATED_AT]["N"] = current_timestamp_ms
+    return _dict
+
+
+def _get_update_table_item(
+    current_dynamo_table_item: Dict[str, Any],
+    metadata_location: str,
+    prev_metadata_location: str,
+    properties: Properties,
+) -> Dict[str, Any]:
+    """Create an updated table item for DynamoDB with new metadata location and version."""
+    current_timestamp_ms = str(round(time() * 1000))
+
+    # Start with the current item
+    _dict = dict(current_dynamo_table_item)
+
+    # Update version for optimistic locking
+    _dict[DYNAMODB_COL_VERSION] = {"S": str(uuid.uuid4())}
+    _dict[DYNAMODB_COL_UPDATED_AT] = {"N": current_timestamp_ms}
+
+    # Update metadata locations
+    _dict[_add_property_prefix(METADATA_LOCATION)] = {"S": metadata_location}
+    _dict[_add_property_prefix(PREVIOUS_METADATA_LOCATION)] = {"S": prev_metadata_location}
+
+    # Update properties
+    for key, val in properties.items():
+        _dict[_add_property_prefix(key)] = {"S": val}
+
     return _dict
 
 
