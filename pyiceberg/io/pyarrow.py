@@ -1726,16 +1726,11 @@ class ArrowScan:
         deletes_per_file = _read_all_delete_files(self._io, tasks)
 
         total_row_count = 0
-        executor = ExecutorFactory.get_or_create()
 
-        def batches_for_task(task: FileScanTask) -> List[pa.RecordBatch]:
-            # Materialize the iterator here to ensure execution happens within the executor.
-            # Otherwise, the iterator would be lazily consumed later (in the main thread),
-            # defeating the purpose of using executor.map.
-            return list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file))
 
         limit_reached = False
-        for batches in executor.map(batches_for_task, tasks):
+        for task in tasks:
+            batches = self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file)
             for batch in batches:
                 current_batch_size = len(batch)
                 if self._limit is not None and total_row_count + current_batch_size >= self._limit:
