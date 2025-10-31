@@ -26,7 +26,6 @@ on:
 
 jobs:
   set-version:
-    if: github.repository == 'apache/iceberg-python'  # Only run for apache repo
     runs-on: ubuntu-latest
     outputs:
       VERSION: ${{ steps.set-version.outputs.VERSION }}
