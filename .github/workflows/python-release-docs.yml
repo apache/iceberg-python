@@ -34,8 +34,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
-      - name: Install poetry
-        run: make install-poetry
+      - name: Install UV
+        uses: astral-sh/setup-uv@v6
       - name: Install docs
         run: make docs-install
       - name: Build docs

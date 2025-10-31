@@ -97,20 +97,20 @@ jobs:
         with:
           python-version: 3.12
 
-      - name: Install Poetry
-        run: make install-poetry
+      - name: Install UV
+        uses: astral-sh/setup-uv@v6
 
       - name: Validate current pyiceberg version
         env:
           VERSION: ${{ needs.validate-inputs.outputs.VERSION }}
         run: |
-          # Extract the current version from Poetry
-          current_pyiceberg_version=$(poetry version --short)
-          echo "Detected Poetry version: $current_pyiceberg_version"
+          # Extract the current version from UV
+          current_pyiceberg_version=$(uv version --short)
+          echo "Detected UV version: $current_pyiceberg_version"
 
-          # Compare the input version with the Poetry version
+          # Compare the input version with the UV version
           if [[ "$VERSION" != "$current_pyiceberg_version" ]]; then
-            echo "Error: Input version ($VERSION) does not match the Poetry version ($current_pyiceberg_version)"
+            echo "Error: Input version ($VERSION) does not match the UV version ($current_pyiceberg_version)"
             exit 1
           fi
 
