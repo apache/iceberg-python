@@ -1727,7 +1727,6 @@ class ArrowScan:
 
         total_row_count = 0
 
-
         limit_reached = False
         for task in tasks:
             batches = self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file)
