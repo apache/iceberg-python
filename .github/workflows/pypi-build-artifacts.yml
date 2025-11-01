@@ -71,6 +71,7 @@ jobs:
           CIBW_PROJECT_REQUIRES_PYTHON: ">=3.10"
           CIBW_TEST_REQUIRES: "pytest==7.4.2 moto==5.0.1"
           CIBW_TEST_COMMAND: "pytest {project}/tests/avro/test_decoder.py"
+          CIBW_BUILD_VERBOSITY: 1
           # Ignore tests for pypy since not all dependencies are compiled for it
           # and would require a local rust build chain
           CIBW_TEST_SKIP: "pp*"
