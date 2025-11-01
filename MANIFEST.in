@@ -15,4 +15,37 @@
 # specific language governing permissions and limitations
 # under the License.
 
-graft src
+# Include important project files
+include README.md
+include LICENSE
+include NOTICE
+include Makefile
+include pyproject.toml
+include setup.py
+include uv.lock
+
+# Cython source files
+recursive-include pyiceberg *.pyx *.pyi
+
+# vendor packages
+recursive-include vendor *
+
+# type stubs
+include pyiceberg/py.typed
+
+# Include test files in sdist
+recursive-include tests *.py
+
+# Include dev tools in sdist
+recursive-include dev *
+
+# Exclude build artifacts
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude *.so
+global-exclude *.pyd
+global-exclude __pycache__
+prune .venv
+prune build
+prune dist
+prune *.egg-info

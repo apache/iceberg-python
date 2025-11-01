@@ -18,20 +18,23 @@
 # Configuration Variables
 # ========================
 
+PYTHON ?=  # Override with e.g. PYTHON=3.11 to use specific Python version
 PYTEST_ARGS ?= -v -x  # Override with e.g. PYTEST_ARGS="-vv --tb=short"
 COVERAGE ?= 0      # Set COVERAGE=1 to enable coverage: make test COVERAGE=1
 COVERAGE_FAIL_UNDER ?= 85  # Minimum coverage % to pass: make coverage-report COVERAGE_FAIL_UNDER=70
 KEEP_COMPOSE ?= 0  # Set KEEP_COMPOSE=1 to keep containers after integration tests
 
-PIP = python -m pip
-
-POETRY_VERSION = 2.2.1
-POETRY = python -m poetry
+# Set Python argument for uv commands if PYTHON is specified
+ifneq ($(PYTHON),)
+  PYTHON_ARG = --python $(PYTHON)
+else
+  PYTHON_ARG =
+endif
 
 ifeq ($(COVERAGE),1)
-  TEST_RUNNER = $(POETRY) run coverage run --parallel-mode --source=pyiceberg -m
+  TEST_RUNNER = uv run coverage run --parallel-mode --source=pyiceberg -m
 else
-  TEST_RUNNER = $(POETRY) run
+  TEST_RUNNER = uv run
 endif
 
 ifeq ($(KEEP_COMPOSE),1)
@@ -55,24 +58,26 @@ help: ## Display this help message
 
 ##@ Setup
 
-install-poetry: ## Ensure Poetry is installed at the specified version
-	@if ! command -v ${POETRY} &> /dev/null; then \
-		echo "Poetry not found. Installing..."; \
-		${PIP} install poetry==$(POETRY_VERSION); \
+install-uv: ## Ensure uv is installed
+	@if ! command -v uv &> /dev/null; then \
+		echo "uv not found. Installing..."; \
+		curl -LsSf https://astral.sh/uv/install.sh | sh; \
 	else \
-		INSTALLED_VERSION=$$(${PIP} show poetry | grep Version | awk '{print $$2}'); \
-		if [ "$$INSTALLED_VERSION" != "$(POETRY_VERSION)" ]; then \
-			echo "Updating Poetry to version $(POETRY_VERSION)..."; \
-			${PIP} install --upgrade poetry==$(POETRY_VERSION); \
-		else \
-			echo "Poetry version $(POETRY_VERSION) already installed."; \
-		fi; \
+		echo "uv is already installed."; \
 	fi
 
-install-dependencies: ## Install all dependencies including extras
-	$(POETRY) install --all-extras
+setup-venv: ## Create virtual environment
+	@if [ ! -d .venv ]; then \
+		echo "Creating virtual environment."; \
+		uv venv $(PYTHON_ARG); \
+	else \
+		echo "Virtual environment already exists."; \
+	fi
 
-install: install-poetry install-dependencies ## Install Poetry and dependencies
+install-dependencies: setup-venv ## Install all dependencies including extras
+	uv sync --all-extras
+
+install: install-uv install-dependencies ## Install uv and dependencies
 
 # ===============
 # Code Validation
@@ -84,7 +89,7 @@ check-license: ## Check license headers
 	./dev/check-license
 
 lint: ## Run code linters via prek (pre-commit hooks)
-	$(POETRY) run prek run -a
+	uv run prek run -a
 
 # ===============
 # Testing Section
@@ -101,7 +106,7 @@ test-integration-setup: ## Start Docker services for integration tests
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml up -d --wait
-	$(POETRY) run python dev/provision.py
+	uv run python dev/provision.py
 
 test-integration-exec: ## Run integration tests (excluding provision)
 	$(TEST_RUNNER) pytest tests/ -m integration $(PYTEST_ARGS)
@@ -133,10 +138,10 @@ test-coverage: COVERAGE=1
 test-coverage: test test-integration test-s3 test-adls test-gcs coverage-report ## Run all tests with coverage and report
 
 coverage-report: ## Combine and report coverage
-	${POETRY} run coverage combine
-	${POETRY} run coverage report -m --fail-under=$(COVERAGE_FAIL_UNDER)
-	${POETRY} run coverage html
-	${POETRY} run coverage xml
+	uv run coverage combine
+	uv run coverage report -m --fail-under=$(COVERAGE_FAIL_UNDER)
+	uv run coverage html
+	uv run coverage xml
 
 # ================
 # Documentation
@@ -144,14 +149,14 @@ coverage-report: ## Combine and report coverage
 
 ##@ Documentation
 
-docs-install: ## Install docs dependencies
-	${POETRY} install --with docs
+docs-install: ## Install docs dependencies (included in default groups)
+	uv sync --group docs
 
 docs-serve: ## Serve local docs preview (hot reload)
-	${POETRY} run mkdocs serve -f mkdocs/mkdocs.yml
+	uv run mkdocs serve -f mkdocs/mkdocs.yml
 
 docs-build: ## Build the static documentation site
-	${POETRY} run mkdocs build -f mkdocs/mkdocs.yml --strict
+	uv run mkdocs build -f mkdocs/mkdocs.yml --strict
 
 # ===================
 # Project Maintenance
@@ -161,7 +166,7 @@ docs-build: ## Build the static documentation site
 
 clean: ## Remove build artifacts and caches
 	@echo "Cleaning up Cython and Python cached files..."
-	@rm -rf build dist *.egg-info
+	@rm -rf build dist *.egg-info .venv
 	@find . -name "*.so" -exec echo Deleting {} \; -delete
 	@find . -name "*.pyc" -exec echo Deleting {} \; -delete
 	@find . -name "__pycache__" -exec echo Deleting {} \; -exec rm -rf {} +
