@@ -348,6 +348,7 @@ markers = [
 # Turns a warning into an error
 filterwarnings = [
   "error",
+  "ignore:You are using a Python version.*which Google will stop supporting:FutureWarning",
 ]
 
 [tool.black]
