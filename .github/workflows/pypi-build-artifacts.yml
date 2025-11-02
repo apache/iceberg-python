@@ -74,6 +74,7 @@ jobs:
           # Ignore tests for pypy since not all dependencies are compiled for it
           # and would require a local rust build chain
           CIBW_TEST_SKIP: "pp*"
+          CIBW_SKIP: "cp3*t-*"
 
       - name: Add source distribution
         if: startsWith(matrix.os, 'ubuntu')
