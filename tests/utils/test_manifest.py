@@ -47,7 +47,7 @@ from pyiceberg.types import IntegerType, NestedField
 @pytest.fixture(autouse=True)
 def clear_global_manifests_cache() -> None:
     # Clear the global cache before each test
-    _manifests.cache_clear()  # type: ignore
+    _manifests.cache_clear()
 
 
 def _verify_metadata_with_fastavro(avro_file: str, expected_metadata: Dict[str, str]) -> None:

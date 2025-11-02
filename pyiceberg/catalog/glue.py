@@ -355,34 +355,29 @@ class GlueCatalog(MetastoreCatalog):
                 _register_glue_catalog_id_with_glue_client(self.glue, glue_catalog_id)
 
     def _convert_glue_to_iceberg(self, glue_table: "TableTypeDef") -> Table:
-        properties: Properties = glue_table["Parameters"]
-
-        database_name = glue_table.get("DatabaseName", None)
-        if database_name is None:
+        if (database_name := glue_table.get("DatabaseName")) is None:
             raise ValueError("Glue table is missing DatabaseName property")
 
-        parameters = glue_table.get("Parameters", None)
-        if parameters is None:
+        if (table_name := glue_table.get("Name")) is None:
+            raise ValueError("Glue table is missing Name property")
+
+        if (parameters := glue_table.get("Parameters")) is None:
             raise ValueError("Glue table is missing Parameters property")
 
-        table_name = glue_table["Name"]
-
-        if TABLE_TYPE not in properties:
+        if (glue_table_type := parameters.get(TABLE_TYPE)) is None:
             raise NoSuchPropertyException(
                 f"Property {TABLE_TYPE} missing, could not determine type: {database_name}.{table_name}"
             )
-        glue_table_type = properties[TABLE_TYPE]
 
         if glue_table_type.lower() != ICEBERG:
             raise NoSuchIcebergTableError(
                 f"Property table_type is {glue_table_type}, expected {ICEBERG}: {database_name}.{table_name}"
             )
 
-        if METADATA_LOCATION not in properties:
+        if (metadata_location := parameters.get(METADATA_LOCATION)) is None:
             raise NoSuchPropertyException(
                 f"Table property {METADATA_LOCATION} is missing, cannot find metadata for: {database_name}.{table_name}"
             )
-        metadata_location = properties[METADATA_LOCATION]
 
         io = self._load_file_io(location=metadata_location)
         file = io.new_input(metadata_location)

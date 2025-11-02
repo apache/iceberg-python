@@ -157,6 +157,19 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._deleted_data_files.add(data_file)
         return self
 
+    def _calculate_added_rows(self, manifests: List[ManifestFile]) -> int:
+        """Calculate the number of added rows from a list of manifest files."""
+        added_rows = 0
+        for manifest in manifests:
+            if manifest.added_snapshot_id is None or manifest.added_snapshot_id == self._snapshot_id:
+                if manifest.added_rows_count is None:
+                    raise ValueError(
+                        "Cannot determine number of added rows in snapshot because "
+                        f"the entry for manifest {manifest.manifest_path} is missing the field `added-rows-count`"
+                    )
+                added_rows += manifest.added_rows_count
+        return added_rows
+
     @abstractmethod
     def _deleted_entries(self) -> List[ManifestEntry]: ...
 
@@ -227,8 +240,11 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     def _summary(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> Summary:
         from pyiceberg.table import TableProperties
 
+        # avoid copying metadata for each data file
+        table_metadata = self._transaction.table_metadata
+
         partition_summary_limit = int(
-            self._transaction.table_metadata.properties.get(
+            table_metadata.properties.get(
                 TableProperties.WRITE_PARTITION_SUMMARY_LIMIT, TableProperties.WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT
             )
         )
@@ -237,23 +253,21 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         for data_file in self._added_data_files:
             ssc.add_file(
                 data_file=data_file,
-                partition_spec=self._transaction.table_metadata.spec(),
-                schema=self._transaction.table_metadata.schema(),
+                partition_spec=table_metadata.spec(),
+                schema=table_metadata.schema(),
             )
 
         if len(self._deleted_data_files) > 0:
-            specs = self._transaction.table_metadata.specs()
+            specs = table_metadata.specs()
             for data_file in self._deleted_data_files:
                 ssc.remove_file(
                     data_file=data_file,
                     partition_spec=specs[data_file.spec_id],
-                    schema=self._transaction.table_metadata.schema(),
+                    schema=table_metadata.schema(),
                 )
 
         previous_snapshot = (
-            self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
-            if self._parent_snapshot_id is not None
-            else None
+            table_metadata.snapshot_by_id(self._parent_snapshot_id) if self._parent_snapshot_id is not None else None
         )
 
         return update_snapshot_summaries(
@@ -284,6 +298,11 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         ) as writer:
             writer.add_manifests(new_manifests)
 
+        first_row_id: Optional[int] = None
+
+        if self._transaction.table_metadata.format_version >= 3:
+            first_row_id = self._transaction.table_metadata.next_row_id
+
         snapshot = Snapshot(
             snapshot_id=self._snapshot_id,
             parent_snapshot_id=self._parent_snapshot_id,
@@ -291,6 +310,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             sequence_number=next_sequence_number,
             summary=summary,
             schema_id=self._transaction.table_metadata.current_schema_id,
+            first_row_id=first_row_id,
         )
 
         add_snapshot_update = AddSnapshotUpdate(snapshot=snapshot)

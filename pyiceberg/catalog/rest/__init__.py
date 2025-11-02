@@ -238,6 +238,9 @@ class RestCatalog(Catalog):
         """Create a request session with provided catalog configuration."""
         session = Session()
 
+        # Set HTTP headers
+        self._config_headers(session)
+
         # Sets the client side and server side SSL cert verification, if provided as properties.
         if ssl_config := self.properties.get(SSL):
             if ssl_ca_bundle := ssl_config.get(CA_BUNDLE):
@@ -264,9 +267,6 @@ class RestCatalog(Catalog):
             session.auth = AuthManagerAdapter(AuthManagerFactory.create(auth_impl or auth_type, auth_type_config))
         else:
             session.auth = AuthManagerAdapter(self._create_legacy_oauth2_auth_manager(session))
-
-        # Set HTTP headers
-        self._config_headers(session)
 
         # Configure SigV4 Request Signing
         if property_as_bool(self.properties, SIGV4, False):

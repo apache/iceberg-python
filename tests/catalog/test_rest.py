@@ -1899,6 +1899,28 @@ def test_rest_catalog_with_google_credentials_path(
     assert actual_headers["Authorization"] == expected_auth_header
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+)
+def test_auth_header(rest_mock: Mocker) -> None:
+    mock_request = rest_mock.post(
+        f"{TEST_URI}v1/oauth/tokens",
+        json={
+            "access_token": TEST_TOKEN,
+            "token_type": "Bearer",
+            "expires_in": 86400,
+            "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "scope": "openid offline",
+            "refresh_token": "refresh_token",
+        },
+        status_code=200,
+        request_headers={**OAUTH_TEST_HEADERS, "Custom": "Value"},
+    )
+
+    RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, audience="", resource="", **{"header.Custom": "Value"})
+    assert mock_request.last_request.text == "grant_type=client_credentials&client_id=client&client_secret=secret&scope=catalog"
+
+
 class TestRestCatalogClose:
     """Tests RestCatalog close functionality"""
 

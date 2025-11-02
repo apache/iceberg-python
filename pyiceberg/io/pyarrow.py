@@ -2082,12 +2082,17 @@ class StatsAggregator:
         self.trunc_length = trunc_length
 
         expected_physical_type = _primitive_to_physical(iceberg_type)
+
+        # TODO: Refactor to use promotion logic
         if expected_physical_type != physical_type_string:
             # Allow promotable physical types
             # INT32 -> INT64 and FLOAT -> DOUBLE are safe type casts
             if (physical_type_string == "INT32" and expected_physical_type == "INT64") or (
                 physical_type_string == "FLOAT" and expected_physical_type == "DOUBLE"
             ):
+                pass
+            # Allow DECIMAL to be stored as FIXED_LEN_BYTE_ARRAY, INT32 or INT64
+            elif physical_type_string == "FIXED_LEN_BYTE_ARRAY" and expected_physical_type in ("INT32", "INT64"):
                 pass
             else:
                 raise ValueError(
@@ -2506,12 +2511,16 @@ def data_file_statistics_from_parquet_metadata(
 
                     if isinstance(stats_col.iceberg_type, DecimalType) and statistics.physical_type != "FIXED_LEN_BYTE_ARRAY":
                         scale = stats_col.iceberg_type.scale
-                        col_aggs[field_id].update_min(
-                            unscaled_to_decimal(statistics.min_raw, scale)
-                        ) if statistics.min_raw is not None else None
-                        col_aggs[field_id].update_max(
-                            unscaled_to_decimal(statistics.max_raw, scale)
-                        ) if statistics.max_raw is not None else None
+                        (
+                            col_aggs[field_id].update_min(unscaled_to_decimal(statistics.min_raw, scale))
+                            if statistics.min_raw is not None
+                            else None
+                        )
+                        (
+                            col_aggs[field_id].update_max(unscaled_to_decimal(statistics.max_raw, scale))
+                            if statistics.max_raw is not None
+                            else None
+                        )
                     else:
                         col_aggs[field_id].update_min(statistics.min)
                         col_aggs[field_id].update_max(statistics.max)
