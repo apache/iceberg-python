@@ -1492,14 +1492,18 @@ class _ConvertToIcebergWithoutIDs(_ConvertToIceberg):
 
 
 def _get_column_projection_values(
-    file: DataFile, projected_schema: Schema, partition_spec: Optional[PartitionSpec], file_project_field_ids: Set[int]
+    file: DataFile,
+    projected_schema: Schema,
+    table_schema: Schema,
+    partition_spec: Optional[PartitionSpec],
+    file_project_field_ids: Set[int],
 ) -> Dict[int, Any]:
     """Apply Column Projection rules to File Schema."""
     project_schema_diff = projected_schema.field_ids.difference(file_project_field_ids)
     if len(project_schema_diff) == 0 or partition_spec is None:
         return EMPTY_DICT
 
-    partition_schema = partition_spec.partition_type(projected_schema)
+    partition_schema = partition_spec.partition_type(table_schema)
     accessors = build_position_accessors(partition_schema)
 
     projected_missing_fields = {}
@@ -1517,6 +1521,7 @@ def _task_to_record_batches(
     task: FileScanTask,
     bound_row_filter: BooleanExpression,
     projected_schema: Schema,
+    table_schema: Schema,
     projected_field_ids: Set[int],
     positional_deletes: Optional[List[ChunkedArray]],
     case_sensitive: bool,
@@ -1541,7 +1546,7 @@ def _task_to_record_batches(
 
         # Apply column projection rules: https://iceberg.apache.org/spec/#column-projection
         projected_missing_fields = _get_column_projection_values(
-            task.file, projected_schema, partition_spec, file_schema.field_ids
+            task.file, projected_schema, table_schema, partition_spec, file_schema.field_ids
         )
 
         pyarrow_filter = None
@@ -1763,6 +1768,7 @@ class ArrowScan:
                 task,
                 self._bound_row_filter,
                 self._projected_schema,
+                self._table_metadata.schema(),
                 self._projected_field_ids,
                 deletes_per_file.get(task.file.file_path),
                 self._case_sensitive,

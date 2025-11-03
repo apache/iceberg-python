@@ -2846,6 +2846,7 @@ def test_task_to_record_batches_nanos(format_version: TableVersion, tmpdir: str)
             FileScanTask(data_file),
             bound_row_filter=AlwaysTrue(),
             projected_schema=table_schema,
+            table_schema=table_schema,
             projected_field_ids={1},
             positional_deletes=None,
             case_sensitive=True,
@@ -4590,3 +4591,72 @@ def test_orc_stripe_based_batching(tmp_path: Path) -> None:
         # Verify total rows
         total_rows = sum(batch.num_rows for batch in batches)
         assert total_rows == 10000, f"Expected 10000 total rows, got {total_rows}"
+
+
+def test_partition_column_projection_with_schema_evolution(catalog: InMemoryCatalog) -> None:
+    """Test column projection on partitioned table after schema evolution (https://github.com/apache/iceberg-python/issues/2672)."""
+    initial_schema = Schema(
+        NestedField(1, "partition_date", DateType(), required=False),
+        NestedField(2, "id", IntegerType(), required=False),
+        NestedField(3, "name", StringType(), required=False),
+        NestedField(4, "value", IntegerType(), required=False),
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="partition_date"),
+    )
+
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test_schema_evolution_projection",
+        schema=initial_schema,
+        partition_spec=partition_spec,
+    )
+
+    data_v1 = pa.Table.from_pylist(
+        [
+            {"partition_date": date(2024, 1, 1), "id": 1, "name": "Alice", "value": 100},
+            {"partition_date": date(2024, 1, 1), "id": 2, "name": "Bob", "value": 200},
+        ],
+        schema=pa.schema(
+            [
+                ("partition_date", pa.date32()),
+                ("id", pa.int32()),
+                ("name", pa.string()),
+                ("value", pa.int32()),
+            ]
+        ),
+    )
+
+    table.append(data_v1)
+
+    with table.update_schema() as update:
+        update.add_column("new_column", StringType())
+
+    table = catalog.load_table("default.test_schema_evolution_projection")
+
+    data_v2 = pa.Table.from_pylist(
+        [
+            {"partition_date": date(2024, 1, 2), "id": 3, "name": "Charlie", "value": 300, "new_column": "new1"},
+            {"partition_date": date(2024, 1, 2), "id": 4, "name": "David", "value": 400, "new_column": "new2"},
+        ],
+        schema=pa.schema(
+            [
+                ("partition_date", pa.date32()),
+                ("id", pa.int32()),
+                ("name", pa.string()),
+                ("value", pa.int32()),
+                ("new_column", pa.string()),
+            ]
+        ),
+    )
+
+    table.append(data_v2)
+
+    result = table.scan(selected_fields=("id", "name", "value", "new_column")).to_arrow()
+
+    assert set(result.schema.names) == {"id", "name", "value", "new_column"}
+    assert result.num_rows == 4
+    result_sorted = result.sort_by("name")
+    assert result_sorted["name"].to_pylist() == ["Alice", "Bob", "Charlie", "David"]
+    assert result_sorted["new_column"].to_pylist() == [None, None, "new1", "new2"]
