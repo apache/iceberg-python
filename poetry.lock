@@ -1332,19 +1332,19 @@ files = [
 
 [[package]]
 name = "daft"
-version = "0.6.7"
+version = "0.6.8"
 description = "Distributed Dataframes for Multimodal Data"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
 markers = "extra == \"daft\""
 files = [
-    {file = "daft-0.6.7-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:be5e444d5cdbc438087e211735ef63e55070448165ea7b7f36fca3e13d89c961"},
-    {file = "daft-0.6.7-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:c20a28037c07bfe6041519eb91e9b02330d43f66275bdeb9c4e749cc1ae753fd"},
-    {file = "daft-0.6.7-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:1fee22c827ddb59cf8e899c4b54ddcfe90da5441182e29ca517cb283784d1a10"},
-    {file = "daft-0.6.7-cp39-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:438734389796f06220ed361086d9f45a57ec55f729005245064b9e0a4ef9bff6"},
-    {file = "daft-0.6.7-cp39-abi3-win_amd64.whl", hash = "sha256:e7158f789306a538f490843b4fd1b69d10b0446f22a440aafe32501fa0f744aa"},
-    {file = "daft-0.6.7.tar.gz", hash = "sha256:468fb0bc7c6d70f3cf4a4df2caa657263517a01aa22e23bf6987e3a613db0283"},
+    {file = "daft-0.6.8-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:c102c4797d91900e6532c10ae1d5fe704b3760e4520ee35ce013e6a9682e07fc"},
+    {file = "daft-0.6.8-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:ff9e050ec588555ca9b5b50726a320d52f83469a56e8db74c2419848895bb177"},
+    {file = "daft-0.6.8-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:165fe295d8a5b8015029be7c4c8c6c1a8feb7d14d59074f9778f6d35263231dc"},
+    {file = "daft-0.6.8-cp39-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:6720a5763740ab45bf7ea341ab442e03342a3f6d3c6fd4b03be5fc0dabbb0b98"},
+    {file = "daft-0.6.8-cp39-abi3-win_amd64.whl", hash = "sha256:1df735ece1fc41276a001514a039b2abc9b61a0f10bb0d78049068aa7d462586"},
+    {file = "daft-0.6.8.tar.gz", hash = "sha256:692ce1eadbac48c65b1be87cc9f58368e00590f93ce10e5f82bf9d3a511c8c6b"},
 ]
 
 [package.dependencies]
@@ -1367,10 +1367,9 @@ numpy = ["numpy"]
 openai = ["openai"]
 pandas = ["pandas"]
 ray = ["ray[client,data] (>=2.0.0,<2.48.0) ; platform_system != \"Windows\"", "ray[client,data] (>=2.10.0,<2.48.0) ; platform_system == \"Windows\""]
-sentence-transformers = ["sentence-transformers"]
 spark = ["googleapis-common-protos (>=1.56.4)", "grpcio (>=1.48)", "grpcio-status (>=1.48)", "numpy (>=1.15)", "pandas (>=1.0.5)", "py4j (>=0.10.9.7)", "pyspark (==3.5.5)"]
 sql = ["connectorx", "sqlalchemy", "sqlglot"]
-transformers = ["torch", "torchvision", "transformers"]
+transformers = ["sentence-transformers", "tensorflow", "torch", "torchvision", "transformers"]
 turbopuffer = ["turbopuffer"]
 unity = ["httpx (<=0.27.2)", "unitycatalog"]
 
