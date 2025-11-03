@@ -2479,7 +2479,7 @@ def test_partition_for_demo() -> None:
         PartitionField(source_id=2, field_id=1002, transform=IdentityTransform(), name="n_legs_identity"),
         PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="year_identity"),
     )
-    result = _determine_partitions(partition_spec, test_schema, arrow_table)
+    result = list(_determine_partitions(partition_spec, test_schema, arrow_table))
     assert {table_partition.partition_key.partition for table_partition in result} == {
         Record(2, 2020),
         Record(100, 2021),
@@ -2518,7 +2518,7 @@ def test_partition_for_nested_field() -> None:
     ]
 
     arrow_table = pa.Table.from_pylist(test_data, schema=schema.as_arrow())
-    partitions = _determine_partitions(spec, schema, arrow_table)
+    partitions = list(_determine_partitions(spec, schema, arrow_table))
     partition_values = {p.partition_key.partition[0] for p in partitions}
 
     assert partition_values == {486729, 486730}
@@ -2550,7 +2550,7 @@ def test_partition_for_deep_nested_field() -> None:
     ]
 
     arrow_table = pa.Table.from_pylist(test_data, schema=schema.as_arrow())
-    partitions = _determine_partitions(spec, schema, arrow_table)
+    partitions = list(_determine_partitions(spec, schema, arrow_table))
 
     assert len(partitions) == 2  # 2 unique partitions
     partition_values = {p.partition_key.partition[0] for p in partitions}
@@ -2621,7 +2621,7 @@ def test_identity_partition_on_multi_columns() -> None:
         }
         arrow_table = pa.Table.from_pydict(test_data, schema=test_pa_schema)
 
-        result = _determine_partitions(partition_spec, test_schema, arrow_table)
+        result = list(_determine_partitions(partition_spec, test_schema, arrow_table))
 
         assert {table_partition.partition_key.partition for table_partition in result} == expected
         concatenated_arrow_table = pa.concat_tables([table_partition.arrow_table_partition for table_partition in result])
