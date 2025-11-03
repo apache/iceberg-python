@@ -210,6 +210,10 @@ UTC_ALIASES = {"UTC", "+00:00", "Etc/UTC", "Z"}
 
 T = TypeVar("T")
 
+def _remove_section_between_at_and_slash(s):
+    # Remove everything from "@" (inclusive) to the first following "/" (exclusive)
+    result = re.sub(r'@[^/]+/', '/', s)
+    return result
 
 @lru_cache
 def _cached_resolve_s3_region(bucket: str) -> Optional[str]:
@@ -279,7 +283,7 @@ class PyArrowFile(InputFile, OutputFile):
 
     def __init__(self, location: str, path: str, fs: FileSystem, buffer_size: int = ONE_MEGABYTE):
         self._filesystem = fs
-        self._path = path
+        self._path = _remove_section_between_at_and_slash(path)
         self._buffer_size = buffer_size
         super().__init__(location=location)
 
