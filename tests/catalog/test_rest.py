@@ -368,6 +368,27 @@ def test_config_sets_headers(requests_mock: Mocker) -> None:
     )
 
 
+def test_client_version_headers(requests_mock: Mocker) -> None:
+    import re
+
+    from pyiceberg import __version__
+
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, warehouse="s3://some-bucket")
+
+    assert catalog._session.headers.get("X-Client-Version") == __version__
+    assert "X-Client-Git-Commit-Short" in catalog._session.headers
+    git_commit = catalog._session.headers.get("X-Client-Git-Commit-Short")
+    assert git_commit is not None
+    assert isinstance(git_commit, str)
+    assert re.match(r"^[0-9a-f]{7}$", git_commit), f"Expected 7-char hex git hash, got: {git_commit}"
+
+
 @pytest.mark.filterwarnings(
     "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
