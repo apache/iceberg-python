@@ -33,12 +33,10 @@ from typing import (
     Iterable,
     Iterator,
     List,
-    Optional,
     Set,
     Tuple,
     Type,
     TypeVar,
-    Union,
 )
 
 from pydantic import Field

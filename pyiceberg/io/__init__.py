@@ -34,10 +34,8 @@ from types import TracebackType
 from typing import (
     Dict,
     List,
-    Optional,
     Protocol,
     Type,
-    Union,
     runtime_checkable,
 )
 from urllib.parse import urlparse

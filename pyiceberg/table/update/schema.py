@@ -20,7 +20,7 @@ import itertools
 from copy import copy
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Set, Tuple
 
 from pyiceberg.exceptions import ResolveError, ValidationError
 from pyiceberg.expressions import literal  # type: ignore
@@ -693,7 +693,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         return next(self._last_column_id)
 
 
-class _ApplyChanges(SchemaVisitor[Optional[IcebergType]]):
+class _ApplyChanges(SchemaVisitor[IcebergType | None]):
     _adds: Dict[int, List[NestedField]]
     _updates: Dict[int, NestedField]
     _deletes: Set[int]

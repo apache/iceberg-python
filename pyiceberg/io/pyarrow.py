@@ -49,11 +49,9 @@ from typing import (
     Iterable,
     Iterator,
     List,
-    Optional,
     Set,
     Tuple,
     TypeVar,
-    Union,
     cast,
 )
 from urllib.parse import urlparse
@@ -1291,7 +1289,7 @@ class _HasIds(PyArrowSchemaVisitor[bool]):
         return True
 
 
-class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
+class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema]):
     """Converts PyArrowSchema to Iceberg Schema. Applies the IDs from name_mapping if provided."""
 
     _field_names: List[str]
@@ -1428,7 +1426,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
         self._field_names.pop()
 
 
-class _ConvertToLargeTypes(PyArrowSchemaVisitor[Union[pa.DataType, pa.Schema]]):
+class _ConvertToLargeTypes(PyArrowSchemaVisitor[IcebergType | pa.Schema]):
     def schema(self, schema: pa.Schema, struct_result: pa.StructType) -> pa.Schema:
         return pa.schema(struct_result)
 
@@ -1452,7 +1450,7 @@ class _ConvertToLargeTypes(PyArrowSchemaVisitor[Union[pa.DataType, pa.Schema]]):
         return primitive
 
 
-class _ConvertToSmallTypes(PyArrowSchemaVisitor[Union[pa.DataType, pa.Schema]]):
+class _ConvertToSmallTypes(PyArrowSchemaVisitor[IcebergType | pa.Schema]):
     def schema(self, schema: pa.Schema, struct_result: pa.StructType) -> pa.Schema:
         return pa.schema(struct_result)
 
@@ -1807,7 +1805,7 @@ def _to_requested_schema(
     return pa.RecordBatch.from_struct_array(struct_array)
 
 
-class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Array]]):
+class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]):
     _file_schema: Schema
     _include_field_ids: bool
     _downcast_ns_timestamp_to_us: bool

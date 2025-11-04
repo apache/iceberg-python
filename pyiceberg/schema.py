@@ -29,7 +29,6 @@ from typing import (
     Generic,
     List,
     Literal,
-    Optional,
     Set,
     Tuple,
     TypeVar,
@@ -1433,7 +1432,7 @@ def sanitize_column_names(schema: Schema) -> Schema:
     )
 
 
-class _SanitizeColumnsVisitor(SchemaVisitor[Optional[IcebergType]]):
+class _SanitizeColumnsVisitor(SchemaVisitor[IcebergType | None]):
     def schema(self, schema: Schema, struct_result: IcebergType | None) -> IcebergType | None:
         return struct_result
 
@@ -1484,7 +1483,7 @@ def prune_columns(schema: Schema, selected: Set[int], select_full_types: bool = 
     )
 
 
-class _PruneColumnsVisitor(SchemaVisitor[Optional[IcebergType]]):
+class _PruneColumnsVisitor(SchemaVisitor[IcebergType | None]):
     selected: Set[int]
     select_full_types: bool
 

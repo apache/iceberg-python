@@ -22,7 +22,6 @@ from typing import (
     Dict,
     List,
     Tuple,
-    Union,
 )
 
 from pyiceberg.schema import (
@@ -80,7 +79,7 @@ LOGICAL_FIELD_TYPE_MAPPING: Dict[Tuple[str, str], PrimitiveType] = {
     ("uuid", "string"): UUIDType(),
 }
 
-AvroType = Union[str, Any]
+AvroType = str | Any
 
 
 class AvroSchemaConversion:

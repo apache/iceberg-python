@@ -26,7 +26,7 @@ converting character sets (https://docs.python.org/3/library/codecs.html).
 
 from __future__ import annotations
 
-from typing import Dict, Literal, Optional, Type
+from typing import Dict, Literal, Type
 
 from typing_extensions import TypeAlias
 

@@ -29,7 +29,6 @@ from typing import (
     Tuple,
     Type,
     TypeVar,
-    Union,
 )
 from typing import Literal as TypingLiteral
 
