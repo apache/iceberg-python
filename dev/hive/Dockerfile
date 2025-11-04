@@ -13,21 +13,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM openjdk:8-jre-slim AS build
-
-RUN apt-get update -qq && apt-get -qq -y install curl
-
-ENV HADOOP_VERSION=3.3.6
-ENV AWS_SDK_BUNDLE=1.12.753
-
-RUN curl https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/${HADOOP_VERSION}/hadoop-aws-${HADOOP_VERSION}.jar -Lo /tmp/hadoop-aws-${HADOOP_VERSION}.jar
-RUN curl https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/${AWS_SDK_BUNDLE}/aws-java-sdk-bundle-${AWS_SDK_BUNDLE}.jar -Lo /tmp/aws-java-sdk-bundle-${AWS_SDK_BUNDLE}.jar
-
 FROM apache/hive:4.0.0
 
 ENV HADOOP_VERSION=3.3.6
 ENV AWS_SDK_BUNDLE=1.12.753
 
-COPY --from=build /tmp/hadoop-aws-${HADOOP_VERSION}.jar /opt/hive/lib/hadoop-aws-${HADOOP_VERSION}.jar
-COPY --from=build /tmp/aws-java-sdk-bundle-${AWS_SDK_BUNDLE}.jar /opt/hive/lib/aws-java-sdk-bundle-${AWS_SDK_BUNDLE}.jar
+USER root
+
+# Install curl, download JARs, and cleanup in a single layer
+RUN apt-get update -qq && apt-get -qq -y install curl && \
+    curl https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/${HADOOP_VERSION}/hadoop-aws-${HADOOP_VERSION}.jar -Lo /opt/hive/lib/hadoop-aws-${HADOOP_VERSION}.jar && \
+    curl https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/${AWS_SDK_BUNDLE}/aws-java-sdk-bundle-${AWS_SDK_BUNDLE}.jar -Lo /opt/hive/lib/aws-java-sdk-bundle-${AWS_SDK_BUNDLE}.jar && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
 COPY core-site.xml /opt/hadoop/etc/hadoop/core-site.xml
+
+USER hive
