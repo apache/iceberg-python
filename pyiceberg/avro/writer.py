@@ -30,9 +30,7 @@ from typing import (
     Any,
     Dict,
     List,
-    Optional,
     Tuple,
-    Union,
 )
 from uuid import UUID
 
@@ -122,7 +120,7 @@ class StringWriter(Writer):
 
 @dataclass(frozen=True)
 class UUIDWriter(Writer):
-    def write(self, encoder: BinaryEncoder, val: Union[UUID, bytes]) -> None:
+    def write(self, encoder: BinaryEncoder, val: UUID | bytes) -> None:
         if isinstance(val, UUID):
             encoder.write(val.bytes)
         else:
@@ -188,7 +186,7 @@ class OptionWriter(Writer):
 
 @dataclass(frozen=True)
 class StructWriter(Writer):
-    field_writers: Tuple[Tuple[Optional[int], Writer], ...] = dataclassfield()
+    field_writers: Tuple[Tuple[int | None, Writer], ...] = dataclassfield()
 
     def write(self, encoder: BinaryEncoder, val: Record) -> None:
         for pos, writer in self.field_writers:

@@ -28,10 +28,8 @@ from typing import (
     Iterator,
     List,
     Literal,
-    Optional,
     Tuple,
     Type,
-    Union,
 )
 
 from cachetools import LRUCache, cached
@@ -102,7 +100,7 @@ class FileFormat(str, Enum):
     PUFFIN = "PUFFIN"
 
     @classmethod
-    def _missing_(cls, value: object) -> Union[None, str]:
+    def _missing_(cls, value: object) -> None | str:
         for member in cls:
             if member.value == str(value).upper():
                 return member
@@ -501,19 +499,19 @@ class DataFile(Record):
         return self._data[11]
 
     @property
-    def key_metadata(self) -> Optional[bytes]:
+    def key_metadata(self) -> bytes | None:
         return self._data[12]
 
     @property
-    def split_offsets(self) -> Optional[List[int]]:
+    def split_offsets(self) -> List[int] | None:
         return self._data[13]
 
     @property
-    def equality_ids(self) -> Optional[List[int]]:
+    def equality_ids(self) -> List[int] | None:
         return self._data[14]
 
     @property
-    def sort_order_id(self) -> Optional[int]:
+    def sort_order_id(self) -> int | None:
         return self._data[15]
 
     # Spec ID should not be stored in the file
@@ -594,7 +592,7 @@ class ManifestEntry(Record):
         self._data[0] = value
 
     @property
-    def snapshot_id(self) -> Optional[int]:
+    def snapshot_id(self) -> int | None:
         return self._data[1]
 
     @snapshot_id.setter
@@ -602,7 +600,7 @@ class ManifestEntry(Record):
         self._data[0] = value
 
     @property
-    def sequence_number(self) -> Optional[int]:
+    def sequence_number(self) -> int | None:
         return self._data[2]
 
     @sequence_number.setter
@@ -610,7 +608,7 @@ class ManifestEntry(Record):
         self._data[2] = value
 
     @property
-    def file_sequence_number(self) -> Optional[int]:
+    def file_sequence_number(self) -> int | None:
         return self._data[3]
 
     @file_sequence_number.setter
@@ -644,15 +642,15 @@ class PartitionFieldSummary(Record):
         return self._data[0]
 
     @property
-    def contains_nan(self) -> Optional[bool]:
+    def contains_nan(self) -> bool | None:
         return self._data[1]
 
     @property
-    def lower_bound(self) -> Optional[bytes]:
+    def lower_bound(self) -> bytes | None:
         return self._data[2]
 
     @property
-    def upper_bound(self) -> Optional[bytes]:
+    def upper_bound(self) -> bytes | None:
         return self._data[3]
 
 
@@ -660,8 +658,8 @@ class PartitionFieldStats:
     _type: PrimitiveType
     _contains_null: bool
     _contains_nan: bool
-    _min: Optional[Any]
-    _max: Optional[Any]
+    _min: Any | None
+    _max: Any | None
 
     def __init__(self, iceberg_type: PrimitiveType) -> None:
         self._type = iceberg_type
@@ -802,39 +800,39 @@ class ManifestFile(Record):
         self._data[5] = value
 
     @property
-    def added_snapshot_id(self) -> Optional[int]:
+    def added_snapshot_id(self) -> int | None:
         return self._data[6]
 
     @property
-    def added_files_count(self) -> Optional[int]:
+    def added_files_count(self) -> int | None:
         return self._data[7]
 
     @property
-    def existing_files_count(self) -> Optional[int]:
+    def existing_files_count(self) -> int | None:
         return self._data[8]
 
     @property
-    def deleted_files_count(self) -> Optional[int]:
+    def deleted_files_count(self) -> int | None:
         return self._data[9]
 
     @property
-    def added_rows_count(self) -> Optional[int]:
+    def added_rows_count(self) -> int | None:
         return self._data[10]
 
     @property
-    def existing_rows_count(self) -> Optional[int]:
+    def existing_rows_count(self) -> int | None:
         return self._data[11]
 
     @property
-    def deleted_rows_count(self) -> Optional[int]:
+    def deleted_rows_count(self) -> int | None:
         return self._data[12]
 
     @property
-    def partitions(self) -> Optional[List[PartitionFieldSummary]]:
+    def partitions(self) -> List[PartitionFieldSummary] | None:
         return self._data[13]
 
     @property
-    def key_metadata(self) -> Optional[bytes]:
+    def key_metadata(self) -> bytes | None:
         return self._data[14]
 
     def has_added_files(self) -> bool:
@@ -954,7 +952,7 @@ class ManifestWriter(ABC):
     _existing_rows: int
     _deleted_files: int
     _deleted_rows: int
-    _min_sequence_number: Optional[int]
+    _min_sequence_number: int | None
     _partitions: List[Record]
     _compression: AvroCompressionCodec
 
@@ -990,9 +988,9 @@ class ManifestWriter(ABC):
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_value: Optional[BaseException],
-        traceback: Optional[TracebackType],
+        exc_type: Type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
     ) -> None:
         """Close the writer."""
         if (self._added_files + self._existing_files + self._deleted_files) == 0:
@@ -1224,9 +1222,9 @@ class ManifestListWriter(ABC):
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_value: Optional[BaseException],
-        traceback: Optional[TracebackType],
+        exc_type: Type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
     ) -> None:
         """Close the writer."""
         self._writer.__exit__(exc_type, exc_value, traceback)
@@ -1245,7 +1243,7 @@ class ManifestListWriterV1(ManifestListWriter):
         self,
         output_file: OutputFile,
         snapshot_id: int,
-        parent_snapshot_id: Optional[int],
+        parent_snapshot_id: int | None,
         compression: AvroCompressionCodec,
     ):
         super().__init__(
@@ -1273,7 +1271,7 @@ class ManifestListWriterV2(ManifestListWriter):
         self,
         output_file: OutputFile,
         snapshot_id: int,
-        parent_snapshot_id: Optional[int],
+        parent_snapshot_id: int | None,
         sequence_number: int,
         compression: AvroCompressionCodec,
     ):
@@ -1318,8 +1316,8 @@ def write_manifest_list(
     format_version: TableVersion,
     output_file: OutputFile,
     snapshot_id: int,
-    parent_snapshot_id: Optional[int],
-    sequence_number: Optional[int],
+    parent_snapshot_id: int | None,
+    sequence_number: int | None,
     avro_compression: AvroCompressionCodec,
 ) -> ManifestListWriter:
     if format_version == 1:

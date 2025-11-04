@@ -128,9 +128,7 @@ class InputStream(Protocol):
         """Provide setup when opening an InputStream using a 'with' statement."""
 
     @abstractmethod
-    def __exit__(
-        self, exctype: Optional[Type[BaseException]], excinst: Optional[BaseException], exctb: Optional[TracebackType]
-    ) -> None:
+    def __exit__(self, exctype: Type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
         """Perform cleanup when exiting the scope of a 'with' statement."""
 
 
@@ -153,9 +151,7 @@ class OutputStream(Protocol):  # pragma: no cover
         """Provide setup when opening an OutputStream using a 'with' statement."""
 
     @abstractmethod
-    def __exit__(
-        self, exctype: Optional[Type[BaseException]], excinst: Optional[BaseException], exctb: Optional[TracebackType]
-    ) -> None:
+    def __exit__(self, exctype: Type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
         """Perform cleanup when exiting the scope of a 'with' statement."""
 
 
@@ -283,7 +279,7 @@ class FileIO(ABC):
         """
 
     @abstractmethod
-    def delete(self, location: Union[str, InputFile, OutputFile]) -> None:
+    def delete(self, location: str | InputFile | OutputFile) -> None:
         """Delete the file at the given path.
 
         Args:
@@ -321,7 +317,7 @@ SCHEMA_TO_FILE_IO: Dict[str, List[str]] = {
 }
 
 
-def _import_file_io(io_impl: str, properties: Properties) -> Optional[FileIO]:
+def _import_file_io(io_impl: str, properties: Properties) -> FileIO | None:
     try:
         path_parts = io_impl.split(".")
         if len(path_parts) < 2:
@@ -338,7 +334,7 @@ def _import_file_io(io_impl: str, properties: Properties) -> Optional[FileIO]:
 PY_IO_IMPL = "py-io-impl"
 
 
-def _infer_file_io_from_scheme(path: str, properties: Properties) -> Optional[FileIO]:
+def _infer_file_io_from_scheme(path: str, properties: Properties) -> FileIO | None:
     parsed_url = urlparse(path)
     if parsed_url.scheme:
         if file_ios := SCHEMA_TO_FILE_IO.get(parsed_url.scheme):
@@ -350,7 +346,7 @@ def _infer_file_io_from_scheme(path: str, properties: Properties) -> Optional[Fi
     return None
 
 
-def load_file_io(properties: Properties = EMPTY_DICT, location: Optional[str] = None) -> FileIO:
+def load_file_io(properties: Properties = EMPTY_DICT, location: str | None = None) -> FileIO:
     # First look for the py-io-impl property to directly load the class
     if io_impl := properties.get(PY_IO_IMPL):
         if file_io := _import_file_io(io_impl, properties):

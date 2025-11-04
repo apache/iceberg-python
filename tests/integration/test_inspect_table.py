@@ -18,7 +18,6 @@
 
 import math
 from datetime import date, datetime
-from typing import Union
 
 import pyarrow as pa
 import pytest
@@ -643,7 +642,7 @@ def test_inspect_partitions_partitioned_with_filter(spark: SparkSession, session
 
     tbl = session_catalog.load_table(identifier)
     for snapshot in tbl.metadata.snapshots:
-        test_cases: list[tuple[Union[str, BooleanExpression], str]] = [
+        test_cases: list[tuple[str | BooleanExpression, str]] = [
             ("dt >= '2021-01-01'", "partition.dt >= '2021-01-01'"),
             (GreaterThanOrEqual("dt", "2021-01-01"), "partition.dt >= '2021-01-01'"),
             ("dt >= '2021-01-01' and dt < '2021-03-01'", "partition.dt >= '2021-01-01' AND partition.dt < '2021-03-01'"),

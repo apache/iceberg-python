@@ -16,7 +16,7 @@
 # under the License.
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Set, Tuple
 
 from pyiceberg.expressions import (
     Reference,
@@ -78,8 +78,8 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
     def add_field(
         self,
         source_column_name: str,
-        transform: Union[str, Transform[Any, Any]],
-        partition_field_name: Optional[str] = None,
+        transform: str | Transform[Any, Any],
+        partition_field_name: str | None = None,
     ) -> UpdateSpec:
         ref = Reference(source_column_name)
         bound_ref = ref.bind(self._transaction.table_metadata.schema(), self._case_sensitive)
@@ -267,7 +267,7 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
                 new_spec_id = spec.spec_id + 1
         return PartitionSpec(*partition_fields, spec_id=new_spec_id)
 
-    def _partition_field(self, transform_key: Tuple[int, Transform[Any, Any]], name: Optional[str]) -> PartitionField:
+    def _partition_field(self, transform_key: Tuple[int, Transform[Any, Any]], name: str | None) -> PartitionField:
         if self._transaction.table_metadata.format_version == 2:
             source_id, transform = transform_key
             historical_fields = []

@@ -40,7 +40,7 @@ AvroCompressionCodec: TypeAlias = Literal["null", "bzip2", "snappy", "zstandard"
 
 AVRO_CODEC_KEY = "avro.codec"
 
-KNOWN_CODECS: Dict[AvroCompressionCodec, Optional[Type[Codec]]] = {
+KNOWN_CODECS: Dict[AvroCompressionCodec, Type[Codec] | None] = {
     "null": None,
     "bzip2": BZip2Codec,
     "snappy": SnappyCodec,

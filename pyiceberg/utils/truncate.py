@@ -14,10 +14,9 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
-from typing import Optional
 
 
-def truncate_upper_bound_text_string(value: str, trunc_length: Optional[int]) -> Optional[str]:
+def truncate_upper_bound_text_string(value: str, trunc_length: int | None) -> str | None:
     result = value[:trunc_length]
     if result != value:
         chars = [*result]
@@ -35,7 +34,7 @@ def truncate_upper_bound_text_string(value: str, trunc_length: Optional[int]) ->
     return result
 
 
-def truncate_upper_bound_binary_string(value: bytes, trunc_length: Optional[int]) -> Optional[bytes]:
+def truncate_upper_bound_binary_string(value: bytes, trunc_length: int | None) -> bytes | None:
     result = value[:trunc_length]
     if result != value:
         _bytes = [*result]

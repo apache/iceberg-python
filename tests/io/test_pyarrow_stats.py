@@ -32,9 +32,7 @@ from typing import (
     Any,
     Dict,
     List,
-    Optional,
     Tuple,
-    Union,
 )
 
 import pyarrow as pa
@@ -78,13 +76,13 @@ from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, time_to_m
 @dataclass(frozen=True)
 class TestStruct:
     __test__ = False
-    x: Optional[int]
-    y: Optional[float]
+    x: int | None
+    y: float | None
 
 
 def construct_test_table(
-    write_statistics: Union[bool, List[str]] = True,
-) -> Tuple[pq.FileMetaData, Union[TableMetadataV1, TableMetadataV2]]:
+    write_statistics: bool | List[str] = True,
+) -> Tuple[pq.FileMetaData, TableMetadataV1 | TableMetadataV2]:
     table_metadata = {
         "format-version": 2,
         "location": "s3://bucket/test/location",
@@ -145,7 +143,7 @@ def construct_test_table(
 
     _list = [[1, 2, 3], [4, 5, 6], None, [7, 8, 9]]
 
-    _maps: List[Optional[Dict[int, int]]] = [
+    _maps: List[Dict[int, int] | None] = [
         {1: 2, 3: 4},
         None,
         {5: 6},
@@ -424,7 +422,7 @@ def test_column_metrics_mode() -> None:
     assert 1 not in datafile.upper_bounds
 
 
-def construct_test_table_primitive_types() -> Tuple[pq.FileMetaData, Union[TableMetadataV1, TableMetadataV2]]:
+def construct_test_table_primitive_types() -> Tuple[pq.FileMetaData, TableMetadataV1 | TableMetadataV2]:
     table_metadata = {
         "format-version": 2,
         "location": "s3://bucket/test/location",
@@ -578,7 +576,7 @@ def test_metrics_primitive_types() -> None:
     assert not any(key in datafile.upper_bounds.keys() for key in [16, 17, 18])
 
 
-def construct_test_table_invalid_upper_bound() -> Tuple[pq.FileMetaData, Union[TableMetadataV1, TableMetadataV2]]:
+def construct_test_table_invalid_upper_bound() -> Tuple[pq.FileMetaData, TableMetadataV1 | TableMetadataV2]:
     table_metadata = {
         "format-version": 2,
         "location": "s3://bucket/test/location",

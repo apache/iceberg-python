@@ -16,7 +16,7 @@
 # under the License.
 # pylint: disable=keyword-arg-before-vararg
 from enum import Enum
-from typing import Annotated, Any, Callable, Dict, List, Optional, Union
+from typing import Annotated, Any, Callable, Dict, List
 
 from pydantic import (
     BeforeValidator,
@@ -71,10 +71,10 @@ class SortField(IcebergBaseModel):
 
     def __init__(
         self,
-        source_id: Optional[int] = None,
-        transform: Optional[Union[Transform[Any, Any], Callable[[IcebergType], Transform[Any, Any]]]] = None,
-        direction: Optional[SortDirection] = None,
-        null_order: Optional[NullOrder] = None,
+        source_id: int | None = None,
+        transform: Transform[Any, Any] | Callable[[IcebergType], Transform[Any, Any]] | None = None,
+        direction: SortDirection | None = None,
+        null_order: NullOrder | None = None,
         **data: Any,
     ):
         if source_id is not None:

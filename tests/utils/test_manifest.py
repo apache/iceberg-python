@@ -16,7 +16,7 @@
 # under the License.
 # pylint: disable=redefined-outer-name,arguments-renamed,fixme
 from tempfile import TemporaryDirectory
-from typing import Dict, Optional
+from typing import Dict
 from unittest.mock import patch
 
 import fastavro
@@ -532,7 +532,7 @@ def test_write_manifest_list(
     generated_manifest_file_file_v1: str,
     generated_manifest_file_file_v2: str,
     format_version: TableVersion,
-    parent_snapshot_id: Optional[int],
+    parent_snapshot_id: int | None,
     compression: AvroCompressionCodec,
 ) -> None:
     io = load_file_io()
