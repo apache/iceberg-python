@@ -155,7 +155,7 @@ class _CreateMapping(SchemaVisitor[List[MappedField]]):
     def struct(self, struct: StructType, field_results: List[List[MappedField]]) -> List[MappedField]:
         return [
             MappedField(field_id=field.field_id, names=[field.name], fields=result)
-            for field, result in zip(struct.fields, field_results)
+            for field, result in zip(struct.fields, field_results, strict=True)
         ]
 
     def field(self, field: NestedField, field_result: List[MappedField]) -> List[MappedField]:

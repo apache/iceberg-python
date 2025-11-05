@@ -1898,7 +1898,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
             return None
         field_arrays: List[pa.Array] = []
         fields: List[pa.Field] = []
-        for field, field_array in zip(struct.fields, field_results):
+        for field, field_array in zip(struct.fields, field_results, strict=True):
             if field_array is not None:
                 array = self._cast_if_needed(field, field_array)
                 field_arrays.append(array)
@@ -2840,7 +2840,7 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
     # to avoid conflicts
     partition_fields = [f"_partition_{field.name}" for field in spec.fields]
 
-    for partition, name in zip(spec.fields, partition_fields):
+    for partition, name in zip(spec.fields, partition_fields, strict=True):
         source_field = schema.find_field(partition.source_id)
         full_field_name = schema.find_column_name(partition.source_id)
         if full_field_name is None:
@@ -2854,7 +2854,7 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
         partition_key = PartitionKey(
             field_values=[
                 PartitionFieldValue(field=field, value=unique_partition[name])
-                for field, name in zip(spec.fields, partition_fields)
+                for field, name in zip(spec.fields, partition_fields, strict=True)
             ],
             partition_spec=spec,
             schema=schema,
@@ -2868,7 +2868,7 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
                         if unique_partition[partition_field_name] is not None
                         else pc.field(partition_field_name).is_null()
                     )
-                    for field, partition_field_name in zip(spec.fields, partition_fields)
+                    for field, partition_field_name in zip(spec.fields, partition_fields, strict=True)
                 ],
             )
         )
