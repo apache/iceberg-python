@@ -38,7 +38,7 @@ from pyiceberg.utils.lazydict import LazyDict
 # direct comparison with the dicts returned by fastavro
 def todict(obj: Any, spec_keys: List[str]) -> Any:
     if type(obj) is Record:
-        return {key: obj[pos] for key, pos in zip(spec_keys, range(len(obj)))}
+        return {key: obj[pos] for key, pos in zip(spec_keys, range(len(obj)), strict=True)}
     if isinstance(obj, dict) or isinstance(obj, LazyDict):
         data = []
         for k, v in obj.items():

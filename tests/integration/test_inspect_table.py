@@ -152,7 +152,7 @@ def _inspect_files_asserts(df: pa.Table, spark_df: DataFrame) -> None:
         if column == "partition":
             # Spark leaves out the partition if the table is unpartitioned
             continue
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if isinstance(left, float) and math.isnan(left) and isinstance(right, float) and math.isnan(right):
                 # NaN != NaN in Python
                 continue
@@ -209,7 +209,7 @@ def _check_pyiceberg_df_equals_spark_df(df: pa.Table, spark_df: DataFrame) -> No
     lhs = df.to_pandas().sort_values("last_updated_at")
     rhs = spark_df.toPandas().sort_values("last_updated_at")
     for column in df.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             assert left == right, f"Difference in column {column}: {left} != {right}"
 
 
@@ -284,7 +284,7 @@ def test_inspect_snapshots(
     lhs = spark.table(f"{identifier}.snapshots").toPandas()
     rhs = df.to_pandas()
     for column in df.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if column == "summary":
                 # Arrow returns a list of tuples, instead of a dict
                 right = dict(right)
@@ -332,7 +332,7 @@ def test_inspect_entries(
         assert len(lhs) == len(rhs)
 
         for column in df.column_names:
-            for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+            for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
                 if column == "data_file":
                     for df_column in left.keys():
                         if df_column == "partition":
@@ -485,7 +485,7 @@ def test_inspect_refs(
     lhs = spark.table(f"{identifier}.refs").toPandas()
     rhs = df.to_pandas()
     for column in df.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if isinstance(left, float) and math.isnan(left) and isinstance(right, float) and math.isnan(right):
                 # NaN != NaN in Python
                 continue
@@ -535,7 +535,7 @@ def test_inspect_partitions_unpartitioned(
     lhs = df.to_pandas()
     rhs = spark.table(f"{identifier}.partitions").toPandas()
     for column in df.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             assert left == right, f"Difference in column {column}: {left} != {right}"
 
 
@@ -755,7 +755,7 @@ def test_inspect_manifests(spark: SparkSession, session_catalog: Catalog, format
     lhs = spark.table(f"{identifier}.manifests").toPandas()
     rhs = df.to_pandas()
     for column in df.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             assert left == right, f"Difference in column {column}: {left} != {right}"
 
 
@@ -793,7 +793,7 @@ def test_inspect_metadata_log_entries(
     assert_frame_equal(left_before_last, right_before_last, check_dtype=False)
     # compare the last row, except for the timestamp
     for column in df.column_names:
-        for left, right in zip(left_last[column], right_last[column]):
+        for left, right in zip(left_last[column], right_last[column], strict=True):
             if column == "timestamp":
                 continue
             assert left == right, f"Difference in column {column}: {left} != {right}"
@@ -861,7 +861,7 @@ def test_inspect_history(spark: SparkSession, session_catalog: Catalog, format_v
     lhs = spark.table(f"{identifier}.history").toPandas()
     rhs = df.to_pandas()
     for column in df.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if isinstance(left, float) and math.isnan(left) and isinstance(right, float) and math.isnan(right):
                 # NaN != NaN in Python
                 continue
