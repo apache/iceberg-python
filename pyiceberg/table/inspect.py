@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import itertools
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Set, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Set, Tuple
 
 from pyiceberg.conversions import from_bytes
 from pyiceberg.expressions import AlwaysTrue, BooleanExpression
@@ -48,7 +48,7 @@ class InspectTable:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For metadata operations PyArrow needs to be installed") from e
 
-    def _get_snapshot(self, snapshot_id: Optional[int] = None) -> Snapshot:
+    def _get_snapshot(self, snapshot_id: int | None = None) -> Snapshot:
         if snapshot_id is not None:
             if snapshot := self.tbl.metadata.snapshot_by_id(snapshot_id):
                 return snapshot
@@ -98,7 +98,7 @@ class InspectTable:
             schema=snapshots_schema,
         )
 
-    def entries(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+    def entries(self, snapshot_id: int | None = None) -> "pa.Table":
         import pyarrow as pa
 
         from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -261,8 +261,8 @@ class InspectTable:
 
     def partitions(
         self,
-        snapshot_id: Optional[int] = None,
-        row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
+        snapshot_id: int | None = None,
+        row_filter: str | BooleanExpression = ALWAYS_TRUE,
         case_sensitive: bool = True,
     ) -> "pa.Table":
         import pyarrow as pa
@@ -330,7 +330,7 @@ class InspectTable:
         partitions_map: Dict[Tuple[str, Any], Any],
         file: DataFile,
         partition_record_dict: Dict[str, Any],
-        snapshot: Optional[Snapshot],
+        snapshot: Snapshot | None,
     ) -> None:
         partition_record_key = _convert_to_hashable_type(partition_record_dict)
         if partition_record_key not in partitions_map:
@@ -405,7 +405,7 @@ class InspectTable:
         all_manifests_schema = all_manifests_schema.append(pa.field("reference_snapshot_id", pa.int64(), nullable=False))
         return all_manifests_schema
 
-    def _generate_manifests_table(self, snapshot: Optional[Snapshot], is_all_manifests_table: bool = False) -> "pa.Table":
+    def _generate_manifests_table(self, snapshot: Snapshot | None, is_all_manifests_table: bool = False) -> "pa.Table":
         import pyarrow as pa
 
         def _partition_summaries_to_rows(
@@ -545,7 +545,7 @@ class InspectTable:
         return pa.Table.from_pylist(history, schema=history_schema)
 
     def _get_files_from_manifest(
-        self, manifest_list: ManifestFile, data_file_filter: Optional[Set[DataFileContent]] = None
+        self, manifest_list: ManifestFile, data_file_filter: Set[DataFileContent] | None = None
     ) -> "pa.Table":
         import pyarrow as pa
 
@@ -663,7 +663,7 @@ class InspectTable:
         )
         return files_schema
 
-    def _files(self, snapshot_id: Optional[int] = None, data_file_filter: Optional[Set[DataFileContent]] = None) -> "pa.Table":
+    def _files(self, snapshot_id: int | None = None, data_file_filter: Set[DataFileContent] | None = None) -> "pa.Table":
         import pyarrow as pa
 
         if not snapshot_id and not self.tbl.metadata.current_snapshot():
@@ -680,13 +680,13 @@ class InspectTable:
         )
         return pa.concat_tables(results)
 
-    def files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+    def files(self, snapshot_id: int | None = None) -> "pa.Table":
         return self._files(snapshot_id)
 
-    def data_files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+    def data_files(self, snapshot_id: int | None = None) -> "pa.Table":
         return self._files(snapshot_id, {DataFileContent.DATA})
 
-    def delete_files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+    def delete_files(self, snapshot_id: int | None = None) -> "pa.Table":
         return self._files(snapshot_id, {DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES})
 
     def all_manifests(self) -> "pa.Table":
@@ -702,7 +702,7 @@ class InspectTable:
         )
         return pa.concat_tables(manifests_by_snapshots)
 
-    def _all_files(self, data_file_filter: Optional[Set[DataFileContent]] = None) -> "pa.Table":
+    def _all_files(self, data_file_filter: Set[DataFileContent] | None = None) -> "pa.Table":
         import pyarrow as pa
 
         snapshots = self.tbl.snapshots()

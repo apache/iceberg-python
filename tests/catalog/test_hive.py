@@ -22,7 +22,6 @@ import threading
 import uuid
 from collections.abc import Generator
 from copy import deepcopy
-from typing import Optional
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -230,7 +229,7 @@ class SaslServer(threading.Thread):
                 pass
 
     @property
-    def port(self) -> Optional[int]:
+    def port(self) -> int | None:
         self._port_bound.wait()
         return self._port
 

@@ -30,7 +30,6 @@ from typing import (
     Dict,
     Generic,
     List,
-    Optional,
     Type,
     TypeVar,
 )
@@ -85,7 +84,7 @@ class AvroFileHeader(Record):
     def sync(self) -> bytes:
         return self._data[2]
 
-    def compression_codec(self) -> Optional[Type[Codec]]:
+    def compression_codec(self) -> Type[Codec] | None:
         """Get the file's compression codec algorithm from the file's metadata.
 
         In the case of a null codec, we return a None indicating that we
@@ -146,7 +145,7 @@ class AvroFile(Generic[D]):
         "block",
     )
     input_file: InputFile
-    read_schema: Optional[Schema]
+    read_schema: Schema | None
     read_types: Dict[int, Callable[..., StructProtocol]]
     read_enums: Dict[int, Callable[..., Enum]]
     header: AvroFileHeader
@@ -154,12 +153,12 @@ class AvroFile(Generic[D]):
     reader: Reader
 
     decoder: BinaryDecoder
-    block: Optional[Block[D]]
+    block: Block[D] | None
 
     def __init__(
         self,
         input_file: InputFile,
-        read_schema: Optional[Schema] = None,
+        read_schema: Schema | None = None,
         read_types: Dict[int, Callable[..., StructProtocol]] = EMPTY_DICT,
         read_enums: Dict[int, Callable[..., Enum]] = EMPTY_DICT,
     ) -> None:
@@ -186,9 +185,7 @@ class AvroFile(Generic[D]):
 
         return self
 
-    def __exit__(
-        self, exctype: Optional[Type[BaseException]], excinst: Optional[BaseException], exctb: Optional[TracebackType]
-    ) -> None:
+    def __exit__(self, exctype: Type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
         """Perform cleanup when exiting the scope of a 'with' statement."""
 
     def __iter__(self) -> AvroFile[D]:
@@ -242,7 +239,7 @@ class AvroOutputFile(Generic[D]):
         output_file: OutputFile,
         file_schema: Schema,
         schema_name: str,
-        record_schema: Optional[Schema] = None,
+        record_schema: Schema | None = None,
         metadata: Dict[str, str] = EMPTY_DICT,
     ) -> None:
         self.output_file = output_file
@@ -270,9 +267,7 @@ class AvroOutputFile(Generic[D]):
 
         return self
 
-    def __exit__(
-        self, exctype: Optional[Type[BaseException]], excinst: Optional[BaseException], exctb: Optional[TracebackType]
-    ) -> None:
+    def __exit__(self, exctype: Type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
         """Perform cleanup when exiting the scope of a 'with' statement."""
         self.output_stream.close()
 
@@ -289,7 +284,7 @@ class AvroOutputFile(Generic[D]):
         header = AvroFileHeader(MAGIC, meta, self.sync_bytes)
         construct_writer(META_SCHEMA).write(self.encoder, header)
 
-    def compression_codec(self) -> Optional[Type[Codec]]:
+    def compression_codec(self) -> Type[Codec] | None:
         """Get the file's compression codec algorithm from the file's metadata.
 
         In the case of a null codec, we return a None indicating that we

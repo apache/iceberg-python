@@ -21,7 +21,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from functools import cached_property, singledispatch
-from typing import Annotated, Any, Dict, Generic, List, Optional, Set, Tuple, TypeVar, Union
+from typing import Annotated, Any, Dict, Generic, List, Set, Tuple, TypeVar
 from urllib.parse import quote_plus
 
 from pydantic import (
@@ -86,10 +86,10 @@ class PartitionField(IcebergBaseModel):
 
     def __init__(
         self,
-        source_id: Optional[int] = None,
-        field_id: Optional[int] = None,
-        transform: Optional[Transform[Any, Any]] = None,
-        name: Optional[str] = None,
+        source_id: int | None = None,
+        field_id: int | None = None,
+        transform: Transform[Any, Any] | None = None,
+        name: str | None = None,
         **data: Any,
     ):
         if source_id is not None:
@@ -466,7 +466,7 @@ def _to_partition_representation(type: IcebergType, value: Any) -> Any:
 
 @_to_partition_representation.register(TimestampType)
 @_to_partition_representation.register(TimestamptzType)
-def _(type: IcebergType, value: Optional[Union[int, datetime]]) -> Optional[int]:
+def _(type: IcebergType, value: int | datetime | None) -> int | None:
     if value is None:
         return None
     elif isinstance(value, int):
@@ -478,7 +478,7 @@ def _(type: IcebergType, value: Optional[Union[int, datetime]]) -> Optional[int]
 
 
 @_to_partition_representation.register(DateType)
-def _(type: IcebergType, value: Optional[Union[int, date]]) -> Optional[int]:
+def _(type: IcebergType, value: int | date | None) -> int | None:
     if value is None:
         return None
     elif isinstance(value, int):
@@ -490,12 +490,12 @@ def _(type: IcebergType, value: Optional[Union[int, date]]) -> Optional[int]:
 
 
 @_to_partition_representation.register(TimeType)
-def _(type: IcebergType, value: Optional[time]) -> Optional[int]:
+def _(type: IcebergType, value: time | None) -> int | None:
     return time_to_micros(value) if value is not None else None
 
 
 @_to_partition_representation.register(UUIDType)
-def _(type: IcebergType, value: Optional[Union[uuid.UUID, int, bytes]]) -> Optional[Union[bytes, int]]:
+def _(type: IcebergType, value: uuid.UUID | int | bytes | None) -> bytes | int | None:
     if value is None:
         return None
     elif isinstance(value, bytes):
@@ -509,5 +509,5 @@ def _(type: IcebergType, value: Optional[Union[uuid.UUID, int, bytes]]) -> Optio
 
 
 @_to_partition_representation.register(PrimitiveType)
-def _(type: IcebergType, value: Optional[Any]) -> Optional[Any]:
+def _(type: IcebergType, value: Any | None) -> Any | None:
     return value

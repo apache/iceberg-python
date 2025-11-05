@@ -20,9 +20,7 @@ from typing import (
     Callable,
     Dict,
     List,
-    Optional,
     Tuple,
-    Union,
 )
 
 from pyiceberg.avro.decoder import BinaryDecoder
@@ -116,7 +114,7 @@ STRUCT_ROOT = -1
 
 
 def construct_reader(
-    file_schema: Union[Schema, IcebergType], read_types: Dict[int, Callable[..., StructProtocol]] = EMPTY_DICT
+    file_schema: Schema | IcebergType, read_types: Dict[int, Callable[..., StructProtocol]] = EMPTY_DICT
 ) -> Reader:
     """Construct a reader from a file schema.
 
@@ -130,7 +128,7 @@ def construct_reader(
     return resolve_reader(file_schema, file_schema, read_types)
 
 
-def construct_writer(file_schema: Union[Schema, IcebergType]) -> Writer:
+def construct_writer(file_schema: Schema | IcebergType) -> Writer:
     """Construct a writer from a file schema.
 
     Args:
@@ -216,8 +214,8 @@ CONSTRUCT_WRITER_VISITOR = ConstructWriter()
 
 
 def resolve_writer(
-    record_schema: Union[Schema, IcebergType],
-    file_schema: Union[Schema, IcebergType],
+    record_schema: Schema | IcebergType,
+    file_schema: Schema | IcebergType,
 ) -> Writer:
     """Resolve the file and read schema to produce a reader.
 
@@ -234,8 +232,8 @@ def resolve_writer(
 
 
 def resolve_reader(
-    file_schema: Union[Schema, IcebergType],
-    read_schema: Union[Schema, IcebergType],
+    file_schema: Schema | IcebergType,
+    read_schema: Schema | IcebergType,
     read_types: Dict[int, Callable[..., StructProtocol]] = EMPTY_DICT,
     read_enums: Dict[int, Callable[..., Enum]] = EMPTY_DICT,
 ) -> Reader:
@@ -273,15 +271,15 @@ class EnumReader(Reader):
 
 
 class WriteSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Writer]):
-    def schema(self, file_schema: Schema, record_schema: Optional[IcebergType], result: Writer) -> Writer:
+    def schema(self, file_schema: Schema, record_schema: IcebergType | None, result: Writer) -> Writer:
         return result
 
-    def struct(self, file_schema: StructType, record_struct: Optional[IcebergType], file_writers: List[Writer]) -> Writer:
+    def struct(self, file_schema: StructType, record_struct: IcebergType | None, file_writers: List[Writer]) -> Writer:
         if not isinstance(record_struct, StructType):
             raise ResolveError(f"File/write schema are not aligned for struct, got {record_struct}")
 
         record_struct_positions: Dict[int, int] = {field.field_id: pos for pos, field in enumerate(record_struct.fields)}
-        results: List[Tuple[Optional[int], Writer]] = []
+        results: List[Tuple[int | None, Writer]] = []
 
         for writer, file_field in zip(file_writers, file_schema.fields):
             if file_field.field_id in record_struct_positions:
@@ -298,18 +296,16 @@ class WriteSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Writer]):
 
         return StructWriter(field_writers=tuple(results))
 
-    def field(self, file_field: NestedField, record_type: Optional[IcebergType], field_writer: Writer) -> Writer:
+    def field(self, file_field: NestedField, record_type: IcebergType | None, field_writer: Writer) -> Writer:
         return field_writer if file_field.required else OptionWriter(field_writer)
 
-    def list(self, file_list_type: ListType, file_list: Optional[IcebergType], element_writer: Writer) -> Writer:
+    def list(self, file_list_type: ListType, file_list: IcebergType | None, element_writer: Writer) -> Writer:
         return ListWriter(element_writer if file_list_type.element_required else OptionWriter(element_writer))
 
-    def map(
-        self, file_map_type: MapType, file_primitive: Optional[IcebergType], key_writer: Writer, value_writer: Writer
-    ) -> Writer:
+    def map(self, file_map_type: MapType, file_primitive: IcebergType | None, key_writer: Writer, value_writer: Writer) -> Writer:
         return MapWriter(key_writer, value_writer if file_map_type.value_required else OptionWriter(value_writer))
 
-    def primitive(self, file_primitive: PrimitiveType, record_primitive: Optional[IcebergType]) -> Writer:
+    def primitive(self, file_primitive: PrimitiveType, record_primitive: IcebergType | None) -> Writer:
         if record_primitive is not None:
             # ensure that the type can be projected to the expected
             if file_primitive != record_primitive:
@@ -317,55 +313,55 @@ class WriteSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Writer]):
 
         return super().primitive(file_primitive, file_primitive)
 
-    def visit_boolean(self, boolean_type: BooleanType, partner: Optional[IcebergType]) -> Writer:
+    def visit_boolean(self, boolean_type: BooleanType, partner: IcebergType | None) -> Writer:
         return BooleanWriter()
 
-    def visit_integer(self, integer_type: IntegerType, partner: Optional[IcebergType]) -> Writer:
+    def visit_integer(self, integer_type: IntegerType, partner: IcebergType | None) -> Writer:
         return IntegerWriter()
 
-    def visit_long(self, long_type: LongType, partner: Optional[IcebergType]) -> Writer:
+    def visit_long(self, long_type: LongType, partner: IcebergType | None) -> Writer:
         return IntegerWriter()
 
-    def visit_float(self, float_type: FloatType, partner: Optional[IcebergType]) -> Writer:
+    def visit_float(self, float_type: FloatType, partner: IcebergType | None) -> Writer:
         return FloatWriter()
 
-    def visit_double(self, double_type: DoubleType, partner: Optional[IcebergType]) -> Writer:
+    def visit_double(self, double_type: DoubleType, partner: IcebergType | None) -> Writer:
         return DoubleWriter()
 
-    def visit_decimal(self, decimal_type: DecimalType, partner: Optional[IcebergType]) -> Writer:
+    def visit_decimal(self, decimal_type: DecimalType, partner: IcebergType | None) -> Writer:
         return DecimalWriter(decimal_type.precision, decimal_type.scale)
 
-    def visit_date(self, date_type: DateType, partner: Optional[IcebergType]) -> Writer:
+    def visit_date(self, date_type: DateType, partner: IcebergType | None) -> Writer:
         return DateWriter()
 
-    def visit_time(self, time_type: TimeType, partner: Optional[IcebergType]) -> Writer:
+    def visit_time(self, time_type: TimeType, partner: IcebergType | None) -> Writer:
         return TimeWriter()
 
-    def visit_timestamp(self, timestamp_type: TimestampType, partner: Optional[IcebergType]) -> Writer:
+    def visit_timestamp(self, timestamp_type: TimestampType, partner: IcebergType | None) -> Writer:
         return TimestampWriter()
 
-    def visit_timestamp_ns(self, timestamp_ns_type: TimestampNanoType, partner: Optional[IcebergType]) -> Writer:
+    def visit_timestamp_ns(self, timestamp_ns_type: TimestampNanoType, partner: IcebergType | None) -> Writer:
         return TimestampNanoWriter()
 
-    def visit_timestamptz(self, timestamptz_type: TimestamptzType, partner: Optional[IcebergType]) -> Writer:
+    def visit_timestamptz(self, timestamptz_type: TimestamptzType, partner: IcebergType | None) -> Writer:
         return TimestamptzWriter()
 
-    def visit_timestamptz_ns(self, timestamptz_ns_type: TimestamptzNanoType, partner: Optional[IcebergType]) -> Writer:
+    def visit_timestamptz_ns(self, timestamptz_ns_type: TimestamptzNanoType, partner: IcebergType | None) -> Writer:
         return TimestamptzNanoWriter()
 
-    def visit_string(self, string_type: StringType, partner: Optional[IcebergType]) -> Writer:
+    def visit_string(self, string_type: StringType, partner: IcebergType | None) -> Writer:
         return StringWriter()
 
-    def visit_uuid(self, uuid_type: UUIDType, partner: Optional[IcebergType]) -> Writer:
+    def visit_uuid(self, uuid_type: UUIDType, partner: IcebergType | None) -> Writer:
         return UUIDWriter()
 
-    def visit_fixed(self, fixed_type: FixedType, partner: Optional[IcebergType]) -> Writer:
+    def visit_fixed(self, fixed_type: FixedType, partner: IcebergType | None) -> Writer:
         return FixedWriter(len(fixed_type))
 
-    def visit_binary(self, binary_type: BinaryType, partner: Optional[IcebergType]) -> Writer:
+    def visit_binary(self, binary_type: BinaryType, partner: IcebergType | None) -> Writer:
         return BinaryWriter()
 
-    def visit_unknown(self, unknown_type: UnknownType, partner: Optional[IcebergType]) -> Writer:
+    def visit_unknown(self, unknown_type: UnknownType, partner: IcebergType | None) -> Writer:
         return UnknownWriter()
 
 
@@ -384,16 +380,16 @@ class ReadSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
         self.read_enums = read_enums
         self.context = []
 
-    def schema(self, schema: Schema, expected_schema: Optional[IcebergType], result: Reader) -> Reader:
+    def schema(self, schema: Schema, expected_schema: IcebergType | None, result: Reader) -> Reader:
         return result
 
-    def before_field(self, field: NestedField, field_partner: Optional[NestedField]) -> None:
+    def before_field(self, field: NestedField, field_partner: NestedField | None) -> None:
         self.context.append(field.field_id)
 
-    def after_field(self, field: NestedField, field_partner: Optional[NestedField]) -> None:
+    def after_field(self, field: NestedField, field_partner: NestedField | None) -> None:
         self.context.pop()
 
-    def struct(self, struct: StructType, expected_struct: Optional[IcebergType], field_readers: List[Reader]) -> Reader:
+    def struct(self, struct: StructType, expected_struct: IcebergType | None, field_readers: List[Reader]) -> Reader:
         read_struct_id = self.context[STRUCT_ROOT] if len(self.context) > 0 else STRUCT_ROOT
         struct_callable = self.read_types.get(read_struct_id, Record)
 
@@ -406,7 +402,7 @@ class ReadSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
         expected_positions: Dict[int, int] = {field.field_id: pos for pos, field in enumerate(expected_struct.fields)}
 
         # first, add readers for the file fields that must be in order
-        results: List[Tuple[Optional[int], Reader]] = [
+        results: List[Tuple[int | None, Reader]] = [
             (
                 expected_positions.get(field.field_id),
                 # Check if we need to convert it to an Enum
@@ -430,22 +426,22 @@ class ReadSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
 
         return StructReader(tuple(results), struct_callable, expected_struct)
 
-    def field(self, field: NestedField, expected_field: Optional[IcebergType], field_reader: Reader) -> Reader:
+    def field(self, field: NestedField, expected_field: IcebergType | None, field_reader: Reader) -> Reader:
         return field_reader if field.required else OptionReader(field_reader)
 
-    def list(self, list_type: ListType, expected_list: Optional[IcebergType], element_reader: Reader) -> Reader:
+    def list(self, list_type: ListType, expected_list: IcebergType | None, element_reader: Reader) -> Reader:
         if expected_list and not isinstance(expected_list, ListType):
             raise ResolveError(f"File/read schema are not aligned for list, got {expected_list}")
 
         return ListReader(element_reader if list_type.element_required else OptionReader(element_reader))
 
-    def map(self, map_type: MapType, expected_map: Optional[IcebergType], key_reader: Reader, value_reader: Reader) -> Reader:
+    def map(self, map_type: MapType, expected_map: IcebergType | None, key_reader: Reader, value_reader: Reader) -> Reader:
         if expected_map and not isinstance(expected_map, MapType):
             raise ResolveError(f"File/read schema are not aligned for map, got {expected_map}")
 
         return MapReader(key_reader, value_reader if map_type.value_required else OptionReader(value_reader))
 
-    def primitive(self, primitive: PrimitiveType, expected_primitive: Optional[IcebergType]) -> Reader:
+    def primitive(self, primitive: PrimitiveType, expected_primitive: IcebergType | None) -> Reader:
         if expected_primitive is not None:
             if not isinstance(expected_primitive, PrimitiveType):
                 raise ResolveError(f"File/read schema are not aligned for {primitive}, got {expected_primitive}")
@@ -456,66 +452,66 @@ class ReadSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
 
         return super().primitive(primitive, expected_primitive)
 
-    def visit_boolean(self, boolean_type: BooleanType, partner: Optional[IcebergType]) -> Reader:
+    def visit_boolean(self, boolean_type: BooleanType, partner: IcebergType | None) -> Reader:
         return BooleanReader()
 
-    def visit_integer(self, integer_type: IntegerType, partner: Optional[IcebergType]) -> Reader:
+    def visit_integer(self, integer_type: IntegerType, partner: IcebergType | None) -> Reader:
         return IntegerReader()
 
-    def visit_long(self, long_type: LongType, partner: Optional[IcebergType]) -> Reader:
+    def visit_long(self, long_type: LongType, partner: IcebergType | None) -> Reader:
         return IntegerReader()
 
-    def visit_float(self, float_type: FloatType, partner: Optional[IcebergType]) -> Reader:
+    def visit_float(self, float_type: FloatType, partner: IcebergType | None) -> Reader:
         return FloatReader()
 
-    def visit_double(self, double_type: DoubleType, partner: Optional[IcebergType]) -> Reader:
+    def visit_double(self, double_type: DoubleType, partner: IcebergType | None) -> Reader:
         return DoubleReader()
 
-    def visit_decimal(self, decimal_type: DecimalType, partner: Optional[IcebergType]) -> Reader:
+    def visit_decimal(self, decimal_type: DecimalType, partner: IcebergType | None) -> Reader:
         return DecimalReader(decimal_type.precision, decimal_type.scale)
 
-    def visit_date(self, date_type: DateType, partner: Optional[IcebergType]) -> Reader:
+    def visit_date(self, date_type: DateType, partner: IcebergType | None) -> Reader:
         return DateReader()
 
-    def visit_time(self, time_type: TimeType, partner: Optional[IcebergType]) -> Reader:
+    def visit_time(self, time_type: TimeType, partner: IcebergType | None) -> Reader:
         return TimeReader()
 
-    def visit_timestamp(self, timestamp_type: TimestampType, partner: Optional[IcebergType]) -> Reader:
+    def visit_timestamp(self, timestamp_type: TimestampType, partner: IcebergType | None) -> Reader:
         return TimestampReader()
 
-    def visit_timestamp_ns(self, timestamp_ns_type: TimestampNanoType, partner: Optional[IcebergType]) -> Reader:
+    def visit_timestamp_ns(self, timestamp_ns_type: TimestampNanoType, partner: IcebergType | None) -> Reader:
         return TimestampNanoReader()
 
-    def visit_timestamptz(self, timestamptz_type: TimestamptzType, partner: Optional[IcebergType]) -> Reader:
+    def visit_timestamptz(self, timestamptz_type: TimestamptzType, partner: IcebergType | None) -> Reader:
         return TimestamptzReader()
 
-    def visit_timestamptz_ns(self, timestamptz_ns_type: TimestamptzNanoType, partner: Optional[IcebergType]) -> Reader:
+    def visit_timestamptz_ns(self, timestamptz_ns_type: TimestamptzNanoType, partner: IcebergType | None) -> Reader:
         return TimestamptzNanoReader()
 
-    def visit_string(self, string_type: StringType, partner: Optional[IcebergType]) -> Reader:
+    def visit_string(self, string_type: StringType, partner: IcebergType | None) -> Reader:
         return StringReader()
 
-    def visit_uuid(self, uuid_type: UUIDType, partner: Optional[IcebergType]) -> Reader:
+    def visit_uuid(self, uuid_type: UUIDType, partner: IcebergType | None) -> Reader:
         return UUIDReader()
 
-    def visit_fixed(self, fixed_type: FixedType, partner: Optional[IcebergType]) -> Reader:
+    def visit_fixed(self, fixed_type: FixedType, partner: IcebergType | None) -> Reader:
         return FixedReader(len(fixed_type))
 
-    def visit_binary(self, binary_type: BinaryType, partner: Optional[IcebergType]) -> Reader:
+    def visit_binary(self, binary_type: BinaryType, partner: IcebergType | None) -> Reader:
         return BinaryReader()
 
-    def visit_unknown(self, unknown_type: UnknownType, partner: Optional[IcebergType]) -> Reader:
+    def visit_unknown(self, unknown_type: UnknownType, partner: IcebergType | None) -> Reader:
         return UnknownReader()
 
 
 class SchemaPartnerAccessor(PartnerAccessor[IcebergType]):
-    def schema_partner(self, partner: Optional[IcebergType]) -> Optional[IcebergType]:
+    def schema_partner(self, partner: IcebergType | None) -> IcebergType | None:
         if isinstance(partner, Schema):
             return partner.as_struct()
 
         raise ResolveError(f"File/read schema are not aligned for schema, got {partner}")
 
-    def field_partner(self, partner: Optional[IcebergType], field_id: int, field_name: str) -> Optional[IcebergType]:
+    def field_partner(self, partner: IcebergType | None, field_id: int, field_name: str) -> IcebergType | None:
         if isinstance(partner, StructType):
             field = partner.field(field_id)
         else:
@@ -523,19 +519,19 @@ class SchemaPartnerAccessor(PartnerAccessor[IcebergType]):
 
         return field.field_type if field else None
 
-    def list_element_partner(self, partner_list: Optional[IcebergType]) -> Optional[IcebergType]:
+    def list_element_partner(self, partner_list: IcebergType | None) -> IcebergType | None:
         if isinstance(partner_list, ListType):
             return partner_list.element_type
 
         raise ResolveError(f"File/read schema are not aligned for list, got {partner_list}")
 
-    def map_key_partner(self, partner_map: Optional[IcebergType]) -> Optional[IcebergType]:
+    def map_key_partner(self, partner_map: IcebergType | None) -> IcebergType | None:
         if isinstance(partner_map, MapType):
             return partner_map.key_type
 
         raise ResolveError(f"File/read schema are not aligned for map, got {partner_map}")
 
-    def map_value_partner(self, partner_map: Optional[IcebergType]) -> Optional[IcebergType]:
+    def map_value_partner(self, partner_map: IcebergType | None) -> IcebergType | None:
         if isinstance(partner_map, MapType):
             return partner_map.value_type
 

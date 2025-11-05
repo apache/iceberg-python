@@ -27,7 +27,6 @@ from typing import (
     Generic,
     List,
     Literal,
-    Optional,
     Protocol,
     Set,
     Tuple,
@@ -127,7 +126,7 @@ class IcebergBaseModel(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
-    def _exclude_private_properties(self, exclude: Optional[Set[str]] = None) -> Set[str]:
+    def _exclude_private_properties(self, exclude: Set[str] | None = None) -> Set[str]:
         # A small trick to exclude private properties. Properties are serialized by pydantic,
         # regardless if they start with an underscore.
         # This will look at the dict, and find the fields and exclude them
@@ -136,14 +135,14 @@ class IcebergBaseModel(BaseModel):
         )
 
     def model_dump(
-        self, exclude_none: bool = True, exclude: Optional[Set[str]] = None, by_alias: bool = True, **kwargs: Any
+        self, exclude_none: bool = True, exclude: Set[str] | None = None, by_alias: bool = True, **kwargs: Any
     ) -> Dict[str, Any]:
         return super().model_dump(
             exclude_none=exclude_none, exclude=self._exclude_private_properties(exclude), by_alias=by_alias, **kwargs
         )
 
     def model_dump_json(
-        self, exclude_none: bool = True, exclude: Optional[Set[str]] = None, by_alias: bool = True, **kwargs: Any
+        self, exclude_none: bool = True, exclude: Set[str] | None = None, by_alias: bool = True, **kwargs: Any
     ) -> str:
         return super().model_dump_json(
             exclude_none=exclude_none, exclude=self._exclude_private_properties(exclude), by_alias=by_alias, **kwargs

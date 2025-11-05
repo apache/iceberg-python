@@ -21,7 +21,6 @@ from typing import (
     Callable,
     Dict,
     Literal,
-    Optional,
     Tuple,
 )
 
@@ -64,12 +63,12 @@ def catch_exception() -> Callable:  # type: ignore
 @click.pass_context
 def run(
     ctx: Context,
-    catalog: Optional[str],
+    catalog: str | None,
     verbose: bool,
     output: str,
-    ugi: Optional[str],
-    uri: Optional[str],
-    credential: Optional[str],
+    ugi: str | None,
+    uri: str | None,
+    credential: str | None,
 ) -> None:
     properties = {}
     if ugi:
@@ -107,7 +106,7 @@ def _catalog_and_output(ctx: Context) -> Tuple[Catalog, Output]:
 @click.pass_context
 @click.argument("parent", required=False)
 @catch_exception()
-def list(ctx: Context, parent: Optional[str]) -> None:  # pylint: disable=redefined-builtin
+def list(ctx: Context, parent: str | None) -> None:  # pylint: disable=redefined-builtin
     """List tables or namespaces."""
     catalog, output = _catalog_and_output(ctx)
 

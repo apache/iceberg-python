@@ -21,7 +21,6 @@ from typing import (
     Generic,
     Iterable,
     List,
-    Optional,
     TypeVar,
 )
 
@@ -91,7 +90,7 @@ class PackingIterator(Generic[T]):
 
         return self.remove_bin().items
 
-    def find_bin(self, weight: int) -> Optional[Bin[T]]:
+    def find_bin(self, weight: int) -> Bin[T] | None:
         for bin_ in self.bins:
             if bin_.can_add(weight):
                 return bin_
