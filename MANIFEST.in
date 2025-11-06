@@ -27,7 +27,7 @@ include uv.lock
 # Cython source files
 recursive-include pyiceberg *.pyx *.pyi
 
-# vendor packages
+# Vendor packages
 recursive-include vendor *
 
 # type stubs
@@ -49,3 +49,8 @@ prune .venv
 prune build
 prune dist
 prune *.egg-info
+prune .pytest_cache
+
+# Exclude generated files
+exclude pyiceberg/avro/decoder_fast.c
+exclude setup.cfg
