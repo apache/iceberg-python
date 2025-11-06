@@ -759,7 +759,9 @@ def test_spark_writes_orc_pyiceberg_reads(spark: SparkSession, session_catalog: 
     ]
 
     # Verify PyIceberg results contain the expected data (appears twice due to create + append)
-    pyiceberg_data = list(zip(pyiceberg_df["id"], pyiceberg_df["name"], pyiceberg_df["age"], pyiceberg_df["is_active"]))
+    pyiceberg_data = list(
+        zip(pyiceberg_df["id"], pyiceberg_df["name"], pyiceberg_df["age"], pyiceberg_df["is_active"], strict=True)
+    )
     assert pyiceberg_data == expected_data + expected_data  # Data should appear twice
 
     # Verify PyIceberg data types are correct
@@ -1170,7 +1172,7 @@ def test_inspect_snapshots(
     lhs = spark.table(f"{identifier}.snapshots").toPandas()
     rhs = df.to_pandas()
     for column in df.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if column == "summary":
                 # Arrow returns a list of tuples, instead of a dict
                 right = dict(right)
@@ -1466,7 +1468,7 @@ def test_table_write_schema_with_valid_nullability_diff(
     rhs = written_arrow_table.to_pandas()
 
     for column in written_arrow_table.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             assert left == right
 
 
@@ -1506,7 +1508,7 @@ def test_table_write_schema_with_valid_upcast(
     rhs = written_arrow_table.to_pandas()
 
     for column in written_arrow_table.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if column == "map":
                 # Arrow returns a list of tuples, instead of a dict
                 right = dict(right)
@@ -1552,7 +1554,7 @@ def test_write_all_timestamp_precision(
     rhs = written_arrow_table.to_pandas()
 
     for column in written_arrow_table.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if pd.isnull(left):
                 assert pd.isnull(right)
             else:

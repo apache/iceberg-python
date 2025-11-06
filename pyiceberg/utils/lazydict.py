@@ -46,7 +46,7 @@ class LazyDict(Mapping[K, V]):
     def _build_dict(self) -> Dict[K, V]:
         self._dict = {}
         for item in self._contents:
-            self._dict.update(dict(zip(cast(Sequence[K], item[::2]), cast(Sequence[V], item[1::2]))))
+            self._dict.update(dict(zip(cast(Sequence[K], item[::2]), cast(Sequence[V], item[1::2]), strict=True)))
 
         return self._dict
 

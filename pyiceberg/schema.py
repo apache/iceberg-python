@@ -125,7 +125,7 @@ class Schema(IcebergBaseModel):
             return False
 
         identifier_field_ids_is_equal = self.identifier_field_ids == other.identifier_field_ids
-        schema_is_equal = all(lhs == rhs for lhs, rhs in zip(self.columns, other.columns))
+        schema_is_equal = all(lhs == rhs for lhs, rhs in zip(self.columns, other.columns, strict=True))
 
         return identifier_field_ids_is_equal and schema_is_equal
 
@@ -1317,7 +1317,7 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
     def struct(self, struct: StructType, field_results: List[Callable[[], IcebergType]]) -> StructType:
         new_ids = [self._get_and_increment(field.field_id) for field in struct.fields]
         new_fields = []
-        for field_id, field, field_type in zip(new_ids, struct.fields, field_results):
+        for field_id, field, field_type in zip(new_ids, struct.fields, field_results, strict=True):
             new_fields.append(
                 NestedField(
                     field_id=field_id,

@@ -281,7 +281,7 @@ class WriteSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Writer]):
         record_struct_positions: Dict[int, int] = {field.field_id: pos for pos, field in enumerate(record_struct.fields)}
         results: List[Tuple[int | None, Writer]] = []
 
-        for writer, file_field in zip(file_writers, file_schema.fields):
+        for writer, file_field in zip(file_writers, file_schema.fields, strict=True):
             if file_field.field_id in record_struct_positions:
                 results.append((record_struct_positions[file_field.field_id], writer))
             elif file_field.required:
@@ -408,7 +408,7 @@ class ReadSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
                 # Check if we need to convert it to an Enum
                 result_reader if not (enum_type := self.read_enums.get(field.field_id)) else EnumReader(enum_type, result_reader),
             )
-            for field, result_reader in zip(struct.fields, field_readers)
+            for field, result_reader in zip(struct.fields, field_readers, strict=True)
         ]
 
         file_fields = {field.field_id for field in struct.fields}

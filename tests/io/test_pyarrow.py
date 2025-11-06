@@ -1076,16 +1076,16 @@ def test_projection_add_column(file_int: str) -> None:
     for col in result_table.columns:
         assert len(col) == 3
 
-    for actual, expected in zip(result_table.columns[0], [None, None, None]):
+    for actual, expected in zip(result_table.columns[0], [None, None, None], strict=True):
         assert actual.as_py() == expected
 
-    for actual, expected in zip(result_table.columns[1], [None, None, None]):
+    for actual, expected in zip(result_table.columns[1], [None, None, None], strict=True):
         assert actual.as_py() == expected
 
-    for actual, expected in zip(result_table.columns[2], [None, None, None]):
+    for actual, expected in zip(result_table.columns[2], [None, None, None], strict=True):
         assert actual.as_py() == expected
 
-    for actual, expected in zip(result_table.columns[3], [None, None, None]):
+    for actual, expected in zip(result_table.columns[3], [None, None, None], strict=True):
         assert actual.as_py() == expected
     assert (
         repr(result_table.schema)
@@ -1106,7 +1106,9 @@ def test_read_list(schema_list: Schema, file_list: str) -> None:
     result_table = project(schema_list, [file_list])
 
     assert len(result_table.columns[0]) == 3
-    for actual, expected in zip(result_table.columns[0], [list(range(1, 10)), list(range(2, 20)), list(range(3, 30))]):
+    for actual, expected in zip(
+        result_table.columns[0], [list(range(1, 10)), list(range(2, 20)), list(range(3, 30))], strict=True
+    ):
         assert actual.as_py() == expected
 
     assert (
@@ -1120,7 +1122,7 @@ def test_read_map(schema_map: Schema, file_map: str) -> None:
     result_table = project(schema_map, [file_map])
 
     assert len(result_table.columns[0]) == 3
-    for actual, expected in zip(result_table.columns[0], [[("a", "b")], [("c", "d")], [("e", "f"), ("g", "h")]]):
+    for actual, expected in zip(result_table.columns[0], [[("a", "b")], [("c", "d")], [("e", "f"), ("g", "h")]], strict=True):
         assert actual.as_py() == expected
 
     assert (
@@ -1177,7 +1179,7 @@ def test_projection_rename_column(schema_int: Schema, file_int: str) -> None:
     )
     result_table = project(schema, [file_int])
     assert len(result_table.columns[0]) == 3
-    for actual, expected in zip(result_table.columns[0], [0, 1, 2]):
+    for actual, expected in zip(result_table.columns[0], [0, 1, 2], strict=True):
         assert actual.as_py() == expected
 
     assert repr(result_table.schema) == "other_name: int32 not null"
@@ -1186,7 +1188,7 @@ def test_projection_rename_column(schema_int: Schema, file_int: str) -> None:
 def test_projection_concat_files(schema_int: Schema, file_int: str) -> None:
     result_table = project(schema_int, [file_int, file_int])
 
-    for actual, expected in zip(result_table.columns[0], [0, 1, 2, 0, 1, 2]):
+    for actual, expected in zip(result_table.columns[0], [0, 1, 2, 0, 1, 2], strict=True):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 6
     assert repr(result_table.schema) == "id: int32"
@@ -1350,7 +1352,7 @@ def test_projection_filter_add_column(schema_int: Schema, file_int: str, file_st
     """We have one file that has the column, and the other one doesn't"""
     result_table = project(schema_int, [file_int, file_string])
 
-    for actual, expected in zip(result_table.columns[0], [0, 1, 2, None, None, None]):
+    for actual, expected in zip(result_table.columns[0], [0, 1, 2, None, None, None], strict=True):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 6
     assert repr(result_table.schema) == "id: int32"
@@ -1360,7 +1362,7 @@ def test_projection_filter_add_column_promote(file_int: str) -> None:
     schema_long = Schema(NestedField(1, "id", LongType(), required=True))
     result_table = project(schema_long, [file_int])
 
-    for actual, expected in zip(result_table.columns[0], [0, 1, 2]):
+    for actual, expected in zip(result_table.columns[0], [0, 1, 2], strict=True):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 3
     assert repr(result_table.schema) == "id: int64 not null"
@@ -1388,7 +1390,7 @@ def test_projection_nested_struct_subset(file_struct: str) -> None:
 
     result_table = project(schema, [file_struct])
 
-    for actual, expected in zip(result_table.columns[0], [52.371807, 52.387386, 52.078663]):
+    for actual, expected in zip(result_table.columns[0], [52.371807, 52.387386, 52.078663], strict=True):
         assert actual.as_py() == {"lat": expected}
 
     assert len(result_table.columns[0]) == 3
@@ -1413,7 +1415,7 @@ def test_projection_nested_new_field(file_struct: str) -> None:
 
     result_table = project(schema, [file_struct])
 
-    for actual, expected in zip(result_table.columns[0], [None, None, None]):
+    for actual, expected in zip(result_table.columns[0], [None, None, None], strict=True):
         assert actual.as_py() == {"null": expected}
     assert len(result_table.columns[0]) == 3
     assert (
@@ -1445,6 +1447,7 @@ def test_projection_nested_struct(schema_struct: Schema, file_struct: str) -> No
             {"lat": 52.387386, "long": 4.646219, "null": None},
             {"lat": 52.078663, "long": 4.288788, "null": None},
         ],
+        strict=True,
     ):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 3
@@ -1536,6 +1539,7 @@ def test_projection_maps_of_structs(schema_map_of_structs: Schema, file_map_of_s
                 ("4", {"latitude": 52.387386, "longitude": 4.646219, "altitude": None}),
             ],
         ],
+        strict=True,
     ):
         assert actual.as_py() == expected
     assert (
@@ -1563,7 +1567,7 @@ def test_projection_nested_struct_different_parent_id(file_struct: str) -> None:
     )
 
     result_table = project(schema, [file_struct])
-    for actual, expected in zip(result_table.columns[0], [None, None, None]):
+    for actual, expected in zip(result_table.columns[0], [None, None, None], strict=True):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 3
     assert (
@@ -1579,10 +1583,7 @@ def test_projection_filter_on_unprojected_field(schema_int_str: Schema, file_int
 
     result_table = project(schema, [file_int_str], GreaterThan("data", "1"), schema_int_str)
 
-    for actual, expected in zip(
-        result_table.columns[0],
-        [2],
-    ):
+    for actual, expected in zip(result_table.columns[0], [2], strict=True):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 1
     assert repr(result_table.schema) == "id: int32 not null"

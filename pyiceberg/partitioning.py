@@ -202,7 +202,7 @@ class PartitionSpec(IcebergBaseModel):
             this_field.source_id == that_field.source_id
             and this_field.transform == that_field.transform
             and this_field.name == that_field.name
-            for this_field, that_field in zip(self.fields, other.fields)
+            for this_field, that_field in zip(self.fields, other.fields, strict=True)
         )
 
     def partition_type(self, schema: Schema) -> StructType:
@@ -242,7 +242,7 @@ class PartitionSpec(IcebergBaseModel):
             value_strs.append(quote_plus(value_str, safe=""))
             field_strs.append(quote_plus(partition_field.name, safe=""))
 
-        path = "/".join([field_str + "=" + value_str for field_str, value_str in zip(field_strs, value_strs)])
+        path = "/".join([field_str + "=" + value_str for field_str, value_str in zip(field_strs, value_strs, strict=True)])
         return path
 
 
