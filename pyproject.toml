@@ -190,7 +190,6 @@ warn_unused_ignores = true
 disallow_any_generics = true
 disallow_untyped_defs = true
 implicit_reexport = false
-ignore_missing_imports = true
 
 [tool.coverage.run]
 source = ['pyiceberg/']
