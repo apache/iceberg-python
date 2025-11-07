@@ -874,7 +874,11 @@ class ManifestFile(Record):
         return hash(self.manifest_path)
 
 
-@cached(cache=LRUCache(maxsize=128), key=lambda io, manifest_list: hashkey(manifest_list), lock=threading.RLock())
+# Global cache for manifest lists
+_manifest_cache: LRUCache[Any, Tuple[ManifestFile, ...]] = LRUCache(maxsize=128)
+
+
+@cached(cache=_manifest_cache, key=lambda io, manifest_list: hashkey(manifest_list), lock=threading.RLock())
 def _manifests(io: FileIO, manifest_list: str) -> Tuple[ManifestFile, ...]:
     """Read and cache manifests from the given manifest list, returning a tuple to prevent modification."""
     file = io.new_input(manifest_list)
