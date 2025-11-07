@@ -98,7 +98,7 @@ from pyiceberg.utils.datetime import datetime_to_millis
 
 if TYPE_CHECKING:
     import pyarrow as pa
-    from moto.server import ThreadedMotoServer  # type: ignore
+    from moto.server import ThreadedMotoServer
     from pyspark.sql import SparkSession
 
     from pyiceberg.io.pyarrow import PyArrowFileIO

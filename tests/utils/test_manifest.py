@@ -33,7 +33,7 @@ from pyiceberg.manifest import (
     ManifestEntryStatus,
     ManifestFile,
     PartitionFieldSummary,
-    _manifests,
+    _manifest_cache,
     read_manifest_list,
     write_manifest,
     write_manifest_list,
@@ -48,7 +48,7 @@ from pyiceberg.types import IntegerType, NestedField
 @pytest.fixture(autouse=True)
 def clear_global_manifests_cache() -> None:
     # Clear the global cache before each test
-    _manifests.cache_clear()
+    _manifest_cache.clear()
 
 
 def _verify_metadata_with_fastavro(avro_file: str, expected_metadata: Dict[str, str]) -> None:
