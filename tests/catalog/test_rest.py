@@ -50,7 +50,7 @@ from pyiceberg.typedef import RecursiveDict
 from pyiceberg.utils.config import Config
 
 TEST_URI = "https://iceberg-test-catalog/"
-TEST_CREDENTIALS = "client:secret"
+TEST_CREDENTIALS = "client:secret_with:colon"
 TEST_OAUTH2_SERVER_URI = "https://auth-endpoint/"
 TEST_TOKEN = "some_jwt_token"
 TEST_SCOPE = "openid_offline_corpds_ds_profile"
