@@ -528,7 +528,7 @@ def _(update: RemoveSnapshotsUpdate, base_metadata: TableMetadata, context: _Tab
         if ref.snapshot_id in update.snapshot_ids
     )
     remove_statistics_updates = (
-        RemoveStatisticsUpdate(statistics_file.snapshot_id)
+        RemoveStatisticsUpdate(snapshot_id=statistics_file.snapshot_id)
         for statistics_file in base_metadata.statistics
         if statistics_file.snapshot_id in update.snapshot_ids
     )
