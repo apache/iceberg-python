@@ -1,10 +1,10 @@
-.github/.*
+.github/*
 .rat-excludes
 build
 .git
 .gitignore
 uv.lock
-mkdocs/.*
+mkdocs/*
 .venv/.*
 .*\.egg-info.*
 .*\.pytest_cache.*
