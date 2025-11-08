@@ -67,12 +67,7 @@ install-uv: ## Ensure uv is installed
 	fi
 
 setup-venv: ## Create virtual environment
-	@if [ ! -d .venv ]; then \
-		echo "Creating virtual environment."; \
-		uv venv $(PYTHON_ARG); \
-	else \
-		echo "Virtual environment already exists."; \
-	fi
+	uv venv $(PYTHON_ARG)
 
 install-dependencies: setup-venv ## Install all dependencies including extras
 	uv sync --all-extras
