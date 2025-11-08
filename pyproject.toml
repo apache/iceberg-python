@@ -22,6 +22,7 @@ authors = [{ name = "Apache Software Foundation", email = "dev@iceberg.apache.or
 requires-python = ">=3.10.0,<4.0.0"
 readme = "README.md"
 license = "Apache-2.0"
+license-files = ["LICEN[CS]E*", "NOTICE*"]
 classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.10",
@@ -143,7 +144,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
 
 markers = [
   "unmarked: marks a test as a unittest",

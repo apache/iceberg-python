@@ -32,9 +32,9 @@ else
 endif
 
 ifeq ($(COVERAGE),1)
-  TEST_RUNNER = uv run coverage run --parallel-mode --source=pyiceberg -m
+  TEST_RUNNER = uv run python -m coverage run --parallel-mode --source=pyiceberg -m
 else
-  TEST_RUNNER = uv run
+  TEST_RUNNER = uv run python -m
 endif
 
 ifeq ($(KEEP_COMPOSE),1)

@@ -5,8 +5,7 @@ build
 .gitignore
 uv.lock
 mkdocs/*
-.venv/.*
-.*\.egg-info.*
-.*\.pytest_cache.*
 setup.cfg
-pyiceberg\.egg-info/.*
+(^|.*/)[^/]*\.egg-info(/.*)?$
+# Cython generated files
+decoder_fast.c
