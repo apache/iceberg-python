@@ -1896,13 +1896,13 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
         if field.field_type.is_primitive:
             if (target_type := schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)) != values.type:
                 if field.field_type == TimestampType():
-                    # Downcasting of nanoseconds to microseconds
                     if (
                         pa.types.is_timestamp(target_type)
                         and not target_type.tz
                         and pa.types.is_timestamp(values.type)
                         and (values.type.tz in UTC_ALIASES or values.type.tz is None)
                     ):
+                        # Downcasting of nanoseconds to microseconds
                         if target_type.unit == "us" and values.type.unit == "ns" and self._downcast_ns_timestamp_to_us:
                             return values.cast(target_type, safe=False)
                         elif target_type.unit == "us" and values.type.unit in {"s", "ms", "us"}:
@@ -1915,6 +1915,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
                         and pa.types.is_timestamp(values.type)
                         and (values.type.tz in UTC_ALIASES or values.type.tz is None)
                     ):
+                        # Downcasting of nanoseconds to microseconds
                         if target_type.unit == "us" and values.type.unit == "ns" and self._downcast_ns_timestamp_to_us:
                             return values.cast(target_type, safe=False)
                         elif target_type.unit == "us" and values.type.unit in {"s", "ms", "us"}:
