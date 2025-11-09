@@ -1901,11 +1901,11 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
                         pa.types.is_timestamp(target_type)
                         and not target_type.tz
                         and pa.types.is_timestamp(values.type)
-                        and not values.type.tz
+                        and (values.type.tz in UTC_ALIASES or values.type.tz is None)
                     ):
                         if target_type.unit == "us" and values.type.unit == "ns" and self._downcast_ns_timestamp_to_us:
                             return values.cast(target_type, safe=False)
-                        elif target_type.unit == "us" and values.type.unit in {"s", "ms"}:
+                        elif target_type.unit == "us" and values.type.unit in {"s", "ms", "us"}:
                             return values.cast(target_type)
                     raise ValueError(f"Unsupported schema projection from {values.type} to {target_type}")
                 elif field.field_type == TimestamptzType():
