@@ -15,7 +15,17 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Remove build resources
+# Include Cython source files for building from source
+recursive-include pyiceberg *.pyx *.c
+
+# Include test files in sdist
+recursive-include tests *.py
+
+# Include development files
+include Makefile
+recursive-include dev *
+
+# Exclude build artifacts
 prune .venv
 prune build
 prune dist
