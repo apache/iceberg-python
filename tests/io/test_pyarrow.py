@@ -2725,6 +2725,43 @@ def test__to_requested_schema_timestamp_to_timestamptz_projection() -> None:
     assert expected.equals(actual_result)
 
 
+def test__to_requested_schema_timestamptz_to_timestamp_projection() -> None:
+    # file is written with timestamp with timezone
+    file_schema = Schema(NestedField(1, "ts_field", TimestamptzType(), required=False))
+    batch = pa.record_batch(
+        [
+            pa.array(
+                [
+                    datetime(2025, 8, 14, 12, 0, 0, tzinfo=timezone.utc),
+                    datetime(2025, 8, 14, 13, 0, 0, tzinfo=timezone.utc),
+                ],
+                type=pa.timestamp("us", tz="UTC"),
+            )
+        ],
+        names=["ts_field"],
+    )
+
+    # table schema expects timestamp without timezone
+    table_schema = Schema(NestedField(1, "ts_field", TimestampType(), required=False))
+
+    actual_result = _to_requested_schema(table_schema, file_schema, batch, downcast_ns_timestamp_to_us=True)
+    expected = pa.record_batch(
+        [
+            pa.array(
+                [
+                    datetime(2025, 8, 14, 12, 0, 0),
+                    datetime(2025, 8, 14, 13, 0, 0),
+                ],
+                type=pa.timestamp("us"),
+            )
+        ],
+        names=["ts_field"],
+    )
+
+    # expect actual_result to have no timezone
+    assert expected.equals(actual_result)
+
+
 def test__to_requested_schema_timestamps(
     arrow_table_schema_with_all_timestamp_precisions: pa.Schema,
     arrow_table_with_all_timestamp_precisions: pa.Table,
