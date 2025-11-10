@@ -815,12 +815,12 @@ class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
                 If not provided, only the field name will be used (not dotted path).
     """
 
-    _schema: Optional[Schema]
+    _schema: Schema | None
 
-    def __init__(self, schema: Optional[Schema] = None):
+    def __init__(self, schema: Schema | None = None):
         self._schema = schema
 
-    def _get_field_name(self, term: BoundTerm[Any]) -> Union[str, Tuple[str, ...]]:
+    def _get_field_name(self, term: BoundTerm[Any]) -> str | Tuple[str, ...]:
         """Get the field name or nested field path for a bound term.
 
         For nested struct fields, returns a tuple of field names (e.g., ("mazeMetadata", "run_id")).
@@ -1020,7 +1020,7 @@ class _NullNaNUnmentionedTermsCollector(BoundBooleanExpressionVisitor[None]):
         boolean_expression_visit(expr, self)
 
 
-def expression_to_pyarrow(expr: BooleanExpression, schema: Optional[Schema] = None) -> pc.Expression:
+def expression_to_pyarrow(expr: BooleanExpression, schema: Schema | None = None) -> pc.Expression:
     """Convert an Iceberg boolean expression to a PyArrow expression.
 
     Args:
@@ -1034,7 +1034,7 @@ def expression_to_pyarrow(expr: BooleanExpression, schema: Optional[Schema] = No
     return boolean_expression_visit(expr, _ConvertToArrowExpression(schema))
 
 
-def _expression_to_complementary_pyarrow(expr: BooleanExpression, schema: Optional[Schema] = None) -> pc.Expression:
+def _expression_to_complementary_pyarrow(expr: BooleanExpression, schema: Schema | None = None) -> pc.Expression:
     """Complementary filter conversion function of expression_to_pyarrow.
 
     Could not use expression_to_pyarrow(Not(expr)) to achieve this complementary effect because ~ in pyarrow.compute.Expression does not handle null.
