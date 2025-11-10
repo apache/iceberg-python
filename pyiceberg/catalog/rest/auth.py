@@ -95,7 +95,7 @@ class LegacyOAuth2AuthManager(AuthManager):
 
     def _fetch_access_token(self, credential: str) -> str:
         if COLON in credential:
-            client_id, client_secret = credential.split(COLON)
+            client_id, client_secret = credential.split(COLON, maxsplit=1)
         else:
             client_id, client_secret = None, credential
 
