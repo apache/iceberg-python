@@ -19,7 +19,7 @@
 recursive-include pyiceberg *.pyx *.c
 
 # Include test files in sdist
-recursive-include tests *.py
+recursive-include tests *
 
 # Include development files
 include Makefile
