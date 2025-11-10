@@ -7,5 +7,3 @@ uv.lock
 mkdocs/*
 setup.cfg
 (^|.*/)[^/]*\.egg-info(/.*)?$
-# Cython generated files
-decoder_fast.c
