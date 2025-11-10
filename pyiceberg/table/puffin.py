@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import math
-from typing import TYPE_CHECKING, Dict, List, Literal, Optional
+from typing import TYPE_CHECKING, Dict, List, Literal
 
 from pydantic import Field
 from pyroaring import BitMap, FrozenBitMap
@@ -69,7 +69,7 @@ class PuffinBlobMetadata(IcebergBaseModel):
     sequence_number: int = Field(alias="sequence-number")
     offset: int = Field()
     length: int = Field()
-    compression_codec: Optional[str] = Field(alias="compression-codec", default=None)
+    compression_codec: str | None = Field(alias="compression-codec", default=None)
     properties: Dict[str, str] = Field(default_factory=dict)
 
 

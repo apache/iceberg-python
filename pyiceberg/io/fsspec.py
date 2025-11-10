@@ -30,7 +30,6 @@ from typing import (
     Callable,
     Dict,
     Type,
-    Union,
 )
 from urllib.parse import urlparse
 
@@ -426,7 +425,7 @@ class FsspecFileIO(FileIO):
         fs = self.get_fs(uri.scheme)
         return FsspecOutputFile(location=location, fs=fs)
 
-    def delete(self, location: Union[str, InputFile, OutputFile]) -> None:
+    def delete(self, location: str | InputFile | OutputFile) -> None:
         """Delete the file at the given location.
 
         Args:

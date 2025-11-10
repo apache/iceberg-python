@@ -698,7 +698,7 @@ def test_deepcopy_of_singleton_fixed_type() -> None:
     list_of_fixed_types = [FixedType(22), FixedType(19)]
     copied_list = deepcopy(list_of_fixed_types)
 
-    for lhs, rhs in zip(list_of_fixed_types, copied_list):
+    for lhs, rhs in zip(list_of_fixed_types, copied_list, strict=True):
         assert id(lhs) == id(rhs)
 
 

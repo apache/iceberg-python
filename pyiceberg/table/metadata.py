@@ -19,7 +19,7 @@ from __future__ import annotations
 import datetime
 import uuid
 from copy import copy
-from typing import Annotated, Any, Dict, List, Literal, Optional, Union
+from typing import Annotated, Any, Dict, List, Literal
 
 from pydantic import Field, field_serializer, field_validator, model_validator
 from pydantic import ValidationError as PydanticValidationError
@@ -163,7 +163,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
     default_spec_id: int = Field(alias="default-spec-id", default=INITIAL_SPEC_ID)
     """ID of the “current” spec that writers should use by default."""
 
-    last_partition_id: Optional[int] = Field(alias="last-partition-id", default=None)
+    last_partition_id: int | None = Field(alias="last-partition-id", default=None)
     """An integer; the highest assigned partition field ID across all
     partition specs for the table. This is used to ensure partition fields
     are always assigned an unused ID when evolving specs."""
@@ -174,7 +174,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
     to be used for arbitrary metadata. For example, commit.retry.num-retries
     is used to control the number of commit retries."""
 
-    current_snapshot_id: Optional[int] = Field(alias="current-snapshot-id", default=None)
+    current_snapshot_id: int | None = Field(alias="current-snapshot-id", default=None)
     """ID of the current table snapshot."""
 
     snapshots: List[Snapshot] = Field(default_factory=list)
@@ -235,11 +235,11 @@ class TableMetadataCommonFields(IcebergBaseModel):
     def transform_properties_dict_value_to_str(cls, properties: Properties) -> Dict[str, str]:
         return transform_dict_value_to_str(properties)
 
-    def snapshot_by_id(self, snapshot_id: int) -> Optional[Snapshot]:
+    def snapshot_by_id(self, snapshot_id: int) -> Snapshot | None:
         """Get the snapshot by snapshot_id."""
         return next((snapshot for snapshot in self.snapshots if snapshot.snapshot_id == snapshot_id), None)
 
-    def schema_by_id(self, schema_id: int) -> Optional[Schema]:
+    def schema_by_id(self, schema_id: int) -> Schema | None:
         """Get the schema by schema_id."""
         return next((schema for schema in self.schemas if schema.schema_id == schema_id), None)
 
@@ -247,7 +247,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
         """Return the schema for this table."""
         return next(schema for schema in self.schemas if schema.schema_id == self.current_schema_id)
 
-    def name_mapping(self) -> Optional[NameMapping]:
+    def name_mapping(self) -> NameMapping | None:
         """Return the table's field-id NameMapping."""
         if name_mapping_json := self.properties.get("schema.name-mapping.default"):
             return parse_mapping_from_json(name_mapping_json)
@@ -295,7 +295,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
 
         return snapshot_id
 
-    def snapshot_by_name(self, name: Optional[str]) -> Optional[Snapshot]:
+    def snapshot_by_name(self, name: str | None) -> Snapshot | None:
         """Return the snapshot referenced by the given name or null if no such reference exists."""
         if name is None:
             name = MAIN_BRANCH
@@ -303,7 +303,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
             return self.snapshot_by_id(ref.snapshot_id)
         return None
 
-    def current_snapshot(self) -> Optional[Snapshot]:
+    def current_snapshot(self) -> Snapshot | None:
         """Get the current snapshot for this table, or None if there is no current snapshot."""
         if self.current_snapshot_id is not None:
             return self.snapshot_by_id(self.current_snapshot_id)
@@ -312,12 +312,12 @@ class TableMetadataCommonFields(IcebergBaseModel):
     def next_sequence_number(self) -> int:
         return self.last_sequence_number + 1 if self.format_version > 1 else INITIAL_SEQUENCE_NUMBER
 
-    def sort_order_by_id(self, sort_order_id: int) -> Optional[SortOrder]:
+    def sort_order_by_id(self, sort_order_id: int) -> SortOrder | None:
         """Get the sort order by sort_order_id."""
         return next((sort_order for sort_order in self.sort_orders if sort_order.order_id == sort_order_id), None)
 
     @field_serializer("current_snapshot_id")
-    def serialize_current_snapshot_id(self, current_snapshot_id: Optional[int]) -> Optional[int]:
+    def serialize_current_snapshot_id(self, current_snapshot_id: int | None) -> int | None:
         if current_snapshot_id is None and Config().get_bool("legacy-current-snapshot-id"):
             return -1
         return current_snapshot_id
@@ -337,7 +337,9 @@ def _generate_snapshot_id() -> int:
     """
     rnd_uuid = uuid.uuid4()
     snapshot_id = int.from_bytes(
-        bytes(lhs ^ rhs for lhs, rhs in zip(rnd_uuid.bytes[0:8], rnd_uuid.bytes[8:16])), byteorder="little", signed=True
+        bytes(lhs ^ rhs for lhs, rhs in zip(rnd_uuid.bytes[0:8], rnd_uuid.bytes[8:16], strict=True)),
+        byteorder="little",
+        signed=True,
     )
     snapshot_id = snapshot_id if snapshot_id >= 0 else snapshot_id * -1
 
@@ -363,8 +365,8 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
         return cleanup_snapshot_id(data)
 
     @model_validator(mode="after")
-    def construct_refs(cls, data: TableMetadataV1) -> TableMetadataV1:
-        return construct_refs(data)
+    def construct_refs(self) -> TableMetadataV1:
+        return construct_refs(self)
 
     @model_validator(mode="before")
     def set_v2_compatible_defaults(cls, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -492,20 +494,20 @@ class TableMetadataV2(TableMetadataCommonFields, IcebergBaseModel):
         return cleanup_snapshot_id(data)
 
     @model_validator(mode="after")
-    def check_schemas(cls, table_metadata: TableMetadata) -> TableMetadata:
-        return check_schemas(table_metadata)
+    def check_schemas(self) -> TableMetadata:
+        return check_schemas(self)
 
     @model_validator(mode="after")
-    def check_partition_specs(cls, table_metadata: TableMetadata) -> TableMetadata:
-        return check_partition_specs(table_metadata)
+    def check_partition_specs(self) -> TableMetadata:
+        return check_partition_specs(self)
 
     @model_validator(mode="after")
-    def check_sort_orders(cls, table_metadata: TableMetadata) -> TableMetadata:
-        return check_sort_orders(table_metadata)
+    def check_sort_orders(self) -> TableMetadata:
+        return check_sort_orders(self)
 
     @model_validator(mode="after")
-    def construct_refs(cls, table_metadata: TableMetadata) -> TableMetadata:
-        return construct_refs(table_metadata)
+    def construct_refs(self) -> TableMetadata:
+        return construct_refs(self)
 
     format_version: Literal[2] = Field(alias="format-version", default=2)
     """An integer version number for the format. Implementations must throw
@@ -536,20 +538,20 @@ class TableMetadataV3(TableMetadataCommonFields, IcebergBaseModel):
         return cleanup_snapshot_id(data)
 
     @model_validator(mode="after")
-    def check_schemas(cls, table_metadata: TableMetadata) -> TableMetadata:
-        return check_schemas(table_metadata)
+    def check_schemas(self) -> TableMetadata:
+        return check_schemas(self)
 
     @model_validator(mode="after")
-    def check_partition_specs(cls, table_metadata: TableMetadata) -> TableMetadata:
-        return check_partition_specs(table_metadata)
+    def check_partition_specs(self) -> TableMetadata:
+        return check_partition_specs(self)
 
     @model_validator(mode="after")
-    def check_sort_orders(cls, table_metadata: TableMetadata) -> TableMetadata:
-        return check_sort_orders(table_metadata)
+    def check_sort_orders(self) -> TableMetadata:
+        return check_sort_orders(self)
 
     @model_validator(mode="after")
-    def construct_refs(cls, table_metadata: TableMetadata) -> TableMetadata:
-        return construct_refs(table_metadata)
+    def construct_refs(self) -> TableMetadata:
+        return construct_refs(self)
 
     format_version: Literal[3] = Field(alias="format-version", default=3)
     """An integer version number for the format. Implementations must throw
@@ -559,16 +561,14 @@ class TableMetadataV3(TableMetadataCommonFields, IcebergBaseModel):
     """The table’s highest assigned sequence number, a monotonically
     increasing long that tracks the order of snapshots in a table."""
 
-    next_row_id: Optional[int] = Field(alias="next-row-id", default=None)
+    next_row_id: int | None = Field(alias="next-row-id", default=None)
     """A long higher than all assigned row IDs; the next snapshot's `first-row-id`."""
 
-    def model_dump_json(
-        self, exclude_none: bool = True, exclude: Optional[Any] = None, by_alias: bool = True, **kwargs: Any
-    ) -> str:
+    def model_dump_json(self, exclude_none: bool = True, exclude: Any | None = None, by_alias: bool = True, **kwargs: Any) -> str:
         raise NotImplementedError("Writing V3 is not yet supported, see: https://github.com/apache/iceberg-python/issues/1551")
 
 
-TableMetadata = Annotated[Union[TableMetadataV1, TableMetadataV2, TableMetadataV3], Field(discriminator="format_version")]
+TableMetadata = Annotated[TableMetadataV1 | TableMetadataV2 | TableMetadataV3, Field(discriminator="format_version")]
 
 
 def new_table_metadata(
@@ -577,7 +577,7 @@ def new_table_metadata(
     sort_order: SortOrder,
     location: str,
     properties: Properties = EMPTY_DICT,
-    table_uuid: Optional[uuid.UUID] = None,
+    table_uuid: uuid.UUID | None = None,
 ) -> TableMetadata:
     from pyiceberg.table import TableProperties
 

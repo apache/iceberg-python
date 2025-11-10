@@ -356,10 +356,20 @@ def test_static_table_gz_same_as_table(table_v2: Table, metadata_location_gz: st
     assert static_table.metadata == table_v2.metadata
 
 
-def test_static_table_version_hint_same_as_table(table_v2: Table, table_location: str) -> None:
-    static_table = StaticTable.from_metadata(table_location)
-    assert isinstance(static_table, Table)
-    assert static_table.metadata == table_v2.metadata
+def test_static_table_version_hint_same_as_table(
+    table_v2: Table,
+    table_location_with_version_hint_full: str,
+    table_location_with_version_hint_numeric: str,
+    table_location_with_version_hint_non_numeric: str,
+) -> None:
+    for table_location in [
+        table_location_with_version_hint_full,
+        table_location_with_version_hint_numeric,
+        table_location_with_version_hint_non_numeric,
+    ]:
+        static_table = StaticTable.from_metadata(table_location)
+        assert isinstance(static_table, Table)
+        assert static_table.metadata == table_v2.metadata
 
 
 def test_static_table_io_does_not_exist(metadata_location: str) -> None:
@@ -1511,3 +1521,57 @@ def test_remove_partition_statistics_update_with_invalid_snapshot_id(table_v2_wi
             table_v2_with_statistics.metadata,
             (RemovePartitionStatisticsUpdate(snapshot_id=123456789),),
         )
+
+
+def test_add_snapshot_update_fails_without_first_row_id(table_v3: Table) -> None:
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=200,
+        timestamp_ms=1602638593590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Cannot add snapshot without first row id",
+    ):
+        update_table_metadata(table_v3.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
+
+
+def test_add_snapshot_update_fails_with_smaller_first_row_id(table_v3: Table) -> None:
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=200,
+        timestamp_ms=1602638593590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+        first_row_id=0,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Cannot add a snapshot with first row id smaller than the table's next-row-id",
+    ):
+        update_table_metadata(table_v3.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
+
+
+def test_add_snapshot_update_updates_next_row_id(table_v3: Table) -> None:
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=200,
+        timestamp_ms=1602638593590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+        first_row_id=2,
+        added_rows=10,
+    )
+
+    new_metadata = update_table_metadata(table_v3.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
+    assert new_metadata.next_row_id == 11

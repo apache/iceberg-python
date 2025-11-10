@@ -26,7 +26,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections import ChainMap
 from functools import cached_property, singledispatch
-from typing import Any, Dict, Generic, Iterator, List, Optional, TypeVar, Union
+from typing import Any, Dict, Generic, Iterator, List, TypeVar
 
 from pydantic import Field, conlist, field_validator, model_serializer
 
@@ -36,7 +36,7 @@ from pyiceberg.types import IcebergType, ListType, MapType, NestedField, Primiti
 
 
 class MappedField(IcebergBaseModel):
-    field_id: Optional[int] = Field(alias="field-id", default=None)
+    field_id: int | None = Field(alias="field-id", default=None)
     names: List[str] = conlist(str)
     fields: List[MappedField] = Field(default_factory=list)
 
@@ -128,7 +128,7 @@ class _IndexByName(NameMappingVisitor[Dict[str, MappedField], Dict[str, MappedFi
 
 
 @singledispatch
-def visit_name_mapping(obj: Union[NameMapping, List[MappedField], MappedField], visitor: NameMappingVisitor[S, T]) -> S:
+def visit_name_mapping(obj: NameMapping | List[MappedField] | MappedField, visitor: NameMappingVisitor[S, T]) -> S:
     """Traverse the name mapping in post-order traversal."""
     raise NotImplementedError(f"Cannot visit non-type: {obj}")
 
@@ -155,7 +155,7 @@ class _CreateMapping(SchemaVisitor[List[MappedField]]):
     def struct(self, struct: StructType, field_results: List[List[MappedField]]) -> List[MappedField]:
         return [
             MappedField(field_id=field.field_id, names=[field.name], fields=result)
-            for field, result in zip(struct.fields, field_results)
+            for field, result in zip(struct.fields, field_results, strict=True)
         ]
 
     def field(self, field: NestedField, field_result: List[MappedField]) -> List[MappedField]:
@@ -183,7 +183,7 @@ class _UpdateMapping(NameMappingVisitor[List[MappedField], MappedField]):
         self._adds = adds
 
     @staticmethod
-    def _remove_reassigned_names(field: MappedField, assignments: Dict[str, int]) -> Optional[MappedField]:
+    def _remove_reassigned_names(field: MappedField, assignments: Dict[str, int]) -> MappedField | None:
         removed_names = set()
         for name in field.names:
             if (assigned_id := assignments.get(name)) and assigned_id != field.field_id:
@@ -249,12 +249,12 @@ def update_mapping(mapping: NameMapping, updates: Dict[int, NestedField], adds: 
 
 
 class NameMappingAccessor(PartnerAccessor[MappedField]):
-    def schema_partner(self, partner: Optional[MappedField]) -> Optional[MappedField]:
+    def schema_partner(self, partner: MappedField | None) -> MappedField | None:
         return partner
 
     def field_partner(
-        self, partner_struct: Optional[Union[List[MappedField], MappedField]], _: int, field_name: str
-    ) -> Optional[MappedField]:
+        self, partner_struct: List[MappedField] | MappedField | None, _: int, field_name: str
+    ) -> MappedField | None:
         if partner_struct is not None:
             if isinstance(partner_struct, MappedField):
                 partner_struct = partner_struct.fields
@@ -265,21 +265,21 @@ class NameMappingAccessor(PartnerAccessor[MappedField]):
 
         return None
 
-    def list_element_partner(self, partner_list: Optional[MappedField]) -> Optional[MappedField]:
+    def list_element_partner(self, partner_list: MappedField | None) -> MappedField | None:
         if partner_list is not None:
             for field in partner_list.fields:
                 if "element" in field.names:
                     return field
         return None
 
-    def map_key_partner(self, partner_map: Optional[MappedField]) -> Optional[MappedField]:
+    def map_key_partner(self, partner_map: MappedField | None) -> MappedField | None:
         if partner_map is not None:
             for field in partner_map.fields:
                 if "key" in field.names:
                     return field
         return None
 
-    def map_value_partner(self, partner_map: Optional[MappedField]) -> Optional[MappedField]:
+    def map_value_partner(self, partner_map: MappedField | None) -> MappedField | None:
         if partner_map is not None:
             for field in partner_map.fields:
                 if "value" in field.names:
@@ -294,37 +294,37 @@ class NameMappingProjectionVisitor(SchemaWithPartnerVisitor[MappedField, Iceberg
         # For keeping track where we are in case when a field cannot be found
         self.current_path = []
 
-    def before_field(self, field: NestedField, field_partner: Optional[P]) -> None:
+    def before_field(self, field: NestedField, field_partner: P | None) -> None:
         self.current_path.append(field.name)
 
-    def after_field(self, field: NestedField, field_partner: Optional[P]) -> None:
+    def after_field(self, field: NestedField, field_partner: P | None) -> None:
         self.current_path.pop()
 
-    def before_list_element(self, element: NestedField, element_partner: Optional[P]) -> None:
+    def before_list_element(self, element: NestedField, element_partner: P | None) -> None:
         self.current_path.append("element")
 
-    def after_list_element(self, element: NestedField, element_partner: Optional[P]) -> None:
+    def after_list_element(self, element: NestedField, element_partner: P | None) -> None:
         self.current_path.pop()
 
-    def before_map_key(self, key: NestedField, key_partner: Optional[P]) -> None:
+    def before_map_key(self, key: NestedField, key_partner: P | None) -> None:
         self.current_path.append("key")
 
-    def after_map_key(self, key: NestedField, key_partner: Optional[P]) -> None:
+    def after_map_key(self, key: NestedField, key_partner: P | None) -> None:
         self.current_path.pop()
 
-    def before_map_value(self, value: NestedField, value_partner: Optional[P]) -> None:
+    def before_map_value(self, value: NestedField, value_partner: P | None) -> None:
         self.current_path.append("value")
 
-    def after_map_value(self, value: NestedField, value_partner: Optional[P]) -> None:
+    def after_map_value(self, value: NestedField, value_partner: P | None) -> None:
         self.current_path.pop()
 
-    def schema(self, schema: Schema, schema_partner: Optional[MappedField], struct_result: StructType) -> IcebergType:
+    def schema(self, schema: Schema, schema_partner: MappedField | None, struct_result: StructType) -> IcebergType:
         return Schema(*struct_result.fields, schema_id=schema.schema_id)
 
-    def struct(self, struct: StructType, struct_partner: Optional[MappedField], field_results: List[NestedField]) -> IcebergType:
+    def struct(self, struct: StructType, struct_partner: MappedField | None, field_results: List[NestedField]) -> IcebergType:
         return StructType(*field_results)
 
-    def field(self, field: NestedField, field_partner: Optional[MappedField], field_result: IcebergType) -> IcebergType:
+    def field(self, field: NestedField, field_partner: MappedField | None, field_result: IcebergType) -> IcebergType:
         if field_partner is None or field_partner.field_id is None:
             raise ValueError(f"Field or field ID missing from NameMapping: {'.'.join(self.current_path)}")
 
@@ -338,7 +338,7 @@ class NameMappingProjectionVisitor(SchemaWithPartnerVisitor[MappedField, Iceberg
             initial_write=field.write_default,
         )
 
-    def list(self, list_type: ListType, list_partner: Optional[MappedField], element_result: IcebergType) -> IcebergType:
+    def list(self, list_type: ListType, list_partner: MappedField | None, element_result: IcebergType) -> IcebergType:
         if list_partner is None:
             raise ValueError(f"Could not find field with name: {'.'.join(self.current_path)}")
 
@@ -346,7 +346,7 @@ class NameMappingProjectionVisitor(SchemaWithPartnerVisitor[MappedField, Iceberg
         return ListType(element_id=element_id, element=element_result, element_required=list_type.element_required)
 
     def map(
-        self, map_type: MapType, map_partner: Optional[MappedField], key_result: IcebergType, value_result: IcebergType
+        self, map_type: MapType, map_partner: MappedField | None, key_result: IcebergType, value_result: IcebergType
     ) -> IcebergType:
         if map_partner is None:
             raise ValueError(f"Could not find field with name: {'.'.join(self.current_path)}")
@@ -361,7 +361,7 @@ class NameMappingProjectionVisitor(SchemaWithPartnerVisitor[MappedField, Iceberg
             value_required=map_type.value_required,
         )
 
-    def primitive(self, primitive: PrimitiveType, primitive_partner: Optional[MappedField]) -> PrimitiveType:
+    def primitive(self, primitive: PrimitiveType, primitive_partner: MappedField | None) -> PrimitiveType:
         if primitive_partner is None:
             raise ValueError(f"Could not find field with name: {'.'.join(self.current_path)}")
 

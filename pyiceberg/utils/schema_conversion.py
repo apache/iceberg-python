@@ -21,9 +21,7 @@ from typing import (
     Any,
     Dict,
     List,
-    Optional,
     Tuple,
-    Union,
 )
 
 from pyiceberg.schema import (
@@ -81,7 +79,7 @@ LOGICAL_FIELD_TYPE_MAPPING: Dict[Tuple[str, str], PrimitiveType] = {
     ("uuid", "string"): UUIDType(),
 }
 
-AvroType = Union[str, Any]
+AvroType = str | Any
 
 
 class AvroSchemaConversion:
@@ -130,13 +128,11 @@ class AvroSchemaConversion:
         """
         return Schema(*[self._convert_field(field) for field in avro_schema["fields"]], schema_id=1)
 
-    def iceberg_to_avro(self, schema: Schema, schema_name: Optional[str] = None) -> AvroType:
+    def iceberg_to_avro(self, schema: Schema, schema_name: str | None = None) -> AvroType:
         """Convert an Iceberg schema into an Avro dictionary that can be serialized to JSON."""
         return visit(schema, ConvertSchemaToAvro(schema_name))
 
-    def _resolve_union(
-        self, type_union: Union[Dict[str, str], List[Union[str, Dict[str, str]]], str]
-    ) -> Tuple[Union[str, Dict[str, Any]], bool]:
+    def _resolve_union(self, type_union: Dict[str, str] | List[str | Dict[str, str]] | str) -> Tuple[str | Dict[str, Any], bool]:
         """
         Convert Unions into their type and resolves if the field is required.
 
@@ -159,7 +155,7 @@ class AvroSchemaConversion:
         Raises:
             TypeError: In the case non-optional union types are encountered.
         """
-        avro_types: Union[Dict[str, str], List[Union[Dict[str, str], str]]]
+        avro_types: Dict[str, str] | List[Dict[str, str] | str]
         if isinstance(type_union, str):
             # It is a primitive and required
             return type_union, True
@@ -185,7 +181,7 @@ class AvroSchemaConversion:
         # Filter the null value and return the type
         return list(filter(lambda t: t != "null", avro_types))[0], False
 
-    def _convert_schema(self, avro_type: Union[str, Dict[str, Any]]) -> IcebergType:
+    def _convert_schema(self, avro_type: str | Dict[str, Any]) -> IcebergType:
         """
         Resolve the Avro type.
 
@@ -496,12 +492,12 @@ class AvroSchemaConversion:
 class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
     """Convert an Iceberg schema to an Avro schema."""
 
-    schema_name: Optional[str]
+    schema_name: str | None
     last_list_field_id: int
     last_map_key_field_id: int
     last_map_value_field_id: int
 
-    def __init__(self, schema_name: Optional[str]) -> None:
+    def __init__(self, schema_name: str | None) -> None:
         """Convert an Iceberg schema to an Avro schema.
 
         Args:

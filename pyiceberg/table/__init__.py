@@ -31,13 +31,12 @@ from typing import (
     Callable,
     Dict,
     Iterable,
+    Iterator,
     List,
-    Optional,
     Set,
     Tuple,
     Type,
     TypeVar,
-    Union,
 )
 
 from pydantic import Field
@@ -278,9 +277,7 @@ class Transaction:
         """Start a transaction to update the table."""
         return self
 
-    def __exit__(
-        self, exctype: Optional[Type[BaseException]], excinst: Optional[BaseException], exctb: Optional[TracebackType]
-    ) -> None:
+    def __exit__(self, exctype: Type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
         """Close and commit the transaction if no exceptions have been raised."""
         if exctype is None and excinst is None and exctb is None:
             self.commit_transaction()
@@ -304,7 +301,7 @@ class Transaction:
 
         return self
 
-    def _scan(self, row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE, case_sensitive: bool = True) -> DataScan:
+    def _scan(self, row_filter: str | BooleanExpression = ALWAYS_TRUE, case_sensitive: bool = True) -> DataScan:
         """Minimal data scan of the table with the current state of the transaction."""
         return DataScan(
             table_metadata=self.table_metadata, io=self._table.io, row_filter=row_filter, case_sensitive=case_sensitive
@@ -352,9 +349,9 @@ class Transaction:
         snapshot_id: int,
         ref_name: str,
         type: str,
-        max_ref_age_ms: Optional[int] = None,
-        max_snapshot_age_ms: Optional[int] = None,
-        min_snapshots_to_keep: Optional[int] = None,
+        max_ref_age_ms: int | None = None,
+        max_snapshot_age_ms: int | None = None,
+        min_snapshots_to_keep: int | None = None,
     ) -> UpdatesAndRequirements:
         """Update a ref to a snapshot.
 
@@ -407,7 +404,7 @@ class Transaction:
         return expr
 
     def _append_snapshot_producer(
-        self, snapshot_properties: Dict[str, str], branch: Optional[str] = MAIN_BRANCH
+        self, snapshot_properties: Dict[str, str], branch: str | None = MAIN_BRANCH
     ) -> _FastAppendFiles:
         """Determine the append type based on table properties.
 
@@ -456,7 +453,7 @@ class Transaction:
         )
 
     def update_snapshot(
-        self, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = MAIN_BRANCH
+        self, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH
     ) -> UpdateSnapshot:
         """Create a new UpdateSnapshot to produce a new snapshot for the table.
 
@@ -474,7 +471,7 @@ class Transaction:
         """
         return UpdateStatistics(transaction=self)
 
-    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = MAIN_BRANCH) -> None:
+    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH) -> None:
         """
         Shorthand API for appending a PyArrow table to a table transaction.
 
@@ -513,7 +510,7 @@ class Transaction:
                     append_files.append_data_file(data_file)
 
     def dynamic_partition_overwrite(
-        self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = MAIN_BRANCH
+        self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH
     ) -> None:
         """
         Shorthand for overwriting existing partitions with a PyArrow table.
@@ -577,10 +574,10 @@ class Transaction:
     def overwrite(
         self,
         df: pa.Table,
-        overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
+        overwrite_filter: BooleanExpression | str = ALWAYS_TRUE,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
-        branch: Optional[str] = MAIN_BRANCH,
+        branch: str | None = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand for adding a table overwrite with a PyArrow table to the transaction.
@@ -637,10 +634,10 @@ class Transaction:
 
     def delete(
         self,
-        delete_filter: Union[str, BooleanExpression],
+        delete_filter: str | BooleanExpression,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
-        branch: Optional[str] = MAIN_BRANCH,
+        branch: str | None = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand for deleting record from a table.
@@ -739,11 +736,11 @@ class Transaction:
     def upsert(
         self,
         df: pa.Table,
-        join_cols: Optional[List[str]] = None,
+        join_cols: List[str] | None = None,
         when_matched_update_all: bool = True,
         when_not_matched_insert_all: bool = True,
         case_sensitive: bool = True,
-        branch: Optional[str] = MAIN_BRANCH,
+        branch: str | None = MAIN_BRANCH,
     ) -> UpsertResult:
         """Shorthand API for performing an upsert to an iceberg table.
 
@@ -885,7 +882,7 @@ class Transaction:
         file_paths: List[str],
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
         check_duplicate_files: bool = True,
-        branch: Optional[str] = MAIN_BRANCH,
+        branch: str | None = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand API for adding files as data files to the table transaction.
@@ -993,7 +990,7 @@ class CreateTableTransaction(Transaction):
             self._updates += (AddPartitionSpecUpdate(spec=spec),)
         self._updates += (SetDefaultSpecUpdate(spec_id=-1),)
 
-        sort_order: Optional[SortOrder] = table_metadata.sort_order_by_id(table_metadata.default_sort_order_id)
+        sort_order: SortOrder | None = table_metadata.sort_order_by_id(table_metadata.default_sort_order_id)
         if sort_order is None or sort_order.is_unsorted:
             self._updates += (AddSortOrderUpdate(sort_order=UNSORTED_SORT_ORDER),)
         else:
@@ -1133,12 +1130,12 @@ class Table:
 
     def scan(
         self,
-        row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
+        row_filter: str | BooleanExpression = ALWAYS_TRUE,
         selected_fields: Tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
-        snapshot_id: Optional[int] = None,
+        snapshot_id: int | None = None,
         options: Properties = EMPTY_DICT,
-        limit: Optional[int] = None,
+        limit: int | None = None,
     ) -> DataScan:
         """Fetch a DataScan based on the table's current metadata.
 
@@ -1233,7 +1230,7 @@ class Table:
     def last_sequence_number(self) -> int:
         return self.metadata.last_sequence_number
 
-    def current_snapshot(self) -> Optional[Snapshot]:
+    def current_snapshot(self) -> Snapshot | None:
         """Get the current snapshot for this table, or None if there is no current snapshot."""
         if self.metadata.current_snapshot_id is not None:
             return self.snapshot_by_id(self.metadata.current_snapshot_id)
@@ -1242,17 +1239,17 @@ class Table:
     def snapshots(self) -> List[Snapshot]:
         return self.metadata.snapshots
 
-    def snapshot_by_id(self, snapshot_id: int) -> Optional[Snapshot]:
+    def snapshot_by_id(self, snapshot_id: int) -> Snapshot | None:
         """Get the snapshot of this table with the given id, or None if there is no matching snapshot."""
         return self.metadata.snapshot_by_id(snapshot_id)
 
-    def snapshot_by_name(self, name: str) -> Optional[Snapshot]:
+    def snapshot_by_name(self, name: str) -> Snapshot | None:
         """Return the snapshot referenced by the given name or null if no such reference exists."""
         if ref := self.metadata.refs.get(name):
             return self.snapshot_by_id(ref.snapshot_id)
         return None
 
-    def snapshot_as_of_timestamp(self, timestamp_ms: int, inclusive: bool = True) -> Optional[Snapshot]:
+    def snapshot_as_of_timestamp(self, timestamp_ms: int, inclusive: bool = True) -> Snapshot | None:
         """Get the snapshot that was current as of or right before the given timestamp, or None if there is no matching snapshot.
 
         Args:
@@ -1325,18 +1322,18 @@ class Table:
         """
         return UpdateSortOrder(transaction=Transaction(self, autocommit=True), case_sensitive=case_sensitive)
 
-    def name_mapping(self) -> Optional[NameMapping]:
+    def name_mapping(self) -> NameMapping | None:
         """Return the table's field-id NameMapping."""
         return self.metadata.name_mapping()
 
     def upsert(
         self,
         df: pa.Table,
-        join_cols: Optional[List[str]] = None,
+        join_cols: List[str] | None = None,
         when_matched_update_all: bool = True,
         when_not_matched_insert_all: bool = True,
         case_sensitive: bool = True,
-        branch: Optional[str] = MAIN_BRANCH,
+        branch: str | None = MAIN_BRANCH,
     ) -> UpsertResult:
         """Shorthand API for performing an upsert to an iceberg table.
 
@@ -1383,7 +1380,7 @@ class Table:
                 branch=branch,
             )
 
-    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = MAIN_BRANCH) -> None:
+    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH) -> None:
         """
         Shorthand API for appending a PyArrow table to the table.
 
@@ -1396,7 +1393,7 @@ class Table:
             tx.append(df=df, snapshot_properties=snapshot_properties, branch=branch)
 
     def dynamic_partition_overwrite(
-        self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = MAIN_BRANCH
+        self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH
     ) -> None:
         """Shorthand for dynamic overwriting the table with a PyArrow table.
 
@@ -1412,10 +1409,10 @@ class Table:
     def overwrite(
         self,
         df: pa.Table,
-        overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
+        overwrite_filter: BooleanExpression | str = ALWAYS_TRUE,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
-        branch: Optional[str] = MAIN_BRANCH,
+        branch: str | None = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand for overwriting the table with a PyArrow table.
@@ -1445,10 +1442,10 @@ class Table:
 
     def delete(
         self,
-        delete_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
+        delete_filter: BooleanExpression | str = ALWAYS_TRUE,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
-        branch: Optional[str] = MAIN_BRANCH,
+        branch: str | None = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand for deleting rows from the table.
@@ -1469,7 +1466,7 @@ class Table:
         file_paths: List[str],
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
         check_duplicate_files: bool = True,
-        branch: Optional[str] = MAIN_BRANCH,
+        branch: str | None = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand API for adding files as data files to the table.
@@ -1623,9 +1620,9 @@ class StaticTable(Table):
         if content.endswith(".metadata.json"):
             return os.path.join(metadata_location, "metadata", content)
         elif content.isnumeric():
-            return os.path.join(metadata_location, "metadata", "v%s.metadata.json").format(content)
+            return os.path.join(metadata_location, "metadata", f"v{content}.metadata.json")
         else:
-            return os.path.join(metadata_location, "metadata", "%s.metadata.json").format(content)
+            return os.path.join(metadata_location, "metadata", f"{content}.metadata.json")
 
     @classmethod
     def from_metadata(cls, metadata_location: str, properties: Properties = EMPTY_DICT) -> StaticTable:
@@ -1656,12 +1653,12 @@ class StagedTable(Table):
 
     def scan(
         self,
-        row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
+        row_filter: str | BooleanExpression = ALWAYS_TRUE,
         selected_fields: Tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
-        snapshot_id: Optional[int] = None,
+        snapshot_id: int | None = None,
         options: Properties = EMPTY_DICT,
-        limit: Optional[int] = None,
+        limit: int | None = None,
     ) -> DataScan:
         raise ValueError("Cannot scan a staged table")
 
@@ -1669,7 +1666,7 @@ class StagedTable(Table):
         raise ValueError("Cannot convert a staged table to a Daft DataFrame")
 
 
-def _parse_row_filter(expr: Union[str, BooleanExpression]) -> BooleanExpression:
+def _parse_row_filter(expr: str | BooleanExpression) -> BooleanExpression:
     """Accept an expression in the form of a BooleanExpression or a string.
 
     In the case of a string, it will be converted into a unbound BooleanExpression.
@@ -1691,20 +1688,20 @@ class TableScan(ABC):
     row_filter: BooleanExpression
     selected_fields: Tuple[str, ...]
     case_sensitive: bool
-    snapshot_id: Optional[int]
+    snapshot_id: int | None
     options: Properties
-    limit: Optional[int]
+    limit: int | None
 
     def __init__(
         self,
         table_metadata: TableMetadata,
         io: FileIO,
-        row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
+        row_filter: str | BooleanExpression = ALWAYS_TRUE,
         selected_fields: Tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
-        snapshot_id: Optional[int] = None,
+        snapshot_id: int | None = None,
         options: Properties = EMPTY_DICT,
-        limit: Optional[int] = None,
+        limit: int | None = None,
     ):
         self.table_metadata = table_metadata
         self.io = io
@@ -1715,7 +1712,7 @@ class TableScan(ABC):
         self.options = options
         self.limit = limit
 
-    def snapshot(self) -> Optional[Snapshot]:
+    def snapshot(self) -> Snapshot | None:
         if self.snapshot_id:
             return self.table_metadata.snapshot_by_id(self.snapshot_id)
         return self.table_metadata.current_snapshot()
@@ -1776,7 +1773,7 @@ class TableScan(ABC):
             return self.update(selected_fields=field_names)
         return self.update(selected_fields=tuple(set(self.selected_fields).intersection(set(field_names))))
 
-    def filter(self: S, expr: Union[str, BooleanExpression]) -> S:
+    def filter(self: S, expr: str | BooleanExpression) -> S:
         return self.update(row_filter=And(self.row_filter, _parse_row_filter(expr)))
 
     def with_case_sensitive(self: S, case_sensitive: bool = True) -> S:
@@ -1803,9 +1800,9 @@ class FileScanTask(ScanTask):
     def __init__(
         self,
         data_file: DataFile,
-        delete_files: Optional[Set[DataFile]] = None,
-        start: Optional[int] = None,
-        length: Optional[int] = None,
+        delete_files: Set[DataFile] | None = None,
+        start: int | None = None,
+        length: int | None = None,
         residual: BooleanExpression = ALWAYS_TRUE,
     ) -> None:
         self.file = data_file
@@ -1942,11 +1939,11 @@ class DataScan(TableScan):
             and (manifest.sequence_number or INITIAL_SEQUENCE_NUMBER) >= min_sequence_number
         )
 
-    def plan_files(self) -> Iterable[FileScanTask]:
-        """Plans the relevant files by filtering on the PartitionSpecs.
+    def scan_plan_helper(self) -> Iterator[List[ManifestEntry]]:
+        """Filter and return manifest entries based on partition and metrics evaluators.
 
         Returns:
-            List of FileScanTasks that contain both data and delete files.
+            Iterator of ManifestEntry objects that match the scan's partition filter.
         """
         snapshot = self.snapshot()
         if not snapshot:
@@ -1956,8 +1953,6 @@ class DataScan(TableScan):
         # the filter depends on the partition spec used to write the manifest file, so create a cache of filters for each spec id
 
         manifest_evaluators: Dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
-
-        residual_evaluators: Dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
 
         manifests = [
             manifest_file
@@ -1972,25 +1967,34 @@ class DataScan(TableScan):
 
         min_sequence_number = _min_sequence_number(manifests)
 
+        executor = ExecutorFactory.get_or_create()
+
+        return executor.map(
+            lambda args: _open_manifest(*args),
+            [
+                (
+                    self.io,
+                    manifest,
+                    partition_evaluators[manifest.partition_spec_id],
+                    self._build_metrics_evaluator(),
+                )
+                for manifest in manifests
+                if self._check_sequence_number(min_sequence_number, manifest)
+            ],
+        )
+
+    def plan_files(self) -> Iterable[FileScanTask]:
+        """Plans the relevant files by filtering on the PartitionSpecs.
+
+        Returns:
+            List of FileScanTasks that contain both data and delete files.
+        """
         data_entries: List[ManifestEntry] = []
         positional_delete_entries = SortedList(key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER)
 
-        executor = ExecutorFactory.get_or_create()
-        for manifest_entry in chain(
-            *executor.map(
-                lambda args: _open_manifest(*args),
-                [
-                    (
-                        self.io,
-                        manifest,
-                        partition_evaluators[manifest.partition_spec_id],
-                        self._build_metrics_evaluator(),
-                    )
-                    for manifest in manifests
-                    if self._check_sequence_number(min_sequence_number, manifest)
-                ],
-            )
-        ):
+        residual_evaluators: Dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
+
+        for manifest_entry in chain.from_iterable(self.scan_plan_helper()):
             data_file = manifest_entry.data_file
             if data_file.content == DataFileContent.DATA:
                 data_entries.append(manifest_entry)
@@ -2062,7 +2066,7 @@ class DataScan(TableScan):
         """
         return self.to_arrow().to_pandas(**kwargs)
 
-    def to_duckdb(self, table_name: str, connection: Optional[DuckDBPyConnection] = None) -> DuckDBPyConnection:
+    def to_duckdb(self, table_name: str, connection: DuckDBPyConnection | None = None) -> DuckDBPyConnection:
         """Shorthand for loading the Iceberg Table in DuckDB.
 
         Returns:
@@ -2135,8 +2139,8 @@ class WriteTask:
     task_id: int
     schema: Schema
     record_batches: List[pa.RecordBatch]
-    sort_order_id: Optional[int] = None
-    partition_key: Optional[PartitionKey] = None
+    sort_order_id: int | None = None
+    partition_key: PartitionKey | None = None
 
     def generate_data_file_filename(self, extension: str) -> str:
         # Mimics the behavior in the Java API:

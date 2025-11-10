@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import json
-from typing import TYPE_CHECKING, Any, List, Optional, Set, Tuple, Union
+from typing import TYPE_CHECKING, Any, List, Set, Tuple, Union
 
 from google.api_core.exceptions import NotFound
 from google.cloud.bigquery import Client, Dataset, DatasetReference, TableReference
@@ -62,10 +62,10 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
 
-        project_id: Optional[str] = self.properties.get(GCP_PROJECT_ID)
-        location: Optional[str] = self.properties.get(GCP_LOCATION)
-        credentials_file: Optional[str] = self.properties.get(GCP_CREDENTIALS_FILE)
-        credentials_info_str: Optional[str] = self.properties.get(GCP_CREDENTIALS_INFO)
+        project_id: str | None = self.properties.get(GCP_PROJECT_ID)
+        location: str | None = self.properties.get(GCP_LOCATION)
+        credentials_file: str | None = self.properties.get(GCP_CREDENTIALS_FILE)
+        credentials_info_str: str | None = self.properties.get(GCP_CREDENTIALS_INFO)
 
         if not project_id:
             raise ValueError(f"Missing property: {GCP_PROJECT_ID}")
@@ -100,9 +100,9 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
 
     def create_table(
         self,
-        identifier: Union[str, Identifier],
+        identifier: str | Identifier,
         schema: Union[Schema, "pa.Schema"],
-        location: Optional[str] = None,
+        location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
@@ -154,7 +154,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
 
         return self.load_table(identifier=identifier)
 
-    def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
+    def create_namespace(self, namespace: str | Identifier, properties: Properties = EMPTY_DICT) -> None:
         """Create a namespace in the catalog.
 
         Args:
@@ -177,7 +177,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         except Conflict as e:
             raise NamespaceAlreadyExistsError("Namespace {database_name} already exists") from e
 
-    def load_table(self, identifier: Union[str, Identifier]) -> Table:
+    def load_table(self, identifier: str | Identifier) -> Table:
         """
         Load the table's metadata and returns the table instance.
 
@@ -206,7 +206,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         except NotFound as e:
             raise NoSuchTableError(f"Table does not exist: {dataset_name}.{table_name}") from e
 
-    def drop_table(self, identifier: Union[str, Identifier]) -> None:
+    def drop_table(self, identifier: str | Identifier) -> None:
         """Drop a table.
 
         Args:
@@ -231,10 +231,10 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
     ) -> CommitTableResponse:
         raise NotImplementedError
 
-    def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
+    def rename_table(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> Table:
         raise NotImplementedError
 
-    def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
+    def drop_namespace(self, namespace: str | Identifier) -> None:
         database_name = self.identifier_to_database(namespace)
 
         try:
@@ -244,7 +244,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         except NotFound as e:
             raise NoSuchNamespaceError(f"Namespace {namespace} does not exist.") from e
 
-    def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> List[Identifier]:
         database_name = self.identifier_to_database(namespace)
         iceberg_tables: List[Identifier] = []
         try:
@@ -258,7 +258,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Namespace (dataset) '{database_name}' not found.") from None
         return iceberg_tables
 
-    def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> List[Identifier]:
         # Since this catalog only supports one-level namespaces, it always returns an empty list unless
         # passed an empty namespace to list all namespaces within the catalog.
         if namespace:
@@ -268,7 +268,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         datasets_iterator = self.client.list_datasets()
         return [(dataset.dataset_id,) for dataset in datasets_iterator]
 
-    def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
+    def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
         """Register a new table using existing metadata.
 
         Args:
@@ -299,16 +299,16 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
 
         return self.load_table(identifier=identifier)
 
-    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> List[Identifier]:
         raise NotImplementedError
 
-    def drop_view(self, identifier: Union[str, Identifier]) -> None:
+    def drop_view(self, identifier: str | Identifier) -> None:
         raise NotImplementedError
 
-    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
+    def view_exists(self, identifier: str | Identifier) -> bool:
         raise NotImplementedError
 
-    def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
+    def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
         dataset_name = self.identifier_to_database(namespace)
 
         try:
@@ -321,7 +321,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         return {}
 
     def update_namespace_properties(
-        self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = EMPTY_DICT
+        self, namespace: str | Identifier, removals: Set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
         raise NotImplementedError
 
@@ -364,7 +364,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
             parameters=metadataParameters,
         )
 
-    def _convert_bigquery_table_to_iceberg_table(self, identifier: Union[str, Identifier], table: BQTable) -> Table:
+    def _convert_bigquery_table_to_iceberg_table(self, identifier: str | Identifier, table: BQTable) -> Table:
         dataset_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
         metadata_location = ""
         if table.external_catalog_table_options and table.external_catalog_table_options.parameters:
@@ -405,7 +405,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
 
         return parameters
 
-    def _default_storage_location(self, location: Optional[str], dataset_ref: DatasetReference) -> Union[str, None]:
+    def _default_storage_location(self, location: str | None, dataset_ref: DatasetReference) -> str | None:
         if location:
             return location
         dataset = self.client.get_dataset(dataset_ref)

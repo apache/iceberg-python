@@ -40,7 +40,6 @@ from typing import (
     ClassVar,
     Dict,
     Literal,
-    Optional,
     Tuple,
 )
 
@@ -339,9 +338,9 @@ class NestedField(IcebergType):
     name: str = Field()
     field_type: SerializeAsAny[IcebergType] = Field(alias="type")
     required: bool = Field(default=False)
-    doc: Optional[str] = Field(default=None, repr=False)
-    initial_default: Optional[DefaultValue] = Field(alias="initial-default", default=None, repr=True)  # type: ignore
-    write_default: Optional[DefaultValue] = Field(alias="write-default", default=None, repr=True)  # type: ignore
+    doc: str | None = Field(default=None, repr=False)
+    initial_default: DefaultValue | None = Field(alias="initial-default", default=None, repr=True)  # type: ignore
+    write_default: DefaultValue | None = Field(alias="write-default", default=None, repr=True)  # type: ignore
 
     @field_validator("field_type", mode="before")
     def convert_field_type(cls, v: Any) -> IcebergType:
@@ -355,13 +354,13 @@ class NestedField(IcebergType):
 
     def __init__(
         self,
-        field_id: Optional[int] = None,
-        name: Optional[str] = None,
-        field_type: Optional[IcebergType | str] = None,
+        field_id: int | None = None,
+        name: str | None = None,
+        field_type: IcebergType | str | None = None,
         required: bool = False,
-        doc: Optional[str] = None,
-        initial_default: Optional[Any] = None,
-        write_default: Optional[L] = None,
+        doc: str | None = None,
+        initial_default: Any | None = None,
+        write_default: L | None = None,
         **data: Any,
     ):
         # We need an init when we want to use positional arguments, but
@@ -416,7 +415,7 @@ class NestedField(IcebergType):
 
         return f"NestedField({', '.join(parts)})"
 
-    def __getnewargs__(self) -> Tuple[int, str, IcebergType, bool, Optional[str]]:
+    def __getnewargs__(self) -> Tuple[int, str, IcebergType, bool, str | None]:
         """Pickle the NestedField class."""
         return (self.field_id, self.name, self.field_type, self.required, self.doc)
 
@@ -447,13 +446,13 @@ class StructType(IcebergType):
         super().__init__(**data)
         self._hash = hash(self.fields)
 
-    def field(self, field_id: int) -> Optional[NestedField]:
+    def field(self, field_id: int) -> NestedField | None:
         for field in self.fields:
             if field.field_id == field_id:
                 return field
         return None
 
-    def field_by_name(self, name: str, case_sensitive: bool = True) -> Optional[NestedField]:
+    def field_by_name(self, name: str, case_sensitive: bool = True) -> NestedField | None:
         if case_sensitive:
             for field in self.fields:
                 if field.name == name:
@@ -506,7 +505,7 @@ class ListType(IcebergType):
     _hash: int = PrivateAttr()
 
     def __init__(
-        self, element_id: Optional[int] = None, element: Optional[IcebergType] = None, element_required: bool = True, **data: Any
+        self, element_id: int | None = None, element: IcebergType | None = None, element_required: bool = True, **data: Any
     ):
         data["element-id"] = data["element-id"] if "element-id" in data else element_id
         data["element"] = element or data["element_type"]
@@ -558,10 +557,10 @@ class MapType(IcebergType):
 
     def __init__(
         self,
-        key_id: Optional[int] = None,
-        key_type: Optional[IcebergType] = None,
-        value_id: Optional[int] = None,
-        value_type: Optional[IcebergType] = None,
+        key_id: int | None = None,
+        key_type: IcebergType | None = None,
+        value_id: int | None = None,
+        value_type: IcebergType | None = None,
         value_required: bool = True,
         **data: Any,
     ):

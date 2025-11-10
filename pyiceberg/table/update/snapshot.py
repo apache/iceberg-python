@@ -24,7 +24,7 @@ from collections import defaultdict
 from concurrent.futures import Future
 from datetime import datetime
 from functools import cached_property
-from typing import TYPE_CHECKING, Callable, Dict, Generic, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Callable, Dict, Generic, List, Set, Tuple
 
 from sortedcontainers import SortedList
 
@@ -105,21 +105,21 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     _io: FileIO
     _operation: Operation
     _snapshot_id: int
-    _parent_snapshot_id: Optional[int]
+    _parent_snapshot_id: int | None
     _added_data_files: List[DataFile]
     _manifest_num_counter: itertools.count[int]
     _deleted_data_files: Set[DataFile]
     _compression: AvroCompressionCodec
-    _target_branch: Optional[str]
+    _target_branch: str | None
 
     def __init__(
         self,
         operation: Operation,
         transaction: Transaction,
         io: FileIO,
-        commit_uuid: Optional[uuid.UUID] = None,
+        commit_uuid: uuid.UUID | None = None,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
-        branch: Optional[str] = MAIN_BRANCH,
+        branch: str | None = MAIN_BRANCH,
     ) -> None:
         super().__init__(transaction)
         self.commit_uuid = commit_uuid or uuid.uuid4()
@@ -140,7 +140,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.snapshot_by_name(self._target_branch)) else None
         )
 
-    def _validate_target_branch(self, branch: Optional[str]) -> Optional[str]:
+    def _validate_target_branch(self, branch: str | None) -> str | None:
         # if branch is none, write will be written into a staging snapshot
         if branch is not None:
             if branch in self._transaction.table_metadata.refs:
@@ -156,6 +156,19 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     def delete_data_file(self, data_file: DataFile) -> _SnapshotProducer[U]:
         self._deleted_data_files.add(data_file)
         return self
+
+    def _calculate_added_rows(self, manifests: List[ManifestFile]) -> int:
+        """Calculate the number of added rows from a list of manifest files."""
+        added_rows = 0
+        for manifest in manifests:
+            if manifest.added_snapshot_id is None or manifest.added_snapshot_id == self._snapshot_id:
+                if manifest.added_rows_count is None:
+                    raise ValueError(
+                        "Cannot determine number of added rows in snapshot because "
+                        f"the entry for manifest {manifest.manifest_path} is missing the field `added-rows-count`"
+                    )
+                added_rows += manifest.added_rows_count
+        return added_rows
 
     @abstractmethod
     def _deleted_entries(self) -> List[ManifestEntry]: ...
@@ -227,8 +240,11 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     def _summary(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> Summary:
         from pyiceberg.table import TableProperties
 
+        # avoid copying metadata for each data file
+        table_metadata = self._transaction.table_metadata
+
         partition_summary_limit = int(
-            self._transaction.table_metadata.properties.get(
+            table_metadata.properties.get(
                 TableProperties.WRITE_PARTITION_SUMMARY_LIMIT, TableProperties.WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT
             )
         )
@@ -237,23 +253,21 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         for data_file in self._added_data_files:
             ssc.add_file(
                 data_file=data_file,
-                partition_spec=self._transaction.table_metadata.spec(),
-                schema=self._transaction.table_metadata.schema(),
+                partition_spec=table_metadata.spec(),
+                schema=table_metadata.schema(),
             )
 
         if len(self._deleted_data_files) > 0:
-            specs = self._transaction.table_metadata.specs()
+            specs = table_metadata.specs()
             for data_file in self._deleted_data_files:
                 ssc.remove_file(
                     data_file=data_file,
                     partition_spec=specs[data_file.spec_id],
-                    schema=self._transaction.table_metadata.schema(),
+                    schema=table_metadata.schema(),
                 )
 
         previous_snapshot = (
-            self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
-            if self._parent_snapshot_id is not None
-            else None
+            table_metadata.snapshot_by_id(self._parent_snapshot_id) if self._parent_snapshot_id is not None else None
         )
 
         return update_snapshot_summaries(
@@ -284,6 +298,11 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         ) as writer:
             writer.add_manifests(new_manifests)
 
+        first_row_id: int | None = None
+
+        if self._transaction.table_metadata.format_version >= 3:
+            first_row_id = self._transaction.table_metadata.next_row_id
+
         snapshot = Snapshot(
             snapshot_id=self._snapshot_id,
             parent_snapshot_id=self._parent_snapshot_id,
@@ -291,6 +310,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             sequence_number=next_sequence_number,
             summary=summary,
             schema_id=self._transaction.table_metadata.current_schema_id,
+            first_row_id=first_row_id,
         )
 
         add_snapshot_update = AddSnapshotUpdate(snapshot=snapshot)
@@ -366,8 +386,8 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         operation: Operation,
         transaction: Transaction,
         io: FileIO,
-        branch: Optional[str] = MAIN_BRANCH,
-        commit_uuid: Optional[uuid.UUID] = None,
+        branch: str | None = MAIN_BRANCH,
+        commit_uuid: uuid.UUID | None = None,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ):
         super().__init__(operation, transaction, io, commit_uuid, snapshot_properties, branch)
@@ -537,8 +557,8 @@ class _MergeAppendFiles(_FastAppendFiles):
         operation: Operation,
         transaction: Transaction,
         io: FileIO,
-        branch: Optional[str] = MAIN_BRANCH,
-        commit_uuid: Optional[uuid.UUID] = None,
+        branch: str | None = MAIN_BRANCH,
+        commit_uuid: uuid.UUID | None = None,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ) -> None:
         from pyiceberg.table import TableProperties
@@ -658,14 +678,14 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
 class UpdateSnapshot:
     _transaction: Transaction
     _io: FileIO
-    _branch: Optional[str]
+    _branch: str | None
     _snapshot_properties: Dict[str, str]
 
     def __init__(
         self,
         transaction: Transaction,
         io: FileIO,
-        branch: Optional[str] = MAIN_BRANCH,
+        branch: str | None = MAIN_BRANCH,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ) -> None:
         self._transaction = transaction
@@ -691,7 +711,7 @@ class UpdateSnapshot:
             snapshot_properties=self._snapshot_properties,
         )
 
-    def overwrite(self, commit_uuid: Optional[uuid.UUID] = None) -> _OverwriteFiles:
+    def overwrite(self, commit_uuid: uuid.UUID | None = None) -> _OverwriteFiles:
         return _OverwriteFiles(
             commit_uuid=commit_uuid,
             operation=Operation.OVERWRITE
@@ -844,7 +864,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         self._requirements += requirements
         return self
 
-    def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> ManageSnapshots:
+    def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: int | None = None) -> ManageSnapshots:
         """
         Create a new tag pointing to the given snapshot id.
 
@@ -881,9 +901,9 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         self,
         snapshot_id: int,
         branch_name: str,
-        max_ref_age_ms: Optional[int] = None,
-        max_snapshot_age_ms: Optional[int] = None,
-        min_snapshots_to_keep: Optional[int] = None,
+        max_ref_age_ms: int | None = None,
+        max_snapshot_age_ms: int | None = None,
+        min_snapshots_to_keep: int | None = None,
     ) -> ManageSnapshots:
         """
         Create a new branch pointing to the given snapshot id.

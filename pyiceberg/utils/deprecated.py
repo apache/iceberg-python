@@ -16,10 +16,10 @@
 #  under the License.
 import functools
 import warnings
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 
-def deprecated(deprecated_in: str, removed_in: str, help_message: Optional[str] = None) -> Callable:  # type: ignore
+def deprecated(deprecated_in: str, removed_in: str, help_message: str | None = None) -> Callable:  # type: ignore
     """Mark functions as deprecated.
 
     Adding this will result in a warning being emitted when the function is used.
@@ -41,12 +41,12 @@ def deprecated(deprecated_in: str, removed_in: str, help_message: Optional[str] 
     return decorator
 
 
-def deprecation_notice(deprecated_in: str, removed_in: str, help_message: Optional[str]) -> str:
+def deprecation_notice(deprecated_in: str, removed_in: str, help_message: str | None) -> str:
     """Return a deprecation notice."""
     return f"Deprecated in {deprecated_in}, will be removed in {removed_in}. {help_message}"
 
 
-def deprecation_message(deprecated_in: str, removed_in: str, help_message: Optional[str]) -> None:
+def deprecation_message(deprecated_in: str, removed_in: str, help_message: str | None) -> None:
     """Mark properties or behaviors as deprecated.
 
     Adding this will result in a warning being emitted.

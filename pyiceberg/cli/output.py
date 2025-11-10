@@ -20,7 +20,6 @@ from typing import (
     Any,
     Dict,
     List,
-    Optional,
     Tuple,
 )
 from uuid import UUID
@@ -65,7 +64,7 @@ class Output(ABC):
     def spec(self, spec: PartitionSpec) -> None: ...
 
     @abstractmethod
-    def uuid(self, uuid: Optional[UUID]) -> None: ...
+    def uuid(self, uuid: UUID | None) -> None: ...
 
     @abstractmethod
     def version(self, version: str) -> None: ...
@@ -169,7 +168,7 @@ class ConsoleOutput(Output):
     def spec(self, spec: PartitionSpec) -> None:
         Console().print(str(spec))
 
-    def uuid(self, uuid: Optional[UUID]) -> None:
+    def uuid(self, uuid: UUID | None) -> None:
         Console().print(str(uuid) if uuid else "missing")
 
     def version(self, version: str) -> None:
@@ -235,7 +234,7 @@ class JsonOutput(Output):
     def spec(self, spec: PartitionSpec) -> None:
         print(spec.model_dump_json())
 
-    def uuid(self, uuid: Optional[UUID]) -> None:
+    def uuid(self, uuid: UUID | None) -> None:
         self._out({"uuid": str(uuid) if uuid else "missing"})
 
     def version(self, version: str) -> None:

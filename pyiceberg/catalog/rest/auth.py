@@ -22,7 +22,7 @@ import threading
 import time
 from abc import ABC, abstractmethod
 from functools import cached_property
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Type
 
 import requests
 from requests import HTTPError, PreparedRequest, Session
@@ -43,14 +43,14 @@ class AuthManager(ABC):
     """
 
     @abstractmethod
-    def auth_header(self) -> Optional[str]:
+    def auth_header(self) -> str | None:
         """Return the Authorization header value, or None if not applicable."""
 
 
 class NoopAuthManager(AuthManager):
     """Auth Manager implementation with no auth."""
 
-    def auth_header(self) -> Optional[str]:
+    def auth_header(self) -> str | None:
         return None
 
 
@@ -73,18 +73,18 @@ class LegacyOAuth2AuthManager(AuthManager):
     """
 
     _session: Session
-    _auth_url: Optional[str]
-    _token: Optional[str]
-    _credential: Optional[str]
-    _optional_oauth_params: Optional[Dict[str, str]]
+    _auth_url: str | None
+    _token: str | None
+    _credential: str | None
+    _optional_oauth_params: Dict[str, str] | None
 
     def __init__(
         self,
         session: Session,
-        auth_url: Optional[str] = None,
-        credential: Optional[str] = None,
-        initial_token: Optional[str] = None,
-        optional_oauth_params: Optional[Dict[str, str]] = None,
+        auth_url: str | None = None,
+        credential: str | None = None,
+        initial_token: str | None = None,
+        optional_oauth_params: Dict[str, str] | None = None,
     ):
         self._session = session
         self._auth_url = auth_url
@@ -131,11 +131,11 @@ class OAuth2TokenProvider:
     client_id: str
     client_secret: str
     token_url: str
-    scope: Optional[str]
+    scope: str | None
     refresh_margin: int
-    expires_in: Optional[int]
+    expires_in: int | None
 
-    _token: Optional[str]
+    _token: str | None
     _expires_at: int
     _lock: threading.Lock
 
@@ -144,9 +144,9 @@ class OAuth2TokenProvider:
         client_id: str,
         client_secret: str,
         token_url: str,
-        scope: Optional[str] = None,
+        scope: str | None = None,
         refresh_margin: int = 60,
-        expires_in: Optional[int] = None,
+        expires_in: int | None = None,
     ):
         self.client_id = client_id
         self.client_secret = client_secret
@@ -200,9 +200,9 @@ class OAuth2AuthManager(AuthManager):
         client_id: str,
         client_secret: str,
         token_url: str,
-        scope: Optional[str] = None,
+        scope: str | None = None,
         refresh_margin: int = 60,
-        expires_in: Optional[int] = None,
+        expires_in: int | None = None,
     ):
         self.token_provider = OAuth2TokenProvider(
             client_id,
@@ -220,7 +220,7 @@ class OAuth2AuthManager(AuthManager):
 class GoogleAuthManager(AuthManager):
     """An auth manager that is responsible for handling Google credentials."""
 
-    def __init__(self, credentials_path: Optional[str] = None, scopes: Optional[List[str]] = None):
+    def __init__(self, credentials_path: str | None = None, scopes: List[str] | None = None):
         """
         Initialize GoogleAuthManager.
 

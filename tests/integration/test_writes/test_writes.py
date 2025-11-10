@@ -64,7 +64,7 @@ from pyiceberg.types import (
     StringType,
     UUIDType,
 )
-from utils import _create_table
+from utils import TABLE_SCHEMA, _create_table
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -759,7 +759,9 @@ def test_spark_writes_orc_pyiceberg_reads(spark: SparkSession, session_catalog: 
     ]
 
     # Verify PyIceberg results contain the expected data (appears twice due to create + append)
-    pyiceberg_data = list(zip(pyiceberg_df["id"], pyiceberg_df["name"], pyiceberg_df["age"], pyiceberg_df["is_active"]))
+    pyiceberg_data = list(
+        zip(pyiceberg_df["id"], pyiceberg_df["name"], pyiceberg_df["age"], pyiceberg_df["is_active"], strict=True)
+    )
     assert pyiceberg_data == expected_data + expected_data  # Data should appear twice
 
     # Verify PyIceberg data types are correct
@@ -1170,7 +1172,7 @@ def test_inspect_snapshots(
     lhs = spark.table(f"{identifier}.snapshots").toPandas()
     rhs = df.to_pandas()
     for column in df.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if column == "summary":
                 # Arrow returns a list of tuples, instead of a dict
                 right = dict(right)
@@ -1466,7 +1468,7 @@ def test_table_write_schema_with_valid_nullability_diff(
     rhs = written_arrow_table.to_pandas()
 
     for column in written_arrow_table.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             assert left == right
 
 
@@ -1506,7 +1508,7 @@ def test_table_write_schema_with_valid_upcast(
     rhs = written_arrow_table.to_pandas()
 
     for column in written_arrow_table.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if column == "map":
                 # Arrow returns a list of tuples, instead of a dict
                 right = dict(right)
@@ -1552,7 +1554,7 @@ def test_write_all_timestamp_precision(
     rhs = written_arrow_table.to_pandas()
 
     for column in written_arrow_table.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if pd.isnull(left):
                 assert pd.isnull(right)
             else:
@@ -2490,3 +2492,41 @@ def test_stage_only_overwrite_files(
     assert operations == ["append", "append", "delete", "append", "append"]
 
     assert parent_snapshot_id == [None, first_snapshot, second_snapshot, second_snapshot, second_snapshot]
+
+
+@pytest.mark.skip("V3 writer support is not enabled.")
+@pytest.mark.integration
+def test_v3_write_and_read_row_lineage(spark: SparkSession, session_catalog: Catalog) -> None:
+    """Test writing to a v3 table and reading with Spark."""
+    identifier = "default.test_v3_write_and_read"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "3"})
+    assert tbl.format_version == 3, f"Expected v3, got: v{tbl.format_version}"
+    initial_next_row_id = tbl.metadata.next_row_id or 0
+
+    test_data = pa.Table.from_pydict(
+        {
+            "bool": [True, False, True],
+            "string": ["a", "b", "c"],
+            "string_long": ["a_long", "b_long", "c_long"],
+            "int": [1, 2, 3],
+            "long": [11, 22, 33],
+            "float": [1.1, 2.2, 3.3],
+            "double": [1.11, 2.22, 3.33],
+            "timestamp": [datetime(2023, 1, 1, 1, 1, 1), datetime(2023, 2, 2, 2, 2, 2), datetime(2023, 3, 3, 3, 3, 3)],
+            "timestamptz": [
+                datetime(2023, 1, 1, 1, 1, 1, tzinfo=pytz.utc),
+                datetime(2023, 2, 2, 2, 2, 2, tzinfo=pytz.utc),
+                datetime(2023, 3, 3, 3, 3, 3, tzinfo=pytz.utc),
+            ],
+            "date": [date(2023, 1, 1), date(2023, 2, 2), date(2023, 3, 3)],
+            "binary": [b"\x01", b"\x02", b"\x03"],
+            "fixed": [b"1234567890123456", b"1234567890123456", b"1234567890123456"],
+        },
+        schema=TABLE_SCHEMA.as_arrow(),
+    )
+
+    tbl.append(test_data)
+
+    assert tbl.metadata.next_row_id == initial_next_row_id + len(test_data), (
+        "Expected next_row_id to be incremented by the number of added rows"
+    )

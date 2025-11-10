@@ -27,7 +27,6 @@ from typing import (
     SupportsFloat,
     Tuple,
     TypeVar,
-    Union,
 )
 
 from pyiceberg.conversions import from_bytes
@@ -1014,7 +1013,7 @@ class ExpressionToPlainFormat(BoundBooleanExpressionVisitor[List[Tuple[str, str,
     def __init__(self, cast_int_to_date: bool = False) -> None:
         self.cast_int_to_date = cast_int_to_date
 
-    def _cast_if_necessary(self, iceberg_type: IcebergType, literal: Union[L, Set[L]]) -> Union[L, Set[L]]:
+    def _cast_if_necessary(self, iceberg_type: IcebergType, literal: L | Set[L]) -> L | Set[L]:
         if self.cast_int_to_date:
             iceberg_type_class = type(iceberg_type)
             conversions = {TimestampType: micros_to_timestamp, TimestamptzType: micros_to_timestamptz}

@@ -14,7 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from typing import Dict, List, Literal, Optional, Union
+from typing import Dict, List, Literal
 
 from pydantic import Field
 
@@ -26,7 +26,7 @@ class BlobMetadata(IcebergBaseModel):
     snapshot_id: int = Field(alias="snapshot-id")
     sequence_number: int = Field(alias="sequence-number")
     fields: List[int]
-    properties: Optional[Dict[str, str]] = None
+    properties: Dict[str, str] | None = None
 
 
 class StatisticsCommonFields(IcebergBaseModel):
@@ -39,7 +39,7 @@ class StatisticsCommonFields(IcebergBaseModel):
 
 class StatisticsFile(StatisticsCommonFields):
     file_footer_size_in_bytes: int = Field(alias="file-footer-size-in-bytes")
-    key_metadata: Optional[str] = Field(alias="key-metadata", default=None)
+    key_metadata: str | None = Field(alias="key-metadata", default=None)
     blob_metadata: List[BlobMetadata] = Field(alias="blob-metadata")
 
 
@@ -48,7 +48,7 @@ class PartitionStatisticsFile(StatisticsCommonFields):
 
 
 def filter_statistics_by_snapshot_id(
-    statistics: List[Union[StatisticsFile, PartitionStatisticsFile]],
+    statistics: List[StatisticsFile | PartitionStatisticsFile],
     reject_snapshot_id: int,
-) -> List[Union[StatisticsFile, PartitionStatisticsFile]]:
+) -> List[StatisticsFile | PartitionStatisticsFile]:
     return [stat for stat in statistics if stat.snapshot_id != reject_snapshot_id]

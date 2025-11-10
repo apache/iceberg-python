@@ -41,7 +41,6 @@ from typing import (
     Dict,
     Generator,
     List,
-    Optional,
 )
 
 import boto3
@@ -72,7 +71,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
-from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2
+from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2, TableMetadataV3
 from pyiceberg.transforms import DayTransform, IdentityTransform
 from pyiceberg.types import (
     BinaryType,
@@ -98,7 +97,7 @@ from pyiceberg.utils.datetime import datetime_to_millis
 
 if TYPE_CHECKING:
     import pyarrow as pa
-    from moto.server import ThreadedMotoServer  # type: ignore
+    from moto.server import ThreadedMotoServer
     from pyspark.sql import SparkSession
 
     from pyiceberg.io.pyarrow import PyArrowFileIO
@@ -786,8 +785,8 @@ def example_table_metadata_no_snapshot_v1() -> Dict[str, Any]:
 def example_table_metadata_v2_with_extensive_snapshots() -> Dict[str, Any]:
     def generate_snapshot(
         snapshot_id: int,
-        parent_snapshot_id: Optional[int] = None,
-        timestamp_ms: Optional[int] = None,
+        parent_snapshot_id: int | None = None,
+        timestamp_ms: int | None = None,
         sequence_number: int = 0,
     ) -> Dict[str, Any]:
         return {
@@ -920,6 +919,7 @@ EXAMPLE_TABLE_METADATA_V3 = {
     "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
     "location": "s3://bucket/test/location",
     "last-sequence-number": 34,
+    "next-row-id": 1,
     "last-updated-ms": 1602638573590,
     "last-column-id": 3,
     "current-schema-id": 1,
@@ -1135,20 +1135,41 @@ def example_table_metadata_v3() -> Dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_V3
 
 
-@pytest.fixture(scope="session")
-def table_location(tmp_path_factory: pytest.TempPathFactory) -> str:
+def generate_table_location_with_version_hint(
+    tmp_path_factory: pytest.TempPathFactory, content_in_version_hint: str, metadata_filename: str
+) -> str:
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
-    metadata_filename = f"{uuid.uuid4()}.metadata.json"
     metadata_location = str(tmp_path_factory.getbasetemp() / "metadata" / metadata_filename)
     version_hint_location = str(tmp_path_factory.getbasetemp() / "metadata" / "version-hint.text")
     metadata = TableMetadataV2(**EXAMPLE_TABLE_METADATA_V2)
     ToOutputFile.table_metadata(metadata, PyArrowFileIO().new_output(location=metadata_location), overwrite=True)
 
     with PyArrowFileIO().new_output(location=version_hint_location).create(overwrite=True) as s:
-        s.write(metadata_filename.encode("utf-8"))
+        s.write(content_in_version_hint.encode("utf-8"))
 
     return str(tmp_path_factory.getbasetemp())
+
+
+@pytest.fixture(scope="session")
+def table_location_with_version_hint_full(tmp_path_factory: pytest.TempPathFactory) -> str:
+    content_in_version_hint = str(uuid.uuid4())
+    metadata_filename = f"{content_in_version_hint}.metadata.json"
+    return generate_table_location_with_version_hint(tmp_path_factory, content_in_version_hint, metadata_filename)
+
+
+@pytest.fixture(scope="session")
+def table_location_with_version_hint_numeric(tmp_path_factory: pytest.TempPathFactory) -> str:
+    content_in_version_hint = "1234567890"
+    metadata_filename = f"v{content_in_version_hint}.metadata.json"
+    return generate_table_location_with_version_hint(tmp_path_factory, content_in_version_hint, metadata_filename)
+
+
+@pytest.fixture(scope="session")
+def table_location_with_version_hint_non_numeric(tmp_path_factory: pytest.TempPathFactory) -> str:
+    content_in_version_hint = "non_numberic"
+    metadata_filename = f"{content_in_version_hint}.metadata.json"
+    return generate_table_location_with_version_hint(tmp_path_factory, content_in_version_hint, metadata_filename)
 
 
 @pytest.fixture(scope="session")
@@ -2346,12 +2367,12 @@ def get_gcs_bucket_name() -> str:
     return bucket_name
 
 
-def get_glue_endpoint() -> Optional[str]:
+def get_glue_endpoint() -> str | None:
     """Set the optional environment variable AWS_TEST_GLUE_ENDPOINT for a glue endpoint to test."""
     return os.getenv("AWS_TEST_GLUE_ENDPOINT")
 
 
-def get_s3_path(bucket_name: str, database_name: Optional[str] = None, table_name: Optional[str] = None) -> str:
+def get_s3_path(bucket_name: str, database_name: str | None = None, table_name: str | None = None) -> str:
     result_path = f"s3://{bucket_name}"
     if database_name is not None:
         result_path += f"/{database_name}.db"
@@ -2361,7 +2382,7 @@ def get_s3_path(bucket_name: str, database_name: Optional[str] = None, table_nam
     return result_path
 
 
-def get_gcs_path(bucket_name: str, database_name: Optional[str] = None, table_name: Optional[str] = None) -> str:
+def get_gcs_path(bucket_name: str, database_name: str | None = None, table_name: str | None = None) -> str:
     result_path = f"gcs://{bucket_name}"
     if database_name is not None:
         result_path += f"/{database_name}.db"
@@ -2459,6 +2480,18 @@ def table_v1(example_table_metadata_v1: Dict[str, Any]) -> Table:
 @pytest.fixture
 def table_v2(example_table_metadata_v2: Dict[str, Any]) -> Table:
     table_metadata = TableMetadataV2(**example_table_metadata_v2)
+    return Table(
+        identifier=("database", "table"),
+        metadata=table_metadata,
+        metadata_location=f"{table_metadata.location}/uuid.metadata.json",
+        io=load_file_io(),
+        catalog=NoopCatalog("NoopCatalog"),
+    )
+
+
+@pytest.fixture
+def table_v3(example_table_metadata_v3: Dict[str, Any]) -> Table:
+    table_metadata = TableMetadataV3(**example_table_metadata_v3)
     return Table(
         identifier=("database", "table"),
         metadata=table_metadata,

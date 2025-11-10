@@ -155,9 +155,9 @@ class DynamoDbCatalog(MetastoreCatalog):
 
     def create_table(
         self,
-        identifier: Union[str, Identifier],
+        identifier: str | Identifier,
         schema: Union[Schema, "pa.Schema"],
-        location: Optional[str] = None,
+        location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
@@ -212,7 +212,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return self.load_table(identifier=identifier)
 
-    def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
+    def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
         """Register a new table using existing metadata.
 
         Args:
@@ -246,7 +246,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         """
         raise NotImplementedError
 
-    def load_table(self, identifier: Union[str, Identifier]) -> Table:
+    def load_table(self, identifier: str | Identifier) -> Table:
         """
         Load the table's metadata and returns the table instance.
 
@@ -266,7 +266,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         dynamo_table_item = self._get_iceberg_table_item(database_name=database_name, table_name=table_name)
         return self._convert_dynamo_table_item_to_iceberg_table(dynamo_table_item=dynamo_table_item)
 
-    def drop_table(self, identifier: Union[str, Identifier]) -> None:
+    def drop_table(self, identifier: str | Identifier) -> None:
         """Drop a table.
 
         Args:
@@ -286,7 +286,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         except ConditionalCheckFailedException as e:
             raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}") from e
 
-    def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
+    def rename_table(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> Table:
         """Rename a fully classified table name.
 
         This method can only rename Iceberg tables in AWS Glue.
@@ -352,7 +352,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return self.load_table(to_identifier)
 
-    def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
+    def create_namespace(self, namespace: str | Identifier, properties: Properties = EMPTY_DICT) -> None:
         """Create a namespace in the catalog.
 
         Args:
@@ -373,7 +373,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         except ConditionalCheckFailedException as e:
             raise NamespaceAlreadyExistsError(f"Database {database_name} already exists") from e
 
-    def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
+    def drop_namespace(self, namespace: str | Identifier) -> None:
         """Drop a namespace.
 
         A Glue namespace can only be dropped if it is empty.
@@ -400,7 +400,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         except ConditionalCheckFailedException as e:
             raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
 
-    def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> List[Identifier]:
         """List Iceberg tables under the given namespace in the catalog.
 
         Args:
@@ -444,7 +444,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return table_identifiers
 
-    def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> List[Identifier]:
         """List top-level namespaces from the catalog.
 
         We do not support hierarchical namespace.
@@ -486,7 +486,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return database_identifiers
 
-    def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
+    def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
         """
         Get properties for a namespace.
 
@@ -505,7 +505,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         return _get_namespace_properties(namespace_dict=namespace_dict)
 
     def update_namespace_properties(
-        self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = EMPTY_DICT
+        self, namespace: str | Identifier, removals: Set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
         """
         Remove or update provided property keys for a namespace.
@@ -541,13 +541,13 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return properties_update_summary
 
-    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> List[Identifier]:
         raise NotImplementedError
 
-    def drop_view(self, identifier: Union[str, Identifier]) -> None:
+    def drop_view(self, identifier: str | Identifier) -> None:
         raise NotImplementedError
 
-    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
+    def view_exists(self, identifier: str | Identifier) -> bool:
         raise NotImplementedError
 
     def _get_iceberg_table_item(self, database_name: str, table_name: str) -> Dict[str, Any]:

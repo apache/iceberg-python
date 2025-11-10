@@ -30,11 +30,9 @@ from typing import (
     Callable,
     Dict,
     List,
-    Optional,
     Set,
     Tuple,
     Type,
-    Union,
     cast,
 )
 
@@ -195,7 +193,7 @@ AVAILABLE_CATALOGS: dict[CatalogType, Callable[[str, Properties], Catalog]] = {
 }
 
 
-def infer_catalog_type(name: str, catalog_properties: RecursiveDict) -> Optional[CatalogType]:
+def infer_catalog_type(name: str, catalog_properties: RecursiveDict) -> CatalogType | None:
     """Try to infer the type based on the dict.
 
     Args:
@@ -225,7 +223,7 @@ def infer_catalog_type(name: str, catalog_properties: RecursiveDict) -> Optional
     )
 
 
-def load_catalog(name: Optional[str] = None, **properties: Optional[str]) -> Catalog:
+def load_catalog(name: str | None = None, **properties: str | None) -> Catalog:
     """Load the catalog based on the properties.
 
     Will look up the properties from the config, based on the name.
@@ -247,7 +245,7 @@ def load_catalog(name: Optional[str] = None, **properties: Optional[str]) -> Cat
     env = _ENV_CONFIG.get_catalog_config(name)
     conf: RecursiveDict = merge_config(env or {}, cast(RecursiveDict, properties))
 
-    catalog_type: Optional[CatalogType]
+    catalog_type: CatalogType | None
     provided_catalog_type = conf.get(TYPE)
 
     if catalog_impl := properties.get(PY_CATALOG_IMPL):
@@ -317,7 +315,7 @@ def delete_data_files(io: FileIO, manifests_to_delete: List[ManifestFile]) -> No
                 deleted_files[path] = True
 
 
-def _import_catalog(name: str, catalog_impl: str, properties: Properties) -> Optional[Catalog]:
+def _import_catalog(name: str, catalog_impl: str, properties: Properties) -> Catalog | None:
     try:
         path_parts = catalog_impl.split(".")
         if len(path_parts) < 2:
@@ -362,9 +360,9 @@ class Catalog(ABC):
     @abstractmethod
     def create_table(
         self,
-        identifier: Union[str, Identifier],
-        schema: Union[Schema, "pa.Schema"],
-        location: Optional[str] = None,
+        identifier: str | Identifier,
+        schema: Schema | "pa.Schema",
+        location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
@@ -389,9 +387,9 @@ class Catalog(ABC):
     @abstractmethod
     def create_table_transaction(
         self,
-        identifier: Union[str, Identifier],
-        schema: Union[Schema, "pa.Schema"],
-        location: Optional[str] = None,
+        identifier: str | Identifier,
+        schema: Schema | "pa.Schema",
+        location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
@@ -412,9 +410,9 @@ class Catalog(ABC):
 
     def create_table_if_not_exists(
         self,
-        identifier: Union[str, Identifier],
-        schema: Union[Schema, "pa.Schema"],
-        location: Optional[str] = None,
+        identifier: str | Identifier,
+        schema: Schema | "pa.Schema",
+        location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
@@ -439,7 +437,7 @@ class Catalog(ABC):
             return self.load_table(identifier)
 
     @abstractmethod
-    def load_table(self, identifier: Union[str, Identifier]) -> Table:
+    def load_table(self, identifier: str | Identifier) -> Table:
         """Load the table's metadata and returns the table instance.
 
         You can also use this method to check for table existence using 'try catalog.table() except NoSuchTableError'.
@@ -456,7 +454,7 @@ class Catalog(ABC):
         """
 
     @abstractmethod
-    def table_exists(self, identifier: Union[str, Identifier]) -> bool:
+    def table_exists(self, identifier: str | Identifier) -> bool:
         """Check if a table exists.
 
         Args:
@@ -467,7 +465,7 @@ class Catalog(ABC):
         """
 
     @abstractmethod
-    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
+    def view_exists(self, identifier: str | Identifier) -> bool:
         """Check if a view exists.
 
         Args:
@@ -478,7 +476,7 @@ class Catalog(ABC):
         """
 
     @abstractmethod
-    def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
+    def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
         """Register a new table using existing metadata.
 
         Args:
@@ -493,7 +491,7 @@ class Catalog(ABC):
         """
 
     @abstractmethod
-    def drop_table(self, identifier: Union[str, Identifier]) -> None:
+    def drop_table(self, identifier: str | Identifier) -> None:
         """Drop a table.
 
         Args:
@@ -504,7 +502,7 @@ class Catalog(ABC):
         """
 
     @abstractmethod
-    def purge_table(self, identifier: Union[str, Identifier]) -> None:
+    def purge_table(self, identifier: str | Identifier) -> None:
         """Drop a table and purge all data and metadata files.
 
         Note: This method only logs warning rather than raise exception when encountering file deletion failure.
@@ -517,7 +515,7 @@ class Catalog(ABC):
         """
 
     @abstractmethod
-    def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
+    def rename_table(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> Table:
         """Rename a fully classified table name.
 
         Args:
@@ -552,7 +550,7 @@ class Catalog(ABC):
         """
 
     @abstractmethod
-    def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
+    def create_namespace(self, namespace: str | Identifier, properties: Properties = EMPTY_DICT) -> None:
         """Create a namespace in the catalog.
 
         Args:
@@ -563,7 +561,7 @@ class Catalog(ABC):
             NamespaceAlreadyExistsError: If a namespace with the given name already exists.
         """
 
-    def create_namespace_if_not_exists(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
+    def create_namespace_if_not_exists(self, namespace: str | Identifier, properties: Properties = EMPTY_DICT) -> None:
         """Create a namespace if it does not exist.
 
         Args:
@@ -576,7 +574,7 @@ class Catalog(ABC):
             pass
 
     @abstractmethod
-    def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
+    def drop_namespace(self, namespace: str | Identifier) -> None:
         """Drop a namespace.
 
         Args:
@@ -588,7 +586,7 @@ class Catalog(ABC):
         """
 
     @abstractmethod
-    def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> List[Identifier]:
         """List tables under the given namespace in the catalog.
 
         Args:
@@ -602,7 +600,7 @@ class Catalog(ABC):
         """
 
     @abstractmethod
-    def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> List[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
 
         Args:
@@ -616,7 +614,7 @@ class Catalog(ABC):
         """
 
     @abstractmethod
-    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> List[Identifier]:
         """List views under the given namespace in the catalog.
 
         Args:
@@ -630,7 +628,7 @@ class Catalog(ABC):
         """
 
     @abstractmethod
-    def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
+    def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
         """Get properties for a namespace.
 
         Args:
@@ -645,7 +643,7 @@ class Catalog(ABC):
 
     @abstractmethod
     def update_namespace_properties(
-        self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = EMPTY_DICT
+        self, namespace: str | Identifier, removals: Set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
         """Remove provided property keys and updates properties for a namespace.
 
@@ -660,7 +658,7 @@ class Catalog(ABC):
         """
 
     @abstractmethod
-    def drop_view(self, identifier: Union[str, Identifier]) -> None:
+    def drop_view(self, identifier: str | Identifier) -> None:
         """Drop a view.
 
         Args:
@@ -671,7 +669,7 @@ class Catalog(ABC):
         """
 
     @staticmethod
-    def identifier_to_tuple(identifier: Union[str, Identifier]) -> Identifier:
+    def identifier_to_tuple(identifier: str | Identifier) -> Identifier:
         """Parse an identifier to a tuple.
 
         If the identifier is a string, it is split into a tuple on '.'. If it is a tuple, it is used as-is.
@@ -685,7 +683,7 @@ class Catalog(ABC):
         return identifier if isinstance(identifier, tuple) else tuple(str.split(identifier, "."))
 
     @staticmethod
-    def table_name_from(identifier: Union[str, Identifier]) -> str:
+    def table_name_from(identifier: str | Identifier) -> str:
         """Extract table name from a table identifier.
 
         Args:
@@ -697,7 +695,7 @@ class Catalog(ABC):
         return Catalog.identifier_to_tuple(identifier)[-1]
 
     @staticmethod
-    def namespace_from(identifier: Union[str, Identifier]) -> Identifier:
+    def namespace_from(identifier: str | Identifier) -> Identifier:
         """Extract table namespace from a table identifier.
 
         Args:
@@ -709,9 +707,7 @@ class Catalog(ABC):
         return Catalog.identifier_to_tuple(identifier)[:-1]
 
     @staticmethod
-    def namespace_to_string(
-        identifier: Union[str, Identifier], err: Union[Type[ValueError], Type[NoSuchNamespaceError]] = ValueError
-    ) -> str:
+    def namespace_to_string(identifier: str | Identifier, err: Type[ValueError] | Type[NoSuchNamespaceError] = ValueError) -> str:
         """Transform a namespace identifier into a string.
 
         Args:
@@ -733,7 +729,7 @@ class Catalog(ABC):
 
     @staticmethod
     def identifier_to_database(
-        identifier: Union[str, Identifier], err: Union[Type[ValueError], Type[NoSuchNamespaceError]] = ValueError
+        identifier: str | Identifier, err: Type[ValueError] | Type[NoSuchNamespaceError] = ValueError
     ) -> str:
         tuple_identifier = Catalog.identifier_to_tuple(identifier)
         if len(tuple_identifier) != 1:
@@ -743,8 +739,8 @@ class Catalog(ABC):
 
     @staticmethod
     def identifier_to_database_and_table(
-        identifier: Union[str, Identifier],
-        err: Union[Type[ValueError], Type[NoSuchTableError], Type[NoSuchNamespaceError]] = ValueError,
+        identifier: str | Identifier,
+        err: Type[ValueError] | Type[NoSuchTableError] | Type[NoSuchNamespaceError] = ValueError,
     ) -> Tuple[str, str]:
         tuple_identifier = Catalog.identifier_to_tuple(identifier)
         if len(tuple_identifier) != 2:
@@ -752,12 +748,12 @@ class Catalog(ABC):
 
         return tuple_identifier[0], tuple_identifier[1]
 
-    def _load_file_io(self, properties: Properties = EMPTY_DICT, location: Optional[str] = None) -> FileIO:
+    def _load_file_io(self, properties: Properties = EMPTY_DICT, location: str | None = None) -> FileIO:
         return load_file_io({**self.properties, **properties}, location)
 
     @staticmethod
     def _convert_schema_if_needed(
-        schema: Union[Schema, "pa.Schema"], format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION
+        schema: Schema | "pa.Schema", format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION
     ) -> Schema:
         if isinstance(schema, Schema):
             return schema
@@ -811,7 +807,7 @@ class Catalog(ABC):
         """
         return self
 
-    def __exit__(self, exc_type: Optional[type], exc_val: Optional[BaseException], exc_tb: Optional[Any]) -> None:
+    def __exit__(self, exc_type: type | None, exc_val: BaseException | None, exc_tb: Any | None) -> None:
         """Exit the context manager and close the catalog.
 
         Args:
@@ -832,9 +828,9 @@ class MetastoreCatalog(Catalog, ABC):
 
     def create_table_transaction(
         self,
-        identifier: Union[str, Identifier],
-        schema: Union[Schema, "pa.Schema"],
-        location: Optional[str] = None,
+        identifier: str | Identifier,
+        schema: Schema | "pa.Schema",
+        location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
@@ -843,14 +839,14 @@ class MetastoreCatalog(Catalog, ABC):
             self._create_staged_table(identifier, schema, location, partition_spec, sort_order, properties)
         )
 
-    def table_exists(self, identifier: Union[str, Identifier]) -> bool:
+    def table_exists(self, identifier: str | Identifier) -> bool:
         try:
             self.load_table(identifier)
             return True
         except NoSuchTableError:
             return False
 
-    def purge_table(self, identifier: Union[str, Identifier]) -> None:
+    def purge_table(self, identifier: str | Identifier) -> None:
         table = self.load_table(identifier)
         self.drop_table(identifier)
         io = load_file_io(self.properties, table.metadata_location)
@@ -872,9 +868,9 @@ class MetastoreCatalog(Catalog, ABC):
 
     def _create_staged_table(
         self,
-        identifier: Union[str, Identifier],
-        schema: Union[Schema, "pa.Schema"],
-        location: Optional[str] = None,
+        identifier: str | Identifier,
+        schema: Schema | "pa.Schema",
+        location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
@@ -916,7 +912,7 @@ class MetastoreCatalog(Catalog, ABC):
 
     def _update_and_stage_table(
         self,
-        current_table: Optional[Table],
+        current_table: Table | None,
         table_identifier: Identifier,
         requirements: Tuple[TableRequirement, ...],
         updates: Tuple[TableUpdate, ...],
@@ -944,7 +940,7 @@ class MetastoreCatalog(Catalog, ABC):
         )
 
     def _get_updated_props_and_update_summary(
-        self, current_properties: Properties, removals: Optional[Set[str]], updates: Properties
+        self, current_properties: Properties, removals: Set[str] | None, updates: Properties
     ) -> Tuple[PropertiesUpdateSummary, Properties]:
         self._check_for_overlap(updates=updates, removals=removals)
         updated_properties = dict(current_properties)
@@ -969,7 +965,7 @@ class MetastoreCatalog(Catalog, ABC):
 
         return properties_update_summary, updated_properties
 
-    def _resolve_table_location(self, location: Optional[str], database_name: str, table_name: str) -> str:
+    def _resolve_table_location(self, location: str | None, database_name: str, table_name: str) -> str:
         if not location:
             return self._get_default_warehouse_location(database_name, table_name)
         return location.rstrip("/")
@@ -1032,7 +1028,7 @@ class MetastoreCatalog(Catalog, ABC):
             return -1
 
     @staticmethod
-    def _check_for_overlap(removals: Optional[Set[str]], updates: Properties) -> None:
+    def _check_for_overlap(removals: Set[str] | None, updates: Properties) -> None:
         if updates and removals:
             overlap = set(removals) & set(updates.keys())
             if overlap:
