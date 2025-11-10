@@ -51,15 +51,18 @@ pyarrow = [
     "pyiceberg-core>=0.5.1,<0.8.0",
 ]
 pandas = [
-    "pyiceberg[pyarrow]",
+    "pyarrow>=17.0.0",
+    "pyiceberg-core>=0.5.1,<0.8.0",
     "pandas>=1.0.0,<3.0.0",
 ]
 duckdb = [
-    "pyiceberg[pyarrow]",
+    "pyarrow>=17.0.0",
+    "pyiceberg-core>=0.5.1,<0.8.0",
     "duckdb>=0.5.0,<2.0.0",
 ]
 ray = [
-    "pyiceberg[pyarrow]",
+    "pyarrow>=17.0.0",
+    "pyiceberg-core>=0.5.1,<0.8.0",
     "ray>=2.10.0,<=2.44.0",
     "pandas>=1.0.0,<3.0.0",
 ]
@@ -86,7 +89,7 @@ sql-sqlite = ["sqlalchemy>=2.0.18,<3"]
 gcsfs = ["gcsfs>=2023.1.0"]
 rest-sigv4 = ["boto3>=1.24.59"]
 hf = ["huggingface-hub>=0.24.0"]
-pyiceberg-core = ["pyiceberg-core>=0.5.1,<0.7.0"]
+pyiceberg-core = ["pyiceberg-core>=0.5.1,<0.8.0"]
 datafusion = ["datafusion>=45,<49"]
 gcp-auth = ["google-auth>=2.4.0"]
 

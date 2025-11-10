@@ -18,6 +18,9 @@
 # Include Cython source files for building from source
 recursive-include pyiceberg *.pyx *.c
 
+# Exclude generated Cython C file
+exclude pyiceberg/avro/decoder_fast.c
+
 # Include test files in sdist
 recursive-include tests *
 
@@ -26,6 +29,7 @@ include Makefile
 recursive-include dev *
 
 # Exclude build artifacts
+global-exclude */__pycache__/*
 prune .venv
 prune build
 prune dist
