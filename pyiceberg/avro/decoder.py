@@ -181,6 +181,6 @@ def new_decoder(b: bytes) -> BinaryDecoder:
     except ModuleNotFoundError:
         import warnings
 
-        warnings.warn("Falling back to pure Python Avro decoder, missing Cython implementation")
+        warnings.warn("Falling back to pure Python Avro decoder, missing Cython implementation", stacklevel=2)
 
         return StreamingBinaryDecoder(b)

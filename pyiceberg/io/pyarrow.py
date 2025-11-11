@@ -232,7 +232,7 @@ def _import_retry_strategy(impl: str) -> S3RetryStrategy | None:
         class_ = getattr(module, class_name)
         return class_()
     except (ModuleNotFoundError, AttributeError):
-        warnings.warn(f"Could not initialize S3 retry strategy: {impl}")
+        warnings.warn(f"Could not initialize S3 retry strategy: {impl}", stacklevel=2)
         return None
 
 
@@ -2768,7 +2768,7 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
         f"{TableProperties.PARQUET_BLOOM_FILTER_COLUMN_ENABLED_PREFIX}.*",
     ]:
         if unsupported_keys := fnmatch.filter(table_properties, key_pattern):
-            warnings.warn(f"Parquet writer option(s) {unsupported_keys} not implemented")
+            warnings.warn(f"Parquet writer option(s) {unsupported_keys} not implemented", stacklevel=2)
 
     compression_codec = table_properties.get(TableProperties.PARQUET_COMPRESSION, TableProperties.PARQUET_COMPRESSION_DEFAULT)
     compression_level = property_as_int(
