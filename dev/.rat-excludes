@@ -3,5 +3,7 @@
 build
 .git
 .gitignore
-poetry.lock
+uv.lock
 mkdocs/*
+setup.cfg
+(^|.*/)[^/]*\.egg-info(/.*)?$

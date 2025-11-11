@@ -46,18 +46,18 @@ jobs:
             3.11
             3.12
 
-      - name: Install poetry
-        run: make install-poetry
+      - name: Install UV
+        uses: astral-sh/setup-uv@v6
 
       - name: Set version with RC
         env:
           VERSION: ${{ inputs.VERSION }}
-        run: python -m poetry version "${{ env.VERSION }}"
+        run: uv version "${{ env.VERSION }}"
 
       # Publish the source distribution with the version that's in
       # the repository, otherwise the tests will fail
       - name: Compile source distribution
-        run: python3 -m poetry build --format=sdist
+        run: uv build --sdist
         if: startsWith(matrix.os, 'ubuntu')
 
       - name: Build wheels
@@ -76,6 +76,7 @@ jobs:
           CIBW_TEST_SKIP: "pp*"
           # Skip free-threaded (PEP 703) builds until we evaluate decoder_fast support
           CIBW_SKIP: "cp3*t-*"
+
 
       - name: Add source distribution
         if: startsWith(matrix.os, 'ubuntu')
