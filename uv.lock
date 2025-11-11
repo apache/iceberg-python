@@ -3830,15 +3830,15 @@ docs = [
 
 [[package]]
 name = "pyiceberg-core"
-version = "0.6.0"
+version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/60/80/06bd9159cacd80797122a88d65e8d3377fb76f00f1b23eeefe4ab0d85f4d/pyiceberg_core-0.6.0.tar.gz", hash = "sha256:ce2cac8cf8a85da6e682cec032165fcf387256257971f0f84bc6d50c0941f261", size = 457209, upload-time = "2025-07-30T09:20:23.447Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c8/85/d3ec2e229d4e1bad3b9c4092889cae102eaf0d4ed62ce0e2de2b6e32cc4d/pyiceberg_core-0.7.0.tar.gz", hash = "sha256:8166883ace30a388d2f659634bec87731cad7bc52341c997fcdd4e13780e4345", size = 504657, upload-time = "2025-10-10T16:30:16.202Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f6/8b/7ff908f6f18bc3d6351d9f4334d6a299eb7f1975b0bacb061d73b3292c1c/pyiceberg_core-0.6.0-cp39-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:2f228a54a2a69912378be18f98ea866bb4a08d265c875856f99cd81f2f7299ba", size = 55132736, upload-time = "2025-07-30T09:20:07.91Z" },
-    { url = "https://files.pythonhosted.org/packages/57/09/ee720f4811fd4323a45d9d7bebcfd5d99283cf45092bccea87787a06bdff/pyiceberg_core-0.6.0-cp39-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:edb41a1f182774085b11352a1f44955d561e21453f00973021244471873fbbd7", size = 30041729, upload-time = "2025-07-30T09:20:13.056Z" },
-    { url = "https://files.pythonhosted.org/packages/37/cd/94095aa2282ebe716e0a12130760b51076b1c921285574b1f88e5f63e234/pyiceberg_core-0.6.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:5cf869d225d57254a54bc3778841cffea4193319bc0a849767a15e05e75c9b36", size = 30566511, upload-time = "2025-07-30T09:20:15.596Z" },
-    { url = "https://files.pythonhosted.org/packages/87/62/7971cc8b090e51448da8d59e411be7b752a3a2abb1365e760871f27611e7/pyiceberg_core-0.6.0-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:18c12fe1ac5b4725b673cf0d1d0ab3e9475644ac0dae871a2e9a293c2622f0a8", size = 29570254, upload-time = "2025-07-30T09:20:18.371Z" },
-    { url = "https://files.pythonhosted.org/packages/29/40/96bd273520075ee10718eeb609e92d44ee0b7701b5c225eae505a38fb22d/pyiceberg_core-0.6.0-cp39-abi3-win_amd64.whl", hash = "sha256:d3249eeae5e1d1f1d2c8bd8d6eced98da002afa7c48c751cb22d8dbd4b091a1e", size = 25815921, upload-time = "2025-07-30T09:20:20.781Z" },
+    { url = "https://files.pythonhosted.org/packages/70/35/2942dcaf19ca1becc7f9a9001d0cf98168634732a33efbb06a6f382c36b1/pyiceberg_core-0.7.0-cp39-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:99e23463c30c4180329719fe1f120e779b20616a36bbdd42042b70063a13bd39", size = 56895735, upload-time = "2025-10-10T16:30:00.949Z" },
+    { url = "https://files.pythonhosted.org/packages/93/54/dbf169474b8c336316657041fd6e2791b534f8ab3cffe50509533993de03/pyiceberg_core-0.7.0-cp39-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:94fe0281f09c84cdd4e56d217865ef1d81e0cb0b708ba6eb2f4c5ae8bf86f0ba", size = 30991747, upload-time = "2025-10-10T16:30:04.515Z" },
+    { url = "https://files.pythonhosted.org/packages/ed/34/545cf261c343a8d04f75e25aa259f0cf5020b913ede0cb3bdf17c2c7690a/pyiceberg_core-0.7.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:74543885cc97e8d976707f97dd01e8f03dce8a5d3a01e41ada0aaefa13c742f9", size = 31572481, upload-time = "2025-10-10T16:30:07.319Z" },
+    { url = "https://files.pythonhosted.org/packages/63/6b/c8ae2eb1fd60798b819720915e50ea29befafb8816141182df7fa5e788d6/pyiceberg_core-0.7.0-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:2303276b0d8b57b8ce4a3ef9e5050ffdefd9561684728cd0a9a72a9ad0a6a74d", size = 30588256, upload-time = "2025-10-10T16:30:11.047Z" },
+    { url = "https://files.pythonhosted.org/packages/4a/8f/e63e03afb2e655d6f984a4e57ea53aa860a545298eeb5bc887a5d5db9c3b/pyiceberg_core-0.7.0-cp39-abi3-win_amd64.whl", hash = "sha256:64dd3c3c7af6d39097e1d070161e98118e5dd423392992a9074e1ab813fd467b", size = 26606962, upload-time = "2025-10-10T16:30:13.96Z" },
 ]
 
 [[package]]
