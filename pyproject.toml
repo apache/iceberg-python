@@ -22,7 +22,7 @@ authors = [{ name = "Apache Software Foundation", email = "dev@iceberg.apache.or
 requires-python = ">=3.10.0,<4.0.0"
 readme = "README.md"
 license = "Apache-2.0"
-license-files = ["LICEN[CS]E*", "NOTICE*"]
+license-files = ["LICENSE", "NOTICE"]
 classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.10",
