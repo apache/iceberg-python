@@ -743,3 +743,6 @@ class SqlCatalog(MetastoreCatalog):
         """
         if hasattr(self, "engine"):
             self.engine.dispose()
+
+    def rename_view(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> None:
+        raise NotImplementedError

@@ -52,6 +52,7 @@ from pyiceberg.exceptions import (
     NoSuchViewError,
     TableAlreadyExistsError,
     UnauthorizedError,
+    ViewAlreadyExistsError,
 )
 from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec, assign_fresh_partition_spec_ids
@@ -100,6 +101,7 @@ class Endpoints:
     list_views: str = "namespaces/{namespace}/views"
     drop_view: str = "namespaces/{namespace}/views/{view}"
     view_exists: str = "namespaces/{namespace}/views/{view}"
+    rename_view: str = "views/rename"
 
 
 class IdentifierKind(Enum):
@@ -885,6 +887,28 @@ class RestCatalog(Catalog):
             response.raise_for_status()
         except HTTPError as exc:
             _handle_non_200_response(exc, {404: NoSuchViewError})
+
+    @retry(**_RETRY_ARGS)
+    def rename_view(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> None:
+        payload = {
+            "source": self._split_identifier_for_json(from_identifier),
+            "destination": self._split_identifier_for_json(to_identifier),
+        }
+
+        # Ensure source and destination namespaces exist before rename.
+        source_namespace = self._split_identifier_for_json(from_identifier)["namespace"]
+        dest_namespace = self._split_identifier_for_path(to_identifier)["namespace"]
+
+        if not self.namespace_exists(source_namespace):
+            raise NoSuchNamespaceError(f"Source namespace does not exist: {source_namespace}")
+        if not self.namespace_exists(dest_namespace):
+            raise NoSuchNamespaceError(f"Destination namespace does not exist: {dest_namespace}")
+
+        response = self._session.post(self.url(Endpoints.rename_view), json=payload)
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            _handle_non_200_response(exc, {404: NoSuchViewError, 409: ViewAlreadyExistsError})
 
     def close(self) -> None:
         """Close the catalog and release Session connection adapters.

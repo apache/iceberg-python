@@ -475,6 +475,9 @@ class HiveCatalog(MetastoreCatalog):
     def view_exists(self, identifier: str | Identifier) -> bool:
         raise NotImplementedError
 
+    def rename_view(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> None:
+        raise NotImplementedError
+
     def _create_lock_request(self, database_name: str, table_name: str) -> LockRequest:
         lock_component: LockComponent = LockComponent(
             level=LockLevel.TABLE, type=LockType.EXCLUSIVE, dbname=database_name, tablename=table_name, isTransactional=True
