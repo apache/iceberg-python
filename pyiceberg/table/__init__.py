@@ -1783,7 +1783,7 @@ class TableScan(ABC):
     def count(self) -> int: ...
 
 
-class ScanTask(ABC):
+class ScanTask:
     pass
 
 

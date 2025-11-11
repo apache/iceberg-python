@@ -131,7 +131,7 @@ class Term(Generic[L], ABC):
     """A simple expression that evaluates to a value."""
 
 
-class Bound(ABC):
+class Bound:
     """Represents a bound value expression."""
 
 
