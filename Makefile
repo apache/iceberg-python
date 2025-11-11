@@ -32,9 +32,9 @@ else
 endif
 
 ifeq ($(COVERAGE),1)
-  TEST_RUNNER = uv run python -m coverage run --parallel-mode --source=pyiceberg -m
+  TEST_RUNNER = uv run $(PYTHON_ARG) python -m coverage run --parallel-mode --source=pyiceberg -m
 else
-  TEST_RUNNER = uv run python -m
+  TEST_RUNNER = uv run $(PYTHON_ARG) python -m
 endif
 
 ifeq ($(KEEP_COMPOSE),1)
@@ -70,7 +70,7 @@ setup-venv: ## Create virtual environment
 	uv venv $(PYTHON_ARG)
 
 install-dependencies: setup-venv ## Install all dependencies including extras
-	uv sync --all-extras
+	uv sync $(PYTHON_ARG) --all-extras
 
 install: install-uv install-dependencies ## Install uv and dependencies
 
@@ -84,7 +84,7 @@ check-license: ## Check license headers
 	./dev/check-license
 
 lint: ## Run code linters via prek (pre-commit hooks)
-	uv run prek run -a
+	uv run $(PYTHON_ARG) prek run -a
 
 # ===============
 # Testing Section
@@ -101,7 +101,7 @@ test-integration-setup: ## Start Docker services for integration tests
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml up -d --wait
-	uv run python dev/provision.py
+	uv run $(PYTHON_ARG) python dev/provision.py
 
 test-integration-exec: ## Run integration tests (excluding provision)
 	$(TEST_RUNNER) pytest tests/ -m integration $(PYTEST_ARGS)
@@ -133,10 +133,10 @@ test-coverage: COVERAGE=1
 test-coverage: test test-integration test-s3 test-adls test-gcs coverage-report ## Run all tests with coverage and report
 
 coverage-report: ## Combine and report coverage
-	uv run coverage combine
-	uv run coverage report -m --fail-under=$(COVERAGE_FAIL_UNDER)
-	uv run coverage html
-	uv run coverage xml
+	uv run $(PYTHON_ARG) coverage combine
+	uv run $(PYTHON_ARG) coverage report -m --fail-under=$(COVERAGE_FAIL_UNDER)
+	uv run $(PYTHON_ARG) coverage html
+	uv run $(PYTHON_ARG) coverage xml
 
 # ================
 # Documentation
@@ -145,13 +145,13 @@ coverage-report: ## Combine and report coverage
 ##@ Documentation
 
 docs-install: ## Install docs dependencies (included in default groups)
-	uv sync --group docs
+	uv sync $(PYTHON_ARG) --group docs
 
 docs-serve: ## Serve local docs preview (hot reload)
-	uv run mkdocs serve -f mkdocs/mkdocs.yml
+	uv run $(PYTHON_ARG) mkdocs serve -f mkdocs/mkdocs.yml
 
 docs-build: ## Build the static documentation site
-	uv run mkdocs build -f mkdocs/mkdocs.yml --strict
+	uv run $(PYTHON_ARG) mkdocs build -f mkdocs/mkdocs.yml --strict
 
 # ===================
 # Project Maintenance
