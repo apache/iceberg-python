@@ -45,6 +45,13 @@ dependencies = [
     "zstandard>=0.13.0,<1.0.0"
 ]
 
+[project.urls]
+Homepage = "https://py.iceberg.apache.org/"
+Repository = "https://github.com/apache/iceberg-python"
+
+[project.scripts]
+pyiceberg = "pyiceberg.cli.console:run"
+
 [project.optional-dependencies]
 pyarrow = [
     "pyarrow>=17.0.0",
@@ -92,13 +99,6 @@ hf = ["huggingface-hub>=0.24.0"]
 pyiceberg-core = ["pyiceberg-core>=0.5.1,<0.8.0"]
 datafusion = ["datafusion>=45,<49"]
 gcp-auth = ["google-auth>=2.4.0"]
-
-[project.urls]
-Homepage = "https://py.iceberg.apache.org/"
-Repository = "https://github.com/apache/iceberg-python"
-
-[project.scripts]
-pyiceberg = "pyiceberg.cli.console:run"
 
 [dependency-groups]
 dev = [
