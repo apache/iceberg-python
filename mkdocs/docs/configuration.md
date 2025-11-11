@@ -569,7 +569,7 @@ catalog:
 
 !!! Note "Metastore Authentication Models"
     If your BigLake Metastore catalog is configured for "user credentials" authentication instead of "vendor credentials", set the `header.X-Iceberg-Access-Delegation` header to an empty string as shown above.  Standard GCP Application Default Credentials (ADC) will be used to authenticate requests to the BigLake Metastore REST API.
-    You can retrieve the configuration details for your BigLake Iceberg catalog at the [GCP Console BigLake Metastore page](https://console.cloud.google.com/biglake/metastore/catalogs). Select your catalog, then find the necessary parameters such as `uri`, `warehouse`, and authentication method (e.g. user-creds or vendor).  
+    You can retrieve the configuration details for your BigLake Iceberg catalog at the [GCP Console BigLake Metastore page](https://console.cloud.google.com/biglake/metastore/catalogs). Select your catalog, then find the necessary parameters such as `uri`, `warehouse`, and authentication method (e.g. user-creds or vendor).
 
 <!-- prettier-ignore-end -->
 
