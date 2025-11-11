@@ -18,6 +18,23 @@
 import os
 
 from setuptools import Extension, find_packages, setup
+from setuptools.command.sdist import sdist as _sdist
+
+
+class sdist(_sdist):
+    """Custom sdist that excludes .egg-info and setup.cfg."""
+
+    def make_release_tree(self, base_dir: str, files: list[str]) -> None:
+        # Filter egg-info from the file manifest
+        files = [f for f in files if ".egg-info" not in f]
+
+        super().make_release_tree(base_dir, files)
+
+        # Remove setup.cfg after setuptools creates it
+        setup_cfg = os.path.join(base_dir, "setup.cfg")
+        if os.path.exists(setup_cfg):
+            os.remove(setup_cfg)
+
 
 allowed_to_fail = os.environ.get("CIBUILDWHEEL", "0") != "1"
 
@@ -69,4 +86,5 @@ setup(
     },
     include_package_data=True,
     ext_modules=ext_modules,
+    cmdclass={"sdist": sdist},
 )
