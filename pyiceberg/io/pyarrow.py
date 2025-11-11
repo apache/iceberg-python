@@ -808,51 +808,83 @@ def _convert_scalar(value: Any, iceberg_type: IcebergType) -> pa.scalar:
 
 
 class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
+    """Convert Iceberg bound expressions to PyArrow expressions.
+
+    Args:
+        schema: Optional Iceberg schema to resolve full field paths for nested fields.
+                If not provided, only the field name will be used (not dotted path).
+    """
+
+    _schema: Schema | None
+
+    def __init__(self, schema: Schema | None = None):
+        self._schema = schema
+
+    def _get_field_name(self, term: BoundTerm[Any]) -> str | Tuple[str, ...]:
+        """Get the field name or nested field path for a bound term.
+
+        For nested struct fields, returns a tuple of field names (e.g., ("mazeMetadata", "run_id")).
+        For top-level fields, returns just the field name as a string.
+
+        PyArrow requires nested field references as tuples, not dotted strings.
+        """
+        if self._schema is not None:
+            # Use the schema to get the full dotted path for nested fields
+            full_name = self._schema.find_column_name(term.ref().field.field_id)
+            if full_name is not None:
+                # If the field name contains dots, it's a nested field
+                # Convert "parent.child" to ("parent", "child") for PyArrow
+                if "." in full_name:
+                    return tuple(full_name.split("."))
+                return full_name
+        # Fallback to just the field name if schema is not available
+        return term.ref().field.name
+
     def visit_in(self, term: BoundTerm[Any], literals: Set[Any]) -> pc.Expression:
         pyarrow_literals = pa.array(literals, type=schema_to_pyarrow(term.ref().field.field_type))
-        return pc.field(term.ref().field.name).isin(pyarrow_literals)
+        return pc.field(self._get_field_name(term)).isin(pyarrow_literals)
 
     def visit_not_in(self, term: BoundTerm[Any], literals: Set[Any]) -> pc.Expression:
         pyarrow_literals = pa.array(literals, type=schema_to_pyarrow(term.ref().field.field_type))
-        return ~pc.field(term.ref().field.name).isin(pyarrow_literals)
+        return ~pc.field(self._get_field_name(term)).isin(pyarrow_literals)
 
     def visit_is_nan(self, term: BoundTerm[Any]) -> pc.Expression:
-        ref = pc.field(term.ref().field.name)
+        ref = pc.field(self._get_field_name(term))
         return pc.is_nan(ref)
 
     def visit_not_nan(self, term: BoundTerm[Any]) -> pc.Expression:
-        ref = pc.field(term.ref().field.name)
+        ref = pc.field(self._get_field_name(term))
         return ~pc.is_nan(ref)
 
     def visit_is_null(self, term: BoundTerm[Any]) -> pc.Expression:
-        return pc.field(term.ref().field.name).is_null(nan_is_null=False)
+        return pc.field(self._get_field_name(term)).is_null(nan_is_null=False)
 
     def visit_not_null(self, term: BoundTerm[Any]) -> pc.Expression:
-        return pc.field(term.ref().field.name).is_valid()
+        return pc.field(self._get_field_name(term)).is_valid()
 
     def visit_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> pc.Expression:
-        return pc.field(term.ref().field.name) == _convert_scalar(literal.value, term.ref().field.field_type)
+        return pc.field(self._get_field_name(term)) == _convert_scalar(literal.value, term.ref().field.field_type)
 
     def visit_not_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> pc.Expression:
-        return pc.field(term.ref().field.name) != _convert_scalar(literal.value, term.ref().field.field_type)
+        return pc.field(self._get_field_name(term)) != _convert_scalar(literal.value, term.ref().field.field_type)
 
     def visit_greater_than_or_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> pc.Expression:
-        return pc.field(term.ref().field.name) >= _convert_scalar(literal.value, term.ref().field.field_type)
+        return pc.field(self._get_field_name(term)) >= _convert_scalar(literal.value, term.ref().field.field_type)
 
     def visit_greater_than(self, term: BoundTerm[Any], literal: Literal[Any]) -> pc.Expression:
-        return pc.field(term.ref().field.name) > _convert_scalar(literal.value, term.ref().field.field_type)
+        return pc.field(self._get_field_name(term)) > _convert_scalar(literal.value, term.ref().field.field_type)
 
     def visit_less_than(self, term: BoundTerm[Any], literal: Literal[Any]) -> pc.Expression:
-        return pc.field(term.ref().field.name) < _convert_scalar(literal.value, term.ref().field.field_type)
+        return pc.field(self._get_field_name(term)) < _convert_scalar(literal.value, term.ref().field.field_type)
 
     def visit_less_than_or_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> pc.Expression:
-        return pc.field(term.ref().field.name) <= _convert_scalar(literal.value, term.ref().field.field_type)
+        return pc.field(self._get_field_name(term)) <= _convert_scalar(literal.value, term.ref().field.field_type)
 
     def visit_starts_with(self, term: BoundTerm[Any], literal: Literal[Any]) -> pc.Expression:
-        return pc.starts_with(pc.field(term.ref().field.name), literal.value)
+        return pc.starts_with(pc.field(self._get_field_name(term)), literal.value)
 
     def visit_not_starts_with(self, term: BoundTerm[Any], literal: Literal[Any]) -> pc.Expression:
-        return ~pc.starts_with(pc.field(term.ref().field.name), literal.value)
+        return ~pc.starts_with(pc.field(self._get_field_name(term)), literal.value)
 
     def visit_true(self) -> pc.Expression:
         return pc.scalar(True)
@@ -988,11 +1020,21 @@ class _NullNaNUnmentionedTermsCollector(BoundBooleanExpressionVisitor[None]):
         boolean_expression_visit(expr, self)
 
 
-def expression_to_pyarrow(expr: BooleanExpression) -> pc.Expression:
-    return boolean_expression_visit(expr, _ConvertToArrowExpression())
+def expression_to_pyarrow(expr: BooleanExpression, schema: Schema | None = None) -> pc.Expression:
+    """Convert an Iceberg boolean expression to a PyArrow expression.
+
+    Args:
+        expr: The Iceberg boolean expression to convert.
+        schema: Optional Iceberg schema to resolve full field paths for nested fields.
+                If provided, nested struct fields will use dotted paths (e.g., "parent.child").
+
+    Returns:
+        A PyArrow compute expression.
+    """
+    return boolean_expression_visit(expr, _ConvertToArrowExpression(schema))
 
 
-def _expression_to_complementary_pyarrow(expr: BooleanExpression) -> pc.Expression:
+def _expression_to_complementary_pyarrow(expr: BooleanExpression, schema: Schema | None = None) -> pc.Expression:
     """Complementary filter conversion function of expression_to_pyarrow.
 
     Could not use expression_to_pyarrow(Not(expr)) to achieve this complementary effect because ~ in pyarrow.compute.Expression does not handle null.
@@ -1013,7 +1055,7 @@ def _expression_to_complementary_pyarrow(expr: BooleanExpression) -> pc.Expressi
         preserve_expr = Or(preserve_expr, BoundIsNull(term=term))
     for term in nan_unmentioned_bound_terms:
         preserve_expr = Or(preserve_expr, BoundIsNaN(term=term))
-    return expression_to_pyarrow(preserve_expr)
+    return expression_to_pyarrow(preserve_expr, schema)
 
 
 @lru_cache
@@ -1553,7 +1595,7 @@ def _task_to_record_batches(
                 bound_row_filter, file_schema, case_sensitive=case_sensitive, projected_field_values=projected_missing_fields
             )
             bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
-            pyarrow_filter = expression_to_pyarrow(bound_file_filter)
+            pyarrow_filter = expression_to_pyarrow(bound_file_filter, file_schema)
 
         file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
 
