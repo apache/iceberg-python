@@ -18,9 +18,6 @@
 from enum import Enum
 from typing import (
     Callable,
-    Dict,
-    List,
-    Tuple,
 )
 
 from pyiceberg.avro.decoder import BinaryDecoder
@@ -114,7 +111,7 @@ STRUCT_ROOT = -1
 
 
 def construct_reader(
-    file_schema: Schema | IcebergType, read_types: Dict[int, Callable[..., StructProtocol]] = EMPTY_DICT
+    file_schema: Schema | IcebergType, read_types: dict[int, Callable[..., StructProtocol]] = EMPTY_DICT
 ) -> Reader:
     """Construct a reader from a file schema.
 
@@ -146,7 +143,7 @@ class ConstructWriter(SchemaVisitorPerPrimitiveType[Writer]):
     def schema(self, schema: Schema, struct_result: Writer) -> Writer:
         return struct_result
 
-    def struct(self, struct: StructType, field_results: List[Writer]) -> Writer:
+    def struct(self, struct: StructType, field_results: list[Writer]) -> Writer:
         return StructWriter(tuple((pos, result) for pos, result in enumerate(field_results)))
 
     def field(self, field: NestedField, field_result: Writer) -> Writer:
@@ -234,8 +231,8 @@ def resolve_writer(
 def resolve_reader(
     file_schema: Schema | IcebergType,
     read_schema: Schema | IcebergType,
-    read_types: Dict[int, Callable[..., StructProtocol]] = EMPTY_DICT,
-    read_enums: Dict[int, Callable[..., Enum]] = EMPTY_DICT,
+    read_types: dict[int, Callable[..., StructProtocol]] = EMPTY_DICT,
+    read_enums: dict[int, Callable[..., Enum]] = EMPTY_DICT,
 ) -> Reader:
     """Resolve the file and read schema to produce a reader.
 
@@ -274,12 +271,12 @@ class WriteSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Writer]):
     def schema(self, file_schema: Schema, record_schema: IcebergType | None, result: Writer) -> Writer:
         return result
 
-    def struct(self, file_schema: StructType, record_struct: IcebergType | None, file_writers: List[Writer]) -> Writer:
+    def struct(self, file_schema: StructType, record_struct: IcebergType | None, file_writers: list[Writer]) -> Writer:
         if not isinstance(record_struct, StructType):
             raise ResolveError(f"File/write schema are not aligned for struct, got {record_struct}")
 
-        record_struct_positions: Dict[int, int] = {field.field_id: pos for pos, field in enumerate(record_struct.fields)}
-        results: List[Tuple[int | None, Writer]] = []
+        record_struct_positions: dict[int, int] = {field.field_id: pos for pos, field in enumerate(record_struct.fields)}
+        results: list[tuple[int | None, Writer]] = []
 
         for writer, file_field in zip(file_writers, file_schema.fields, strict=True):
             if file_field.field_id in record_struct_positions:
@@ -367,14 +364,14 @@ class WriteSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Writer]):
 
 class ReadSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
     __slots__ = ("read_types", "read_enums", "context")
-    read_types: Dict[int, Callable[..., StructProtocol]]
-    read_enums: Dict[int, Callable[..., Enum]]
-    context: List[int]
+    read_types: dict[int, Callable[..., StructProtocol]]
+    read_enums: dict[int, Callable[..., Enum]]
+    context: list[int]
 
     def __init__(
         self,
-        read_types: Dict[int, Callable[..., StructProtocol]] = EMPTY_DICT,
-        read_enums: Dict[int, Callable[..., Enum]] = EMPTY_DICT,
+        read_types: dict[int, Callable[..., StructProtocol]] = EMPTY_DICT,
+        read_enums: dict[int, Callable[..., Enum]] = EMPTY_DICT,
     ) -> None:
         self.read_types = read_types
         self.read_enums = read_enums
@@ -389,7 +386,7 @@ class ReadSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
     def after_field(self, field: NestedField, field_partner: NestedField | None) -> None:
         self.context.pop()
 
-    def struct(self, struct: StructType, expected_struct: IcebergType | None, field_readers: List[Reader]) -> Reader:
+    def struct(self, struct: StructType, expected_struct: IcebergType | None, field_readers: list[Reader]) -> Reader:
         read_struct_id = self.context[STRUCT_ROOT] if len(self.context) > 0 else STRUCT_ROOT
         struct_callable = self.read_types.get(read_struct_id, Record)
 
@@ -399,10 +396,10 @@ class ReadSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
         if not isinstance(expected_struct, StructType):
             raise ResolveError(f"File/read schema are not aligned for struct, got {expected_struct}")
 
-        expected_positions: Dict[int, int] = {field.field_id: pos for pos, field in enumerate(expected_struct.fields)}
+        expected_positions: dict[int, int] = {field.field_id: pos for pos, field in enumerate(expected_struct.fields)}
 
         # first, add readers for the file fields that must be in order
-        results: List[Tuple[int | None, Reader]] = [
+        results: list[tuple[int | None, Reader]] = [
             (
                 expected_positions.get(field.field_id),
                 # Check if we need to convert it to an Enum

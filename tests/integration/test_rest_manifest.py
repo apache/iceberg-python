@@ -20,7 +20,7 @@ import inspect
 from copy import copy
 from enum import Enum
 from tempfile import TemporaryDirectory
-from typing import Any, List
+from typing import Any
 
 import pytest
 from fastavro import reader
@@ -36,7 +36,7 @@ from pyiceberg.utils.lazydict import LazyDict
 
 # helper function to serialize our objects to dicts to enable
 # direct comparison with the dicts returned by fastavro
-def todict(obj: Any, spec_keys: List[str]) -> Any:
+def todict(obj: Any, spec_keys: list[str]) -> Any:
     if type(obj) is Record:
         return {key: obj[pos] for key, pos in zip(spec_keys, range(len(obj)), strict=True)}
     if isinstance(obj, dict) or isinstance(obj, LazyDict):

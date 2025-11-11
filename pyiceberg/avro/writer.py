@@ -28,9 +28,6 @@ from dataclasses import dataclass
 from dataclasses import field as dataclassfield
 from typing import (
     Any,
-    Dict,
-    List,
-    Tuple,
 )
 from uuid import UUID
 
@@ -186,7 +183,7 @@ class OptionWriter(Writer):
 
 @dataclass(frozen=True)
 class StructWriter(Writer):
-    field_writers: Tuple[Tuple[int | None, Writer], ...] = dataclassfield()
+    field_writers: tuple[tuple[int | None, Writer], ...] = dataclassfield()
 
     def write(self, encoder: BinaryEncoder, val: Record) -> None:
         for pos, writer in self.field_writers:
@@ -210,7 +207,7 @@ class StructWriter(Writer):
 class ListWriter(Writer):
     element_writer: Writer
 
-    def write(self, encoder: BinaryEncoder, val: List[Any]) -> None:
+    def write(self, encoder: BinaryEncoder, val: list[Any]) -> None:
         encoder.write_int(len(val))
         for v in val:
             self.element_writer.write(encoder, v)
@@ -223,7 +220,7 @@ class MapWriter(Writer):
     key_writer: Writer
     value_writer: Writer
 
-    def write(self, encoder: BinaryEncoder, val: Dict[Any, Any]) -> None:
+    def write(self, encoder: BinaryEncoder, val: dict[Any, Any]) -> None:
         encoder.write_int(len(val))
         for k, v in val.items():
             self.key_writer.write(encoder, k)

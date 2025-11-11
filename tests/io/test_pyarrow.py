@@ -22,7 +22,7 @@ import uuid
 import warnings
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -1014,7 +1014,7 @@ def file_map(schema_map: Schema, tmpdir: str) -> str:
 
 
 def project(
-    schema: Schema, files: List[str], expr: BooleanExpression | None = None, table_schema: Schema | None = None
+    schema: Schema, files: list[str], expr: BooleanExpression | None = None, table_schema: Schema | None = None
 ) -> pa.Table:
     def _set_spec_id(datafile: DataFile) -> DataFile:
         datafile.spec_id = 0
@@ -2160,7 +2160,7 @@ def test_make_compatible_name() -> None:
         ([None, None, None], DateType(), None),
     ],
 )
-def test_stats_aggregator_update_min(vals: List[Any], primitive_type: PrimitiveType, expected_result: Any) -> None:
+def test_stats_aggregator_update_min(vals: list[Any], primitive_type: PrimitiveType, expected_result: Any) -> None:
     stats = StatsAggregator(primitive_type, _primitive_to_physical(primitive_type))
 
     for val in vals:
@@ -2180,7 +2180,7 @@ def test_stats_aggregator_update_min(vals: List[Any], primitive_type: PrimitiveT
         ([None, None, None], DateType(), None),
     ],
 )
-def test_stats_aggregator_update_max(vals: List[Any], primitive_type: PrimitiveType, expected_result: Any) -> None:
+def test_stats_aggregator_update_max(vals: list[Any], primitive_type: PrimitiveType, expected_result: Any) -> None:
     stats = StatsAggregator(primitive_type, _primitive_to_physical(primitive_type))
 
     for val in vals:

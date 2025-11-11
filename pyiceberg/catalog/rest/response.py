@@ -15,7 +15,7 @@
 #  specific language governing permissions and limitations
 #  under the License.
 from json import JSONDecodeError
-from typing import Dict, Literal, Type
+from typing import Literal
 
 from pydantic import Field, ValidationError
 from requests import HTTPError
@@ -60,8 +60,8 @@ class OAuthErrorResponse(IcebergBaseModel):
     error_uri: str | None = None
 
 
-def _handle_non_200_response(exc: HTTPError, error_handler: Dict[int, Type[Exception]]) -> None:
-    exception: Type[Exception]
+def _handle_non_200_response(exc: HTTPError, error_handler: dict[int, type[Exception]]) -> None:
+    exception: type[Exception]
 
     if exc.response is None:
         raise ValueError("Did not receive a response")

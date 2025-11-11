@@ -22,7 +22,7 @@ import threading
 import time
 from abc import ABC, abstractmethod
 from functools import cached_property
-from typing import Any, Dict, List, Type
+from typing import Any
 
 import requests
 from requests import HTTPError, PreparedRequest, Session
@@ -76,7 +76,7 @@ class LegacyOAuth2AuthManager(AuthManager):
     _auth_url: str | None
     _token: str | None
     _credential: str | None
-    _optional_oauth_params: Dict[str, str] | None
+    _optional_oauth_params: dict[str, str] | None
 
     def __init__(
         self,
@@ -84,7 +84,7 @@ class LegacyOAuth2AuthManager(AuthManager):
         auth_url: str | None = None,
         credential: str | None = None,
         initial_token: str | None = None,
-        optional_oauth_params: Dict[str, str] | None = None,
+        optional_oauth_params: dict[str, str] | None = None,
     ):
         self._session = session
         self._auth_url = auth_url
@@ -220,7 +220,7 @@ class OAuth2AuthManager(AuthManager):
 class GoogleAuthManager(AuthManager):
     """An auth manager that is responsible for handling Google credentials."""
 
-    def __init__(self, credentials_path: str | None = None, scopes: List[str] | None = None):
+    def __init__(self, credentials_path: str | None = None, scopes: list[str] | None = None):
         """
         Initialize GoogleAuthManager.
 
@@ -280,10 +280,10 @@ class AuthManagerAdapter(AuthBase):
 
 
 class AuthManagerFactory:
-    _registry: Dict[str, Type["AuthManager"]] = {}
+    _registry: dict[str, type["AuthManager"]] = {}
 
     @classmethod
-    def register(cls, name: str, auth_manager_class: Type["AuthManager"]) -> None:
+    def register(cls, name: str, auth_manager_class: type["AuthManager"]) -> None:
         """
         Register a string name to a known AuthManager class.
 
@@ -297,7 +297,7 @@ class AuthManagerFactory:
         cls._registry[name] = auth_manager_class
 
     @classmethod
-    def create(cls, class_or_name: str, config: Dict[str, Any]) -> AuthManager:
+    def create(cls, class_or_name: str, config: dict[str, Any]) -> AuthManager:
         """
         Create an AuthManager by name or fully-qualified class path.
 

@@ -19,9 +19,7 @@ from functools import wraps
 from typing import (
     Any,
     Callable,
-    Dict,
     Literal,
-    Tuple,
 )
 
 import click
@@ -97,7 +95,7 @@ def run(
         ctx.exit(1)
 
 
-def _catalog_and_output(ctx: Context) -> Tuple[Catalog, Output]:
+def _catalog_and_output(ctx: Context) -> tuple[Catalog, Output]:
     """Small helper to set the types."""
     return ctx.obj["catalog"], ctx.obj["output"]
 
@@ -430,7 +428,7 @@ def list_refs(ctx: Context, identifier: str, type: str, verbose: bool) -> None:
     output.describe_refs(relevant_refs)
 
 
-def _retention_properties(ref: SnapshotRef, table_properties: Dict[str, str]) -> Dict[str, str]:
+def _retention_properties(ref: SnapshotRef, table_properties: dict[str, str]) -> dict[str, str]:
     retention_properties = {}
     if ref.snapshot_ref_type == SnapshotRefType.BRANCH:
         default_min_snapshots_to_keep = property_as_int(

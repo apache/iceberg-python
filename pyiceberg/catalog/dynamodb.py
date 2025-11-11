@@ -19,11 +19,7 @@ from time import time
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
-    List,
     Optional,
-    Set,
-    Tuple,
     Union,
 )
 
@@ -228,7 +224,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         raise NotImplementedError
 
     def commit_table(
-        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+        self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
         """Commit updates to a table.
 
@@ -400,7 +396,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         except ConditionalCheckFailedException as e:
             raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
 
-    def list_tables(self, namespace: str | Identifier) -> List[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
         """List Iceberg tables under the given namespace in the catalog.
 
         Args:
@@ -444,7 +440,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return table_identifiers
 
-    def list_namespaces(self, namespace: str | Identifier = ()) -> List[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
         """List top-level namespaces from the catalog.
 
         We do not support hierarchical namespace.
@@ -505,7 +501,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         return _get_namespace_properties(namespace_dict=namespace_dict)
 
     def update_namespace_properties(
-        self, namespace: str | Identifier, removals: Set[str] | None = None, updates: Properties = EMPTY_DICT
+        self, namespace: str | Identifier, removals: set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
         """
         Remove or update provided property keys for a namespace.
@@ -541,7 +537,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return properties_update_summary
 
-    def list_views(self, namespace: str | Identifier) -> List[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         raise NotImplementedError
 
     def drop_view(self, identifier: str | Identifier) -> None:
@@ -550,22 +546,22 @@ class DynamoDbCatalog(MetastoreCatalog):
     def view_exists(self, identifier: str | Identifier) -> bool:
         raise NotImplementedError
 
-    def _get_iceberg_table_item(self, database_name: str, table_name: str) -> Dict[str, Any]:
+    def _get_iceberg_table_item(self, database_name: str, table_name: str) -> dict[str, Any]:
         try:
             return self._get_dynamo_item(identifier=f"{database_name}.{table_name}", namespace=database_name)
         except ValueError as e:
             raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}") from e
 
-    def _get_iceberg_namespace_item(self, database_name: str) -> Dict[str, Any]:
+    def _get_iceberg_namespace_item(self, database_name: str) -> dict[str, Any]:
         try:
             return self._get_dynamo_item(identifier=DYNAMODB_NAMESPACE, namespace=database_name)
         except ValueError as e:
             raise NoSuchNamespaceError(f"Namespace does not exist: {database_name}") from e
 
-    def _ensure_namespace_exists(self, database_name: str) -> Dict[str, Any]:
+    def _ensure_namespace_exists(self, database_name: str) -> dict[str, Any]:
         return self._get_iceberg_namespace_item(database_name)
 
-    def _get_dynamo_item(self, identifier: str, namespace: str) -> Dict[str, Any]:
+    def _get_dynamo_item(self, identifier: str, namespace: str) -> dict[str, Any]:
         try:
             response = self.dynamodb.get_item(
                 TableName=self.dynamodb_table_name,
@@ -592,7 +588,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         ) as e:
             raise GenericDynamoDbError(e.message) from e
 
-    def _put_dynamo_item(self, item: Dict[str, Any], condition_expression: str) -> None:
+    def _put_dynamo_item(self, item: dict[str, Any], condition_expression: str) -> None:
         try:
             self.dynamodb.put_item(TableName=self.dynamodb_table_name, Item=item, ConditionExpression=condition_expression)
         except self.dynamodb.exceptions.ConditionalCheckFailedException as e:
@@ -635,7 +631,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         ) as e:
             raise GenericDynamoDbError(e.message) from e
 
-    def _convert_dynamo_table_item_to_iceberg_table(self, dynamo_table_item: Dict[str, Any]) -> Table:
+    def _convert_dynamo_table_item_to_iceberg_table(self, dynamo_table_item: dict[str, Any]) -> Table:
         table_dict = _convert_dynamo_item_to_regular_dict(dynamo_table_item)
 
         for prop in [_add_property_prefix(prop) for prop in (TABLE_TYPE, METADATA_LOCATION)] + [
@@ -672,7 +668,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         return self._get_hive_style_warehouse_location(database_name, table_name)
 
 
-def _get_create_table_item(database_name: str, table_name: str, properties: Properties, metadata_location: str) -> Dict[str, Any]:
+def _get_create_table_item(database_name: str, table_name: str, properties: Properties, metadata_location: str) -> dict[str, Any]:
     current_timestamp_ms = str(round(time() * 1000))
     _dict = {
         DYNAMODB_COL_IDENTIFIER: {
@@ -702,7 +698,7 @@ def _get_create_table_item(database_name: str, table_name: str, properties: Prop
     return _dict
 
 
-def _get_rename_table_item(from_dynamo_table_item: Dict[str, Any], to_database_name: str, to_table_name: str) -> Dict[str, Any]:
+def _get_rename_table_item(from_dynamo_table_item: dict[str, Any], to_database_name: str, to_table_name: str) -> dict[str, Any]:
     _dict = from_dynamo_table_item
     current_timestamp_ms = str(round(time() * 1000))
     _dict[DYNAMODB_COL_IDENTIFIER]["S"] = f"{to_database_name}.{to_table_name}"
@@ -712,7 +708,7 @@ def _get_rename_table_item(from_dynamo_table_item: Dict[str, Any], to_database_n
     return _dict
 
 
-def _get_create_database_item(database_name: str, properties: Properties) -> Dict[str, Any]:
+def _get_create_database_item(database_name: str, properties: Properties) -> dict[str, Any]:
     current_timestamp_ms = str(round(time() * 1000))
     _dict = {
         DYNAMODB_COL_IDENTIFIER: {
@@ -738,7 +734,7 @@ def _get_create_database_item(database_name: str, properties: Properties) -> Dic
     return _dict
 
 
-def _get_update_database_item(namespace_item: Dict[str, Any], updated_properties: Properties) -> Dict[str, Any]:
+def _get_update_database_item(namespace_item: dict[str, Any], updated_properties: Properties) -> dict[str, Any]:
     current_timestamp_ms = str(round(time() * 1000))
 
     _dict = {
@@ -802,11 +798,11 @@ CREATE_CATALOG_GLOBAL_SECONDARY_INDEXES = [
 ]
 
 
-def _get_namespace_properties(namespace_dict: Dict[str, str]) -> Properties:
+def _get_namespace_properties(namespace_dict: dict[str, str]) -> Properties:
     return {_remove_property_prefix(key): val for key, val in namespace_dict.items() if key.startswith(PROPERTY_KEY_PREFIX)}
 
 
-def _convert_dynamo_item_to_regular_dict(dynamo_json: Dict[str, Any]) -> Dict[str, str]:
+def _convert_dynamo_item_to_regular_dict(dynamo_json: dict[str, Any]) -> dict[str, str]:
     """Convert a dynamo json to a regular json.
 
     Example of a dynamo json:

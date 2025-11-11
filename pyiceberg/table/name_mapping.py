@@ -23,10 +23,11 @@ https://iceberg.apache.org/spec/#name-mapping-serialization
 
 from __future__ import annotations
 
+import builtins
 from abc import ABC, abstractmethod
 from collections import ChainMap
 from functools import cached_property, singledispatch
-from typing import Any, Dict, Generic, Iterator, List, TypeVar
+from typing import Any, Generic, Iterator, TypeVar
 
 from pydantic import Field, conlist, field_validator, model_serializer
 
@@ -37,8 +38,8 @@ from pyiceberg.types import IcebergType, ListType, MapType, NestedField, Primiti
 
 class MappedField(IcebergBaseModel):
     field_id: int | None = Field(alias="field-id", default=None)
-    names: List[str] = conlist(str)
-    fields: List[MappedField] = Field(default_factory=list)
+    names: list[str] = conlist(str)
+    fields: list[MappedField] = Field(default_factory=list)
 
     @field_validator("fields", mode="before")
     @classmethod
@@ -46,9 +47,9 @@ class MappedField(IcebergBaseModel):
         return v or []
 
     @model_serializer
-    def ser_model(self) -> Dict[str, Any]:
+    def ser_model(self) -> dict[str, Any]:
         """Set custom serializer to leave out the field when it is empty."""
-        serialized: Dict[str, Any] = {"names": self.names}
+        serialized: dict[str, Any] = {"names": self.names}
         if self.field_id is not None:
             serialized["field-id"] = self.field_id
         if len(self.fields) > 0:
@@ -68,11 +69,11 @@ class MappedField(IcebergBaseModel):
         return "([" + ", ".join(self.names) + "] -> " + field_id + fields_str + ")"
 
 
-class NameMapping(IcebergRootModel[List[MappedField]]):
-    root: List[MappedField]
+class NameMapping(IcebergRootModel[list[MappedField]]):
+    root: list[MappedField]
 
     @cached_property
-    def _field_by_name(self) -> Dict[str, MappedField]:
+    def _field_by_name(self) -> dict[str, MappedField]:
         return visit_name_mapping(self, _IndexByName())
 
     def __len__(self) -> int:
@@ -101,7 +102,7 @@ class NameMappingVisitor(Generic[S, T], ABC):
         """Visit a NameMapping."""
 
     @abstractmethod
-    def fields(self, struct: List[MappedField], field_results: List[T]) -> S:
+    def fields(self, struct: list[MappedField], field_results: list[T]) -> S:
         """Visit a List[MappedField]."""
 
     @abstractmethod
@@ -109,15 +110,15 @@ class NameMappingVisitor(Generic[S, T], ABC):
         """Visit a MappedField."""
 
 
-class _IndexByName(NameMappingVisitor[Dict[str, MappedField], Dict[str, MappedField]]):
-    def mapping(self, nm: NameMapping, field_results: Dict[str, MappedField]) -> Dict[str, MappedField]:
+class _IndexByName(NameMappingVisitor[dict[str, MappedField], dict[str, MappedField]]):
+    def mapping(self, nm: NameMapping, field_results: dict[str, MappedField]) -> dict[str, MappedField]:
         return field_results
 
-    def fields(self, struct: List[MappedField], field_results: List[Dict[str, MappedField]]) -> Dict[str, MappedField]:
+    def fields(self, struct: list[MappedField], field_results: list[dict[str, MappedField]]) -> dict[str, MappedField]:
         return dict(ChainMap(*field_results))
 
-    def field(self, field: MappedField, field_result: Dict[str, MappedField]) -> Dict[str, MappedField]:
-        result: Dict[str, MappedField] = {
+    def field(self, field: MappedField, field_result: dict[str, MappedField]) -> dict[str, MappedField]:
+        result: dict[str, MappedField] = {
             f"{field_name}.{key}": result_field for key, result_field in field_result.items() for field_name in field.names
         }
 
@@ -128,7 +129,7 @@ class _IndexByName(NameMappingVisitor[Dict[str, MappedField], Dict[str, MappedFi
 
 
 @singledispatch
-def visit_name_mapping(obj: NameMapping | List[MappedField] | MappedField, visitor: NameMappingVisitor[S, T]) -> S:
+def visit_name_mapping(obj: NameMapping | list[MappedField] | MappedField, visitor: NameMappingVisitor[S, T]) -> S:
     """Traverse the name mapping in post-order traversal."""
     raise NotImplementedError(f"Cannot visit non-type: {obj}")
 
@@ -139,7 +140,7 @@ def _(obj: NameMapping, visitor: NameMappingVisitor[S, T]) -> S:
 
 
 @visit_name_mapping.register(list)
-def _(fields: List[MappedField], visitor: NameMappingVisitor[S, T]) -> S:
+def _(fields: list[MappedField], visitor: NameMappingVisitor[S, T]) -> S:
     results = [visitor.field(field, visit_name_mapping(field.fields, visitor)) for field in fields]
     return visitor.fields(fields, results)
 
@@ -148,42 +149,44 @@ def parse_mapping_from_json(mapping: str) -> NameMapping:
     return NameMapping.model_validate_json(mapping)
 
 
-class _CreateMapping(SchemaVisitor[List[MappedField]]):
-    def schema(self, schema: Schema, struct_result: List[MappedField]) -> List[MappedField]:
+class _CreateMapping(SchemaVisitor[list[MappedField]]):
+    def schema(self, schema: Schema, struct_result: builtins.list[MappedField]) -> builtins.list[MappedField]:
         return struct_result
 
-    def struct(self, struct: StructType, field_results: List[List[MappedField]]) -> List[MappedField]:
+    def struct(self, struct: StructType, field_results: builtins.list[builtins.list[MappedField]]) -> builtins.list[MappedField]:
         return [
             MappedField(field_id=field.field_id, names=[field.name], fields=result)
             for field, result in zip(struct.fields, field_results, strict=True)
         ]
 
-    def field(self, field: NestedField, field_result: List[MappedField]) -> List[MappedField]:
+    def field(self, field: NestedField, field_result: builtins.list[MappedField]) -> builtins.list[MappedField]:
         return field_result
 
-    def list(self, list_type: ListType, element_result: List[MappedField]) -> List[MappedField]:
+    def list(self, list_type: ListType, element_result: builtins.list[MappedField]) -> builtins.list[MappedField]:
         return [MappedField(field_id=list_type.element_id, names=["element"], fields=element_result)]
 
-    def map(self, map_type: MapType, key_result: List[MappedField], value_result: List[MappedField]) -> List[MappedField]:
+    def map(
+        self, map_type: MapType, key_result: builtins.list[MappedField], value_result: builtins.list[MappedField]
+    ) -> builtins.list[MappedField]:
         return [
             MappedField(field_id=map_type.key_id, names=["key"], fields=key_result),
             MappedField(field_id=map_type.value_id, names=["value"], fields=value_result),
         ]
 
-    def primitive(self, primitive: PrimitiveType) -> List[MappedField]:
+    def primitive(self, primitive: PrimitiveType) -> builtins.list[MappedField]:
         return []
 
 
-class _UpdateMapping(NameMappingVisitor[List[MappedField], MappedField]):
-    _updates: Dict[int, NestedField]
-    _adds: Dict[int, List[NestedField]]
+class _UpdateMapping(NameMappingVisitor[list[MappedField], MappedField]):
+    _updates: dict[int, NestedField]
+    _adds: dict[int, list[NestedField]]
 
-    def __init__(self, updates: Dict[int, NestedField], adds: Dict[int, List[NestedField]]):
+    def __init__(self, updates: dict[int, NestedField], adds: dict[int, list[NestedField]]):
         self._updates = updates
         self._adds = adds
 
     @staticmethod
-    def _remove_reassigned_names(field: MappedField, assignments: Dict[str, int]) -> MappedField | None:
+    def _remove_reassigned_names(field: MappedField, assignments: dict[str, int]) -> MappedField | None:
         removed_names = set()
         for name in field.names:
             if (assigned_id := assignments.get(name)) and assigned_id != field.field_id:
@@ -195,10 +198,10 @@ class _UpdateMapping(NameMappingVisitor[List[MappedField], MappedField]):
         else:
             return None
 
-    def _add_new_fields(self, mapped_fields: List[MappedField], parent_id: int) -> List[MappedField]:
+    def _add_new_fields(self, mapped_fields: list[MappedField], parent_id: int) -> list[MappedField]:
         if fields_to_add := self._adds.get(parent_id):
-            fields: List[MappedField] = []
-            new_fields: List[MappedField] = []
+            fields: list[MappedField] = []
+            new_fields: list[MappedField] = []
 
             for add in fields_to_add:
                 new_fields.append(
@@ -215,11 +218,11 @@ class _UpdateMapping(NameMappingVisitor[List[MappedField], MappedField]):
         else:
             return mapped_fields
 
-    def mapping(self, nm: NameMapping, field_results: List[MappedField]) -> List[MappedField]:
+    def mapping(self, nm: NameMapping, field_results: list[MappedField]) -> list[MappedField]:
         return self._add_new_fields(field_results, -1)
 
-    def fields(self, struct: List[MappedField], field_results: List[MappedField]) -> List[MappedField]:
-        reassignments: Dict[str, int] = {
+    def fields(self, struct: list[MappedField], field_results: list[MappedField]) -> list[MappedField]:
+        reassignments: dict[str, int] = {
             update.name: update.field_id
             for f in field_results
             if f.field_id is not None and (update := self._updates.get(f.field_id))
@@ -230,7 +233,7 @@ class _UpdateMapping(NameMappingVisitor[List[MappedField], MappedField]):
             if (updated_field := self._remove_reassigned_names(field, reassignments)) is not None
         ]
 
-    def field(self, field: MappedField, field_result: List[MappedField]) -> MappedField:
+    def field(self, field: MappedField, field_result: list[MappedField]) -> MappedField:
         if field.field_id is None:
             return field
         field_names = field.names
@@ -244,7 +247,7 @@ def create_mapping_from_schema(schema: Schema) -> NameMapping:
     return NameMapping(visit(schema, _CreateMapping()))
 
 
-def update_mapping(mapping: NameMapping, updates: Dict[int, NestedField], adds: Dict[int, List[NestedField]]) -> NameMapping:
+def update_mapping(mapping: NameMapping, updates: dict[int, NestedField], adds: dict[int, list[NestedField]]) -> NameMapping:
     return NameMapping(visit_name_mapping(mapping, _UpdateMapping(updates, adds)))
 
 
@@ -253,7 +256,7 @@ class NameMappingAccessor(PartnerAccessor[MappedField]):
         return partner
 
     def field_partner(
-        self, partner_struct: List[MappedField] | MappedField | None, _: int, field_name: str
+        self, partner_struct: list[MappedField] | MappedField | None, _: int, field_name: str
     ) -> MappedField | None:
         if partner_struct is not None:
             if isinstance(partner_struct, MappedField):
@@ -288,7 +291,7 @@ class NameMappingAccessor(PartnerAccessor[MappedField]):
 
 
 class NameMappingProjectionVisitor(SchemaWithPartnerVisitor[MappedField, IcebergType]):
-    current_path: List[str]
+    current_path: builtins.list[str]
 
     def __init__(self) -> None:
         # For keeping track where we are in case when a field cannot be found
@@ -321,7 +324,9 @@ class NameMappingProjectionVisitor(SchemaWithPartnerVisitor[MappedField, Iceberg
     def schema(self, schema: Schema, schema_partner: MappedField | None, struct_result: StructType) -> IcebergType:
         return Schema(*struct_result.fields, schema_id=schema.schema_id)
 
-    def struct(self, struct: StructType, struct_partner: MappedField | None, field_results: List[NestedField]) -> IcebergType:
+    def struct(
+        self, struct: StructType, struct_partner: MappedField | None, field_results: builtins.list[NestedField]
+    ) -> IcebergType:
         return StructType(*field_results)
 
     def field(self, field: NestedField, field_partner: MappedField | None, field_result: IcebergType) -> IcebergType:

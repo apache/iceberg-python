@@ -16,9 +16,6 @@
 #  under the License.
 from typing import (
     TYPE_CHECKING,
-    List,
-    Set,
-    Tuple,
     Union,
 )
 
@@ -95,7 +92,7 @@ class NoopCatalog(Catalog):
         raise NotImplementedError
 
     def commit_table(
-        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+        self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
         raise NotImplementedError
 
@@ -105,21 +102,21 @@ class NoopCatalog(Catalog):
     def drop_namespace(self, namespace: str | Identifier) -> None:
         raise NotImplementedError
 
-    def list_tables(self, namespace: str | Identifier) -> List[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
         raise NotImplementedError
 
-    def list_namespaces(self, namespace: str | Identifier = ()) -> List[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
         raise NotImplementedError
 
     def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
         raise NotImplementedError
 
     def update_namespace_properties(
-        self, namespace: str | Identifier, removals: Set[str] | None = None, updates: Properties = EMPTY_DICT
+        self, namespace: str | Identifier, removals: set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
         raise NotImplementedError
 
-    def list_views(self, namespace: str | Identifier) -> List[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         raise NotImplementedError
 
     def view_exists(self, identifier: str | Identifier) -> bool:

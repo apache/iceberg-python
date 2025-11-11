@@ -27,10 +27,7 @@ from enum import Enum
 from types import TracebackType
 from typing import (
     Callable,
-    Dict,
     Generic,
-    List,
-    Type,
     TypeVar,
 )
 
@@ -77,14 +74,14 @@ class AvroFileHeader(Record):
         return self._data[0]
 
     @property
-    def meta(self) -> Dict[str, str]:
+    def meta(self) -> dict[str, str]:
         return self._data[1]
 
     @property
     def sync(self) -> bytes:
         return self._data[2]
 
-    def compression_codec(self) -> Type[Codec] | None:
+    def compression_codec(self) -> type[Codec] | None:
         """Get the file's compression codec algorithm from the file's metadata.
 
         In the case of a null codec, we return a None indicating that we
@@ -146,8 +143,8 @@ class AvroFile(Generic[D]):
     )
     input_file: InputFile
     read_schema: Schema | None
-    read_types: Dict[int, Callable[..., StructProtocol]]
-    read_enums: Dict[int, Callable[..., Enum]]
+    read_types: dict[int, Callable[..., StructProtocol]]
+    read_enums: dict[int, Callable[..., Enum]]
     header: AvroFileHeader
     schema: Schema
     reader: Reader
@@ -159,8 +156,8 @@ class AvroFile(Generic[D]):
         self,
         input_file: InputFile,
         read_schema: Schema | None = None,
-        read_types: Dict[int, Callable[..., StructProtocol]] = EMPTY_DICT,
-        read_enums: Dict[int, Callable[..., Enum]] = EMPTY_DICT,
+        read_types: dict[int, Callable[..., StructProtocol]] = EMPTY_DICT,
+        read_enums: dict[int, Callable[..., Enum]] = EMPTY_DICT,
     ) -> None:
         self.input_file = input_file
         self.read_schema = read_schema
@@ -185,7 +182,7 @@ class AvroFile(Generic[D]):
 
         return self
 
-    def __exit__(self, exctype: Type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
+    def __exit__(self, exctype: type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
         """Perform cleanup when exiting the scope of a 'with' statement."""
 
     def __iter__(self) -> AvroFile[D]:
@@ -240,7 +237,7 @@ class AvroOutputFile(Generic[D]):
         file_schema: Schema,
         schema_name: str,
         record_schema: Schema | None = None,
-        metadata: Dict[str, str] = EMPTY_DICT,
+        metadata: dict[str, str] = EMPTY_DICT,
     ) -> None:
         self.output_file = output_file
         self.file_schema = file_schema
@@ -267,7 +264,7 @@ class AvroOutputFile(Generic[D]):
 
         return self
 
-    def __exit__(self, exctype: Type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
+    def __exit__(self, exctype: type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
         """Perform cleanup when exiting the scope of a 'with' statement."""
         self.output_stream.close()
 
@@ -284,7 +281,7 @@ class AvroOutputFile(Generic[D]):
         header = AvroFileHeader(MAGIC, meta, self.sync_bytes)
         construct_writer(META_SCHEMA).write(self.encoder, header)
 
-    def compression_codec(self) -> Type[Codec] | None:
+    def compression_codec(self) -> type[Codec] | None:
         """Get the file's compression codec algorithm from the file's metadata.
 
         In the case of a null codec, we return a None indicating that we
@@ -302,7 +299,7 @@ class AvroOutputFile(Generic[D]):
 
         return KNOWN_CODECS[codec_name]  # type: ignore
 
-    def write_block(self, objects: List[D]) -> None:
+    def write_block(self, objects: list[D]) -> None:
         in_memory = io.BytesIO()
         block_content_encoder = BinaryEncoder(output_stream=in_memory)
         for obj in objects:

@@ -20,7 +20,6 @@ from typing import (
     Callable,
     Generic,
     Iterable,
-    List,
     TypeVar,
 )
 
@@ -31,7 +30,7 @@ class Bin(Generic[T]):
     def __init__(self, target_weight: int) -> None:
         self.bin_weight = 0
         self.target_weight = target_weight
-        self.items: List[T] = []
+        self.items: list[T] = []
 
     def weight(self) -> int:
         return self.bin_weight
@@ -45,7 +44,7 @@ class Bin(Generic[T]):
 
 
 class PackingIterator(Generic[T]):
-    bins: List[Bin[T]]
+    bins: list[Bin[T]]
 
     def __init__(
         self,
@@ -66,7 +65,7 @@ class PackingIterator(Generic[T]):
         """Return an iterator for the PackingIterator class."""
         return self
 
-    def __next__(self) -> List[T]:
+    def __next__(self) -> list[T]:
         """Return the next item when iterating over the PackingIterator class."""
         while True:
             try:
@@ -115,7 +114,7 @@ class ListPacker(Generic[T]):
         self._lookback = lookback
         self._largest_bin_first = largest_bin_first
 
-    def pack(self, items: List[T], weight_func: Callable[[T], int]) -> List[List[T]]:
+    def pack(self, items: list[T], weight_func: Callable[[T], int]) -> list[list[T]]:
         return list(
             PackingIterator(
                 items=items,
@@ -126,6 +125,6 @@ class ListPacker(Generic[T]):
             )
         )
 
-    def pack_end(self, items: List[T], weight_func: Callable[[T], int]) -> List[List[T]]:
+    def pack_end(self, items: list[T], weight_func: Callable[[T], int]) -> list[list[T]]:
         packed = self.pack(items=list(reversed(items)), weight_func=weight_func)
         return [list(reversed(bin_items)) for bin_items in reversed(packed)]

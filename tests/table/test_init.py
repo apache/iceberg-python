@@ -18,7 +18,7 @@
 import json
 import uuid
 from copy import copy
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -545,7 +545,7 @@ def test_update_column(table_v1: Table, table_v2: Table) -> None:
 
 
 def test_add_primitive_type_column(table_v2: Table) -> None:
-    primitive_type: Dict[str, PrimitiveType] = {
+    primitive_type: dict[str, PrimitiveType] = {
         "boolean": BooleanType(),
         "int": IntegerType(),
         "long": LongType(),
@@ -1221,7 +1221,7 @@ def test_correct_schema() -> None:
     assert "Snapshot not found: -1" in str(exc_info.value)
 
 
-def test_table_properties(example_table_metadata_v2: Dict[str, Any]) -> None:
+def test_table_properties(example_table_metadata_v2: dict[str, Any]) -> None:
     # metadata properties are all strings
     for k, v in example_table_metadata_v2["properties"].items():
         assert isinstance(k, str)
@@ -1239,7 +1239,7 @@ def test_table_properties(example_table_metadata_v2: Dict[str, Any]) -> None:
     assert isinstance(new_metadata.properties["property_name"], str)
 
 
-def test_table_properties_raise_for_none_value(example_table_metadata_v2: Dict[str, Any]) -> None:
+def test_table_properties_raise_for_none_value(example_table_metadata_v2: dict[str, Any]) -> None:
     property_with_none = {"property_name": None}
     example_table_metadata_v2 = {**example_table_metadata_v2, "properties": property_with_none}
     with pytest.raises(ValidationError) as exc_info:

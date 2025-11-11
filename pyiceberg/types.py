@@ -38,9 +38,7 @@ from typing import (
     Annotated,
     Any,
     ClassVar,
-    Dict,
     Literal,
-    Tuple,
 )
 
 from pydantic import (
@@ -64,7 +62,7 @@ FIXED = "fixed"
 FIXED_PARSER = ParseNumberFromBrackets(FIXED)
 
 
-def transform_dict_value_to_str(dict: Dict[str, Any]) -> Dict[str, str]:
+def transform_dict_value_to_str(dict: dict[str, Any]) -> dict[str, str]:
     """Transform all values in the dictionary to string. Raise an error if any value is None."""
     for key, value in dict.items():
         if value is None:
@@ -72,7 +70,7 @@ def transform_dict_value_to_str(dict: Dict[str, Any]) -> Dict[str, str]:
     return {k: str(v).lower() if isinstance(v, bool) else str(v) for k, v in dict.items()}
 
 
-def _parse_decimal_type(decimal: Any) -> Tuple[int, int]:
+def _parse_decimal_type(decimal: Any) -> tuple[int, int]:
     if isinstance(decimal, str):
         matches = DECIMAL_REGEX.search(decimal)
         if matches:
@@ -250,7 +248,7 @@ class DecimalType(PrimitiveType):
         True
     """
 
-    root: Tuple[int, int]
+    root: tuple[int, int]
 
     def __init__(self, precision: int, scale: int) -> None:
         super().__init__(root=(precision, scale))
@@ -282,7 +280,7 @@ class DecimalType(PrimitiveType):
         """Return the hash of the tuple."""
         return hash(self.root)
 
-    def __getnewargs__(self) -> Tuple[int, int]:
+    def __getnewargs__(self) -> tuple[int, int]:
         """Pickle the DecimalType class."""
         return self.precision, self.scale
 
@@ -375,7 +373,7 @@ class NestedField(IcebergType):
         super().__init__(**data)
 
     @model_serializer()
-    def serialize_model(self) -> Dict[str, Any]:
+    def serialize_model(self) -> dict[str, Any]:
         from pyiceberg.conversions import to_json
 
         fields = {
@@ -415,7 +413,7 @@ class NestedField(IcebergType):
 
         return f"NestedField({', '.join(parts)})"
 
-    def __getnewargs__(self) -> Tuple[int, str, IcebergType, bool, str | None]:
+    def __getnewargs__(self) -> tuple[int, str, IcebergType, bool, str | None]:
         """Pickle the NestedField class."""
         return (self.field_id, self.name, self.field_type, self.required, self.doc)
 
@@ -436,7 +434,7 @@ class StructType(IcebergType):
     """
 
     type: Literal["struct"] = Field(default="struct")
-    fields: Tuple[NestedField, ...] = Field(default_factory=tuple)
+    fields: tuple[NestedField, ...] = Field(default_factory=tuple)
     _hash: int = PrivateAttr()
 
     def __init__(self, *fields: NestedField, **data: Any):
@@ -476,7 +474,7 @@ class StructType(IcebergType):
         """Return the length of an instance of the StructType class."""
         return len(self.fields)
 
-    def __getnewargs__(self) -> Tuple[NestedField, ...]:
+    def __getnewargs__(self) -> tuple[NestedField, ...]:
         """Pickle the StructType class."""
         return self.fields
 
@@ -526,7 +524,7 @@ class ListType(IcebergType):
         """Return the string representation of the ListType class."""
         return f"list<{self.element_type}>"
 
-    def __getnewargs__(self) -> Tuple[int, IcebergType, bool]:
+    def __getnewargs__(self) -> tuple[int, IcebergType, bool]:
         """Pickle the ListType class."""
         return (self.element_id, self.element_type, self.element_required)
 
@@ -594,7 +592,7 @@ class MapType(IcebergType):
         """Return the string representation of the MapType class."""
         return f"map<{self.key_type}, {self.value_type}>"
 
-    def __getnewargs__(self) -> Tuple[int, IcebergType, int, IcebergType, bool]:
+    def __getnewargs__(self) -> tuple[int, IcebergType, int, IcebergType, bool]:
         """Pickle the MapType class."""
         return (self.key_id, self.key_type, self.value_id, self.value_type, self.value_required)
 

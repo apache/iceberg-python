@@ -19,7 +19,7 @@ from __future__ import annotations
 import datetime
 import uuid
 from copy import copy
-from typing import Annotated, Any, Dict, List, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import Field, field_serializer, field_validator, model_validator
 from pydantic import ValidationError as PydanticValidationError
@@ -68,7 +68,7 @@ DEFAULT_SCHEMA_ID = 0
 SUPPORTED_TABLE_FORMAT_VERSION = 2
 
 
-def cleanup_snapshot_id(data: Dict[str, Any]) -> Dict[str, Any]:
+def cleanup_snapshot_id(data: dict[str, Any]) -> dict[str, Any]:
     """Run before validation."""
     if CURRENT_SNAPSHOT_ID in data and data[CURRENT_SNAPSHOT_ID] == -1:
         # We treat -1 and None the same, by cleaning this up
@@ -92,7 +92,7 @@ def check_partition_specs(table_metadata: TableMetadata) -> TableMetadata:
     """Check if the default-spec-id is present in partition-specs."""
     default_spec_id = table_metadata.default_spec_id
 
-    partition_specs: List[PartitionSpec] = table_metadata.partition_specs
+    partition_specs: list[PartitionSpec] = table_metadata.partition_specs
     for spec in partition_specs:
         if spec.spec_id == default_spec_id:
             return table_metadata
@@ -105,7 +105,7 @@ def check_sort_orders(table_metadata: TableMetadata) -> TableMetadata:
     default_sort_order_id: int = table_metadata.default_sort_order_id
 
     if default_sort_order_id != UNSORTED_SORT_ORDER_ID:
-        sort_orders: List[SortOrder] = table_metadata.sort_orders
+        sort_orders: list[SortOrder] = table_metadata.sort_orders
         for sort_order in sort_orders:
             if sort_order.order_id == default_sort_order_id:
                 return table_metadata
@@ -151,13 +151,13 @@ class TableMetadataCommonFields(IcebergBaseModel):
     This is used to ensure fields are always assigned an unused ID
     when evolving schemas."""
 
-    schemas: List[Schema] = Field(default_factory=list)
+    schemas: list[Schema] = Field(default_factory=list)
     """A list of schemas, stored as objects with schema-id."""
 
     current_schema_id: int = Field(alias="current-schema-id", default=DEFAULT_SCHEMA_ID)
     """ID of the table’s current schema."""
 
-    partition_specs: List[PartitionSpec] = Field(alias="partition-specs", default_factory=list)
+    partition_specs: list[PartitionSpec] = Field(alias="partition-specs", default_factory=list)
     """A list of partition specs, stored as full partition spec objects."""
 
     default_spec_id: int = Field(alias="default-spec-id", default=INITIAL_SPEC_ID)
@@ -168,7 +168,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
     partition specs for the table. This is used to ensure partition fields
     are always assigned an unused ID when evolving specs."""
 
-    properties: Dict[str, str] = Field(default_factory=dict)
+    properties: dict[str, str] = Field(default_factory=dict)
     """A string to string map of table properties. This is used to
     control settings that affect reading and writing and is not intended
     to be used for arbitrary metadata. For example, commit.retry.num-retries
@@ -177,13 +177,13 @@ class TableMetadataCommonFields(IcebergBaseModel):
     current_snapshot_id: int | None = Field(alias="current-snapshot-id", default=None)
     """ID of the current table snapshot."""
 
-    snapshots: List[Snapshot] = Field(default_factory=list)
+    snapshots: list[Snapshot] = Field(default_factory=list)
     """A list of valid snapshots. Valid snapshots are snapshots for which
     all data files exist in the file system. A data file must not be
     deleted from the file system until the last snapshot in which it was
     listed is garbage collected."""
 
-    snapshot_log: List[SnapshotLogEntry] = Field(alias="snapshot-log", default_factory=list)
+    snapshot_log: list[SnapshotLogEntry] = Field(alias="snapshot-log", default_factory=list)
     """A list (optional) of timestamp and snapshot ID pairs that encodes
     changes to the current snapshot for the table. Each time the
     current-snapshot-id is changed, a new entry should be added with the
@@ -191,7 +191,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
     expired from the list of valid snapshots, all entries before a snapshot
     that has expired should be removed."""
 
-    metadata_log: List[MetadataLogEntry] = Field(alias="metadata-log", default_factory=list)
+    metadata_log: list[MetadataLogEntry] = Field(alias="metadata-log", default_factory=list)
     """A list (optional) of timestamp and metadata file location pairs that
     encodes changes to the previous metadata files for the table. Each time
     a new metadata file is created, a new entry of the previous metadata
@@ -199,7 +199,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
     remove oldest metadata log entries and keep a fixed-size log of the most
     recent entries after a commit."""
 
-    sort_orders: List[SortOrder] = Field(alias="sort-orders", default_factory=list)
+    sort_orders: list[SortOrder] = Field(alias="sort-orders", default_factory=list)
     """A list of sort orders, stored as full sort order objects."""
 
     default_sort_order_id: int = Field(alias="default-sort-order-id", default=UNSORTED_SORT_ORDER_ID)
@@ -207,14 +207,14 @@ class TableMetadataCommonFields(IcebergBaseModel):
     writers, but is not used when reading because reads use the specs stored
      in manifest files."""
 
-    refs: Dict[str, SnapshotRef] = Field(default_factory=dict)
+    refs: dict[str, SnapshotRef] = Field(default_factory=dict)
     """A map of snapshot references.
     The map keys are the unique snapshot reference names in the table,
     and the map values are snapshot reference objects.
     There is always a main branch reference pointing to the
     current-snapshot-id even if the refs map is null."""
 
-    statistics: List[StatisticsFile] = Field(default_factory=list)
+    statistics: list[StatisticsFile] = Field(default_factory=list)
     """A optional list of table statistics files.
     Table statistics files are valid Puffin files. Statistics are
     informational. A reader can choose to ignore statistics
@@ -222,7 +222,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
     table correctly. A table can contain many statistics files
     associated with different table snapshots."""
 
-    partition_statistics: List[PartitionStatisticsFile] = Field(alias="partition-statistics", default_factory=list)
+    partition_statistics: list[PartitionStatisticsFile] = Field(alias="partition-statistics", default_factory=list)
     """A optional list of partition statistics files.
     Partition statistics are not required for reading or planning
     and readers may ignore them. Each table snapshot may be associated
@@ -232,7 +232,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
 
     # validators
     @field_validator("properties", mode="before")
-    def transform_properties_dict_value_to_str(cls, properties: Properties) -> Dict[str, str]:
+    def transform_properties_dict_value_to_str(cls, properties: Properties) -> dict[str, str]:
         return transform_dict_value_to_str(properties)
 
     def snapshot_by_id(self, snapshot_id: int) -> Snapshot | None:
@@ -258,7 +258,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
         """Return the partition spec of this table."""
         return next(spec for spec in self.partition_specs if spec.spec_id == self.default_spec_id)
 
-    def specs(self) -> Dict[int, PartitionSpec]:
+    def specs(self) -> dict[int, PartitionSpec]:
         """Return a dict the partition specs this table."""
         return {spec.spec_id: spec for spec in self.partition_specs}
 
@@ -323,7 +323,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
         return current_snapshot_id
 
     @field_serializer("snapshots")
-    def serialize_snapshots(self, snapshots: List[Snapshot]) -> List[Snapshot]:
+    def serialize_snapshots(self, snapshots: list[Snapshot]) -> list[Snapshot]:
         # Snapshot field `sequence-number` should not be written for v1 metadata
         if self.format_version == 1:
             return [snapshot.model_copy(update={"sequence_number": None}) for snapshot in snapshots]
@@ -361,7 +361,7 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
     # to the owner of the table.
 
     @model_validator(mode="before")
-    def cleanup_snapshot_id(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+    def cleanup_snapshot_id(cls, data: dict[str, Any]) -> dict[str, Any]:
         return cleanup_snapshot_id(data)
 
     @model_validator(mode="after")
@@ -369,7 +369,7 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
         return construct_refs(self)
 
     @model_validator(mode="before")
-    def set_v2_compatible_defaults(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+    def set_v2_compatible_defaults(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Set default values to be compatible with the format v2.
 
         Args:
@@ -387,7 +387,7 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
         return data
 
     @model_validator(mode="before")
-    def construct_schemas(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+    def construct_schemas(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Convert the schema into schemas.
 
         For V1 schemas is optional, and if they aren't set, we'll set them
@@ -406,7 +406,7 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
         return data
 
     @model_validator(mode="before")
-    def construct_partition_specs(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+    def construct_partition_specs(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Convert the partition_spec into partition_specs.
 
         For V1 partition_specs is optional, and if they aren't set, we'll set them
@@ -441,7 +441,7 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
         return data
 
     @model_validator(mode="before")
-    def set_sort_orders(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+    def set_sort_orders(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Set the sort_orders if not provided.
 
         For V1 sort_orders is optional, and if they aren't set, we'll set them
@@ -470,7 +470,7 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
     """The table’s current schema. (Deprecated: use schemas and
     current-schema-id instead)."""
 
-    partition_spec: List[Dict[str, Any]] = Field(alias="partition-spec", default_factory=list)
+    partition_spec: list[dict[str, Any]] = Field(alias="partition-spec", default_factory=list)
     """The table’s current partition spec, stored as only fields.
     Note that this is used by writers to partition data, but is
     not used when reading because reads use the specs stored in
@@ -490,7 +490,7 @@ class TableMetadataV2(TableMetadataCommonFields, IcebergBaseModel):
     """
 
     @model_validator(mode="before")
-    def cleanup_snapshot_id(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+    def cleanup_snapshot_id(cls, data: dict[str, Any]) -> dict[str, Any]:
         return cleanup_snapshot_id(data)
 
     @model_validator(mode="after")
@@ -534,7 +534,7 @@ class TableMetadataV3(TableMetadataCommonFields, IcebergBaseModel):
     """
 
     @model_validator(mode="before")
-    def cleanup_snapshot_id(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+    def cleanup_snapshot_id(cls, data: dict[str, Any]) -> dict[str, Any]:
         return cleanup_snapshot_id(data)
 
     @model_validator(mode="after")
@@ -655,7 +655,7 @@ class TableMetadataUtil:
             raise ValidationError(e) from e
 
     @staticmethod
-    def parse_obj(data: Dict[str, Any]) -> TableMetadata:
+    def parse_obj(data: dict[str, Any]) -> TableMetadata:
         if "format-version" not in data:
             raise ValidationError(f"Missing format-version in TableMetadata: {data}")
         format_version = data["format-version"]

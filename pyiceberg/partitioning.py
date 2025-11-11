@@ -21,7 +21,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from functools import cached_property, singledispatch
-from typing import Annotated, Any, Dict, Generic, List, Set, Tuple, TypeVar
+from typing import Annotated, Any, Generic, TypeVar
 from urllib.parse import quote_plus
 
 from pydantic import (
@@ -131,7 +131,7 @@ class PartitionSpec(IcebergBaseModel):
     """
 
     spec_id: int = Field(alias="spec-id", default=INITIAL_PARTITION_SPEC_ID)
-    fields: Tuple[PartitionField, ...] = Field(default_factory=tuple)
+    fields: tuple[PartitionField, ...] = Field(default_factory=tuple)
 
     def __init__(
         self,
@@ -181,15 +181,15 @@ class PartitionSpec(IcebergBaseModel):
         return PARTITION_FIELD_ID_START - 1
 
     @cached_property
-    def source_id_to_fields_map(self) -> Dict[int, List[PartitionField]]:
-        source_id_to_fields_map: Dict[int, List[PartitionField]] = {}
+    def source_id_to_fields_map(self) -> dict[int, list[PartitionField]]:
+        source_id_to_fields_map: dict[int, list[PartitionField]] = {}
         for partition_field in self.fields:
             existing = source_id_to_fields_map.get(partition_field.source_id, [])
             existing.append(partition_field)
             source_id_to_fields_map[partition_field.source_id] = existing
         return source_id_to_fields_map
 
-    def fields_by_source_id(self, field_id: int) -> List[PartitionField]:
+    def fields_by_source_id(self, field_id: int) -> list[PartitionField]:
         return self.source_id_to_fields_map.get(field_id, [])
 
     def compatible_with(self, other: PartitionSpec) -> bool:
@@ -254,7 +254,7 @@ def validate_partition_name(
     partition_transform: Transform[Any, Any],
     source_id: int,
     schema: Schema,
-    partition_names: Set[str],
+    partition_names: set[str],
 ) -> None:
     """Validate that a partition field name doesn't conflict with schema field names."""
     try:
@@ -372,7 +372,7 @@ R = TypeVar("R")
 
 
 @singledispatch
-def _visit(spec: PartitionSpec, schema: Schema, visitor: PartitionSpecVisitor[R]) -> List[R]:
+def _visit(spec: PartitionSpec, schema: Schema, visitor: PartitionSpecVisitor[R]) -> list[R]:
     return [_visit_partition_field(schema, field, visitor) for field in spec.fields]
 
 
@@ -412,7 +412,7 @@ class PartitionFieldValue:
 
 @dataclass(frozen=True)
 class PartitionKey:
-    field_values: List[PartitionFieldValue]
+    field_values: list[PartitionFieldValue]
     partition_spec: PartitionSpec
     schema: Schema
 
