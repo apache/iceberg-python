@@ -1555,7 +1555,7 @@ class Table:
 
         return pl.scan_iceberg(self)
 
-    def __datafusion_table_provider__(self) -> "IcebergDataFusionTable":
+    def __datafusion_table_provider__(self) -> IcebergDataFusionTable:
         """Return the DataFusion table provider PyCapsule interface.
 
         To support DataFusion features such as push down filtering, this function will return a PyCapsule

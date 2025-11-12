@@ -186,7 +186,7 @@ class Schema(IcebergBaseModel):
         """Return the schema as a struct."""
         return StructType(*self.fields)
 
-    def as_arrow(self) -> "pa.Schema":
+    def as_arrow(self) -> pa.Schema:
         """Return the schema as an Arrow schema."""
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 

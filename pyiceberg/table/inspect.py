@@ -60,7 +60,7 @@ class InspectTable:
         else:
             raise ValueError("Cannot get a snapshot as the table does not have any.")
 
-    def snapshots(self) -> "pa.Table":
+    def snapshots(self) -> pa.Table:
         import pyarrow as pa
 
         snapshots_schema = pa.schema(
@@ -98,7 +98,7 @@ class InspectTable:
             schema=snapshots_schema,
         )
 
-    def entries(self, snapshot_id: int | None = None) -> "pa.Table":
+    def entries(self, snapshot_id: int | None = None) -> pa.Table:
         import pyarrow as pa
 
         from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -229,7 +229,7 @@ class InspectTable:
             schema=entries_schema,
         )
 
-    def refs(self) -> "pa.Table":
+    def refs(self) -> pa.Table:
         import pyarrow as pa
 
         ref_schema = pa.schema(
@@ -264,7 +264,7 @@ class InspectTable:
         snapshot_id: int | None = None,
         row_filter: str | BooleanExpression = ALWAYS_TRUE,
         case_sensitive: bool = True,
-    ) -> "pa.Table":
+    ) -> pa.Table:
         import pyarrow as pa
 
         from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -368,7 +368,7 @@ class InspectTable:
         else:
             raise ValueError(f"Unknown DataFileContent ({file.content})")
 
-    def _get_manifests_schema(self) -> "pa.Schema":
+    def _get_manifests_schema(self) -> pa.Schema:
         import pyarrow as pa
 
         partition_summary_schema = pa.struct(
@@ -398,14 +398,14 @@ class InspectTable:
         )
         return manifest_schema
 
-    def _get_all_manifests_schema(self) -> "pa.Schema":
+    def _get_all_manifests_schema(self) -> pa.Schema:
         import pyarrow as pa
 
         all_manifests_schema = self._get_manifests_schema()
         all_manifests_schema = all_manifests_schema.append(pa.field("reference_snapshot_id", pa.int64(), nullable=False))
         return all_manifests_schema
 
-    def _generate_manifests_table(self, snapshot: Snapshot | None, is_all_manifests_table: bool = False) -> "pa.Table":
+    def _generate_manifests_table(self, snapshot: Snapshot | None, is_all_manifests_table: bool = False) -> pa.Table:
         import pyarrow as pa
 
         def _partition_summaries_to_rows(
@@ -474,10 +474,10 @@ class InspectTable:
             schema=self._get_all_manifests_schema() if is_all_manifests_table else self._get_manifests_schema(),
         )
 
-    def manifests(self) -> "pa.Table":
+    def manifests(self) -> pa.Table:
         return self._generate_manifests_table(self.tbl.current_snapshot())
 
-    def metadata_log_entries(self) -> "pa.Table":
+    def metadata_log_entries(self) -> pa.Table:
         import pyarrow as pa
 
         from pyiceberg.table.snapshots import MetadataLogEntry
@@ -513,7 +513,7 @@ class InspectTable:
             schema=table_schema,
         )
 
-    def history(self) -> "pa.Table":
+    def history(self) -> pa.Table:
         import pyarrow as pa
 
         history_schema = pa.schema(
@@ -546,7 +546,7 @@ class InspectTable:
 
     def _get_files_from_manifest(
         self, manifest_list: ManifestFile, data_file_filter: Set[DataFileContent] | None = None
-    ) -> "pa.Table":
+    ) -> pa.Table:
         import pyarrow as pa
 
         files: list[dict[str, Any]] = []
@@ -610,7 +610,7 @@ class InspectTable:
             schema=self._get_files_schema(),
         )
 
-    def _get_files_schema(self) -> "pa.Schema":
+    def _get_files_schema(self) -> pa.Schema:
         import pyarrow as pa
 
         from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -663,7 +663,7 @@ class InspectTable:
         )
         return files_schema
 
-    def _files(self, snapshot_id: int | None = None, data_file_filter: Set[DataFileContent] | None = None) -> "pa.Table":
+    def _files(self, snapshot_id: int | None = None, data_file_filter: Set[DataFileContent] | None = None) -> pa.Table:
         import pyarrow as pa
 
         if not snapshot_id and not self.tbl.metadata.current_snapshot():
@@ -680,16 +680,16 @@ class InspectTable:
         )
         return pa.concat_tables(results)
 
-    def files(self, snapshot_id: int | None = None) -> "pa.Table":
+    def files(self, snapshot_id: int | None = None) -> pa.Table:
         return self._files(snapshot_id)
 
-    def data_files(self, snapshot_id: int | None = None) -> "pa.Table":
+    def data_files(self, snapshot_id: int | None = None) -> pa.Table:
         return self._files(snapshot_id, {DataFileContent.DATA})
 
-    def delete_files(self, snapshot_id: int | None = None) -> "pa.Table":
+    def delete_files(self, snapshot_id: int | None = None) -> pa.Table:
         return self._files(snapshot_id, {DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES})
 
-    def all_manifests(self) -> "pa.Table":
+    def all_manifests(self) -> pa.Table:
         import pyarrow as pa
 
         snapshots = self.tbl.snapshots()
@@ -697,12 +697,12 @@ class InspectTable:
             return pa.Table.from_pylist([], schema=self._get_all_manifests_schema())
 
         executor = ExecutorFactory.get_or_create()
-        manifests_by_snapshots: Iterator["pa.Table"] = executor.map(
+        manifests_by_snapshots: Iterator[pa.Table] = executor.map(
             lambda args: self._generate_manifests_table(*args), [(snapshot, True) for snapshot in snapshots]
         )
         return pa.concat_tables(manifests_by_snapshots)
 
-    def _all_files(self, data_file_filter: Set[DataFileContent] | None = None) -> "pa.Table":
+    def _all_files(self, data_file_filter: Set[DataFileContent] | None = None) -> pa.Table:
         import pyarrow as pa
 
         snapshots = self.tbl.snapshots()
@@ -720,11 +720,11 @@ class InspectTable:
 
         return pa.concat_tables(file_lists)
 
-    def all_files(self) -> "pa.Table":
+    def all_files(self) -> pa.Table:
         return self._all_files()
 
-    def all_data_files(self) -> "pa.Table":
+    def all_data_files(self) -> pa.Table:
         return self._all_files({DataFileContent.DATA})
 
-    def all_delete_files(self) -> "pa.Table":
+    def all_delete_files(self) -> pa.Table:
         return self._all_files({DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES})

@@ -1012,7 +1012,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
 
         return self
 
-    def by_ids(self, snapshot_ids: List[int]) -> "ExpireSnapshots":
+    def by_ids(self, snapshot_ids: List[int]) -> ExpireSnapshots:
         """
         Expire multiple snapshots by their IDs.
 
@@ -1027,7 +1027,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
             self.by_id(snapshot_id)
         return self
 
-    def older_than(self, dt: datetime) -> "ExpireSnapshots":
+    def older_than(self, dt: datetime) -> ExpireSnapshots:
         """
         Expire all unprotected snapshots with a timestamp older than a given value.
 
