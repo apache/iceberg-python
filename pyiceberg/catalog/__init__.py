@@ -31,6 +31,7 @@ from typing import (
     cast,
 )
 
+from pyiceberg.catalog._meta import CatalogABCMeta
 from pyiceberg.exceptions import (
     NamespaceAlreadyExistsError,
     NoSuchNamespaceError,
@@ -331,7 +332,7 @@ class PropertiesUpdateSummary:
     missing: list[str]
 
 
-class Catalog(ABC):
+class Catalog(ABC, metaclass=CatalogABCMeta):
     """Base Catalog for table operations like - create, drop, load, list and others.
 
     The catalog table APIs accept a table identifier, which is fully classified table name. The identifier can be a string or
@@ -347,7 +348,6 @@ class Catalog(ABC):
 
     name: str
     properties: Properties
-    _support_namespaces: bool = False
 
     def __init__(self, name: str, **properties: str):
         self.name = name
@@ -724,7 +724,7 @@ class Catalog(ABC):
         return ".".join(segment.strip() for segment in tuple_identifier)
 
     @staticmethod
-    def namespace_level(identifier: Union[str, Identifier]) -> int:
+    def namespace_level(identifier: str | Identifier) -> int:
         """Get the level of a namespace identifier.
 
         Args:

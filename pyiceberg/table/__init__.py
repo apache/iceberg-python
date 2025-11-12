@@ -32,10 +32,7 @@ from typing import (
     ClassVar,
     Iterable,
     Iterator,
-    List,
-    Set,
-    Tuple,
-    Type,
+    Sequence,
     TypeVar,
 )
 
