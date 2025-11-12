@@ -15,4 +15,22 @@
 # specific language governing permissions and limitations
 # under the License.
 
-graft src
+# Include Cython source files for building from source
+recursive-include pyiceberg *.pyx *.c
+
+# Exclude generated Cython C file
+exclude pyiceberg/avro/decoder_fast.c
+
+# Include test files in sdist
+recursive-include tests *
+
+# Include development files
+include Makefile
+recursive-include dev *
+
+# Exclude build artifacts
+global-exclude */__pycache__/*
+prune .venv
+prune build
+prune dist
+prune .pytest_cache

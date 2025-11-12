@@ -16,7 +16,7 @@
 # under the License.
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, List, Tuple
 
 from pyiceberg.table.sorting import INITIAL_SORT_ORDER_ID, UNSORTED_SORT_ORDER, NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.table.update import (
@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 
 class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
     _transaction: Transaction
-    _last_assigned_order_id: Optional[int]
+    _last_assigned_order_id: int | None
     _case_sensitive: bool
     _fields: List[SortField]
 
@@ -44,7 +44,7 @@ class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
         super().__init__(transaction)
         self._fields: List[SortField] = []
         self._case_sensitive: bool = case_sensitive
-        self._last_assigned_order_id: Optional[int] = None
+        self._last_assigned_order_id: int | None = None
 
     def _column_name_to_id(self, column_name: str) -> int:
         """Map the column name to the column field id."""

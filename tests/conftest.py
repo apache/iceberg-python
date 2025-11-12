@@ -41,7 +41,6 @@ from typing import (
     Dict,
     Generator,
     List,
-    Optional,
 )
 
 import boto3
@@ -98,7 +97,7 @@ from pyiceberg.utils.datetime import datetime_to_millis
 
 if TYPE_CHECKING:
     import pyarrow as pa
-    from moto.server import ThreadedMotoServer  # type: ignore
+    from moto.server import ThreadedMotoServer
     from pyspark.sql import SparkSession
 
     from pyiceberg.io.pyarrow import PyArrowFileIO
@@ -786,8 +785,8 @@ def example_table_metadata_no_snapshot_v1() -> Dict[str, Any]:
 def example_table_metadata_v2_with_extensive_snapshots() -> Dict[str, Any]:
     def generate_snapshot(
         snapshot_id: int,
-        parent_snapshot_id: Optional[int] = None,
-        timestamp_ms: Optional[int] = None,
+        parent_snapshot_id: int | None = None,
+        timestamp_ms: int | None = None,
         sequence_number: int = 0,
     ) -> Dict[str, Any]:
         return {
@@ -2368,12 +2367,12 @@ def get_gcs_bucket_name() -> str:
     return bucket_name
 
 
-def get_glue_endpoint() -> Optional[str]:
+def get_glue_endpoint() -> str | None:
     """Set the optional environment variable AWS_TEST_GLUE_ENDPOINT for a glue endpoint to test."""
     return os.getenv("AWS_TEST_GLUE_ENDPOINT")
 
 
-def get_s3_path(bucket_name: str, database_name: Optional[str] = None, table_name: Optional[str] = None) -> str:
+def get_s3_path(bucket_name: str, database_name: str | None = None, table_name: str | None = None) -> str:
     result_path = f"s3://{bucket_name}"
     if database_name is not None:
         result_path += f"/{database_name}.db"
@@ -2383,7 +2382,7 @@ def get_s3_path(bucket_name: str, database_name: Optional[str] = None, table_nam
     return result_path
 
 
-def get_gcs_path(bucket_name: str, database_name: Optional[str] = None, table_name: Optional[str] = None) -> str:
+def get_gcs_path(bucket_name: str, database_name: str | None = None, table_name: str | None = None) -> str:
     result_path = f"gcs://{bucket_name}"
     if database_name is not None:
         result_path += f"/{database_name}.db"

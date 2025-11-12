@@ -34,33 +34,61 @@ For first-time contributors, feel free to check out our [good first issues](http
 
 The PyIceberg Project is hosted on GitHub at <https://github.com/apache/iceberg-python>.
 
-For the development, Poetry is used for packing and dependency management. You can install this using:
+For development, [uv](https://docs.astral.sh/uv/) is used for dependency management and packaging. uv is a Python package installer and resolver, written in Rust, that serves as a drop-in replacement for pip, and virtualenv.
+
+### Getting Started
+
+Install uv and set up the development environment:
 
 ```bash
-make install-poetry
+make install
 ```
 
-To get started, you can run `make install`, which installs all the dependencies of the Iceberg library. This also installs the development dependencies. If you don't want to install the development dependencies, you need to install using `poetry install --without dev` instead of `make install`.
+This will install uv if needed, create a virtual environment in `.venv`, and install all dependencies.
 
-If you want to install the library on the host, you can simply run `pip3 install -e .`. If you wish to use a virtual environment, you can run `poetry shell`. Poetry will open up a virtual environment with all the dependencies set.
+If you only want to just install uv:
 
-> **Note:** If you want to use `poetry shell`, you need to install it using `pip install poetry-plugin-shell`. Alternatively, you can run commands directly with `poetry run`.
+```bash
+make install-uv
+```
 
-To set up IDEA with Poetry:
+### Python Version Selection
+
+You can specify which Python version to use when creating your virtual environment:
+
+```bash
+PYTHON=3.12 make install # Create environment with Python 3.12
+make test # Run tests against Python 3.12
+```
+
+> **Tip:** `uv python list` shows available interpreters. `uv python install 3.12` can install one if needed.
+
+### IDE Setup
+
+After running `make install`, configure your IDE to use the Python interpreter at `.venv/bin/python`.
+
+**To set up IDEA with uv:**
 
 - Open up the Python project in IntelliJ
-- Make sure that you're on latest main (that includes Poetry)
+- Make sure that you're on latest main
 - Go to File -> Project Structure (⌘;)
 - Go to Platform Settings -> SDKs
-- Click the + sign -> Add Python SDK
-- Select Poetry Environment from the left hand side bar and hit OK
-- It can take some time to download all the dependencies based on your internet
-- Go to Project Settings -> Project
-- Select the Poetry SDK from the SDK dropdown, and click OK
+- Add Python SDK -> Virtualenv Environment -> Existing environment
+- Point to `.venv/bin/python`
 
-For IDEA ≤2021 you need to install the [Poetry integration as a plugin](https://plugins.jetbrains.com/plugin/14307-poetry/).
+**VS Code:**
 
-Now you're set using Poetry, and all the tests will run in Poetry, and you'll have syntax highlighting in the pyproject.toml to indicate stale dependencies.
+- Press Cmd/Ctrl+Shift+P -> "Python: Select Interpreter"
+- Choose `.venv/bin/python`
+
+### Advanced uv Usage
+
+For full control over your environment, you can use uv commands directly. See the [uv documentation](https://docs.astral.sh/uv/) to learn more about:
+
+- Managing dependencies with `uv add` and `uv remove`
+- Python version management with `uv python`
+- Running commands with `uv run`
+- Lock file management with `uv.lock`
 
 ## Installation from source
 

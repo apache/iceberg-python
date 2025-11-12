@@ -14,7 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from typing import Iterator, Optional, Set
+from typing import Iterator, Set
 
 from pyiceberg.exceptions import ValidationException
 from pyiceberg.expressions import BooleanExpression
@@ -82,9 +82,9 @@ def _validation_history(
 def _filter_manifest_entries(
     entry: ManifestEntry,
     snapshot_ids: set[int],
-    data_filter: Optional[BooleanExpression],
-    partition_set: Optional[dict[int, set[Record]]],
-    entry_status: Optional[ManifestEntryStatus],
+    data_filter: BooleanExpression | None,
+    partition_set: dict[int, set[Record]] | None,
+    entry_status: ManifestEntryStatus | None,
     schema: Schema,
 ) -> bool:
     """Filter manifest entries based on data filter and partition set.
@@ -123,9 +123,9 @@ def _filter_manifest_entries(
 def _deleted_data_files(
     table: Table,
     starting_snapshot: Snapshot,
-    data_filter: Optional[BooleanExpression],
-    partition_set: Optional[dict[int, set[Record]]],
-    parent_snapshot: Optional[Snapshot],
+    data_filter: BooleanExpression | None,
+    partition_set: dict[int, set[Record]] | None,
+    parent_snapshot: Snapshot | None,
 ) -> Iterator[ManifestEntry]:
     """Find deleted data files matching a filter since a starting snapshot.
 
@@ -162,7 +162,7 @@ def _deleted_data_files(
 def _validate_deleted_data_files(
     table: Table,
     starting_snapshot: Snapshot,
-    data_filter: Optional[BooleanExpression],
+    data_filter: BooleanExpression | None,
     parent_snapshot: Snapshot,
 ) -> None:
     """Validate that no files matching a filter have been deleted from the table since a starting snapshot.
@@ -183,9 +183,9 @@ def _validate_deleted_data_files(
 def _added_data_files(
     table: Table,
     starting_snapshot: Snapshot,
-    data_filter: Optional[BooleanExpression],
-    partition_set: Optional[dict[int, set[Record]]],
-    parent_snapshot: Optional[Snapshot],
+    data_filter: BooleanExpression | None,
+    partition_set: dict[int, set[Record]] | None,
+    parent_snapshot: Snapshot | None,
 ) -> Iterator[ManifestEntry]:
     """Return manifest entries for data files added between the starting snapshot and parent snapshot.
 
@@ -219,8 +219,8 @@ def _added_data_files(
 def _validate_added_data_files(
     table: Table,
     starting_snapshot: Snapshot,
-    data_filter: Optional[BooleanExpression],
-    parent_snapshot: Optional[Snapshot],
+    data_filter: BooleanExpression | None,
+    parent_snapshot: Snapshot | None,
 ) -> None:
     """Validate that no files matching a filter have been added to the table since a starting snapshot.
 

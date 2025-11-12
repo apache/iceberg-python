@@ -737,7 +737,7 @@ def test_partition_key(
 ) -> None:
     field_values = [
         PartitionFieldValue(field, field.transform.transform(TABLE_SCHEMA.find_field(field.source_id).field_type)(value))
-        for field, value in zip(partition_fields, partition_values)
+        for field, value in zip(partition_fields, partition_values, strict=True)
     ]
     spec = PartitionSpec(*partition_fields)
 

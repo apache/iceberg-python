@@ -29,7 +29,6 @@ from typing import (
     Tuple,
     Type,
     TypeVar,
-    Union,
 )
 from typing import Literal as TypingLiteral
 
@@ -52,15 +51,15 @@ except ImportError:
     ConfigDict = dict
 
 
-def _to_unbound_term(term: Union[str, UnboundTerm[Any]]) -> UnboundTerm[Any]:
+def _to_unbound_term(term: str | UnboundTerm[Any]) -> UnboundTerm[Any]:
     return Reference(term) if isinstance(term, str) else term
 
 
-def _to_literal_set(values: Union[Iterable[L], Iterable[Literal[L]]]) -> Set[Literal[L]]:
+def _to_literal_set(values: Iterable[L] | Iterable[Literal[L]]) -> Set[Literal[L]]:
     return {_to_literal(v) for v in values}
 
 
-def _to_literal(value: Union[L, Literal[L]]) -> Literal[L]:
+def _to_literal(value: L | Literal[L]) -> Literal[L]:
     if isinstance(value, Literal):
         return value
     else:
@@ -132,7 +131,7 @@ class Term(Generic[L], ABC):
     """A simple expression that evaluates to a value."""
 
 
-class Bound(ABC):
+class Bound:
     """Represents a bound value expression."""
 
 
@@ -448,7 +447,7 @@ class BoundPredicate(Generic[L], Bound, BooleanExpression, ABC):
 class UnboundPredicate(Generic[L], Unbound[BooleanExpression], BooleanExpression, ABC):
     term: UnboundTerm[Any]
 
-    def __init__(self, term: Union[str, UnboundTerm[Any]]):
+    def __init__(self, term: str | UnboundTerm[Any]):
         self.term = _to_unbound_term(term)
 
     def __eq__(self, other: Any) -> bool:
@@ -468,7 +467,7 @@ class UnaryPredicate(IcebergBaseModel, UnboundPredicate[Any], ABC):
 
     model_config = {"arbitrary_types_allowed": True}
 
-    def __init__(self, term: Union[str, UnboundTerm[Any]]):
+    def __init__(self, term: str | UnboundTerm[Any]):
         unbound = _to_unbound_term(term)
         super().__init__(term=unbound)
 
@@ -620,7 +619,7 @@ class SetPredicate(IcebergBaseModel, UnboundPredicate[L], ABC):
     type: TypingLiteral["in", "not-in"] = Field(default="in")
     literals: Set[Literal[L]] = Field(alias="items")
 
-    def __init__(self, term: Union[str, UnboundTerm[Any]], literals: Union[Iterable[L], Iterable[Literal[L]]]):
+    def __init__(self, term: str | UnboundTerm[Any], literals: Iterable[L] | Iterable[Literal[L]]):
         super().__init__(term=_to_unbound_term(term), items=_to_literal_set(literals))  # type: ignore
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundSetPredicate[L]:
@@ -736,7 +735,7 @@ class In(SetPredicate[L]):
     type: TypingLiteral["in"] = Field(default="in", alias="type")
 
     def __new__(  # type: ignore  # pylint: disable=W0221
-        cls, term: Union[str, UnboundTerm[Any]], literals: Union[Iterable[L], Iterable[Literal[L]]]
+        cls, term: str | UnboundTerm[Any], literals: Iterable[L] | Iterable[Literal[L]]
     ) -> BooleanExpression:
         literals_set: Set[Literal[L]] = _to_literal_set(literals)
         count = len(literals_set)
@@ -760,7 +759,7 @@ class NotIn(SetPredicate[L], ABC):
     type: TypingLiteral["not-in"] = Field(default="not-in", alias="type")
 
     def __new__(  # type: ignore  # pylint: disable=W0221
-        cls, term: Union[str, UnboundTerm[Any]], literals: Union[Iterable[L], Iterable[Literal[L]]]
+        cls, term: str | UnboundTerm[Any], literals: Iterable[L] | Iterable[Literal[L]]
     ) -> BooleanExpression:
         literals_set: Set[Literal[L]] = _to_literal_set(literals)
         count = len(literals_set)
@@ -786,7 +785,7 @@ class LiteralPredicate(IcebergBaseModel, UnboundPredicate[L], ABC):
     value: Literal[L] = Field()
     model_config = ConfigDict(populate_by_name=True, frozen=True, arbitrary_types_allowed=True)
 
-    def __init__(self, term: Union[str, UnboundTerm[Any]], literal: Union[L, Literal[L]]):
+    def __init__(self, term: str | UnboundTerm[Any], literal: L | Literal[L]):
         super().__init__(term=_to_unbound_term(term), value=_to_literal(literal))  # type: ignore[call-arg]
 
     @property

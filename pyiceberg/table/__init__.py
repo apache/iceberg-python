@@ -33,12 +33,10 @@ from typing import (
     Iterable,
     Iterator,
     List,
-    Optional,
     Set,
     Tuple,
     Type,
     TypeVar,
-    Union,
 )
 
 from pydantic import Field
@@ -279,9 +277,7 @@ class Transaction:
         """Start a transaction to update the table."""
         return self
 
-    def __exit__(
-        self, exctype: Optional[Type[BaseException]], excinst: Optional[BaseException], exctb: Optional[TracebackType]
-    ) -> None:
+    def __exit__(self, exctype: Type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
         """Close and commit the transaction if no exceptions have been raised."""
         if exctype is None and excinst is None and exctb is None:
             self.commit_transaction()
@@ -305,7 +301,7 @@ class Transaction:
 
         return self
 
-    def _scan(self, row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE, case_sensitive: bool = True) -> DataScan:
+    def _scan(self, row_filter: str | BooleanExpression = ALWAYS_TRUE, case_sensitive: bool = True) -> DataScan:
         """Minimal data scan of the table with the current state of the transaction."""
         return DataScan(
             table_metadata=self.table_metadata, io=self._table.io, row_filter=row_filter, case_sensitive=case_sensitive
@@ -353,9 +349,9 @@ class Transaction:
         snapshot_id: int,
         ref_name: str,
         type: str,
-        max_ref_age_ms: Optional[int] = None,
-        max_snapshot_age_ms: Optional[int] = None,
-        min_snapshots_to_keep: Optional[int] = None,
+        max_ref_age_ms: int | None = None,
+        max_snapshot_age_ms: int | None = None,
+        min_snapshots_to_keep: int | None = None,
     ) -> UpdatesAndRequirements:
         """Update a ref to a snapshot.
 
@@ -408,7 +404,7 @@ class Transaction:
         return expr
 
     def _append_snapshot_producer(
-        self, snapshot_properties: Dict[str, str], branch: Optional[str] = MAIN_BRANCH
+        self, snapshot_properties: Dict[str, str], branch: str | None = MAIN_BRANCH
     ) -> _FastAppendFiles:
         """Determine the append type based on table properties.
 
@@ -457,7 +453,7 @@ class Transaction:
         )
 
     def update_snapshot(
-        self, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = MAIN_BRANCH
+        self, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH
     ) -> UpdateSnapshot:
         """Create a new UpdateSnapshot to produce a new snapshot for the table.
 
@@ -475,7 +471,7 @@ class Transaction:
         """
         return UpdateStatistics(transaction=self)
 
-    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = MAIN_BRANCH) -> None:
+    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH) -> None:
         """
         Shorthand API for appending a PyArrow table to a table transaction.
 
@@ -514,7 +510,7 @@ class Transaction:
                     append_files.append_data_file(data_file)
 
     def dynamic_partition_overwrite(
-        self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = MAIN_BRANCH
+        self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH
     ) -> None:
         """
         Shorthand for overwriting existing partitions with a PyArrow table.
@@ -578,10 +574,10 @@ class Transaction:
     def overwrite(
         self,
         df: pa.Table,
-        overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
+        overwrite_filter: BooleanExpression | str = ALWAYS_TRUE,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
-        branch: Optional[str] = MAIN_BRANCH,
+        branch: str | None = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand for adding a table overwrite with a PyArrow table to the transaction.
@@ -638,10 +634,10 @@ class Transaction:
 
     def delete(
         self,
-        delete_filter: Union[str, BooleanExpression],
+        delete_filter: str | BooleanExpression,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
-        branch: Optional[str] = MAIN_BRANCH,
+        branch: str | None = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand for deleting record from a table.
@@ -667,7 +663,7 @@ class Transaction:
             self.table_metadata.properties.get(TableProperties.DELETE_MODE, TableProperties.DELETE_MODE_DEFAULT)
             == TableProperties.DELETE_MODE_MERGE_ON_READ
         ):
-            warnings.warn("Merge on read is not yet supported, falling back to copy-on-write")
+            warnings.warn("Merge on read is not yet supported, falling back to copy-on-write", stacklevel=2)
 
         if isinstance(delete_filter, str):
             delete_filter = _parse_row_filter(delete_filter)
@@ -678,7 +674,7 @@ class Transaction:
         # Check if there are any files that require an actual rewrite of a data file
         if delete_snapshot.rewrites_needed is True:
             bound_delete_filter = bind(self.table_metadata.schema(), delete_filter, case_sensitive)
-            preserve_row_filter = _expression_to_complementary_pyarrow(bound_delete_filter)
+            preserve_row_filter = _expression_to_complementary_pyarrow(bound_delete_filter, self.table_metadata.schema())
 
             file_scan = self._scan(row_filter=delete_filter, case_sensitive=case_sensitive)
             if branch is not None:
@@ -735,16 +731,16 @@ class Transaction:
                             overwrite_snapshot.append_data_file(replaced_data_file)
 
         if not delete_snapshot.files_affected and not delete_snapshot.rewrites_needed:
-            warnings.warn("Delete operation did not match any records")
+            warnings.warn("Delete operation did not match any records", stacklevel=2)
 
     def upsert(
         self,
         df: pa.Table,
-        join_cols: Optional[List[str]] = None,
+        join_cols: List[str] | None = None,
         when_matched_update_all: bool = True,
         when_not_matched_insert_all: bool = True,
         case_sensitive: bool = True,
-        branch: Optional[str] = MAIN_BRANCH,
+        branch: str | None = MAIN_BRANCH,
     ) -> UpsertResult:
         """Shorthand API for performing an upsert to an iceberg table.
 
@@ -886,7 +882,7 @@ class Transaction:
         file_paths: List[str],
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
         check_duplicate_files: bool = True,
-        branch: Optional[str] = MAIN_BRANCH,
+        branch: str | None = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand API for adding files as data files to the table transaction.
@@ -994,7 +990,7 @@ class CreateTableTransaction(Transaction):
             self._updates += (AddPartitionSpecUpdate(spec=spec),)
         self._updates += (SetDefaultSpecUpdate(spec_id=-1),)
 
-        sort_order: Optional[SortOrder] = table_metadata.sort_order_by_id(table_metadata.default_sort_order_id)
+        sort_order: SortOrder | None = table_metadata.sort_order_by_id(table_metadata.default_sort_order_id)
         if sort_order is None or sort_order.is_unsorted:
             self._updates += (AddSortOrderUpdate(sort_order=UNSORTED_SORT_ORDER),)
         else:
@@ -1134,12 +1130,12 @@ class Table:
 
     def scan(
         self,
-        row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
+        row_filter: str | BooleanExpression = ALWAYS_TRUE,
         selected_fields: Tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
-        snapshot_id: Optional[int] = None,
+        snapshot_id: int | None = None,
         options: Properties = EMPTY_DICT,
-        limit: Optional[int] = None,
+        limit: int | None = None,
     ) -> DataScan:
         """Fetch a DataScan based on the table's current metadata.
 
@@ -1234,7 +1230,7 @@ class Table:
     def last_sequence_number(self) -> int:
         return self.metadata.last_sequence_number
 
-    def current_snapshot(self) -> Optional[Snapshot]:
+    def current_snapshot(self) -> Snapshot | None:
         """Get the current snapshot for this table, or None if there is no current snapshot."""
         if self.metadata.current_snapshot_id is not None:
             return self.snapshot_by_id(self.metadata.current_snapshot_id)
@@ -1243,17 +1239,17 @@ class Table:
     def snapshots(self) -> List[Snapshot]:
         return self.metadata.snapshots
 
-    def snapshot_by_id(self, snapshot_id: int) -> Optional[Snapshot]:
+    def snapshot_by_id(self, snapshot_id: int) -> Snapshot | None:
         """Get the snapshot of this table with the given id, or None if there is no matching snapshot."""
         return self.metadata.snapshot_by_id(snapshot_id)
 
-    def snapshot_by_name(self, name: str) -> Optional[Snapshot]:
+    def snapshot_by_name(self, name: str) -> Snapshot | None:
         """Return the snapshot referenced by the given name or null if no such reference exists."""
         if ref := self.metadata.refs.get(name):
             return self.snapshot_by_id(ref.snapshot_id)
         return None
 
-    def snapshot_as_of_timestamp(self, timestamp_ms: int, inclusive: bool = True) -> Optional[Snapshot]:
+    def snapshot_as_of_timestamp(self, timestamp_ms: int, inclusive: bool = True) -> Snapshot | None:
         """Get the snapshot that was current as of or right before the given timestamp, or None if there is no matching snapshot.
 
         Args:
@@ -1326,18 +1322,18 @@ class Table:
         """
         return UpdateSortOrder(transaction=Transaction(self, autocommit=True), case_sensitive=case_sensitive)
 
-    def name_mapping(self) -> Optional[NameMapping]:
+    def name_mapping(self) -> NameMapping | None:
         """Return the table's field-id NameMapping."""
         return self.metadata.name_mapping()
 
     def upsert(
         self,
         df: pa.Table,
-        join_cols: Optional[List[str]] = None,
+        join_cols: List[str] | None = None,
         when_matched_update_all: bool = True,
         when_not_matched_insert_all: bool = True,
         case_sensitive: bool = True,
-        branch: Optional[str] = MAIN_BRANCH,
+        branch: str | None = MAIN_BRANCH,
     ) -> UpsertResult:
         """Shorthand API for performing an upsert to an iceberg table.
 
@@ -1384,7 +1380,7 @@ class Table:
                 branch=branch,
             )
 
-    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = MAIN_BRANCH) -> None:
+    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH) -> None:
         """
         Shorthand API for appending a PyArrow table to the table.
 
@@ -1397,7 +1393,7 @@ class Table:
             tx.append(df=df, snapshot_properties=snapshot_properties, branch=branch)
 
     def dynamic_partition_overwrite(
-        self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: Optional[str] = MAIN_BRANCH
+        self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH
     ) -> None:
         """Shorthand for dynamic overwriting the table with a PyArrow table.
 
@@ -1413,10 +1409,10 @@ class Table:
     def overwrite(
         self,
         df: pa.Table,
-        overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
+        overwrite_filter: BooleanExpression | str = ALWAYS_TRUE,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
-        branch: Optional[str] = MAIN_BRANCH,
+        branch: str | None = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand for overwriting the table with a PyArrow table.
@@ -1446,10 +1442,10 @@ class Table:
 
     def delete(
         self,
-        delete_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
+        delete_filter: BooleanExpression | str = ALWAYS_TRUE,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
-        branch: Optional[str] = MAIN_BRANCH,
+        branch: str | None = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand for deleting rows from the table.
@@ -1470,7 +1466,7 @@ class Table:
         file_paths: List[str],
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
         check_duplicate_files: bool = True,
-        branch: Optional[str] = MAIN_BRANCH,
+        branch: str | None = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand API for adding files as data files to the table.
@@ -1506,7 +1502,7 @@ class Table:
         try:
             self.catalog._delete_old_metadata(self.io, self.metadata, response.metadata)
         except Exception as e:
-            warnings.warn(f"Failed to delete old metadata after commit: {e}")
+            warnings.warn(f"Failed to delete old metadata after commit: {e}", stacklevel=2)
 
         self.metadata = response.metadata
         self.metadata_location = response.metadata_location
@@ -1559,7 +1555,7 @@ class Table:
 
         return pl.scan_iceberg(self)
 
-    def __datafusion_table_provider__(self) -> "IcebergDataFusionTable":
+    def __datafusion_table_provider__(self) -> IcebergDataFusionTable:
         """Return the DataFusion table provider PyCapsule interface.
 
         To support DataFusion features such as push down filtering, this function will return a PyCapsule
@@ -1657,12 +1653,12 @@ class StagedTable(Table):
 
     def scan(
         self,
-        row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
+        row_filter: str | BooleanExpression = ALWAYS_TRUE,
         selected_fields: Tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
-        snapshot_id: Optional[int] = None,
+        snapshot_id: int | None = None,
         options: Properties = EMPTY_DICT,
-        limit: Optional[int] = None,
+        limit: int | None = None,
     ) -> DataScan:
         raise ValueError("Cannot scan a staged table")
 
@@ -1670,7 +1666,7 @@ class StagedTable(Table):
         raise ValueError("Cannot convert a staged table to a Daft DataFrame")
 
 
-def _parse_row_filter(expr: Union[str, BooleanExpression]) -> BooleanExpression:
+def _parse_row_filter(expr: str | BooleanExpression) -> BooleanExpression:
     """Accept an expression in the form of a BooleanExpression or a string.
 
     In the case of a string, it will be converted into a unbound BooleanExpression.
@@ -1692,20 +1688,20 @@ class TableScan(ABC):
     row_filter: BooleanExpression
     selected_fields: Tuple[str, ...]
     case_sensitive: bool
-    snapshot_id: Optional[int]
+    snapshot_id: int | None
     options: Properties
-    limit: Optional[int]
+    limit: int | None
 
     def __init__(
         self,
         table_metadata: TableMetadata,
         io: FileIO,
-        row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
+        row_filter: str | BooleanExpression = ALWAYS_TRUE,
         selected_fields: Tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
-        snapshot_id: Optional[int] = None,
+        snapshot_id: int | None = None,
         options: Properties = EMPTY_DICT,
-        limit: Optional[int] = None,
+        limit: int | None = None,
     ):
         self.table_metadata = table_metadata
         self.io = io
@@ -1716,7 +1712,7 @@ class TableScan(ABC):
         self.options = options
         self.limit = limit
 
-    def snapshot(self) -> Optional[Snapshot]:
+    def snapshot(self) -> Snapshot | None:
         if self.snapshot_id:
             return self.table_metadata.snapshot_by_id(self.snapshot_id)
         return self.table_metadata.current_snapshot()
@@ -1732,7 +1728,7 @@ class TableScan(ABC):
                             schema for schema in self.table_metadata.schemas if schema.schema_id == snapshot.schema_id
                         )
                     except StopIteration:
-                        warnings.warn(f"Metadata does not contain schema with id: {snapshot.schema_id}")
+                        warnings.warn(f"Metadata does not contain schema with id: {snapshot.schema_id}", stacklevel=2)
             else:
                 raise ValueError(f"Snapshot not found: {self.snapshot_id}")
 
@@ -1777,7 +1773,7 @@ class TableScan(ABC):
             return self.update(selected_fields=field_names)
         return self.update(selected_fields=tuple(set(self.selected_fields).intersection(set(field_names))))
 
-    def filter(self: S, expr: Union[str, BooleanExpression]) -> S:
+    def filter(self: S, expr: str | BooleanExpression) -> S:
         return self.update(row_filter=And(self.row_filter, _parse_row_filter(expr)))
 
     def with_case_sensitive(self: S, case_sensitive: bool = True) -> S:
@@ -1787,7 +1783,7 @@ class TableScan(ABC):
     def count(self) -> int: ...
 
 
-class ScanTask(ABC):
+class ScanTask:
     pass
 
 
@@ -1804,9 +1800,9 @@ class FileScanTask(ScanTask):
     def __init__(
         self,
         data_file: DataFile,
-        delete_files: Optional[Set[DataFile]] = None,
-        start: Optional[int] = None,
-        length: Optional[int] = None,
+        delete_files: Set[DataFile] | None = None,
+        start: int | None = None,
+        length: int | None = None,
         residual: BooleanExpression = ALWAYS_TRUE,
     ) -> None:
         self.file = data_file
@@ -2070,7 +2066,7 @@ class DataScan(TableScan):
         """
         return self.to_arrow().to_pandas(**kwargs)
 
-    def to_duckdb(self, table_name: str, connection: Optional[DuckDBPyConnection] = None) -> DuckDBPyConnection:
+    def to_duckdb(self, table_name: str, connection: DuckDBPyConnection | None = None) -> DuckDBPyConnection:
         """Shorthand for loading the Iceberg Table in DuckDB.
 
         Returns:
@@ -2143,8 +2139,8 @@ class WriteTask:
     task_id: int
     schema: Schema
     record_batches: List[pa.RecordBatch]
-    sort_order_id: Optional[int] = None
-    partition_key: Optional[PartitionKey] = None
+    sort_order_id: int | None = None
+    partition_key: PartitionKey | None = None
 
     def generate_data_file_filename(self, extension: str) -> str:
         # Mimics the behavior in the Java API:

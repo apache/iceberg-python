@@ -21,7 +21,6 @@ from typing import (
     Dict,
     List,
     Tuple,
-    Union,
     cast,
 )
 
@@ -137,7 +136,7 @@ class StreamingBinaryDecoder(BinaryDecoder):
     __slots__ = "_input_stream"
     _input_stream: InputStream
 
-    def __init__(self, input_stream: Union[bytes, InputStream]) -> None:
+    def __init__(self, input_stream: bytes | InputStream) -> None:
         """Reader is a Python object on which we can call read, seek, and tell."""
         if isinstance(input_stream, bytes):
             # In the case of bytes, we wrap it into a BytesIO to make it a stream
@@ -182,6 +181,6 @@ def new_decoder(b: bytes) -> BinaryDecoder:
     except ModuleNotFoundError:
         import warnings
 
-        warnings.warn("Falling back to pure Python Avro decoder, missing Cython implementation")
+        warnings.warn("Falling back to pure Python Avro decoder, missing Cython implementation", stacklevel=2)
 
         return StreamingBinaryDecoder(b)

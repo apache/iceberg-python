@@ -18,7 +18,6 @@
 from typing import (
     Any,
     Dict,
-    Optional,
 )
 
 from pyiceberg.typedef import Properties
@@ -30,8 +29,8 @@ HEADER_PREFIX = "header."
 def property_as_int(
     properties: Dict[str, str],
     property_name: str,
-    default: Optional[int] = None,
-) -> Optional[int]:
+    default: int | None = None,
+) -> int | None:
     if value := properties.get(property_name):
         try:
             return int(value)
@@ -44,8 +43,8 @@ def property_as_int(
 def property_as_float(
     properties: Dict[str, str],
     property_name: str,
-    default: Optional[float] = None,
-) -> Optional[float]:
+    default: float | None = None,
+) -> float | None:
     if value := properties.get(property_name):
         try:
             return float(value)
@@ -71,7 +70,7 @@ def property_as_bool(
 def get_first_property_value(
     properties: Properties,
     *property_names: str,
-) -> Optional[Any]:
+) -> Any | None:
     for property_name in property_names:
         if property_value := properties.get(property_name):
             return property_value

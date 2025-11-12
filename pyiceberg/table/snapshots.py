@@ -20,7 +20,7 @@ import time
 import warnings
 from collections import defaultdict
 from enum import Enum
-from typing import TYPE_CHECKING, Any, DefaultDict, Dict, Iterable, List, Mapping, Optional
+from typing import TYPE_CHECKING, Any, DefaultDict, Dict, Iterable, List, Mapping
 
 from pydantic import Field, PrivateAttr, model_serializer
 
@@ -185,14 +185,14 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
     operation: Operation = Field()
     _additional_properties: Dict[str, str] = PrivateAttr()
 
-    def __init__(self, operation: Optional[Operation] = None, **data: Any) -> None:
+    def __init__(self, operation: Operation | None = None, **data: Any) -> None:
         if operation is None:
-            warnings.warn("Encountered invalid snapshot summary: operation is missing, defaulting to overwrite")
+            warnings.warn("Encountered invalid snapshot summary: operation is missing, defaulting to overwrite", stacklevel=2)
             operation = Operation.OVERWRITE
         super().__init__(operation=operation, **data)
         self._additional_properties = data
 
-    def __getitem__(self, __key: str) -> Optional[Any]:  # type: ignore
+    def __getitem__(self, __key: str) -> Any | None:  # type: ignore
         """Return a key as it is a map."""
         if __key.lower() == "operation":
             return self.operation
@@ -238,16 +238,16 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
 
 class Snapshot(IcebergBaseModel):
     snapshot_id: int = Field(alias="snapshot-id")
-    parent_snapshot_id: Optional[int] = Field(alias="parent-snapshot-id", default=None)
-    sequence_number: Optional[int] = Field(alias="sequence-number", default=INITIAL_SEQUENCE_NUMBER)
+    parent_snapshot_id: int | None = Field(alias="parent-snapshot-id", default=None)
+    sequence_number: int | None = Field(alias="sequence-number", default=INITIAL_SEQUENCE_NUMBER)
     timestamp_ms: int = Field(alias="timestamp-ms", default_factory=lambda: int(time.time() * 1000))
     manifest_list: str = Field(alias="manifest-list", description="Location of the snapshot's manifest list file")
-    summary: Optional[Summary] = Field(default=None)
-    schema_id: Optional[int] = Field(alias="schema-id", default=None)
-    first_row_id: Optional[int] = Field(
+    summary: Summary | None = Field(default=None)
+    schema_id: int | None = Field(alias="schema-id", default=None)
+    first_row_id: int | None = Field(
         alias="first-row-id", default=None, description="assigned to the first row in the first data file in the first manifest"
     )
-    added_rows: Optional[int] = Field(
+    added_rows: int | None = Field(
         alias="added-rows", default=None, description="The upper bound of the number of rows with assigned row IDs"
     )
 
@@ -376,7 +376,7 @@ def _truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str
 
 
 def update_snapshot_summaries(
-    summary: Summary, previous_summary: Optional[Mapping[str, str]] = None, truncate_full_table: bool = False
+    summary: Summary, previous_summary: Mapping[str, str] | None = None, truncate_full_table: bool = False
 ) -> Summary:
     if summary.operation not in {Operation.APPEND, Operation.OVERWRITE, Operation.DELETE}:
         raise ValueError(f"Operation not implemented: {summary.operation}")
@@ -452,7 +452,7 @@ def set_when_positive(properties: Dict[str, str], num: int, property_name: str) 
         properties[property_name] = str(num)
 
 
-def ancestors_of(current_snapshot: Optional[Snapshot], table_metadata: TableMetadata) -> Iterable[Snapshot]:
+def ancestors_of(current_snapshot: Snapshot | None, table_metadata: TableMetadata) -> Iterable[Snapshot]:
     """Get the ancestors of and including the given snapshot."""
     snapshot = current_snapshot
     while snapshot is not None:
@@ -462,9 +462,7 @@ def ancestors_of(current_snapshot: Optional[Snapshot], table_metadata: TableMeta
         snapshot = table_metadata.snapshot_by_id(snapshot.parent_snapshot_id)
 
 
-def ancestors_between(
-    from_snapshot: Optional[Snapshot], to_snapshot: Snapshot, table_metadata: TableMetadata
-) -> Iterable[Snapshot]:
+def ancestors_between(from_snapshot: Snapshot | None, to_snapshot: Snapshot, table_metadata: TableMetadata) -> Iterable[Snapshot]:
     """Get the ancestors of and including the given snapshot between the to and from snapshots."""
     if from_snapshot is not None:
         for snapshot in ancestors_of(to_snapshot, table_metadata):

@@ -39,13 +39,13 @@ jobs:
         with:
           python-version: 3.12
 
-      - name: Install Poetry
-        run: make install-poetry
+      - name: Install UV
+        uses: astral-sh/setup-uv@v7
 
       - name: Set version
         id: set-version
         run: |
-          CURRENT_VERSION=$(poetry version --short)
+          CURRENT_VERSION=$(uv version --short)
           TIMESTAMP=$(date +%Y%m%d%H%M%S)
           echo "VERSION=${CURRENT_VERSION}.dev${TIMESTAMP}" >> "$GITHUB_OUTPUT"
 

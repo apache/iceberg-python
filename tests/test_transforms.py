@@ -18,7 +18,7 @@
 # pylint: disable=eval-used,protected-access,redefined-outer-name
 from datetime import date
 from decimal import Decimal
-from typing import Annotated, Any, Callable, Optional, Union
+from typing import Annotated, Any, Callable
 from uuid import UUID
 
 import mmh3 as mmh3
@@ -1030,7 +1030,7 @@ def test_projection_truncate_string_not_starts_with(bound_reference_str: BoundRe
     ) == NotStartsWith(term="name", literal=literal("he"))
 
 
-def _test_projection(lhs: Optional[UnboundPredicate[L]], rhs: Optional[UnboundPredicate[L]]) -> None:
+def _test_projection(lhs: UnboundPredicate[L] | None, rhs: UnboundPredicate[L] | None) -> None:
     assert type(lhs) is type(lhs), f"Different classes: {type(lhs)} != {type(rhs)}"
     if lhs is None and rhs is None:
         # Both null
@@ -1050,7 +1050,7 @@ def _assert_projection_strict(
     pred: BooleanExpression,
     transform: Transform[S, T],
     expected_type: type[BooleanExpression],
-    expected_human_str: Optional[str] = None,
+    expected_human_str: str | None = None,
 ) -> None:
     result = transform.strict_project(name="name", pred=pred)
 
@@ -1647,8 +1647,8 @@ def test_ymd_pyarrow_transforms(
 )
 def test_bucket_pyarrow_transforms(
     source_type: PrimitiveType,
-    input_arr: Union[pa.Array, pa.ChunkedArray],
-    expected: Union[pa.Array, pa.ChunkedArray],
+    input_arr: pa.Array | pa.ChunkedArray,
+    expected: pa.Array | pa.ChunkedArray,
     num_buckets: int,
 ) -> None:
     transform: Transform[Any, Any] = BucketTransform(num_buckets=num_buckets)
@@ -1670,8 +1670,8 @@ def test_bucket_pyarrow_void_transform() -> None:
 )
 def test_truncate_pyarrow_transforms(
     source_type: PrimitiveType,
-    input_arr: Union[pa.Array, pa.ChunkedArray],
-    expected: Union[pa.Array, pa.ChunkedArray],
+    input_arr: pa.Array | pa.ChunkedArray,
+    expected: pa.Array | pa.ChunkedArray,
     width: int,
 ) -> None:
     transform: Transform[Any, Any] = TruncateTransform(width=width)
