@@ -340,7 +340,7 @@ def _infer_file_io_from_scheme(path: str, properties: Properties) -> FileIO | No
                 if file_io := _import_file_io(file_io_path, properties):
                     return file_io
         else:
-            warnings.warn(f"No preferred file implementation for scheme: {parsed_url.scheme}")
+            warnings.warn(f"No preferred file implementation for scheme: {parsed_url.scheme}", stacklevel=2)
     return None
 
 

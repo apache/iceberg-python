@@ -187,7 +187,7 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
 
     def __init__(self, operation: Operation | None = None, **data: Any) -> None:
         if operation is None:
-            warnings.warn("Encountered invalid snapshot summary: operation is missing, defaulting to overwrite")
+            warnings.warn("Encountered invalid snapshot summary: operation is missing, defaulting to overwrite", stacklevel=2)
             operation = Operation.OVERWRITE
         super().__init__(operation=operation, **data)
         self._additional_properties = data

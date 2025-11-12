@@ -5,5 +5,3 @@ build
 .gitignore
 uv.lock
 mkdocs/*
-setup.cfg
-(^|.*/)[^/]*\.egg-info(/.*)?$
