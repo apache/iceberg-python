@@ -19,7 +19,7 @@ name = "pyiceberg"
 version = "0.10.0"
 description = "Apache Iceberg is an open table format for huge analytic datasets"
 authors = [{ name = "Apache Software Foundation", email = "dev@iceberg.apache.org" }]
-requires-python = ">=3.10.0,<4.0.0"
+requires-python = ">=3.10.0,<=3.13.0"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
@@ -49,65 +49,23 @@ dependencies = [
 Homepage = "https://py.iceberg.apache.org/"
 Repository = "https://github.com/apache/iceberg-python"
 
-[tool.poetry.group.dev.dependencies]
-pytest = "7.4.4"
-pytest-checkdocs = "2.13.0"
-prek = "^0.2.1"
-pytest-lazy-fixture = "0.6.3"
-fastavro = "1.12.1"
-coverage = { version = "^7.4.2", extras = ["toml"] }
-requests-mock = "1.12.1"
-moto = { version = "^5.0.2", extras = ["server"] }
-typing-extensions = "4.15.0"
-pytest-mock = "3.15.1"
-pyspark = { version = "4.0.1", extras = ["connect"] }
-protobuf = "6.33.0" # match Spark Connect's gencode
-cython = "3.1.6"
-deptry = ">=0.14,<0.24"
-docutils = "!=0.21.post1"   # https://github.com/python-poetry/poetry/issues/9248#issuecomment-2026240520
-mypy-boto3-glue = ">=1.28.18"
-mypy-boto3-dynamodb = ">=1.28.18"
-
-[tool.poetry.group.docs.dependencies]
-# for mkdocs
-mkdocs = "1.6.1"
-griffe = "1.14.0"
-jinja2 = "3.1.6"
-mkdocstrings = "0.30.1"
-mkdocstrings-python = "1.18.2"
-mkdocs-literate-nav = "0.6.2"
-mkdocs-autorefs = "1.4.3"
-mkdocs-gen-files = "0.5.0"
-mkdocs-material = "9.6.22"
-mkdocs-material-extensions = "1.3.1"
-mkdocs-section-index = "0.3.10"
-
-[[tool.poetry.source]]
-name = "test"
-url = "https://test.pypi.org/simple/"
-priority = "supplemental"
-
 [project.scripts]
 pyiceberg = "pyiceberg.cli.console:run"
 
 [project.optional-dependencies]
 pyarrow = [
     "pyarrow>=17.0.0",
-    "pyiceberg-core>=0.5.1,<0.8.0",
 ]
 pandas = [
     "pyarrow>=17.0.0",
-    "pyiceberg-core>=0.5.1,<0.8.0",
     "pandas>=1.0.0,<3.0.0",
 ]
 duckdb = [
     "pyarrow>=17.0.0",
-    "pyiceberg-core>=0.5.1,<0.8.0",
     "duckdb>=0.5.0,<2.0.0",
 ]
 ray = [
     "pyarrow>=17.0.0",
-    "pyiceberg-core>=0.5.1,<0.8.0",
     "ray>=2.10.0,<=2.44.0",
     "pandas>=1.0.0,<3.0.0",
 ]
@@ -134,9 +92,18 @@ sql-sqlite = ["sqlalchemy>=2.0.18,<3"]
 gcsfs = ["gcsfs>=2023.1.0"]
 rest-sigv4 = ["boto3>=1.24.59"]
 hf = ["huggingface-hub>=0.24.0"]
-pyiceberg-core = ["pyiceberg-core>=0.5.1,<0.8.0"]
+pyiceberg-core = ["pyiceberg-core==0.7.0.dev20251112154529"]
 datafusion = ["datafusion>=45,<49"]
 gcp-auth = ["google-auth>=2.4.0"]
+
+[tool.uv.sources]
+pyiceberg-core = { index = "testpypi" }
+
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+publish-url = "https://test.pypi.org/legacy/"
+explicit = true
 
 [dependency-groups]
 dev = [
