@@ -558,7 +558,7 @@ catalog:
   biglake_catalog:
     type: rest
     uri: https://biglake.googleapis.com/iceberg/v1/restcatalog
-    warehouse: gs://<bucket-name>  # Use the bq:// format for federation option (see docs)
+    warehouse: gs://<bucket-name>  # Use bq://projects/<gcp-project-id> for federation option (see docs)
     auth:
       type: google
     header.x-goog-user-project: <gcp-project-id>
