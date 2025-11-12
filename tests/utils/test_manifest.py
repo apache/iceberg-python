@@ -16,8 +16,7 @@
 # under the License.
 # pylint: disable=redefined-outer-name,arguments-renamed,fixme
 from tempfile import TemporaryDirectory
-from typing import Dict, Optional
-from unittest.mock import patch
+from typing import Dict
 
 import fastavro
 import pytest
