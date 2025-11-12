@@ -17,6 +17,7 @@
 # pylint:disable=redefined-outer-name
 
 import pytest
+from sqlalchemy import Connection, inspect
 
 from pyiceberg.catalog.rest import RestCatalog
 
@@ -61,3 +62,22 @@ def test_create_namespace_if_already_existing(catalog: RestCatalog) -> None:
     catalog.create_namespace_if_not_exists(TEST_NAMESPACE_IDENTIFIER)
 
     assert catalog.namespace_exists(TEST_NAMESPACE_IDENTIFIER)
+
+
+@pytest.mark.integration
+@pytest.mark.integration_trino
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog")])
+def test_schema_exists_in_trino(trino_rest_conn: Connection, catalog: RestCatalog) -> None:
+    """Verifies that an Iceberg namespace correctly appears as a schema in Trino.
+
+    This test ensures the synchronization between Iceberg's namespace concept and
+    Trino's schema concept, confirming that after creating a namespace in the Iceberg
+    catalog, it becomes visible as a schema in the Trino environment.
+    """
+
+    if not catalog.namespace_exists(TEST_NAMESPACE_IDENTIFIER):
+        catalog.drop_namespace(TEST_NAMESPACE_IDENTIFIER)
+    catalog.create_namespace_if_not_exists(TEST_NAMESPACE_IDENTIFIER)
+
+    assert catalog.namespace_exists(TEST_NAMESPACE_IDENTIFIER)
+    assert TEST_NAMESPACE_IDENTIFIER.lower() in inspect(trino_rest_conn).get_schema_names()
