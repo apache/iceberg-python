@@ -199,7 +199,7 @@ class _IcebergSchemaToGlueType(SchemaVisitor[str]):
 
 
 def _to_columns(metadata: TableMetadata) -> List["ColumnTypeDef"]:
-    results: Dict[str, "ColumnTypeDef"] = {}
+    results: Dict[str, ColumnTypeDef] = {}
 
     def _append_to_results(field: NestedField, is_current: bool) -> None:
         if field.name in results:
@@ -241,7 +241,7 @@ def _construct_table_input(
     glue_table: Optional["TableTypeDef"] = None,
     prev_metadata_location: str | None = None,
 ) -> "TableInputTypeDef":
-    table_input: "TableInputTypeDef" = {
+    table_input: TableInputTypeDef = {
         "Name": table_name,
         "TableType": EXTERNAL_TABLE,
         "Parameters": _construct_parameters(metadata_location, glue_table, prev_metadata_location, properties),
@@ -258,7 +258,7 @@ def _construct_table_input(
 
 
 def _construct_rename_table_input(to_table_name: str, glue_table: "TableTypeDef") -> "TableInputTypeDef":
-    rename_table_input: "TableInputTypeDef" = {"Name": to_table_name}
+    rename_table_input: TableInputTypeDef = {"Name": to_table_name}
     # use the same Glue info to create the new table, pointing to the old metadata
     if not glue_table["TableType"]:
         raise ValueError("Glue table type is missing, cannot rename table")
@@ -283,7 +283,7 @@ def _construct_rename_table_input(to_table_name: str, glue_table: "TableTypeDef"
 
 
 def _construct_database_input(database_name: str, properties: Properties) -> "DatabaseInputTypeDef":
-    database_input: "DatabaseInputTypeDef" = {"Name": database_name}
+    database_input: DatabaseInputTypeDef = {"Name": database_name}
     parameters = {}
     for k, v in properties.items():
         if k == "Description":
@@ -506,7 +506,7 @@ class GlueCatalog(MetastoreCatalog):
         table_identifier = table.name()
         database_name, table_name = self.identifier_to_database_and_table(table_identifier, NoSuchTableError)
 
-        current_glue_table: "TableTypeDef" | None
+        current_glue_table: TableTypeDef | None
         glue_table_version_id: str | None
         current_table: Table | None
         try:
@@ -718,7 +718,7 @@ class GlueCatalog(MetastoreCatalog):
             NoSuchNamespaceError: If a namespace with the given name does not exist, or the identifier is invalid.
         """
         database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
-        table_list: List["TableTypeDef"] = []
+        table_list: List[TableTypeDef] = []
         next_token: str | None = None
         try:
             while True:
@@ -746,7 +746,7 @@ class GlueCatalog(MetastoreCatalog):
         if namespace:
             return []
 
-        database_list: List["DatabaseTypeDef"] = []
+        database_list: List[DatabaseTypeDef] = []
         next_token: str | None = None
 
         while True:

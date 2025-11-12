@@ -2804,7 +2804,7 @@ def test_pyarrow_io_multi_fs() -> None:
 class SomeRetryStrategy(AwsDefaultS3RetryStrategy):
     def __init__(self) -> None:
         super().__init__()
-        warnings.warn("Initialized SomeRetryStrategy 👍")
+        warnings.warn("Initialized SomeRetryStrategy 👍", stacklevel=2)
 
 
 def test_retry_strategy() -> None:

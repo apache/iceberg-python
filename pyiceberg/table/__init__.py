@@ -663,7 +663,7 @@ class Transaction:
             self.table_metadata.properties.get(TableProperties.DELETE_MODE, TableProperties.DELETE_MODE_DEFAULT)
             == TableProperties.DELETE_MODE_MERGE_ON_READ
         ):
-            warnings.warn("Merge on read is not yet supported, falling back to copy-on-write")
+            warnings.warn("Merge on read is not yet supported, falling back to copy-on-write", stacklevel=2)
 
         if isinstance(delete_filter, str):
             delete_filter = _parse_row_filter(delete_filter)
@@ -731,7 +731,7 @@ class Transaction:
                             overwrite_snapshot.append_data_file(replaced_data_file)
 
         if not delete_snapshot.files_affected and not delete_snapshot.rewrites_needed:
-            warnings.warn("Delete operation did not match any records")
+            warnings.warn("Delete operation did not match any records", stacklevel=2)
 
     def upsert(
         self,
@@ -1502,7 +1502,7 @@ class Table:
         try:
             self.catalog._delete_old_metadata(self.io, self.metadata, response.metadata)
         except Exception as e:
-            warnings.warn(f"Failed to delete old metadata after commit: {e}")
+            warnings.warn(f"Failed to delete old metadata after commit: {e}", stacklevel=2)
 
         self.metadata = response.metadata
         self.metadata_location = response.metadata_location
@@ -1555,7 +1555,7 @@ class Table:
 
         return pl.scan_iceberg(self)
 
-    def __datafusion_table_provider__(self) -> "IcebergDataFusionTable":
+    def __datafusion_table_provider__(self) -> IcebergDataFusionTable:
         """Return the DataFusion table provider PyCapsule interface.
 
         To support DataFusion features such as push down filtering, this function will return a PyCapsule
@@ -1728,7 +1728,7 @@ class TableScan(ABC):
                             schema for schema in self.table_metadata.schemas if schema.schema_id == snapshot.schema_id
                         )
                     except StopIteration:
-                        warnings.warn(f"Metadata does not contain schema with id: {snapshot.schema_id}")
+                        warnings.warn(f"Metadata does not contain schema with id: {snapshot.schema_id}", stacklevel=2)
             else:
                 raise ValueError(f"Snapshot not found: {self.snapshot_id}")
 

@@ -361,7 +361,7 @@ class Catalog(ABC):
     def create_table(
         self,
         identifier: str | Identifier,
-        schema: Schema | "pa.Schema",
+        schema: Schema | pa.Schema,
         location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -388,7 +388,7 @@ class Catalog(ABC):
     def create_table_transaction(
         self,
         identifier: str | Identifier,
-        schema: Schema | "pa.Schema",
+        schema: Schema | pa.Schema,
         location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -411,7 +411,7 @@ class Catalog(ABC):
     def create_table_if_not_exists(
         self,
         identifier: str | Identifier,
-        schema: Schema | "pa.Schema",
+        schema: Schema | pa.Schema,
         location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -753,7 +753,7 @@ class Catalog(ABC):
 
     @staticmethod
     def _convert_schema_if_needed(
-        schema: Schema | "pa.Schema", format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION
+        schema: Schema | pa.Schema, format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION
     ) -> Schema:
         if isinstance(schema, Schema):
             return schema
@@ -799,7 +799,7 @@ class Catalog(ABC):
         Default implementation does nothing. Override in subclasses that need cleanup.
         """
 
-    def __enter__(self) -> "Catalog":
+    def __enter__(self) -> Catalog:
         """Enter the context manager.
 
         Returns:
@@ -829,7 +829,7 @@ class MetastoreCatalog(Catalog, ABC):
     def create_table_transaction(
         self,
         identifier: str | Identifier,
-        schema: Schema | "pa.Schema",
+        schema: Schema | pa.Schema,
         location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -869,7 +869,7 @@ class MetastoreCatalog(Catalog, ABC):
     def _create_staged_table(
         self,
         identifier: str | Identifier,
-        schema: Schema | "pa.Schema",
+        schema: Schema | pa.Schema,
         location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,

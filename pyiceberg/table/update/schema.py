@@ -145,7 +145,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
     def union_by_name(
         # TODO: Move TableProperties.DEFAULT_FORMAT_VERSION to separate file and set that as format_version default.
         self,
-        new_schema: Schema | "pa.Schema",
+        new_schema: Schema | pa.Schema,
         format_version: TableVersion = 2,
     ) -> UpdateSchema:
         from pyiceberg.catalog import Catalog
