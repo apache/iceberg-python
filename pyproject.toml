@@ -120,7 +120,6 @@ dev = [
     "mypy-boto3-glue>=1.28.18",
     "mypy-boto3-dynamodb>=1.28.18",
     "trino[sqlalchemy]>=0.336.0",
-    "pre-commit>=4.4.0",
 ]
 # for mkdocs
 docs = [
