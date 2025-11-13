@@ -21,6 +21,7 @@ from uuid import UUID
 
 import pytest
 
+from pyiceberg.expressions import And, EqualTo
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import (
@@ -122,6 +123,13 @@ def test_serialize_partition_spec() -> None:
     assert (
         partitioned.model_dump_json()
         == """{"spec-id":3,"fields":[{"source-id":1,"field-id":1000,"transform":"truncate[19]","name":"str_truncate"},{"source-id":2,"field-id":1001,"transform":"bucket[25]","name":"int_bucket"}]}"""
+    )
+
+
+def test_serialize_and_expression() -> None:
+    expr = And(EqualTo("foo", 1), EqualTo("bar", 2))
+    assert expr.model_dump_json(by_alias=True) == (
+        '{"type":"and","left":{"type":"equal_to","term":"foo","literal":1},"right":{"type":"equal_to","term":"bar","literal":2}}'
     )
 
 

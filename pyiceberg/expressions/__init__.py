@@ -256,11 +256,17 @@ class Reference(UnboundTerm[Any], IcebergRootModel[str]):
         return BoundReference[L]
 
 
-class And(BooleanExpression):
+class And(IcebergBaseModel, BooleanExpression):
     """AND operation expression - logical conjunction."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=False)
+
+    type: TypingLiteral["and"] = Field(default="and", alias="type")
     left: BooleanExpression
     right: BooleanExpression
+
+    def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> None:
+        super().__init__(left=left, right=right)
 
     def __new__(cls, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> BooleanExpression:  # type: ignore
         if rest:
@@ -273,6 +279,7 @@ class And(BooleanExpression):
             return left
         else:
             obj = super().__new__(cls)
+            obj.__pydantic_fields_set__ = set()
             obj.left = left
             obj.right = right
             return obj
