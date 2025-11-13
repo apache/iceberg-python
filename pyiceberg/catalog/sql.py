@@ -17,9 +17,6 @@
 
 from typing import (
     TYPE_CHECKING,
-    List,
-    Set,
-    Tuple,
     Union,
 )
 
@@ -402,7 +399,7 @@ class SqlCatalog(MetastoreCatalog):
         return self.load_table(to_identifier)
 
     def commit_table(
-        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+        self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
         """Commit updates to a table.
 
@@ -583,7 +580,7 @@ class SqlCatalog(MetastoreCatalog):
             )
             session.commit()
 
-    def list_tables(self, namespace: str | Identifier) -> List[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
         """List tables under the given namespace in the catalog.
 
         Args:
@@ -604,7 +601,7 @@ class SqlCatalog(MetastoreCatalog):
             result = session.scalars(stmt)
             return [(Catalog.identifier_to_tuple(table.table_namespace) + (table.table_name,)) for table in result]
 
-    def list_namespaces(self, namespace: str | Identifier = ()) -> List[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
 
         Args:
@@ -669,7 +666,7 @@ class SqlCatalog(MetastoreCatalog):
             return {props.property_key: props.property_value for props in result}
 
     def update_namespace_properties(
-        self, namespace: str | Identifier, removals: Set[str] | None = None, updates: Properties = EMPTY_DICT
+        self, namespace: str | Identifier, removals: set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
         """Remove provided property keys and update properties for a namespace.
 
@@ -724,7 +721,7 @@ class SqlCatalog(MetastoreCatalog):
             session.commit()
         return properties_update_summary
 
-    def list_views(self, namespace: str | Identifier) -> List[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         raise NotImplementedError
 
     def view_exists(self, identifier: str | Identifier) -> bool:

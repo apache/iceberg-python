@@ -38,9 +38,7 @@ from tempfile import TemporaryDirectory
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
     Generator,
-    List,
 )
 
 import boto3
@@ -103,7 +101,7 @@ if TYPE_CHECKING:
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
 
-def pytest_collection_modifyitems(items: List[pytest.Item]) -> None:
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:
         if not any(item.iter_markers()):
             item.add_marker("unmarked")
@@ -546,7 +544,7 @@ def iceberg_schema_nested_no_ids() -> Schema:
 
 
 @pytest.fixture(scope="session")
-def all_avro_types() -> Dict[str, Any]:
+def all_avro_types() -> dict[str, Any]:
     return {
         "type": "record",
         "name": "all_avro_types",
@@ -650,7 +648,7 @@ EXAMPLE_TABLE_METADATA_V1 = {
 
 
 @pytest.fixture(scope="session")
-def example_table_metadata_v1() -> Dict[str, Any]:
+def example_table_metadata_v1() -> dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_V1
 
 
@@ -724,7 +722,7 @@ EXAMPLE_TABLE_METADATA_WITH_SNAPSHOT_V1 = {
 
 
 @pytest.fixture
-def example_table_metadata_with_snapshot_v1() -> Dict[str, Any]:
+def example_table_metadata_with_snapshot_v1() -> dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_WITH_SNAPSHOT_V1
 
 
@@ -777,18 +775,18 @@ EXAMPLE_TABLE_METADATA_NO_SNAPSHOT_V1 = {
 
 
 @pytest.fixture
-def example_table_metadata_no_snapshot_v1() -> Dict[str, Any]:
+def example_table_metadata_no_snapshot_v1() -> dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_NO_SNAPSHOT_V1
 
 
 @pytest.fixture
-def example_table_metadata_v2_with_extensive_snapshots() -> Dict[str, Any]:
+def example_table_metadata_v2_with_extensive_snapshots() -> dict[str, Any]:
     def generate_snapshot(
         snapshot_id: int,
         parent_snapshot_id: int | None = None,
         timestamp_ms: int | None = None,
         sequence_number: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return {
             "snapshot-id": snapshot_id,
             "parent-snapshot-id": parent_snapshot_id,
@@ -1116,22 +1114,22 @@ TABLE_METADATA_V2_WITH_STATISTICS = {
 
 
 @pytest.fixture
-def example_table_metadata_v2() -> Dict[str, Any]:
+def example_table_metadata_v2() -> dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_V2
 
 
 @pytest.fixture
-def table_metadata_v2_with_fixed_and_decimal_types() -> Dict[str, Any]:
+def table_metadata_v2_with_fixed_and_decimal_types() -> dict[str, Any]:
     return TABLE_METADATA_V2_WITH_FIXED_AND_DECIMAL_TYPES
 
 
 @pytest.fixture
-def table_metadata_v2_with_statistics() -> Dict[str, Any]:
+def table_metadata_v2_with_statistics() -> dict[str, Any]:
     return TABLE_METADATA_V2_WITH_STATISTICS
 
 
 @pytest.fixture
-def example_table_metadata_v3() -> Dict[str, Any]:
+def example_table_metadata_v3() -> dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_V3
 
 
@@ -1487,7 +1485,7 @@ manifest_file_records_v2 = [
 
 
 @pytest.fixture(scope="session")
-def avro_schema_manifest_file_v1() -> Dict[str, Any]:
+def avro_schema_manifest_file_v1() -> dict[str, Any]:
     return {
         "type": "record",
         "name": "manifest_file",
@@ -1589,7 +1587,7 @@ def avro_schema_manifest_file_v1() -> Dict[str, Any]:
 
 
 @pytest.fixture(scope="session")
-def avro_schema_manifest_file_v2() -> Dict[str, Any]:
+def avro_schema_manifest_file_v2() -> dict[str, Any]:
     return {
         "type": "record",
         "name": "manifest_file",
@@ -1668,7 +1666,7 @@ def avro_schema_manifest_file_v2() -> Dict[str, Any]:
 
 
 @pytest.fixture(scope="session")
-def avro_schema_manifest_entry() -> Dict[str, Any]:
+def avro_schema_manifest_entry() -> dict[str, Any]:
     return {
         "type": "record",
         "name": "manifest_entry",
@@ -1898,7 +1896,7 @@ def test_partition_spec() -> Schema:
 
 @pytest.fixture(scope="session")
 def generated_manifest_entry_file(
-    avro_schema_manifest_entry: Dict[str, Any], test_schema: Schema, test_partition_spec: PartitionSpec
+    avro_schema_manifest_entry: dict[str, Any], test_schema: Schema, test_partition_spec: PartitionSpec
 ) -> Generator[str, None, None]:
     from fastavro import parse_schema, writer
 
@@ -1921,7 +1919,7 @@ def generated_manifest_entry_file(
 
 @pytest.fixture(scope="session")
 def generated_manifest_file_file_v1(
-    avro_schema_manifest_file_v1: Dict[str, Any], generated_manifest_entry_file: str
+    avro_schema_manifest_file_v1: dict[str, Any], generated_manifest_entry_file: str
 ) -> Generator[str, None, None]:
     from fastavro import parse_schema, writer
 
@@ -1939,7 +1937,7 @@ def generated_manifest_file_file_v1(
 
 @pytest.fixture(scope="session")
 def generated_manifest_file_file_v2(
-    avro_schema_manifest_file_v2: Dict[str, Any], generated_manifest_entry_file: str
+    avro_schema_manifest_file_v2: dict[str, Any], generated_manifest_entry_file: str
 ) -> Generator[str, None, None]:
     from fastavro import parse_schema, writer
 
@@ -2288,7 +2286,7 @@ def table_name() -> str:
 
 
 @pytest.fixture()
-def table_list(table_name: str) -> List[str]:
+def table_list(table_name: str) -> list[str]:
     return [f"{table_name}_{idx}" for idx in range(NUM_TABLES)]
 
 
@@ -2307,7 +2305,7 @@ def gcp_dataset_name() -> str:
 
 
 @pytest.fixture()
-def database_list(database_name: str) -> List[str]:
+def database_list(database_name: str) -> list[str]:
     return [f"{database_name}_{idx}" for idx in range(NUM_TABLES)]
 
 
@@ -2320,7 +2318,7 @@ def hierarchical_namespace_name() -> str:
 
 
 @pytest.fixture()
-def hierarchical_namespace_list(hierarchical_namespace_name: str) -> List[str]:
+def hierarchical_namespace_list(hierarchical_namespace_name: str) -> list[str]:
     return [f"{hierarchical_namespace_name}_{idx}" for idx in range(NUM_TABLES)]
 
 
@@ -2466,7 +2464,7 @@ def warehouse(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture
-def table_v1(example_table_metadata_v1: Dict[str, Any]) -> Table:
+def table_v1(example_table_metadata_v1: dict[str, Any]) -> Table:
     table_metadata = TableMetadataV1(**example_table_metadata_v1)
     return Table(
         identifier=("database", "table"),
@@ -2478,7 +2476,7 @@ def table_v1(example_table_metadata_v1: Dict[str, Any]) -> Table:
 
 
 @pytest.fixture
-def table_v2(example_table_metadata_v2: Dict[str, Any]) -> Table:
+def table_v2(example_table_metadata_v2: dict[str, Any]) -> Table:
     table_metadata = TableMetadataV2(**example_table_metadata_v2)
     return Table(
         identifier=("database", "table"),
@@ -2490,7 +2488,7 @@ def table_v2(example_table_metadata_v2: Dict[str, Any]) -> Table:
 
 
 @pytest.fixture
-def table_v3(example_table_metadata_v3: Dict[str, Any]) -> Table:
+def table_v3(example_table_metadata_v3: dict[str, Any]) -> Table:
     table_metadata = TableMetadataV3(**example_table_metadata_v3)
     return Table(
         identifier=("database", "table"),
@@ -2502,7 +2500,7 @@ def table_v3(example_table_metadata_v3: Dict[str, Any]) -> Table:
 
 
 @pytest.fixture
-def table_v2_orc(example_table_metadata_v2: Dict[str, Any]) -> Table:
+def table_v2_orc(example_table_metadata_v2: dict[str, Any]) -> Table:
     import copy
 
     metadata_dict = copy.deepcopy(example_table_metadata_v2)
@@ -2521,7 +2519,7 @@ def table_v2_orc(example_table_metadata_v2: Dict[str, Any]) -> Table:
 
 @pytest.fixture
 def table_v2_with_fixed_and_decimal_types(
-    table_metadata_v2_with_fixed_and_decimal_types: Dict[str, Any],
+    table_metadata_v2_with_fixed_and_decimal_types: dict[str, Any],
 ) -> Table:
     table_metadata = TableMetadataV2(
         **table_metadata_v2_with_fixed_and_decimal_types,
@@ -2536,7 +2534,7 @@ def table_v2_with_fixed_and_decimal_types(
 
 
 @pytest.fixture
-def table_v2_with_extensive_snapshots(example_table_metadata_v2_with_extensive_snapshots: Dict[str, Any]) -> Table:
+def table_v2_with_extensive_snapshots(example_table_metadata_v2_with_extensive_snapshots: dict[str, Any]) -> Table:
     table_metadata = TableMetadataV2(**example_table_metadata_v2_with_extensive_snapshots)
     return Table(
         identifier=("database", "table"),
@@ -2548,7 +2546,7 @@ def table_v2_with_extensive_snapshots(example_table_metadata_v2_with_extensive_s
 
 
 @pytest.fixture
-def table_v2_with_statistics(table_metadata_v2_with_statistics: Dict[str, Any]) -> Table:
+def table_v2_with_statistics(table_metadata_v2_with_statistics: dict[str, Any]) -> Table:
     table_metadata = TableMetadataV2(**table_metadata_v2_with_statistics)
     return Table(
         identifier=("database", "table"),

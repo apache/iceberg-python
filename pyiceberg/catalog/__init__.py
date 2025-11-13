@@ -28,11 +28,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
-    List,
-    Set,
-    Tuple,
-    Type,
     cast,
 )
 
@@ -268,16 +263,16 @@ def load_catalog(name: str | None = None, **properties: str | None) -> Catalog:
         catalog_type = infer_catalog_type(name, conf)
 
     if catalog_type:
-        return AVAILABLE_CATALOGS[catalog_type](name, cast(Dict[str, str], conf))
+        return AVAILABLE_CATALOGS[catalog_type](name, cast(dict[str, str], conf))
 
     raise ValueError(f"Could not initialize catalog with the following properties: {properties}")
 
 
-def list_catalogs() -> List[str]:
+def list_catalogs() -> list[str]:
     return _ENV_CONFIG.get_known_catalogs()
 
 
-def delete_files(io: FileIO, files_to_delete: Set[str], file_type: str) -> None:
+def delete_files(io: FileIO, files_to_delete: set[str], file_type: str) -> None:
     """Delete files.
 
     Log warnings if failing to delete any file.
@@ -294,7 +289,7 @@ def delete_files(io: FileIO, files_to_delete: Set[str], file_type: str) -> None:
             logger.warning(msg=f"Failed to delete {file_type} file {file}", exc_info=exc)
 
 
-def delete_data_files(io: FileIO, manifests_to_delete: List[ManifestFile]) -> None:
+def delete_data_files(io: FileIO, manifests_to_delete: list[ManifestFile]) -> None:
     """Delete data files linked to given manifests.
 
     Log warnings if failing to delete any file.
@@ -331,9 +326,9 @@ def _import_catalog(name: str, catalog_impl: str, properties: Properties) -> Cat
 
 @dataclass
 class PropertiesUpdateSummary:
-    removed: List[str]
-    updated: List[str]
-    missing: List[str]
+    removed: list[str]
+    updated: list[str]
+    missing: list[str]
 
 
 class Catalog(ABC):
@@ -531,7 +526,7 @@ class Catalog(ABC):
 
     @abstractmethod
     def commit_table(
-        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+        self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
         """Commit updates to a table.
 
@@ -586,7 +581,7 @@ class Catalog(ABC):
         """
 
     @abstractmethod
-    def list_tables(self, namespace: str | Identifier) -> List[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
         """List tables under the given namespace in the catalog.
 
         Args:
@@ -600,7 +595,7 @@ class Catalog(ABC):
         """
 
     @abstractmethod
-    def list_namespaces(self, namespace: str | Identifier = ()) -> List[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
 
         Args:
@@ -614,7 +609,7 @@ class Catalog(ABC):
         """
 
     @abstractmethod
-    def list_views(self, namespace: str | Identifier) -> List[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         """List views under the given namespace in the catalog.
 
         Args:
@@ -643,7 +638,7 @@ class Catalog(ABC):
 
     @abstractmethod
     def update_namespace_properties(
-        self, namespace: str | Identifier, removals: Set[str] | None = None, updates: Properties = EMPTY_DICT
+        self, namespace: str | Identifier, removals: set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
         """Remove provided property keys and updates properties for a namespace.
 
@@ -707,7 +702,7 @@ class Catalog(ABC):
         return Catalog.identifier_to_tuple(identifier)[:-1]
 
     @staticmethod
-    def namespace_to_string(identifier: str | Identifier, err: Type[ValueError] | Type[NoSuchNamespaceError] = ValueError) -> str:
+    def namespace_to_string(identifier: str | Identifier, err: type[ValueError] | type[NoSuchNamespaceError] = ValueError) -> str:
         """Transform a namespace identifier into a string.
 
         Args:
@@ -729,7 +724,7 @@ class Catalog(ABC):
 
     @staticmethod
     def identifier_to_database(
-        identifier: str | Identifier, err: Type[ValueError] | Type[NoSuchNamespaceError] = ValueError
+        identifier: str | Identifier, err: type[ValueError] | type[NoSuchNamespaceError] = ValueError
     ) -> str:
         tuple_identifier = Catalog.identifier_to_tuple(identifier)
         if len(tuple_identifier) != 1:
@@ -740,8 +735,8 @@ class Catalog(ABC):
     @staticmethod
     def identifier_to_database_and_table(
         identifier: str | Identifier,
-        err: Type[ValueError] | Type[NoSuchTableError] | Type[NoSuchNamespaceError] = ValueError,
-    ) -> Tuple[str, str]:
+        err: type[ValueError] | type[NoSuchTableError] | type[NoSuchNamespaceError] = ValueError,
+    ) -> tuple[str, str]:
         tuple_identifier = Catalog.identifier_to_tuple(identifier)
         if len(tuple_identifier) != 2:
             raise err(f"Invalid path, hierarchical namespaces are not supported: {identifier}")
@@ -852,7 +847,7 @@ class MetastoreCatalog(Catalog, ABC):
         io = load_file_io(self.properties, table.metadata_location)
         metadata = table.metadata
         manifest_lists_to_delete = set()
-        manifests_to_delete: List[ManifestFile] = []
+        manifests_to_delete: list[ManifestFile] = []
         for snapshot in metadata.snapshots:
             manifests_to_delete += snapshot.manifests(io)
             manifest_lists_to_delete.add(snapshot.manifest_list)
@@ -914,8 +909,8 @@ class MetastoreCatalog(Catalog, ABC):
         self,
         current_table: Table | None,
         table_identifier: Identifier,
-        requirements: Tuple[TableRequirement, ...],
-        updates: Tuple[TableUpdate, ...],
+        requirements: tuple[TableRequirement, ...],
+        updates: tuple[TableUpdate, ...],
     ) -> StagedTable:
         for requirement in requirements:
             requirement.validate(current_table.metadata if current_table else None)
@@ -940,13 +935,13 @@ class MetastoreCatalog(Catalog, ABC):
         )
 
     def _get_updated_props_and_update_summary(
-        self, current_properties: Properties, removals: Set[str] | None, updates: Properties
-    ) -> Tuple[PropertiesUpdateSummary, Properties]:
+        self, current_properties: Properties, removals: set[str] | None, updates: Properties
+    ) -> tuple[PropertiesUpdateSummary, Properties]:
         self._check_for_overlap(updates=updates, removals=removals)
         updated_properties = dict(current_properties)
 
-        removed: Set[str] = set()
-        updated: Set[str] = set()
+        removed: set[str] = set()
+        updated: set[str] = set()
 
         if removals:
             for key in removals:
@@ -1028,7 +1023,7 @@ class MetastoreCatalog(Catalog, ABC):
             return -1
 
     @staticmethod
-    def _check_for_overlap(removals: Set[str] | None, updates: Properties) -> None:
+    def _check_for_overlap(removals: set[str] | None, updates: Properties) -> None:
         if updates and removals:
             overlap = set(removals) & set(updates.keys())
             if overlap:

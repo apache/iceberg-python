@@ -16,7 +16,6 @@
 # under the License.
 # pylint: disable=redefined-outer-name,arguments-renamed,fixme
 from tempfile import TemporaryDirectory
-from typing import Dict
 from unittest.mock import patch
 
 import fastavro
@@ -51,7 +50,7 @@ def clear_global_manifests_cache() -> None:
     _manifest_cache.clear()
 
 
-def _verify_metadata_with_fastavro(avro_file: str, expected_metadata: Dict[str, str]) -> None:
+def _verify_metadata_with_fastavro(avro_file: str, expected_metadata: dict[str, str]) -> None:
     with open(avro_file, "rb") as f:
         reader = fastavro.reader(f)
         metadata = reader.metadata

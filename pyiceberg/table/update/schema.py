@@ -16,11 +16,12 @@
 # under the License.
 from __future__ import annotations
 
+import builtins
 import itertools
 from copy import copy
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, List, Set, Tuple
+from typing import TYPE_CHECKING, Any
 
 from pyiceberg.exceptions import ResolveError, ValidationError
 from pyiceberg.expressions import literal  # type: ignore
@@ -76,16 +77,16 @@ class _Move:
 class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
     _schema: Schema
     _last_column_id: itertools.count[int]
-    _identifier_field_names: Set[str]
+    _identifier_field_names: set[str]
 
-    _adds: Dict[int, List[NestedField]] = {}
-    _updates: Dict[int, NestedField] = {}
-    _deletes: Set[int] = set()
-    _moves: Dict[int, List[_Move]] = {}
+    _adds: dict[int, list[NestedField]] = {}
+    _updates: dict[int, NestedField] = {}
+    _deletes: set[int] = set()
+    _moves: dict[int, list[_Move]] = {}
 
-    _added_name_to_id: Dict[str, int] = {}
+    _added_name_to_id: dict[str, int] = {}
     # Part of https://github.com/apache/iceberg/pull/8393
-    _id_to_parent: Dict[int, str] = {}
+    _id_to_parent: dict[int, str] = {}
     _allow_incompatible_changes: bool
     _case_sensitive: bool
 
@@ -161,7 +162,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
     def add_column(
         self,
-        path: str | Tuple[str, ...],
+        path: str | tuple[str, ...],
         field_type: IcebergType,
         doc: str | None = None,
         required: bool = False,
@@ -257,7 +258,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         return self
 
-    def delete_column(self, path: str | Tuple[str, ...]) -> UpdateSchema:
+    def delete_column(self, path: str | tuple[str, ...]) -> UpdateSchema:
         """Delete a column from a table.
 
         Args:
@@ -280,7 +281,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         return self
 
-    def set_default_value(self, path: str | Tuple[str, ...], default_value: L | None) -> UpdateSchema:
+    def set_default_value(self, path: str | tuple[str, ...], default_value: L | None) -> UpdateSchema:
         """Set the default value of a column.
 
         Args:
@@ -293,7 +294,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         return self
 
-    def rename_column(self, path_from: str | Tuple[str, ...], new_name: str) -> UpdateSchema:
+    def rename_column(self, path_from: str | tuple[str, ...], new_name: str) -> UpdateSchema:
         """Update the name of a column.
 
         Args:
@@ -339,7 +340,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         return self
 
-    def make_column_optional(self, path: str | Tuple[str, ...]) -> UpdateSchema:
+    def make_column_optional(self, path: str | tuple[str, ...]) -> UpdateSchema:
         """Make a column optional.
 
         Args:
@@ -354,7 +355,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
     def set_identifier_fields(self, *fields: str) -> None:
         self._identifier_field_names = set(fields)
 
-    def _set_column_requirement(self, path: str | Tuple[str, ...], required: bool) -> None:
+    def _set_column_requirement(self, path: str | tuple[str, ...], required: bool) -> None:
         path = (path,) if isinstance(path, str) else path
         name = ".".join(path)
 
@@ -391,7 +392,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 write_default=field.write_default,
             )
 
-    def _set_column_default_value(self, path: str | Tuple[str, ...], default_value: Any) -> None:
+    def _set_column_default_value(self, path: str | tuple[str, ...], default_value: Any) -> None:
         path = (path,) if isinstance(path, str) else path
         name = ".".join(path)
 
@@ -437,7 +438,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
     def update_column(
         self,
-        path: str | Tuple[str, ...],
+        path: str | tuple[str, ...],
         field_type: IcebergType | None = None,
         required: bool | None = None,
         doc: str | None = None,
@@ -534,7 +535,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
             self._moves[TABLE_ROOT_ID] = self._moves.get(TABLE_ROOT_ID, []) + [move]
 
-    def move_first(self, path: str | Tuple[str, ...]) -> UpdateSchema:
+    def move_first(self, path: str | tuple[str, ...]) -> UpdateSchema:
         """Move the field to the first position of the parent struct.
 
         Args:
@@ -554,7 +555,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         return self
 
-    def move_before(self, path: str | Tuple[str, ...], before_path: str | Tuple[str, ...]) -> UpdateSchema:
+    def move_before(self, path: str | tuple[str, ...], before_path: str | tuple[str, ...]) -> UpdateSchema:
         """Move the field to before another field.
 
         Args:
@@ -588,7 +589,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         return self
 
-    def move_after(self, path: str | Tuple[str, ...], after_name: str | Tuple[str, ...]) -> UpdateSchema:
+    def move_after(self, path: str | tuple[str, ...], after_name: str | tuple[str, ...]) -> UpdateSchema:
         """Move the field to after another field.
 
         Args:
@@ -627,8 +628,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
             (schema.schema_id for schema in self._transaction.table_metadata.schemas if schema == new_schema), None
         )
 
-        requirements: Tuple[TableRequirement, ...] = ()
-        updates: Tuple[TableUpdate, ...] = ()
+        requirements: tuple[TableRequirement, ...] = ()
+        updates: tuple[TableUpdate, ...] = ()
 
         # Check if it is different current schema ID
         if existing_schema_id != self._schema.schema_id:
@@ -694,17 +695,17 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
 
 class _ApplyChanges(SchemaVisitor[IcebergType | None]):
-    _adds: Dict[int, List[NestedField]]
-    _updates: Dict[int, NestedField]
-    _deletes: Set[int]
-    _moves: Dict[int, List[_Move]]
+    _adds: dict[int, builtins.list[NestedField]]
+    _updates: dict[int, NestedField]
+    _deletes: set[int]
+    _moves: dict[int, builtins.list[_Move]]
 
     def __init__(
         self,
-        adds: Dict[int, List[NestedField]],
-        updates: Dict[int, NestedField],
-        deletes: Set[int],
-        moves: Dict[int, List[_Move]],
+        adds: dict[int, builtins.list[NestedField]],
+        updates: dict[int, NestedField],
+        deletes: set[int],
+        moves: dict[int, builtins.list[_Move]],
     ) -> None:
         self._adds = adds
         self._updates = updates
@@ -724,7 +725,7 @@ class _ApplyChanges(SchemaVisitor[IcebergType | None]):
 
         return struct_result
 
-    def struct(self, struct: StructType, field_results: List[IcebergType | None]) -> IcebergType | None:
+    def struct(self, struct: StructType, field_results: builtins.list[IcebergType | None]) -> IcebergType | None:
         has_changes = False
         new_fields = []
 
@@ -851,7 +852,7 @@ class _UnionByNameVisitor(SchemaWithPartnerVisitor[int, bool]):
     def schema(self, schema: Schema, partner_id: int | None, struct_result: bool) -> bool:
         return struct_result
 
-    def struct(self, struct: StructType, partner_id: int | None, missing_positions: List[bool]) -> bool:
+    def struct(self, struct: StructType, partner_id: int | None, missing_positions: builtins.list[bool]) -> bool:
         if partner_id is None:
             return True
 
@@ -873,7 +874,7 @@ class _UnionByNameVisitor(SchemaWithPartnerVisitor[int, bool]):
 
     def _add_column(self, parent_id: int, field: NestedField) -> None:
         if parent_name := self.existing_schema.find_column_name(parent_id):
-            path: Tuple[str, ...] = (parent_name, field.name)
+            path: tuple[str, ...] = (parent_name, field.name)
         else:
             path = (field.name,)
 
@@ -997,12 +998,12 @@ class PartnerIdByNameAccessor(PartnerAccessor[int]):
             return None
 
 
-def _add_fields(fields: Tuple[NestedField, ...], adds: List[NestedField] | None) -> Tuple[NestedField, ...]:
+def _add_fields(fields: tuple[NestedField, ...], adds: list[NestedField] | None) -> tuple[NestedField, ...]:
     adds = adds or []
     return fields + tuple(adds)
 
 
-def _move_fields(fields: Tuple[NestedField, ...], moves: List[_Move]) -> Tuple[NestedField, ...]:
+def _move_fields(fields: tuple[NestedField, ...], moves: list[_Move]) -> tuple[NestedField, ...]:
     reordered = list(copy(fields))
     for move in moves:
         # Find the field that we're about to move
@@ -1026,8 +1027,8 @@ def _move_fields(fields: Tuple[NestedField, ...], moves: List[_Move]) -> Tuple[N
 
 
 def _add_and_move_fields(
-    fields: Tuple[NestedField, ...], adds: List[NestedField], moves: List[_Move]
-) -> Tuple[NestedField, ...] | None:
+    fields: tuple[NestedField, ...], adds: list[NestedField], moves: list[_Move]
+) -> tuple[NestedField, ...] | None:
     if len(adds) > 0:
         # always apply adds first so that added fields can be moved
         added = _add_fields(fields, adds)

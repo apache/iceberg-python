@@ -19,11 +19,7 @@
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
-    List,
     Optional,
-    Set,
-    Tuple,
     Union,
     cast,
 )
@@ -178,7 +174,7 @@ class _IcebergSchemaToGlueType(SchemaVisitor[str]):
     def schema(self, schema: Schema, struct_result: str) -> str:
         return struct_result
 
-    def struct(self, struct: StructType, field_results: List[str]) -> str:
+    def struct(self, struct: StructType, field_results: list[str]) -> str:
         return f"struct<{','.join(field_results)}>"
 
     def field(self, field: NestedField, field_result: str) -> str:
@@ -198,8 +194,8 @@ class _IcebergSchemaToGlueType(SchemaVisitor[str]):
         return GLUE_PRIMITIVE_TYPES[primitive_type]
 
 
-def _to_columns(metadata: TableMetadata) -> List["ColumnTypeDef"]:
-    results: Dict[str, ColumnTypeDef] = {}
+def _to_columns(metadata: TableMetadata) -> list["ColumnTypeDef"]:
+    results: dict[str, ColumnTypeDef] = {}
 
     def _append_to_results(field: NestedField, is_current: bool) -> None:
         if field.name in results:
@@ -305,7 +301,7 @@ def _register_glue_catalog_id_with_glue_client(glue: "GlueClient", glue_catalog_
     """
     event_system = glue.meta.events
 
-    def add_glue_catalog_id(params: Dict[str, str], **kwargs: Any) -> None:
+    def add_glue_catalog_id(params: dict[str, str], **kwargs: Any) -> None:
         if "CatalogId" not in params:
             params["CatalogId"] = glue_catalog_id
 
@@ -487,7 +483,7 @@ class GlueCatalog(MetastoreCatalog):
         return self.load_table(identifier=identifier)
 
     def commit_table(
-        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+        self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
         """Commit updates to a table.
 
@@ -705,7 +701,7 @@ class GlueCatalog(MetastoreCatalog):
                 )
         self.glue.delete_database(Name=database_name)
 
-    def list_tables(self, namespace: str | Identifier) -> List[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
         """List Iceberg tables under the given namespace in the catalog.
 
         Args:
@@ -718,7 +714,7 @@ class GlueCatalog(MetastoreCatalog):
             NoSuchNamespaceError: If a namespace with the given name does not exist, or the identifier is invalid.
         """
         database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
-        table_list: List[TableTypeDef] = []
+        table_list: list[TableTypeDef] = []
         next_token: str | None = None
         try:
             while True:
@@ -736,7 +732,7 @@ class GlueCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
         return [(database_name, table["Name"]) for table in table_list if self.__is_iceberg_table(table)]
 
-    def list_namespaces(self, namespace: str | Identifier = ()) -> List[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
 
         Returns:
@@ -746,7 +742,7 @@ class GlueCatalog(MetastoreCatalog):
         if namespace:
             return []
 
-        database_list: List[DatabaseTypeDef] = []
+        database_list: list[DatabaseTypeDef] = []
         next_token: str | None = None
 
         while True:
@@ -789,7 +785,7 @@ class GlueCatalog(MetastoreCatalog):
         return properties
 
     def update_namespace_properties(
-        self, namespace: str | Identifier, removals: Set[str] | None = None, updates: Properties = EMPTY_DICT
+        self, namespace: str | Identifier, removals: set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
         """Remove provided property keys and updates properties for a namespace.
 
@@ -812,7 +808,7 @@ class GlueCatalog(MetastoreCatalog):
 
         return properties_update_summary
 
-    def list_views(self, namespace: str | Identifier) -> List[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         raise NotImplementedError
 
     def drop_view(self, identifier: str | Identifier) -> None:

@@ -32,10 +32,7 @@ from abc import ABC, abstractmethod
 from io import SEEK_SET
 from types import TracebackType
 from typing import (
-    Dict,
-    List,
     Protocol,
-    Type,
     runtime_checkable,
 )
 from urllib.parse import urlparse
@@ -126,7 +123,7 @@ class InputStream(Protocol):
         """Provide setup when opening an InputStream using a 'with' statement."""
 
     @abstractmethod
-    def __exit__(self, exctype: Type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
+    def __exit__(self, exctype: type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
         """Perform cleanup when exiting the scope of a 'with' statement."""
 
 
@@ -149,7 +146,7 @@ class OutputStream(Protocol):  # pragma: no cover
         """Provide setup when opening an OutputStream using a 'with' statement."""
 
     @abstractmethod
-    def __exit__(self, exctype: Type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
+    def __exit__(self, exctype: type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
         """Perform cleanup when exiting the scope of a 'with' statement."""
 
 
@@ -298,7 +295,7 @@ FSSPEC_FILE_IO = "pyiceberg.io.fsspec.FsspecFileIO"
 
 # Mappings from the Java FileIO impl to a Python one. The list is ordered by preference.
 # If an implementation isn't installed, it will fall back to the next one.
-SCHEMA_TO_FILE_IO: Dict[str, List[str]] = {
+SCHEMA_TO_FILE_IO: dict[str, list[str]] = {
     "s3": [ARROW_FILE_IO, FSSPEC_FILE_IO],
     "s3a": [ARROW_FILE_IO, FSSPEC_FILE_IO],
     "s3n": [ARROW_FILE_IO, FSSPEC_FILE_IO],

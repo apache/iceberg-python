@@ -17,7 +17,7 @@
 # pylint:disable=redefined-outer-name
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Any, List
+from typing import Any
 
 import pytest
 from pyspark.sql import SparkSession
@@ -728,8 +728,8 @@ identifier = "default.test_table"
 def test_partition_key(
     session_catalog: Catalog,
     spark: SparkSession,
-    partition_fields: List[PartitionField],
-    partition_values: List[Any],
+    partition_fields: list[PartitionField],
+    partition_values: list[Any],
     expected_partition_record: Record,
     expected_hive_partition_path_slice: str,
     spark_create_table_sql_for_justification: str,

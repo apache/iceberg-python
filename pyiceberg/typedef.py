@@ -23,13 +23,9 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
     Generic,
-    List,
     Literal,
     Protocol,
-    Set,
-    Tuple,
     TypeVar,
     Union,
     runtime_checkable,
@@ -43,7 +39,7 @@ if TYPE_CHECKING:
     from pyiceberg.types import StructType
 
 
-class FrozenDict(Dict[Any, Any]):
+class FrozenDict(dict[Any, Any]):
     def __setitem__(self, instance: Any, value: Any) -> None:
         """Assign a value to a FrozenDict."""
         raise AttributeError("FrozenDict does not support assignment")
@@ -61,7 +57,7 @@ V = TypeVar("V")
 
 
 # from https://stackoverflow.com/questions/2912231/is-there-a-clever-way-to-pass-the-key-to-defaultdicts-default-factory
-class KeyDefaultDict(Dict[K, V]):
+class KeyDefaultDict(dict[K, V]):
     def __init__(self, default_factory: Callable[[K], V]):
         super().__init__()
         self.default_factory = default_factory
@@ -73,7 +69,7 @@ class KeyDefaultDict(Dict[K, V]):
         return val
 
 
-Identifier = Tuple[str, ...]
+Identifier = tuple[str, ...]
 """A tuple of strings representing a table identifier.
 
 Each string in the tuple represents a part of the table's unique path. For example,
@@ -85,11 +81,11 @@ Examples:
     >>> identifier: Identifier = ("namespace", "table_name")
 """
 
-Properties = Dict[str, Any]
+Properties = dict[str, Any]
 """A dictionary type for properties in PyIceberg."""
 
 
-RecursiveDict = Dict[str, Union[str, "RecursiveDict"]]
+RecursiveDict = dict[str, Union[str, "RecursiveDict"]]
 """A recursive dictionary type for nested structures in PyIceberg."""
 
 # Represents the literal value
@@ -126,7 +122,7 @@ class IcebergBaseModel(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
-    def _exclude_private_properties(self, exclude: Set[str] | None = None) -> Set[str]:
+    def _exclude_private_properties(self, exclude: set[str] | None = None) -> set[str]:
         # A small trick to exclude private properties. Properties are serialized by pydantic,
         # regardless if they start with an underscore.
         # This will look at the dict, and find the fields and exclude them
@@ -135,14 +131,14 @@ class IcebergBaseModel(BaseModel):
         )
 
     def model_dump(
-        self, exclude_none: bool = True, exclude: Set[str] | None = None, by_alias: bool = True, **kwargs: Any
-    ) -> Dict[str, Any]:
+        self, exclude_none: bool = True, exclude: set[str] | None = None, by_alias: bool = True, **kwargs: Any
+    ) -> dict[str, Any]:
         return super().model_dump(
             exclude_none=exclude_none, exclude=self._exclude_private_properties(exclude), by_alias=by_alias, **kwargs
         )
 
     def model_dump_json(
-        self, exclude_none: bool = True, exclude: Set[str] | None = None, by_alias: bool = True, **kwargs: Any
+        self, exclude_none: bool = True, exclude: set[str] | None = None, by_alias: bool = True, **kwargs: Any
     ) -> str:
         return super().model_dump_json(
             exclude_none=exclude_none, exclude=self._exclude_private_properties(exclude), by_alias=by_alias, **kwargs
@@ -172,7 +168,7 @@ class IcebergRootModel(RootModel[T], Generic[T]):
 
 class Record(StructProtocol):
     __slots__ = ("_data",)
-    _data: List[Any]
+    _data: list[Any]
 
     @classmethod
     def _bind(cls, struct: StructType, **arguments: Any) -> Self:

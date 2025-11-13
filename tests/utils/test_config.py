@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import os
-from typing import Any, Dict
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -148,7 +148,7 @@ def test_from_configuration_files_get_typed_value(tmp_path_factory: pytest.TempP
 def test_config_lookup_order(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path_factory: pytest.TempPathFactory,
-    config_setup: Dict[str, Any],
+    config_setup: dict[str, Any],
     expected_result: str | None,
 ) -> None:
     """
