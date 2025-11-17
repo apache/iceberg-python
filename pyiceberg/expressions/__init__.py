@@ -20,7 +20,7 @@ from __future__ import annotations
 import builtins
 from abc import ABC, abstractmethod
 from functools import cached_property
-from typing import Any, Callable, Iterable, Sequence, cast
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, cast
 from typing import Literal as TypingLiteral
 
 from pydantic import ConfigDict, Field
@@ -36,7 +36,10 @@ try:
 except ImportError:
     ConfigDict = dict
 
-LiteralValue = Literal[Any]
+if TYPE_CHECKING:
+    LiteralValue = Literal[Any]
+else:
+    LiteralValue = Literal
 
 
 def _to_unbound_term(term: str | UnboundTerm) -> UnboundTerm:
@@ -772,7 +775,7 @@ class LiteralPredicate(IcebergBaseModel, UnboundPredicate, ABC):
     value: LiteralValue = Field()
     model_config = ConfigDict(populate_by_name=True, frozen=True, arbitrary_types_allowed=True)
 
-    def __init__(self, term: str | UnboundTerm, literal: Any | LiteralValue):
+    def __init__(self, term: str | UnboundTerm, literal: Any):
         super().__init__(term=_to_unbound_term(term), value=_to_literal(literal))  # type: ignore[call-arg]
 
     @property
