@@ -1967,7 +1967,7 @@ iceberg_table.append(data)
 
 # Register the table with DataFusion
 ctx = SessionContext()
-ctx.register_table_provider("test", iceberg_table)
+ctx.register_table("test", iceberg_table)
 
 # Query the table using DataFusion SQL
 ctx.table("test").show()
