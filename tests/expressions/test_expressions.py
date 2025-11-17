@@ -19,7 +19,6 @@
 import pickle
 import uuid
 from decimal import Decimal
-from typing import Any
 
 import pytest
 from typing_extensions import assert_type
@@ -502,7 +501,7 @@ def test_less_than_or_equal_invert() -> None:
         LessThanOrEqual(Reference("foo"), "hello"),
     ],
 )
-def test_bind(pred: UnboundPredicate[Any], table_schema_simple: Schema) -> None:
+def test_bind(pred: UnboundPredicate, table_schema_simple: Schema) -> None:
     assert pred.bind(table_schema_simple, case_sensitive=True).term.field == table_schema_simple.find_field(  # type: ignore
         pred.term.name,  # type: ignore
         case_sensitive=True,
@@ -522,7 +521,7 @@ def test_bind(pred: UnboundPredicate[Any], table_schema_simple: Schema) -> None:
         LessThanOrEqual(Reference("Bar"), 5),
     ],
 )
-def test_bind_case_insensitive(pred: UnboundPredicate[Any], table_schema_simple: Schema) -> None:
+def test_bind_case_insensitive(pred: UnboundPredicate, table_schema_simple: Schema) -> None:
     assert pred.bind(table_schema_simple, case_sensitive=False).term.field == table_schema_simple.find_field(  # type: ignore
         pred.term.name,  # type: ignore
         case_sensitive=False,
@@ -683,7 +682,7 @@ def accessor() -> Accessor:
 
 
 @pytest.fixture
-def term(field: NestedField, accessor: Accessor) -> BoundReference[Any]:
+def term(field: NestedField, accessor: Accessor) -> BoundReference:
     return BoundReference(
         field=field,
         accessor=accessor,
@@ -794,14 +793,14 @@ def test_bound_reference_field_property() -> None:
     assert bound_ref.field == NestedField(field_id=1, name="foo", field_type=StringType(), required=False)
 
 
-def test_bound_is_null(term: BoundReference[Any]) -> None:
+def test_bound_is_null(term: BoundReference) -> None:
     bound_is_null = BoundIsNull(term)
     assert str(bound_is_null) == f"BoundIsNull(term={str(term)})"
     assert repr(bound_is_null) == f"BoundIsNull(term={repr(term)})"
     assert bound_is_null == eval(repr(bound_is_null))
 
 
-def test_bound_is_not_null(term: BoundReference[Any]) -> None:
+def test_bound_is_not_null(term: BoundReference) -> None:
     bound_not_null = BoundNotNull(term)
     assert str(bound_not_null) == f"BoundNotNull(term={str(term)})"
     assert repr(bound_not_null) == f"BoundNotNull(term={repr(term)})"
@@ -838,7 +837,7 @@ def test_serialize_not_null() -> None:
 
 def test_bound_is_nan(accessor: Accessor) -> None:
     # We need a FloatType here
-    term = BoundReference[float](
+    term = BoundReference(
         field=NestedField(field_id=1, name="foo", field_type=FloatType(), required=False),
         accessor=accessor,
     )
@@ -851,7 +850,7 @@ def test_bound_is_nan(accessor: Accessor) -> None:
 
 def test_bound_is_not_nan(accessor: Accessor) -> None:
     # We need a FloatType here
-    term = BoundReference[float](
+    term = BoundReference(
         field=NestedField(field_id=1, name="foo", field_type=FloatType(), required=False),
         accessor=accessor,
     )
@@ -880,7 +879,7 @@ def test_not_nan() -> None:
     assert not_nan == pickle.loads(pickle.dumps(not_nan))
 
 
-def test_bound_in(term: BoundReference[Any]) -> None:
+def test_bound_in(term: BoundReference) -> None:
     bound_in = BoundIn(term, {literal("a"), literal("b"), literal("c")})
     assert str(bound_in) == f"BoundIn({str(term)}, {{a, b, c}})"
     assert repr(bound_in) == f"BoundIn({repr(term)}, {{literal('a'), literal('b'), literal('c')}})"
@@ -888,7 +887,7 @@ def test_bound_in(term: BoundReference[Any]) -> None:
     assert bound_in == pickle.loads(pickle.dumps(bound_in))
 
 
-def test_bound_not_in(term: BoundReference[Any]) -> None:
+def test_bound_not_in(term: BoundReference) -> None:
     bound_not_in = BoundNotIn(term, {literal("a"), literal("b"), literal("c")})
     assert str(bound_not_in) == f"BoundNotIn({str(term)}, {{a, b, c}})"
     assert repr(bound_not_in) == f"BoundNotIn({repr(term)}, {{literal('a'), literal('b'), literal('c')}})"
@@ -924,7 +923,7 @@ def test_serialize_not_in() -> None:
     assert pred.model_dump_json() == '{"term":"foo","type":"not-in","items":[1,2,3]}'
 
 
-def test_bound_equal_to(term: BoundReference[Any]) -> None:
+def test_bound_equal_to(term: BoundReference) -> None:
     bound_equal_to = BoundEqualTo(term, literal("a"))
     assert str(bound_equal_to) == f"BoundEqualTo(term={str(term)}, literal=literal('a'))"
     assert repr(bound_equal_to) == f"BoundEqualTo(term={repr(term)}, literal=literal('a'))"
@@ -932,7 +931,7 @@ def test_bound_equal_to(term: BoundReference[Any]) -> None:
     assert bound_equal_to == pickle.loads(pickle.dumps(bound_equal_to))
 
 
-def test_bound_not_equal_to(term: BoundReference[Any]) -> None:
+def test_bound_not_equal_to(term: BoundReference) -> None:
     bound_not_equal_to = BoundNotEqualTo(term, literal("a"))
     assert str(bound_not_equal_to) == f"BoundNotEqualTo(term={str(term)}, literal=literal('a'))"
     assert repr(bound_not_equal_to) == f"BoundNotEqualTo(term={repr(term)}, literal=literal('a'))"
@@ -940,7 +939,7 @@ def test_bound_not_equal_to(term: BoundReference[Any]) -> None:
     assert bound_not_equal_to == pickle.loads(pickle.dumps(bound_not_equal_to))
 
 
-def test_bound_greater_than_or_equal_to(term: BoundReference[Any]) -> None:
+def test_bound_greater_than_or_equal_to(term: BoundReference) -> None:
     bound_greater_than_or_equal_to = BoundGreaterThanOrEqual(term, literal("a"))
     assert str(bound_greater_than_or_equal_to) == f"BoundGreaterThanOrEqual(term={str(term)}, literal=literal('a'))"
     assert repr(bound_greater_than_or_equal_to) == f"BoundGreaterThanOrEqual(term={repr(term)}, literal=literal('a'))"
@@ -948,7 +947,7 @@ def test_bound_greater_than_or_equal_to(term: BoundReference[Any]) -> None:
     assert bound_greater_than_or_equal_to == pickle.loads(pickle.dumps(bound_greater_than_or_equal_to))
 
 
-def test_bound_greater_than(term: BoundReference[Any]) -> None:
+def test_bound_greater_than(term: BoundReference) -> None:
     bound_greater_than = BoundGreaterThan(term, literal("a"))
     assert str(bound_greater_than) == f"BoundGreaterThan(term={str(term)}, literal=literal('a'))"
     assert repr(bound_greater_than) == f"BoundGreaterThan(term={repr(term)}, literal=literal('a'))"
@@ -956,7 +955,7 @@ def test_bound_greater_than(term: BoundReference[Any]) -> None:
     assert bound_greater_than == pickle.loads(pickle.dumps(bound_greater_than))
 
 
-def test_bound_less_than(term: BoundReference[Any]) -> None:
+def test_bound_less_than(term: BoundReference) -> None:
     bound_less_than = BoundLessThan(term, literal("a"))
     assert str(bound_less_than) == f"BoundLessThan(term={str(term)}, literal=literal('a'))"
     assert repr(bound_less_than) == f"BoundLessThan(term={repr(term)}, literal=literal('a'))"
@@ -964,7 +963,7 @@ def test_bound_less_than(term: BoundReference[Any]) -> None:
     assert bound_less_than == pickle.loads(pickle.dumps(bound_less_than))
 
 
-def test_bound_less_than_or_equal(term: BoundReference[Any]) -> None:
+def test_bound_less_than_or_equal(term: BoundReference) -> None:
     bound_less_than_or_equal = BoundLessThanOrEqual(term, literal("a"))
     assert str(bound_less_than_or_equal) == f"BoundLessThanOrEqual(term={str(term)}, literal=literal('a'))"
     assert repr(bound_less_than_or_equal) == f"BoundLessThanOrEqual(term={repr(term)}, literal=literal('a'))"
@@ -1231,7 +1230,7 @@ def test_above_long_bounds_greater_than_or_equal(
     assert GreaterThanOrEqual[int]("a", below_long_min).bind(long_schema) is AlwaysTrue()
 
 
-def test_eq_bound_expression(bound_reference_str: BoundReference[str]) -> None:
+def test_eq_bound_expression(bound_reference_str: BoundReference) -> None:
     assert BoundEqualTo(term=bound_reference_str, literal=literal("a")) != BoundGreaterThanOrEqual(
         term=bound_reference_str, literal=literal("a")
     )
@@ -1283,6 +1282,6 @@ _assert_literal_predicate_type(EqualTo("a", "b"))
 _assert_literal_predicate_type(In("a", ("a", "b", "c")))
 _assert_literal_predicate_type(In("a", (1, 2, 3)))
 _assert_literal_predicate_type(NotIn("a", ("a", "b", "c")))
-assert_type(In("a", ("a", "b", "c")), In[str])
-assert_type(In("a", (1, 2, 3)), In[int])
-assert_type(NotIn("a", ("a", "b", "c")), NotIn[str])
+assert_type(In("a", ("a", "b", "c")), In)
+assert_type(In("a", (1, 2, 3)), In)
+assert_type(NotIn("a", ("a", "b", "c")), NotIn)

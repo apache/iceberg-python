@@ -2558,17 +2558,17 @@ def table_v2_with_statistics(table_metadata_v2_with_statistics: dict[str, Any]) 
 
 
 @pytest.fixture
-def bound_reference_str() -> BoundReference[str]:
+def bound_reference_str() -> BoundReference:
     return BoundReference(field=NestedField(1, "field", StringType(), required=False), accessor=Accessor(position=0, inner=None))
 
 
 @pytest.fixture
-def bound_reference_binary() -> BoundReference[str]:
+def bound_reference_binary() -> BoundReference:
     return BoundReference(field=NestedField(1, "field", BinaryType(), required=False), accessor=Accessor(position=0, inner=None))
 
 
 @pytest.fixture
-def bound_reference_uuid() -> BoundReference[str]:
+def bound_reference_uuid() -> BoundReference:
     return BoundReference(field=NestedField(1, "field", UUIDType(), required=False), accessor=Accessor(position=0, inner=None))
 
 
