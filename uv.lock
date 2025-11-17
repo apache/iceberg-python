@@ -1022,7 +1022,7 @@ wheels = [
 
 [[package]]
 name = "daft"
-version = "0.6.12"
+version = "0.6.14"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fsspec" },
@@ -1031,13 +1031,13 @@ dependencies = [
     { name = "tqdm" },
     { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/47/80/0013c2c027f0637f52a115bcd82db9cc4d522af402794670b841f287a28b/daft-0.6.12.tar.gz", hash = "sha256:68ce923c56e3cdfd0423a72d9206da59898c0175ff1345d9f646edb7d1d11dcd", size = 10755323, upload-time = "2025-11-10T15:12:16.046Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f5/cc/1da6b22727afa04e9fb9b57e9b7c3416d1ef536d699eb79c4e358364fb39/daft-0.6.14.tar.gz", hash = "sha256:1466ae5b672ac640f1867f46e5d825ac213986cb5e2e9d14ebb04e95fea3ac63", size = 10785985, upload-time = "2025-11-17T20:02:58.572Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/91/c6/3ecd1a202965ff5c61f5a89758c91e1ae51b1a49cc48ef4ca67d60b0634c/daft-0.6.12-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:7a61431cc60495d68a2777709b6bf8960eb87a52f0d1e0876f54ca9662ccf940", size = 49773785, upload-time = "2025-11-10T15:11:45.64Z" },
-    { url = "https://files.pythonhosted.org/packages/9a/f8/39619a2ad521d40075e7a1f862436e2df41fa278c5559f2e6277472cb28d/daft-0.6.12-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:b57dc6c98c0c56cf4b2d2fc4dea2e740084b2feb2bcdf2a3323f6a1e87f2caad", size = 46319479, upload-time = "2025-11-10T15:11:49.469Z" },
-    { url = "https://files.pythonhosted.org/packages/3d/35/6024e93ced8f15090e29cad619e0d715e31a7139ed3f67f10e1d5f861ad4/daft-0.6.12-cp310-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:7403c92f2694fb01a4956e6515ddaac637494c5f69875c19260aef19f34fc0f2", size = 47651557, upload-time = "2025-11-10T15:11:53.211Z" },
-    { url = "https://files.pythonhosted.org/packages/7a/5b/54f92751a8dd3c0c4a1c58c530cb529322643a4d80a36abe1aba377228f6/daft-0.6.12-cp310-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:5d15fe561a0ce4716512cc3e259b0ce1d485d8885a4abedfe62f1070b69a19bd", size = 50081130, upload-time = "2025-11-10T15:11:57.2Z" },
-    { url = "https://files.pythonhosted.org/packages/d3/4c/6017ae13465cfe3bba98e890a8ee38e0c14890aed5aec216a2e8b699b808/daft-0.6.12-cp310-abi3-win_amd64.whl", hash = "sha256:03f59d3374c016680b9a0b36dfc284d20922a6e24ff6f8d3d9f76f42b69554d3", size = 48536875, upload-time = "2025-11-10T15:12:00.808Z" },
+    { url = "https://files.pythonhosted.org/packages/b1/ac/367314da18ecd05c9b8567eebd9bbf1edd065b42df0cb70d20ec907d7df8/daft-0.6.14-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:56939ee5e195e36dc95659344e918876dd1101e9fde4398a44e3999741c0e9b4", size = 51908854, upload-time = "2025-11-17T20:02:27.642Z" },
+    { url = "https://files.pythonhosted.org/packages/b7/c6/eac1db77a33ad760e1e8b173b0c1c97de0d638ff96266299dc70a9df33e3/daft-0.6.14-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:f9b82a095248fc2dc53b014ff99c3556fcb25a385987a28da35c235f9405632a", size = 48300243, upload-time = "2025-11-17T20:02:35.431Z" },
+    { url = "https://files.pythonhosted.org/packages/05/5f/57f670d98a4f5a879e5ad7ba7c22b875efe887ffd47c38c9d6f97c9b22f6/daft-0.6.14-cp310-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:19b029886752a24ef50f3948c541c4c4a01a87847d861ab51ea0be52e7352745", size = 49720024, upload-time = "2025-11-17T20:02:38.941Z" },
+    { url = "https://files.pythonhosted.org/packages/e0/bd/ed3ae603955725be7af8575144f7e6cf2baaef12513838c783f998252161/daft-0.6.14-cp310-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:49d54e31ea587413bfc5120a28d4a023a56f22fc304c6aa1e28c888cfada54b5", size = 52240413, upload-time = "2025-11-17T20:02:42.199Z" },
+    { url = "https://files.pythonhosted.org/packages/ff/2c/170a87c35bfd8390c3b52cd9828c5d5d84fc986f0db7348d05391f5e3c32/daft-0.6.14-cp310-abi3-win_amd64.whl", hash = "sha256:be4cddf55d5a49a7fe15299e01ae9d41d74472a9834d5a7f5a91517b87ab6de0", size = 50655066, upload-time = "2025-11-17T20:02:45.593Z" },
 ]
 
 [[package]]
@@ -3645,7 +3645,6 @@ datafusion = [
 duckdb = [
     { name = "duckdb" },
     { name = "pyarrow" },
-    { name = "pyiceberg-core" },
 ]
 dynamodb = [
     { name = "boto3" },
@@ -3673,7 +3672,6 @@ hive-kerberos = [
 pandas = [
     { name = "pandas" },
     { name = "pyarrow" },
-    { name = "pyiceberg-core" },
 ]
 polars = [
     { name = "polars" },
@@ -3688,7 +3686,6 @@ pyiceberg-core = [
 ray = [
     { name = "pandas" },
     { name = "pyarrow" },
-    { name = "pyiceberg-core" },
     { name = "ray" },
 ]
 rest-sigv4 = [
@@ -3770,11 +3767,8 @@ requires-dist = [
     { name = "pyarrow", marker = "extra == 'pyarrow'", specifier = ">=17.0.0" },
     { name = "pyarrow", marker = "extra == 'ray'", specifier = ">=17.0.0" },
     { name = "pydantic", specifier = ">=2.0,!=2.4.0,!=2.4.1,!=2.12.0,!=2.12.1,<3.0" },
-    { name = "pyiceberg-core", marker = "extra == 'duckdb'", specifier = ">=0.5.1,<0.8.0" },
-    { name = "pyiceberg-core", marker = "extra == 'pandas'", specifier = ">=0.5.1,<0.8.0" },
     { name = "pyiceberg-core", marker = "extra == 'pyarrow'", specifier = ">=0.5.1,<0.8.0" },
     { name = "pyiceberg-core", marker = "extra == 'pyiceberg-core'", specifier = ">=0.5.1,<0.8.0" },
-    { name = "pyiceberg-core", marker = "extra == 'ray'", specifier = ">=0.5.1,<0.8.0" },
     { name = "pyparsing", specifier = ">=3.1.0,<4.0.0" },
     { name = "pyroaring", specifier = ">=1.0.0,<2.0.0" },
     { name = "python-snappy", marker = "extra == 'snappy'", specifier = ">=0.6.0,<1.0.0" },
