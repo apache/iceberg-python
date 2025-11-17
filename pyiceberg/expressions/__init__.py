@@ -20,7 +20,7 @@ from __future__ import annotations
 import builtins
 from abc import ABC, abstractmethod
 from functools import cached_property
-from typing import Any, Callable, Generic, Iterable, Sequence, cast
+from typing import Any, Callable, Iterable, Sequence, cast
 from typing import Literal as TypingLiteral
 
 from pydantic import ConfigDict, Field
@@ -489,7 +489,7 @@ class BoundUnaryPredicate(BoundPredicate, ABC):
 
 
 class BoundIsNull(BoundUnaryPredicate):
-    def __new__(cls, term: BoundTerm) -> BooleanExpression:  # type: ignore  # pylint: disable=W0221
+    def __new__(cls, term: BoundTerm) -> BooleanExpression:  # type: ignore[misc]  # pylint: disable=W0221
         if term.ref().field.required:
             return AlwaysFalse()
         return super().__new__(cls)
@@ -504,7 +504,7 @@ class BoundIsNull(BoundUnaryPredicate):
 
 
 class BoundNotNull(BoundUnaryPredicate):
-    def __new__(cls, term: BoundTerm):  # type: ignore  # pylint: disable=W0221
+    def __new__(cls, term: BoundTerm) -> BooleanExpression:  # type: ignore[misc]  # pylint: disable=W0221
         if term.ref().field.required:
             return AlwaysTrue()
         return super().__new__(cls)
@@ -543,7 +543,7 @@ class NotNull(UnaryPredicate):
 
 
 class BoundIsNaN(BoundUnaryPredicate):
-    def __new__(cls, term: BoundTerm) -> BooleanExpression:  # type: ignore  # pylint: disable=W0221
+    def __new__(cls, term: BoundTerm) -> BooleanExpression:  # type: ignore[misc]  # pylint: disable=W0221
         bound_type = term.ref().field.field_type
         if isinstance(bound_type, (FloatType, DoubleType)):
             return super().__new__(cls)
@@ -559,7 +559,7 @@ class BoundIsNaN(BoundUnaryPredicate):
 
 
 class BoundNotNaN(BoundUnaryPredicate):
-    def __new__(cls, term: BoundTerm) -> BooleanExpression:  # type: ignore  # pylint: disable=W0221
+    def __new__(cls, term: BoundTerm) -> BooleanExpression:  # type: ignore[misc]  # pylint: disable=W0221
         bound_type = term.ref().field.field_type
         if isinstance(bound_type, (FloatType, DoubleType)):
             return super().__new__(cls)
@@ -673,7 +673,7 @@ class BoundSetPredicate(BoundPredicate, ABC):
 
 
 class BoundIn(BoundSetPredicate):
-    def __new__(cls, term: BoundTerm, literals: set[LiteralValue]) -> BooleanExpression:  # type: ignore  # pylint: disable=W0221
+    def __new__(cls, term: BoundTerm, literals: set[LiteralValue]) -> BooleanExpression:  # type: ignore[misc]  # pylint: disable=W0221
         count = len(literals)
         if count == 0:
             return AlwaysFalse()
@@ -696,7 +696,7 @@ class BoundIn(BoundSetPredicate):
 
 
 class BoundNotIn(BoundSetPredicate):
-    def __new__(  # type: ignore  # pylint: disable=W0221
+    def __new__(  # type: ignore[misc]  # pylint: disable=W0221
         cls,
         term: BoundTerm,
         literals: set[LiteralValue],
@@ -721,7 +721,7 @@ class BoundNotIn(BoundSetPredicate):
 class In(SetPredicate):
     type: TypingLiteral["in"] = Field(default="in", alias="type")
 
-    def __new__(  # type: ignore  # pylint: disable=W0221
+    def __new__(  # type: ignore[misc]  # pylint: disable=W0221
         cls, term: str | UnboundTerm, literals: Iterable[Any] | Iterable[LiteralValue]
     ) -> BooleanExpression:
         literals_set: set[LiteralValue] = _to_literal_set(literals)
@@ -745,7 +745,7 @@ class In(SetPredicate):
 class NotIn(SetPredicate, ABC):
     type: TypingLiteral["not-in"] = Field(default="not-in", alias="type")
 
-    def __new__(  # type: ignore  # pylint: disable=W0221
+    def __new__(  # type: ignore[misc]  # pylint: disable=W0221
         cls, term: str | UnboundTerm, literals: Iterable[Any] | Iterable[LiteralValue]
     ) -> BooleanExpression:
         literals_set: set[LiteralValue] = _to_literal_set(literals)
@@ -766,17 +766,17 @@ class NotIn(SetPredicate, ABC):
         return BoundNotIn
 
 
-class LiteralPredicate(IcebergBaseModel, UnboundPredicate, Generic[L], ABC):
+class LiteralPredicate(IcebergBaseModel, UnboundPredicate, ABC):
     type: TypingLiteral["lt", "lt-eq", "gt", "gt-eq", "eq", "not-eq", "starts-with", "not-starts-with"] = Field(alias="type")
     term: UnboundTerm
-    value: Literal[L] = Field()
+    value: LiteralValue = Field()
     model_config = ConfigDict(populate_by_name=True, frozen=True, arbitrary_types_allowed=True)
 
-    def __init__(self, term: str | UnboundTerm, literal: L | Literal[L]):
+    def __init__(self, term: str | UnboundTerm, literal: Any | LiteralValue):
         super().__init__(term=_to_unbound_term(term), value=_to_literal(literal))  # type: ignore[call-arg]
 
     @property
-    def literal(self) -> Literal[L]:
+    def literal(self) -> LiteralValue:
         return self.value
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundLiteralPredicate:
@@ -816,9 +816,9 @@ class LiteralPredicate(IcebergBaseModel, UnboundPredicate, Generic[L], ABC):
 
 
 class BoundLiteralPredicate(BoundPredicate, ABC):
-    literal: Literal[Any]
+    literal: LiteralValue
 
-    def __init__(self, term: BoundTerm, literal: Literal[Any]):  # pylint: disable=W0621
+    def __init__(self, term: BoundTerm, literal: LiteralValue):  # pylint: disable=W0621
         super().__init__(term)
         self.literal = literal  # pylint: disable=W0621
 
@@ -834,7 +834,7 @@ class BoundLiteralPredicate(BoundPredicate, ABC):
 
     @property
     @abstractmethod
-    def as_unbound(self) -> type[LiteralPredicate[Any]]: ...
+    def as_unbound(self) -> type[LiteralPredicate]: ...
 
 
 class BoundEqualTo(BoundLiteralPredicate):
@@ -843,7 +843,7 @@ class BoundEqualTo(BoundLiteralPredicate):
         return BoundNotEqualTo(self.term, self.literal)
 
     @property
-    def as_unbound(self) -> type[EqualTo[Any]]:
+    def as_unbound(self) -> type[EqualTo]:
         return EqualTo
 
 
@@ -853,7 +853,7 @@ class BoundNotEqualTo(BoundLiteralPredicate):
         return BoundEqualTo(self.term, self.literal)
 
     @property
-    def as_unbound(self) -> type[NotEqualTo[Any]]:
+    def as_unbound(self) -> type[NotEqualTo]:
         return NotEqualTo
 
 
@@ -863,7 +863,7 @@ class BoundGreaterThanOrEqual(BoundLiteralPredicate):
         return BoundLessThan(self.term, self.literal)
 
     @property
-    def as_unbound(self) -> type[GreaterThanOrEqual[Any]]:
+    def as_unbound(self) -> type[GreaterThanOrEqual]:
         return GreaterThanOrEqual
 
 
@@ -873,7 +873,7 @@ class BoundGreaterThan(BoundLiteralPredicate):
         return BoundLessThanOrEqual(self.term, self.literal)
 
     @property
-    def as_unbound(self) -> type[GreaterThan[Any]]:
+    def as_unbound(self) -> type[GreaterThan]:
         return GreaterThan
 
 
@@ -883,7 +883,7 @@ class BoundLessThan(BoundLiteralPredicate):
         return BoundGreaterThanOrEqual(self.term, self.literal)
 
     @property
-    def as_unbound(self) -> type[LessThan[Any]]:
+    def as_unbound(self) -> type[LessThan]:
         return LessThan
 
 
@@ -893,7 +893,7 @@ class BoundLessThanOrEqual(BoundLiteralPredicate):
         return BoundGreaterThan(self.term, self.literal)
 
     @property
-    def as_unbound(self) -> type[LessThanOrEqual[Any]]:
+    def as_unbound(self) -> type[LessThanOrEqual]:
         return LessThanOrEqual
 
 
@@ -903,7 +903,7 @@ class BoundStartsWith(BoundLiteralPredicate):
         return BoundNotStartsWith(self.term, self.literal)
 
     @property
-    def as_unbound(self) -> type[StartsWith[Any]]:
+    def as_unbound(self) -> type[StartsWith]:
         return StartsWith
 
 
@@ -913,14 +913,14 @@ class BoundNotStartsWith(BoundLiteralPredicate):
         return BoundStartsWith(self.term, self.literal)
 
     @property
-    def as_unbound(self) -> type[NotStartsWith[Any]]:
+    def as_unbound(self) -> type[NotStartsWith]:
         return NotStartsWith
 
 
-class EqualTo(LiteralPredicate[L]):
+class EqualTo(LiteralPredicate):
     type: TypingLiteral["eq"] = Field(default="eq", alias="type")
 
-    def __invert__(self) -> NotEqualTo[Any]:
+    def __invert__(self) -> NotEqualTo:
         """Transform the Expression into its negated version."""
         return NotEqualTo(self.term, self.literal)
 
@@ -929,10 +929,10 @@ class EqualTo(LiteralPredicate[L]):
         return BoundEqualTo
 
 
-class NotEqualTo(LiteralPredicate[L]):
+class NotEqualTo(LiteralPredicate):
     type: TypingLiteral["not-eq"] = Field(default="not-eq", alias="type")
 
-    def __invert__(self) -> EqualTo[Any]:
+    def __invert__(self) -> EqualTo:
         """Transform the Expression into its negated version."""
         return EqualTo(self.term, self.literal)
 
@@ -941,10 +941,10 @@ class NotEqualTo(LiteralPredicate[L]):
         return BoundNotEqualTo
 
 
-class LessThan(LiteralPredicate[L]):
+class LessThan(LiteralPredicate):
     type: TypingLiteral["lt"] = Field(default="lt", alias="type")
 
-    def __invert__(self) -> GreaterThanOrEqual[Any]:
+    def __invert__(self) -> GreaterThanOrEqual:
         """Transform the Expression into its negated version."""
         return GreaterThanOrEqual(self.term, self.literal)
 
@@ -953,10 +953,10 @@ class LessThan(LiteralPredicate[L]):
         return BoundLessThan
 
 
-class GreaterThanOrEqual(LiteralPredicate[L]):
+class GreaterThanOrEqual(LiteralPredicate):
     type: TypingLiteral["gt-eq"] = Field(default="gt-eq", alias="type")
 
-    def __invert__(self) -> LessThan[Any]:
+    def __invert__(self) -> LessThan:
         """Transform the Expression into its negated version."""
         return LessThan(self.term, self.literal)
 
@@ -965,10 +965,10 @@ class GreaterThanOrEqual(LiteralPredicate[L]):
         return BoundGreaterThanOrEqual
 
 
-class GreaterThan(LiteralPredicate[L]):
+class GreaterThan(LiteralPredicate):
     type: TypingLiteral["gt"] = Field(default="gt", alias="type")
 
-    def __invert__(self) -> LessThanOrEqual[Any]:
+    def __invert__(self) -> LessThanOrEqual:
         """Transform the Expression into its negated version."""
         return LessThanOrEqual(self.term, self.literal)
 
@@ -977,10 +977,10 @@ class GreaterThan(LiteralPredicate[L]):
         return BoundGreaterThan
 
 
-class LessThanOrEqual(LiteralPredicate[L]):
+class LessThanOrEqual(LiteralPredicate):
     type: TypingLiteral["lt-eq"] = Field(default="lt-eq", alias="type")
 
-    def __invert__(self) -> GreaterThan[Any]:
+    def __invert__(self) -> GreaterThan:
         """Transform the Expression into its negated version."""
         return GreaterThan(self.term, self.literal)
 
@@ -989,10 +989,10 @@ class LessThanOrEqual(LiteralPredicate[L]):
         return BoundLessThanOrEqual
 
 
-class StartsWith(LiteralPredicate[L]):
+class StartsWith(LiteralPredicate):
     type: TypingLiteral["starts-with"] = Field(default="starts-with", alias="type")
 
-    def __invert__(self) -> NotStartsWith[Any]:
+    def __invert__(self) -> NotStartsWith:
         """Transform the Expression into its negated version."""
         return NotStartsWith(self.term, self.literal)
 
@@ -1001,10 +1001,10 @@ class StartsWith(LiteralPredicate[L]):
         return BoundStartsWith
 
 
-class NotStartsWith(LiteralPredicate[L]):
+class NotStartsWith(LiteralPredicate):
     type: TypingLiteral["not-starts-with"] = Field(default="not-starts-with", alias="type")
 
-    def __invert__(self) -> StartsWith[Any]:
+    def __invert__(self) -> StartsWith:
         """Transform the Expression into its negated version."""
         return StartsWith(self.term, self.literal)
 

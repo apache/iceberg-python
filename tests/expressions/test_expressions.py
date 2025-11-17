@@ -64,7 +64,7 @@ from pyiceberg.expressions import (
 from pyiceberg.expressions.literals import Literal, literal
 from pyiceberg.expressions.visitors import _from_byte_buffer
 from pyiceberg.schema import Accessor, Schema
-from pyiceberg.typedef import L, Record
+from pyiceberg.typedef import Record
 from pyiceberg.types import (
     DecimalType,
     DoubleType,
@@ -1091,37 +1091,37 @@ def below_int_min() -> Literal[int]:
 
 
 def test_above_int_bounds_equal_to(int_schema: Schema, above_int_max: Literal[int], below_int_min: Literal[int]) -> None:
-    assert EqualTo[int]("a", above_int_max).bind(int_schema) is AlwaysFalse()
-    assert EqualTo[int]("a", below_int_min).bind(int_schema) is AlwaysFalse()
+    assert EqualTo("a", above_int_max).bind(int_schema) is AlwaysFalse()
+    assert EqualTo("a", below_int_min).bind(int_schema) is AlwaysFalse()
 
 
 def test_above_int_bounds_not_equal_to(int_schema: Schema, above_int_max: Literal[int], below_int_min: Literal[int]) -> None:
-    assert NotEqualTo[int]("a", above_int_max).bind(int_schema) is AlwaysTrue()
-    assert NotEqualTo[int]("a", below_int_min).bind(int_schema) is AlwaysTrue()
+    assert NotEqualTo("a", above_int_max).bind(int_schema) is AlwaysTrue()
+    assert NotEqualTo("a", below_int_min).bind(int_schema) is AlwaysTrue()
 
 
 def test_above_int_bounds_less_than(int_schema: Schema, above_int_max: Literal[int], below_int_min: Literal[int]) -> None:
-    assert LessThan[int]("a", above_int_max).bind(int_schema) is AlwaysTrue()
-    assert LessThan[int]("a", below_int_min).bind(int_schema) is AlwaysFalse()
+    assert LessThan("a", above_int_max).bind(int_schema) is AlwaysTrue()
+    assert LessThan("a", below_int_min).bind(int_schema) is AlwaysFalse()
 
 
 def test_above_int_bounds_less_than_or_equal(
     int_schema: Schema, above_int_max: Literal[int], below_int_min: Literal[int]
 ) -> None:
-    assert LessThanOrEqual[int]("a", above_int_max).bind(int_schema) is AlwaysTrue()
-    assert LessThanOrEqual[int]("a", below_int_min).bind(int_schema) is AlwaysFalse()
+    assert LessThanOrEqual("a", above_int_max).bind(int_schema) is AlwaysTrue()
+    assert LessThanOrEqual("a", below_int_min).bind(int_schema) is AlwaysFalse()
 
 
 def test_above_int_bounds_greater_than(int_schema: Schema, above_int_max: Literal[int], below_int_min: Literal[int]) -> None:
-    assert GreaterThan[int]("a", above_int_max).bind(int_schema) is AlwaysFalse()
-    assert GreaterThan[int]("a", below_int_min).bind(int_schema) is AlwaysTrue()
+    assert GreaterThan("a", above_int_max).bind(int_schema) is AlwaysFalse()
+    assert GreaterThan("a", below_int_min).bind(int_schema) is AlwaysTrue()
 
 
 def test_above_int_bounds_greater_than_or_equal(
     int_schema: Schema, above_int_max: Literal[int], below_int_min: Literal[int]
 ) -> None:
-    assert GreaterThanOrEqual[int]("a", above_int_max).bind(int_schema) is AlwaysFalse()
-    assert GreaterThanOrEqual[int]("a", below_int_min).bind(int_schema) is AlwaysTrue()
+    assert GreaterThanOrEqual("a", above_int_max).bind(int_schema) is AlwaysFalse()
+    assert GreaterThanOrEqual("a", below_int_min).bind(int_schema) is AlwaysTrue()
 
 
 @pytest.fixture
@@ -1142,43 +1142,43 @@ def below_float_min() -> Literal[float]:
 def test_above_float_bounds_equal_to(
     float_schema: Schema, above_float_max: Literal[float], below_float_min: Literal[float]
 ) -> None:
-    assert EqualTo[float]("a", above_float_max).bind(float_schema) is AlwaysFalse()
-    assert EqualTo[float]("a", below_float_min).bind(float_schema) is AlwaysFalse()
+    assert EqualTo("a", above_float_max).bind(float_schema) is AlwaysFalse()
+    assert EqualTo("a", below_float_min).bind(float_schema) is AlwaysFalse()
 
 
 def test_above_float_bounds_not_equal_to(
     float_schema: Schema, above_float_max: Literal[float], below_float_min: Literal[float]
 ) -> None:
-    assert NotEqualTo[float]("a", above_float_max).bind(float_schema) is AlwaysTrue()
-    assert NotEqualTo[float]("a", below_float_min).bind(float_schema) is AlwaysTrue()
+    assert NotEqualTo("a", above_float_max).bind(float_schema) is AlwaysTrue()
+    assert NotEqualTo("a", below_float_min).bind(float_schema) is AlwaysTrue()
 
 
 def test_above_float_bounds_less_than(
     float_schema: Schema, above_float_max: Literal[float], below_float_min: Literal[float]
 ) -> None:
-    assert LessThan[float]("a", above_float_max).bind(float_schema) is AlwaysTrue()
-    assert LessThan[float]("a", below_float_min).bind(float_schema) is AlwaysFalse()
+    assert LessThan("a", above_float_max).bind(float_schema) is AlwaysTrue()
+    assert LessThan("a", below_float_min).bind(float_schema) is AlwaysFalse()
 
 
 def test_above_float_bounds_less_than_or_equal(
     float_schema: Schema, above_float_max: Literal[float], below_float_min: Literal[float]
 ) -> None:
-    assert LessThanOrEqual[float]("a", above_float_max).bind(float_schema) is AlwaysTrue()
-    assert LessThanOrEqual[float]("a", below_float_min).bind(float_schema) is AlwaysFalse()
+    assert LessThanOrEqual("a", above_float_max).bind(float_schema) is AlwaysTrue()
+    assert LessThanOrEqual("a", below_float_min).bind(float_schema) is AlwaysFalse()
 
 
 def test_above_float_bounds_greater_than(
     float_schema: Schema, above_float_max: Literal[float], below_float_min: Literal[float]
 ) -> None:
-    assert GreaterThan[float]("a", above_float_max).bind(float_schema) is AlwaysFalse()
-    assert GreaterThan[float]("a", below_float_min).bind(float_schema) is AlwaysTrue()
+    assert GreaterThan("a", above_float_max).bind(float_schema) is AlwaysFalse()
+    assert GreaterThan("a", below_float_min).bind(float_schema) is AlwaysTrue()
 
 
 def test_above_float_bounds_greater_than_or_equal(
     float_schema: Schema, above_float_max: Literal[float], below_float_min: Literal[float]
 ) -> None:
-    assert GreaterThanOrEqual[float]("a", above_float_max).bind(float_schema) is AlwaysFalse()
-    assert GreaterThanOrEqual[float]("a", below_float_min).bind(float_schema) is AlwaysTrue()
+    assert GreaterThanOrEqual("a", above_float_max).bind(float_schema) is AlwaysFalse()
+    assert GreaterThanOrEqual("a", below_float_min).bind(float_schema) is AlwaysTrue()
 
 
 @pytest.fixture
@@ -1197,37 +1197,37 @@ def below_long_min() -> Literal[float]:
 
 
 def test_above_long_bounds_equal_to(long_schema: Schema, above_long_max: Literal[int], below_long_min: Literal[int]) -> None:
-    assert EqualTo[int]("a", above_long_max).bind(long_schema) is AlwaysFalse()
-    assert EqualTo[int]("a", below_long_min).bind(long_schema) is AlwaysFalse()
+    assert EqualTo("a", above_long_max).bind(long_schema) is AlwaysFalse()
+    assert EqualTo("a", below_long_min).bind(long_schema) is AlwaysFalse()
 
 
 def test_above_long_bounds_not_equal_to(long_schema: Schema, above_long_max: Literal[int], below_long_min: Literal[int]) -> None:
-    assert NotEqualTo[int]("a", above_long_max).bind(long_schema) is AlwaysTrue()
-    assert NotEqualTo[int]("a", below_long_min).bind(long_schema) is AlwaysTrue()
+    assert NotEqualTo("a", above_long_max).bind(long_schema) is AlwaysTrue()
+    assert NotEqualTo("a", below_long_min).bind(long_schema) is AlwaysTrue()
 
 
 def test_above_long_bounds_less_than(long_schema: Schema, above_long_max: Literal[int], below_long_min: Literal[int]) -> None:
-    assert LessThan[int]("a", above_long_max).bind(long_schema) is AlwaysTrue()
-    assert LessThan[int]("a", below_long_min).bind(long_schema) is AlwaysFalse()
+    assert LessThan("a", above_long_max).bind(long_schema) is AlwaysTrue()
+    assert LessThan("a", below_long_min).bind(long_schema) is AlwaysFalse()
 
 
 def test_above_long_bounds_less_than_or_equal(
     long_schema: Schema, above_long_max: Literal[int], below_long_min: Literal[int]
 ) -> None:
-    assert LessThanOrEqual[int]("a", above_long_max).bind(long_schema) is AlwaysTrue()
-    assert LessThanOrEqual[int]("a", below_long_min).bind(long_schema) is AlwaysFalse()
+    assert LessThanOrEqual("a", above_long_max).bind(long_schema) is AlwaysTrue()
+    assert LessThanOrEqual("a", below_long_min).bind(long_schema) is AlwaysFalse()
 
 
 def test_above_long_bounds_greater_than(long_schema: Schema, above_long_max: Literal[int], below_long_min: Literal[int]) -> None:
-    assert GreaterThan[int]("a", above_long_max).bind(long_schema) is AlwaysFalse()
-    assert GreaterThan[int]("a", below_long_min).bind(long_schema) is AlwaysTrue()
+    assert GreaterThan("a", above_long_max).bind(long_schema) is AlwaysFalse()
+    assert GreaterThan("a", below_long_min).bind(long_schema) is AlwaysTrue()
 
 
 def test_above_long_bounds_greater_than_or_equal(
     long_schema: Schema, above_long_max: Literal[int], below_long_min: Literal[int]
 ) -> None:
-    assert GreaterThanOrEqual[int]("a", above_long_max).bind(long_schema) is AlwaysFalse()
-    assert GreaterThanOrEqual[int]("a", below_long_min).bind(long_schema) is AlwaysTrue()
+    assert GreaterThanOrEqual("a", above_long_max).bind(long_schema) is AlwaysFalse()
+    assert GreaterThanOrEqual("a", below_long_min).bind(long_schema) is AlwaysTrue()
 
 
 def test_eq_bound_expression(bound_reference_str: BoundReference) -> None:
@@ -1274,8 +1274,8 @@ def test_bind_ambiguous_name() -> None:
 #          |__/     |__/
 
 
-def _assert_literal_predicate_type(expr: LiteralPredicate[L]) -> None:
-    assert_type(expr, LiteralPredicate[L])
+def _assert_literal_predicate_type(expr: LiteralPredicate) -> None:
+    assert_type(expr, LiteralPredicate)
 
 
 _assert_literal_predicate_type(EqualTo("a", "b"))
