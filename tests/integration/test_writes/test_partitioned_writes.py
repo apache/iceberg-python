@@ -18,7 +18,7 @@
 
 
 from datetime import date
-from typing import Any, Set
+from typing import Any
 
 import pyarrow as pa
 import pytest
@@ -1038,7 +1038,7 @@ def test_append_transform_partition_verify_partitions_count(
     arrow_table_date_timestamps: pa.Table,
     table_date_timestamps_schema: Schema,
     transform: Transform[Any, Any],
-    expected_partitions: Set[Any],
+    expected_partitions: set[Any],
     format_version: int,
 ) -> None:
     # Given

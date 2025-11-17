@@ -24,7 +24,7 @@ import uuid
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 from urllib.parse import urlparse
 
 import fastavro
@@ -639,7 +639,7 @@ def test_write_parquet_compression_properties(
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
     format_version: int,
-    properties: Dict[str, Any],
+    properties: dict[str, Any],
     expected_compression_name: str,
 ) -> None:
     identifier = "default.write_parquet_compression_properties"
@@ -674,8 +674,8 @@ def test_write_parquet_other_properties(
     spark: SparkSession,
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
-    properties: Dict[str, Any],
-    expected_kwargs: Dict[str, Any],
+    properties: dict[str, Any],
+    expected_kwargs: dict[str, Any],
 ) -> None:
     identifier = "default.test_write_parquet_other_properties"
 
@@ -701,7 +701,7 @@ def test_write_parquet_unsupported_properties(
     spark: SparkSession,
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
-    properties: Dict[str, str],
+    properties: dict[str, str],
 ) -> None:
     identifier = "default.write_parquet_unsupported_properties"
 

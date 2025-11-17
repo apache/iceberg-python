@@ -16,7 +16,7 @@
 # under the License.
 # pylint:disable=redefined-outer-name,eval-used
 import json
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 
@@ -63,7 +63,7 @@ def test_deserialize_sort_order(sort_order: SortOrder) -> None:
     assert SortOrder.model_validate_json(payload) == sort_order
 
 
-def test_sorting_schema(example_table_metadata_v2: Dict[str, Any]) -> None:
+def test_sorting_schema(example_table_metadata_v2: dict[str, Any]) -> None:
     table_metadata = TableMetadataUtil.parse_raw(json.dumps(example_table_metadata_v2))
 
     assert table_metadata.sort_orders == [

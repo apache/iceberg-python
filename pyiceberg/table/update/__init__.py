@@ -21,7 +21,7 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
 from functools import singledispatch
-from typing import TYPE_CHECKING, Annotated, Any, Dict, Generic, List, Literal, Tuple, TypeVar, cast
+from typing import TYPE_CHECKING, Annotated, Any, Generic, Literal, TypeVar, cast
 
 from pydantic import Field, field_validator, model_serializer, model_validator
 
@@ -143,7 +143,7 @@ class SetSnapshotRefUpdate(IcebergBaseModel):
 
 class RemoveSnapshotsUpdate(IcebergBaseModel):
     action: Literal["remove-snapshots"] = Field(default="remove-snapshots")
-    snapshot_ids: List[int] = Field(alias="snapshot-ids")
+    snapshot_ids: list[int] = Field(alias="snapshot-ids")
 
 
 class RemoveSnapshotRefUpdate(IcebergBaseModel):
@@ -158,16 +158,16 @@ class SetLocationUpdate(IcebergBaseModel):
 
 class SetPropertiesUpdate(IcebergBaseModel):
     action: Literal["set-properties"] = Field(default="set-properties")
-    updates: Dict[str, str]
+    updates: dict[str, str]
 
     @field_validator("updates", mode="before")
-    def transform_properties_dict_value_to_str(cls, properties: Properties) -> Dict[str, str]:
+    def transform_properties_dict_value_to_str(cls, properties: Properties) -> dict[str, str]:
         return transform_dict_value_to_str(properties)
 
 
 class RemovePropertiesUpdate(IcebergBaseModel):
     action: Literal["remove-properties"] = Field(default="remove-properties")
-    removals: List[str]
+    removals: list[str]
 
 
 class SetStatisticsUpdate(IcebergBaseModel):
@@ -180,7 +180,7 @@ class SetStatisticsUpdate(IcebergBaseModel):
     )
 
     @model_validator(mode="before")
-    def validate_snapshot_id(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+    def validate_snapshot_id(cls, data: dict[str, Any]) -> dict[str, Any]:
         stats = cast(StatisticsFile, data["statistics"])
 
         data["snapshot_id"] = stats.snapshot_id
@@ -195,12 +195,12 @@ class RemoveStatisticsUpdate(IcebergBaseModel):
 
 class RemovePartitionSpecsUpdate(IcebergBaseModel):
     action: Literal["remove-partition-specs"] = Field(default="remove-partition-specs")
-    spec_ids: List[int] = Field(alias="spec-ids")
+    spec_ids: list[int] = Field(alias="spec-ids")
 
 
 class RemoveSchemasUpdate(IcebergBaseModel):
     action: Literal["remove-schemas"] = Field(default="remove-schemas")
-    schema_ids: List[int] = Field(alias="schema-ids")
+    schema_ids: list[int] = Field(alias="schema-ids")
 
 
 class SetPartitionStatisticsUpdate(IcebergBaseModel):
@@ -240,7 +240,7 @@ TableUpdate = Annotated[
 
 
 class _TableMetadataUpdateContext:
-    _updates: List[TableUpdate]
+    _updates: list[TableUpdate]
 
     def __init__(self) -> None:
         self._updates = []
@@ -345,7 +345,7 @@ def _(update: RemovePropertiesUpdate, base_metadata: TableMetadata, context: _Ta
 
 @_apply_table_update.register(AddSchemaUpdate)
 def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
-    metadata_updates: Dict[str, Any] = {
+    metadata_updates: dict[str, Any] = {
         "last_column_id": max(base_metadata.last_column_id, update.schema_.highest_field_id),
         "schemas": base_metadata.schemas + [update.schema_],
     }
@@ -381,7 +381,7 @@ def _(update: AddPartitionSpecUpdate, base_metadata: TableMetadata, context: _Ta
         if spec.spec_id == update.spec.spec_id and spec != update.spec:
             raise ValueError(f"Partition spec with id {spec.spec_id} already exists: {spec}")
 
-    metadata_updates: Dict[str, Any] = {
+    metadata_updates: dict[str, Any] = {
         "partition_specs": base_metadata.partition_specs + [update.spec],
         "last_partition_id": max(
             max([field.field_id for field in update.spec.fields], default=0),
@@ -480,7 +480,7 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
     if snapshot is None:
         raise ValueError(f"Cannot set {update.ref_name} to unknown snapshot {snapshot_ref.snapshot_id}")
 
-    metadata_updates: Dict[str, Any] = {}
+    metadata_updates: dict[str, Any] = {}
     if context.is_added_snapshot(snapshot_ref.snapshot_id):
         metadata_updates["last_updated_ms"] = snapshot.timestamp_ms
 
@@ -672,7 +672,7 @@ def _(
 
 def update_table_metadata(
     base_metadata: TableMetadata,
-    updates: Tuple[TableUpdate, ...],
+    updates: tuple[TableUpdate, ...],
     enforce_validation: bool = False,
     metadata_location: str | None = None,
 ) -> TableMetadata:
@@ -732,7 +732,7 @@ def _update_table_metadata_log(base_metadata: TableMetadata, metadata_location: 
     if len(base_metadata.metadata_log) >= max_metadata_log_entries:  # type: ignore
         remove_index = len(base_metadata.metadata_log) - max_metadata_log_entries + 1  # type: ignore
         previous_metadata_log = base_metadata.metadata_log[remove_index:]
-    metadata_updates: Dict[str, Any] = {
+    metadata_updates: dict[str, Any] = {
         "metadata_log": previous_metadata_log + [MetadataLogEntry(metadata_file=metadata_location, timestamp_ms=last_updated_ms)]
     }
     return base_metadata.model_copy(update=metadata_updates)
@@ -899,4 +899,4 @@ TableRequirement = Annotated[
     Field(discriminator="type"),
 ]
 
-UpdatesAndRequirements = Tuple[Tuple[TableUpdate, ...], Tuple[TableRequirement, ...]]
+UpdatesAndRequirements = tuple[tuple[TableUpdate, ...], tuple[TableRequirement, ...]]

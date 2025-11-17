@@ -16,7 +16,7 @@
 # under the License.
 # pylint:disable=redefined-outer-name
 
-from typing import Any, List, Set
+from typing import Any
 
 import pytest
 
@@ -91,7 +91,7 @@ from pyiceberg.types import (
 )
 
 
-class ExampleVisitor(BooleanExpressionVisitor[List[str]]):
+class ExampleVisitor(BooleanExpressionVisitor[list[str]]):
     """A test implementation of a BooleanExpressionVisitor
 
     As this visitor visits each node, it appends an element to a `visit_history` list. This enables testing that a given expression is
@@ -99,119 +99,119 @@ class ExampleVisitor(BooleanExpressionVisitor[List[str]]):
     """
 
     def __init__(self) -> None:
-        self.visit_history: List[str] = []
+        self.visit_history: list[str] = []
 
-    def visit_true(self) -> List[str]:
+    def visit_true(self) -> list[str]:
         self.visit_history.append("TRUE")
         return self.visit_history
 
-    def visit_false(self) -> List[str]:
+    def visit_false(self) -> list[str]:
         self.visit_history.append("FALSE")
         return self.visit_history
 
-    def visit_not(self, child_result: List[str]) -> List[str]:
+    def visit_not(self, child_result: list[str]) -> list[str]:
         self.visit_history.append("NOT")
         return self.visit_history
 
-    def visit_and(self, left_result: List[str], right_result: List[str]) -> List[str]:
+    def visit_and(self, left_result: list[str], right_result: list[str]) -> list[str]:
         self.visit_history.append("AND")
         return self.visit_history
 
-    def visit_or(self, left_result: List[str], right_result: List[str]) -> List[str]:
+    def visit_or(self, left_result: list[str], right_result: list[str]) -> list[str]:
         self.visit_history.append("OR")
         return self.visit_history
 
-    def visit_unbound_predicate(self, predicate: UnboundPredicate[Any]) -> List[str]:
+    def visit_unbound_predicate(self, predicate: UnboundPredicate[Any]) -> list[str]:
         self.visit_history.append(str(predicate.__class__.__name__).upper())
         return self.visit_history
 
-    def visit_bound_predicate(self, predicate: BoundPredicate[Any]) -> List[str]:
+    def visit_bound_predicate(self, predicate: BoundPredicate[Any]) -> list[str]:
         self.visit_history.append(str(predicate.__class__.__name__).upper())
         return self.visit_history
 
 
-class FooBoundBooleanExpressionVisitor(BoundBooleanExpressionVisitor[List[str]]):
+class FooBoundBooleanExpressionVisitor(BoundBooleanExpressionVisitor[list[str]]):
     """A test implementation of a BoundBooleanExpressionVisitor
     As this visitor visits each node, it appends an element to a `visit_history` list. This enables testing that a given bound expression is
     visited in an expected order by the `visit` method.
     """
 
     def __init__(self) -> None:
-        self.visit_history: List[str] = []
+        self.visit_history: list[str] = []
 
-    def visit_in(self, term: BoundTerm[Any], literals: Set[Any]) -> List[str]:
+    def visit_in(self, term: BoundTerm[Any], literals: set[Any]) -> list[str]:
         self.visit_history.append("IN")
         return self.visit_history
 
-    def visit_not_in(self, term: BoundTerm[Any], literals: Set[Any]) -> List[str]:
+    def visit_not_in(self, term: BoundTerm[Any], literals: set[Any]) -> list[str]:
         self.visit_history.append("NOT_IN")
         return self.visit_history
 
-    def visit_is_nan(self, term: BoundTerm[Any]) -> List[str]:
+    def visit_is_nan(self, term: BoundTerm[Any]) -> list[str]:
         self.visit_history.append("IS_NAN")
         return self.visit_history
 
-    def visit_not_nan(self, term: BoundTerm[Any]) -> List[str]:
+    def visit_not_nan(self, term: BoundTerm[Any]) -> list[str]:
         self.visit_history.append("NOT_NAN")
         return self.visit_history
 
-    def visit_is_null(self, term: BoundTerm[Any]) -> List[str]:
+    def visit_is_null(self, term: BoundTerm[Any]) -> list[str]:
         self.visit_history.append("IS_NULL")
         return self.visit_history
 
-    def visit_not_null(self, term: BoundTerm[Any]) -> List[str]:
+    def visit_not_null(self, term: BoundTerm[Any]) -> list[str]:
         self.visit_history.append("NOT_NULL")
         return self.visit_history
 
-    def visit_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> List[str]:  # pylint: disable=redefined-outer-name
+    def visit_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> list[str]:  # pylint: disable=redefined-outer-name
         self.visit_history.append("EQUAL")
         return self.visit_history
 
-    def visit_not_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> List[str]:  # pylint: disable=redefined-outer-name
+    def visit_not_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> list[str]:  # pylint: disable=redefined-outer-name
         self.visit_history.append("NOT_EQUAL")
         return self.visit_history
 
-    def visit_greater_than_or_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> List[str]:  # pylint: disable=redefined-outer-name
+    def visit_greater_than_or_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> list[str]:  # pylint: disable=redefined-outer-name
         self.visit_history.append("GREATER_THAN_OR_EQUAL")
         return self.visit_history
 
-    def visit_greater_than(self, term: BoundTerm[Any], literal: Literal[Any]) -> List[str]:  # pylint: disable=redefined-outer-name
+    def visit_greater_than(self, term: BoundTerm[Any], literal: Literal[Any]) -> list[str]:  # pylint: disable=redefined-outer-name
         self.visit_history.append("GREATER_THAN")
         return self.visit_history
 
-    def visit_less_than(self, term: BoundTerm[Any], literal: Literal[Any]) -> List[str]:  # pylint: disable=redefined-outer-name
+    def visit_less_than(self, term: BoundTerm[Any], literal: Literal[Any]) -> list[str]:  # pylint: disable=redefined-outer-name
         self.visit_history.append("LESS_THAN")
         return self.visit_history
 
-    def visit_less_than_or_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> List[str]:  # pylint: disable=redefined-outer-name
+    def visit_less_than_or_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> list[str]:  # pylint: disable=redefined-outer-name
         self.visit_history.append("LESS_THAN_OR_EQUAL")
         return self.visit_history
 
-    def visit_true(self) -> List[str]:
+    def visit_true(self) -> list[str]:
         self.visit_history.append("TRUE")
         return self.visit_history
 
-    def visit_false(self) -> List[str]:
+    def visit_false(self) -> list[str]:
         self.visit_history.append("FALSE")
         return self.visit_history
 
-    def visit_not(self, child_result: List[str]) -> List[str]:
+    def visit_not(self, child_result: list[str]) -> list[str]:
         self.visit_history.append("NOT")
         return self.visit_history
 
-    def visit_and(self, left_result: List[str], right_result: List[str]) -> List[str]:
+    def visit_and(self, left_result: list[str], right_result: list[str]) -> list[str]:
         self.visit_history.append("AND")
         return self.visit_history
 
-    def visit_or(self, left_result: List[str], right_result: List[str]) -> List[str]:
+    def visit_or(self, left_result: list[str], right_result: list[str]) -> list[str]:
         self.visit_history.append("OR")
         return self.visit_history
 
-    def visit_starts_with(self, term: BoundTerm[Any], literal: Literal[Any]) -> List[str]:
+    def visit_starts_with(self, term: BoundTerm[Any], literal: Literal[Any]) -> list[str]:
         self.visit_history.append("STARTS_WITH")
         return self.visit_history
 
-    def visit_not_starts_with(self, term: BoundTerm[Any], literal: Literal[Any]) -> List[str]:
+    def visit_not_starts_with(self, term: BoundTerm[Any], literal: Literal[Any]) -> list[str]:
         self.visit_history.append("NOT_STARTS_WITH")
         return self.visit_history
 
@@ -1041,7 +1041,7 @@ def test_not_nan(schema: Schema, manifest: ManifestFile) -> None:
 
 
 def test_missing_stats(schema: Schema, manifest_no_stats: ManifestFile) -> None:
-    expressions: List[BooleanExpression] = [
+    expressions: list[BooleanExpression] = [
         LessThan(Reference("id"), 5),
         LessThanOrEqual(Reference("id"), 30),
         EqualTo(Reference("id"), 70),

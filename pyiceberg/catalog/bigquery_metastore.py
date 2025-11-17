@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import json
-from typing import TYPE_CHECKING, Any, List, Set, Tuple, Union
+from typing import TYPE_CHECKING, Any, Union
 
 from google.api_core.exceptions import NotFound
 from google.cloud.bigquery import Client, Dataset, DatasetReference, TableReference
@@ -227,7 +227,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
             raise NoSuchTableError(f"Table does not exist: {dataset_name}.{table_name}") from e
 
     def commit_table(
-        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+        self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
         raise NotImplementedError
 
@@ -244,9 +244,9 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         except NotFound as e:
             raise NoSuchNamespaceError(f"Namespace {namespace} does not exist.") from e
 
-    def list_tables(self, namespace: str | Identifier) -> List[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
         database_name = self.identifier_to_database(namespace)
-        iceberg_tables: List[Identifier] = []
+        iceberg_tables: list[Identifier] = []
         try:
             dataset_ref = DatasetReference(project=self.project_id, dataset_id=database_name)
             # The list_tables method returns an iterator of TableListItem
@@ -258,7 +258,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Namespace (dataset) '{database_name}' not found.") from None
         return iceberg_tables
 
-    def list_namespaces(self, namespace: str | Identifier = ()) -> List[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
         # Since this catalog only supports one-level namespaces, it always returns an empty list unless
         # passed an empty namespace to list all namespaces within the catalog.
         if namespace:
@@ -299,7 +299,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
 
         return self.load_table(identifier=identifier)
 
-    def list_views(self, namespace: str | Identifier) -> List[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         raise NotImplementedError
 
     def drop_view(self, identifier: str | Identifier) -> None:
@@ -321,7 +321,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         return {}
 
     def update_namespace_properties(
-        self, namespace: str | Identifier, removals: Set[str] | None = None, updates: Properties = EMPTY_DICT
+        self, namespace: str | Identifier, removals: set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
         raise NotImplementedError
 

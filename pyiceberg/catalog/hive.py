@@ -22,11 +22,6 @@ from types import TracebackType
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
-    List,
-    Set,
-    Tuple,
-    Type,
     Union,
 )
 from urllib.parse import urlparse
@@ -148,7 +143,7 @@ class _HiveClient:
     """Helper class to nicely open and close the transport."""
 
     _transport: TTransport
-    _ugi: List[str] | None
+    _ugi: list[str] | None
 
     def __init__(
         self,
@@ -194,7 +189,7 @@ class _HiveClient:
                 self._transport.open()
         return self._client()  # recreate the client
 
-    def __exit__(self, exctype: Type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
+    def __exit__(self, exctype: type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
         """Close transport if it was opened."""
         if self._transport.isOpen():
             self._transport.close()
@@ -223,7 +218,7 @@ DEFAULT_PROPERTIES = {TableProperties.PARQUET_COMPRESSION: TableProperties.PARQU
 
 def _construct_parameters(
     metadata_location: str, previous_metadata_location: str | None = None, metadata_properties: Properties | None = None
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     properties = {PROP_EXTERNAL: "TRUE", PROP_TABLE_TYPE: "ICEBERG", PROP_METADATA_LOCATION: metadata_location}
     if previous_metadata_location:
         properties[PROP_PREVIOUS_METADATA_LOCATION] = previous_metadata_location
@@ -276,7 +271,7 @@ class SchemaToHiveConverter(SchemaVisitor[str]):
     def schema(self, schema: Schema, struct_result: str) -> str:
         return struct_result
 
-    def struct(self, struct: StructType, field_results: List[str]) -> str:
+    def struct(self, struct: StructType, field_results: list[str]) -> str:
         return f"struct<{','.join(field_results)}>"
 
     def field(self, field: NestedField, field_result: str) -> str:
@@ -315,7 +310,7 @@ class HiveCatalog(MetastoreCatalog):
         )
 
     @staticmethod
-    def _create_hive_client(properties: Dict[str, str]) -> _HiveClient:
+    def _create_hive_client(properties: dict[str, str]) -> _HiveClient:
         last_exception = None
         for uri in properties[URI].split(","):
             try:
@@ -333,7 +328,7 @@ class HiveCatalog(MetastoreCatalog):
             raise ValueError(f"Unable to connect to hive using uri: {properties[URI]}")
 
     def _convert_hive_into_iceberg(self, table: HiveTable) -> Table:
-        properties: Dict[str, str] = table.parameters
+        properties: dict[str, str] = table.parameters
         if TABLE_TYPE not in properties:
             raise NoSuchPropertyException(
                 f"Property table_type missing, could not determine type: {table.dbName}.{table.tableName}"
@@ -469,7 +464,7 @@ class HiveCatalog(MetastoreCatalog):
 
         return self._convert_hive_into_iceberg(hive_table)
 
-    def list_views(self, namespace: str | Identifier) -> List[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         raise NotImplementedError
 
     def view_exists(self, identifier: str | Identifier) -> bool:
@@ -505,7 +500,7 @@ class HiveCatalog(MetastoreCatalog):
         return _do_wait_for_lock()
 
     def commit_table(
-        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+        self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
         """Commit updates to a table.
 
@@ -715,7 +710,7 @@ class HiveCatalog(MetastoreCatalog):
         except MetaException as e:
             raise NoSuchNamespaceError(f"Database does not exists: {database_name}") from e
 
-    def list_tables(self, namespace: str | Identifier) -> List[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
         """List Iceberg tables under the given namespace in the catalog.
 
         When the database doesn't exist, it will just return an empty list.
@@ -739,7 +734,7 @@ class HiveCatalog(MetastoreCatalog):
                 if table.parameters.get(TABLE_TYPE, "").lower() == ICEBERG
             ]
 
-    def list_namespaces(self, namespace: str | Identifier = ()) -> List[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
 
         Returns:
@@ -777,7 +772,7 @@ class HiveCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Database does not exists: {database_name}") from e
 
     def update_namespace_properties(
-        self, namespace: str | Identifier, removals: Set[str] | None = None, updates: Properties = EMPTY_DICT
+        self, namespace: str | Identifier, removals: set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
         """Remove provided property keys and update properties for a namespace.
 
@@ -799,8 +794,8 @@ class HiveCatalog(MetastoreCatalog):
             except NoSuchObjectException as e:
                 raise NoSuchNamespaceError(f"Database does not exists: {database_name}") from e
 
-            removed: Set[str] = set()
-            updated: Set[str] = set()
+            removed: set[str] = set()
+            updated: set[str] = set()
 
             if removals:
                 for key in removals:

@@ -24,12 +24,8 @@ from enum import Enum
 from types import TracebackType
 from typing import (
     Any,
-    Dict,
     Iterator,
-    List,
     Literal,
-    Tuple,
-    Type,
 )
 
 from cachetools import LRUCache, cached
@@ -111,7 +107,7 @@ class FileFormat(str, Enum):
         return f"FileFormat.{self.name}"
 
 
-DATA_FILE_TYPE: Dict[int, StructType] = {
+DATA_FILE_TYPE: dict[int, StructType] = {
     1: StructType(
         NestedField(field_id=100, name="file_path", field_type=StringType(), required=True, doc="Location URI with FS scheme"),
         NestedField(
@@ -475,27 +471,27 @@ class DataFile(Record):
         return self._data[5]
 
     @property
-    def column_sizes(self) -> Dict[int, int]:
+    def column_sizes(self) -> dict[int, int]:
         return self._data[6]
 
     @property
-    def value_counts(self) -> Dict[int, int]:
+    def value_counts(self) -> dict[int, int]:
         return self._data[7]
 
     @property
-    def null_value_counts(self) -> Dict[int, int]:
+    def null_value_counts(self) -> dict[int, int]:
         return self._data[8]
 
     @property
-    def nan_value_counts(self) -> Dict[int, int]:
+    def nan_value_counts(self) -> dict[int, int]:
         return self._data[9]
 
     @property
-    def lower_bounds(self) -> Dict[int, bytes]:
+    def lower_bounds(self) -> dict[int, bytes]:
         return self._data[10]
 
     @property
-    def upper_bounds(self) -> Dict[int, bytes]:
+    def upper_bounds(self) -> dict[int, bytes]:
         return self._data[11]
 
     @property
@@ -503,11 +499,11 @@ class DataFile(Record):
         return self._data[12]
 
     @property
-    def split_offsets(self) -> List[int] | None:
+    def split_offsets(self) -> list[int] | None:
         return self._data[13]
 
     @property
-    def equality_ids(self) -> List[int] | None:
+    def equality_ids(self) -> list[int] | None:
         return self._data[14]
 
     @property
@@ -690,7 +686,7 @@ class PartitionFieldStats:
                 self._min = min(self._min, value)
 
 
-def construct_partition_summaries(spec: PartitionSpec, schema: Schema, partitions: List[Record]) -> List[PartitionFieldSummary]:
+def construct_partition_summaries(spec: PartitionSpec, schema: Schema, partitions: list[Record]) -> list[PartitionFieldSummary]:
     types = [field.field_type for field in spec.partition_type(schema).fields]
     field_stats = [PartitionFieldStats(field_type) for field_type in types]
     for partition_keys in partitions:
@@ -702,7 +698,7 @@ def construct_partition_summaries(spec: PartitionSpec, schema: Schema, partition
     return [field.to_summary() for field in field_stats]
 
 
-MANIFEST_LIST_FILE_SCHEMAS: Dict[int, Schema] = {
+MANIFEST_LIST_FILE_SCHEMAS: dict[int, Schema] = {
     1: Schema(
         NestedField(500, "manifest_path", StringType(), required=True, doc="Location URI with FS scheme"),
         NestedField(501, "manifest_length", LongType(), required=True),
@@ -828,7 +824,7 @@ class ManifestFile(Record):
         return self._data[12]
 
     @property
-    def partitions(self) -> List[PartitionFieldSummary] | None:
+    def partitions(self) -> list[PartitionFieldSummary] | None:
         return self._data[13]
 
     @property
@@ -841,7 +837,7 @@ class ManifestFile(Record):
     def has_existing_files(self) -> bool:
         return self.existing_files_count is None or self.existing_files_count > 0
 
-    def fetch_manifest_entry(self, io: FileIO, discard_deleted: bool = True) -> List[ManifestEntry]:
+    def fetch_manifest_entry(self, io: FileIO, discard_deleted: bool = True) -> list[ManifestEntry]:
         """
         Read the manifest entries from the manifest file.
 
@@ -904,11 +900,11 @@ class ManifestFile(Record):
 
 
 # Global cache for manifest lists
-_manifest_cache: LRUCache[Any, Tuple[ManifestFile, ...]] = LRUCache(maxsize=128)
+_manifest_cache: LRUCache[Any, tuple[ManifestFile, ...]] = LRUCache(maxsize=128)
 
 
 @cached(cache=_manifest_cache, key=lambda io, manifest_list: hashkey(manifest_list), lock=threading.RLock())
-def _manifests(io: FileIO, manifest_list: str) -> Tuple[ManifestFile, ...]:
+def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
     """Read and cache manifests from the given manifest list, returning a tuple to prevent modification."""
     bs = io.new_input(manifest_list).open().read()
     from pyiceberg_core import manifest
@@ -1016,7 +1012,7 @@ class ManifestWriter(ABC):
     _deleted_files: int
     _deleted_rows: int
     _min_sequence_number: int | None
-    _partitions: List[Record]
+    _partitions: list[Record]
     _compression: AvroCompressionCodec
 
     def __init__(
@@ -1051,7 +1047,7 @@ class ManifestWriter(ABC):
 
     def __exit__(
         self,
-        exc_type: Type[BaseException] | None,
+        exc_type: type[BaseException] | None,
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
@@ -1071,7 +1067,7 @@ class ManifestWriter(ABC):
     def version(self) -> TableVersion: ...
 
     @property
-    def _meta(self) -> Dict[str, str]:
+    def _meta(self) -> dict[str, str]:
         return {
             "schema": self._schema.model_dump_json(),
             "partition-spec": to_json(self._spec.fields).decode("utf-8"),
@@ -1226,7 +1222,7 @@ class ManifestWriterV2(ManifestWriter):
         return 2
 
     @property
-    def _meta(self) -> Dict[str, str]:
+    def _meta(self) -> dict[str, str]:
         return {
             **super()._meta,
             "content": "data",
@@ -1260,12 +1256,12 @@ def write_manifest(
 class ManifestListWriter(ABC):
     _format_version: TableVersion
     _output_file: OutputFile
-    _meta: Dict[str, str]
-    _manifest_files: List[ManifestFile]
+    _meta: dict[str, str]
+    _manifest_files: list[ManifestFile]
     _commit_snapshot_id: int
     _writer: AvroOutputFile[ManifestFile]
 
-    def __init__(self, format_version: TableVersion, output_file: OutputFile, meta: Dict[str, Any]):
+    def __init__(self, format_version: TableVersion, output_file: OutputFile, meta: dict[str, Any]):
         self._format_version = format_version
         self._output_file = output_file
         self._meta = meta
@@ -1285,7 +1281,7 @@ class ManifestListWriter(ABC):
 
     def __exit__(
         self,
-        exc_type: Type[BaseException] | None,
+        exc_type: type[BaseException] | None,
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
@@ -1296,7 +1292,7 @@ class ManifestListWriter(ABC):
     @abstractmethod
     def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile: ...
 
-    def add_manifests(self, manifest_files: List[ManifestFile]) -> ManifestListWriter:
+    def add_manifests(self, manifest_files: list[ManifestFile]) -> ManifestListWriter:
         self._writer.write_block([self.prepare_manifest(manifest_file) for manifest_file in manifest_files])
         return self
 

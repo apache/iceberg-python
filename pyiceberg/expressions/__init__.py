@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import builtins
 from abc import ABC, abstractmethod
 from functools import cached_property
 from typing import (
@@ -25,9 +26,6 @@ from typing import (
     Generic,
     Iterable,
     Sequence,
-    Set,
-    Tuple,
-    Type,
     TypeVar,
 )
 from typing import Literal as TypingLiteral
@@ -55,7 +53,7 @@ def _to_unbound_term(term: str | UnboundTerm[Any]) -> UnboundTerm[Any]:
     return Reference(term) if isinstance(term, str) else term
 
 
-def _to_literal_set(values: Iterable[L] | Iterable[Literal[L]]) -> Set[Literal[L]]:
+def _to_literal_set(values: Iterable[L] | Iterable[Literal[L]]) -> set[Literal[L]]:
     return {_to_literal(v) for v in values}
 
 
@@ -146,7 +144,7 @@ class Unbound(Generic[B], ABC):
 
     @property
     @abstractmethod
-    def as_bound(self) -> Type[Bound]: ...
+    def as_bound(self) -> type[Bound]: ...
 
 
 class BoundTerm(Term[L], Bound, ABC):
@@ -254,7 +252,7 @@ class Reference(UnboundTerm[Any], IcebergRootModel[str]):
         return self.root
 
     @property
-    def as_bound(self) -> Type[BoundReference[L]]:
+    def as_bound(self) -> type[BoundReference[L]]:
         return BoundReference[L]
 
 
@@ -296,7 +294,7 @@ class And(BooleanExpression):
         # De Morgan's law: not (A and B) = (not A) or (not B)
         return Or(~self.left, ~self.right)
 
-    def __getnewargs__(self) -> Tuple[BooleanExpression, BooleanExpression]:
+    def __getnewargs__(self) -> tuple[BooleanExpression, BooleanExpression]:
         """Pickle the And class."""
         return (self.left, self.right)
 
@@ -344,7 +342,7 @@ class Or(IcebergBaseModel, BooleanExpression):
         # De Morgan's law: not (A or B) = (not A) and (not B)
         return And(~self.left, ~self.right)
 
-    def __getnewargs__(self) -> Tuple[BooleanExpression, BooleanExpression]:
+    def __getnewargs__(self) -> tuple[BooleanExpression, BooleanExpression]:
         """Pickle the Or class."""
         return (self.left, self.right)
 
@@ -386,7 +384,7 @@ class Not(IcebergBaseModel, BooleanExpression):
         """Transform the Expression into its negated version."""
         return self.child
 
-    def __getnewargs__(self) -> Tuple[BooleanExpression]:
+    def __getnewargs__(self) -> tuple[BooleanExpression]:
         """Pickle the Not class."""
         return (self.child,)
 
@@ -441,7 +439,7 @@ class BoundPredicate(Generic[L], Bound, BooleanExpression, ABC):
 
     @property
     @abstractmethod
-    def as_unbound(self) -> Type[UnboundPredicate[Any]]: ...
+    def as_unbound(self) -> type[UnboundPredicate[Any]]: ...
 
 
 class UnboundPredicate(Generic[L], Unbound[BooleanExpression], BooleanExpression, ABC):
@@ -459,7 +457,7 @@ class UnboundPredicate(Generic[L], Unbound[BooleanExpression], BooleanExpression
 
     @property
     @abstractmethod
-    def as_bound(self) -> Type[BoundPredicate[L]]: ...
+    def as_bound(self) -> type[BoundPredicate[L]]: ...
 
 
 class UnaryPredicate(IcebergBaseModel, UnboundPredicate[Any], ABC):
@@ -478,7 +476,7 @@ class UnaryPredicate(IcebergBaseModel, UnboundPredicate[Any], ABC):
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundUnaryPredicate[Any]:
         bound_term = self.term.bind(schema, case_sensitive)
-        return self.as_bound(bound_term)
+        return self.as_bound(bound_term)  # type: ignore
 
     def __repr__(self) -> str:
         """Return the string representation of the UnaryPredicate class."""
@@ -486,7 +484,7 @@ class UnaryPredicate(IcebergBaseModel, UnboundPredicate[Any], ABC):
 
     @property
     @abstractmethod
-    def as_bound(self) -> Type[BoundUnaryPredicate[Any]]: ...
+    def as_bound(self) -> type[BoundUnaryPredicate[Any]]: ...  # type: ignore
 
 
 class BoundUnaryPredicate(BoundPredicate[L], ABC):
@@ -496,9 +494,9 @@ class BoundUnaryPredicate(BoundPredicate[L], ABC):
 
     @property
     @abstractmethod
-    def as_unbound(self) -> Type[UnaryPredicate]: ...
+    def as_unbound(self) -> type[UnaryPredicate]: ...
 
-    def __getnewargs__(self) -> Tuple[BoundTerm[L]]:
+    def __getnewargs__(self) -> tuple[BoundTerm[L]]:
         """Pickle the BoundUnaryPredicate class."""
         return (self.term,)
 
@@ -514,7 +512,7 @@ class BoundIsNull(BoundUnaryPredicate[L]):
         return BoundNotNull(self.term)
 
     @property
-    def as_unbound(self) -> Type[IsNull]:
+    def as_unbound(self) -> type[IsNull]:
         return IsNull
 
 
@@ -529,7 +527,7 @@ class BoundNotNull(BoundUnaryPredicate[L]):
         return BoundIsNull(self.term)
 
     @property
-    def as_unbound(self) -> Type[NotNull]:
+    def as_unbound(self) -> type[NotNull]:
         return NotNull
 
 
@@ -541,7 +539,7 @@ class IsNull(UnaryPredicate):
         return NotNull(self.term)
 
     @property
-    def as_bound(self) -> Type[BoundIsNull[L]]:
+    def as_bound(self) -> builtins.type[BoundIsNull[L]]:
         return BoundIsNull[L]
 
 
@@ -553,7 +551,7 @@ class NotNull(UnaryPredicate):
         return IsNull(self.term)
 
     @property
-    def as_bound(self) -> Type[BoundNotNull[L]]:
+    def as_bound(self) -> builtins.type[BoundNotNull[L]]:
         return BoundNotNull[L]
 
 
@@ -569,7 +567,7 @@ class BoundIsNaN(BoundUnaryPredicate[L]):
         return BoundNotNaN(self.term)
 
     @property
-    def as_unbound(self) -> Type[IsNaN]:
+    def as_unbound(self) -> type[IsNaN]:
         return IsNaN
 
 
@@ -585,7 +583,7 @@ class BoundNotNaN(BoundUnaryPredicate[L]):
         return BoundIsNaN(self.term)
 
     @property
-    def as_unbound(self) -> Type[NotNaN]:
+    def as_unbound(self) -> type[NotNaN]:
         return NotNaN
 
 
@@ -597,7 +595,7 @@ class IsNaN(UnaryPredicate):
         return NotNaN(self.term)
 
     @property
-    def as_bound(self) -> Type[BoundIsNaN[L]]:
+    def as_bound(self) -> builtins.type[BoundIsNaN[L]]:
         return BoundIsNaN[L]
 
 
@@ -609,7 +607,7 @@ class NotNaN(UnaryPredicate):
         return IsNaN(self.term)
 
     @property
-    def as_bound(self) -> Type[BoundNotNaN[L]]:
+    def as_bound(self) -> builtins.type[BoundNotNaN[L]]:
         return BoundNotNaN[L]
 
 
@@ -617,7 +615,7 @@ class SetPredicate(IcebergBaseModel, UnboundPredicate[L], ABC):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     type: TypingLiteral["in", "not-in"] = Field(default="in")
-    literals: Set[Literal[L]] = Field(alias="items")
+    literals: set[Literal[L]] = Field(alias="items")
 
     def __init__(self, term: str | UnboundTerm[Any], literals: Iterable[L] | Iterable[Literal[L]]):
         super().__init__(term=_to_unbound_term(term), items=_to_literal_set(literals))  # type: ignore
@@ -640,26 +638,26 @@ class SetPredicate(IcebergBaseModel, UnboundPredicate[L], ABC):
         """Return the equality of two instances of the SetPredicate class."""
         return self.term == other.term and self.literals == other.literals if isinstance(other, self.__class__) else False
 
-    def __getnewargs__(self) -> Tuple[UnboundTerm[L], Set[Literal[L]]]:
+    def __getnewargs__(self) -> tuple[UnboundTerm[L], set[Literal[L]]]:
         """Pickle the SetPredicate class."""
         return (self.term, self.literals)
 
     @property
     @abstractmethod
-    def as_bound(self) -> Type[BoundSetPredicate[L]]:
+    def as_bound(self) -> builtins.type[BoundSetPredicate[L]]:
         return BoundSetPredicate[L]
 
 
 class BoundSetPredicate(BoundPredicate[L], ABC):
-    literals: Set[Literal[L]]
+    literals: set[Literal[L]]
 
-    def __init__(self, term: BoundTerm[L], literals: Set[Literal[L]]):
+    def __init__(self, term: BoundTerm[L], literals: set[Literal[L]]):
         # Since we don't know the type of BoundPredicate[L], we have to ignore this one
         super().__init__(term)  # type: ignore
         self.literals = _to_literal_set(literals)  # pylint: disable=W0621
 
     @cached_property
-    def value_set(self) -> Set[L]:
+    def value_set(self) -> set[L]:
         return {lit.value for lit in self.literals}
 
     def __str__(self) -> str:
@@ -676,17 +674,17 @@ class BoundSetPredicate(BoundPredicate[L], ABC):
         """Return the equality of two instances of the BoundSetPredicate class."""
         return self.term == other.term and self.literals == other.literals if isinstance(other, self.__class__) else False
 
-    def __getnewargs__(self) -> Tuple[BoundTerm[L], Set[Literal[L]]]:
+    def __getnewargs__(self) -> tuple[BoundTerm[L], set[Literal[L]]]:
         """Pickle the BoundSetPredicate class."""
         return (self.term, self.literals)
 
     @property
     @abstractmethod
-    def as_unbound(self) -> Type[SetPredicate[L]]: ...
+    def as_unbound(self) -> type[SetPredicate[L]]: ...
 
 
 class BoundIn(BoundSetPredicate[L]):
-    def __new__(cls, term: BoundTerm[L], literals: Set[Literal[L]]) -> BooleanExpression:  # type: ignore  # pylint: disable=W0221
+    def __new__(cls, term: BoundTerm[L], literals: set[Literal[L]]) -> BooleanExpression:  # type: ignore  # pylint: disable=W0221
         count = len(literals)
         if count == 0:
             return AlwaysFalse()
@@ -704,7 +702,7 @@ class BoundIn(BoundSetPredicate[L]):
         return self.term == other.term and self.literals == other.literals if isinstance(other, self.__class__) else False
 
     @property
-    def as_unbound(self) -> Type[In[L]]:
+    def as_unbound(self) -> type[In[L]]:
         return In
 
 
@@ -712,7 +710,7 @@ class BoundNotIn(BoundSetPredicate[L]):
     def __new__(  # type: ignore  # pylint: disable=W0221
         cls,
         term: BoundTerm[L],
-        literals: Set[Literal[L]],
+        literals: set[Literal[L]],
     ) -> BooleanExpression:
         count = len(literals)
         if count == 0:
@@ -727,7 +725,7 @@ class BoundNotIn(BoundSetPredicate[L]):
         return BoundIn(self.term, self.literals)
 
     @property
-    def as_unbound(self) -> Type[NotIn[L]]:
+    def as_unbound(self) -> type[NotIn[L]]:
         return NotIn
 
 
@@ -737,7 +735,7 @@ class In(SetPredicate[L]):
     def __new__(  # type: ignore  # pylint: disable=W0221
         cls, term: str | UnboundTerm[Any], literals: Iterable[L] | Iterable[Literal[L]]
     ) -> BooleanExpression:
-        literals_set: Set[Literal[L]] = _to_literal_set(literals)
+        literals_set: set[Literal[L]] = _to_literal_set(literals)
         count = len(literals_set)
         if count == 0:
             return AlwaysFalse()
@@ -751,7 +749,7 @@ class In(SetPredicate[L]):
         return NotIn[L](self.term, self.literals)
 
     @property
-    def as_bound(self) -> Type[BoundIn[L]]:
+    def as_bound(self) -> builtins.type[BoundIn[L]]:
         return BoundIn[L]
 
 
@@ -761,7 +759,7 @@ class NotIn(SetPredicate[L], ABC):
     def __new__(  # type: ignore  # pylint: disable=W0221
         cls, term: str | UnboundTerm[Any], literals: Iterable[L] | Iterable[Literal[L]]
     ) -> BooleanExpression:
-        literals_set: Set[Literal[L]] = _to_literal_set(literals)
+        literals_set: set[Literal[L]] = _to_literal_set(literals)
         count = len(literals_set)
         if count == 0:
             return AlwaysTrue()
@@ -775,7 +773,7 @@ class NotIn(SetPredicate[L], ABC):
         return In[L](self.term, self.literals)
 
     @property
-    def as_bound(self) -> Type[BoundNotIn[L]]:
+    def as_bound(self) -> builtins.type[BoundNotIn[L]]:
         return BoundNotIn[L]
 
 
@@ -825,7 +823,7 @@ class LiteralPredicate(IcebergBaseModel, UnboundPredicate[L], ABC):
 
     @property
     @abstractmethod
-    def as_bound(self) -> Type[BoundLiteralPredicate[L]]: ...
+    def as_bound(self) -> builtins.type[BoundLiteralPredicate[L]]: ...
 
 
 class BoundLiteralPredicate(BoundPredicate[L], ABC):
@@ -848,7 +846,7 @@ class BoundLiteralPredicate(BoundPredicate[L], ABC):
 
     @property
     @abstractmethod
-    def as_unbound(self) -> Type[LiteralPredicate[L]]: ...
+    def as_unbound(self) -> type[LiteralPredicate[L]]: ...
 
 
 class BoundEqualTo(BoundLiteralPredicate[L]):
@@ -857,7 +855,7 @@ class BoundEqualTo(BoundLiteralPredicate[L]):
         return BoundNotEqualTo[L](self.term, self.literal)
 
     @property
-    def as_unbound(self) -> Type[EqualTo[L]]:
+    def as_unbound(self) -> type[EqualTo[L]]:
         return EqualTo
 
 
@@ -867,7 +865,7 @@ class BoundNotEqualTo(BoundLiteralPredicate[L]):
         return BoundEqualTo[L](self.term, self.literal)
 
     @property
-    def as_unbound(self) -> Type[NotEqualTo[L]]:
+    def as_unbound(self) -> type[NotEqualTo[L]]:
         return NotEqualTo
 
 
@@ -877,7 +875,7 @@ class BoundGreaterThanOrEqual(BoundLiteralPredicate[L]):
         return BoundLessThan[L](self.term, self.literal)
 
     @property
-    def as_unbound(self) -> Type[GreaterThanOrEqual[L]]:
+    def as_unbound(self) -> type[GreaterThanOrEqual[L]]:
         return GreaterThanOrEqual[L]
 
 
@@ -887,7 +885,7 @@ class BoundGreaterThan(BoundLiteralPredicate[L]):
         return BoundLessThanOrEqual(self.term, self.literal)
 
     @property
-    def as_unbound(self) -> Type[GreaterThan[L]]:
+    def as_unbound(self) -> type[GreaterThan[L]]:
         return GreaterThan[L]
 
 
@@ -897,7 +895,7 @@ class BoundLessThan(BoundLiteralPredicate[L]):
         return BoundGreaterThanOrEqual[L](self.term, self.literal)
 
     @property
-    def as_unbound(self) -> Type[LessThan[L]]:
+    def as_unbound(self) -> type[LessThan[L]]:
         return LessThan[L]
 
 
@@ -907,7 +905,7 @@ class BoundLessThanOrEqual(BoundLiteralPredicate[L]):
         return BoundGreaterThan[L](self.term, self.literal)
 
     @property
-    def as_unbound(self) -> Type[LessThanOrEqual[L]]:
+    def as_unbound(self) -> type[LessThanOrEqual[L]]:
         return LessThanOrEqual[L]
 
 
@@ -917,7 +915,7 @@ class BoundStartsWith(BoundLiteralPredicate[L]):
         return BoundNotStartsWith[L](self.term, self.literal)
 
     @property
-    def as_unbound(self) -> Type[StartsWith[L]]:
+    def as_unbound(self) -> type[StartsWith[L]]:
         return StartsWith[L]
 
 
@@ -927,7 +925,7 @@ class BoundNotStartsWith(BoundLiteralPredicate[L]):
         return BoundStartsWith[L](self.term, self.literal)
 
     @property
-    def as_unbound(self) -> Type[NotStartsWith[L]]:
+    def as_unbound(self) -> type[NotStartsWith[L]]:
         return NotStartsWith[L]
 
 
@@ -939,7 +937,7 @@ class EqualTo(LiteralPredicate[L]):
         return NotEqualTo[L](self.term, self.literal)
 
     @property
-    def as_bound(self) -> Type[BoundEqualTo[L]]:
+    def as_bound(self) -> builtins.type[BoundEqualTo[L]]:
         return BoundEqualTo[L]
 
 
@@ -951,7 +949,7 @@ class NotEqualTo(LiteralPredicate[L]):
         return EqualTo[L](self.term, self.literal)
 
     @property
-    def as_bound(self) -> Type[BoundNotEqualTo[L]]:
+    def as_bound(self) -> builtins.type[BoundNotEqualTo[L]]:
         return BoundNotEqualTo[L]
 
 
@@ -963,7 +961,7 @@ class LessThan(LiteralPredicate[L]):
         return GreaterThanOrEqual[L](self.term, self.literal)
 
     @property
-    def as_bound(self) -> Type[BoundLessThan[L]]:
+    def as_bound(self) -> builtins.type[BoundLessThan[L]]:
         return BoundLessThan[L]
 
 
@@ -975,7 +973,7 @@ class GreaterThanOrEqual(LiteralPredicate[L]):
         return LessThan[L](self.term, self.literal)
 
     @property
-    def as_bound(self) -> Type[BoundGreaterThanOrEqual[L]]:
+    def as_bound(self) -> builtins.type[BoundGreaterThanOrEqual[L]]:
         return BoundGreaterThanOrEqual[L]
 
 
@@ -987,7 +985,7 @@ class GreaterThan(LiteralPredicate[L]):
         return LessThanOrEqual[L](self.term, self.literal)
 
     @property
-    def as_bound(self) -> Type[BoundGreaterThan[L]]:
+    def as_bound(self) -> builtins.type[BoundGreaterThan[L]]:
         return BoundGreaterThan[L]
 
 
@@ -999,7 +997,7 @@ class LessThanOrEqual(LiteralPredicate[L]):
         return GreaterThan[L](self.term, self.literal)
 
     @property
-    def as_bound(self) -> Type[BoundLessThanOrEqual[L]]:
+    def as_bound(self) -> builtins.type[BoundLessThanOrEqual[L]]:
         return BoundLessThanOrEqual[L]
 
 
@@ -1011,7 +1009,7 @@ class StartsWith(LiteralPredicate[L]):
         return NotStartsWith[L](self.term, self.literal)
 
     @property
-    def as_bound(self) -> Type[BoundStartsWith[L]]:
+    def as_bound(self) -> builtins.type[BoundStartsWith[L]]:
         return BoundStartsWith[L]
 
 
@@ -1023,5 +1021,5 @@ class NotStartsWith(LiteralPredicate[L]):
         return StartsWith[L](self.term, self.literal)
 
     @property
-    def as_bound(self) -> Type[BoundNotStartsWith[L]]:
+    def as_bound(self) -> builtins.type[BoundNotStartsWith[L]]:
         return BoundNotStartsWith[L]

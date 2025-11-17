@@ -29,13 +29,8 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
     Iterable,
     Iterator,
-    List,
-    Set,
-    Tuple,
-    Type,
     TypeVar,
 )
 
@@ -254,8 +249,8 @@ class TableProperties:
 class Transaction:
     _table: Table
     _autocommit: bool
-    _updates: Tuple[TableUpdate, ...]
-    _requirements: Tuple[TableRequirement, ...]
+    _updates: tuple[TableUpdate, ...]
+    _requirements: tuple[TableRequirement, ...]
 
     def __init__(self, table: Table, autocommit: bool = False):
         """Open a transaction to stage and commit changes to a table.
@@ -277,12 +272,12 @@ class Transaction:
         """Start a transaction to update the table."""
         return self
 
-    def __exit__(self, exctype: Type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
+    def __exit__(self, exctype: type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
         """Close and commit the transaction if no exceptions have been raised."""
         if exctype is None and excinst is None and exctb is None:
             self.commit_transaction()
 
-    def _apply(self, updates: Tuple[TableUpdate, ...], requirements: Tuple[TableRequirement, ...] = ()) -> Transaction:
+    def _apply(self, updates: tuple[TableUpdate, ...], requirements: tuple[TableRequirement, ...] = ()) -> Transaction:
         """Check if the requirements are met, and applies the updates to the metadata."""
         for requirement in requirements:
             requirement.validate(self.table_metadata)
@@ -377,7 +372,7 @@ class Transaction:
 
         return updates, requirements
 
-    def _build_partition_predicate(self, partition_records: Set[Record]) -> BooleanExpression:
+    def _build_partition_predicate(self, partition_records: set[Record]) -> BooleanExpression:
         """Build a filter predicate matching any of the input partition records.
 
         Args:
@@ -404,7 +399,7 @@ class Transaction:
         return expr
 
     def _append_snapshot_producer(
-        self, snapshot_properties: Dict[str, str], branch: str | None = MAIN_BRANCH
+        self, snapshot_properties: dict[str, str], branch: str | None = MAIN_BRANCH
     ) -> _FastAppendFiles:
         """Determine the append type based on table properties.
 
@@ -453,7 +448,7 @@ class Transaction:
         )
 
     def update_snapshot(
-        self, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH
+        self, snapshot_properties: dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH
     ) -> UpdateSnapshot:
         """Create a new UpdateSnapshot to produce a new snapshot for the table.
 
@@ -471,7 +466,7 @@ class Transaction:
         """
         return UpdateStatistics(transaction=self)
 
-    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH) -> None:
+    def append(self, df: pa.Table, snapshot_properties: dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH) -> None:
         """
         Shorthand API for appending a PyArrow table to a table transaction.
 
@@ -510,7 +505,7 @@ class Transaction:
                     append_files.append_data_file(data_file)
 
     def dynamic_partition_overwrite(
-        self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH
+        self, df: pa.Table, snapshot_properties: dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH
     ) -> None:
         """
         Shorthand for overwriting existing partitions with a PyArrow table.
@@ -556,7 +551,7 @@ class Transaction:
             return
 
         append_snapshot_commit_uuid = uuid.uuid4()
-        data_files: List[DataFile] = list(
+        data_files: list[DataFile] = list(
             _dataframe_to_data_files(
                 table_metadata=self._table.metadata, write_uuid=append_snapshot_commit_uuid, df=df, io=self._table.io
             )
@@ -575,7 +570,7 @@ class Transaction:
         self,
         df: pa.Table,
         overwrite_filter: BooleanExpression | str = ALWAYS_TRUE,
-        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
         branch: str | None = MAIN_BRANCH,
     ) -> None:
@@ -635,7 +630,7 @@ class Transaction:
     def delete(
         self,
         delete_filter: str | BooleanExpression,
-        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
         branch: str | None = MAIN_BRANCH,
     ) -> None:
@@ -684,7 +679,7 @@ class Transaction:
             commit_uuid = uuid.uuid4()
             counter = itertools.count(0)
 
-            replaced_files: List[Tuple[DataFile, List[DataFile]]] = []
+            replaced_files: list[tuple[DataFile, list[DataFile]]] = []
             # This will load the Parquet file into memory, including:
             #   - Filter out the rows based on the delete filter
             #   - Projecting it to the current schema
@@ -736,7 +731,7 @@ class Transaction:
     def upsert(
         self,
         df: pa.Table,
-        join_cols: List[str] | None = None,
+        join_cols: list[str] | None = None,
         when_matched_update_all: bool = True,
         when_not_matched_insert_all: bool = True,
         case_sensitive: bool = True,
@@ -879,8 +874,8 @@ class Transaction:
 
     def add_files(
         self,
-        file_paths: List[str],
-        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        file_paths: list[str],
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
         check_duplicate_files: bool = True,
         branch: str | None = MAIN_BRANCH,
     ) -> None:
@@ -1025,10 +1020,10 @@ class CreateTableTransaction(Transaction):
         return self._table
 
 
-class Namespace(IcebergRootModel[List[str]]):
+class Namespace(IcebergRootModel[list[str]]):
     """Reference to one or more levels of a namespace."""
 
-    root: List[str] = Field(
+    root: list[str] = Field(
         ...,
         description="Reference to one or more levels of a namespace",
     )
@@ -1045,8 +1040,8 @@ class CommitTableRequest(IcebergBaseModel):
     """A pydantic BaseModel for a table commit request."""
 
     identifier: TableIdentifier = Field()
-    requirements: Tuple[TableRequirement, ...] = Field(default_factory=tuple)
-    updates: Tuple[TableUpdate, ...] = Field(default_factory=tuple)
+    requirements: tuple[TableRequirement, ...] = Field(default_factory=tuple)
+    updates: tuple[TableUpdate, ...] = Field(default_factory=tuple)
 
 
 class CommitTableResponse(IcebergBaseModel):
@@ -1064,7 +1059,7 @@ class Table:
     metadata_location: str = Field()
     io: FileIO
     catalog: Catalog
-    config: Dict[str, str]
+    config: dict[str, str]
 
     def __init__(
         self,
@@ -1073,7 +1068,7 @@ class Table:
         metadata_location: str,
         io: FileIO,
         catalog: Catalog,
-        config: Dict[str, str] = EMPTY_DICT,
+        config: dict[str, str] = EMPTY_DICT,
     ) -> None:
         self._identifier = identifier
         self.metadata = metadata
@@ -1131,7 +1126,7 @@ class Table:
     def scan(
         self,
         row_filter: str | BooleanExpression = ALWAYS_TRUE,
-        selected_fields: Tuple[str, ...] = ("*",),
+        selected_fields: tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
         snapshot_id: int | None = None,
         options: Properties = EMPTY_DICT,
@@ -1185,7 +1180,7 @@ class Table:
         """Return the schema for this table."""
         return next(schema for schema in self.metadata.schemas if schema.schema_id == self.metadata.current_schema_id)
 
-    def schemas(self) -> Dict[int, Schema]:
+    def schemas(self) -> dict[int, Schema]:
         """Return a dict of the schema of this table."""
         return {schema.schema_id: schema for schema in self.metadata.schemas}
 
@@ -1193,7 +1188,7 @@ class Table:
         """Return the partition spec of this table."""
         return next(spec for spec in self.metadata.partition_specs if spec.spec_id == self.metadata.default_spec_id)
 
-    def specs(self) -> Dict[int, PartitionSpec]:
+    def specs(self) -> dict[int, PartitionSpec]:
         """Return a dict the partition specs this table."""
         return {spec.spec_id: spec for spec in self.metadata.partition_specs}
 
@@ -1203,7 +1198,7 @@ class Table:
             sort_order for sort_order in self.metadata.sort_orders if sort_order.order_id == self.metadata.default_sort_order_id
         )
 
-    def sort_orders(self) -> Dict[int, SortOrder]:
+    def sort_orders(self) -> dict[int, SortOrder]:
         """Return a dict of the sort orders of this table."""
         return {sort_order.order_id: sort_order for sort_order in self.metadata.sort_orders}
 
@@ -1214,7 +1209,7 @@ class Table:
         return PARTITION_FIELD_ID_START - 1
 
     @property
-    def properties(self) -> Dict[str, str]:
+    def properties(self) -> dict[str, str]:
         """Properties of the table."""
         return self.metadata.properties
 
@@ -1236,7 +1231,7 @@ class Table:
             return self.snapshot_by_id(self.metadata.current_snapshot_id)
         return None
 
-    def snapshots(self) -> List[Snapshot]:
+    def snapshots(self) -> list[Snapshot]:
         return self.metadata.snapshots
 
     def snapshot_by_id(self, snapshot_id: int) -> Snapshot | None:
@@ -1261,7 +1256,7 @@ class Table:
                 return self.snapshot_by_id(log_entry.snapshot_id)
         return None
 
-    def history(self) -> List[SnapshotLogEntry]:
+    def history(self) -> list[SnapshotLogEntry]:
         """Get the snapshot history of this table."""
         return self.metadata.snapshot_log
 
@@ -1329,7 +1324,7 @@ class Table:
     def upsert(
         self,
         df: pa.Table,
-        join_cols: List[str] | None = None,
+        join_cols: list[str] | None = None,
         when_matched_update_all: bool = True,
         when_not_matched_insert_all: bool = True,
         case_sensitive: bool = True,
@@ -1380,7 +1375,7 @@ class Table:
                 branch=branch,
             )
 
-    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH) -> None:
+    def append(self, df: pa.Table, snapshot_properties: dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH) -> None:
         """
         Shorthand API for appending a PyArrow table to the table.
 
@@ -1393,7 +1388,7 @@ class Table:
             tx.append(df=df, snapshot_properties=snapshot_properties, branch=branch)
 
     def dynamic_partition_overwrite(
-        self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH
+        self, df: pa.Table, snapshot_properties: dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH
     ) -> None:
         """Shorthand for dynamic overwriting the table with a PyArrow table.
 
@@ -1410,7 +1405,7 @@ class Table:
         self,
         df: pa.Table,
         overwrite_filter: BooleanExpression | str = ALWAYS_TRUE,
-        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
         branch: str | None = MAIN_BRANCH,
     ) -> None:
@@ -1443,7 +1438,7 @@ class Table:
     def delete(
         self,
         delete_filter: BooleanExpression | str = ALWAYS_TRUE,
-        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
         branch: str | None = MAIN_BRANCH,
     ) -> None:
@@ -1463,8 +1458,8 @@ class Table:
 
     def add_files(
         self,
-        file_paths: List[str],
-        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        file_paths: list[str],
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
         check_duplicate_files: bool = True,
         branch: str | None = MAIN_BRANCH,
     ) -> None:
@@ -1488,11 +1483,11 @@ class Table:
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
         return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)
 
-    def refs(self) -> Dict[str, SnapshotRef]:
+    def refs(self) -> dict[str, SnapshotRef]:
         """Return the snapshot references in the table."""
         return self.metadata.refs
 
-    def _do_commit(self, updates: Tuple[TableUpdate, ...], requirements: Tuple[TableRequirement, ...]) -> None:
+    def _do_commit(self, updates: tuple[TableUpdate, ...], requirements: tuple[TableRequirement, ...]) -> None:
         response = self.catalog.commit_table(self, requirements, updates)
 
         # https://github.com/apache/iceberg/blob/f6faa58/core/src/main/java/org/apache/iceberg/CatalogUtil.java#L527
@@ -1654,7 +1649,7 @@ class StagedTable(Table):
     def scan(
         self,
         row_filter: str | BooleanExpression = ALWAYS_TRUE,
-        selected_fields: Tuple[str, ...] = ("*",),
+        selected_fields: tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
         snapshot_id: int | None = None,
         options: Properties = EMPTY_DICT,
@@ -1686,7 +1681,7 @@ class TableScan(ABC):
     table_metadata: TableMetadata
     io: FileIO
     row_filter: BooleanExpression
-    selected_fields: Tuple[str, ...]
+    selected_fields: tuple[str, ...]
     case_sensitive: bool
     snapshot_id: int | None
     options: Properties
@@ -1697,7 +1692,7 @@ class TableScan(ABC):
         table_metadata: TableMetadata,
         io: FileIO,
         row_filter: str | BooleanExpression = ALWAYS_TRUE,
-        selected_fields: Tuple[str, ...] = ("*",),
+        selected_fields: tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
         snapshot_id: int | None = None,
         options: Properties = EMPTY_DICT,
@@ -1792,7 +1787,7 @@ class FileScanTask(ScanTask):
     """Task representing a data file and its corresponding delete files."""
 
     file: DataFile
-    delete_files: Set[DataFile]
+    delete_files: set[DataFile]
     start: int
     length: int
     residual: BooleanExpression
@@ -1800,7 +1795,7 @@ class FileScanTask(ScanTask):
     def __init__(
         self,
         data_file: DataFile,
-        delete_files: Set[DataFile] | None = None,
+        delete_files: set[DataFile] | None = None,
         start: int | None = None,
         length: int | None = None,
         residual: BooleanExpression = ALWAYS_TRUE,
@@ -1817,7 +1812,7 @@ def _open_manifest(
     manifest: ManifestFile,
     partition_filter: Callable[[DataFile], bool],
     metrics_evaluator: Callable[[DataFile], bool],
-) -> List[ManifestEntry]:
+) -> list[ManifestEntry]:
     """Open a manifest file and return matching manifest entries.
 
     Returns:
@@ -1830,7 +1825,7 @@ def _open_manifest(
     ]
 
 
-def _min_sequence_number(manifests: List[ManifestFile]) -> int:
+def _min_sequence_number(manifests: list[ManifestFile]) -> int:
     try:
         return min(
             manifest.min_sequence_number or INITIAL_SEQUENCE_NUMBER
@@ -1842,7 +1837,7 @@ def _min_sequence_number(manifests: List[ManifestFile]) -> int:
         return INITIAL_SEQUENCE_NUMBER
 
 
-def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_entries: SortedList[ManifestEntry]) -> Set[DataFile]:
+def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_entries: SortedList[ManifestEntry]) -> set[DataFile]:
     """Check if the delete file is relevant for the data file.
 
     Using the column metrics to see if the filename is in the lower and upper bound.
@@ -1939,7 +1934,7 @@ class DataScan(TableScan):
             and (manifest.sequence_number or INITIAL_SEQUENCE_NUMBER) >= min_sequence_number
         )
 
-    def scan_plan_helper(self) -> Iterator[List[ManifestEntry]]:
+    def scan_plan_helper(self) -> Iterator[list[ManifestEntry]]:
         """Filter and return manifest entries based on partition and metrics evaluators.
 
         Returns:
@@ -1952,7 +1947,7 @@ class DataScan(TableScan):
         # step 1: filter manifests using partition summaries
         # the filter depends on the partition spec used to write the manifest file, so create a cache of filters for each spec id
 
-        manifest_evaluators: Dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
+        manifest_evaluators: dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
 
         manifests = [
             manifest_file
@@ -1963,7 +1958,7 @@ class DataScan(TableScan):
         # step 2: filter the data files in each manifest
         # this filter depends on the partition spec used to write the manifest file
 
-        partition_evaluators: Dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._build_partition_evaluator)
+        partition_evaluators: dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._build_partition_evaluator)
 
         min_sequence_number = _min_sequence_number(manifests)
 
@@ -1989,10 +1984,10 @@ class DataScan(TableScan):
         Returns:
             List of FileScanTasks that contain both data and delete files.
         """
-        data_entries: List[ManifestEntry] = []
+        data_entries: list[ManifestEntry] = []
         positional_delete_entries = SortedList(key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER)
 
-        residual_evaluators: Dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
+        residual_evaluators: dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
 
         for manifest_entry in chain.from_iterable(self.scan_plan_helper()):
             data_file = manifest_entry.data_file
@@ -2138,7 +2133,7 @@ class WriteTask:
     write_uuid: uuid.UUID
     task_id: int
     schema: Schema
-    record_batches: List[pa.RecordBatch]
+    record_batches: list[pa.RecordBatch]
     sort_order_id: int | None = None
     partition_key: PartitionKey | None = None
 
@@ -2148,7 +2143,7 @@ class WriteTask:
         return f"00000-{self.task_id}-{self.write_uuid}.{extension}"
 
 
-def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], io: FileIO) -> Iterable[DataFile]:
+def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: list[str], io: FileIO) -> Iterable[DataFile]:
     """Convert a list files into DataFiles.
 
     Returns:

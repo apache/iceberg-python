@@ -59,8 +59,7 @@ select = [
 ]
 ignore = [
     "E501",
-    "UP035",
-    "UP006"
+    "UP035"
 ]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided.

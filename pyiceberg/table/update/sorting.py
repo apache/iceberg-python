@@ -16,7 +16,7 @@
 # under the License.
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, List, Tuple
+from typing import TYPE_CHECKING, Any
 
 from pyiceberg.table.sorting import INITIAL_SORT_ORDER_ID, UNSORTED_SORT_ORDER, NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.table.update import (
@@ -38,11 +38,11 @@ class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
     _transaction: Transaction
     _last_assigned_order_id: int | None
     _case_sensitive: bool
-    _fields: List[SortField]
+    _fields: list[SortField]
 
     def __init__(self, transaction: Transaction, case_sensitive: bool = True) -> None:
         super().__init__(transaction)
-        self._fields: List[SortField] = []
+        self._fields: list[SortField] = []
         self._case_sensitive: bool = case_sensitive
         self._last_assigned_order_id: int | None = None
 
@@ -118,8 +118,8 @@ class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
     def _commit(self) -> UpdatesAndRequirements:
         """Apply the pending changes and commit."""
         new_sort_order = self._apply()
-        requirements: Tuple[TableRequirement, ...] = ()
-        updates: Tuple[TableUpdate, ...] = ()
+        requirements: tuple[TableRequirement, ...] = ()
+        updates: tuple[TableUpdate, ...] = ()
 
         if (
             self._transaction.table_metadata.default_sort_order_id != new_sort_order.order_id

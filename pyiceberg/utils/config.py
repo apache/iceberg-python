@@ -16,7 +16,6 @@
 # under the License.
 import logging
 import os
-from typing import List
 
 import strictyaml
 
@@ -106,7 +105,7 @@ class Config:
             Amended configuration.
         """
 
-        def set_property(_config: RecursiveDict, path: List[str], config_value: str) -> None:
+        def set_property(_config: RecursiveDict, path: list[str], config_value: str) -> None:
             while len(path) > 0:
                 element = path.pop(0)
                 if len(path) == 0:
@@ -159,7 +158,7 @@ class Config:
                 return catalog_conf
         return None
 
-    def get_known_catalogs(self) -> List[str]:
+    def get_known_catalogs(self) -> list[str]:
         catalogs = self.config.get(CATALOG, {})
         if not isinstance(catalogs, dict):
             raise ValueError("Catalog configurations needs to be an object")

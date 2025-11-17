@@ -18,14 +18,14 @@
 import multiprocessing
 import os
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from typing import Dict, Generator
+from typing import Generator
 from unittest import mock
 
 import pytest
 
 from pyiceberg.utils.concurrent import ExecutorFactory
 
-EMPTY_ENV: Dict[str, str | None] = {}
+EMPTY_ENV: dict[str, str | None] = {}
 VALID_ENV = {"PYICEBERG_MAX_WORKERS": "5"}
 INVALID_ENV = {"PYICEBERG_MAX_WORKERS": "invalid"}
 

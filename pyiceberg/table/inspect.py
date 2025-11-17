@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import itertools
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Set, Tuple
+from typing import TYPE_CHECKING, Any, Iterator
 
 from pyiceberg.conversions import from_bytes
 from pyiceberg.expressions import AlwaysTrue, BooleanExpression
@@ -308,7 +308,7 @@ class InspectTable:
             snapshot_id=snapshot.snapshot_id,
         )
 
-        partitions_map: Dict[Tuple[str, Any], Any] = {}
+        partitions_map: dict[tuple[str, Any], Any] = {}
 
         for entry in itertools.chain.from_iterable(scan.scan_plan_helper()):
             partition = entry.data_file.partition
@@ -327,9 +327,9 @@ class InspectTable:
 
     def _update_partitions_map_from_manifest_entry(
         self,
-        partitions_map: Dict[Tuple[str, Any], Any],
+        partitions_map: dict[tuple[str, Any], Any],
         file: DataFile,
-        partition_record_dict: Dict[str, Any],
+        partition_record_dict: dict[str, Any],
         snapshot: Snapshot | None,
     ) -> None:
         partition_record_key = _convert_to_hashable_type(partition_record_dict)
@@ -409,8 +409,8 @@ class InspectTable:
         import pyarrow as pa
 
         def _partition_summaries_to_rows(
-            spec: PartitionSpec, partition_summaries: List[PartitionFieldSummary]
-        ) -> List[Dict[str, Any]]:
+            spec: PartitionSpec, partition_summaries: list[PartitionFieldSummary]
+        ) -> list[dict[str, Any]]:
             rows = []
             for i, field_summary in enumerate(partition_summaries):
                 field = spec.fields[i]
@@ -492,7 +492,7 @@ class InspectTable:
             ]
         )
 
-        def metadata_log_entry_to_row(metadata_entry: MetadataLogEntry) -> Dict[str, Any]:
+        def metadata_log_entry_to_row(metadata_entry: MetadataLogEntry) -> dict[str, Any]:
             latest_snapshot = self.tbl.snapshot_as_of_timestamp(metadata_entry.timestamp_ms)
             return {
                 "timestamp": metadata_entry.timestamp_ms,
@@ -545,7 +545,7 @@ class InspectTable:
         return pa.Table.from_pylist(history, schema=history_schema)
 
     def _get_files_from_manifest(
-        self, manifest_list: ManifestFile, data_file_filter: Set[DataFileContent] | None = None
+        self, manifest_list: ManifestFile, data_file_filter: set[DataFileContent] | None = None
     ) -> pa.Table:
         import pyarrow as pa
 
@@ -663,7 +663,7 @@ class InspectTable:
         )
         return files_schema
 
-    def _files(self, snapshot_id: int | None = None, data_file_filter: Set[DataFileContent] | None = None) -> pa.Table:
+    def _files(self, snapshot_id: int | None = None, data_file_filter: set[DataFileContent] | None = None) -> pa.Table:
         import pyarrow as pa
 
         if not snapshot_id and not self.tbl.metadata.current_snapshot():
@@ -702,7 +702,7 @@ class InspectTable:
         )
         return pa.concat_tables(manifests_by_snapshots)
 
-    def _all_files(self, data_file_filter: Set[DataFileContent] | None = None) -> pa.Table:
+    def _all_files(self, data_file_filter: set[DataFileContent] | None = None) -> pa.Table:
         import pyarrow as pa
 
         snapshots = self.tbl.snapshots()

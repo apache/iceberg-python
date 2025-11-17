@@ -16,7 +16,6 @@
 # under the License.
 import threading
 from datetime import datetime, timedelta
-from typing import Dict
 from unittest.mock import MagicMock, Mock
 from uuid import uuid4
 
@@ -253,7 +252,7 @@ def test_thread_safety_fix() -> None:
 
 def test_concurrent_operations() -> None:
     """Test concurrent operations with separate ExpireSnapshots instances."""
-    results: Dict[str, set[int]] = {"expire1_snapshots": set(), "expire2_snapshots": set()}
+    results: dict[str, set[int]] = {"expire1_snapshots": set(), "expire2_snapshots": set()}
 
     def worker1() -> None:
         expire1 = ExpireSnapshots(Mock())

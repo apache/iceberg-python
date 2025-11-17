@@ -17,7 +17,7 @@
 
 import os
 from pathlib import Path, PosixPath
-from typing import Generator, List
+from typing import Generator
 
 import pytest
 
@@ -171,7 +171,7 @@ def test_load_table(test_catalog: Catalog, table_schema_nested: Schema, database
 
 @pytest.mark.integration
 @pytest.mark.parametrize("test_catalog", CATALOGS)
-def test_list_tables(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_list: List[str]) -> None:
+def test_list_tables(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_list: list[str]) -> None:
     test_catalog.create_namespace(database_name)
     for table_name in table_list:
         test_catalog.create_table((database_name, table_name), table_schema_nested)
@@ -443,7 +443,7 @@ def test_create_namespace_with_comment(test_catalog: Catalog, database_name: str
 
 @pytest.mark.integration
 @pytest.mark.parametrize("test_catalog", CATALOGS)
-def test_list_namespaces(test_catalog: Catalog, database_list: List[str]) -> None:
+def test_list_namespaces(test_catalog: Catalog, database_list: list[str]) -> None:
     for database_name in database_list:
         test_catalog.create_namespace(database_name)
     db_list = test_catalog.list_namespaces()

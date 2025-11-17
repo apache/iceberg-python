@@ -18,10 +18,6 @@ from enum import Enum
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
-    List,
-    Set,
-    Tuple,
     Union,
 )
 
@@ -164,11 +160,11 @@ class CreateTableRequest(IcebergBaseModel):
     partition_spec: PartitionSpec | None = Field(alias="partition-spec")
     write_order: SortOrder | None = Field(alias="write-order")
     stage_create: bool = Field(alias="stage-create", default=False)
-    properties: Dict[str, str] = Field(default_factory=dict)
+    properties: dict[str, str] = Field(default_factory=dict)
 
     # validators
     @field_validator("properties", mode="before")
-    def transform_properties_dict_value_to_str(cls, properties: Properties) -> Dict[str, str]:
+    def transform_properties_dict_value_to_str(cls, properties: Properties) -> dict[str, str]:
         return transform_dict_value_to_str(properties)
 
 
@@ -183,7 +179,7 @@ class ConfigResponse(IcebergBaseModel):
 
 
 class ListNamespaceResponse(IcebergBaseModel):
-    namespaces: List[Identifier] = Field()
+    namespaces: list[Identifier] = Field()
 
 
 class NamespaceResponse(IcebergBaseModel):
@@ -192,9 +188,9 @@ class NamespaceResponse(IcebergBaseModel):
 
 
 class UpdateNamespacePropertiesResponse(IcebergBaseModel):
-    removed: List[str] = Field()
-    updated: List[str] = Field()
-    missing: List[str] = Field()
+    removed: list[str] = Field()
+    updated: list[str] = Field()
+    missing: list[str] = Field()
 
 
 class ListTableResponseEntry(IcebergBaseModel):
@@ -208,11 +204,11 @@ class ListViewResponseEntry(IcebergBaseModel):
 
 
 class ListTablesResponse(IcebergBaseModel):
-    identifiers: List[ListTableResponseEntry] = Field()
+    identifiers: list[ListTableResponseEntry] = Field()
 
 
 class ListViewsResponse(IcebergBaseModel):
-    identifiers: List[ListViewResponseEntry] = Field()
+    identifiers: list[ListViewResponseEntry] = Field()
 
 
 class RestCatalog(Catalog):
@@ -346,7 +342,7 @@ class RestCatalog(Catalog):
                 "endpoint is explicitly configured. See https://github.com/apache/iceberg/issues/10537",
             )
 
-    def _extract_optional_oauth_params(self) -> Dict[str, str]:
+    def _extract_optional_oauth_params(self) -> dict[str, str]:
         optional_oauth_param = {SCOPE: self.properties.get(SCOPE) or CATALOG_SCOPE}
         set_of_optional_params = {AUDIENCE, RESOURCE}
         for param in set_of_optional_params:
@@ -391,7 +387,7 @@ class RestCatalog(Catalog):
 
         return {"namespace": NAMESPACE_SEPARATOR.join(identifier_tuple[:-1]), kind.value: identifier_tuple[-1]}
 
-    def _split_identifier_for_json(self, identifier: str | Identifier) -> Dict[str, Identifier | str]:
+    def _split_identifier_for_json(self, identifier: str | Identifier) -> dict[str, Identifier | str]:
         identifier_tuple = self._identifier_to_validated_tuple(identifier)
         return {"namespace": identifier_tuple[:-1], "name": identifier_tuple[-1]}
 
@@ -447,7 +443,7 @@ class RestCatalog(Catalog):
 
         session.mount(self.uri, SigV4Adapter(**self.properties))
 
-    def _response_to_table(self, identifier_tuple: Tuple[str, ...], table_response: TableResponse) -> Table:
+    def _response_to_table(self, identifier_tuple: tuple[str, ...], table_response: TableResponse) -> Table:
         return Table(
             identifier=identifier_tuple,
             metadata_location=table_response.metadata_location,  # type: ignore
@@ -459,7 +455,7 @@ class RestCatalog(Catalog):
             config=table_response.config,
         )
 
-    def _response_to_staged_table(self, identifier_tuple: Tuple[str, ...], table_response: TableResponse) -> StagedTable:
+    def _response_to_staged_table(self, identifier_tuple: tuple[str, ...], table_response: TableResponse) -> StagedTable:
         return StagedTable(
             identifier=identifier_tuple,
             metadata_location=table_response.metadata_location,  # type: ignore
@@ -602,7 +598,7 @@ class RestCatalog(Catalog):
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
     @retry(**_RETRY_ARGS)
-    def list_tables(self, namespace: str | Identifier) -> List[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
         response = self._session.get(self.url(Endpoints.list_tables, namespace=namespace_concat))
@@ -683,7 +679,7 @@ class RestCatalog(Catalog):
         return table_request
 
     @retry(**_RETRY_ARGS)
-    def list_views(self, namespace: str | Identifier) -> List[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
         response = self._session.get(self.url(Endpoints.list_views, namespace=namespace_concat))
@@ -695,7 +691,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def commit_table(
-        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+        self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
         """Commit updates to a table.
 
@@ -760,7 +756,7 @@ class RestCatalog(Catalog):
             _handle_non_200_response(exc, {404: NoSuchNamespaceError, 409: NamespaceNotEmptyError})
 
     @retry(**_RETRY_ARGS)
-    def list_namespaces(self, namespace: str | Identifier = ()) -> List[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
         namespace_tuple = self.identifier_to_tuple(namespace)
         response = self._session.get(
             self.url(
@@ -790,7 +786,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def update_namespace_properties(
-        self, namespace: str | Identifier, removals: Set[str] | None = None, updates: Properties = EMPTY_DICT
+        self, namespace: str | Identifier, removals: set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)

@@ -57,16 +57,16 @@ pyarrow = [
     "pyarrow>=17.0.0",
 ]
 pandas = [
-    "pyarrow>=17.0.0",
     "pandas>=1.0.0,<3.0.0",
+    "pyarrow>=17.0.0",
 ]
 duckdb = [
-    "pyarrow>=17.0.0",
     "duckdb>=0.5.0,<2.0.0",
+    "pyarrow>=17.0.0",
 ]
 ray = [
-    "pyarrow>=17.0.0",
     "ray>=2.10.0,<=2.44.0",
+    "pyarrow>=17.0.0",
     "pandas>=1.0.0,<3.0.0",
 ]
 bodo = ["bodo>=2025.7.4"]

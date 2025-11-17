@@ -20,7 +20,7 @@ import time
 import warnings
 from collections import defaultdict
 from enum import Enum
-from typing import TYPE_CHECKING, Any, DefaultDict, Dict, Iterable, List, Mapping
+from typing import TYPE_CHECKING, Any, Iterable, Mapping
 
 from pydantic import Field, PrivateAttr, model_serializer
 
@@ -154,8 +154,8 @@ class UpdateMetrics:
         else:
             raise ValueError(f"Unknown data file content: {data_file.content}")
 
-    def to_dict(self) -> Dict[str, str]:
-        properties: Dict[str, str] = {}
+    def to_dict(self) -> dict[str, str]:
+        properties: dict[str, str] = {}
         set_when_positive(properties, self.added_file_size, ADDED_FILE_SIZE)
         set_when_positive(properties, self.removed_file_size, REMOVED_FILE_SIZE)
         set_when_positive(properties, self.added_data_files, ADDED_DATA_FILES)
@@ -183,7 +183,7 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
     """
 
     operation: Operation = Field()
-    _additional_properties: Dict[str, str] = PrivateAttr()
+    _additional_properties: dict[str, str] = PrivateAttr()
 
     def __init__(self, operation: Operation | None = None, **data: Any) -> None:
         if operation is None:
@@ -212,14 +212,14 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
         return 1 + len(self._additional_properties)
 
     @model_serializer
-    def ser_model(self) -> Dict[str, str]:
+    def ser_model(self) -> dict[str, str]:
         return {
             "operation": str(self.operation.value),
             **self._additional_properties,
         }
 
     @property
-    def additional_properties(self) -> Dict[str, str]:
+    def additional_properties(self) -> dict[str, str]:
         return self._additional_properties
 
     def __repr__(self) -> str:
@@ -275,7 +275,7 @@ class Snapshot(IcebergBaseModel):
         filtered_fields = [field for field in fields if field is not None]
         return f"Snapshot({', '.join(filtered_fields)})"
 
-    def manifests(self, io: FileIO) -> List[ManifestFile]:
+    def manifests(self, io: FileIO) -> list[ManifestFile]:
         """Return the manifests for the given snapshot."""
         return list(_manifests(io, self.manifest_list))
 
@@ -292,7 +292,7 @@ class SnapshotLogEntry(IcebergBaseModel):
 
 class SnapshotSummaryCollector:
     metrics: UpdateMetrics
-    partition_metrics: DefaultDict[str, UpdateMetrics]
+    partition_metrics: defaultdict[str, UpdateMetrics]
     max_changed_partitions_for_summaries: int
 
     def __init__(self, partition_summary_limit: int = 0) -> None:
@@ -324,7 +324,7 @@ class SnapshotSummaryCollector:
         else:
             partition_metrics.remove_file(file)
 
-    def build(self) -> Dict[str, str]:
+    def build(self) -> dict[str, str]:
         properties = self.metrics.to_dict()
         changed_partitions_size = len(self.partition_metrics)
         set_when_positive(properties, changed_partitions_size, CHANGED_PARTITION_COUNT_PROP)
@@ -447,7 +447,7 @@ def update_snapshot_summaries(
     return summary
 
 
-def set_when_positive(properties: Dict[str, str], num: int, property_name: str) -> None:
+def set_when_positive(properties: dict[str, str], num: int, property_name: str) -> None:
     if num > 0:
         properties[property_name] = str(num)
 
