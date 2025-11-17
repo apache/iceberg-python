@@ -19,7 +19,7 @@ name = "pyiceberg"
 version = "0.10.0"
 description = "Apache Iceberg is an open table format for huge analytic datasets"
 authors = [{ name = "Apache Software Foundation", email = "dev@iceberg.apache.org" }]
-requires-python = ">=3.10.0,<4.0.0"
+requires-python = ">=3.10.0,<=3.13.0"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
@@ -55,7 +55,6 @@ pyiceberg = "pyiceberg.cli.console:run"
 [project.optional-dependencies]
 pyarrow = [
     "pyarrow>=17.0.0",
-    "pyiceberg-core>=0.5.1,<0.8.0",
 ]
 pandas = [
     "pandas>=1.0.0,<3.0.0",
@@ -93,9 +92,18 @@ sql-sqlite = ["sqlalchemy>=2.0.18,<3"]
 gcsfs = ["gcsfs>=2023.1.0"]
 rest-sigv4 = ["boto3>=1.24.59"]
 hf = ["huggingface-hub>=0.24.0"]
-pyiceberg-core = ["pyiceberg-core>=0.5.1,<0.8.0"]
-datafusion = ["datafusion>=45,<49"]
+pyiceberg-core = ["pyiceberg-core==0.7.0.dev20251112154529"]
+datafusion = ["datafusion==50.*"]
 gcp-auth = ["google-auth>=2.4.0"]
+
+[tool.uv.sources]
+pyiceberg-core = { index = "testpypi" }
+
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+publish-url = "https://test.pypi.org/legacy/"
+explicit = true
 
 [dependency-groups]
 dev = [
@@ -157,8 +165,7 @@ markers = [
 # Turns a warning into an error
 filterwarnings = [
   "error",
-  # Ignore Python version deprecation warning from google.api_core while we still support 3.10
-  "ignore:You are using a Python version.*which Google will stop supporting:FutureWarning:google.api_core",
+  "ignore:You are using a Python version.*which Google will stop supporting:FutureWarning",
 ]
 
 [tool.black]
