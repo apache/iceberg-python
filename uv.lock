@@ -3441,6 +3441,18 @@ wheels = [
 ]
 
 [[package]]
+name = "pyarrow-stubs"
+version = "20.0.0.20251107"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyarrow" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9d/f1/40fa277fe20dfc6253f8e11edb96120050174209afc84019cd52386c5769/pyarrow_stubs-20.0.0.20251107.tar.gz", hash = "sha256:c0885c09f63e2be51bacb6b0e20b39083f43da1cb214d31e406f982e874bcb5a", size = 236584, upload-time = "2025-11-07T03:46:59.872Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/86/fa/a8ebb2cc3a301604f5ca2628e399232ba2d53c1590c1a9b7f8695667db4e/pyarrow_stubs-20.0.0.20251107-py3-none-any.whl", hash = "sha256:09da6809f37cc6dbbbf59c9c8e42269290d19ac09f65d2b3456c671f1c3a8765", size = 235744, upload-time = "2025-11-07T03:47:00.868Z" },
+]
+
+[[package]]
 name = "pyasn1"
 version = "0.6.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3723,6 +3735,7 @@ dev = [
     { name = "mypy-boto3-glue" },
     { name = "prek" },
     { name = "protobuf" },
+    { name = "pyarrow-stubs" },
     { name = "pyspark", extra = ["connect"] },
     { name = "pytest" },
     { name = "pytest-checkdocs" },
@@ -3806,6 +3819,7 @@ dev = [
     { name = "mypy-boto3-glue", specifier = ">=1.28.18" },
     { name = "prek", specifier = ">=0.2.1,<0.3" },
     { name = "protobuf", specifier = "==6.33.1" },
+    { name = "pyarrow-stubs", specifier = ">=20.0.0.20251107" },
     { name = "pyspark", extras = ["connect"], specifier = "==4.0.1" },
     { name = "pytest", specifier = "==7.4.4" },
     { name = "pytest-checkdocs", specifier = "==2.13.0" },
