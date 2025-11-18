@@ -30,6 +30,7 @@ on:
     paths:
       - '.github/workflows/check-md-link.yml'
       - 'mkdocs/**'
+  workflow_dispatch:
 
 jobs:
   markdown-link-check:
