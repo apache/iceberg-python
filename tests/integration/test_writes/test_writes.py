@@ -2091,15 +2091,20 @@ def test_read_write_decimals(session_catalog: Catalog) -> None:
     assert tbl.scan().to_arrow() == arrow_table
 
 
-@pytest.mark.skip("UUID BucketTransform is not supported in Spark Iceberg 1.9.2 yet")
 @pytest.mark.integration
 @pytest.mark.parametrize(
     "transform",
     [
         IdentityTransform(),
-        # Bucket is disabled because of an issue in Iceberg Java:
-        # https://github.com/apache/iceberg/pull/13324
-        # BucketTransform(32)
+        pytest.param(
+            BucketTransform(32),
+            marks=pytest.mark.skip(
+                reason="""
+                        Bucket is disabled because of an issue in Iceberg Java:
+                        https://github.com/apache/iceberg/pull/13324
+                        """
+            ),
+        ),
     ],
 )
 def test_uuid_partitioning(session_catalog: Catalog, spark: SparkSession, transform: Transform) -> None:  # type: ignore
