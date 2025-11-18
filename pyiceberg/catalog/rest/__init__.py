@@ -214,6 +214,7 @@ class ListViewsResponse(IcebergBaseModel):
 class RestCatalog(Catalog):
     uri: str
     _session: Session
+    _support_namespaces: bool = True
 
     def __init__(self, name: str, **properties: str):
         """Rest Catalog.
