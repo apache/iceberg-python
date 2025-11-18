@@ -21,9 +21,10 @@ import importlib
 import struct
 import types
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from enum import IntEnum
 from functools import singledispatch
-from typing import TYPE_CHECKING, Any, Callable, Generic, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Optional, TypeVar
 from typing import Literal as LiteralType
 from uuid import UUID
 

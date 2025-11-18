@@ -22,12 +22,12 @@ import json
 import logging
 import os
 import threading
+from collections.abc import Callable
 from copy import copy
 from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
 )
 from urllib.parse import urlparse
 

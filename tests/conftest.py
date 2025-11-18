@@ -31,6 +31,7 @@ import socket
 import string
 import time
 import uuid
+from collections.abc import Generator
 from datetime import date, datetime, timezone
 from pathlib import Path
 from random import choice, randint
@@ -38,7 +39,6 @@ from tempfile import TemporaryDirectory
 from typing import (
     TYPE_CHECKING,
     Any,
-    Generator,
 )
 
 import boto3

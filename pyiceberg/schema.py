@@ -20,12 +20,12 @@ from __future__ import annotations
 import builtins
 import itertools
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cached_property, partial, singledispatch
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Generic,
     Literal,
     TypeVar,

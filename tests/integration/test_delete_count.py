@@ -16,8 +16,8 @@
 # under the License.
 # pylint:disable=redefined-outer-name
 import random
+from collections.abc import Generator
 from datetime import datetime, timedelta
-from typing import Generator
 
 import pyarrow as pa
 import pytest

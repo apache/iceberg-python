@@ -21,6 +21,7 @@ import os
 import uuid
 import warnings
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from functools import cached_property
 from itertools import chain
@@ -28,9 +29,6 @@ from types import TracebackType
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
-    Iterable,
-    Iterator,
     TypeVar,
 )
 

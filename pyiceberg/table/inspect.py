@@ -17,8 +17,9 @@
 from __future__ import annotations
 
 import itertools
+from collections.abc import Iterator
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 
 from pyiceberg.conversions import from_bytes
 from pyiceberg.expressions import AlwaysTrue, BooleanExpression
