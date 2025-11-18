@@ -17,7 +17,8 @@
 # pylint: disable=redefined-outer-name,unused-argument
 import base64
 import os
-from typing import Any, Callable, cast
+from collections.abc import Callable
+from typing import Any, cast
 from unittest import mock
 
 import pytest

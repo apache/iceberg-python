@@ -20,8 +20,8 @@ import multiprocessing
 import os
 import re
 import threading
+from collections.abc import Iterator
 from datetime import date
-from typing import Iterator
 from unittest import mock
 
 import pyarrow as pa

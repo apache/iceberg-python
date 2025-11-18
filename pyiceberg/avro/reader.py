@@ -27,13 +27,12 @@ read schema is different, while respecting the read schema.
 from __future__ import annotations
 
 from abc import abstractmethod
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from dataclasses import field as dataclassfield
 from decimal import Decimal
 from typing import (
     Any,
-    Callable,
-    Mapping,
 )
 from uuid import UUID
 

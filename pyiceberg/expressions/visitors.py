@@ -16,10 +16,10 @@
 # under the License.
 import math
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from functools import singledispatch
 from typing import (
     Any,
-    Callable,
     Generic,
     SupportsFloat,
     TypeVar,

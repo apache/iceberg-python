@@ -37,6 +37,7 @@ import re
 import uuid
 import warnings
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterable, Iterator
 from copy import copy
 from dataclasses import dataclass
 from enum import Enum
@@ -44,10 +45,7 @@ from functools import lru_cache, singledispatch
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Generic,
-    Iterable,
-    Iterator,
     TypeVar,
     cast,
 )

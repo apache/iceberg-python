@@ -26,9 +26,7 @@ converting character sets (https://docs.python.org/3/library/codecs.html).
 
 from __future__ import annotations
 
-from typing import Literal
-
-from typing_extensions import TypeAlias
+from typing import Literal, TypeAlias
 
 from pyiceberg.avro.codecs.bzip2 import BZip2Codec
 from pyiceberg.avro.codecs.codec import Codec

@@ -15,10 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=broad-except,redefined-builtin,redefined-outer-name
+from collections.abc import Callable
 from functools import wraps
 from typing import (
     Any,
-    Callable,
     Literal,
 )
 

@@ -16,9 +16,10 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=eval-used,protected-access,redefined-outer-name
+from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
-from typing import Annotated, Any, Callable
+from typing import Annotated, Any
 from uuid import UUID
 
 import mmh3 as mmh3

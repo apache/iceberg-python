@@ -15,8 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=keyword-arg-before-vararg
+from collections.abc import Callable
 from enum import Enum
-from typing import Annotated, Any, Callable
+from typing import Annotated, Any
 
 from pydantic import (
     BeforeValidator,

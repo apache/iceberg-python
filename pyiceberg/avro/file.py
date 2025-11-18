@@ -22,11 +22,11 @@ from __future__ import annotations
 import io
 import json
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from types import TracebackType
 from typing import (
-    Callable,
     Generic,
     TypeVar,
 )

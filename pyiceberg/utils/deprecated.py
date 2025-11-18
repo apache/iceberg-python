@@ -16,7 +16,8 @@
 #  under the License.
 import functools
 import warnings
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 
 def deprecated(deprecated_in: str, removed_in: str, help_message: str | None = None) -> Callable:  # type: ignore
