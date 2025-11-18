@@ -50,6 +50,8 @@ from pyiceberg.types import (
 )
 from pyiceberg.utils.schema_conversion import AvroSchemaConversion
 
+__all__: list[str] = []
+
 VERSION = 1
 MAGIC = bytes(b"Obj" + bytearray([VERSION]))
 MAGIC_SIZE = len(MAGIC)
