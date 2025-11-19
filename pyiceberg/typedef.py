@@ -36,14 +36,14 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, RootModel
 from typing_extensions import Self
 
-from pyiceberg.expressions.literals import Literal as IcebergLiteral
-
 if TYPE_CHECKING:
+    from pyiceberg.expressions.literals import Literal as IcebergLiteral
     from pyiceberg.types import StructType
 
     LiteralValue = IcebergLiteral[Any]
 else:
-    LiteralValue = IcebergLiteral
+    # Use Any for runtime to avoid circular import - type checkers will use TYPE_CHECKING version
+    LiteralValue = Any  # type: ignore[assignment,misc]
 
 
 class FrozenDict(dict[Any, Any]):
