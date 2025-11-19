@@ -21,26 +21,16 @@ import builtins
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Sequence
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any
 from typing import Literal as TypingLiteral
 
 from pydantic import ConfigDict, Field
 
 from pyiceberg.expressions.literals import AboveMax, BelowMin, Literal, literal
 from pyiceberg.schema import Accessor, Schema
-from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel, L, StructProtocol
+from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel, L, LiteralValue, StructProtocol
 from pyiceberg.types import DoubleType, FloatType, NestedField
 from pyiceberg.utils.singleton import Singleton
-
-try:
-    from pydantic import ConfigDict
-except ImportError:
-    ConfigDict = dict
-
-if TYPE_CHECKING:
-    LiteralValue = Literal[Any]
-else:
-    LiteralValue = Literal
 
 
 def _to_unbound_term(term: str | UnboundTerm) -> UnboundTerm:
@@ -606,7 +596,7 @@ class SetPredicate(IcebergBaseModel, UnboundPredicate, ABC):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     type: TypingLiteral["in", "not-in"] = Field(default="in")
-    literals: set[Any] = Field(alias="items")
+    literals: set[LiteralValue] = Field(alias="items")
 
     def __init__(self, term: str | UnboundTerm, literals: Iterable[Any] | Iterable[LiteralValue]):
         literal_set = _to_literal_set(literals)
@@ -615,7 +605,7 @@ class SetPredicate(IcebergBaseModel, UnboundPredicate, ABC):
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundSetPredicate:
         bound_term = self.term.bind(schema, case_sensitive)
-        literal_set = cast(set[LiteralValue], self.literals)
+        literal_set = self.literals
         return self.as_bound(bound_term, {lit.to(bound_term.ref().field.field_type) for lit in literal_set})
 
     def __str__(self) -> str:
