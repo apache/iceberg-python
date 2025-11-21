@@ -43,6 +43,7 @@ repos:
           - types-pytest-lazy-fixture
           - types-pytz
           - types-requests
+          - pyarrow-stubs # Remove when pyarrow >= 23.0.0 https://github.com/apache/arrow/pull/47609
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.45.0
     hooks:
