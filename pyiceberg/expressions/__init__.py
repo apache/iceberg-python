@@ -253,14 +253,15 @@ class Reference(UnboundTerm[Any]):
 class And(IcebergBaseModel, BooleanExpression):
     """AND operation expression - logical conjunction."""
 
-    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=False)
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     type: TypingLiteral["and"] = Field(default="and", alias="type")
     left: BooleanExpression
     right: BooleanExpression
 
     def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> None:
-        super().__init__(left=left, right=right)
+        if isinstance(self, And) and not hasattr(self, "left") and not hasattr(self, "right"):
+            super().__init__(left=left, right=right)
 
     def __new__(cls, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> BooleanExpression:  # type: ignore
         if rest:
@@ -284,7 +285,7 @@ class And(IcebergBaseModel, BooleanExpression):
 
     def __str__(self) -> str:
         """Return the string representation of the And class."""
-        return f"And(left={str(self.left)}, right={str(self.right)})"
+        return f"{str(self.__class__.__name__)}(left={repr(self.left)}, right={repr(self.right)})"
 
     def __repr__(self) -> str:
         """Return the string representation of the And class."""
