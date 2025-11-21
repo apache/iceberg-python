@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import math
-from typing import TYPE_CHECKING, Dict, List, Literal, Optional
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import Field
 from pyroaring import BitMap, FrozenBitMap
@@ -32,7 +32,7 @@ MAX_JAVA_SIGNED = int(math.pow(2, 31)) - 1
 PROPERTY_REFERENCED_DATA_FILE = "referenced-data-file"
 
 
-def _deserialize_bitmap(pl: bytes) -> List[BitMap]:
+def _deserialize_bitmap(pl: bytes) -> list[BitMap]:
     number_of_bitmaps = int.from_bytes(pl[0:8], byteorder="little")
     pl = pl[8:]
 
@@ -64,21 +64,21 @@ def _deserialize_bitmap(pl: bytes) -> List[BitMap]:
 
 class PuffinBlobMetadata(IcebergBaseModel):
     type: Literal["deletion-vector-v1"] = Field()
-    fields: List[int] = Field()
+    fields: list[int] = Field()
     snapshot_id: int = Field(alias="snapshot-id")
     sequence_number: int = Field(alias="sequence-number")
     offset: int = Field()
     length: int = Field()
-    compression_codec: Optional[str] = Field(alias="compression-codec", default=None)
-    properties: Dict[str, str] = Field(default_factory=dict)
+    compression_codec: str | None = Field(alias="compression-codec", default=None)
+    properties: dict[str, str] = Field(default_factory=dict)
 
 
 class Footer(IcebergBaseModel):
-    blobs: List[PuffinBlobMetadata] = Field()
-    properties: Dict[str, str] = Field(default_factory=dict)
+    blobs: list[PuffinBlobMetadata] = Field()
+    properties: dict[str, str] = Field(default_factory=dict)
 
 
-def _bitmaps_to_chunked_array(bitmaps: List[BitMap]) -> "pa.ChunkedArray":
+def _bitmaps_to_chunked_array(bitmaps: list[BitMap]) -> "pa.ChunkedArray":
     import pyarrow as pa
 
     return pa.chunked_array([(key_pos << 32) + pos for pos in bitmap] for key_pos, bitmap in enumerate(bitmaps))
@@ -86,7 +86,7 @@ def _bitmaps_to_chunked_array(bitmaps: List[BitMap]) -> "pa.ChunkedArray":
 
 class PuffinFile:
     footer: Footer
-    _deletion_vectors: Dict[str, List[BitMap]]
+    _deletion_vectors: dict[str, list[BitMap]]
 
     def __init__(self, puffin: bytes) -> None:
         for magic_bytes in [puffin[:4], puffin[-4:]]:
@@ -112,5 +112,5 @@ class PuffinFile:
             for blob in self.footer.blobs
         }
 
-    def to_vector(self) -> Dict[str, "pa.ChunkedArray"]:
+    def to_vector(self) -> dict[str, "pa.ChunkedArray"]:
         return {path: _bitmaps_to_chunked_array(bitmaps) for path, bitmaps in self._deletion_vectors.items()}

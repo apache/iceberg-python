@@ -16,7 +16,6 @@
 # under the License.
 # pylint: disable=redefined-outer-name,arguments-renamed,fixme
 from tempfile import TemporaryDirectory
-from typing import Dict, Optional
 from unittest.mock import patch
 
 import fastavro
@@ -33,7 +32,7 @@ from pyiceberg.manifest import (
     ManifestEntryStatus,
     ManifestFile,
     PartitionFieldSummary,
-    _manifests,
+    _manifest_cache,
     read_manifest_list,
     write_manifest,
     write_manifest_list,
@@ -48,10 +47,10 @@ from pyiceberg.types import IntegerType, NestedField
 @pytest.fixture(autouse=True)
 def clear_global_manifests_cache() -> None:
     # Clear the global cache before each test
-    _manifests.cache_clear()  # type: ignore
+    _manifest_cache.clear()
 
 
-def _verify_metadata_with_fastavro(avro_file: str, expected_metadata: Dict[str, str]) -> None:
+def _verify_metadata_with_fastavro(avro_file: str, expected_metadata: dict[str, str]) -> None:
     with open(avro_file, "rb") as f:
         reader = fastavro.reader(f)
         metadata = reader.metadata
@@ -532,7 +531,7 @@ def test_write_manifest_list(
     generated_manifest_file_file_v1: str,
     generated_manifest_file_file_v2: str,
     format_version: TableVersion,
-    parent_snapshot_id: Optional[int],
+    parent_snapshot_id: int | None,
     compression: AvroCompressionCodec,
 ) -> None:
     io = load_file_io()

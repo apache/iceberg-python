@@ -20,8 +20,8 @@ import multiprocessing
 import os
 import re
 import threading
+from collections.abc import Iterator
 from datetime import date
-from typing import Iterator
 from unittest import mock
 
 import pyarrow as pa
@@ -713,7 +713,7 @@ def test_add_file_with_valid_nullability_diff(spark: SparkSession, session_catal
     rhs = written_arrow_table.to_pandas()
 
     for column in written_arrow_table.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             assert left == right
 
 
@@ -755,7 +755,7 @@ def test_add_files_with_valid_upcast(
     rhs = written_arrow_table.to_pandas()
 
     for column in written_arrow_table.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if column == "map":
                 # Arrow returns a list of tuples, instead of a dict
                 right = dict(right)
@@ -802,7 +802,7 @@ def test_add_files_subset_of_schema(spark: SparkSession, session_catalog: Catalo
     rhs = written_arrow_table.to_pandas()
 
     for column in written_arrow_table.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             assert left == right
 
 

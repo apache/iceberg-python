@@ -3,4 +3,5 @@
 build
 .git
 .gitignore
-poetry.lock
+uv.lock
+mkdocs/*

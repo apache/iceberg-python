@@ -18,11 +18,6 @@ from enum import Enum
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
-    List,
-    Optional,
-    Set,
-    Tuple,
     Union,
 )
 
@@ -153,23 +148,23 @@ _RETRY_ARGS = {
 
 
 class TableResponse(IcebergBaseModel):
-    metadata_location: Optional[str] = Field(alias="metadata-location", default=None)
+    metadata_location: str | None = Field(alias="metadata-location", default=None)
     metadata: TableMetadata
     config: Properties = Field(default_factory=dict)
 
 
 class CreateTableRequest(IcebergBaseModel):
     name: str = Field()
-    location: Optional[str] = Field()
+    location: str | None = Field()
     table_schema: Schema = Field(alias="schema")
-    partition_spec: Optional[PartitionSpec] = Field(alias="partition-spec")
-    write_order: Optional[SortOrder] = Field(alias="write-order")
+    partition_spec: PartitionSpec | None = Field(alias="partition-spec")
+    write_order: SortOrder | None = Field(alias="write-order")
     stage_create: bool = Field(alias="stage-create", default=False)
-    properties: Dict[str, str] = Field(default_factory=dict)
+    properties: dict[str, str] = Field(default_factory=dict)
 
     # validators
     @field_validator("properties", mode="before")
-    def transform_properties_dict_value_to_str(cls, properties: Properties) -> Dict[str, str]:
+    def transform_properties_dict_value_to_str(cls, properties: Properties) -> dict[str, str]:
         return transform_dict_value_to_str(properties)
 
 
@@ -179,12 +174,12 @@ class RegisterTableRequest(IcebergBaseModel):
 
 
 class ConfigResponse(IcebergBaseModel):
-    defaults: Optional[Properties] = Field(default_factory=dict)
-    overrides: Optional[Properties] = Field(default_factory=dict)
+    defaults: Properties | None = Field(default_factory=dict)
+    overrides: Properties | None = Field(default_factory=dict)
 
 
 class ListNamespaceResponse(IcebergBaseModel):
-    namespaces: List[Identifier] = Field()
+    namespaces: list[Identifier] = Field()
 
 
 class NamespaceResponse(IcebergBaseModel):
@@ -193,9 +188,9 @@ class NamespaceResponse(IcebergBaseModel):
 
 
 class UpdateNamespacePropertiesResponse(IcebergBaseModel):
-    removed: List[str] = Field()
-    updated: List[str] = Field()
-    missing: List[str] = Field()
+    removed: list[str] = Field()
+    updated: list[str] = Field()
+    missing: list[str] = Field()
 
 
 class ListTableResponseEntry(IcebergBaseModel):
@@ -209,11 +204,11 @@ class ListViewResponseEntry(IcebergBaseModel):
 
 
 class ListTablesResponse(IcebergBaseModel):
-    identifiers: List[ListTableResponseEntry] = Field()
+    identifiers: list[ListTableResponseEntry] = Field()
 
 
 class ListViewsResponse(IcebergBaseModel):
-    identifiers: List[ListViewResponseEntry] = Field()
+    identifiers: list[ListViewResponseEntry] = Field()
 
 
 class RestCatalog(Catalog):
@@ -237,6 +232,9 @@ class RestCatalog(Catalog):
     def _create_session(self) -> Session:
         """Create a request session with provided catalog configuration."""
         session = Session()
+
+        # Set HTTP headers
+        self._config_headers(session)
 
         # Sets the client side and server side SSL cert verification, if provided as properties.
         if ssl_config := self.properties.get(SSL):
@@ -265,9 +263,6 @@ class RestCatalog(Catalog):
         else:
             session.auth = AuthManagerAdapter(self._create_legacy_oauth2_auth_manager(session))
 
-        # Set HTTP headers
-        self._config_headers(session)
-
         # Configure SigV4 Request Signing
         if property_as_bool(self.properties, SIGV4, False):
             self._init_sigv4(session)
@@ -294,7 +289,7 @@ class RestCatalog(Catalog):
 
         return AuthManagerFactory.create("legacyoauth2", auth_config)
 
-    def _check_valid_namespace_identifier(self, identifier: Union[str, Identifier]) -> Identifier:
+    def _check_valid_namespace_identifier(self, identifier: str | Identifier) -> Identifier:
         """Check if the identifier has at least one element."""
         identifier_tuple = Catalog.identifier_to_tuple(identifier)
         if len(identifier_tuple) < 1:
@@ -347,7 +342,7 @@ class RestCatalog(Catalog):
                 "endpoint is explicitly configured. See https://github.com/apache/iceberg/issues/10537",
             )
 
-    def _extract_optional_oauth_params(self) -> Dict[str, str]:
+    def _extract_optional_oauth_params(self) -> dict[str, str]:
         optional_oauth_param = {SCOPE: self.properties.get(SCOPE) or CATALOG_SCOPE}
         set_of_optional_params = {AUDIENCE, RESOURCE}
         for param in set_of_optional_params:
@@ -377,14 +372,14 @@ class RestCatalog(Catalog):
         # Update URI based on overrides
         self.uri = config[URI]
 
-    def _identifier_to_validated_tuple(self, identifier: Union[str, Identifier]) -> Identifier:
+    def _identifier_to_validated_tuple(self, identifier: str | Identifier) -> Identifier:
         identifier_tuple = self.identifier_to_tuple(identifier)
         if len(identifier_tuple) <= 1:
             raise NoSuchIdentifierError(f"Missing namespace or invalid identifier: {'.'.join(identifier_tuple)}")
         return identifier_tuple
 
     def _split_identifier_for_path(
-        self, identifier: Union[str, Identifier, TableIdentifier], kind: IdentifierKind = IdentifierKind.TABLE
+        self, identifier: str | Identifier | TableIdentifier, kind: IdentifierKind = IdentifierKind.TABLE
     ) -> Properties:
         if isinstance(identifier, TableIdentifier):
             return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root), kind.value: identifier.name}
@@ -392,7 +387,7 @@ class RestCatalog(Catalog):
 
         return {"namespace": NAMESPACE_SEPARATOR.join(identifier_tuple[:-1]), kind.value: identifier_tuple[-1]}
 
-    def _split_identifier_for_json(self, identifier: Union[str, Identifier]) -> Dict[str, Union[Identifier, str]]:
+    def _split_identifier_for_json(self, identifier: str | Identifier) -> dict[str, Identifier | str]:
         identifier_tuple = self._identifier_to_validated_tuple(identifier)
         return {"namespace": identifier_tuple[:-1], "name": identifier_tuple[-1]}
 
@@ -448,7 +443,7 @@ class RestCatalog(Catalog):
 
         session.mount(self.uri, SigV4Adapter(**self.properties))
 
-    def _response_to_table(self, identifier_tuple: Tuple[str, ...], table_response: TableResponse) -> Table:
+    def _response_to_table(self, identifier_tuple: tuple[str, ...], table_response: TableResponse) -> Table:
         return Table(
             identifier=identifier_tuple,
             metadata_location=table_response.metadata_location,  # type: ignore
@@ -460,7 +455,7 @@ class RestCatalog(Catalog):
             config=table_response.config,
         )
 
-    def _response_to_staged_table(self, identifier_tuple: Tuple[str, ...], table_response: TableResponse) -> StagedTable:
+    def _response_to_staged_table(self, identifier_tuple: tuple[str, ...], table_response: TableResponse) -> StagedTable:
         return StagedTable(
             identifier=identifier_tuple,
             metadata_location=table_response.metadata_location,  # type: ignore
@@ -488,9 +483,9 @@ class RestCatalog(Catalog):
 
     def _create_table(
         self,
-        identifier: Union[str, Identifier],
+        identifier: str | Identifier,
         schema: Union[Schema, "pa.Schema"],
-        location: Optional[str] = None,
+        location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
@@ -530,9 +525,9 @@ class RestCatalog(Catalog):
     @retry(**_RETRY_ARGS)
     def create_table(
         self,
-        identifier: Union[str, Identifier],
+        identifier: str | Identifier,
         schema: Union[Schema, "pa.Schema"],
-        location: Optional[str] = None,
+        location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
@@ -551,9 +546,9 @@ class RestCatalog(Catalog):
     @retry(**_RETRY_ARGS)
     def create_table_transaction(
         self,
-        identifier: Union[str, Identifier],
+        identifier: str | Identifier,
         schema: Union[Schema, "pa.Schema"],
-        location: Optional[str] = None,
+        location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
@@ -571,7 +566,7 @@ class RestCatalog(Catalog):
         return CreateTableTransaction(staged_table)
 
     @retry(**_RETRY_ARGS)
-    def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
+    def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
         """Register a new table using existing metadata.
 
         Args:
@@ -603,7 +598,7 @@ class RestCatalog(Catalog):
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
     @retry(**_RETRY_ARGS)
-    def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
         response = self._session.get(self.url(Endpoints.list_tables, namespace=namespace_concat))
@@ -614,7 +609,7 @@ class RestCatalog(Catalog):
         return [(*table.namespace, table.name) for table in ListTablesResponse.model_validate_json(response.text).identifiers]
 
     @retry(**_RETRY_ARGS)
-    def load_table(self, identifier: Union[str, Identifier]) -> Table:
+    def load_table(self, identifier: str | Identifier) -> Table:
         params = {}
         if mode := self.properties.get(SNAPSHOT_LOADING_MODE):
             if mode in {"all", "refs"}:
@@ -634,7 +629,7 @@ class RestCatalog(Catalog):
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
     @retry(**_RETRY_ARGS)
-    def drop_table(self, identifier: Union[str, Identifier], purge_requested: bool = False) -> None:
+    def drop_table(self, identifier: str | Identifier, purge_requested: bool = False) -> None:
         response = self._session.delete(
             self.url(Endpoints.drop_table, prefixed=True, **self._split_identifier_for_path(identifier)),
             params={"purgeRequested": purge_requested},
@@ -645,15 +640,25 @@ class RestCatalog(Catalog):
             _handle_non_200_response(exc, {404: NoSuchTableError})
 
     @retry(**_RETRY_ARGS)
-    def purge_table(self, identifier: Union[str, Identifier]) -> None:
+    def purge_table(self, identifier: str | Identifier) -> None:
         self.drop_table(identifier=identifier, purge_requested=True)
 
     @retry(**_RETRY_ARGS)
-    def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
+    def rename_table(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> Table:
         payload = {
             "source": self._split_identifier_for_json(from_identifier),
             "destination": self._split_identifier_for_json(to_identifier),
         }
+
+        # Ensure that namespaces exist on source and destination.
+        source_namespace = self._split_identifier_for_json(from_identifier)["namespace"]
+        if not self.namespace_exists(source_namespace):
+            raise NoSuchNamespaceError(f"Source namespace does not exist: {source_namespace}")
+
+        destination_namespace = self._split_identifier_for_json(to_identifier)["namespace"]
+        if not self.namespace_exists(destination_namespace):
+            raise NoSuchNamespaceError(f"Destination namespace does not exist: {destination_namespace}")
+
         response = self._session.post(self.url(Endpoints.rename_table), json=payload)
         try:
             response.raise_for_status()
@@ -674,7 +679,7 @@ class RestCatalog(Catalog):
         return table_request
 
     @retry(**_RETRY_ARGS)
-    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
         response = self._session.get(self.url(Endpoints.list_views, namespace=namespace_concat))
@@ -686,7 +691,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def commit_table(
-        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+        self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
         """Commit updates to a table.
 
@@ -731,7 +736,7 @@ class RestCatalog(Catalog):
         return CommitTableResponse.model_validate_json(response.text)
 
     @retry(**_RETRY_ARGS)
-    def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
+    def create_namespace(self, namespace: str | Identifier, properties: Properties = EMPTY_DICT) -> None:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         payload = {"namespace": namespace_tuple, "properties": properties}
         response = self._session.post(self.url(Endpoints.create_namespace), json=payload)
@@ -741,7 +746,7 @@ class RestCatalog(Catalog):
             _handle_non_200_response(exc, {409: NamespaceAlreadyExistsError})
 
     @retry(**_RETRY_ARGS)
-    def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
+    def drop_namespace(self, namespace: str | Identifier) -> None:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
         response = self._session.delete(self.url(Endpoints.drop_namespace, namespace=namespace))
@@ -751,7 +756,7 @@ class RestCatalog(Catalog):
             _handle_non_200_response(exc, {404: NoSuchNamespaceError, 409: NamespaceNotEmptyError})
 
     @retry(**_RETRY_ARGS)
-    def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
         namespace_tuple = self.identifier_to_tuple(namespace)
         response = self._session.get(
             self.url(
@@ -768,7 +773,7 @@ class RestCatalog(Catalog):
         return ListNamespaceResponse.model_validate_json(response.text).namespaces
 
     @retry(**_RETRY_ARGS)
-    def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
+    def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
         response = self._session.get(self.url(Endpoints.load_namespace_metadata, namespace=namespace))
@@ -781,7 +786,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def update_namespace_properties(
-        self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = EMPTY_DICT
+        self, namespace: str | Identifier, removals: set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
@@ -799,7 +804,7 @@ class RestCatalog(Catalog):
         )
 
     @retry(**_RETRY_ARGS)
-    def namespace_exists(self, namespace: Union[str, Identifier]) -> bool:
+    def namespace_exists(self, namespace: str | Identifier) -> bool:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
         response = self._session.head(self.url(Endpoints.namespace_exists, namespace=namespace))
@@ -817,7 +822,7 @@ class RestCatalog(Catalog):
         return False
 
     @retry(**_RETRY_ARGS)
-    def table_exists(self, identifier: Union[str, Identifier]) -> bool:
+    def table_exists(self, identifier: str | Identifier) -> bool:
         """Check if a table exists.
 
         Args:
@@ -843,7 +848,7 @@ class RestCatalog(Catalog):
         return False
 
     @retry(**_RETRY_ARGS)
-    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
+    def view_exists(self, identifier: str | Identifier) -> bool:
         """Check if a view exists.
 
         Args:
@@ -868,7 +873,7 @@ class RestCatalog(Catalog):
         return False
 
     @retry(**_RETRY_ARGS)
-    def drop_view(self, identifier: Union[str]) -> None:
+    def drop_view(self, identifier: str) -> None:
         response = self._session.delete(
             self.url(Endpoints.drop_view, prefixed=True, **self._split_identifier_for_path(identifier, IdentifierKind.VIEW)),
         )

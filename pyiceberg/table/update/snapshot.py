@@ -21,10 +21,11 @@ import itertools
 import uuid
 from abc import abstractmethod
 from collections import defaultdict
+from collections.abc import Callable
 from concurrent.futures import Future
 from datetime import datetime
 from functools import cached_property
-from typing import TYPE_CHECKING, Callable, Dict, Generic, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Generic
 
 from sortedcontainers import SortedList
 
@@ -105,21 +106,21 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     _io: FileIO
     _operation: Operation
     _snapshot_id: int
-    _parent_snapshot_id: Optional[int]
-    _added_data_files: List[DataFile]
+    _parent_snapshot_id: int | None
+    _added_data_files: list[DataFile]
     _manifest_num_counter: itertools.count[int]
-    _deleted_data_files: Set[DataFile]
+    _deleted_data_files: set[DataFile]
     _compression: AvroCompressionCodec
-    _target_branch: Optional[str]
+    _target_branch: str | None
 
     def __init__(
         self,
         operation: Operation,
         transaction: Transaction,
         io: FileIO,
-        commit_uuid: Optional[uuid.UUID] = None,
-        snapshot_properties: Dict[str, str] = EMPTY_DICT,
-        branch: Optional[str] = MAIN_BRANCH,
+        commit_uuid: uuid.UUID | None = None,
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
+        branch: str | None = MAIN_BRANCH,
     ) -> None:
         super().__init__(transaction)
         self.commit_uuid = commit_uuid or uuid.uuid4()
@@ -140,7 +141,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.snapshot_by_name(self._target_branch)) else None
         )
 
-    def _validate_target_branch(self, branch: Optional[str]) -> Optional[str]:
+    def _validate_target_branch(self, branch: str | None) -> str | None:
         # if branch is none, write will be written into a staging snapshot
         if branch is not None:
             if branch in self._transaction.table_metadata.refs:
@@ -157,18 +158,31 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._deleted_data_files.add(data_file)
         return self
 
-    @abstractmethod
-    def _deleted_entries(self) -> List[ManifestEntry]: ...
+    def _calculate_added_rows(self, manifests: list[ManifestFile]) -> int:
+        """Calculate the number of added rows from a list of manifest files."""
+        added_rows = 0
+        for manifest in manifests:
+            if manifest.added_snapshot_id is None or manifest.added_snapshot_id == self._snapshot_id:
+                if manifest.added_rows_count is None:
+                    raise ValueError(
+                        "Cannot determine number of added rows in snapshot because "
+                        f"the entry for manifest {manifest.manifest_path} is missing the field `added-rows-count`"
+                    )
+                added_rows += manifest.added_rows_count
+        return added_rows
 
     @abstractmethod
-    def _existing_manifests(self) -> List[ManifestFile]: ...
+    def _deleted_entries(self) -> list[ManifestEntry]: ...
 
-    def _process_manifests(self, manifests: List[ManifestFile]) -> List[ManifestFile]:
+    @abstractmethod
+    def _existing_manifests(self) -> list[ManifestFile]: ...
+
+    def _process_manifests(self, manifests: list[ManifestFile]) -> list[ManifestFile]:
         """To perform any post-processing on the manifests before writing them to the new snapshot."""
         return manifests
 
-    def _manifests(self) -> List[ManifestFile]:
-        def _write_added_manifest() -> List[ManifestFile]:
+    def _manifests(self) -> list[ManifestFile]:
+        def _write_added_manifest() -> list[ManifestFile]:
             if self._added_data_files:
                 with write_manifest(
                     format_version=self._transaction.table_metadata.format_version,
@@ -192,12 +206,12 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             else:
                 return []
 
-        def _write_delete_manifest() -> List[ManifestFile]:
+        def _write_delete_manifest() -> list[ManifestFile]:
             # Check if we need to mark the files as deleted
             deleted_entries = self._deleted_entries()
             if len(deleted_entries) > 0:
                 deleted_manifests = []
-                partition_groups: Dict[int, List[ManifestEntry]] = defaultdict(list)
+                partition_groups: dict[int, list[ManifestEntry]] = defaultdict(list)
                 for deleted_entry in deleted_entries:
                     partition_groups[deleted_entry.data_file.spec_id].append(deleted_entry)
                 for spec_id, entries in partition_groups.items():
@@ -224,11 +238,14 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
 
         return self._process_manifests(added_manifests.result() + delete_manifests.result() + existing_manifests.result())
 
-    def _summary(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> Summary:
+    def _summary(self, snapshot_properties: dict[str, str] = EMPTY_DICT) -> Summary:
         from pyiceberg.table import TableProperties
 
+        # avoid copying metadata for each data file
+        table_metadata = self._transaction.table_metadata
+
         partition_summary_limit = int(
-            self._transaction.table_metadata.properties.get(
+            table_metadata.properties.get(
                 TableProperties.WRITE_PARTITION_SUMMARY_LIMIT, TableProperties.WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT
             )
         )
@@ -237,23 +254,21 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         for data_file in self._added_data_files:
             ssc.add_file(
                 data_file=data_file,
-                partition_spec=self._transaction.table_metadata.spec(),
-                schema=self._transaction.table_metadata.schema(),
+                partition_spec=table_metadata.spec(),
+                schema=table_metadata.schema(),
             )
 
         if len(self._deleted_data_files) > 0:
-            specs = self._transaction.table_metadata.specs()
+            specs = table_metadata.specs()
             for data_file in self._deleted_data_files:
                 ssc.remove_file(
                     data_file=data_file,
                     partition_spec=specs[data_file.spec_id],
-                    schema=self._transaction.table_metadata.schema(),
+                    schema=table_metadata.schema(),
                 )
 
         previous_snapshot = (
-            self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
-            if self._parent_snapshot_id is not None
-            else None
+            table_metadata.snapshot_by_id(self._parent_snapshot_id) if self._parent_snapshot_id is not None else None
         )
 
         return update_snapshot_summaries(
@@ -284,6 +299,11 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         ) as writer:
             writer.add_manifests(new_manifests)
 
+        first_row_id: int | None = None
+
+        if self._transaction.table_metadata.format_version >= 3:
+            first_row_id = self._transaction.table_metadata.next_row_id
+
         snapshot = Snapshot(
             snapshot_id=self._snapshot_id,
             parent_snapshot_id=self._parent_snapshot_id,
@@ -291,6 +311,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             sequence_number=next_sequence_number,
             summary=summary,
             schema_id=self._transaction.table_metadata.current_schema_id,
+            first_row_id=first_row_id,
         )
 
         add_snapshot_update = AddSnapshotUpdate(snapshot=snapshot)
@@ -344,7 +365,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         file_path = location_provider.new_metadata_location(file_name)
         return self._io.new_output(file_path)
 
-    def fetch_manifest_entry(self, manifest: ManifestFile, discard_deleted: bool = True) -> List[ManifestEntry]:
+    def fetch_manifest_entry(self, manifest: ManifestFile, discard_deleted: bool = True) -> list[ManifestEntry]:
         return manifest.fetch_manifest_entry(io=self._io, discard_deleted=discard_deleted)
 
 
@@ -366,9 +387,9 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         operation: Operation,
         transaction: Transaction,
         io: FileIO,
-        branch: Optional[str] = MAIN_BRANCH,
-        commit_uuid: Optional[uuid.UUID] = None,
-        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        branch: str | None = MAIN_BRANCH,
+        commit_uuid: uuid.UUID | None = None,
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
     ):
         super().__init__(operation, transaction, io, commit_uuid, snapshot_properties, branch)
         self._predicate = AlwaysFalse()
@@ -401,7 +422,7 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         self._case_sensitive = case_sensitive
 
     @cached_property
-    def _compute_deletes(self) -> Tuple[List[ManifestFile], List[ManifestEntry], bool]:
+    def _compute_deletes(self) -> tuple[list[ManifestFile], list[ManifestEntry], bool]:
         """Computes all the delete operation and cache it when nothing changes.
 
         Returns:
@@ -421,7 +442,7 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
                 data_file=entry.data_file,
             )
 
-        manifest_evaluators: Dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
+        manifest_evaluators: dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
         strict_metrics_evaluator = _StrictMetricsEvaluator(schema, self._predicate, case_sensitive=self._case_sensitive).eval
         inclusive_metrics_evaluator = _InclusiveMetricsEvaluator(
             schema, self._predicate, case_sensitive=self._case_sensitive
@@ -481,10 +502,10 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
 
         return existing_manifests, total_deleted_entries, partial_rewrites_needed
 
-    def _existing_manifests(self) -> List[ManifestFile]:
+    def _existing_manifests(self) -> list[ManifestFile]:
         return self._compute_deletes[0]
 
-    def _deleted_entries(self) -> List[ManifestEntry]:
+    def _deleted_entries(self) -> list[ManifestEntry]:
         return self._compute_deletes[1]
 
     @property
@@ -499,7 +520,7 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
 
 
 class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
-    def _existing_manifests(self) -> List[ManifestFile]:
+    def _existing_manifests(self) -> list[ManifestFile]:
         """To determine if there are any existing manifest files.
 
         A fast append will add another ManifestFile to the ManifestList.
@@ -519,7 +540,7 @@ class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
 
         return existing_manifests
 
-    def _deleted_entries(self) -> List[ManifestEntry]:
+    def _deleted_entries(self) -> list[ManifestEntry]:
         """To determine if we need to record any deleted manifest entries.
 
         In case of an append, nothing is deleted.
@@ -537,9 +558,9 @@ class _MergeAppendFiles(_FastAppendFiles):
         operation: Operation,
         transaction: Transaction,
         io: FileIO,
-        branch: Optional[str] = MAIN_BRANCH,
-        commit_uuid: Optional[uuid.UUID] = None,
-        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        branch: str | None = MAIN_BRANCH,
+        commit_uuid: uuid.UUID | None = None,
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
     ) -> None:
         from pyiceberg.table import TableProperties
 
@@ -560,7 +581,7 @@ class _MergeAppendFiles(_FastAppendFiles):
             TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
         )
 
-    def _process_manifests(self, manifests: List[ManifestFile]) -> List[ManifestFile]:
+    def _process_manifests(self, manifests: list[ManifestFile]) -> list[ManifestFile]:
         """To perform any post-processing on the manifests before writing them to the new snapshot.
 
         In _MergeAppendFiles, we merge manifests based on the target size and the minimum count to merge
@@ -585,7 +606,7 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
     Data and delete files were added and removed in a logical overwrite operation.
     """
 
-    def _existing_manifests(self) -> List[ManifestFile]:
+    def _existing_manifests(self) -> list[ManifestFile]:
         """Determine if there are any existing manifest files."""
         existing_files = []
 
@@ -621,7 +642,7 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
                         existing_files.append(writer.to_manifest_file())
         return existing_files
 
-    def _deleted_entries(self) -> List[ManifestEntry]:
+    def _deleted_entries(self) -> list[ManifestEntry]:
         """To determine if we need to record any deleted entries.
 
         With a full overwrite all the entries are considered deleted.
@@ -636,7 +657,7 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
 
             executor = ExecutorFactory.get_or_create()
 
-            def _get_entries(manifest: ManifestFile) -> List[ManifestEntry]:
+            def _get_entries(manifest: ManifestFile) -> list[ManifestEntry]:
                 return [
                     ManifestEntry.from_args(
                         status=ManifestEntryStatus.DELETED,
@@ -658,15 +679,15 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
 class UpdateSnapshot:
     _transaction: Transaction
     _io: FileIO
-    _branch: Optional[str]
-    _snapshot_properties: Dict[str, str]
+    _branch: str | None
+    _snapshot_properties: dict[str, str]
 
     def __init__(
         self,
         transaction: Transaction,
         io: FileIO,
-        branch: Optional[str] = MAIN_BRANCH,
-        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        branch: str | None = MAIN_BRANCH,
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
     ) -> None:
         self._transaction = transaction
         self._io = io
@@ -691,7 +712,7 @@ class UpdateSnapshot:
             snapshot_properties=self._snapshot_properties,
         )
 
-    def overwrite(self, commit_uuid: Optional[uuid.UUID] = None) -> _OverwriteFiles:
+    def overwrite(self, commit_uuid: uuid.UUID | None = None) -> _OverwriteFiles:
         return _OverwriteFiles(
             commit_uuid=commit_uuid,
             operation=Operation.OVERWRITE
@@ -727,13 +748,13 @@ class _ManifestMergeManager(Generic[U]):
         self._merge_enabled = merge_enabled
         self._snapshot_producer = snapshot_producer
 
-    def _group_by_spec(self, manifests: List[ManifestFile]) -> Dict[int, List[ManifestFile]]:
+    def _group_by_spec(self, manifests: list[ManifestFile]) -> dict[int, list[ManifestFile]]:
         groups = defaultdict(list)
         for manifest in manifests:
             groups[manifest.partition_spec_id].append(manifest)
         return groups
 
-    def _create_manifest(self, spec_id: int, manifest_bin: List[ManifestFile]) -> ManifestFile:
+    def _create_manifest(self, spec_id: int, manifest_bin: list[ManifestFile]) -> ManifestFile:
         with self._snapshot_producer.new_manifest_writer(spec=self._snapshot_producer.spec(spec_id)) as writer:
             for manifest in manifest_bin:
                 for entry in self._snapshot_producer.fetch_manifest_entry(manifest=manifest, discard_deleted=False):
@@ -749,11 +770,11 @@ class _ManifestMergeManager(Generic[U]):
 
         return writer.to_manifest_file()
 
-    def _merge_group(self, first_manifest: ManifestFile, spec_id: int, manifests: List[ManifestFile]) -> List[ManifestFile]:
+    def _merge_group(self, first_manifest: ManifestFile, spec_id: int, manifests: list[ManifestFile]) -> list[ManifestFile]:
         packer: ListPacker[ManifestFile] = ListPacker(target_weight=self._target_size_bytes, lookback=1, largest_bin_first=False)
-        bins: List[List[ManifestFile]] = packer.pack_end(manifests, lambda m: m.manifest_length)
+        bins: list[list[ManifestFile]] = packer.pack_end(manifests, lambda m: m.manifest_length)
 
-        def merge_bin(manifest_bin: List[ManifestFile]) -> List[ManifestFile]:
+        def merge_bin(manifest_bin: list[ManifestFile]) -> list[ManifestFile]:
             output_manifests = []
             if len(manifest_bin) == 1:
                 output_manifests.append(manifest_bin[0])
@@ -772,15 +793,15 @@ class _ManifestMergeManager(Generic[U]):
 
         # for consistent ordering, we need to maintain future order
         futures_index = {f: i for i, f in enumerate(futures)}
-        completed_futures: SortedList[Future[List[ManifestFile]]] = SortedList(iterable=[], key=lambda f: futures_index[f])
+        completed_futures: SortedList[Future[list[ManifestFile]]] = SortedList(iterable=[], key=lambda f: futures_index[f])
         for future in concurrent.futures.as_completed(futures):
             completed_futures.add(future)
 
-        bin_results: List[List[ManifestFile]] = [f.result() for f in completed_futures if f.result()]
+        bin_results: list[list[ManifestFile]] = [f.result() for f in completed_futures if f.result()]
 
         return [manifest for bin_result in bin_results for manifest in bin_result]
 
-    def merge_manifests(self, manifests: List[ManifestFile]) -> List[ManifestFile]:
+    def merge_manifests(self, manifests: list[ManifestFile]) -> list[ManifestFile]:
         if not self._merge_enabled or len(manifests) == 0:
             return manifests
 
@@ -810,8 +831,8 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
        ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
     """
 
-    _updates: Tuple[TableUpdate, ...]
-    _requirements: Tuple[TableRequirement, ...]
+    _updates: tuple[TableUpdate, ...]
+    _requirements: tuple[TableRequirement, ...]
 
     def __init__(self, transaction: Transaction) -> None:
         super().__init__(transaction)
@@ -844,7 +865,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         self._requirements += requirements
         return self
 
-    def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> ManageSnapshots:
+    def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: int | None = None) -> ManageSnapshots:
         """
         Create a new tag pointing to the given snapshot id.
 
@@ -881,9 +902,9 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         self,
         snapshot_id: int,
         branch_name: str,
-        max_ref_age_ms: Optional[int] = None,
-        max_snapshot_age_ms: Optional[int] = None,
-        min_snapshots_to_keep: Optional[int] = None,
+        max_ref_age_ms: int | None = None,
+        max_snapshot_age_ms: int | None = None,
+        min_snapshots_to_keep: int | None = None,
     ) -> ManageSnapshots:
         """
         Create a new branch pointing to the given snapshot id.
@@ -929,9 +950,9 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
     Pending changes are applied on commit.
     """
 
-    _updates: Tuple[TableUpdate, ...]
-    _requirements: Tuple[TableRequirement, ...]
-    _snapshot_ids_to_expire: Set[int]
+    _updates: tuple[TableUpdate, ...]
+    _requirements: tuple[TableRequirement, ...]
+    _snapshot_ids_to_expire: set[int]
 
     def __init__(self, transaction: Transaction) -> None:
         super().__init__(transaction)
@@ -956,7 +977,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         self._updates += (update,)
         return self._updates, self._requirements
 
-    def _get_protected_snapshot_ids(self) -> Set[int]:
+    def _get_protected_snapshot_ids(self) -> set[int]:
         """
         Get the IDs of protected snapshots.
 
@@ -992,7 +1013,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
 
         return self
 
-    def by_ids(self, snapshot_ids: List[int]) -> "ExpireSnapshots":
+    def by_ids(self, snapshot_ids: list[int]) -> ExpireSnapshots:
         """
         Expire multiple snapshots by their IDs.
 
@@ -1007,7 +1028,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
             self.by_id(snapshot_id)
         return self
 
-    def older_than(self, dt: datetime) -> "ExpireSnapshots":
+    def older_than(self, dt: datetime) -> ExpireSnapshots:
         """
         Expire all unprotected snapshots with a timestamp older than a given value.
 

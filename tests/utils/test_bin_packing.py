@@ -16,7 +16,6 @@
 # under the License.
 
 import random
-from typing import List
 
 import pytest
 
@@ -38,11 +37,11 @@ INT_MAX = 2147483647
         ),  # sparse
     ],
 )
-def test_bin_packing(splits: List[int], lookback: int, split_size: int, open_cost: int) -> None:
+def test_bin_packing(splits: list[int], lookback: int, split_size: int, open_cost: int) -> None:
     def weight_func(x: int) -> int:
         return max(x, open_cost)
 
-    item_list_sums: List[int] = [sum(item) for item in PackingIterator(splits, split_size, lookback, weight_func)]
+    item_list_sums: list[int] = [sum(item) for item in PackingIterator(splits, split_size, lookback, weight_func)]
     assert all(split_size >= item_sum >= 0 for item_sum in item_list_sums)
 
 
@@ -80,7 +79,7 @@ def test_bin_packing(splits: List[int], lookback: int, split_size: int, open_cos
     ],
 )
 def test_bin_packing_lookback(
-    splits: List[int], target_weight: int, lookback: int, largest_bin_first: bool, expected_lists: List[List[int]]
+    splits: list[int], target_weight: int, lookback: int, largest_bin_first: bool, expected_lists: list[list[int]]
 ) -> None:
     def weight_func(x: int) -> int:
         return x
@@ -123,7 +122,7 @@ def test_bin_packing_lookback(
     ],
 )
 def test_reverse_bin_packing_lookback(
-    splits: List[int], target_weight: int, lookback: int, largest_bin_first: bool, expected_lists: List[List[int]]
+    splits: list[int], target_weight: int, lookback: int, largest_bin_first: bool, expected_lists: list[list[int]]
 ) -> None:
     packer: ListPacker[int] = ListPacker(target_weight, lookback, largest_bin_first)
     result = packer.pack_end(splits, lambda x: x)

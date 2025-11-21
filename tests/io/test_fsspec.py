@@ -20,7 +20,6 @@ import pickle
 import tempfile
 import threading
 import uuid
-from typing import List
 from unittest import mock
 
 import pytest
@@ -59,8 +58,8 @@ def test_fsspec_local_fs_can_create_path_without_parent_dir(fsspec_fileio: Fsspe
 
 def test_fsspec_get_fs_instance_per_thread_caching(fsspec_fileio: FsspecFileIO) -> None:
     """Test that filesystem instances are cached per-thread by `FsspecFileIO.get_fs`"""
-    fs_instances: List[AbstractFileSystem] = []
-    start_work_events: List[threading.Event] = [threading.Event() for _ in range(2)]
+    fs_instances: list[AbstractFileSystem] = []
+    start_work_events: list[threading.Event] = [threading.Event() for _ in range(2)]
 
     def get_fs(start_work_event: threading.Event) -> None:
         # Wait to be told to actually start getting the filesystem instances

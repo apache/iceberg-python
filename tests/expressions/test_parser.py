@@ -42,7 +42,7 @@ from pyiceberg.expressions import (
     Reference,
     StartsWith,
 )
-from pyiceberg.expressions.literals import DecimalLiteral, LongLiteral
+from pyiceberg.expressions.literals import DecimalLiteral, LongLiteral, literal
 
 
 def test_always_true() -> None:
@@ -225,6 +225,9 @@ def test_with_function() -> None:
 def test_nested_fields() -> None:
     assert EqualTo("foo.bar", "data") == parser.parse("foo.bar = 'data'")
     assert LessThan("location.x", DecimalLiteral(Decimal(52.00))) == parser.parse("location.x < 52.00")
+    # Test issue #953 scenario - nested struct field filtering
+    assert EqualTo("employment.status", "Employed") == parser.parse("employment.status = 'Employed'")
+    assert EqualTo("contact.email", "test@example.com") == parser.parse("contact.email = 'test@example.com'")
 
 
 def test_quoted_column_with_dots() -> None:
@@ -241,7 +244,8 @@ def test_quoted_column_with_spaces() -> None:
     assert EqualTo("Foo Bar", "data") == parser.parse("\"Foo Bar\" = 'data'")
 
 
-def test_valid_between() -> None:
+def test_valid_between_with_numerics() -> None:
+    # numerics
     assert And(
         left=GreaterThanOrEqual(Reference(name="foo"), LongLiteral(1)),
         right=LessThanOrEqual(Reference(name="foo"), LongLiteral(3)),
@@ -254,16 +258,17 @@ def test_valid_between() -> None:
         left=GreaterThanOrEqual(Reference(name="foo"), DecimalLiteral(Decimal(1.0))),
         right=LessThanOrEqual(Reference(name="foo"), DecimalLiteral(Decimal(4.0))),
     ) == parser.parse("foo between 1.0 and 4.0")
+
+    # dates
+    assert And(
+        left=GreaterThanOrEqual(Reference(name="foo"), literal("2025-05-10")),
+        right=LessThanOrEqual(Reference(name="foo"), literal("2025-05-12")),
+    ) == parser.parse("foo between '2025-05-10' and '2025-05-12'")
+
+    # timestamps
+    assert And(
+        left=GreaterThanOrEqual(Reference(name="foo"), literal("2025-01-01T00:00:00.000000")),
+        right=LessThanOrEqual(Reference(name="foo"), literal("2025-01-10T12:00:00.000000")),
+    ) == parser.parse("foo between '2025-01-01T00:00:00.000000' and '2025-01-10T12:00:00.000000'")
+
     assert parser.parse("foo between 1 and 3") == parser.parse("1 <= foo and foo <= 3")
-
-
-def test_invalid_between() -> None:
-    # boolean
-    with pytest.raises(ParseException) as exc_info:
-        parser.parse("foo between true and false")
-    assert "Expected number, found 'true'" in str(exc_info)
-
-    # string
-    with pytest.raises(ParseException) as exc_info:
-        parser.parse("foo between 'a' and 'b'")
-    assert 'Expected number, found "\'"' in str(exc_info)

@@ -16,7 +16,8 @@
 #  under the License.
 
 import time
-from typing import Any, Dict, Generator, List
+from collections.abc import Generator
+from typing import Any
 from uuid import uuid4
 
 import boto3
@@ -70,7 +71,7 @@ class AthenaQueryHelper:
         self._output_bucket = get_bucket_name()
         self._output_path = f"athena_results_{uuid4()}"
 
-    def get_query_results(self, query: str) -> List[Dict[str, Any]]:
+    def get_query_results(self, query: str) -> list[dict[str, Any]]:
         query_execution_id = self._athena_client.start_query_execution(
             QueryString=query, ResultConfiguration={"OutputLocation": f"s3://{self._output_bucket}/{self._output_path}"}
         )["QueryExecutionId"]
@@ -222,7 +223,7 @@ def test_load_table(test_catalog: Catalog, table_schema_nested: Schema, table_na
     assert MetastoreCatalog._parse_metadata_version(table.metadata_location) == 0
 
 
-def test_list_tables(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_list: List[str]) -> None:
+def test_list_tables(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_list: list[str]) -> None:
     test_catalog.create_namespace(database_name)
     for table_name in table_list:
         test_catalog.create_table((database_name, table_name), table_schema_nested)
@@ -312,7 +313,7 @@ def test_create_namespace_with_comment_and_location(test_catalog: Catalog, datab
     assert properties["location"] == test_location
 
 
-def test_list_namespaces(test_catalog: Catalog, database_list: List[str]) -> None:
+def test_list_namespaces(test_catalog: Catalog, database_list: list[str]) -> None:
     for database_name in database_list:
         test_catalog.create_namespace(database_name)
     db_list = test_catalog.list_namespaces()

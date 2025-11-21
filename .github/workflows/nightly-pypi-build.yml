@@ -39,13 +39,13 @@ jobs:
         with:
           python-version: 3.12
 
-      - name: Install Poetry
-        run: make install-poetry
+      - name: Install UV
+        uses: astral-sh/setup-uv@v7
 
       - name: Set version
         id: set-version
         run: |
-          CURRENT_VERSION=$(poetry version --short)
+          CURRENT_VERSION=$(uv version --short)
           TIMESTAMP=$(date +%Y%m%d%H%M%S)
           echo "VERSION=${CURRENT_VERSION}.dev${TIMESTAMP}" >> "$GITHUB_OUTPUT"
 
@@ -71,15 +71,42 @@ jobs:
 
     steps:
     - name: Download all the artifacts
-      uses: actions/download-artifact@v5
+      uses: actions/download-artifact@v6
       with:
         merge-multiple: true
         path: dist/
     - name: List downloaded artifacts
       run: ls -R dist/
     - name: Publish to TestPyPI
+      id: publish-testpypi
+      continue-on-error: true
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
         repository-url: https://test.pypi.org/legacy/
         skip-existing: true
         verbose: true
+    - name: Display error message on publish failure
+      if: steps.publish-testpypi.outcome == 'failure'
+      run: |
+        echo "::error::Failed to publish to TestPyPI"
+        echo ""
+        echo "⚠️  TestPyPI Publish Failed"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "This may be due to TestPyPI storage limits."
+        echo "See: https://docs.pypi.org/project-management/storage-limits"
+        echo ""
+        echo "To resolve this issue, use the pypi-cleanup utility to clean up old TestPyPI artifacts:"
+        echo "https://pypi.org/project/pypi-cleanup/"
+        echo ""
+        echo "  uvx pypi-cleanup --package pyiceberg --host https://test.pypi.org/ \\"
+        echo "    --verbose -d 10 --do-it --username <username>"
+        echo ""
+        echo "Requirements:"
+        echo "  • Must be a maintainer for pyiceberg on TestPyPI"
+        echo "    (https://test.pypi.org/project/pyiceberg)"
+        echo "  • Requires TestPyPI password and 2FA"
+        echo "  • ⚠️  ONLY do this for TestPyPI, NOT for production PyPI!"
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        exit 1
