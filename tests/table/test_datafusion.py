@@ -49,7 +49,7 @@ def test_datafusion_register_pyiceberg_table(catalog: Catalog, arrow_table_with_
     iceberg_table.append(arrow_table_with_null)
 
     ctx = SessionContext()
-    ctx.register_table_provider("test", iceberg_table)
+    ctx.register_table("test", iceberg_table)
 
     datafusion_table = ctx.table("test")
     assert datafusion_table is not None
