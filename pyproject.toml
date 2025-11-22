@@ -116,6 +116,7 @@ dev = [
     "docutils!=0.21.post1",
     "mypy-boto3-glue>=1.28.18",
     "mypy-boto3-dynamodb>=1.28.18",
+    "pyarrow-stubs>=20.0.0.20251107", # Remove when pyarrow >= 23.0.0 https://github.com/apache/arrow/pull/47609
 ]
 # for mkdocs
 docs = [
