@@ -502,7 +502,7 @@ def test_less_than_or_equal_invert() -> None:
     ],
 )
 def test_bind(pred: UnboundPredicate, table_schema_simple: Schema) -> None:
-    assert pred.bind(table_schema_simple, case_sensitive=True).term.field == table_schema_simple.find_field(  # type: ignore
+    assert pred.bind(table_schema_simple, case_sensitive=True).term.field == table_schema_simple.find_field(
         pred.term.name,  # type: ignore
         case_sensitive=True,
     )
@@ -522,7 +522,7 @@ def test_bind(pred: UnboundPredicate, table_schema_simple: Schema) -> None:
     ],
 )
 def test_bind_case_insensitive(pred: UnboundPredicate, table_schema_simple: Schema) -> None:
-    assert pred.bind(table_schema_simple, case_sensitive=False).term.field == table_schema_simple.find_field(  # type: ignore
+    assert pred.bind(table_schema_simple, case_sensitive=False).term.field == table_schema_simple.find_field(
         pred.term.name,  # type: ignore
         case_sensitive=False,
     )
@@ -990,7 +990,7 @@ def test_not_equal_to() -> None:
     not_equal_to = NotEqualTo(Reference("a"), literal("a"))
     json_repr = '{"term":"a","type":"not-eq","value":"a"}'
     assert not_equal_to.model_dump_json() == json_repr
-    assert BooleanExpression.model_validate_json(json_repr) == equal_to
+    assert BooleanExpression.model_validate_json(json_repr) == not_equal_to
     assert str(not_equal_to) == "NotEqualTo(term=Reference(name='a'), literal=literal('a'))"
     assert repr(not_equal_to) == "NotEqualTo(term=Reference(name='a'), literal=literal('a'))"
     assert not_equal_to == eval(repr(not_equal_to))
@@ -1001,7 +1001,7 @@ def test_greater_than_or_equal_to() -> None:
     greater_than_or_equal_to = GreaterThanOrEqual(Reference("a"), literal("a"))
     json_repr = '{"term":"a","type":"gt-eq","value":"a"}'
     assert greater_than_or_equal_to.model_dump_json() == json_repr
-    assert BooleanExpression.model_validate_json(json_repr) == equal_to
+    assert BooleanExpression.model_validate_json(json_repr) == greater_than_or_equal_to
     assert str(greater_than_or_equal_to) == "GreaterThanOrEqual(term=Reference(name='a'), literal=literal('a'))"
     assert repr(greater_than_or_equal_to) == "GreaterThanOrEqual(term=Reference(name='a'), literal=literal('a'))"
     assert greater_than_or_equal_to == eval(repr(greater_than_or_equal_to))
@@ -1012,7 +1012,7 @@ def test_greater_than() -> None:
     greater_than = GreaterThan(Reference("a"), literal("a"))
     json_repr = '{"term":"a","type":"gt","value":"a"}'
     assert greater_than.model_dump_json() == json_repr
-    assert BooleanExpression.model_validate_json(json_repr) == equal_to
+    assert BooleanExpression.model_validate_json(json_repr) == greater_than
     assert str(greater_than) == "GreaterThan(term=Reference(name='a'), literal=literal('a'))"
     assert repr(greater_than) == "GreaterThan(term=Reference(name='a'), literal=literal('a'))"
     assert greater_than == eval(repr(greater_than))
@@ -1023,7 +1023,7 @@ def test_less_than() -> None:
     less_than = LessThan(Reference("a"), literal("a"))
     json_repr = '{"term":"a","type":"lt","value":"a"}'
     assert less_than.model_dump_json() == json_repr
-    assert BooleanExpression.model_validate_json(json_repr) == equal_to
+    assert BooleanExpression.model_validate_json(json_repr) == less_than
     assert str(less_than) == "LessThan(term=Reference(name='a'), literal=literal('a'))"
     assert repr(less_than) == "LessThan(term=Reference(name='a'), literal=literal('a'))"
     assert less_than == eval(repr(less_than))
@@ -1034,7 +1034,7 @@ def test_less_than_or_equal() -> None:
     less_than_or_equal = LessThanOrEqual(Reference("a"), literal("a"))
     json_repr = '{"term":"a","type":"lt-eq","value":"a"}'
     assert less_than_or_equal.model_dump_json() == json_repr
-    assert BooleanExpression.model_validate_json(json_repr) == equal_to
+    assert BooleanExpression.model_validate_json(json_repr) == less_than_or_equal
     assert str(less_than_or_equal) == "LessThanOrEqual(term=Reference(name='a'), literal=literal('a'))"
     assert repr(less_than_or_equal) == "LessThanOrEqual(term=Reference(name='a'), literal=literal('a'))"
     assert less_than_or_equal == eval(repr(less_than_or_equal))
@@ -1045,14 +1045,14 @@ def test_starts_with() -> None:
     starts_with = StartsWith(Reference("a"), literal("a"))
     json_repr = '{"term":"a","type":"starts-with","value":"a"}'
     assert starts_with.model_dump_json() == json_repr
-    assert BooleanExpression.model_validate_json(json_repr) == equal_to
+    assert BooleanExpression.model_validate_json(json_repr) == starts_with
 
 
 def test_not_starts_with() -> None:
     not_starts_with = NotStartsWith(Reference("a"), literal("a"))
     json_repr = '{"term":"a","type":"not-starts-with","value":"a"}'
     assert not_starts_with.model_dump_json() == json_repr
-    assert BooleanExpression.model_validate_json(json_repr) == equal_to
+    assert BooleanExpression.model_validate_json(json_repr) == not_starts_with
 
 
 def test_bound_reference_eval(table_schema_simple: Schema) -> None:
