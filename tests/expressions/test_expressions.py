@@ -923,7 +923,6 @@ def test_not_in() -> None:
     assert not_in == pickle.loads(pickle.dumps(not_in))
 
 
-
 def test_bound_equal_to(term: BoundReference) -> None:
     bound_equal_to = BoundEqualTo(term, literal("a"))
     assert str(bound_equal_to) == f"BoundEqualTo(term={str(term)}, literal=literal('a'))"
