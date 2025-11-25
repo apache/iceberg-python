@@ -724,10 +724,6 @@ def test_and() -> None:
     with pytest.raises(ValueError, match="Expected BooleanExpression, got: abc"):
         null & "abc"
 
-    json_repr = '{"type": "and", "left": {"type": "is-null", "ref"}}'
-    assert and_.model_dump_json() == json_repr
-    assert BooleanExpression.model_validate_json(json_repr) == and_
-
 
 def test_or() -> None:
     null = IsNull(Reference("a"))

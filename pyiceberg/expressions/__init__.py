@@ -307,12 +307,10 @@ class And(BooleanExpression):
         elif right is AlwaysTrue():
             return left
         else:
-            return super().__new__(cls)
-
-    def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> None:
-        # Ignore rest if provided - __new__ should have handled it
-        if not rest:
-            super().__init__(left=left, right=right)
+            obj = super().__new__(cls)
+            obj.left = left
+            obj.right = right
+            return obj
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the And class."""
