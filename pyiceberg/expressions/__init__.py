@@ -596,11 +596,11 @@ class SetPredicate(IcebergBaseModel, UnboundPredicate, ABC):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     type: TypingLiteral["in", "not-in"] = Field(default="in")
-    literals: set[LiteralValue] = Field(alias="items")
+    literals: set[LiteralValue] = Field(alias="values")
 
     def __init__(self, term: str | UnboundTerm, literals: Iterable[Any] | Iterable[LiteralValue]):
         literal_set = _to_literal_set(literals)
-        super().__init__(term=_to_unbound_term(term), items=literal_set)  # type: ignore
+        super().__init__(term=_to_unbound_term(term), values=literal_set)  # type: ignore
         object.__setattr__(self, "literals", literal_set)
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundSetPredicate:
