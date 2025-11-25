@@ -915,12 +915,12 @@ def test_not_in() -> None:
 
 def test_serialize_in() -> None:
     pred = In(term="foo", literals=[1, 2, 3])
-    assert pred.model_dump_json() == '{"term":"foo","type":"in","items":[1,2,3]}'
+    assert pred.model_dump_json() == '{"term":"foo","type":"in","values":[1,2,3]}'
 
 
 def test_serialize_not_in() -> None:
     pred = NotIn(term="foo", literals=[1, 2, 3])
-    assert pred.model_dump_json() == '{"term":"foo","type":"not-in","items":[1,2,3]}'
+    assert pred.model_dump_json() == '{"term":"foo","type":"not-in","values":[1,2,3]}'
 
 
 def test_bound_equal_to(term: BoundReference) -> None:
