@@ -770,7 +770,7 @@ def test_not_json_serialization_and_deserialization() -> None:
 
 def test_always_true() -> None:
     always_true = AlwaysTrue()
-    assert always_true.model_dump_json() == '"true"'
+    assert always_true.model_dump_json() == "true"
     assert str(always_true) == "AlwaysTrue()"
     assert repr(always_true) == "AlwaysTrue()"
     assert always_true == eval(repr(always_true))
@@ -779,7 +779,7 @@ def test_always_true() -> None:
 
 def test_always_false() -> None:
     always_false = AlwaysFalse()
-    assert always_false.model_dump_json() == '"false"'
+    assert always_false.model_dump_json() == "false"
     assert str(always_false) == "AlwaysFalse()"
     assert repr(always_false) == "AlwaysFalse()"
     assert always_false == eval(repr(always_false))
