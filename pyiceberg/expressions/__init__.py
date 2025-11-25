@@ -370,10 +370,10 @@ class Not(IcebergBaseModel, BooleanExpression):
         return (self.child,)
 
 
-class AlwaysTrue(BooleanExpression, Singleton, IcebergRootModel[str]):
+class AlwaysTrue(BooleanExpression, Singleton, IcebergRootModel[bool]):
     """TRUE expression."""
 
-    root: str = "true"
+    root: bool = True
 
     def __invert__(self) -> AlwaysFalse:
         """Transform the Expression into its negated version."""
@@ -388,10 +388,10 @@ class AlwaysTrue(BooleanExpression, Singleton, IcebergRootModel[str]):
         return "AlwaysTrue()"
 
 
-class AlwaysFalse(BooleanExpression, Singleton, IcebergRootModel[str]):
+class AlwaysFalse(BooleanExpression, Singleton, IcebergRootModel[bool]):
     """FALSE expression."""
 
-    root: str = "false"
+    root: bool = False
 
     def __invert__(self) -> AlwaysTrue:
         """Transform the Expression into its negated version."""
