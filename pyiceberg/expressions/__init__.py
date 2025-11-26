@@ -20,10 +20,10 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Sequence
 from functools import cached_property
-from typing import Any
+from typing import Annotated, Any, TypeAlias
 from typing import Literal as TypingLiteral
 
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Discriminator, Field, Tag, model_validator
 from pydantic_core.core_schema import ValidatorFunctionWrapHandler
 
 from pyiceberg.expressions.literals import AboveMax, BelowMin, Literal, literal
@@ -290,16 +290,42 @@ class Reference(UnboundTerm, IcebergRootModel[str]):
         return BoundReference
 
 
+Predicates: TypeAlias = Annotated[
+    Annotated["IsNull", Tag("is-null")]
+    | Annotated["NotNull", Tag("not-null")]
+    | Annotated["IsNaN", Tag("is-nan")]
+    | Annotated["NotNaN", Tag("not-nan")]
+    | Annotated["EqualTo", Tag("eq")]
+    | Annotated["NotEqualTo", Tag("not-eq")]
+    | Annotated["LessThan", Tag("lt")]
+    | Annotated["LessThanOrEqual", Tag("lt-eq")]
+    | Annotated["GreaterThan", Tag("gt")]
+    | Annotated["GreaterThanOrEqual", Tag("gt-eq")]
+    | Annotated["StartsWith", Tag("starts-with")]
+    | Annotated["NotStartsWith", Tag("not-starts-with")]
+    | Annotated["In", Tag("in")]
+    | Annotated["NotIn", Tag("not-in")]
+    | Annotated["And", Tag("and")]
+    | Annotated["Or", Tag("or")]
+    | Annotated["Not", Tag("not")],
+    Discriminator("type"),
+]
+
+
 class And(BooleanExpression):
     """AND operation expression - logical conjunction."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     type: TypingLiteral["and"] = Field(default="and", alias="type")
-    left: BooleanExpression
-    right: BooleanExpression
+    left: Predicates
+    right: Predicates
 
-    def __new__(cls, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> BooleanExpression:
+    def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression, **_: Any) -> None:
+        if isinstance(self, And) and not hasattr(self, "left") and not hasattr(self, "right"):
+            super().__init__(left=left, right=right)
+
+    def __new__(cls, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression, **_: Any) -> BooleanExpression:
         if rest:
             return _build_balanced_tree(And, (left, right, *rest))
         if left is AlwaysFalse() or right is AlwaysFalse():
@@ -310,10 +336,6 @@ class And(BooleanExpression):
             return left
         else:
             return super().__new__(cls)
-
-    def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> None:
-        if isinstance(self, And) and not hasattr(self, "left") and not hasattr(self, "right"):
-            super().__init__(left=left, right=right)
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the And class."""
@@ -343,8 +365,8 @@ class Or(BooleanExpression):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     type: TypingLiteral["or"] = Field(default="or", alias="type")
-    left: BooleanExpression
-    right: BooleanExpression
+    left: Predicates
+    right: Predicates
 
     def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> None:
         if isinstance(self, Or) and not hasattr(self, "left") and not hasattr(self, "right"):
@@ -390,7 +412,7 @@ class Not(BooleanExpression):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     type: TypingLiteral["not"] = Field(default="not")
-    child: BooleanExpression = Field()
+    child: Predicates = Field()
 
     def __init__(self, child: BooleanExpression, **_: Any) -> None:
         super().__init__(child=child)
@@ -402,8 +424,8 @@ class Not(BooleanExpression):
             return AlwaysTrue()
         elif isinstance(child, Not):
             return child.child
-        obj = super().__new__(cls)
-        return obj
+        else:
+            return super().__new__(cls)
 
     def __str__(self) -> str:
         """Return the string representation of the Not class."""
