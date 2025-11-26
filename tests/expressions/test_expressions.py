@@ -725,6 +725,15 @@ def test_and() -> None:
         null & "abc"
 
 
+def test_and_serialization() -> None:
+    expr = And(EqualTo("x", 1), GreaterThan("y", 2))
+
+    assert (
+        expr.model_dump_json()
+        == '{"type":"and","left":{"term":"x","type":"eq","value":1},"right":{"term":"y","type":"gt","value":2}}'
+    )
+
+
 def test_or() -> None:
     null = IsNull(Reference("a"))
     nan = IsNaN(Reference("b"))
