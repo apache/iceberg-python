@@ -727,11 +727,10 @@ def test_and() -> None:
 
 def test_and_serialization() -> None:
     expr = And(EqualTo("x", 1), GreaterThan("y", 2))
+    json_repr = '{"type":"and","left":{"term":"x","type":"eq","value":1},"right":{"term":"y","type":"gt","value":2}}'
 
-    assert (
-        expr.model_dump_json()
-        == '{"type":"and","left":{"term":"x","type":"eq","value":1},"right":{"term":"y","type":"gt","value":2}}'
-    )
+    assert expr.model_dump_json() == json_repr
+    assert BooleanExpression.model_validate_json(json_repr) == expr
 
 
 def test_or() -> None:

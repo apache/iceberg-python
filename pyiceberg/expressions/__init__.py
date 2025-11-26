@@ -113,9 +113,8 @@ class BooleanExpression(IcebergBaseModel, ABC):
                 return NotIn(**v)
 
             # Other
-            # elif field_type == "and":
-            # WIP: https://github.com/apache/iceberg-python/pull/2560
-            # return And(**v)
+            elif field_type == "and":
+                return And(**v)
             elif field_type == "or":
                 return Or(**v)
             elif field_type == "not":
@@ -301,7 +300,7 @@ class And(BooleanExpression):
     right: BooleanExpression
 
     def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> None:
-        if isinstance(self, And) and not hasattr(self, "left") and not hasattr(self, "right"):
+        if isinstance(self, And):
             super().__init__(left=left, right=right)
 
     def __new__(cls, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> BooleanExpression:
@@ -349,7 +348,7 @@ class Or(BooleanExpression):
     right: BooleanExpression
 
     def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> None:
-        if isinstance(self, Or) and not hasattr(self, "left") and not hasattr(self, "right"):
+        if isinstance(self, Or):
             super().__init__(left=left, right=right)
 
     def __new__(cls, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> BooleanExpression:
