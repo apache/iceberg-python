@@ -261,9 +261,6 @@ class And(IcebergBaseModel, BooleanExpression):
             return left
         else:
             obj = super().__new__(cls)
-            obj.__pydantic_fields_set__ = set()
-            obj.left = left
-            obj.right = right
             return obj
 
     def __eq__(self, other: Any) -> bool:
@@ -272,7 +269,7 @@ class And(IcebergBaseModel, BooleanExpression):
 
     def __str__(self) -> str:
         """Return the string representation of the And class."""
-        return f"{str(self.__class__.__name__)}(left={repr(self.left)}, right={repr(self.right)})"
+        return f"And(left={str(self.left)}, right={str(self.right)})"
 
     def __repr__(self) -> str:
         """Return the string representation of the And class."""
