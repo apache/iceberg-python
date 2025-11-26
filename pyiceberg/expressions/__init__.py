@@ -299,10 +299,6 @@ class And(BooleanExpression):
     left: BooleanExpression
     right: BooleanExpression
 
-    def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> None:
-        if isinstance(self, And):
-            super().__init__(left=left, right=right)
-
     def __new__(cls, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> BooleanExpression:
         if rest:
             return _build_balanced_tree(And, (left, right, *rest))
@@ -313,8 +309,11 @@ class And(BooleanExpression):
         elif right is AlwaysTrue():
             return left
         else:
-            obj = super().__new__(cls)
-            return obj
+            return super().__new__(cls)
+
+    def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> None:
+        if isinstance(self, And) and not hasattr(self, "left") and not hasattr(self, "right"):
+            super().__init__(left=left, right=right)
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the And class."""
@@ -348,7 +347,7 @@ class Or(BooleanExpression):
     right: BooleanExpression
 
     def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> None:
-        if isinstance(self, Or):
+        if isinstance(self, Or) and not hasattr(self, "left") and not hasattr(self, "right"):
             super().__init__(left=left, right=right)
 
     def __new__(cls, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> BooleanExpression:
@@ -361,8 +360,7 @@ class Or(BooleanExpression):
         elif right is AlwaysFalse():
             return left
         else:
-            obj = super().__new__(cls)
-            return obj
+            return super().__new__(cls)
 
     def __str__(self) -> str:
         """Return the string representation of the Or class."""
