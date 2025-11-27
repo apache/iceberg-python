@@ -69,7 +69,8 @@ class UpdateTableMetadata(ABC, Generic[U]):
     def _commit(self) -> UpdatesAndRequirements: ...
 
     def commit(self) -> None:
-        self._transaction._apply(*self._commit())
+        updates, requirements = self._commit()
+        self._transaction._apply(updates, requirements, pending_update=self)
 
     def __exit__(self, _: Any, value: Any, traceback: Any) -> None:
         """Close and commit the change."""
@@ -753,6 +754,10 @@ class ValidatableTableRequirement(IcebergBaseModel):
         """
         ...
 
+    def key(self) -> tuple:
+        """Return a deduplication key for this requirement."""
+        return (type(self),)
+
 
 class AssertCreate(ValidatableTableRequirement):
     """The table must not already exist; used for create transactions."""
@@ -810,6 +815,9 @@ class AssertRefSnapshotId(ValidatableTableRequirement):
                 )
         elif self.snapshot_id is not None:
             raise CommitFailedException(f"Requirement failed: branch or tag {self.ref} is missing, expected {self.snapshot_id}")
+
+    def key(self) -> tuple:
+        return (type(self), self.ref)
 
 
 class AssertLastAssignedFieldId(ValidatableTableRequirement):

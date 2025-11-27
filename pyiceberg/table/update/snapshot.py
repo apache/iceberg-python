@@ -66,9 +66,15 @@ from pyiceberg.table.snapshots import (
     Summary,
     update_snapshot_summaries,
 )
+from pyiceberg.exceptions import (
+    CommitFailedException,
+    CommitStateUnknownException,
+)
+from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.update import (
     AddSnapshotUpdate,
     AssertRefSnapshotId,
+    AssertTableUUID,
     RemoveSnapshotRefUpdate,
     RemoveSnapshotsUpdate,
     SetSnapshotRefUpdate,
@@ -77,6 +83,7 @@ from pyiceberg.table.update import (
     U,
     UpdatesAndRequirements,
     UpdateTableMetadata,
+    update_table_metadata,
 )
 from pyiceberg.typedef import (
     EMPTY_DICT,
@@ -86,6 +93,7 @@ from pyiceberg.utils.bin_packing import ListPacker
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.datetime import datetime_to_millis
 from pyiceberg.utils.properties import property_as_bool, property_as_int
+from pyiceberg.utils.retry import RetryConfig, run_with_retry
 
 if TYPE_CHECKING:
     from pyiceberg.table import Transaction
@@ -276,7 +284,20 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             previous_summary=previous_snapshot.summary if previous_snapshot is not None else None,
         )
 
-    def _commit(self) -> UpdatesAndRequirements:
+    def apply(self) -> TableMetadata:
+        """Apply this snapshot operation and return the updated metadata."""
+        updates, _ = self._build_updates()
+        return update_table_metadata(self._transaction.table_metadata, updates)
+
+    def _build_updates(self) -> UpdatesAndRequirements:
+        """Build the updates and requirements for this snapshot operation."""
+        # Recalculate parent snapshot ID from current table_metadata
+        self._parent_snapshot_id = (
+            snapshot.snapshot_id
+            if (snapshot := self._transaction.table_metadata.snapshot_by_name(self._target_branch))
+            else None
+        )
+
         new_manifests = self._manifests()
         next_sequence_number = self._transaction.table_metadata.next_sequence_number()
 
@@ -334,13 +355,15 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                 ),
                 (
                     AssertRefSnapshotId(
-                        snapshot_id=self._transaction.table_metadata.refs[self._target_branch].snapshot_id
-                        if self._target_branch in self._transaction.table_metadata.refs
-                        else None,
+                        snapshot_id=self._parent_snapshot_id,
                         ref=self._target_branch,
                     ),
                 ),
             )
+
+    def _commit(self) -> UpdatesAndRequirements:
+        """Build and return the updates and requirements for this snapshot."""
+        return self._build_updates()
 
     @property
     def snapshot_id(self) -> int:
@@ -367,6 +390,122 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
 
     def fetch_manifest_entry(self, manifest: ManifestFile, discard_deleted: bool = True) -> list[ManifestEntry]:
         return manifest.fetch_manifest_entry(io=self._io, discard_deleted=discard_deleted)
+
+    def _refresh_state(self) -> None:
+        """Refresh the snapshot producer state for retry.
+
+        This regenerates the snapshot ID, commit UUID, and parent snapshot ID
+        based on the refreshed table metadata.
+        """
+        self._transaction._table.refresh()
+
+        # For autocommit path where _apply is not called.
+        self._transaction._working_metadata = self._transaction._table.metadata
+
+        self._reset_state()
+
+    def _reset_state(self) -> None:
+        """Reset the snapshot producer state for retry without refreshing table.
+
+        This regenerates the snapshot ID, commit UUID, and parent snapshot ID
+        based on the current table metadata. Used when the table has already
+        been refreshed by the caller.
+        """
+        self._snapshot_id = self._transaction.table_metadata.new_snapshot_id()
+        self.commit_uuid = uuid.uuid4()
+        self._manifest_num_counter = itertools.count(0)
+
+        self._parent_snapshot_id = (
+            snapshot.snapshot_id
+            if (snapshot := self._transaction.table_metadata.snapshot_by_name(self._target_branch))
+            else None
+        )
+
+        # Clear cached properties that depend on snapshot state
+        # This ensures manifests and delete computations are regenerated on retry
+        cached_props = ["_compute_deletes", "partition_filters"]
+        for prop in cached_props:
+            if prop in self.__dict__:
+                del self.__dict__[prop]
+
+    def commit(self) -> None:
+        """Commit the snapshot with retry on CommitFailedException.
+
+        This method overrides the base class commit() to add retry logic
+        specifically for snapshot operations. On retry, the snapshot is
+        regenerated with a new snapshot ID and manifest list.
+        """
+        from pyiceberg.table import TableProperties
+
+        if not self._transaction._autocommit:
+            updates, requirements = self._commit()
+            self._transaction._apply(updates, requirements, pending_update=self)
+            return
+
+        properties = self._transaction.table_metadata.properties
+
+        retry_config = RetryConfig(
+            max_attempts=property_as_int(
+                properties,
+                TableProperties.COMMIT_NUM_RETRIES,
+                TableProperties.COMMIT_NUM_RETRIES_DEFAULT,
+            )
+            or TableProperties.COMMIT_NUM_RETRIES_DEFAULT,
+            min_wait_ms=property_as_int(
+                properties,
+                TableProperties.COMMIT_MIN_RETRY_WAIT_MS,
+                TableProperties.COMMIT_MIN_RETRY_WAIT_MS_DEFAULT,
+            )
+            or TableProperties.COMMIT_MIN_RETRY_WAIT_MS_DEFAULT,
+            max_wait_ms=property_as_int(
+                properties,
+                TableProperties.COMMIT_MAX_RETRY_WAIT_MS,
+                TableProperties.COMMIT_MAX_RETRY_WAIT_MS_DEFAULT,
+            )
+            or TableProperties.COMMIT_MAX_RETRY_WAIT_MS_DEFAULT,
+            total_timeout_ms=property_as_int(
+                properties,
+                TableProperties.COMMIT_TOTAL_RETRY_TIME_MS,
+                TableProperties.COMMIT_TOTAL_RETRY_TIME_MS_DEFAULT,
+            )
+            or TableProperties.COMMIT_TOTAL_RETRY_TIME_MS_DEFAULT,
+        )
+
+        first_attempt = True
+
+        def do_commit() -> None:
+            nonlocal first_attempt
+            if first_attempt:
+                first_attempt = False
+            else:
+                # On retry, refresh state and regenerate snapshot
+                self._refresh_state()
+
+            updates, requirements = self._commit()
+
+            requirements = requirements + (
+                AssertTableUUID(uuid=self._transaction.table_metadata.table_uuid),
+            )
+
+            # Directly commit to catalog (bypassing transaction accumulation)
+            # This is necessary because:
+            # 1. We need to catch CommitFailedException from the catalog
+            # 2. On retry, we regenerate the snapshot with new IDs
+            self._transaction._table._do_commit(  # pylint: disable=W0212
+                updates=updates,
+                requirements=requirements,
+            )
+
+        try:
+            run_with_retry(
+                task=do_commit,
+                config=retry_config,
+                retry_on=(CommitFailedException,),
+            )
+        except CommitStateUnknownException:
+            # NOTE: Use the function like checkCommitStatus() in Java 
+            # to determine if the commit succeeded before raising this exception.
+            raise
 
 
 class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
@@ -562,9 +701,9 @@ class _MergeAppendFiles(_FastAppendFiles):
         commit_uuid: uuid.UUID | None = None,
         snapshot_properties: dict[str, str] = EMPTY_DICT,
     ) -> None:
+        super().__init__(operation, transaction, io, commit_uuid, snapshot_properties, branch)
         from pyiceberg.table import TableProperties
 
-        super().__init__(operation, transaction, io, commit_uuid, snapshot_properties, branch)
         self._target_size_bytes = property_as_int(
             self._transaction.table_metadata.properties,
             TableProperties.MANIFEST_TARGET_SIZE_BYTES,

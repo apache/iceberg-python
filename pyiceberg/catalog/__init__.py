@@ -67,7 +67,8 @@ from pyiceberg.typedef import (
     TableVersion,
 )
 from pyiceberg.utils.config import Config, merge_config
-from pyiceberg.utils.properties import property_as_bool
+from pyiceberg.utils.properties import property_as_bool, property_as_int
+from pyiceberg.utils.retry import RetryConfig, run_with_suppressed_failure
 
 if TYPE_CHECKING:
     import pyarrow as pa
