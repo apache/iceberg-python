@@ -17,14 +17,14 @@
 
 from __future__ import annotations
 
-import builtins
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Sequence
 from functools import cached_property
-from typing import Any
+from typing import Any, TypeAlias
 from typing import Literal as TypingLiteral
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, SerializeAsAny, model_validator
+from pydantic_core.core_schema import ValidatorFunctionWrapHandler
 
 from pyiceberg.expressions.literals import AboveMax, BelowMin, Literal, literal
 from pyiceberg.schema import Accessor, Schema
@@ -48,7 +48,7 @@ def _to_literal(value: L | Literal[L]) -> Literal[L]:
         return literal(value)
 
 
-class BooleanExpression(ABC):
+class BooleanExpression(IcebergBaseModel, ABC):
     """An expression that evaluates to a boolean."""
 
     @abstractmethod
@@ -68,6 +68,66 @@ class BooleanExpression(ABC):
             raise ValueError(f"Expected BooleanExpression, got: {other}")
 
         return Or(self, other)
+
+    @model_validator(mode="wrap")
+    @classmethod
+    def handle_primitive_type(cls, v: Any, handler: ValidatorFunctionWrapHandler) -> BooleanExpression:
+        """Apply custom deserialization logic before validation."""
+        # Already a BooleanExpression? return as-is so we keep the concrete subclass.
+        if isinstance(v, BooleanExpression):
+            return v
+
+        # Handle different input formats
+        if isinstance(v, bool):
+            return AlwaysTrue() if v is True else AlwaysFalse()
+
+        if isinstance(v, dict) and (field_type := v.get("type")):
+            # Unary
+            if field_type == "is-null":
+                return IsNull(**v)
+            elif field_type == "not-null":
+                return NotNull(**v)
+            elif field_type == "is-nan":
+                return IsNaN(**v)
+            elif field_type == "not-nan":
+                return NotNaN(**v)
+
+            # Literal
+            elif field_type == "lt":
+                return LessThan(**v)
+            elif field_type == "lt-eq":
+                return LessThanOrEqual(**v)
+            elif field_type == "gt":
+                return GreaterThan(**v)
+            elif field_type == "gt-eq":
+                return GreaterThanOrEqual(**v)
+            elif field_type == "eq":
+                return EqualTo(**v)
+            elif field_type == "not-eq":
+                return NotEqualTo(**v)
+            elif field_type == "starts-with":
+                return StartsWith(**v)
+            elif field_type == "not-starts-with":
+                return NotStartsWith(**v)
+
+            # Set
+            elif field_type == "in":
+                return In(**v)
+            elif field_type == "not-in":
+                return NotIn(**v)
+
+            # Other
+            elif field_type == "and":
+                return And(**v)
+            elif field_type == "or":
+                return Or(**v)
+            elif field_type == "not":
+                return Not(**v)
+
+        return handler(v)
+
+
+SerializableBooleanExpression: TypeAlias = SerializeAsAny["BooleanExpression"]
 
 
 def _build_balanced_tree(
@@ -237,20 +297,20 @@ class Reference(UnboundTerm, IcebergRootModel[str]):
         return BoundReference
 
 
-class And(IcebergBaseModel, BooleanExpression):
+class And(BooleanExpression):
     """AND operation expression - logical conjunction."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     type: TypingLiteral["and"] = Field(default="and", alias="type")
-    left: BooleanExpression
-    right: BooleanExpression
+    left: SerializableBooleanExpression = Field()
+    right: SerializableBooleanExpression = Field()
 
-    def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> None:
+    def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression, **_: Any) -> None:
         if isinstance(self, And) and not hasattr(self, "left") and not hasattr(self, "right"):
             super().__init__(left=left, right=right)
 
-    def __new__(cls, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> BooleanExpression:  # type: ignore
+    def __new__(cls, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression, **_: Any) -> BooleanExpression:
         if rest:
             return _build_balanced_tree(And, (left, right, *rest))
         if left is AlwaysFalse() or right is AlwaysFalse():
@@ -260,8 +320,7 @@ class And(IcebergBaseModel, BooleanExpression):
         elif right is AlwaysTrue():
             return left
         else:
-            obj = super().__new__(cls)
-            return obj
+            return super().__new__(cls)
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the And class."""
@@ -285,20 +344,20 @@ class And(IcebergBaseModel, BooleanExpression):
         return (self.left, self.right)
 
 
-class Or(IcebergBaseModel, BooleanExpression):
+class Or(BooleanExpression):
     """OR operation expression - logical disjunction."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     type: TypingLiteral["or"] = Field(default="or", alias="type")
-    left: BooleanExpression
-    right: BooleanExpression
+    left: SerializableBooleanExpression = Field()
+    right: SerializableBooleanExpression = Field()
 
-    def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> None:
+    def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression, **_: Any) -> None:
         if isinstance(self, Or) and not hasattr(self, "left") and not hasattr(self, "right"):
             super().__init__(left=left, right=right)
 
-    def __new__(cls, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> BooleanExpression:  # type: ignore
+    def __new__(cls, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression, **_: Any) -> BooleanExpression:
         if rest:
             return _build_balanced_tree(Or, (left, right, *rest))
         if left is AlwaysTrue() or right is AlwaysTrue():
@@ -308,8 +367,7 @@ class Or(IcebergBaseModel, BooleanExpression):
         elif right is AlwaysFalse():
             return left
         else:
-            obj = super().__new__(cls)
-            return obj
+            return super().__new__(cls)
 
     def __str__(self) -> str:
         """Return the string representation of the Or class."""
@@ -333,26 +391,26 @@ class Or(IcebergBaseModel, BooleanExpression):
         return (self.left, self.right)
 
 
-class Not(IcebergBaseModel, BooleanExpression):
+class Not(BooleanExpression):
     """NOT operation expression - logical negation."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     type: TypingLiteral["not"] = Field(default="not")
-    child: BooleanExpression = Field()
+    child: SerializableBooleanExpression = Field()
 
     def __init__(self, child: BooleanExpression, **_: Any) -> None:
         super().__init__(child=child)
 
-    def __new__(cls, child: BooleanExpression, **_: Any) -> BooleanExpression:  # type: ignore
+    def __new__(cls, child: BooleanExpression, **_: Any) -> BooleanExpression:
         if child is AlwaysTrue():
             return AlwaysFalse()
         elif child is AlwaysFalse():
             return AlwaysTrue()
         elif isinstance(child, Not):
             return child.child
-        obj = super().__new__(cls)
-        return obj
+        else:
+            return super().__new__(cls)
 
     def __str__(self) -> str:
         """Return the string representation of the Not class."""
@@ -412,10 +470,12 @@ class AlwaysFalse(BooleanExpression, Singleton, IcebergRootModel[bool]):
 
 
 class BoundPredicate(Bound, BooleanExpression, ABC):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     term: BoundTerm
 
-    def __init__(self, term: BoundTerm):
-        self.term = term
+    def __init__(self, term: BoundTerm, **kwargs: Any) -> None:
+        super().__init__(term=term, **kwargs)
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the BoundPredicate class."""
@@ -423,16 +483,22 @@ class BoundPredicate(Bound, BooleanExpression, ABC):
             return self.term == other.term
         return False
 
+    def __str__(self) -> str:
+        """Return the string representation of the BoundPredicate class."""
+        return f"{self.__class__.__name__}(term={str(self.term)})"
+
     @property
     @abstractmethod
     def as_unbound(self) -> type[UnboundPredicate]: ...
 
 
 class UnboundPredicate(Unbound, BooleanExpression, ABC):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     term: UnboundTerm
 
-    def __init__(self, term: str | UnboundTerm):
-        self.term = _to_unbound_term(term)
+    def __init__(self, term: str | UnboundTerm, **kwargs: Any) -> None:
+        super().__init__(term=_to_unbound_term(term), **kwargs)
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the UnboundPredicate class."""
@@ -446,12 +512,12 @@ class UnboundPredicate(Unbound, BooleanExpression, ABC):
     def as_bound(self) -> type[BoundPredicate]: ...
 
 
-class UnaryPredicate(IcebergBaseModel, UnboundPredicate, ABC):
-    type: str
+class UnaryPredicate(UnboundPredicate, ABC):
+    type: TypingLiteral["is-null", "not-null", "is-nan", "not-nan"] = Field()
 
     model_config = {"arbitrary_types_allowed": True}
 
-    def __init__(self, term: str | UnboundTerm):
+    def __init__(self, term: str | UnboundTerm, **_: Any) -> None:
         unbound = _to_unbound_term(term)
         super().__init__(term=unbound)
 
@@ -462,7 +528,8 @@ class UnaryPredicate(IcebergBaseModel, UnboundPredicate, ABC):
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundUnaryPredicate:
         bound_term = self.term.bind(schema, case_sensitive)
-        return self.as_bound(bound_term)  # type: ignore
+        bound_type = self.as_bound
+        return bound_type(bound_term)  # type: ignore[misc]
 
     def __repr__(self) -> str:
         """Return the string representation of the UnaryPredicate class."""
@@ -488,7 +555,7 @@ class BoundUnaryPredicate(BoundPredicate, ABC):
 
 
 class BoundIsNull(BoundUnaryPredicate):
-    def __new__(cls, term: BoundTerm) -> BooleanExpression:  # type: ignore[misc]  # pylint: disable=W0221
+    def __new__(cls, term: BoundTerm) -> BooleanExpression:  # pylint: disable=W0221
         if term.ref().field.required:
             return AlwaysFalse()
         return super().__new__(cls)
@@ -503,7 +570,7 @@ class BoundIsNull(BoundUnaryPredicate):
 
 
 class BoundNotNull(BoundUnaryPredicate):
-    def __new__(cls, term: BoundTerm) -> BooleanExpression:  # type: ignore[misc]  # pylint: disable=W0221
+    def __new__(cls, term: BoundTerm) -> BooleanExpression:  # pylint: disable=W0221
         if term.ref().field.required:
             return AlwaysTrue()
         return super().__new__(cls)
@@ -518,31 +585,31 @@ class BoundNotNull(BoundUnaryPredicate):
 
 
 class IsNull(UnaryPredicate):
-    type: str = "is-null"
+    type: TypingLiteral["is-null"] = Field(default="is-null")
 
     def __invert__(self) -> NotNull:
         """Transform the Expression into its negated version."""
         return NotNull(self.term)
 
     @property
-    def as_bound(self) -> builtins.type[BoundIsNull]:
+    def as_bound(self) -> type[BoundIsNull]:  # type: ignore
         return BoundIsNull
 
 
 class NotNull(UnaryPredicate):
-    type: str = "not-null"
+    type: TypingLiteral["not-null"] = Field(default="not-null")
 
     def __invert__(self) -> IsNull:
         """Transform the Expression into its negated version."""
         return IsNull(self.term)
 
     @property
-    def as_bound(self) -> builtins.type[BoundNotNull]:
+    def as_bound(self) -> type[BoundNotNull]:  # type: ignore
         return BoundNotNull
 
 
 class BoundIsNaN(BoundUnaryPredicate):
-    def __new__(cls, term: BoundTerm) -> BooleanExpression:  # type: ignore[misc]  # pylint: disable=W0221
+    def __new__(cls, term: BoundTerm) -> BooleanExpression:  # pylint: disable=W0221
         bound_type = term.ref().field.field_type
         if isinstance(bound_type, (FloatType, DoubleType)):
             return super().__new__(cls)
@@ -558,7 +625,7 @@ class BoundIsNaN(BoundUnaryPredicate):
 
 
 class BoundNotNaN(BoundUnaryPredicate):
-    def __new__(cls, term: BoundTerm) -> BooleanExpression:  # type: ignore[misc]  # pylint: disable=W0221
+    def __new__(cls, term: BoundTerm) -> BooleanExpression:  # pylint: disable=W0221
         bound_type = term.ref().field.field_type
         if isinstance(bound_type, (FloatType, DoubleType)):
             return super().__new__(cls)
@@ -574,44 +641,51 @@ class BoundNotNaN(BoundUnaryPredicate):
 
 
 class IsNaN(UnaryPredicate):
-    type: str = "is-nan"
+    type: TypingLiteral["is-nan"] = Field(default="is-nan")
 
     def __invert__(self) -> NotNaN:
         """Transform the Expression into its negated version."""
         return NotNaN(self.term)
 
     @property
-    def as_bound(self) -> builtins.type[BoundIsNaN]:
+    def as_bound(self) -> type[BoundIsNaN]:  # type: ignore
         return BoundIsNaN
 
 
 class NotNaN(UnaryPredicate):
-    type: str = "not-nan"
+    type: TypingLiteral["not-nan"] = Field(default="not-nan")
 
     def __invert__(self) -> IsNaN:
         """Transform the Expression into its negated version."""
         return IsNaN(self.term)
 
     @property
-    def as_bound(self) -> builtins.type[BoundNotNaN]:
+    def as_bound(self) -> type[BoundNotNaN]:  # type: ignore
         return BoundNotNaN
 
 
-class SetPredicate(IcebergBaseModel, UnboundPredicate, ABC):
+class SetPredicate(UnboundPredicate, ABC):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     type: TypingLiteral["in", "not-in"] = Field(default="in")
     literals: set[LiteralValue] = Field(alias="values")
 
-    def __init__(self, term: str | UnboundTerm, literals: Iterable[Any] | Iterable[LiteralValue]):
-        literal_set = _to_literal_set(literals)
-        super().__init__(term=_to_unbound_term(term), values=literal_set)  # type: ignore
-        object.__setattr__(self, "literals", literal_set)
+    def __init__(
+        self, term: str | UnboundTerm, literals: Iterable[Any] | Iterable[LiteralValue] | None = None, **kwargs: Any
+    ) -> None:
+        if literals is None and "values" in kwargs:
+            literals = kwargs["values"]
+
+        if literals is None:
+            literal_set: set[LiteralValue] = set()
+        else:
+            literal_set = _to_literal_set(literals)
+        super().__init__(term=_to_unbound_term(term), values=literal_set)
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundSetPredicate:
         bound_term = self.term.bind(schema, case_sensitive)
         literal_set = self.literals
-        return self.as_bound(bound_term, {lit.to(bound_term.ref().field.field_type) for lit in literal_set})
+        return self.as_bound(bound_term, {lit.to(bound_term.ref().field.field_type) for lit in literal_set})  # type: ignore
 
     def __str__(self) -> str:
         """Return the string representation of the SetPredicate class."""
@@ -633,16 +707,16 @@ class SetPredicate(IcebergBaseModel, UnboundPredicate, ABC):
 
     @property
     @abstractmethod
-    def as_bound(self) -> builtins.type[BoundSetPredicate]:
+    def as_bound(self) -> type[BoundSetPredicate]:  # type: ignore
         return BoundSetPredicate
 
 
 class BoundSetPredicate(BoundPredicate, ABC):
     literals: set[LiteralValue]
 
-    def __init__(self, term: BoundTerm, literals: set[LiteralValue]):
-        super().__init__(term)
-        self.literals = _to_literal_set(literals)  # pylint: disable=W0621
+    def __init__(self, term: BoundTerm, literals: set[LiteralValue]) -> None:
+        literal_set = _to_literal_set(literals)
+        super().__init__(term=term, literals=literal_set)
 
     @cached_property
     def value_set(self) -> set[Any]:
@@ -672,7 +746,7 @@ class BoundSetPredicate(BoundPredicate, ABC):
 
 
 class BoundIn(BoundSetPredicate):
-    def __new__(cls, term: BoundTerm, literals: set[LiteralValue]) -> BooleanExpression:  # type: ignore[misc]  # pylint: disable=W0221
+    def __new__(cls, term: BoundTerm, literals: set[LiteralValue]) -> BooleanExpression:  # pylint: disable=W0221
         count = len(literals)
         if count == 0:
             return AlwaysFalse()
@@ -695,7 +769,7 @@ class BoundIn(BoundSetPredicate):
 
 
 class BoundNotIn(BoundSetPredicate):
-    def __new__(  # type: ignore[misc]  # pylint: disable=W0221
+    def __new__(  # pylint: disable=W0221
         cls,
         term: BoundTerm,
         literals: set[LiteralValue],
@@ -720,15 +794,21 @@ class BoundNotIn(BoundSetPredicate):
 class In(SetPredicate):
     type: TypingLiteral["in"] = Field(default="in", alias="type")
 
-    def __new__(  # type: ignore[misc]  # pylint: disable=W0221
-        cls, term: str | UnboundTerm, literals: Iterable[Any] | Iterable[LiteralValue]
-    ) -> BooleanExpression:
-        literals_set: set[LiteralValue] = _to_literal_set(literals)
+    def __new__(  # pylint: disable=W0221
+        cls, term: str | UnboundTerm, literals: Iterable[Any] | Iterable[LiteralValue] | None = None, **kwargs: Any
+    ) -> In:
+        if literals is None and "values" in kwargs:
+            literals = kwargs["values"]
+
+        if literals is None:
+            literals_set: set[LiteralValue] = set()
+        else:
+            literals_set = _to_literal_set(literals)
         count = len(literals_set)
         if count == 0:
             return AlwaysFalse()
         elif count == 1:
-            return EqualTo(term, next(iter(literals)))
+            return EqualTo(term, next(iter(literals_set)))
         else:
             return super().__new__(cls)
 
@@ -737,17 +817,23 @@ class In(SetPredicate):
         return NotIn(self.term, self.literals)
 
     @property
-    def as_bound(self) -> builtins.type[BoundIn]:
+    def as_bound(self) -> type[BoundIn]:  # type: ignore
         return BoundIn
 
 
 class NotIn(SetPredicate, ABC):
     type: TypingLiteral["not-in"] = Field(default="not-in", alias="type")
 
-    def __new__(  # type: ignore[misc]  # pylint: disable=W0221
-        cls, term: str | UnboundTerm, literals: Iterable[Any] | Iterable[LiteralValue]
-    ) -> BooleanExpression:
-        literals_set: set[LiteralValue] = _to_literal_set(literals)
+    def __new__(  # pylint: disable=W0221
+        cls, term: str | UnboundTerm, literals: Iterable[Any] | Iterable[LiteralValue] | None = None, **kwargs: Any
+    ) -> NotIn:
+        if literals is None and "values" in kwargs:
+            literals = kwargs["values"]
+
+        if literals is None:
+            literals_set: set[LiteralValue] = set()
+        else:
+            literals_set = _to_literal_set(literals)
         count = len(literals_set)
         if count == 0:
             return AlwaysTrue()
@@ -761,18 +847,21 @@ class NotIn(SetPredicate, ABC):
         return In(self.term, self.literals)
 
     @property
-    def as_bound(self) -> builtins.type[BoundNotIn]:
+    def as_bound(self) -> type[BoundNotIn]:  # type: ignore
         return BoundNotIn
 
 
-class LiteralPredicate(IcebergBaseModel, UnboundPredicate, ABC):
+class LiteralPredicate(UnboundPredicate, ABC):
     type: TypingLiteral["lt", "lt-eq", "gt", "gt-eq", "eq", "not-eq", "starts-with", "not-starts-with"] = Field(alias="type")
     term: UnboundTerm
     value: LiteralValue = Field()
     model_config = ConfigDict(populate_by_name=True, frozen=True, arbitrary_types_allowed=True)
 
-    def __init__(self, term: str | UnboundTerm, literal: Any):
-        super().__init__(term=_to_unbound_term(term), value=_to_literal(literal))  # type: ignore[call-arg]
+    def __init__(self, term: str | UnboundTerm, literal: Any | None = None, **kwargs: Any) -> None:
+        if literal is None and "value" in kwargs:
+            literal = kwargs["value"]
+
+        super().__init__(term=_to_unbound_term(term), value=_to_literal(literal))
 
     @property
     def literal(self) -> LiteralValue:
@@ -793,7 +882,7 @@ class LiteralPredicate(IcebergBaseModel, UnboundPredicate, ABC):
             elif isinstance(self, (LessThan, LessThanOrEqual, EqualTo)):
                 return AlwaysFalse()
 
-        return self.as_bound(bound_term, lit)
+        return self.as_bound(bound_term, lit)  # type: ignore
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the LiteralPredicate class."""
@@ -811,21 +900,24 @@ class LiteralPredicate(IcebergBaseModel, UnboundPredicate, ABC):
 
     @property
     @abstractmethod
-    def as_bound(self) -> builtins.type[BoundLiteralPredicate]: ...
+    def as_bound(self) -> type[BoundLiteralPredicate]: ...  # type: ignore
 
 
 class BoundLiteralPredicate(BoundPredicate, ABC):
     literal: LiteralValue
 
     def __init__(self, term: BoundTerm, literal: LiteralValue):  # pylint: disable=W0621
-        super().__init__(term)
-        self.literal = literal  # pylint: disable=W0621
+        super().__init__(term=term, literal=literal)
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the BoundLiteralPredicate class."""
         if isinstance(other, self.__class__):
             return self.term == other.term and self.literal == other.literal
         return False
+
+    def __str__(self) -> str:
+        """Return the string representation of the BoundLiteralPredicate class."""
+        return f"{self.__class__.__name__}(term={str(self.term)}, literal={repr(self.literal)})"
 
     def __repr__(self) -> str:
         """Return the string representation of the BoundLiteralPredicate class."""
@@ -924,7 +1016,7 @@ class EqualTo(LiteralPredicate):
         return NotEqualTo(self.term, self.literal)
 
     @property
-    def as_bound(self) -> builtins.type[BoundEqualTo]:
+    def as_bound(self) -> type[BoundEqualTo]:  # type: ignore
         return BoundEqualTo
 
 
@@ -936,7 +1028,7 @@ class NotEqualTo(LiteralPredicate):
         return EqualTo(self.term, self.literal)
 
     @property
-    def as_bound(self) -> builtins.type[BoundNotEqualTo]:
+    def as_bound(self) -> type[BoundNotEqualTo]:  # type: ignore
         return BoundNotEqualTo
 
 
@@ -948,7 +1040,7 @@ class LessThan(LiteralPredicate):
         return GreaterThanOrEqual(self.term, self.literal)
 
     @property
-    def as_bound(self) -> builtins.type[BoundLessThan]:
+    def as_bound(self) -> type[BoundLessThan]:  # type: ignore
         return BoundLessThan
 
 
@@ -960,7 +1052,7 @@ class GreaterThanOrEqual(LiteralPredicate):
         return LessThan(self.term, self.literal)
 
     @property
-    def as_bound(self) -> builtins.type[BoundGreaterThanOrEqual]:
+    def as_bound(self) -> type[BoundGreaterThanOrEqual]:  # type: ignore
         return BoundGreaterThanOrEqual
 
 
@@ -972,7 +1064,7 @@ class GreaterThan(LiteralPredicate):
         return LessThanOrEqual(self.term, self.literal)
 
     @property
-    def as_bound(self) -> builtins.type[BoundGreaterThan]:
+    def as_bound(self) -> type[BoundGreaterThan]:  # type: ignore
         return BoundGreaterThan
 
 
@@ -984,7 +1076,7 @@ class LessThanOrEqual(LiteralPredicate):
         return GreaterThan(self.term, self.literal)
 
     @property
-    def as_bound(self) -> builtins.type[BoundLessThanOrEqual]:
+    def as_bound(self) -> type[BoundLessThanOrEqual]:  # type: ignore
         return BoundLessThanOrEqual
 
 
@@ -996,7 +1088,7 @@ class StartsWith(LiteralPredicate):
         return NotStartsWith(self.term, self.literal)
 
     @property
-    def as_bound(self) -> builtins.type[BoundStartsWith]:
+    def as_bound(self) -> type[BoundStartsWith]:  # type: ignore
         return BoundStartsWith
 
 
@@ -1008,5 +1100,5 @@ class NotStartsWith(LiteralPredicate):
         return StartsWith(self.term, self.literal)
 
     @property
-    def as_bound(self) -> builtins.type[BoundNotStartsWith]:
+    def as_bound(self) -> type[BoundNotStartsWith]:  # type: ignore
         return BoundNotStartsWith

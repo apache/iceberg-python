@@ -280,12 +280,12 @@ class BucketTransform(Transform[S, int]):
         elif isinstance(pred, BoundEqualTo):
             return pred.as_unbound(Reference(name), _transform_literal(transformer, pred.literal))
         elif isinstance(pred, BoundIn):  # NotIn can't be projected
-            return pred.as_unbound(Reference(name), {_transform_literal(transformer, literal) for literal in pred.literals})
+            return pred.as_unbound(Reference(name), {_transform_literal(transformer, literal) for literal in pred.literals})  # type: ignore
         else:
             # - Comparison predicates can't be projected, notEq can't be projected
             # - Small ranges can be projected:
             #   For example, (x > 0) and (x < 3) can be turned into in({1, 2}) and projected.
-            return None
+            return None  # type: ignore
 
     def strict_project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         transformer = self.transform(pred.term.ref().field.field_type)
@@ -297,10 +297,10 @@ class BucketTransform(Transform[S, int]):
         elif isinstance(pred, BoundNotEqualTo):
             return pred.as_unbound(Reference(name), _transform_literal(transformer, pred.literal))
         elif isinstance(pred, BoundNotIn):
-            return pred.as_unbound(Reference(name), {_transform_literal(transformer, literal) for literal in pred.literals})
+            return pred.as_unbound(Reference(name), {_transform_literal(transformer, literal) for literal in pred.literals})  # type: ignore
         else:
             # no strict projection for comparison or equality
-            return None
+            return None  # type: ignore
 
     def can_transform(self, source: IcebergType) -> bool:
         return isinstance(
@@ -431,8 +431,6 @@ class TimeTransform(Transform[S, int], Generic[S], Singleton):
             return _truncate_number(name, pred, transformer)
         elif isinstance(pred, BoundIn):  # NotIn can't be projected
             return _set_apply_transform(name, pred, transformer)
-        else:
-            return None
 
     def strict_project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         transformer = self.transform(pred.term.ref().field.field_type)
@@ -444,8 +442,6 @@ class TimeTransform(Transform[S, int], Generic[S], Singleton):
             return _truncate_number_strict(name, pred, transformer)
         elif isinstance(pred, BoundNotIn):
             return _set_apply_transform(name, pred, transformer)
-        else:
-            return None
 
     @property
     def dedup_name(self) -> str:
@@ -812,13 +808,12 @@ class TruncateTransform(Transform[S, S]):
             return pred.as_unbound(Reference(name))
         elif isinstance(pred, BoundIn):
             return _set_apply_transform(name, pred, self.transform(field_type))
-        elif isinstance(field_type, (IntegerType, LongType, DecimalType)):
+        elif isinstance(field_type, (IntegerType, LongType, DecimalType)):  # type: ignore
             if isinstance(pred, BoundLiteralPredicate):
                 return _truncate_number(name, pred, self.transform(field_type))
         elif isinstance(field_type, (BinaryType, StringType)):
             if isinstance(pred, BoundLiteralPredicate):
                 return _truncate_array(name, pred, self.transform(field_type))
-        return None
 
     def strict_project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         field_type = pred.term.ref().field.field_type
@@ -835,7 +830,7 @@ class TruncateTransform(Transform[S, S]):
             elif isinstance(pred, BoundNotIn):
                 return _set_apply_transform(name, pred, self.transform(field_type))
             else:
-                return None
+                return None  # type: ignore
 
         if isinstance(pred, BoundLiteralPredicate):
             if isinstance(pred, BoundStartsWith):
@@ -860,7 +855,7 @@ class TruncateTransform(Transform[S, S]):
         elif isinstance(pred, BoundNotIn):
             return _set_apply_transform(name, pred, self.transform(field_type))
         else:
-            return None
+            return None  # type: ignore
 
     @property
     def width(self) -> int:
@@ -1135,7 +1130,7 @@ def _remove_transform(partition_name: str, pred: BoundPredicate) -> UnboundPredi
     elif isinstance(pred, BoundLiteralPredicate):
         return pred.as_unbound(Reference(partition_name), pred.literal)
     elif isinstance(pred, (BoundIn, BoundNotIn)):
-        return pred.as_unbound(Reference(partition_name), pred.literals)
+        return pred.as_unbound(Reference(partition_name), pred.literals)  # type: ignore
     else:
         raise ValueError(f"Cannot replace transform in unknown predicate: {pred}")
 
