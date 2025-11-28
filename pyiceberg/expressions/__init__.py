@@ -353,11 +353,11 @@ class Or(BooleanExpression):
     left: SerializableBooleanExpression = Field()
     right: SerializableBooleanExpression = Field()
 
-    def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> None:
+    def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression, **_: Any) -> None:
         if isinstance(self, Or) and not hasattr(self, "left") and not hasattr(self, "right"):
             super().__init__(left=left, right=right)
 
-    def __new__(cls, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> BooleanExpression:
+    def __new__(cls, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression, **_: Any) -> BooleanExpression:
         if rest:
             return _build_balanced_tree(Or, (left, right, *rest))
         if left is AlwaysTrue() or right is AlwaysTrue():
