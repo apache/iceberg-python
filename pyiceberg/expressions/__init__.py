@@ -79,7 +79,7 @@ class BooleanExpression(IcebergBaseModel, ABC):
 
         # Handle different input formats
         if isinstance(v, bool):
-            return AlwaysTrue() if v else AlwaysFalse()
+            return AlwaysTrue() if v is True else AlwaysFalse()
 
         if isinstance(v, dict) and (field_type := v.get("type")):
             # Unary

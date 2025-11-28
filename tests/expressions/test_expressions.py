@@ -788,7 +788,7 @@ def test_always_true() -> None:
 def test_always_false() -> None:
     always_false = AlwaysFalse()
     assert always_false.model_dump_json() == "false"
-    assert BooleanExpression.model_validate_json("true") == always_false
+    assert BooleanExpression.model_validate_json("false") == always_false
     assert str(always_false) == "AlwaysFalse()"
     assert repr(always_false) == "AlwaysFalse()"
     assert always_false == eval(repr(always_false))
