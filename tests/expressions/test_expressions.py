@@ -923,8 +923,9 @@ def test_in() -> None:
 def test_not_in() -> None:
     ref = Reference("a")
     not_in = NotIn(ref, ["a", "b", "c"])
-    json_repr = '{"term":"a","type":"not-in","items":["a","b","c"]}'
-    assert not_in.model_dump_json() == json_repr
+    json_repr = not_in.model_dump_json()
+    assert not_in.model_dump_json().startswith('{"term":"a","type":"not-in","values":')
+    assert BooleanExpression.model_validate_json(json_repr) == not_in
     assert str(not_in) == f"NotIn({str(ref)}, {{a, b, c}})"
     assert repr(not_in) == f"NotIn({repr(ref)}, {{literal('a'), literal('b'), literal('c')}})"
     assert not_in == eval(repr(not_in))
