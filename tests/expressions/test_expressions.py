@@ -837,7 +837,7 @@ def test_not_null() -> None:
     assert non_null == eval(repr(non_null))
     assert non_null == pickle.loads(pickle.dumps(non_null))
     pred = NotNull(term="foo")
-    json_repr = '{"term":"foo","type":"is-null"}'
+    json_repr = '{"term":"foo","type":"not-null"}'
     assert pred.model_dump_json() == json_repr
     assert BooleanExpression.model_validate_json(json_repr) == pred
 
