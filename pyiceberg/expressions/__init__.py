@@ -483,6 +483,10 @@ class BoundPredicate(Bound, BooleanExpression, ABC):
             return self.term == other.term
         return False
 
+    def __str__(self) -> str:
+        """Return the string representation of the BoundPredicate class."""
+        return f"{self.__class__.__name__}(term={str(self.term)})"
+
     @property
     @abstractmethod
     def as_unbound(self) -> type[UnboundPredicate]: ...
@@ -910,6 +914,10 @@ class BoundLiteralPredicate(BoundPredicate, ABC):
         if isinstance(other, self.__class__):
             return self.term == other.term and self.literal == other.literal
         return False
+
+    def __str__(self) -> str:
+        """Return the string representation of the BoundLiteralPredicate class."""
+        return f"{self.__class__.__name__}(term={str(self.term)}, literal={repr(self.literal)})"
 
     def __repr__(self) -> str:
         """Return the string representation of the BoundLiteralPredicate class."""
