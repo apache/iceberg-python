@@ -20,10 +20,10 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Sequence
 from functools import cached_property
-from typing import Annotated, Any, TypeAlias
+from typing import Any, TypeAlias
 from typing import Literal as TypingLiteral
 
-from pydantic import ConfigDict, Discriminator, Field, Tag, model_validator
+from pydantic import ConfigDict, Field, SerializeAsAny, model_validator
 from pydantic_core.core_schema import ValidatorFunctionWrapHandler
 
 from pyiceberg.expressions.literals import AboveMax, BelowMin, Literal, literal
@@ -73,6 +73,10 @@ class BooleanExpression(IcebergBaseModel, ABC):
     @classmethod
     def handle_primitive_type(cls, v: Any, handler: ValidatorFunctionWrapHandler) -> BooleanExpression:
         """Apply custom deserialization logic before validation."""
+        # Already a BooleanExpression? return as-is so we keep the concrete subclass.
+        if isinstance(v, BooleanExpression):
+            return v
+
         # Handle different input formats
         if isinstance(v, bool):
             return AlwaysTrue() if v else AlwaysFalse()
@@ -121,6 +125,9 @@ class BooleanExpression(IcebergBaseModel, ABC):
                 return Not(**v)
 
         return handler(v)
+
+
+SerializableBooleanExpression: TypeAlias = SerializeAsAny["BooleanExpression"]
 
 
 def _build_balanced_tree(
@@ -290,36 +297,14 @@ class Reference(UnboundTerm, IcebergRootModel[str]):
         return BoundReference
 
 
-Predicates: TypeAlias = Annotated[
-    Annotated["IsNull", Tag("is-null")]
-    | Annotated["NotNull", Tag("not-null")]
-    | Annotated["IsNaN", Tag("is-nan")]
-    | Annotated["NotNaN", Tag("not-nan")]
-    | Annotated["EqualTo", Tag("eq")]
-    | Annotated["NotEqualTo", Tag("not-eq")]
-    | Annotated["LessThan", Tag("lt")]
-    | Annotated["LessThanOrEqual", Tag("lt-eq")]
-    | Annotated["GreaterThan", Tag("gt")]
-    | Annotated["GreaterThanOrEqual", Tag("gt-eq")]
-    | Annotated["StartsWith", Tag("starts-with")]
-    | Annotated["NotStartsWith", Tag("not-starts-with")]
-    | Annotated["In", Tag("in")]
-    | Annotated["NotIn", Tag("not-in")]
-    | Annotated["And", Tag("and")]
-    | Annotated["Or", Tag("or")]
-    | Annotated["Not", Tag("not")],
-    Discriminator("type"),
-]
-
-
 class And(BooleanExpression):
     """AND operation expression - logical conjunction."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     type: TypingLiteral["and"] = Field(default="and", alias="type")
-    left: Predicates
-    right: Predicates
+    left: SerializableBooleanExpression = Field()
+    right: SerializableBooleanExpression = Field()
 
     def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression, **_: Any) -> None:
         if isinstance(self, And) and not hasattr(self, "left") and not hasattr(self, "right"):
@@ -365,8 +350,8 @@ class Or(BooleanExpression):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     type: TypingLiteral["or"] = Field(default="or", alias="type")
-    left: Predicates
-    right: Predicates
+    left: SerializableBooleanExpression = Field()
+    right: SerializableBooleanExpression = Field()
 
     def __init__(self, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> None:
         if isinstance(self, Or) and not hasattr(self, "left") and not hasattr(self, "right"):
@@ -412,7 +397,7 @@ class Not(BooleanExpression):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     type: TypingLiteral["not"] = Field(default="not")
-    child: Predicates = Field()
+    child: SerializableBooleanExpression = Field()
 
     def __init__(self, child: BooleanExpression, **_: Any) -> None:
         super().__init__(child=child)
