@@ -17,6 +17,8 @@
 
 from pyiceberg.avro.decoder import BinaryDecoder
 
+__all__: list[str] = []
+
 class CythonBinaryDecoder(BinaryDecoder):
     def __init__(self, input_contents: bytes) -> None:
         pass
