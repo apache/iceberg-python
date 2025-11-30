@@ -3840,8 +3840,8 @@ def test_orc_schema_conversion_with_field_ids() -> None:
     id_field_no_ids = arrow_schema_no_ids.field(0)
     name_field_no_ids = arrow_schema_no_ids.field(1)
 
-    assert PYARROW_PARQUET_FIELD_ID_KEY not in id_field_no_ids.metadata
-    assert PYARROW_PARQUET_FIELD_ID_KEY not in name_field_no_ids.metadata
+    assert ORC_FIELD_ID_KEY not in id_field_no_ids.metadata
+    assert ORC_FIELD_ID_KEY not in name_field_no_ids.metadata
     assert PYARROW_PARQUET_FIELD_ID_KEY not in id_field_no_ids.metadata
     assert PYARROW_PARQUET_FIELD_ID_KEY not in name_field_no_ids.metadata
 
