@@ -3840,8 +3840,46 @@ def test_orc_schema_conversion_with_field_ids() -> None:
     id_field_no_ids = arrow_schema_no_ids.field(0)
     name_field_no_ids = arrow_schema_no_ids.field(1)
 
-    assert not id_field_no_ids.metadata
-    assert not name_field_no_ids.metadata
+    assert ORC_FIELD_ID_KEY not in id_field_no_ids.metadata
+    assert ORC_FIELD_ID_KEY not in name_field_no_ids.metadata
+    assert PYARROW_PARQUET_FIELD_ID_KEY not in id_field_no_ids.metadata
+    assert PYARROW_PARQUET_FIELD_ID_KEY not in name_field_no_ids.metadata
+
+
+def test_orc_schema_conversion_with_required_attribute() -> None:
+    """
+    Test that schema_to_pyarrow correctly adds ORC iceberg.required attribute.
+    To run just this test:
+        pytest tests/io/test_pyarrow.py -k test_orc_schema_conversion_with_required_attribute
+    """
+    from pyiceberg.io.pyarrow import ORC_FIELD_REQUIRED_KEY, schema_to_pyarrow
+    from pyiceberg.manifest import FileFormat
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import IntegerType, StringType
+
+    # Define schema
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(2, "name", StringType(), required=False),
+    )
+
+    # Test 1: Specify Parquet format
+    arrow_schema_default = schema_to_pyarrow(schema, file_format=FileFormat.PARQUET)
+
+    id_field = arrow_schema_default.field(0)
+    name_field = arrow_schema_default.field(1)
+
+    assert ORC_FIELD_REQUIRED_KEY not in id_field.metadata
+    assert ORC_FIELD_REQUIRED_KEY not in name_field.metadata
+
+    # Test 2: Specify ORC format
+    arrow_schema_orc = schema_to_pyarrow(schema, file_format=FileFormat.ORC)
+
+    id_field_orc = arrow_schema_orc.field(0)
+    name_field_orc = arrow_schema_orc.field(1)
+
+    assert id_field_orc.metadata[ORC_FIELD_REQUIRED_KEY] == b"true"
+    assert name_field_orc.metadata[ORC_FIELD_REQUIRED_KEY] == b"false"
 
 
 def test_orc_batching_behavior_documentation(tmp_path: Path) -> None:

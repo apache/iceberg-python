@@ -196,6 +196,7 @@ ICEBERG_SCHEMA = b"iceberg.schema"
 PYARROW_PARQUET_FIELD_ID_KEY = b"PARQUET:field_id"
 # ORC field ID key for Iceberg field IDs in ORC metadata
 ORC_FIELD_ID_KEY = b"iceberg.id"
+ORC_FIELD_REQUIRED_KEY = b"iceberg.required"
 PYARROW_FIELD_DOC_KEY = b"doc"
 LIST_ELEMENT_NAME = "element"
 MAP_KEY_NAME = "key"
@@ -717,6 +718,8 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
             else:
                 # Default to Parquet for backward compatibility
                 metadata[PYARROW_PARQUET_FIELD_ID_KEY] = str(field.field_id)
+        if self._file_format == FileFormat.ORC:
+            metadata[ORC_FIELD_REQUIRED_KEY] = str(field.required).lower()
 
         return pa.field(
             name=field.name,
