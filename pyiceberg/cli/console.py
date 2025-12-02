@@ -15,14 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=broad-except,redefined-builtin,redefined-outer-name
+from collections.abc import Callable
 from functools import wraps
 from typing import (
     Any,
-    Callable,
-    Dict,
     Literal,
-    Optional,
-    Tuple,
 )
 
 import click
@@ -64,12 +61,12 @@ def catch_exception() -> Callable:  # type: ignore
 @click.pass_context
 def run(
     ctx: Context,
-    catalog: Optional[str],
+    catalog: str | None,
     verbose: bool,
     output: str,
-    ugi: Optional[str],
-    uri: Optional[str],
-    credential: Optional[str],
+    ugi: str | None,
+    uri: str | None,
+    credential: str | None,
 ) -> None:
     properties = {}
     if ugi:
@@ -98,7 +95,7 @@ def run(
         ctx.exit(1)
 
 
-def _catalog_and_output(ctx: Context) -> Tuple[Catalog, Output]:
+def _catalog_and_output(ctx: Context) -> tuple[Catalog, Output]:
     """Small helper to set the types."""
     return ctx.obj["catalog"], ctx.obj["output"]
 
@@ -107,7 +104,7 @@ def _catalog_and_output(ctx: Context) -> Tuple[Catalog, Output]:
 @click.pass_context
 @click.argument("parent", required=False)
 @catch_exception()
-def list(ctx: Context, parent: Optional[str]) -> None:  # pylint: disable=redefined-builtin
+def list(ctx: Context, parent: str | None) -> None:  # pylint: disable=redefined-builtin
     """List tables or namespaces."""
     catalog, output = _catalog_and_output(ctx)
 
@@ -438,7 +435,7 @@ def list_refs(ctx: Context, identifier: str, type: str, verbose: bool) -> None:
     output.describe_refs(relevant_refs)
 
 
-def _retention_properties(ref: SnapshotRef, table_properties: Dict[str, str]) -> Dict[str, str]:
+def _retention_properties(ref: SnapshotRef, table_properties: dict[str, str]) -> dict[str, str]:
     retention_properties = {}
     if ref.snapshot_ref_type == SnapshotRefType.BRANCH:
         default_min_snapshots_to_keep = property_as_int(

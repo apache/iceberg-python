@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import os
-from typing import Any, Dict, Optional
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -148,14 +148,14 @@ def test_from_configuration_files_get_typed_value(tmp_path_factory: pytest.TempP
 def test_config_lookup_order(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path_factory: pytest.TempPathFactory,
-    config_setup: Dict[str, Any],
-    expected_result: Optional[str],
+    config_setup: dict[str, Any],
+    expected_result: str | None,
 ) -> None:
     """
     Test that the configuration lookup prioritizes PYICEBERG_HOME, then home (~), then cwd.
     """
 
-    def create_config_file(path: str, uri: Optional[str]) -> None:
+    def create_config_file(path: str, uri: str | None) -> None:
         if uri:
             config_file_path = os.path.join(path, ".pyiceberg.yaml")
             content = {"catalog": {"default": {"uri": uri}}}

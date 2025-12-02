@@ -15,8 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=keyword-arg-before-vararg
+from collections.abc import Callable
 from enum import Enum
-from typing import Annotated, Any, Callable, Dict, List, Optional, Union
+from typing import Annotated, Any
 
 from pydantic import (
     BeforeValidator,
@@ -71,10 +72,10 @@ class SortField(IcebergBaseModel):
 
     def __init__(
         self,
-        source_id: Optional[int] = None,
-        transform: Optional[Union[Transform[Any, Any], Callable[[IcebergType], Transform[Any, Any]]]] = None,
-        direction: Optional[SortDirection] = None,
-        null_order: Optional[NullOrder] = None,
+        source_id: int | None = None,
+        transform: Transform[Any, Any] | Callable[[IcebergType], Transform[Any, Any]] | None = None,
+        direction: SortDirection | None = None,
+        null_order: NullOrder | None = None,
         **data: Any,
     ):
         if source_id is not None:
@@ -88,7 +89,7 @@ class SortField(IcebergBaseModel):
         super().__init__(**data)
 
     @model_validator(mode="before")
-    def set_null_order(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+    def set_null_order(cls, values: dict[str, Any]) -> dict[str, Any]:
         values["direction"] = values["direction"] if values.get("direction") else SortDirection.ASC
         if not values.get("null-order"):
             values["null-order"] = NullOrder.NULLS_FIRST if values["direction"] == SortDirection.ASC else NullOrder.NULLS_LAST
@@ -144,7 +145,7 @@ class SortOrder(IcebergBaseModel):
     """
 
     order_id: int = Field(alias="order-id", default=INITIAL_SORT_ORDER_ID)
-    fields: List[SortField] = Field(default_factory=list)
+    fields: list[SortField] = Field(default_factory=list)
 
     def __init__(self, *fields: SortField, **data: Any):
         if fields:

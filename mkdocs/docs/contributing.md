@@ -34,33 +34,61 @@ For first-time contributors, feel free to check out our [good first issues](http
 
 The PyIceberg Project is hosted on GitHub at <https://github.com/apache/iceberg-python>.
 
-For the development, Poetry is used for packing and dependency management. You can install this using:
+For development, [uv](https://docs.astral.sh/uv/) is used for dependency management and packaging. uv is a Python package installer and resolver, written in Rust, that serves as a drop-in replacement for pip, and virtualenv.
+
+### Getting Started
+
+Install uv and set up the development environment:
 
 ```bash
-make install-poetry
+make install
 ```
 
-To get started, you can run `make install`, which installs all the dependencies of the Iceberg library. This also installs the development dependencies. If you don't want to install the development dependencies, you need to install using `poetry install --without dev` instead of `make install`.
+This will install uv if needed, create a virtual environment in `.venv`, and install all dependencies.
 
-If you want to install the library on the host, you can simply run `pip3 install -e .`. If you wish to use a virtual environment, you can run `poetry shell`. Poetry will open up a virtual environment with all the dependencies set.
+If you only want to just install uv:
 
-> **Note:** If you want to use `poetry shell`, you need to install it using `pip install poetry-plugin-shell`. Alternatively, you can run commands directly with `poetry run`.
+```bash
+make install-uv
+```
 
-To set up IDEA with Poetry:
+### Python Version Selection
+
+You can specify which Python version to use when creating your virtual environment:
+
+```bash
+PYTHON=3.12 make install # Create environment with Python 3.12
+make test # Run tests against Python 3.12
+```
+
+> **Tip:** `uv python list` shows available interpreters. `uv python install 3.12` can install one if needed.
+
+### IDE Setup
+
+After running `make install`, configure your IDE to use the Python interpreter at `.venv/bin/python`.
+
+**To set up IDEA with uv:**
 
 - Open up the Python project in IntelliJ
-- Make sure that you're on latest main (that includes Poetry)
+- Make sure that you're on latest main
 - Go to File -> Project Structure (⌘;)
 - Go to Platform Settings -> SDKs
-- Click the + sign -> Add Python SDK
-- Select Poetry Environment from the left hand side bar and hit OK
-- It can take some time to download all the dependencies based on your internet
-- Go to Project Settings -> Project
-- Select the Poetry SDK from the SDK dropdown, and click OK
+- Add Python SDK -> Virtualenv Environment -> Existing environment
+- Point to `.venv/bin/python`
 
-For IDEA ≤2021 you need to install the [Poetry integration as a plugin](https://plugins.jetbrains.com/plugin/14307-poetry/).
+**VS Code:**
 
-Now you're set using Poetry, and all the tests will run in Poetry, and you'll have syntax highlighting in the pyproject.toml to indicate stale dependencies.
+- Press Cmd/Ctrl+Shift+P -> "Python: Select Interpreter"
+- Choose `.venv/bin/python`
+
+### Advanced uv Usage
+
+For full control over your environment, you can use uv commands directly. See the [uv documentation](https://docs.astral.sh/uv/) to learn more about:
+
+- Managing dependencies with `uv add` and `uv remove`
+- Python version management with `uv python`
+- Running commands with `uv run`
+- Lock file management with `uv.lock`
 
 ## Installation from source
 
@@ -80,17 +108,17 @@ pip install "git+https://github.com/apache/iceberg-python.git#egg=pyiceberg[pyar
 
 ## Linting
 
-`pre-commit` is used for autoformatting and linting:
+`prek` is used for autoformatting and linting:
 
 ```bash
 make lint
 ```
 
-Pre-commit will automatically fix the violations such as import orders, formatting etc. Pylint errors you need to fix yourself.
+`prek` will automatically fix the violations such as import orders, formatting etc. Pylint errors you need to fix yourself.
 
-In contrast to the name suggest, it doesn't run the checks on the commit. If this is something that you like, you can set this up by running `pre-commit install`.
+In addition to manually running `make lint`, you can install the pre-commit hooks in your local repo with `prek install`. By doing this, linting is run automatically every time you make a commit.
 
-You can bump the integrations to the latest version using `pre-commit autoupdate`. This will check if there is a newer version of `{black,mypy,isort,...}` and update the yaml.
+You can bump the integrations to the latest version using `prek auto-update`. This will check if there is a newer version of `{black,mypy,isort,...}` and update the yaml.
 
 ## Cleaning
 
@@ -155,6 +183,34 @@ make test-integration-rebuild
 
 To rebuild the containers from scratch.
 
+#### Running Integration Tests against REST Catalogs
+
+!!! warning "Do not run against production catalogs"
+    The integration tests will delete data throughout the entirety of your catalog. Running these integration tests against production catalogs will result in data loss.
+
+PyIceberg supports the ability to run our catalog tests against an arbitrary REST Catalog.
+
+In order to run the test catalog, you will need to specify which REST catalog to run against with the `PYICEBERG_TEST_CATALOG` environment variable
+
+```sh
+export PYICEBERG_TEST_CATALOG=test_catalog
+```
+
+The catalog in question can be configured either through the ~/.pyiceberg.yaml file or through environment variables.
+
+```yaml
+catalog:
+  test_catalog:
+    uri: http://rest-catalog/ws/
+    credential: t-1234:secret
+```
+
+```sh
+export PYICEBERG_CATALOG__TEST_CATALOG__URI=thrift://localhost:9083
+export PYICEBERG_CATALOG__TEST_CATALOG__ACCESS_KEY_ID=username
+export PYICEBERG_CATALOG__TEST_CATALOG__SECRET_ACCESS_KEY=password
+```
+
 ## Code standards
 
 Below are the formalized conventions that we adhere to in the PyIceberg project. The goal of this is to have a common agreement on how to evolve the codebase, but also using it as guidelines for newcomers to the project.
@@ -205,8 +261,6 @@ Deprecated in 0.1.0, will be removed in 0.2.0. The old_property is deprecated. P
 ### Type annotations
 
 For the type annotation the types from the `Typing` package are used.
-
-PyIceberg offers support from Python 3.9 onwards, we can't use the [type hints from the standard collections](https://peps.python.org/pep-0585/).
 
 ### Third party libraries
 

@@ -14,13 +14,16 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-import datetime
-from unittest.mock import MagicMock
+import threading
+from datetime import datetime, timedelta
+from unittest.mock import MagicMock, Mock
 from uuid import uuid4
 
 import pytest
 
 from pyiceberg.table import CommitTableResponse, Table
+from pyiceberg.table.update import RemoveSnapshotsUpdate, update_table_metadata
+from pyiceberg.table.update.snapshot import ExpireSnapshots
 
 
 def test_cannot_expire_protected_head_snapshot(table_v2: Table) -> None:
@@ -143,7 +146,7 @@ def test_expire_snapshots_by_timestamp_skips_protected(table_v2: Table) -> None:
     table_v2.catalog = MagicMock()
 
     # Attempt to expire all snapshots before a future timestamp (so both are candidates)
-    future_datetime = datetime.datetime.now() + datetime.timedelta(days=1)
+    future_datetime = datetime.now() + timedelta(days=1)
 
     # Mock the catalog's commit_table to return the current metadata (simulate no change)
     mock_response = CommitTableResponse(
@@ -223,3 +226,93 @@ def test_expire_snapshots_by_ids(table_v2: Table) -> None:
     assert EXPIRE_SNAPSHOT_1 not in remaining_snapshots
     assert EXPIRE_SNAPSHOT_2 not in remaining_snapshots
     assert len(table_v2.metadata.snapshots) == 1
+
+
+def test_thread_safety_fix() -> None:
+    """Test that ExpireSnapshots instances have isolated state."""
+    # Create two ExpireSnapshots instances
+    expire1 = ExpireSnapshots(Mock())
+    expire2 = ExpireSnapshots(Mock())
+
+    # Verify they have separate snapshot sets (this was the bug!)
+    # Before fix: both would have the same id (shared class attribute)
+    # After fix: they should have different ids (separate instance attributes)
+    assert id(expire1._snapshot_ids_to_expire) != id(expire2._snapshot_ids_to_expire), (
+        "ExpireSnapshots instances are sharing the same snapshot set - thread safety bug still exists"
+    )
+
+    # Test that modifications to one don't affect the other
+    expire1._snapshot_ids_to_expire.add(1001)
+    expire2._snapshot_ids_to_expire.add(2001)
+
+    # Verify no cross-contamination of snapshot IDs
+    assert 2001 not in expire1._snapshot_ids_to_expire, "Snapshot IDs are leaking between instances"
+    assert 1001 not in expire2._snapshot_ids_to_expire, "Snapshot IDs are leaking between instances"
+
+
+def test_concurrent_operations() -> None:
+    """Test concurrent operations with separate ExpireSnapshots instances."""
+    results: dict[str, set[int]] = {"expire1_snapshots": set(), "expire2_snapshots": set()}
+
+    def worker1() -> None:
+        expire1 = ExpireSnapshots(Mock())
+        expire1._snapshot_ids_to_expire.update([1001, 1002, 1003])
+        results["expire1_snapshots"] = expire1._snapshot_ids_to_expire.copy()
+
+    def worker2() -> None:
+        expire2 = ExpireSnapshots(Mock())
+        expire2._snapshot_ids_to_expire.update([2001, 2002, 2003])
+        results["expire2_snapshots"] = expire2._snapshot_ids_to_expire.copy()
+
+    # Run both workers concurrently
+    thread1 = threading.Thread(target=worker1)
+    thread2 = threading.Thread(target=worker2)
+
+    thread1.start()
+    thread2.start()
+
+    thread1.join()
+    thread2.join()
+
+    # Check for cross-contamination
+    expected_1 = {1001, 1002, 1003}
+    expected_2 = {2001, 2002, 2003}
+
+    assert results["expire1_snapshots"] == expected_1, "Worker 1 snapshots contaminated"
+    assert results["expire2_snapshots"] == expected_2, "Worker 2 snapshots contaminated"
+
+
+def test_update_remove_snapshots_with_statistics(table_v2_with_statistics: Table) -> None:
+    """
+    Test removing snapshots from a table that has statistics.
+
+    This test exercises the code path where RemoveStatisticsUpdate is instantiated
+    within the RemoveSnapshotsUpdate handler. Before the fix for #2558, this would
+    fail with: TypeError: BaseModel.__init__() takes 1 positional argument but 2 were given
+    """
+    # The table has 2 snapshots with IDs: 3051729675574597004 and 3055729675574597004
+    # Both snapshots have statistics associated with them
+    REMOVE_SNAPSHOT = 3051729675574597004
+    KEEP_SNAPSHOT = 3055729675574597004
+
+    # Verify fixture assumptions
+    assert len(table_v2_with_statistics.metadata.snapshots) == 2
+    assert len(table_v2_with_statistics.metadata.statistics) == 2
+    assert any(stat.snapshot_id == REMOVE_SNAPSHOT for stat in table_v2_with_statistics.metadata.statistics), (
+        "Snapshot to remove should have statistics"
+    )
+
+    # This should trigger RemoveStatisticsUpdate instantiation for the removed snapshot
+    update = RemoveSnapshotsUpdate(snapshot_ids=[REMOVE_SNAPSHOT])
+    new_metadata = update_table_metadata(table_v2_with_statistics.metadata, (update,))
+
+    # Verify the snapshot was removed
+    assert len(new_metadata.snapshots) == 1
+    assert new_metadata.snapshots[0].snapshot_id == KEEP_SNAPSHOT
+
+    # Verify the statistics for the removed snapshot were also removed
+    assert len(new_metadata.statistics) == 1
+    assert new_metadata.statistics[0].snapshot_id == KEEP_SNAPSHOT
+    assert not any(stat.snapshot_id == REMOVE_SNAPSHOT for stat in new_metadata.statistics), (
+        "Statistics for removed snapshot should be gone"
+    )

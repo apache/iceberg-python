@@ -18,7 +18,7 @@
 import json
 import uuid
 from copy import copy
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -66,6 +66,7 @@ from pyiceberg.table.sorting import (
 )
 from pyiceberg.table.statistics import BlobMetadata, PartitionStatisticsFile, StatisticsFile
 from pyiceberg.table.update import (
+    AddPartitionSpecUpdate,
     AddSnapshotUpdate,
     AddSortOrderUpdate,
     AssertCreate,
@@ -76,8 +77,10 @@ from pyiceberg.table.update import (
     AssertLastAssignedPartitionId,
     AssertRefSnapshotId,
     AssertTableUUID,
+    RemovePartitionSpecsUpdate,
     RemovePartitionStatisticsUpdate,
     RemovePropertiesUpdate,
+    RemoveSchemasUpdate,
     RemoveSnapshotRefUpdate,
     RemoveSnapshotsUpdate,
     RemoveStatisticsUpdate,
@@ -265,8 +268,15 @@ def test_history(table_v2: Table) -> None:
     ]
 
 
-def test_table_scan_select(table_v2: Table) -> None:
-    scan = table_v2.scan()
+@pytest.mark.parametrize(
+    "table_fixture",
+    [
+        pytest.param(pytest.lazy_fixture("table_v2"), id="parquet"),
+        pytest.param(pytest.lazy_fixture("table_v2_orc"), id="orc"),
+    ],
+)
+def test_table_scan_select(table_fixture: Table) -> None:
+    scan = table_fixture.scan()
     assert scan.selected_fields == ("*",)
     assert scan.select("a", "b").selected_fields == ("a", "b")
     assert scan.select("a", "c").select("a").selected_fields == ("a",)
@@ -346,10 +356,20 @@ def test_static_table_gz_same_as_table(table_v2: Table, metadata_location_gz: st
     assert static_table.metadata == table_v2.metadata
 
 
-def test_static_table_version_hint_same_as_table(table_v2: Table, table_location: str) -> None:
-    static_table = StaticTable.from_metadata(table_location)
-    assert isinstance(static_table, Table)
-    assert static_table.metadata == table_v2.metadata
+def test_static_table_version_hint_same_as_table(
+    table_v2: Table,
+    table_location_with_version_hint_full: str,
+    table_location_with_version_hint_numeric: str,
+    table_location_with_version_hint_non_numeric: str,
+) -> None:
+    for table_location in [
+        table_location_with_version_hint_full,
+        table_location_with_version_hint_numeric,
+        table_location_with_version_hint_non_numeric,
+    ]:
+        static_table = StaticTable.from_metadata(table_location)
+        assert isinstance(static_table, Table)
+        assert static_table.metadata == table_v2.metadata
 
 
 def test_static_table_io_does_not_exist(metadata_location: str) -> None:
@@ -525,7 +545,7 @@ def test_update_column(table_v1: Table, table_v2: Table) -> None:
 
 
 def test_add_primitive_type_column(table_v2: Table) -> None:
-    primitive_type: Dict[str, PrimitiveType] = {
+    primitive_type: dict[str, PrimitiveType] = {
         "boolean": BooleanType(),
         "int": IntegerType(),
         "long": LongType(),
@@ -1201,7 +1221,7 @@ def test_correct_schema() -> None:
     assert "Snapshot not found: -1" in str(exc_info.value)
 
 
-def test_table_properties(example_table_metadata_v2: Dict[str, Any]) -> None:
+def test_table_properties(example_table_metadata_v2: dict[str, Any]) -> None:
     # metadata properties are all strings
     for k, v in example_table_metadata_v2["properties"].items():
         assert isinstance(k, str)
@@ -1219,7 +1239,7 @@ def test_table_properties(example_table_metadata_v2: Dict[str, Any]) -> None:
     assert isinstance(new_metadata.properties["property_name"], str)
 
 
-def test_table_properties_raise_for_none_value(example_table_metadata_v2: Dict[str, Any]) -> None:
+def test_table_properties_raise_for_none_value(example_table_metadata_v2: dict[str, Any]) -> None:
     property_with_none = {"property_name": None}
     example_table_metadata_v2 = {**example_table_metadata_v2, "properties": property_with_none}
     with pytest.raises(ValidationError) as exc_info:
@@ -1284,6 +1304,67 @@ def test_update_metadata_log_overflow(table_v2: Table) -> None:
         table_v2.metadata_location,
     )
     assert len(new_metadata.metadata_log) == 1
+
+
+def test_remove_partition_spec_update(table_v2: Table) -> None:
+    base_metadata = table_v2.metadata
+    new_spec = PartitionSpec(PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="y"), spec_id=1)
+    metadata_with_new_spec = update_table_metadata(base_metadata, (AddPartitionSpecUpdate(spec=new_spec),))
+
+    assert len(metadata_with_new_spec.partition_specs) == 2
+
+    update = RemovePartitionSpecsUpdate(spec_ids=[1])
+    updated_metadata = update_table_metadata(
+        metadata_with_new_spec,
+        (update,),
+    )
+
+    assert len(updated_metadata.partition_specs) == 1
+
+
+def test_remove_partition_spec_update_spec_does_not_exist(table_v2: Table) -> None:
+    update = RemovePartitionSpecsUpdate(
+        spec_ids=[123],
+    )
+    with pytest.raises(ValueError, match="Partition spec with id 123 does not exist"):
+        update_table_metadata(table_v2.metadata, (update,))
+
+
+def test_remove_partition_spec_update_default_spec(table_v2: Table) -> None:
+    update = RemovePartitionSpecsUpdate(
+        spec_ids=[0],
+    )
+    with pytest.raises(ValueError, match="Cannot remove default partition spec: 0"):
+        update_table_metadata(table_v2.metadata, (update,))
+
+
+def test_remove_schemas_update(table_v2: Table) -> None:
+    base_metadata = table_v2.metadata
+    assert len(base_metadata.schemas) == 2
+
+    update = RemoveSchemasUpdate(schema_ids=[0])
+    updated_metadata = update_table_metadata(
+        base_metadata,
+        (update,),
+    )
+
+    assert len(updated_metadata.schemas) == 1
+
+
+def test_remove_schemas_update_schema_does_not_exist(table_v2: Table) -> None:
+    update = RemoveSchemasUpdate(
+        schema_ids=[123],
+    )
+    with pytest.raises(ValueError, match="Schema with schema id 123 does not exist"):
+        update_table_metadata(table_v2.metadata, (update,))
+
+
+def test_remove_schemas_update_current_schema(table_v2: Table) -> None:
+    update = RemoveSchemasUpdate(
+        schema_ids=[1],
+    )
+    with pytest.raises(ValueError, match="Cannot remove current schema with id 1"):
+        update_table_metadata(table_v2.metadata, (update,))
 
 
 def test_set_statistics_update(table_v2_with_statistics: Table) -> None:
@@ -1440,3 +1521,57 @@ def test_remove_partition_statistics_update_with_invalid_snapshot_id(table_v2_wi
             table_v2_with_statistics.metadata,
             (RemovePartitionStatisticsUpdate(snapshot_id=123456789),),
         )
+
+
+def test_add_snapshot_update_fails_without_first_row_id(table_v3: Table) -> None:
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=200,
+        timestamp_ms=1602638593590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Cannot add snapshot without first row id",
+    ):
+        update_table_metadata(table_v3.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
+
+
+def test_add_snapshot_update_fails_with_smaller_first_row_id(table_v3: Table) -> None:
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=200,
+        timestamp_ms=1602638593590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+        first_row_id=0,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Cannot add a snapshot with first row id smaller than the table's next-row-id",
+    ):
+        update_table_metadata(table_v3.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
+
+
+def test_add_snapshot_update_updates_next_row_id(table_v3: Table) -> None:
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=200,
+        timestamp_ms=1602638593590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+        first_row_id=2,
+        added_rows=10,
+    )
+
+    new_metadata = update_table_metadata(table_v3.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
+    assert new_metadata.next_row_id == 11

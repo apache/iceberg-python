@@ -18,9 +18,6 @@
 from typing import (
     TYPE_CHECKING,
     Iterator,
-    Optional,
-    Set,
-    Tuple,
     Union,
 )
 
@@ -91,8 +88,8 @@ class IcebergTables(SqlCatalogBaseTable):
     catalog_name: Mapped[str] = mapped_column(String(255), nullable=False, primary_key=True)
     table_namespace: Mapped[str] = mapped_column(String(255), nullable=False, primary_key=True)
     table_name: Mapped[str] = mapped_column(String(255), nullable=False, primary_key=True)
-    metadata_location: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
-    previous_metadata_location: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    metadata_location: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    previous_metadata_location: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
 
 class IcebergNamespaceProperties(SqlCatalogBaseTable):
@@ -174,9 +171,9 @@ class SqlCatalog(MetastoreCatalog):
 
     def create_table(
         self,
-        identifier: Union[str, Identifier],
+        identifier: str | Identifier,
         schema: Union[Schema, "pa.Schema"],
-        location: Optional[str] = None,
+        location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
@@ -237,12 +234,12 @@ class SqlCatalog(MetastoreCatalog):
 
         return self.load_table(identifier=identifier)
 
-    def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
+    def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
         """Register a new table using existing metadata.
 
         Args:
-            identifier Union[str, Identifier]: Table identifier for the table
-            metadata_location str: The location to the metadata
+            identifier (Union[str, Identifier]): Table identifier for the table
+            metadata_location (str): The location to the metadata
 
         Returns:
             Table: The newly registered table
@@ -274,7 +271,7 @@ class SqlCatalog(MetastoreCatalog):
 
         return self.load_table(identifier=identifier)
 
-    def load_table(self, identifier: Union[str, Identifier]) -> Table:
+    def load_table(self, identifier: str | Identifier) -> Table:
         """Load the table's metadata and return the table instance.
 
         You can also use this method to check for table existence using 'try catalog.table() except NoSuchTableError'.
@@ -303,7 +300,7 @@ class SqlCatalog(MetastoreCatalog):
             return self._convert_orm_to_iceberg(result)
         raise NoSuchTableError(f"Table does not exist: {namespace}.{table_name}")
 
-    def drop_table(self, identifier: Union[str, Identifier]) -> None:
+    def drop_table(self, identifier: str | Identifier) -> None:
         """Drop a table.
 
         Args:
@@ -343,7 +340,7 @@ class SqlCatalog(MetastoreCatalog):
                     raise NoSuchTableError(f"Table does not exist: {namespace}.{table_name}") from e
             session.commit()
 
-    def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
+    def rename_table(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> Table:
         """Rename a fully classified table name.
 
         Args:
@@ -403,7 +400,7 @@ class SqlCatalog(MetastoreCatalog):
         return self.load_table(to_identifier)
 
     def commit_table(
-        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+        self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
         """Commit updates to a table.
 
@@ -424,7 +421,7 @@ class SqlCatalog(MetastoreCatalog):
         namespace = Catalog.namespace_to_string(namespace_tuple)
         table_name = Catalog.table_name_from(table_identifier)
 
-        current_table: Optional[Table]
+        current_table: Table | None
         try:
             current_table = self.load_table(table_identifier)
         except NoSuchTableError:
@@ -498,7 +495,7 @@ class SqlCatalog(MetastoreCatalog):
             metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
         )
 
-    def _namespace_exists(self, identifier: Union[str, Identifier]) -> bool:
+    def _namespace_exists(self, identifier: str | Identifier) -> bool:
         namespace_tuple = Catalog.identifier_to_tuple(identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple, NoSuchNamespaceError)
         namespace_starts_with = namespace.replace("!", "!!").replace("_", "!_").replace("%", "!%") + ".%"
@@ -530,7 +527,7 @@ class SqlCatalog(MetastoreCatalog):
                 return True
         return False
 
-    def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
+    def create_namespace(self, namespace: str | Identifier, properties: Properties = EMPTY_DICT) -> None:
         """Create a namespace in the catalog.
 
         Args:
@@ -558,7 +555,7 @@ class SqlCatalog(MetastoreCatalog):
                 )
             session.commit()
 
-    def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
+    def drop_namespace(self, namespace: str | Identifier) -> None:
         """Drop a namespace.
 
         Args:
@@ -584,7 +581,7 @@ class SqlCatalog(MetastoreCatalog):
             )
             session.commit()
 
-    def list_tables(self, namespace: Union[str, Identifier]) -> Iterator[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> Iterator[Identifier]:
         """List tables under the given namespace in the catalog.
 
         Args:
@@ -605,9 +602,7 @@ class SqlCatalog(MetastoreCatalog):
             result = session.scalars(stmt)
             identifiers = [(Catalog.identifier_to_tuple(table.table_namespace) + (table.table_name,)) for table in result]
 
-            yield from identifiers
-
-    def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> Iterator[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> Iterator[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
 
         Args:
@@ -647,7 +642,7 @@ class SqlCatalog(MetastoreCatalog):
 
             yield from namespaces
 
-    def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
+    def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
         """Get properties for a namespace.
 
         Args:
@@ -671,7 +666,7 @@ class SqlCatalog(MetastoreCatalog):
             return {props.property_key: props.property_value for props in result}
 
     def update_namespace_properties(
-        self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = EMPTY_DICT
+        self, namespace: str | Identifier, removals: set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
         """Remove provided property keys and update properties for a namespace.
 
@@ -726,13 +721,13 @@ class SqlCatalog(MetastoreCatalog):
             session.commit()
         return properties_update_summary
 
-    def list_views(self, namespace: Union[str, Identifier]) -> Iterator[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> Iterator[Identifier]:
         raise NotImplementedError
 
-    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
+    def view_exists(self, identifier: str | Identifier) -> bool:
         raise NotImplementedError
 
-    def drop_view(self, identifier: Union[str, Identifier]) -> None:
+    def drop_view(self, identifier: str | Identifier) -> None:
         raise NotImplementedError
 
     def close(self) -> None:

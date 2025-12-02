@@ -15,17 +15,19 @@
 #  specific language governing permissions and limitations
 #  under the License.
 
+import os
+from collections.abc import Generator
 from pathlib import Path, PosixPath
-from typing import Generator, List
 
 import pytest
 
-from pyiceberg.catalog import Catalog, MetastoreCatalog
+from pyiceberg.catalog import Catalog, MetastoreCatalog, load_catalog
 from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.memory import InMemoryCatalog
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import (
+    CommitFailedException,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchNamespaceError,
@@ -33,7 +35,12 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
 )
 from pyiceberg.io import WAREHOUSE
-from pyiceberg.schema import Schema
+from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.schema import INITIAL_SCHEMA_ID, Schema
+from pyiceberg.table.metadata import INITIAL_SPEC_ID
+from pyiceberg.table.sorting import INITIAL_SORT_ORDER_ID, SortField, SortOrder
+from pyiceberg.transforms import BucketTransform, DayTransform, IdentityTransform
+from pyiceberg.types import IntegerType, LongType, NestedField, TimestampType, UUIDType
 from tests.conftest import clean_up
 
 
@@ -75,11 +82,21 @@ def rest_catalog() -> Generator[Catalog, None, None]:
 
 
 @pytest.fixture(scope="function")
+def rest_test_catalog() -> Generator[Catalog, None, None]:
+    if test_catalog_name := os.environ.get("PYICEBERG_TEST_CATALOG"):
+        test_catalog = load_catalog(test_catalog_name)
+        yield test_catalog
+        clean_up(test_catalog)
+    else:
+        pytest.skip("PYICEBERG_TEST_CATALOG environment variables not set")
+
+
+@pytest.fixture(scope="function")
 def hive_catalog() -> Generator[Catalog, None, None]:
     test_catalog = HiveCatalog(
         "test_hive_catalog",
         **{
-            "uri": "http://localhost:9083",
+            "uri": "thrift://localhost:9083",
             "s3.endpoint": "http://localhost:9000",
             "s3.access-key-id": "admin",
             "s3.secret-access-key": "password",
@@ -95,6 +112,7 @@ CATALOGS = [
     pytest.lazy_fixture("sqlite_catalog_file"),
     pytest.lazy_fixture("rest_catalog"),
     pytest.lazy_fixture("hive_catalog"),
+    pytest.lazy_fixture("rest_test_catalog"),
 ]
 
 
@@ -153,7 +171,7 @@ def test_load_table(test_catalog: Catalog, table_schema_nested: Schema, database
 
 @pytest.mark.integration
 @pytest.mark.parametrize("test_catalog", CATALOGS)
-def test_list_tables(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_list: List[str]) -> None:
+def test_list_tables(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_list: list[str]) -> None:
     test_catalog.create_namespace(database_name)
     for table_name in table_list:
         test_catalog.create_table((database_name, table_name), table_schema_nested)
@@ -249,6 +267,146 @@ def test_table_exists(test_catalog: Catalog, table_schema_nested: Schema, databa
 
 @pytest.mark.integration
 @pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_update_table_transaction(test_catalog: Catalog, test_schema: Schema, table_name: str, database_name: str) -> None:
+    identifier = (database_name, table_name)
+
+    test_catalog.create_namespace(database_name)
+    table = test_catalog.create_table(identifier, test_schema)
+    assert test_catalog.table_exists(identifier)
+
+    expected_schema = Schema(
+        NestedField(1, "VendorID", IntegerType(), False),
+        NestedField(2, "tpep_pickup_datetime", TimestampType(), False),
+        NestedField(3, "new_col", IntegerType(), False),
+    )
+
+    expected_spec = PartitionSpec(PartitionField(3, 1000, IdentityTransform(), "new_col"))
+
+    with table.transaction() as transaction:
+        with transaction.update_schema() as update_schema:
+            update_schema.add_column("new_col", IntegerType())
+
+        with transaction.update_spec() as update_spec:
+            update_spec.add_field("new_col", IdentityTransform())
+
+    table = test_catalog.load_table(identifier)
+    assert table.schema().as_struct() == expected_schema.as_struct()
+    assert table.spec().fields == expected_spec.fields
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_update_schema_conflict(test_catalog: Catalog, test_schema: Schema, table_name: str, database_name: str) -> None:
+    if isinstance(test_catalog, HiveCatalog):
+        pytest.skip("HiveCatalog fails in this test, need to investigate")
+
+    identifier = (database_name, table_name)
+
+    test_catalog.create_namespace(database_name)
+    table = test_catalog.create_table(identifier, test_schema)
+    assert test_catalog.table_exists(identifier)
+
+    original_update = table.update_schema().add_column("new_col", LongType())
+
+    # Update schema concurrently so that the original update fails
+    concurrent_update = test_catalog.load_table(identifier).update_schema().delete_column("VendorID")
+    concurrent_update.commit()
+
+    expected_schema = Schema(NestedField(2, "tpep_pickup_datetime", TimestampType(), False))
+
+    with pytest.raises(CommitFailedException):
+        original_update.commit()
+
+    table = test_catalog.load_table(identifier)
+    assert table.schema().as_struct() == expected_schema.as_struct()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_create_table_transaction_simple(test_catalog: Catalog, test_schema: Schema, table_name: str, database_name: str) -> None:
+    identifier = (database_name, table_name)
+
+    test_catalog.create_namespace(database_name)
+    table_transaction = test_catalog.create_table_transaction(identifier, test_schema)
+    assert not test_catalog.table_exists(identifier)
+
+    table_transaction.update_schema().add_column("new_col", IntegerType()).commit()
+    assert not test_catalog.table_exists(identifier)
+
+    table_transaction.commit_transaction()
+    assert test_catalog.table_exists(identifier)
+
+    table = test_catalog.load_table(identifier)
+    assert table.schema().find_type("new_col").is_primitive
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_create_table_transaction_multiple_schemas(
+    test_catalog: Catalog, test_schema: Schema, test_partition_spec: PartitionSpec, table_name: str, database_name: str
+) -> None:
+    identifier = (database_name, table_name)
+
+    test_catalog.create_namespace(database_name)
+    table_transaction = test_catalog.create_table_transaction(
+        identifier=identifier,
+        schema=test_schema,
+        partition_spec=test_partition_spec,
+        sort_order=SortOrder(SortField(source_id=1)),
+    )
+    assert not test_catalog.table_exists(identifier)
+
+    table_transaction.update_schema().add_column("new_col", IntegerType()).commit()
+    assert not test_catalog.table_exists(identifier)
+
+    table_transaction.update_schema().add_column("new_col_1", UUIDType()).commit()
+    assert not test_catalog.table_exists(identifier)
+
+    table_transaction.update_spec().add_field("new_col", IdentityTransform()).commit()
+    assert not test_catalog.table_exists(identifier)
+
+    # TODO: test replace sort order when available
+
+    expected_schema = Schema(
+        NestedField(1, "VendorID", IntegerType(), False),
+        NestedField(2, "tpep_pickup_datetime", TimestampType(), False),
+        NestedField(3, "new_col", IntegerType(), False),
+        NestedField(4, "new_col_1", UUIDType(), False),
+    )
+
+    expected_spec = PartitionSpec(
+        PartitionField(1, 1000, IdentityTransform(), "VendorID"),
+        PartitionField(2, 1001, DayTransform(), "tpep_pickup_day"),
+        PartitionField(3, 1002, IdentityTransform(), "new_col"),
+    )
+
+    table_transaction.commit_transaction()
+    assert test_catalog.table_exists(identifier)
+
+    table = test_catalog.load_table(identifier)
+    assert table.schema().as_struct() == expected_schema.as_struct()
+    assert table.schema().schema_id == INITIAL_SCHEMA_ID + 2
+    assert table.spec().fields == expected_spec.fields
+    assert table.spec().spec_id == INITIAL_SPEC_ID + 1
+    assert table.sort_order().order_id == INITIAL_SORT_ORDER_ID
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_concurrent_create_transaction(test_catalog: Catalog, test_schema: Schema, table_name: str, database_name: str) -> None:
+    identifier = (database_name, table_name)
+
+    test_catalog.create_namespace(database_name)
+    table = test_catalog.create_table_transaction(identifier=identifier, schema=test_schema)
+    assert not test_catalog.table_exists(identifier)
+
+    test_catalog.create_table(identifier, test_schema)
+    with pytest.raises(CommitFailedException):
+        table.commit_transaction()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_create_namespace(test_catalog: Catalog, database_name: str) -> None:
     test_catalog.create_namespace(database_name)
     assert (database_name,) in test_catalog.list_namespaces()
@@ -285,7 +443,7 @@ def test_create_namespace_with_comment(test_catalog: Catalog, database_name: str
 
 @pytest.mark.integration
 @pytest.mark.parametrize("test_catalog", CATALOGS)
-def test_list_namespaces(test_catalog: Catalog, database_list: List[str]) -> None:
+def test_list_namespaces(test_catalog: Catalog, database_list: list[str]) -> None:
     for database_name in database_list:
         test_catalog.create_namespace(database_name)
     db_list = test_catalog.list_namespaces()
@@ -343,3 +501,103 @@ def test_update_namespace_properties(test_catalog: Catalog, database_name: str) 
         else:
             assert k in update_report.removed
     assert "updated test description" == test_catalog.load_namespace_properties(database_name)["comment"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_update_table_spec(test_catalog: Catalog, test_schema: Schema, table_name: str, database_name: str) -> None:
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(database_name)
+    table = test_catalog.create_table(identifier, test_schema)
+
+    with table.update_spec() as update:
+        update.add_field(source_column_name="VendorID", transform=BucketTransform(16), partition_field_name="shard")
+
+    loaded = test_catalog.load_table(identifier)
+    expected_spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=BucketTransform(16), name="shard"), spec_id=1
+    )
+    # The spec ID may not match, so check equality of the fields
+    assert loaded.spec() == expected_spec
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_update_table_spec_conflict(test_catalog: Catalog, test_schema: Schema, table_name: str, database_name: str) -> None:
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(database_name)
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=BucketTransform(16), name="id_bucket"))
+    table = test_catalog.create_table(identifier, test_schema, partition_spec=spec)
+
+    update = table.update_spec()
+    update.add_field(source_column_name="tpep_pickup_datetime", transform=BucketTransform(16), partition_field_name="shard")
+
+    # update with conflict
+    conflict_table = test_catalog.load_table(identifier)
+    with conflict_table.update_spec() as conflict_update:
+        conflict_update.remove_field("id_bucket")
+
+    with pytest.raises(
+        CommitFailedException, match="Requirement failed: default spec id has changed|default partition spec changed"
+    ):
+        update.commit()
+
+    loaded = test_catalog.load_table(identifier)
+    assert loaded.spec() == PartitionSpec(spec_id=1)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_update_table_spec_then_revert(test_catalog: Catalog, test_schema: Schema, table_name: str, database_name: str) -> None:
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(database_name)
+
+    initial_spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=BucketTransform(16), name="id_bucket"))
+
+    table = test_catalog.create_table(identifier, test_schema, partition_spec=initial_spec, properties={"format-version": "2"})
+    assert table.format_version == 2
+
+    with table.update_spec() as update:
+        update.add_identity(source_column_name="tpep_pickup_datetime")
+
+    with table.update_spec() as update:
+        update.remove_field("tpep_pickup_datetime")
+
+    assert table.spec() == initial_spec
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_register_table(test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str) -> None:
+    identifier = (database_name, table_name)
+
+    test_catalog.create_namespace_if_not_exists(database_name)
+
+    table = test_catalog.create_table(
+        identifier=identifier,
+        schema=table_schema_nested,
+    )
+
+    assert test_catalog.table_exists(identifier)
+    test_catalog.drop_table(identifier)
+    assert not test_catalog.table_exists(identifier)
+    test_catalog.register_table((database_name, "register_table"), metadata_location=table.metadata_location)
+    assert test_catalog.table_exists((database_name, "register_table"))
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_register_table_existing(test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str) -> None:
+    identifier = (database_name, table_name)
+
+    test_catalog.create_namespace_if_not_exists(database_name)
+
+    table = test_catalog.create_table(
+        identifier=identifier,
+        schema=table_schema_nested,
+    )
+
+    assert test_catalog.table_exists(identifier)
+    # Assert that registering the table again raises TableAlreadyExistsError
+    with pytest.raises(TableAlreadyExistsError):
+        test_catalog.register_table(identifier, metadata_location=table.metadata_location)

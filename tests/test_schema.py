@@ -16,7 +16,7 @@
 # under the License.
 
 from textwrap import dedent
-from typing import Any, Dict, List
+from typing import Any
 
 import pyarrow as pa
 import pytest
@@ -409,8 +409,8 @@ def test_build_position_accessors(table_schema_nested: Schema) -> None:
 
 def test_build_position_accessors_with_struct(table_schema_nested: Schema) -> None:
     class TestStruct(StructProtocol):
-        def __init__(self, pos: Dict[int, Any] = EMPTY_DICT):
-            self._pos: Dict[int, Any] = pos
+        def __init__(self, pos: dict[int, Any] = EMPTY_DICT):
+            self._pos: dict[int, Any] = pos
 
         def __setitem__(self, pos: int, value: Any) -> None:
             pass
@@ -952,14 +952,14 @@ def test_unknown_type_promotion_to_non_primitive_raises_resolve_error() -> None:
 
 
 @pytest.fixture()
-def primitive_fields() -> List[NestedField]:
+def primitive_fields() -> list[NestedField]:
     return [
         NestedField(field_id=1, name=str(primitive_type), field_type=primitive_type, required=False)
         for primitive_type in TEST_PRIMITIVE_TYPES
     ]
 
 
-def test_add_top_level_primitives(primitive_fields: List[NestedField], table_v2: Table) -> None:
+def test_add_top_level_primitives(primitive_fields: list[NestedField], table_v2: Table) -> None:
     for primitive_field in primitive_fields:
         new_schema = Schema(primitive_field)
         applied = UpdateSchema(transaction=Transaction(table_v2), schema=Schema()).union_by_name(new_schema)._apply()
@@ -1025,7 +1025,7 @@ def test_add_nested_primitive(primitive_fields: NestedField, table_v2: Table) ->
         assert applied.as_struct() == new_schema.as_struct()
 
 
-def _primitive_fields(types: List[PrimitiveType], start_id: int = 0) -> List[NestedField]:
+def _primitive_fields(types: list[PrimitiveType], start_id: int = 0) -> list[NestedField]:
     fields = []
     for iceberg_type in types:
         fields.append(NestedField(field_id=start_id, name=str(iceberg_type), field_type=iceberg_type, required=False))

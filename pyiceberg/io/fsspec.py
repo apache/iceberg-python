@@ -16,18 +16,18 @@
 # under the License.
 """FileIO implementation for reading and writing table files that uses fsspec compatible filesystems."""
 
+import abc
 import errno
 import json
 import logging
 import os
+import threading
+from collections.abc import Callable
 from copy import copy
-from functools import lru_cache, partial
+from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
-    Dict,
-    Union,
 )
 from urllib.parse import urlparse
 
@@ -69,6 +69,7 @@ from pyiceberg.io import (
     S3_ANONYMOUS,
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
+    S3_FORCE_VIRTUAL_ADDRESSING,
     S3_PROXY_URI,
     S3_REGION,
     S3_REQUEST_TIMEOUT,
@@ -94,38 +95,58 @@ if TYPE_CHECKING:
     from botocore.awsrequest import AWSRequest
 
 
-def s3v4_rest_signer(properties: Properties, request: "AWSRequest", **_: Any) -> "AWSRequest":
-    signer_url = properties.get(S3_SIGNER_URI, properties[URI]).rstrip("/")  # type: ignore
-    signer_endpoint = properties.get(S3_SIGNER_ENDPOINT, S3_SIGNER_ENDPOINT_DEFAULT)
+class S3RequestSigner(abc.ABC):
+    """Abstract base class for S3 request signers."""
 
-    signer_headers = {}
-    if token := properties.get(TOKEN):
-        signer_headers = {"Authorization": f"Bearer {token}"}
-    signer_headers.update(get_header_properties(properties))
+    properties: Properties
 
-    signer_body = {
-        "method": request.method,
-        "region": request.context["client_region"],
-        "uri": request.url,
-        "headers": {key: [val] for key, val in request.headers.items()},
-    }
+    def __init__(self, properties: Properties) -> None:
+        self.properties = properties
 
-    response = requests.post(f"{signer_url}/{signer_endpoint.strip()}", headers=signer_headers, json=signer_body)
-    try:
-        response.raise_for_status()
-        response_json = response.json()
-    except HTTPError as e:
-        raise SignError(f"Failed to sign request {response.status_code}: {signer_body}") from e
-
-    for key, value in response_json["headers"].items():
-        request.headers.add_header(key, ", ".join(value))
-
-    request.url = response_json["uri"]
-
-    return request
+    @abc.abstractmethod
+    def __call__(self, request: "AWSRequest", **_: Any) -> None:
+        pass
 
 
-SIGNERS: Dict[str, Callable[[Properties, "AWSRequest"], "AWSRequest"]] = {"S3V4RestSigner": s3v4_rest_signer}
+class S3V4RestSigner(S3RequestSigner):
+    """An S3 request signer that uses an external REST signing service to sign requests."""
+
+    _session: requests.Session
+
+    def __init__(self, properties: Properties) -> None:
+        super().__init__(properties)
+        self._session = requests.Session()
+
+    def __call__(self, request: "AWSRequest", **_: Any) -> None:
+        signer_url = self.properties.get(S3_SIGNER_URI, self.properties[URI]).rstrip("/")  # type: ignore
+        signer_endpoint = self.properties.get(S3_SIGNER_ENDPOINT, S3_SIGNER_ENDPOINT_DEFAULT)
+
+        signer_headers = {}
+        if token := self.properties.get(TOKEN):
+            signer_headers = {"Authorization": f"Bearer {token}"}
+        signer_headers.update(get_header_properties(self.properties))
+
+        signer_body = {
+            "method": request.method,
+            "region": request.context["client_region"],
+            "uri": request.url,
+            "headers": {key: [val] for key, val in request.headers.items()},
+        }
+
+        response = self._session.post(f"{signer_url}/{signer_endpoint.strip()}", headers=signer_headers, json=signer_body)
+        try:
+            response.raise_for_status()
+            response_json = response.json()
+        except HTTPError as e:
+            raise SignError(f"Failed to sign request {response.status_code}: {signer_body}") from e
+
+        for key, value in response_json["headers"].items():
+            request.headers.add_header(key, ", ".join(value))
+
+        request.url = response_json["uri"]
+
+
+SIGNERS: dict[str, type[S3RequestSigner]] = {"S3V4RestSigner": S3V4RestSigner}
 
 
 def _file(_: Properties) -> LocalFileSystem:
@@ -143,13 +164,13 @@ def _s3(properties: Properties) -> AbstractFileSystem:
         "region_name": get_first_property_value(properties, S3_REGION, AWS_REGION),
     }
     config_kwargs = {}
-    register_events: Dict[str, Callable[[Properties], None]] = {}
+    register_events: dict[str, Callable[[AWSRequest], None]] = {}
 
     if signer := properties.get(S3_SIGNER):
         logger.info("Loading signer %s", signer)
-        if signer_func := SIGNERS.get(signer):
-            signer_func_with_properties = partial(signer_func, properties)
-            register_events["before-sign.s3"] = signer_func_with_properties
+        if signer_cls := SIGNERS.get(signer):
+            signer = signer_cls(properties)
+            register_events["before-sign.s3"] = signer
 
             # Disable the AWS Signer
             from botocore import UNSIGNED
@@ -166,6 +187,9 @@ def _s3(properties: Properties) -> AbstractFileSystem:
 
     if request_timeout := properties.get(S3_REQUEST_TIMEOUT):
         config_kwargs["read_timeout"] = float(request_timeout)
+
+    if _force_virtual_addressing := properties.get(S3_FORCE_VIRTUAL_ADDRESSING):
+        config_kwargs["s3"] = {"addressing_style": "virtual"}
 
     if s3_anonymous := properties.get(S3_ANONYMOUS):
         anon = strtobool(s3_anonymous)
@@ -370,7 +394,7 @@ class FsspecFileIO(FileIO):
     def __init__(self, properties: Properties):
         self._scheme_to_fs = {}
         self._scheme_to_fs.update(SCHEME_TO_FS)
-        self.get_fs: Callable[[str], AbstractFileSystem] = lru_cache(self._get_fs)
+        self._thread_locals = threading.local()
         super().__init__(properties=properties)
 
     def new_input(self, location: str) -> FsspecInputFile:
@@ -399,7 +423,7 @@ class FsspecFileIO(FileIO):
         fs = self.get_fs(uri.scheme)
         return FsspecOutputFile(location=location, fs=fs)
 
-    def delete(self, location: Union[str, InputFile, OutputFile]) -> None:
+    def delete(self, location: str | InputFile | OutputFile) -> None:
         """Delete the file at the given location.
 
         Args:
@@ -416,19 +440,26 @@ class FsspecFileIO(FileIO):
         fs = self.get_fs(uri.scheme)
         fs.rm(str_location)
 
+    def get_fs(self, scheme: str) -> AbstractFileSystem:
+        """Get a filesystem for a specific scheme, cached per thread."""
+        if not hasattr(self._thread_locals, "get_fs_cached"):
+            self._thread_locals.get_fs_cached = lru_cache(self._get_fs)
+
+        return self._thread_locals.get_fs_cached(scheme)
+
     def _get_fs(self, scheme: str) -> AbstractFileSystem:
         """Get a filesystem for a specific scheme."""
         if scheme not in self._scheme_to_fs:
             raise ValueError(f"No registered filesystem for scheme: {scheme}")
         return self._scheme_to_fs[scheme](self.properties)
 
-    def __getstate__(self) -> Dict[str, Any]:
+    def __getstate__(self) -> dict[str, Any]:
         """Create a dictionary of the FsSpecFileIO fields used when pickling."""
         fileio_copy = copy(self.__dict__)
-        fileio_copy["get_fs"] = None
+        del fileio_copy["_thread_locals"]
         return fileio_copy
 
-    def __setstate__(self, state: Dict[str, Any]) -> None:
+    def __setstate__(self, state: dict[str, Any]) -> None:
         """Deserialize the state into a FsSpecFileIO instance."""
         self.__dict__ = state
-        self.get_fs = lru_cache(self._get_fs)
+        self._thread_locals = threading.local()

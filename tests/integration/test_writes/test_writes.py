@@ -24,7 +24,7 @@ import uuid
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 from urllib.parse import urlparse
 
 import fastavro
@@ -46,6 +46,7 @@ from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import CommitFailedException, NoSuchTableError
 from pyiceberg.expressions import And, EqualTo, GreaterThanOrEqual, In, LessThan, Not
 from pyiceberg.io.pyarrow import UnsupportedPyArrowTypeException, _dataframe_to_data_files
+from pyiceberg.manifest import FileFormat
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
@@ -63,7 +64,7 @@ from pyiceberg.types import (
     StringType,
     UUIDType,
 )
-from utils import _create_table
+from utils import TABLE_SCHEMA, _create_table
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -638,7 +639,7 @@ def test_write_parquet_compression_properties(
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
     format_version: int,
-    properties: Dict[str, Any],
+    properties: dict[str, Any],
     expected_compression_name: str,
 ) -> None:
     identifier = "default.write_parquet_compression_properties"
@@ -673,8 +674,8 @@ def test_write_parquet_other_properties(
     spark: SparkSession,
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
-    properties: Dict[str, Any],
-    expected_kwargs: Dict[str, Any],
+    properties: dict[str, Any],
+    expected_kwargs: dict[str, Any],
 ) -> None:
     identifier = "default.test_write_parquet_other_properties"
 
@@ -700,13 +701,87 @@ def test_write_parquet_unsupported_properties(
     spark: SparkSession,
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
-    properties: Dict[str, str],
+    properties: dict[str, str],
 ) -> None:
     identifier = "default.write_parquet_unsupported_properties"
 
     tbl = _create_table(session_catalog, identifier, properties, [])
     with pytest.warns(UserWarning, match=r"Parquet writer option.*"):
         tbl.append(arrow_table_with_null)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_spark_writes_orc_pyiceberg_reads(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    """Test that ORC files written by Spark can be read by PyIceberg."""
+    identifier = f"default.spark_writes_orc_pyiceberg_reads_v{format_version}"
+
+    # Create test data
+    test_data = [
+        (1, "Alice", 25, True),
+        (2, "Bob", 30, False),
+        (3, "Charlie", 35, True),
+        (4, "David", 28, True),
+        (5, "Eve", 32, False),
+    ]
+
+    # Create Spark DataFrame
+    spark_df = spark.createDataFrame(test_data, ["id", "name", "age", "is_active"])
+
+    # Ensure a clean slate to avoid replacing a v2 table with v1
+    spark.sql(f"DROP TABLE IF EXISTS {identifier}")
+
+    # Create table with Spark using ORC format and desired format-version
+    spark_df.writeTo(identifier).using("iceberg").tableProperty("write.format.default", "orc").tableProperty(
+        "format-version", str(format_version)
+    ).createOrReplace()
+
+    # Write data with ORC format using Spark
+    spark_df.writeTo(identifier).using("iceberg").append()
+
+    # Read with PyIceberg - this is the main focus of our validation
+    tbl = session_catalog.load_table(identifier)
+    pyiceberg_df = tbl.scan().to_pandas()
+
+    # Verify PyIceberg results have the expected number of rows
+    assert len(pyiceberg_df) == 10  # 5 rows from create + 5 rows from append
+
+    # Verify PyIceberg column names
+    assert list(pyiceberg_df.columns) == ["id", "name", "age", "is_active"]
+
+    # Verify PyIceberg data integrity - check the actual data values
+    expected_data = [
+        (1, "Alice", 25, True),
+        (2, "Bob", 30, False),
+        (3, "Charlie", 35, True),
+        (4, "David", 28, True),
+        (5, "Eve", 32, False),
+    ]
+
+    # Verify PyIceberg results contain the expected data (appears twice due to create + append)
+    pyiceberg_data = list(
+        zip(pyiceberg_df["id"], pyiceberg_df["name"], pyiceberg_df["age"], pyiceberg_df["is_active"], strict=True)
+    )
+    assert pyiceberg_data == expected_data + expected_data  # Data should appear twice
+
+    # Verify PyIceberg data types are correct
+    assert pyiceberg_df["id"].dtype == "int64"
+    assert pyiceberg_df["name"].dtype == "object"  # string
+    assert pyiceberg_df["age"].dtype == "int64"
+    assert pyiceberg_df["is_active"].dtype == "bool"
+
+    # Cross-validate with Spark to ensure consistency (ensure deterministic ordering)
+    spark_result = spark.sql(f"SELECT * FROM {identifier}").toPandas()
+    sort_cols = ["id", "name", "age", "is_active"]
+    spark_result = spark_result.sort_values(by=sort_cols).reset_index(drop=True)
+    pyiceberg_df = pyiceberg_df.sort_values(by=sort_cols).reset_index(drop=True)
+    pandas.testing.assert_frame_equal(spark_result, pyiceberg_df, check_dtype=False)
+
+    # Verify the files are actually ORC format
+    files = list(tbl.scan().plan_files())
+    assert len(files) > 0
+    for file_task in files:
+        assert file_task.file.file_format == FileFormat.ORC
 
 
 @pytest.mark.integration
@@ -1097,7 +1172,7 @@ def test_inspect_snapshots(
     lhs = spark.table(f"{identifier}.snapshots").toPandas()
     rhs = df.to_pandas()
     for column in df.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if column == "summary":
                 # Arrow returns a list of tuples, instead of a dict
                 right = dict(right)
@@ -1393,7 +1468,7 @@ def test_table_write_schema_with_valid_nullability_diff(
     rhs = written_arrow_table.to_pandas()
 
     for column in written_arrow_table.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             assert left == right
 
 
@@ -1433,7 +1508,7 @@ def test_table_write_schema_with_valid_upcast(
     rhs = written_arrow_table.to_pandas()
 
     for column in written_arrow_table.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if column == "map":
                 # Arrow returns a list of tuples, instead of a dict
                 right = dict(right)
@@ -1479,7 +1554,7 @@ def test_write_all_timestamp_precision(
     rhs = written_arrow_table.to_pandas()
 
     for column in written_arrow_table.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if pd.isnull(left):
                 assert pd.isnull(right)
             else:
@@ -2417,3 +2492,41 @@ def test_stage_only_overwrite_files(
     assert operations == ["append", "append", "delete", "append", "append"]
 
     assert parent_snapshot_id == [None, first_snapshot, second_snapshot, second_snapshot, second_snapshot]
+
+
+@pytest.mark.skip("V3 writer support is not enabled.")
+@pytest.mark.integration
+def test_v3_write_and_read_row_lineage(spark: SparkSession, session_catalog: Catalog) -> None:
+    """Test writing to a v3 table and reading with Spark."""
+    identifier = "default.test_v3_write_and_read"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "3"})
+    assert tbl.format_version == 3, f"Expected v3, got: v{tbl.format_version}"
+    initial_next_row_id = tbl.metadata.next_row_id or 0
+
+    test_data = pa.Table.from_pydict(
+        {
+            "bool": [True, False, True],
+            "string": ["a", "b", "c"],
+            "string_long": ["a_long", "b_long", "c_long"],
+            "int": [1, 2, 3],
+            "long": [11, 22, 33],
+            "float": [1.1, 2.2, 3.3],
+            "double": [1.11, 2.22, 3.33],
+            "timestamp": [datetime(2023, 1, 1, 1, 1, 1), datetime(2023, 2, 2, 2, 2, 2), datetime(2023, 3, 3, 3, 3, 3)],
+            "timestamptz": [
+                datetime(2023, 1, 1, 1, 1, 1, tzinfo=pytz.utc),
+                datetime(2023, 2, 2, 2, 2, 2, tzinfo=pytz.utc),
+                datetime(2023, 3, 3, 3, 3, 3, tzinfo=pytz.utc),
+            ],
+            "date": [date(2023, 1, 1), date(2023, 2, 2), date(2023, 3, 3)],
+            "binary": [b"\x01", b"\x02", b"\x03"],
+            "fixed": [b"1234567890123456", b"1234567890123456", b"1234567890123456"],
+        },
+        schema=TABLE_SCHEMA.as_arrow(),
+    )
+
+    tbl.append(test_data)
+
+    assert tbl.metadata.next_row_id == initial_next_row_id + len(test_data), (
+        "Expected next_row_id to be incremented by the number of added rows"
+    )

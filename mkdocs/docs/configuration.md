@@ -539,6 +539,40 @@ catalog:
     py-io-impl: pyiceberg.io.fsspec.FsspecFileIO
 ```
 
+##### Apache Gravitino
+
+```yaml
+catalog:
+  gravitino_catalog:
+    type: rest
+    uri: <gravitino-catalog-uri>
+    header.X-Iceberg-Access-Delegation: vended-credentials
+    auth:
+      type: noop
+```
+
+##### GCP BigLake Metastore Catalog REST
+
+```yaml
+catalog:
+  biglake_catalog:
+    type: rest
+    uri: https://biglake.googleapis.com/iceberg/v1/restcatalog
+    warehouse: gs://<bucket-name>  # Use bq://projects/<gcp-project-id> for federation option (see docs)
+    auth:
+      type: google
+    header.x-goog-user-project: <gcp-project-id>
+    header.X-Iceberg-Access-Delegation: "" # For user-credentials authentication, set to empty string.
+```
+
+<!-- prettier-ignore-start -->
+
+!!! Note "Metastore Authentication Models"
+    If your BigLake Metastore catalog is configured for "user credentials" authentication instead of "vendor credentials", set the `header.X-Iceberg-Access-Delegation` header to an empty string as shown above.  Standard GCP Application Default Credentials (ADC) will be used to authenticate requests to the BigLake Metastore REST API.
+    You can retrieve the configuration details for your BigLake Iceberg catalog at the [GCP Console BigLake Metastore page](https://console.cloud.google.com/biglake/metastore/catalogs). Select your catalog, then find the necessary parameters such as `uri`, `warehouse`, and authentication method (e.g. user-creds or vendor).
+
+<!-- prettier-ignore-end -->
+
 ### SQL Catalog
 
 The SQL catalog requires a database for its backend. PyIceberg supports PostgreSQL and SQLite through psycopg2. The database connection has to be configured using the `uri` property. The init_catalog_tables is optional and defaults to True. If it is set to False, the catalog tables will not be created when the SQLCatalog is initialized. See SQLAlchemy's [documentation for URL format](https://docs.sqlalchemy.org/en/20/core/engines.html#backend-specific-urls):

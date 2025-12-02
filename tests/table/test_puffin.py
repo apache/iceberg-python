@@ -15,7 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 from os import path
-from typing import List
 
 import pytest
 from pyroaring import BitMap
@@ -32,7 +31,7 @@ def _open_file(file: str) -> bytes:
 def test_map_empty() -> None:
     puffin = _open_file("64mapempty.bin")
 
-    expected: List[BitMap] = []
+    expected: list[BitMap] = []
     actual = _deserialize_bitmap(puffin)
 
     assert expected == actual

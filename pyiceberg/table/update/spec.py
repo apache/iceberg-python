@@ -16,7 +16,7 @@
 # under the License.
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union
+from typing import TYPE_CHECKING, Any
 
 from pyiceberg.expressions import (
     Reference,
@@ -32,6 +32,7 @@ from pyiceberg.partitioning import (
 from pyiceberg.schema import Schema
 from pyiceberg.table.update import (
     AddPartitionSpecUpdate,
+    AssertDefaultSpecId,
     AssertLastAssignedPartitionId,
     SetDefaultSpecUpdate,
     TableRequirement,
@@ -47,15 +48,15 @@ if TYPE_CHECKING:
 
 class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
     _transaction: Transaction
-    _name_to_field: Dict[str, PartitionField] = {}
-    _name_to_added_field: Dict[str, PartitionField] = {}
-    _transform_to_field: Dict[Tuple[int, str], PartitionField] = {}
-    _transform_to_added_field: Dict[Tuple[int, str], PartitionField] = {}
-    _renames: Dict[str, str] = {}
-    _added_time_fields: Dict[int, PartitionField] = {}
+    _name_to_field: dict[str, PartitionField] = {}
+    _name_to_added_field: dict[str, PartitionField] = {}
+    _transform_to_field: dict[tuple[int, str], PartitionField] = {}
+    _transform_to_added_field: dict[tuple[int, str], PartitionField] = {}
+    _renames: dict[str, str] = {}
+    _added_time_fields: dict[int, PartitionField] = {}
     _case_sensitive: bool
-    _adds: List[PartitionField]
-    _deletes: Set[int]
+    _adds: list[PartitionField]
+    _deletes: set[int]
     _last_assigned_partition_id: int
 
     def __init__(self, transaction: Transaction, case_sensitive: bool = True) -> None:
@@ -77,8 +78,8 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
     def add_field(
         self,
         source_column_name: str,
-        transform: Union[str, Transform[Any, Any]],
-        partition_field_name: Optional[str] = None,
+        transform: str | Transform[Any, Any],
+        partition_field_name: str | None = None,
     ) -> UpdateSpec:
         ref = Reference(source_column_name)
         bound_ref = ref.bind(self._transaction.table_metadata.schema(), self._case_sensitive)
@@ -156,8 +157,8 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
 
     def _commit(self) -> UpdatesAndRequirements:
         new_spec = self._apply()
-        updates: Tuple[TableUpdate, ...] = ()
-        requirements: Tuple[TableRequirement, ...] = ()
+        updates: tuple[TableUpdate, ...] = ()
+        requirements: tuple[TableRequirement, ...] = ()
 
         if self._transaction.table_metadata.default_spec_id != new_spec.spec_id:
             if new_spec.spec_id not in self._transaction.table_metadata.specs():
@@ -169,13 +170,17 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
                 updates = (SetDefaultSpecUpdate(spec_id=new_spec.spec_id),)
 
             required_last_assigned_partitioned_id = self._transaction.table_metadata.last_partition_id
-            requirements = (AssertLastAssignedPartitionId(last_assigned_partition_id=required_last_assigned_partitioned_id),)
+            default_spec_id = self._transaction.table_metadata.default_spec_id
+            requirements = (
+                AssertLastAssignedPartitionId(last_assigned_partition_id=required_last_assigned_partitioned_id),
+                AssertDefaultSpecId(default_spec_id=default_spec_id),
+            )
 
         return updates, requirements
 
     def _apply(self) -> PartitionSpec:
         def _check_and_add_partition_name(
-            schema: Schema, name: str, source_id: int, transform: Transform[Any, Any], partition_names: Set[str]
+            schema: Schema, name: str, source_id: int, transform: Transform[Any, Any], partition_names: set[str]
         ) -> None:
             from pyiceberg.partitioning import validate_partition_name
 
@@ -183,13 +188,13 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
             partition_names.add(name)
 
         def _add_new_field(
-            schema: Schema, source_id: int, field_id: int, name: str, transform: Transform[Any, Any], partition_names: Set[str]
+            schema: Schema, source_id: int, field_id: int, name: str, transform: Transform[Any, Any], partition_names: set[str]
         ) -> PartitionField:
             _check_and_add_partition_name(schema, name, source_id, transform, partition_names)
             return PartitionField(source_id, field_id, transform, name)
 
         partition_fields = []
-        partition_names: Set[str] = set()
+        partition_names: set[str] = set()
         for field in self._transaction.table_metadata.spec().fields:
             if field.field_id not in self._deletes:
                 renamed = self._renames.get(field.name)
@@ -262,7 +267,7 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
                 new_spec_id = spec.spec_id + 1
         return PartitionSpec(*partition_fields, spec_id=new_spec_id)
 
-    def _partition_field(self, transform_key: Tuple[int, Transform[Any, Any]], name: Optional[str]) -> PartitionField:
+    def _partition_field(self, transform_key: tuple[int, Transform[Any, Any]], name: str | None) -> PartitionField:
         if self._transaction.table_metadata.format_version == 2:
             source_id, transform = transform_key
             historical_fields = []

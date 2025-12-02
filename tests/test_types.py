@@ -16,7 +16,6 @@
 # under the License.
 # pylint: disable=W0123,W0613
 import pickle
-from typing import Type
 
 import pydantic_core
 import pytest
@@ -79,7 +78,7 @@ primitive_types = {
 
 
 @pytest.mark.parametrize("input_index, input_type", non_parameterized_types)
-def test_repr_primitive_types(input_index: int, input_type: Type[PrimitiveType]) -> None:
+def test_repr_primitive_types(input_index: int, input_type: type[PrimitiveType]) -> None:
     assert isinstance(eval(repr(input_type())), input_type)
     assert input_type == pickle.loads(pickle.dumps(input_type))
 
@@ -273,7 +272,7 @@ def test_nested_field_primitive_type_as_str() -> None:
 @pytest.mark.parametrize("input_index,input_type", non_parameterized_types)
 @pytest.mark.parametrize("check_index,check_type", non_parameterized_types)
 def test_non_parameterized_type_equality(
-    input_index: int, input_type: Type[PrimitiveType], check_index: int, check_type: Type[PrimitiveType]
+    input_index: int, input_type: type[PrimitiveType], check_index: int, check_type: type[PrimitiveType]
 ) -> None:
     if input_index == check_index:
         assert input_type() == check_type()
@@ -698,7 +697,7 @@ def test_deepcopy_of_singleton_fixed_type() -> None:
     list_of_fixed_types = [FixedType(22), FixedType(19)]
     copied_list = deepcopy(list_of_fixed_types)
 
-    for lhs, rhs in zip(list_of_fixed_types, copied_list):
+    for lhs, rhs in zip(list_of_fixed_types, copied_list, strict=True):
         assert id(lhs) == id(rhs)
 
 

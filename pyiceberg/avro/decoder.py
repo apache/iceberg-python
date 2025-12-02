@@ -18,10 +18,6 @@ import io
 from abc import ABC, abstractmethod
 from io import SEEK_CUR
 from typing import (
-    Dict,
-    List,
-    Tuple,
-    Union,
     cast,
 )
 
@@ -68,11 +64,11 @@ class BinaryDecoder(ABC):
         datum = (n >> 1) ^ -(n & 1)
         return datum
 
-    def read_ints(self, n: int) -> Tuple[int, ...]:
+    def read_ints(self, n: int) -> tuple[int, ...]:
         """Read a list of integers."""
         return tuple(self.read_int() for _ in range(n))
 
-    def read_int_bytes_dict(self, n: int, dest: Dict[int, bytes]) -> None:
+    def read_int_bytes_dict(self, n: int, dest: dict[int, bytes]) -> None:
         """Read a dictionary of integers for keys and bytes for values into a destination dictionary."""
         for _ in range(n):
             k = self.read_int()
@@ -86,7 +82,7 @@ class BinaryDecoder(ABC):
         The float is converted into a 32-bit integer using a method equivalent to
         Java's floatToIntBits and then encoded in little-endian format.
         """
-        return float(cast(Tuple[float, ...], STRUCT_FLOAT.unpack(self.read(4)))[0])
+        return float(cast(tuple[float, ...], STRUCT_FLOAT.unpack(self.read(4)))[0])
 
     def read_double(self) -> float:
         """Read a value from the stream as a double.
@@ -95,7 +91,7 @@ class BinaryDecoder(ABC):
         The double is converted into a 64-bit integer using a method equivalent to
         Java's doubleToLongBits and then encoded in little-endian format.
         """
-        return float(cast(Tuple[float, ...], STRUCT_DOUBLE.unpack(self.read(8)))[0])
+        return float(cast(tuple[float, ...], STRUCT_DOUBLE.unpack(self.read(8)))[0])
 
     def read_bytes(self) -> bytes:
         """Bytes are encoded as a long followed by that many bytes of data."""
@@ -137,7 +133,7 @@ class StreamingBinaryDecoder(BinaryDecoder):
     __slots__ = "_input_stream"
     _input_stream: InputStream
 
-    def __init__(self, input_stream: Union[bytes, InputStream]) -> None:
+    def __init__(self, input_stream: bytes | InputStream) -> None:
         """Reader is a Python object on which we can call read, seek, and tell."""
         if isinstance(input_stream, bytes):
             # In the case of bytes, we wrap it into a BytesIO to make it a stream
@@ -153,7 +149,7 @@ class StreamingBinaryDecoder(BinaryDecoder):
         """Read n bytes."""
         if n < 0:
             raise ValueError(f"Requested {n} bytes to read, expected positive integer.")
-        data: List[bytes] = []
+        data: list[bytes] = []
 
         n_remaining = n
         while n_remaining > 0:
@@ -182,6 +178,6 @@ def new_decoder(b: bytes) -> BinaryDecoder:
     except ModuleNotFoundError:
         import warnings
 
-        warnings.warn("Falling back to pure Python Avro decoder, missing Cython implementation")
+        warnings.warn("Falling back to pure Python Avro decoder, missing Cython implementation", stacklevel=2)
 
         return StreamingBinaryDecoder(b)
