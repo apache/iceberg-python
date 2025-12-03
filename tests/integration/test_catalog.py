@@ -409,7 +409,7 @@ def test_concurrent_create_transaction(test_catalog: Catalog, test_schema: Schem
 @pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_create_namespace(test_catalog: Catalog, database_name: str) -> None:
     test_catalog.create_namespace(database_name)
-    assert (database_name,) in test_catalog.list_namespaces()
+    assert (database_name,) in list(test_catalog.list_namespaces())
 
 
 @pytest.mark.integration
@@ -425,7 +425,7 @@ def test_create_duplicate_namespace(test_catalog: Catalog, database_name: str) -
 def test_create_namepsace_if_not_exists(test_catalog: Catalog, database_name: str) -> None:
     test_catalog.create_namespace(database_name)
     test_catalog.create_namespace_if_not_exists(database_name)
-    assert (database_name,) in test_catalog.list_namespaces()
+    assert (database_name,) in list(test_catalog.list_namespaces())
 
 
 @pytest.mark.integration
@@ -435,7 +435,7 @@ def test_create_namespace_with_comment(test_catalog: Catalog, database_name: str
         "comment": "this is a test description",
     }
     test_catalog.create_namespace(namespace=database_name, properties=test_properties)
-    loaded_database_list = test_catalog.list_namespaces()
+    loaded_database_list = list(test_catalog.list_namespaces())
     assert (database_name,) in loaded_database_list
     properties = test_catalog.load_namespace_properties(database_name)
     assert properties["comment"] == "this is a test description"
@@ -446,7 +446,7 @@ def test_create_namespace_with_comment(test_catalog: Catalog, database_name: str
 def test_list_namespaces(test_catalog: Catalog, database_list: list[str]) -> None:
     for database_name in database_list:
         test_catalog.create_namespace(database_name)
-    db_list = test_catalog.list_namespaces()
+    db_list = list(test_catalog.list_namespaces())
     for database_name in database_list:
         assert (database_name,) in db_list
     assert len(list(test_catalog.list_namespaces(list(database_list)[0]))) == 0
@@ -456,13 +456,13 @@ def test_list_namespaces(test_catalog: Catalog, database_list: list[str]) -> Non
 @pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_drop_namespace(test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str) -> None:
     test_catalog.create_namespace(database_name)
-    assert (database_name,) in test_catalog.list_namespaces()
+    assert (database_name,) in list(test_catalog.list_namespaces())
     test_catalog.create_table((database_name, table_name), table_schema_nested)
     with pytest.raises(NamespaceNotEmptyError):
         test_catalog.drop_namespace(database_name)
     test_catalog.drop_table((database_name, table_name))
     test_catalog.drop_namespace(database_name)
-    assert (database_name,) not in test_catalog.list_namespaces()
+    assert (database_name,) not in list(test_catalog.list_namespaces())
 
 
 @pytest.mark.integration
