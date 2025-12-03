@@ -175,8 +175,8 @@ def test_list_tables(test_catalog: Catalog, table_schema_nested: Schema, databas
     test_catalog.create_namespace(database_name)
     for table_name in table_list:
         test_catalog.create_table((database_name, table_name), table_schema_nested)
-    identifier_list = test_catalog.list_tables(database_name)
-    assert len(list(identifier_list)) == len(table_list)
+    identifier_list = list(test_catalog.list_tables(database_name))
+    assert len(identifier_list) == len(table_list)
     for table_name in table_list:
         assert (database_name, table_name) in identifier_list
 
