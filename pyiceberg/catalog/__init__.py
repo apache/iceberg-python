@@ -22,13 +22,12 @@ import logging
 import re
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from enum import Enum
 from typing import (
     TYPE_CHECKING,
     Any,
-    Iterator,
     cast,
 )
 

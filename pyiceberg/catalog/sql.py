@@ -15,9 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from collections.abc import Iterator
 from typing import (
     TYPE_CHECKING,
-    Iterator,
     Union,
 )
 
@@ -601,6 +601,7 @@ class SqlCatalog(MetastoreCatalog):
         with Session(self.engine) as session:
             result = session.scalars(stmt)
             identifiers = [(Catalog.identifier_to_tuple(table.table_namespace) + (table.table_name,)) for table in result]
+            yield from identifiers
 
     def list_namespaces(self, namespace: str | Identifier = ()) -> Iterator[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.

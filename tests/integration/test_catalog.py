@@ -176,7 +176,7 @@ def test_list_tables(test_catalog: Catalog, table_schema_nested: Schema, databas
     for table_name in table_list:
         test_catalog.create_table((database_name, table_name), table_schema_nested)
     identifier_list = test_catalog.list_tables(database_name)
-    assert len(identifier_list) == len(table_list)
+    assert len(list(identifier_list)) == len(table_list)
     for table_name in table_list:
         assert (database_name, table_name) in identifier_list
 
@@ -449,7 +449,7 @@ def test_list_namespaces(test_catalog: Catalog, database_list: list[str]) -> Non
     db_list = test_catalog.list_namespaces()
     for database_name in database_list:
         assert (database_name,) in db_list
-    assert len(test_catalog.list_namespaces(list(database_list)[0])) == 0
+    assert len(list(test_catalog.list_namespaces(list(database_list)[0]))) == 0
 
 
 @pytest.mark.integration

@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import json
+from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any, Union
 
 from google.api_core.exceptions import NotFound
@@ -244,7 +245,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         except NotFound as e:
             raise NoSuchNamespaceError(f"Namespace {namespace} does not exist.") from e
 
-    def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> Iterator[Identifier]:
         database_name = self.identifier_to_database(namespace)
         iceberg_tables: list[Identifier] = []
         try:
@@ -256,9 +257,9 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
                 iceberg_tables.append((database_name, bq_table_list_item.table_id))
         except NotFound:
             raise NoSuchNamespaceError(f"Namespace (dataset) '{database_name}' not found.") from None
-        return iceberg_tables
+        yield from iceberg_tables
 
-    def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> Iterator[Identifier]:
         # Since this catalog only supports one-level namespaces, it always returns an empty list unless
         # passed an empty namespace to list all namespaces within the catalog.
         if namespace:
@@ -266,7 +267,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
 
         # List top-level datasets
         datasets_iterator = self.client.list_datasets()
-        return [(dataset.dataset_id,) for dataset in datasets_iterator]
+        yield from ((dataset.dataset_id,) for dataset in datasets_iterator)
 
     def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
         """Register a new table using existing metadata.
@@ -299,7 +300,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
 
         return self.load_table(identifier=identifier)
 
-    def list_views(self, namespace: str | Identifier) -> list[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> Iterator[Identifier]:
         raise NotImplementedError
 
     def drop_view(self, identifier: str | Identifier) -> None:

@@ -15,11 +15,11 @@
 #  specific language governing permissions and limitations
 #  under the License.
 import uuid
+from collections.abc import Iterator
 from time import time
 from typing import (
     TYPE_CHECKING,
     Any,
-    Iterator,
     Optional,
     Union,
 )
@@ -437,8 +437,6 @@ class DynamoDbCatalog(MetastoreCatalog):
                     continue
 
                 yield self.identifier_to_tuple(identifier_col)
-
-        return table_identifiers
 
     def list_namespaces(self, namespace: str | Identifier = ()) -> Iterator[Identifier]:
         """List top-level namespaces from the catalog.

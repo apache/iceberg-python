@@ -16,8 +16,8 @@
 # under the License.
 import json
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from typing import (
-    Iterator,
     Any,
 )
 from uuid import UUID

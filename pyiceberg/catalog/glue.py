@@ -16,10 +16,10 @@
 #  under the License.
 
 
+from collections.abc import Iterator
 from typing import (
     TYPE_CHECKING,
     Any,
-    Iterator,
     Optional,
     Union,
     cast,

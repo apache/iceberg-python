@@ -18,11 +18,11 @@ import getpass
 import logging
 import socket
 import time
+from collections.abc import Iterator
 from types import TracebackType
 from typing import (
     TYPE_CHECKING,
     Any,
-    Iterator,
     Union,
 )
 from urllib.parse import urlparse
