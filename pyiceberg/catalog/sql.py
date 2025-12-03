@@ -569,8 +569,12 @@ class SqlCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}")
 
         namespace_str = Catalog.namespace_to_string(namespace)
-        if tables := list(self.list_tables(namespace)):
+        tables = self.list_tables(namespace)
+        try:
+            next(tables)
             raise NamespaceNotEmptyError(f"Namespace {namespace_str} is not empty. {len(list(tables))} tables exist.")
+        except StopIteration:
+            pass
 
         with Session(self.engine) as session:
             session.execute(
