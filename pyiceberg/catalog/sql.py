@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from collections.abc import Iterator
 from typing import (
     TYPE_CHECKING,
     Union,
@@ -568,8 +569,12 @@ class SqlCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}")
 
         namespace_str = Catalog.namespace_to_string(namespace)
-        if tables := self.list_tables(namespace):
-            raise NamespaceNotEmptyError(f"Namespace {namespace_str} is not empty. {len(tables)} tables exist.")
+        tables = self.list_tables(namespace)
+        try:
+            next(tables)
+            raise NamespaceNotEmptyError(f"Namespace {namespace_str} is not empty. {len(list(tables))} tables exist.")
+        except StopIteration:
+            pass
 
         with Session(self.engine) as session:
             session.execute(
@@ -580,14 +585,14 @@ class SqlCatalog(MetastoreCatalog):
             )
             session.commit()
 
-    def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> Iterator[Identifier]:
         """List tables under the given namespace in the catalog.
 
         Args:
             namespace (str | Identifier): Namespace identifier to search.
 
         Returns:
-            List[Identifier]: list of table identifiers.
+            Iterator[Identifier]: iterator of table identifiers.
 
         Raises:
             NoSuchNamespaceError: If a namespace with the given name does not exist.
@@ -599,16 +604,17 @@ class SqlCatalog(MetastoreCatalog):
         stmt = select(IcebergTables).where(IcebergTables.catalog_name == self.name, IcebergTables.table_namespace == namespace)
         with Session(self.engine) as session:
             result = session.scalars(stmt)
-            return [(Catalog.identifier_to_tuple(table.table_namespace) + (table.table_name,)) for table in result]
+            identifiers = [(Catalog.identifier_to_tuple(table.table_namespace) + (table.table_name,)) for table in result]
+            yield from identifiers
 
-    def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> Iterator[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
 
         Args:
             namespace (str | Identifier): Namespace identifier to search.
 
         Returns:
-            List[Identifier]: a List of namespace identifiers.
+            Iterator[Identifier]: iterator of namespace identifiers.
 
         Raises:
             NoSuchNamespaceError: If a namespace with the given name does not exist.
@@ -629,7 +635,6 @@ class SqlCatalog(MetastoreCatalog):
         with Session(self.engine) as session:
             namespace_tuple = Catalog.identifier_to_tuple(namespace)
             sub_namespaces_level_length = len(namespace_tuple) + 1
-
             namespaces = list(
                 {  # only get distinct namespaces
                     ns[:sub_namespaces_level_length]  # truncate to the required level
@@ -640,7 +645,7 @@ class SqlCatalog(MetastoreCatalog):
                 }
             )
 
-            return namespaces
+            yield from namespaces
 
     def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
         """Get properties for a namespace.
@@ -721,7 +726,7 @@ class SqlCatalog(MetastoreCatalog):
             session.commit()
         return properties_update_summary
 
-    def list_views(self, namespace: str | Identifier) -> list[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> Iterator[Identifier]:
         raise NotImplementedError
 
     def view_exists(self, identifier: str | Identifier) -> bool:
