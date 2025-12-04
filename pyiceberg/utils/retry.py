@@ -85,15 +85,12 @@ def run_with_retry(
     """
     start_time_ms = int(time.time() * 1000)
     attempt = 0
-    last_exception: Exception | None = None
 
     while True:
         attempt += 1
         try:
             return task()
         except Exception as e:
-            last_exception = e
-
             if not isinstance(e, retry_on):
                 raise
 

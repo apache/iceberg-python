@@ -17,7 +17,8 @@
 
 """Tests for commit retry logic in SnapshotProducer."""
 
-from unittest.mock import MagicMock, patch
+from typing import Any
+from unittest.mock import patch
 
 import pyarrow as pa
 import pytest
@@ -25,7 +26,11 @@ import pytest
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import CommitFailedException, CommitStateUnknownException
 from pyiceberg.schema import Schema
-from pyiceberg.table import TableProperties
+from pyiceberg.table import CommitTableResponse, Table, TableProperties
+from pyiceberg.table.update import (
+    TableRequirement,
+    TableUpdate,
+)
 from pyiceberg.types import LongType, NestedField
 
 
@@ -46,10 +51,8 @@ def catalog(tmp_path: str) -> SqlCatalog:
     """Create a SQL catalog for testing."""
     catalog = SqlCatalog(
         "test_catalog",
-        **{
-            "uri": f"sqlite:///{tmp_path}/test.db",
-            "warehouse": f"file://{tmp_path}/warehouse",
-        },
+        uri=f"sqlite:///{tmp_path}/test.db",
+        warehouse=f"file://{tmp_path}/warehouse",
     )
     catalog.create_namespace_if_not_exists("default")
     return catalog
@@ -72,7 +75,9 @@ class TestSnapshotProducerRetry:
         original_commit = catalog.commit_table
         commit_count = 0
 
-        def mock_commit(tbl, requirements, updates):
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
             if commit_count < 2:
@@ -100,7 +105,9 @@ class TestSnapshotProducerRetry:
 
         commit_count = 0
 
-        def mock_commit(tbl, requirements, updates):
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
             raise CommitFailedException("Always fails")
@@ -111,9 +118,7 @@ class TestSnapshotProducerRetry:
 
         assert commit_count == 3
 
-    def test_commit_state_unknown_not_retried(
-        self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table
-    ) -> None:
+    def test_commit_state_unknown_not_retried(self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table) -> None:
         """Test that CommitStateUnknownException is not retried."""
         table = catalog.create_table(
             "default.test_unknown",
@@ -126,7 +131,9 @@ class TestSnapshotProducerRetry:
 
         commit_count = 0
 
-        def mock_commit(tbl, requirements, updates):
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
             raise CommitStateUnknownException("Unknown state")
@@ -154,7 +161,9 @@ class TestSnapshotProducerRetry:
         snapshot_ids: list[int] = []
         commit_count = 0
 
-        def mock_commit(tbl, requirements, updates):
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
             # Extract snapshot ID from updates
@@ -189,14 +198,16 @@ class TestSnapshotProducerRetry:
         refresh_count = 0
         original_refresh = table.refresh
 
-        def mock_refresh():
+        def mock_refresh() -> None:
             nonlocal refresh_count
             refresh_count += 1
-            return original_refresh()
+            original_refresh()
 
         commit_count = 0
 
-        def mock_commit(tbl, requirements, updates):
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
             if commit_count < 2:
@@ -226,7 +237,9 @@ class TestSnapshotProducerRetry:
         original_commit = catalog.commit_table
         commit_count = 0
 
-        def mock_commit(tbl, requirements, updates):
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
             # Fail every first attempt of each append
@@ -269,7 +282,9 @@ class TestSnapshotProducerRetry:
         original_commit = catalog.commit_table
         commit_count = 0
 
-        def mock_commit(tbl, requirements, updates):
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
             if commit_count == 1:
@@ -310,7 +325,9 @@ class TestSnapshotProducerRetry:
         original_commit = catalog.commit_table
         commit_count = 0
 
-        def mock_commit(tbl, requirements, updates):
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
             if commit_count == 1:
@@ -330,9 +347,7 @@ class TestSnapshotProducerRetry:
 class TestTransactionRetryWithMultipleUpdates:
     """Test transaction retry with multiple update types (like Java BaseTransaction)."""
 
-    def test_transaction_with_property_and_append(
-        self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table
-    ) -> None:
+    def test_transaction_with_property_and_append(self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table) -> None:
         """Test transaction with property update and append retries correctly."""
         table = catalog.create_table(
             "default.test_prop_append",
@@ -347,7 +362,9 @@ class TestTransactionRetryWithMultipleUpdates:
         original_commit = catalog.commit_table
         commit_count = 0
 
-        def mock_commit(tbl, requirements, updates):
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
             if commit_count == 1:
@@ -385,7 +402,9 @@ class TestTransactionRetryWithMultipleUpdates:
         commit_count = 0
         snapshot_ids: list[int] = []
 
-        def mock_commit(tbl, requirements, updates):
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
             # Capture snapshot IDs from updates
@@ -431,7 +450,9 @@ class TestTransactionRetryWithMultipleUpdates:
         original_commit = catalog.commit_table
         commit_count = 0
 
-        def mock_commit(tbl, requirements, updates):
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
             if commit_count == 1:
@@ -470,7 +491,9 @@ class TestTransactionRetryWithMultipleUpdates:
 
         commit_count = 0
 
-        def mock_commit(tbl, requirements, updates):
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
             raise CommitFailedException("Always fails")
@@ -488,9 +511,7 @@ class TestTransactionRetryWithMultipleUpdates:
         assert "test.property" not in table.metadata.properties
         assert len(table.scan().to_arrow()) == 0
 
-    def test_transaction_updates_regenerated_on_retry(
-        self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table
-    ) -> None:
+    def test_transaction_updates_regenerated_on_retry(self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table) -> None:
         """Test that all updates are regenerated on retry."""
         table = catalog.create_table(
             "default.test_regenerate",
@@ -506,7 +527,9 @@ class TestTransactionRetryWithMultipleUpdates:
         commit_count = 0
         updates_per_attempt: list[int] = []
 
-        def mock_commit(tbl, requirements, updates):
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
             updates_per_attempt.append(len(updates))
@@ -541,7 +564,9 @@ class TestTransactionRetryWithMultipleUpdates:
         original_commit = catalog.commit_table
         commit_count = 0
 
-        def mock_commit(tbl, requirements, updates):
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
             if commit_count == 1:
@@ -589,9 +614,11 @@ class TestMultiSnapshotTransactionRetry:
 
         original_commit = catalog.commit_table
         commit_count = 0
-        captured_updates: list = []
+        captured_updates: list[list[Any]] = []
 
-        def mock_commit(tbl, requirements, updates):
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
             captured_updates.append(list(updates))
@@ -623,9 +650,7 @@ class TestMultiSnapshotTransactionRetry:
         # Append snapshot's parent should be delete snapshot
         assert append_snapshot.parent_snapshot_id == delete_snapshot.snapshot_id
 
-    def test_multiple_appends_in_transaction_retry(
-        self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table
-    ) -> None:
+    def test_multiple_appends_in_transaction_retry(self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table) -> None:
         """Test transaction with multiple appends retries correctly.
 
         Note: This test verifies that multiple snapshot operations in a single
@@ -644,7 +669,9 @@ class TestMultiSnapshotTransactionRetry:
         original_commit = catalog.commit_table
         commit_count = 0
 
-        def mock_commit(tbl, requirements, updates):
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
             if commit_count == 1:
@@ -700,9 +727,7 @@ class TestMultiSnapshotTransactionRetry:
         assert delete_snapshot.parent_snapshot_id == initial_snapshot_id
         assert append_snapshot.parent_snapshot_id == delete_snapshot.snapshot_id
 
-    def test_snapshot_ids_change_on_retry(
-        self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table
-    ) -> None:
+    def test_snapshot_ids_change_on_retry(self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table) -> None:
         """Test that snapshot IDs are regenerated on retry."""
         table = catalog.create_table(
             "default.test_ids_change",
@@ -721,12 +746,15 @@ class TestMultiSnapshotTransactionRetry:
         commit_count = 0
         snapshot_ids_per_attempt: list[list[int]] = []
 
-        def mock_commit(tbl, requirements, updates):
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
 
             # Extract snapshot IDs from updates
             from pyiceberg.table.update import AddSnapshotUpdate
+
             ids = [u.snapshot.snapshot_id for u in updates if isinstance(u, AddSnapshotUpdate)]
             snapshot_ids_per_attempt.append(ids)
 
@@ -748,9 +776,7 @@ class TestMultiSnapshotTransactionRetry:
         assert snapshot_ids_per_attempt[0][0] != snapshot_ids_per_attempt[1][0]
         assert snapshot_ids_per_attempt[0][1] != snapshot_ids_per_attempt[1][1]
 
-    def test_apply_method_returns_updated_metadata(
-        self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table
-    ) -> None:
+    def test_apply_method_returns_updated_metadata(self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table) -> None:
         """Test that apply() method returns correctly updated metadata.
 
         This tests the Java-style apply() pattern where each operation
@@ -773,11 +799,9 @@ class TestMultiSnapshotTransactionRetry:
 
             # Add data to the append
             from pyiceberg.io.pyarrow import _dataframe_to_data_files
+
             data_files = _dataframe_to_data_files(
-                table_metadata=tx.table_metadata,
-                write_uuid=fast_append.commit_uuid,
-                df=arrow_table,
-                io=table.io
+                table_metadata=tx.table_metadata, write_uuid=fast_append.commit_uuid, df=arrow_table, io=table.io
             )
             for data_file in data_files:
                 fast_append.append_data_file(data_file)
@@ -828,7 +852,9 @@ class TestAutocommitRetry:
         original_commit = catalog.commit_table
         commit_count = 0
 
-        def mock_commit(tbl, requirements, updates):
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
             if commit_count < 2:
@@ -843,9 +869,7 @@ class TestAutocommitRetry:
         # Verify data was written
         assert len(table.scan().to_arrow()) == 3
 
-    def test_autocommit_retry_with_concurrent_commits(
-        self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table
-    ) -> None:
+    def test_autocommit_retry_with_concurrent_commits(self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table) -> None:
         """Test autocommit retry when another writer commits between retries.
 
         This tests the critical scenario where _working_metadata must be updated
@@ -863,7 +887,6 @@ class TestAutocommitRetry:
 
         # First append to have initial data
         table.append(arrow_table)
-        initial_snapshot_id = table.metadata.current_snapshot_id
 
         # Simulate concurrent commit by another writer before our retry
         table2 = catalog.load_table("default.test_autocommit_concurrent")
@@ -873,7 +896,9 @@ class TestAutocommitRetry:
         original_commit = catalog.commit_table
         commit_count = 0
 
-        def mock_commit(tbl, requirements, updates):
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
 
@@ -919,7 +944,9 @@ class TestAutocommitRetry:
         original_commit = catalog.commit_table
         commit_count = 0
 
-        def mock_commit(tbl, requirements, updates):
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
             if commit_count == 1:
@@ -952,7 +979,9 @@ class TestAutocommitRetry:
         original_commit = catalog.commit_table
         commit_count = 0
 
-        def mock_commit(tbl, requirements, updates):
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
             if commit_count == 1:

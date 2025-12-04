@@ -754,7 +754,7 @@ class ValidatableTableRequirement(IcebergBaseModel):
         """
         ...
 
-    def key(self) -> tuple:
+    def key(self) -> tuple[Any, ...]:
         """Return a deduplication key for this requirement."""
         return (type(self),)
 
@@ -816,7 +816,7 @@ class AssertRefSnapshotId(ValidatableTableRequirement):
         elif self.snapshot_id is not None:
             raise CommitFailedException(f"Requirement failed: branch or tag {self.ref} is missing, expected {self.snapshot_id}")
 
-    def key(self) -> tuple:
+    def key(self) -> tuple[Any, ...]:
         return (type(self), self.ref)
 
 

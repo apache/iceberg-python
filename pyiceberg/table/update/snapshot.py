@@ -30,6 +30,10 @@ from typing import TYPE_CHECKING, Generic
 from sortedcontainers import SortedList
 
 from pyiceberg.avro.codecs import AvroCompressionCodec
+from pyiceberg.exceptions import (
+    CommitFailedException,
+    CommitStateUnknownException,
+)
 from pyiceberg.expressions import (
     AlwaysFalse,
     BooleanExpression,
@@ -58,6 +62,7 @@ from pyiceberg.manifest import (
 from pyiceberg.partitioning import (
     PartitionSpec,
 )
+from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRefType
 from pyiceberg.table.snapshots import (
     Operation,
@@ -66,11 +71,6 @@ from pyiceberg.table.snapshots import (
     Summary,
     update_snapshot_summaries,
 )
-from pyiceberg.exceptions import (
-    CommitFailedException,
-    CommitStateUnknownException,
-)
-from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.update import (
     AddSnapshotUpdate,
     AssertRefSnapshotId,
@@ -293,9 +293,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         """Build the updates and requirements for this snapshot operation."""
         # Recalculate parent snapshot ID from current table_metadata
         self._parent_snapshot_id = (
-            snapshot.snapshot_id
-            if (snapshot := self._transaction.table_metadata.snapshot_by_name(self._target_branch))
-            else None
+            snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.snapshot_by_name(self._target_branch)) else None
         )
 
         new_manifests = self._manifests()
@@ -416,9 +414,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._manifest_num_counter = itertools.count(0)
 
         self._parent_snapshot_id = (
-            snapshot.snapshot_id
-            if (snapshot := self._transaction.table_metadata.snapshot_by_name(self._target_branch))
-            else None
+            snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.snapshot_by_name(self._target_branch)) else None
         )
 
         # Clear cached properties that depend on snapshot state
@@ -483,9 +479,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
 
             updates, requirements = self._commit()
 
-            requirements = requirements + (
-                AssertTableUUID(uuid=self._transaction.table_metadata.table_uuid),
-            )
+            requirements = requirements + (AssertTableUUID(uuid=self._transaction.table_metadata.table_uuid),)
 
             # Directly commit to catalog (bypassing transaction accumulation)
             # This is necessary because:
@@ -503,7 +497,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                 retry_on=(CommitFailedException,),
             )
         except CommitStateUnknownException:
-            # NOTE: Use the function like checkCommitStatus() in Java 
+            # NOTE: Use the function like checkCommitStatus() in Java
             # to determine if the commit succeeded before raising this exception.
             raise
 

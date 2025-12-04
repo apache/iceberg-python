@@ -35,8 +35,8 @@ from typing import (
 from pydantic import Field
 from sortedcontainers import SortedList
 
-from pyiceberg.exceptions import CommitFailedException
 import pyiceberg.expressions.parser as parser
+from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.expressions import (
     AlwaysFalse,
     AlwaysTrue,
@@ -292,7 +292,7 @@ class Transaction:
     _autocommit: bool
     _updates: tuple[TableUpdate, ...]
     _requirements: tuple[TableRequirement, ...]
-    _pending_updates: list[_StaticUpdate | UpdateTableMetadata]
+    _pending_updates: list[_StaticUpdate | UpdateTableMetadata[Any]]
     # NOTE: Whenever _updates is modified, _working_metadata must be updated via update_table_metadata()
     _working_metadata: TableMetadata
 
@@ -328,7 +328,7 @@ class Transaction:
         self,
         updates: tuple[TableUpdate, ...],
         requirements: tuple[TableRequirement, ...] = (),
-        pending_update: _StaticUpdate | UpdateTableMetadata | None = None,
+        pending_update: _StaticUpdate | UpdateTableMetadata[Any] | None = None,
     ) -> Transaction:
         """Check if the requirements are met, and applies the updates to the metadata."""
         for requirement in requirements:
@@ -340,12 +340,12 @@ class Transaction:
 
         # For the requirements, it does not make sense to add a requirement more than once
         # For example, you cannot assert that the current schema has two different IDs
-        existing_requirements = {req.key() for req in self._requirements}
+        existing_requirement_keys = {req.key() for req in self._requirements}
         for new_requirement in requirements:
             key = new_requirement.key()
-            if key not in existing_requirements:
+            if key not in existing_requirement_keys:
                 self._requirements += (new_requirement,)
-                existing_requirements.add(key)
+                existing_requirement_keys.add(key)
 
         if pending_update is not None:
             self._pending_updates.append(pending_update)
@@ -1034,7 +1034,6 @@ class Transaction:
         On retry, refreshes table metadata and regenerates snapshots from
         the pending snapshot producers.
         """
-
         properties = self._table.metadata.properties
 
         retry_config = RetryConfig(
@@ -1116,12 +1115,15 @@ class Transaction:
             self._updates += updates
             self._working_metadata = update_table_metadata(self._working_metadata, updates)
 
-            existing_requirements = {req.key() for r in self._requirements}
+            existing_requirement_keys: set[tuple[Any, ...]] = set()
+            existing_req: TableRequirement
+            for existing_req in self._requirements:
+                existing_requirement_keys.add(existing_req.key())
             for req in requirements:
                 key = req.key()
-                if key not in existing_requirements:
+                if key not in existing_requirement_keys:
                     self._requirements += (req,)
-                    existing_requirements.add(key)
+                    existing_requirement_keys.add(key)
 
         self._requirements += (AssertTableUUID(uuid=self.table_metadata.table_uuid),)
 
