@@ -746,7 +746,7 @@ class HiveCatalog(MetastoreCatalog):
             return iter([])
 
         with self._client as open_client:
-            return iter(map(self.identifier_to_tuple, open_client.get_all_databases()))
+            return map(self.identifier_to_tuple, open_client.get_all_databases())
 
     def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
         """Get properties for a namespace.
