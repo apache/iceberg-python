@@ -42,7 +42,7 @@ Options:
 --help                Show this message and exit.
 
 Commands:
-describe    Describes a namespace xor table
+describe    Describes a namespace or table
 drop        Operations to drop a namespace or table
 list        Lists tables or namespaces
 location    Returns the location of the table
