@@ -33,24 +33,28 @@ You can pass the path to the Catalog using the `--uri` and `--credential` argume
 Usage: pyiceberg [OPTIONS] COMMAND [ARGS]...
 
 Options:
---catalog TEXT
---verbose BOOLEAN
---output [text|json]
---ugi TEXT
---uri TEXT
---credential TEXT
---help                Show this message and exit.
+  --catalog TEXT
+  --verbose BOOLEAN
+  --output [text|json]
+  --ugi TEXT
+  --uri TEXT
+  --credential TEXT
+  --help                Show this message and exit.
 
 Commands:
-describe    Describes a namespace or table
-drop        Operations to drop a namespace or table
-list        Lists tables or namespaces
-location    Returns the location of the table
-properties  Properties on tables/namespaces
-rename      Renames a table
-schema      Gets the schema of the table
-spec        Returns the partition spec of the table
-uuid        Returns the UUID of the table
+  create      Operation to create a namespace.
+  describe    Describe a namespace or a table.
+  drop        Operations to drop a namespace or table.
+  files       List all the files of the table.
+  list        List tables or namespaces.
+  list-refs   List all the refs in the provided table.
+  location    Return the location of the table.
+  properties  Properties on tables/namespaces.
+  rename      Rename a table.
+  schema      Get the schema of the table.
+  spec        Return the partition spec of the table.
+  uuid        Return the UUID of the table.
+  version     Print pyiceberg version.
 ```
 
 This example assumes that you have a default catalog set. If you want to load another catalog, for example, the rest example above. Then you need to set `--catalog rest`.
