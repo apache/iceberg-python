@@ -401,7 +401,7 @@ def test_concurrent_create_transaction(test_catalog: Catalog, test_schema: Schem
     assert not test_catalog.table_exists(identifier)
 
     test_catalog.create_table(identifier, test_schema)
-    with pytest.raises(CommitFailedException):
+    with pytest.raises(TableAlreadyExistsError):
         table.commit_transaction()
 
 
@@ -601,3 +601,31 @@ def test_register_table_existing(test_catalog: Catalog, table_schema_nested: Sch
     # Assert that registering the table again raises TableAlreadyExistsError
     with pytest.raises(TableAlreadyExistsError):
         test_catalog.register_table(identifier, metadata_location=table.metadata_location)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_register_table_non_existing_namespace(test_catalog: Catalog, table_name: str, database_name: str) -> None:
+    identifier = (database_name, table_name)
+
+    test_catalog.create_namespace_if_not_exists(database_name)
+
+    table = test_catalog.create_table(identifier=identifier, schema=Schema())
+
+    assert test_catalog.table_exists(identifier)
+
+    metadata_location = table.metadata_location
+    test_catalog.drop_table(identifier)
+    assert not test_catalog.table_exists(identifier)
+
+    with pytest.raises(NoSuchNamespaceError):
+        test_catalog.register_table(("nonexistent", table_name), metadata_location=metadata_location)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_create_table_non_existing_namespace(test_catalog: Catalog, table_name: str) -> None:
+    identifier = ("nonexisting", table_name)
+
+    with pytest.raises(NoSuchNamespaceError):
+        test_catalog.create_table(identifier, schema=Schema())
