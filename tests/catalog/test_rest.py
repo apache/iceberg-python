@@ -943,7 +943,7 @@ def test_load_table_404(rest_mock: Mocker) -> None:
         json={
             "error": {
                 "message": "Table does not exist: examples.does_not_exists in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
-                "type": "NoSuchNamespaceErrorException",
+                "type": "NoSuchTableError",
                 "code": 404,
             }
         },
@@ -952,6 +952,25 @@ def test_load_table_404(rest_mock: Mocker) -> None:
     )
 
     with pytest.raises(NoSuchTableError) as e:
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).load_table(("fokko", "does_not_exists"))
+    assert "Table does not exist" in str(e.value)
+
+
+def test_load_table_404_non_existent_namespace(rest_mock: Mocker) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/does_not_exists",
+        json={
+            "error": {
+                "message": "Table does not exist: examples.does_not_exists in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
+                "type": "NoSuchNamespaceError",
+                "code": 404,
+            }
+        },
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(NoSuchNamespaceError) as e:
         RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).load_table(("fokko", "does_not_exists"))
     assert "Table does not exist" in str(e.value)
 
@@ -1004,7 +1023,7 @@ def test_drop_table_404(rest_mock: Mocker) -> None:
         json={
             "error": {
                 "message": "Table does not exist: fokko.does_not_exists in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
-                "type": "NoSuchNamespaceErrorException",
+                "type": "NoSuchTableError",
                 "code": 404,
             }
         },
@@ -1013,6 +1032,25 @@ def test_drop_table_404(rest_mock: Mocker) -> None:
     )
 
     with pytest.raises(NoSuchTableError) as e:
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_table(("fokko", "does_not_exists"))
+    assert "Table does not exist" in str(e.value)
+
+
+def test_drop_table_404_non_existent_namespace(rest_mock: Mocker) -> None:
+    rest_mock.delete(
+        f"{TEST_URI}v1/namespaces/fokko/tables/does_not_exists",
+        json={
+            "error": {
+                "message": "Table does not exist: fokko.does_not_exists in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
+                "type": "NoSuchNamespaceErrorException",
+                "code": 404,
+            }
+        },
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(NoSuchNamespaceError) as e:
         RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_table(("fokko", "does_not_exists"))
     assert "Table does not exist" in str(e.value)
 
