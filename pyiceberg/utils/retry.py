@@ -15,8 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Retry utilities for Iceberg operations."""
-
 from __future__ import annotations
 
 import logging

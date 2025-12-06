@@ -1032,38 +1032,25 @@ class Transaction:
         return self._table
 
     def _commit_with_retry(self) -> None:
-        """Commit transaction with retry logic for snapshot operations.
+        """Commit transaction with retry logic.
 
         On retry, refreshes table metadata and regenerates snapshots from
         the pending snapshot producers.
         """
         properties = self._table.metadata.properties
 
+        max_attempts = property_as_int(properties, TableProperties.COMMIT_NUM_RETRIES)
+        min_wait_ms = property_as_int(properties, TableProperties.COMMIT_MIN_RETRY_WAIT_MS)
+        max_wait_ms = property_as_int(properties, TableProperties.COMMIT_MAX_RETRY_WAIT_MS)
+        total_timeout_ms = property_as_int(properties, TableProperties.COMMIT_TOTAL_RETRY_TIME_MS)
+
         retry_config = RetryConfig(
-            max_attempts=property_as_int(
-                properties,
-                TableProperties.COMMIT_NUM_RETRIES,
-                TableProperties.COMMIT_NUM_RETRIES_DEFAULT,
-            )
-            or TableProperties.COMMIT_NUM_RETRIES_DEFAULT,
-            min_wait_ms=property_as_int(
-                properties,
-                TableProperties.COMMIT_MIN_RETRY_WAIT_MS,
-                TableProperties.COMMIT_MIN_RETRY_WAIT_MS_DEFAULT,
-            )
-            or TableProperties.COMMIT_MIN_RETRY_WAIT_MS_DEFAULT,
-            max_wait_ms=property_as_int(
-                properties,
-                TableProperties.COMMIT_MAX_RETRY_WAIT_MS,
-                TableProperties.COMMIT_MAX_RETRY_WAIT_MS_DEFAULT,
-            )
-            or TableProperties.COMMIT_MAX_RETRY_WAIT_MS_DEFAULT,
-            total_timeout_ms=property_as_int(
-                properties,
-                TableProperties.COMMIT_TOTAL_RETRY_TIME_MS,
-                TableProperties.COMMIT_TOTAL_RETRY_TIME_MS_DEFAULT,
-            )
-            or TableProperties.COMMIT_TOTAL_RETRY_TIME_MS_DEFAULT,
+            max_attempts=max_attempts if max_attempts is not None else TableProperties.COMMIT_NUM_RETRIES_DEFAULT,
+            min_wait_ms=min_wait_ms if min_wait_ms is not None else TableProperties.COMMIT_MIN_RETRY_WAIT_MS_DEFAULT,
+            max_wait_ms=max_wait_ms if max_wait_ms is not None else TableProperties.COMMIT_MAX_RETRY_WAIT_MS_DEFAULT,
+            total_timeout_ms=total_timeout_ms
+            if total_timeout_ms is not None
+            else TableProperties.COMMIT_TOTAL_RETRY_TIME_MS_DEFAULT,
         )
 
         first_attempt = True
@@ -1073,7 +1060,6 @@ class Transaction:
             if first_attempt:
                 first_attempt = False
             else:
-                # On retry, reapply all updates with refreshed metadata
                 self._reapply_updates()
 
             self._table._do_commit(  # pylint: disable=W0212

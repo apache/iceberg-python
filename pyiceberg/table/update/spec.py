@@ -58,17 +58,15 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
     _adds: list[PartitionField]
     _deletes: set[int]
     _last_assigned_partition_id: int
-    # Store (source_column_name, transform, partition_field_name) for retry support
-    _field_additions: list[tuple[str, Transform[Any, Any], str | None]]
+    # Store all operations and order for retry support.
+    _operations: list[tuple[Any, ...]]
 
     def __init__(self, transaction: Transaction, case_sensitive: bool = True) -> None:
         super().__init__(transaction)
         self._transaction = transaction
         self._case_sensitive = case_sensitive
-        self._field_additions = []
-        self._deletes = set()
-        self._renames = {}
-        # Initialize state from current metadata
+        self._operations = []
+
         self._init_state_from_metadata()
 
     def _init_state_from_metadata(self) -> None:
@@ -78,6 +76,8 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
         self._transform_to_field = {(field.source_id, repr(field.transform)): field for field in spec.fields}
         self._last_assigned_partition_id = self._transaction.table_metadata.last_partition_id or PARTITION_FIELD_ID_START - 1
         # Clear intermediate state
+        self._deletes = set()
+        self._renames = {}
         self._name_to_added_field = {}
         self._transform_to_added_field = {}
         self._added_time_fields = {}
@@ -89,8 +89,18 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
         This is called on transaction retry to reapply the spec changes on top of the refreshed table metadata.
         """
         self._init_state_from_metadata()
-        for source_column_name, transform, partition_field_name in self._field_additions:
-            self._do_add_field(source_column_name, transform, partition_field_name)
+
+        for operation in self._operations:
+            op_type = operation[0]
+            if op_type == "add":
+                _, source_column_name, transform, partition_field_name = operation
+                self._do_add_field(source_column_name, transform, partition_field_name)
+            elif op_type == "remove":
+                _, name = operation
+                self._do_remove_field(name)
+            elif op_type == "rename":
+                _, name, new_name = operation
+                self._do_rename_field(name, new_name)
 
     def _do_add_field(
         self,
@@ -128,7 +138,7 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
         existing_partition_field = self._name_to_field.get(new_field.name)
         if existing_partition_field and new_field.field_id not in self._deletes:
             if isinstance(existing_partition_field.transform, VoidTransform):
-                self.rename_field(
+                self._do_rename_field(
                     existing_partition_field.name, existing_partition_field.name + "_" + str(existing_partition_field.field_id)
                 )
             else:
@@ -144,14 +154,15 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
         partition_field_name: str | None = None,
     ) -> UpdateSpec:
         transform = parse_transform(transform)
-        self._field_additions.append((source_column_name, transform, partition_field_name))
+        self._operations.append(("add", source_column_name, transform, partition_field_name))
         self._do_add_field(source_column_name, transform, partition_field_name)
         return self
 
     def add_identity(self, source_column_name: str) -> UpdateSpec:
         return self.add_field(source_column_name, IdentityTransform(), None)
 
-    def remove_field(self, name: str) -> UpdateSpec:
+    def _do_remove_field(self, name: str) -> None:
+        """Remove a partition field (internal implementation for retry support)."""
         added = self._name_to_added_field.get(name)
         if added:
             raise ValueError(f"Cannot delete newly added field {name}")
@@ -163,12 +174,18 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
             raise ValueError(f"No such partition field: {name}")
 
         self._deletes.add(field.field_id)
+
+    def remove_field(self, name: str) -> UpdateSpec:
+        self._operations.append(("remove", name))
+        self._do_remove_field(name)
         return self
 
-    def rename_field(self, name: str, new_name: str) -> UpdateSpec:
+    def _do_rename_field(self, name: str, new_name: str) -> None:
+        """Rename a partition field (internal implementation for retry support)."""
         existing_field = self._name_to_field.get(new_name)
         if existing_field and isinstance(existing_field.transform, VoidTransform):
-            return self.rename_field(name, name + "_" + str(existing_field.field_id))
+            self._do_rename_field(name, name + "_" + str(existing_field.field_id))
+            return
         added = self._name_to_added_field.get(name)
         if added:
             raise ValueError("Cannot rename recently added partitions")
@@ -178,6 +195,10 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
         if field.field_id in self._deletes:
             raise ValueError(f"Cannot delete and rename partition field {name}")
         self._renames[name] = new_name
+
+    def rename_field(self, name: str, new_name: str) -> UpdateSpec:
+        self._operations.append(("rename", name, new_name))
+        self._do_rename_field(name, new_name)
         return self
 
     def _commit(self) -> UpdatesAndRequirements:
