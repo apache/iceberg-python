@@ -58,34 +58,48 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
     _adds: list[PartitionField]
     _deletes: set[int]
     _last_assigned_partition_id: int
+    # Store (source_column_name, transform, partition_field_name) for retry support
+    _field_additions: list[tuple[str, Transform[Any, Any], str | None]]
 
     def __init__(self, transaction: Transaction, case_sensitive: bool = True) -> None:
         super().__init__(transaction)
-        self._name_to_field = {field.name: field for field in transaction.table_metadata.spec().fields}
-        self._name_to_added_field = {}
-        self._transform_to_field = {
-            (field.source_id, repr(field.transform)): field for field in transaction.table_metadata.spec().fields
-        }
-        self._transform_to_added_field = {}
-        self._adds = []
-        self._deletes = set()
-        self._last_assigned_partition_id = transaction.table_metadata.last_partition_id or PARTITION_FIELD_ID_START - 1
-        self._renames = {}
         self._transaction = transaction
         self._case_sensitive = case_sensitive
-        self._added_time_fields = {}
+        self._field_additions = []
+        self._deletes = set()
+        self._renames = {}
+        # Initialize state from current metadata
+        self._init_state_from_metadata()
 
-    def add_field(
+    def _init_state_from_metadata(self) -> None:
+        """Initialize or reinitialize state from current transaction metadata."""
+        spec = self._transaction.table_metadata.spec()
+        self._name_to_field = {field.name: field for field in spec.fields}
+        self._transform_to_field = {(field.source_id, repr(field.transform)): field for field in spec.fields}
+        self._last_assigned_partition_id = self._transaction.table_metadata.last_partition_id or PARTITION_FIELD_ID_START - 1
+        # Clear intermediate state
+        self._name_to_added_field = {}
+        self._transform_to_added_field = {}
+        self._added_time_fields = {}
+        self._adds = []
+
+    def _reset_state(self) -> None:
+        """Reset state for retry, rebuilding from refreshed metadata.
+
+        This is called on transaction retry to reapply the spec changes on top of the refreshed table metadata."""
+        self._init_state_from_metadata()
+        for source_column_name, transform, partition_field_name in self._field_additions:
+            self._do_add_field(source_column_name, transform, partition_field_name)
+
+    def _do_add_field(
         self,
         source_column_name: str,
-        transform: str | Transform[Any, Any],
-        partition_field_name: str | None = None,
-    ) -> UpdateSpec:
+        transform: Transform[Any, Any],
+        partition_field_name: str | None,
+    ) -> None:
         ref = Reference(source_column_name)
         bound_ref = ref.bind(self._transaction.table_metadata.schema(), self._case_sensitive)
-        if isinstance(transform, str):
-            transform = parse_transform(transform)
-        # verify transform can actually bind it
+
         output_type = bound_ref.field.field_type
         if not transform.can_transform(output_type):
             raise ValueError(f"{transform} cannot transform {output_type} values from {bound_ref.field.name}")
@@ -121,6 +135,16 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
 
         self._name_to_added_field[new_field.name] = new_field
         self._adds.append(new_field)
+
+    def add_field(
+        self,
+        source_column_name: str,
+        transform: str | Transform[Any, Any],
+        partition_field_name: str | None = None,
+    ) -> UpdateSpec:
+        transform = parse_transform(transform)
+        self._field_additions.append((source_column_name, transform, partition_field_name))
+        self._do_add_field(source_column_name, transform, partition_field_name)
         return self
 
     def add_identity(self, source_column_name: str) -> UpdateSpec:
@@ -177,6 +201,10 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
             )
 
         return updates, requirements
+
+    def commit(self) -> None:
+        updates, requirements = self._commit()
+        self._transaction._apply(updates, requirements, pending_update=self)
 
     def _apply(self) -> PartitionSpec:
         def _check_and_add_partition_name(

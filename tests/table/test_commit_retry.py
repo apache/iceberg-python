@@ -997,3 +997,135 @@ class TestAutocommitRetry:
         result = table.scan().to_arrow()
         assert len(result) == 3
         assert result["id"].to_pylist() == [4, 5, 6]
+
+
+class TestUpdateSpecRetry:
+    def test_update_spec_retried_on_conflict(self, catalog: SqlCatalog, schema: Schema) -> None:
+        """Test that UpdateSpec operations are retried on CommitFailedException."""
+        from pyiceberg.transforms import BucketTransform
+
+        table = catalog.create_table(
+            "default.test_spec_retry",
+            schema=schema,
+            properties={
+                TableProperties.COMMIT_NUM_RETRIES: "3",
+                TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+                TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "10",
+            },
+        )
+
+        original_commit = catalog.commit_table
+        commit_count = 0
+
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
+            nonlocal commit_count
+            commit_count += 1
+            if commit_count == 1:
+                raise CommitFailedException("Simulated spec conflict")
+            return original_commit(tbl, requirements, updates)
+
+        with patch.object(catalog, "commit_table", side_effect=mock_commit):
+            with table.update_spec() as update_spec:
+                update_spec.add_field(
+                    source_column_name="id", transform=BucketTransform(16), partition_field_name="id_bucket"
+                )
+
+        assert commit_count == 2
+
+    def test_update_spec_resolves_conflict_on_retry(self, catalog: SqlCatalog, schema: Schema) -> None:
+        """Test that spec update can resolve conflicts via retry"""
+        from pyiceberg.transforms import BucketTransform
+
+        table = catalog.create_table(
+            "default.test_spec_conflict_resolved",
+            schema=schema,
+            properties={
+                TableProperties.COMMIT_NUM_RETRIES: "5",
+                TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+                TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "10",
+            },
+        )
+
+        with table.update_spec() as update_spec:
+            update_spec.add_field(source_column_name="id", transform=BucketTransform(16), partition_field_name="id_bucket")
+
+        table2 = catalog.load_table("default.test_spec_conflict_resolved")
+        with table2.update_spec() as update_spec2:
+            update_spec2.add_identity("id")
+
+        assert table.spec().spec_id == 1
+        assert table2.spec().spec_id == 2
+
+        original_commit = catalog.commit_table
+        commit_count = 0
+
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
+            nonlocal commit_count
+            commit_count += 1
+            return original_commit(tbl, requirements, updates)
+
+        with patch.object(catalog, "commit_table", side_effect=mock_commit):
+            # Retry resolves conflicts caused by mismatch spec_id
+            with table.update_spec() as update_spec:
+                update_spec.add_field(source_column_name="id", transform=BucketTransform(8), partition_field_name="id_bucket_new")
+
+        assert commit_count == 2
+
+    def test_transaction_with_spec_change_and_append_retries(
+        self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table
+    ) -> None:
+        """Test that a transaction with spec change and append handles retry correctly."""
+        table = catalog.create_table(
+            "default.test_transaction_spec_and_append",
+            schema=schema,
+            properties={
+                TableProperties.COMMIT_NUM_RETRIES: "3",
+                TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+                TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "10",
+            },
+        )
+
+        original_commit = catalog.commit_table
+        commit_count = 0
+        captured_updates: list[tuple[TableUpdate, ...]] = []
+
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
+            nonlocal commit_count
+            commit_count += 1
+            captured_updates.append(updates)
+            if commit_count == 1:
+                raise CommitFailedException("Simulated conflict")
+            return original_commit(tbl, requirements, updates)
+
+        with patch.object(catalog, "commit_table", side_effect=mock_commit):
+            with table.transaction() as txn:
+                with txn.update_spec() as update_spec:
+                    update_spec.add_identity("id")
+                txn.append(arrow_table)
+
+        assert commit_count == 2
+
+        first_attempt_update_types = [type(u).__name__ for u in captured_updates[0]]
+        assert "AddPartitionSpecUpdate" in first_attempt_update_types
+        assert "AddSnapshotUpdate" in first_attempt_update_types
+
+        retry_attempt_update_types = [type(u).__name__ for u in captured_updates[1]]
+        assert "AddPartitionSpecUpdate" in retry_attempt_update_types
+        assert "AddSnapshotUpdate" in retry_attempt_update_types
+
+        assert len(table.scan().to_arrow()) == 3
+
+        from pyiceberg.transforms import IdentityTransform
+
+        assert table.spec().spec_id == 1
+        assert len(table.spec().fields) == 1
+        partition_field = table.spec().fields[0]
+        assert partition_field.name == "id"
+        assert partition_field.source_id == 1  # "id" column's field_id
+        assert isinstance(partition_field.transform, IdentityTransform)
