@@ -306,7 +306,11 @@ def test_update_schema_conflict(test_catalog: Catalog, test_schema: Schema, tabl
     identifier = (database_name, table_name)
 
     test_catalog.create_namespace(database_name)
-    table = test_catalog.create_table(identifier, test_schema)
+    table = test_catalog.create_table(
+        identifier,
+        test_schema,
+        properties={TableProperties.COMMIT_NUM_RETRIES: "1"}
+    )
     assert test_catalog.table_exists(identifier)
 
     original_update = table.update_schema().add_column("new_col", LongType())
@@ -321,6 +325,49 @@ def test_update_schema_conflict(test_catalog: Catalog, test_schema: Schema, tabl
         original_update.commit()
 
     table = test_catalog.load_table(identifier)
+    assert table.schema().as_struct() == expected_schema.as_struct()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_update_schema_conflict_with_retry(test_catalog: Catalog, test_schema: Schema, table_name: str, database_name: str) -> None:
+    if isinstance(test_catalog, HiveCatalog):
+        pytest.skip("HiveCatalog fails in this test, need to investigate")
+
+    identifier = (database_name, table_name)
+
+    test_catalog.create_namespace(database_name)
+    table = test_catalog.create_table(
+        identifier,
+        test_schema,
+        properties={TableProperties.COMMIT_NUM_RETRIES: "2"}
+    )
+    assert test_catalog.table_exists(identifier)
+
+    original_update = table.update_schema().add_column("new_col", LongType())
+
+    original_commit = test_catalog.commit_table
+    commit_count = 0
+
+    def mock_commit(
+        tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+    ) -> CommitTableResponse:
+        nonlocal commit_count
+        commit_count += 1
+        return original_commit(tbl, requirements, updates)
+
+    with patch.object(test_catalog, "commit_table", side_effect=mock_commit):
+        concurrent_update = test_catalog.load_table(identifier).update_schema().delete_column("VendorID")
+        concurrent_update.commit()
+        original_update.commit()
+
+    assert commit_count == 3 # concurrent_update, original_update(fail), retry original_update(success)
+
+    table = test_catalog.load_table(identifier)
+    expected_schema = Schema(
+        NestedField(2, "tpep_pickup_datetime", TimestampType(), False),
+        NestedField(3, "new_col", LongType(), False),
+    )
     assert table.schema().as_struct() == expected_schema.as_struct()
 
 

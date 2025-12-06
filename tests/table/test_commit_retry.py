@@ -77,7 +77,7 @@ class TestSnapshotProducerRetry:
         ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
-            if commit_count == 2:
+            if commit_count == 1:
                 raise CommitFailedException("Simulated conflict")
             return original_commit(tbl, requirements, updates)
 
@@ -1125,3 +1125,153 @@ class TestUpdateSpecRetry:
         assert partition_field.name == "id"
         assert partition_field.source_id == 1  # "id" column's field_id
         assert isinstance(partition_field.transform, IdentityTransform)
+
+
+class TestUpdateSchemaRetry:
+    """Tests for UpdateSchema retry behavior (Java-like behavior)."""
+
+    def test_update_schema_retried_on_conflict(self, catalog: SqlCatalog, schema: Schema) -> None:
+        """Test that UpdateSchema operations are retried on CommitFailedException."""
+        from pyiceberg.types import StringType
+
+        table = catalog.create_table(
+            "default.test_schema_retry",
+            schema=schema,
+            properties={
+                TableProperties.COMMIT_NUM_RETRIES: "3",
+                TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+                TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "10",
+            },
+        )
+
+        original_commit = catalog.commit_table
+        commit_count = 0
+
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
+            nonlocal commit_count
+            commit_count += 1
+            if commit_count == 1:
+                raise CommitFailedException("Simulated schema conflict")
+            return original_commit(tbl, requirements, updates)
+
+        with patch.object(catalog, "commit_table", side_effect=mock_commit):
+            with table.update_schema() as update_schema:
+                update_schema.add_column("new_col", StringType())
+
+        assert commit_count == 2
+
+        # Verify schema was updated
+        table.refresh()
+        assert len(table.schema().fields) == 2
+        assert table.schema().find_field("new_col").field_type == StringType()
+
+    def test_update_schema_resolves_conflict_on_retry(self, catalog: SqlCatalog, schema: Schema) -> None:
+        """Test that schema update can resolve conflicts via retry."""
+        from pyiceberg.types import StringType
+
+        table = catalog.create_table(
+            "default.test_schema_conflict_resolved",
+            schema=schema,
+            properties={
+                TableProperties.COMMIT_NUM_RETRIES: "5",
+                TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+                TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "10",
+            },
+        )
+
+        # First schema change
+        with table.update_schema() as update_schema:
+            update_schema.add_column("col1", StringType())
+
+        # Concurrent schema change by another writer
+        table2 = catalog.load_table("default.test_schema_conflict_resolved")
+        with table2.update_schema() as update_schema2:
+            update_schema2.add_column("col2", StringType())
+
+        assert table.schema().schema_id == 1
+        assert table2.schema().schema_id == 2
+
+        original_commit = catalog.commit_table
+        commit_count = 0
+
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
+            nonlocal commit_count
+            commit_count += 1
+            return original_commit(tbl, requirements, updates)
+
+        with patch.object(catalog, "commit_table", side_effect=mock_commit):
+            # This should succeed on retry after refreshing metadata
+            with table.update_schema() as update_schema:
+                update_schema.add_column("col3", StringType())
+
+        # Should have retried (first attempt fails due to stale schema_id)
+        assert commit_count == 2
+
+        # Verify schema was updated with all columns
+        table.refresh()
+        assert table.schema().schema_id == 3
+        field_names = [f.name for f in table.schema().fields]
+        assert "id" in field_names
+        assert "col1" in field_names
+        assert "col2" in field_names
+        assert "col3" in field_names
+
+    def test_transaction_with_schema_change_and_append_retries(
+        self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table
+    ) -> None:
+        """Test that a transaction with schema change and append handles retry correctly."""
+        from pyiceberg.types import StringType
+
+        table = catalog.create_table(
+            "default.test_transaction_schema_and_append",
+            schema=schema,
+            properties={
+                TableProperties.COMMIT_NUM_RETRIES: "3",
+                TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+                TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "10",
+            },
+        )
+
+        original_commit = catalog.commit_table
+        commit_count = 0
+        captured_updates: list[tuple[TableUpdate, ...]] = []
+
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
+            nonlocal commit_count
+            commit_count += 1
+            captured_updates.append(updates)
+            if commit_count == 1:
+                raise CommitFailedException("Simulated conflict")
+            return original_commit(tbl, requirements, updates)
+
+        with patch.object(catalog, "commit_table", side_effect=mock_commit):
+            with table.transaction() as txn:
+                with txn.update_schema() as update_schema:
+                    update_schema.add_column("new_col", StringType())
+                txn.append(arrow_table)
+
+        assert commit_count == 2
+
+        # On the first attempt, updates should include both schema change and snapshot
+        first_attempt_update_types = [type(u).__name__ for u in captured_updates[0]]
+        assert "AddSchemaUpdate" in first_attempt_update_types
+        assert "AddSnapshotUpdate" in first_attempt_update_types
+
+        # On the retry, BOTH schema and snapshot updates should be present
+        retry_attempt_update_types = [type(u).__name__ for u in captured_updates[1]]
+        assert "AddSchemaUpdate" in retry_attempt_update_types
+        assert "AddSnapshotUpdate" in retry_attempt_update_types
+
+        # Verify data was written
+        assert len(table.scan().to_arrow()) == 3
+
+        # Verify schema was updated
+        assert table.schema().schema_id == 1
+        assert len(table.schema().fields) == 2
+        assert table.schema().find_field("new_col").field_type == StringType()

@@ -1423,6 +1423,15 @@ def test_append_table(catalog: SqlCatalog, table_schema_simple: Schema, table_id
     ],
 )
 def test_concurrent_commit_table(catalog: SqlCatalog, table_schema_simple: Schema, table_identifier: Identifier) -> None:
+    """Test that concurrent schema updates are resolved via retry (Java-like behavior).
+
+    When two writers concurrently update the schema:
+    1. First writer succeeds
+    2. Second writer's first attempt fails (stale schema_id)
+    3. Second writer retries with refreshed metadata and succeeds
+
+    This matches Java's BaseTransaction.applyUpdates() behavior.
+    """
     namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     table_a = catalog.create_table(table_identifier, table_schema_simple)
@@ -1431,10 +1440,17 @@ def test_concurrent_commit_table(catalog: SqlCatalog, table_schema_simple: Schem
     with table_a.update_schema() as update:
         update.add_column(path="b", field_type=IntegerType())
 
-    with pytest.raises(CommitFailedException, match="Requirement failed: current schema id has changed: expected 0, found 1"):
-        # This one should fail since it already has been updated
-        with table_b.update_schema() as update:
-            update.add_column(path="c", field_type=IntegerType())
+    # With retry support, this now succeeds after refreshing metadata
+    # (Java-like behavior: retry resolves conflicts)
+    with table_b.update_schema() as update:
+        update.add_column(path="c", field_type=IntegerType())
+
+    # Verify both columns were added
+    table_a.refresh()
+    field_names = [f.name for f in table_a.schema().fields]
+    assert "b" in field_names
+    assert "c" in field_names
+    assert table_a.schema().schema_id == 2
 
 
 @pytest.mark.parametrize(
