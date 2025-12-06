@@ -27,10 +27,7 @@ from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import CommitFailedException, CommitStateUnknownException
 from pyiceberg.schema import Schema
 from pyiceberg.table import CommitTableResponse, Table, TableProperties
-from pyiceberg.table.update import (
-    TableRequirement,
-    TableUpdate,
-)
+from pyiceberg.table.update import TableRequirement, TableUpdate
 from pyiceberg.types import LongType, NestedField
 
 
@@ -80,7 +77,7 @@ class TestSnapshotProducerRetry:
         ) -> CommitTableResponse:
             nonlocal commit_count
             commit_count += 1
-            if commit_count < 2:
+            if commit_count == 2:
                 raise CommitFailedException("Simulated conflict")
             return original_commit(tbl, requirements, updates)
 
@@ -88,7 +85,6 @@ class TestSnapshotProducerRetry:
             table.append(arrow_table)
 
         assert commit_count == 2
-        # Verify data was written
         assert len(table.scan().to_arrow()) == 3
 
     def test_max_retries_exceeded(self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table) -> None:

@@ -20,6 +20,7 @@ from collections.abc import Generator
 from pathlib import Path, PosixPath
 
 import pytest
+from unittest.mock import patch
 
 from pyiceberg.catalog import Catalog, MetastoreCatalog, load_catalog
 from pyiceberg.catalog.hive import HiveCatalog
@@ -37,8 +38,10 @@ from pyiceberg.exceptions import (
 from pyiceberg.io import WAREHOUSE
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import INITIAL_SCHEMA_ID, Schema
+from pyiceberg.table import CommitTableResponse, Table, TableProperties
 from pyiceberg.table.metadata import INITIAL_SPEC_ID
 from pyiceberg.table.sorting import INITIAL_SORT_ORDER_ID, SortField, SortOrder
+from pyiceberg.table.update import TableRequirement, TableUpdate
 from pyiceberg.transforms import BucketTransform, DayTransform, IdentityTransform
 from pyiceberg.types import IntegerType, LongType, NestedField, TimestampType, UUIDType
 from tests.conftest import clean_up
@@ -527,7 +530,12 @@ def test_update_table_spec_conflict(test_catalog: Catalog, test_schema: Schema, 
     identifier = (database_name, table_name)
     test_catalog.create_namespace(database_name)
     spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=BucketTransform(16), name="id_bucket"))
-    table = test_catalog.create_table(identifier, test_schema, partition_spec=spec)
+    table = test_catalog.create_table(
+        identifier,
+        test_schema,
+        partition_spec=spec,
+        properties={TableProperties.COMMIT_NUM_RETRIES: "1"}
+    )
 
     update = table.update_spec()
     update.add_field(source_column_name="tpep_pickup_datetime", transform=BucketTransform(16), partition_field_name="shard")
@@ -544,6 +552,44 @@ def test_update_table_spec_conflict(test_catalog: Catalog, test_schema: Schema, 
 
     loaded = test_catalog.load_table(identifier)
     assert loaded.spec() == PartitionSpec(spec_id=1)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_update_table_spec_conflict_with_retry(test_catalog: Catalog, test_schema: Schema, table_name: str, database_name: str) -> None:
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(database_name)
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=BucketTransform(16), name="id_bucket"))
+    table = test_catalog.create_table(
+        identifier,
+        test_schema,
+        partition_spec=spec,
+        properties={TableProperties.COMMIT_NUM_RETRIES: "2"}
+    )
+    update = table.update_spec()
+    update.add_field(source_column_name="tpep_pickup_datetime", transform=BucketTransform(16), partition_field_name="shard")
+
+    # update with conflict
+    conflict_table = test_catalog.load_table(identifier)
+    with conflict_table.update_spec() as conflict_update:
+        conflict_update.remove_field("id_bucket")
+
+    original_commit = test_catalog.commit_table
+    commit_count = 0
+
+    def mock_commit(
+        tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+    ) -> CommitTableResponse:
+        nonlocal commit_count
+        commit_count += 1
+        return original_commit(tbl, requirements, updates)
+
+    with patch.object(test_catalog, "commit_table", side_effect=mock_commit):
+        update.commit()
+
+    loaded = test_catalog.load_table(identifier)
+    assert loaded.spec().spec_id == 2
+    assert commit_count == 2
 
 
 @pytest.mark.integration
