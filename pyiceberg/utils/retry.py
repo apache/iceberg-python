@@ -81,7 +81,7 @@ def run_with_retry(
         The result of the task.
 
     Raises:
-        The last exception if all retries fail.
+        Exception: The last exception if all retries fail.
     """
     start_time_ms = int(time.time() * 1000)
     attempt = 0
