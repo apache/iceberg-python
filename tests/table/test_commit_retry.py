@@ -1024,9 +1024,7 @@ class TestUpdateSpecRetry:
 
         with patch.object(catalog, "commit_table", side_effect=mock_commit):
             with table.update_spec() as update_spec:
-                update_spec.add_field(
-                    source_column_name="id", transform=BucketTransform(16), partition_field_name="id_bucket"
-                )
+                update_spec.add_field(source_column_name="id", transform=BucketTransform(16), partition_field_name="id_bucket")
 
         assert commit_count == 2
 

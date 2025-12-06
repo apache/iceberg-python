@@ -86,7 +86,8 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
     def _reset_state(self) -> None:
         """Reset state for retry, rebuilding from refreshed metadata.
 
-        This is called on transaction retry to reapply the spec changes on top of the refreshed table metadata."""
+        This is called on transaction retry to reapply the spec changes on top of the refreshed table metadata.
+        """
         self._init_state_from_metadata()
         for source_column_name, transform, partition_field_name in self._field_additions:
             self._do_add_field(source_column_name, transform, partition_field_name)

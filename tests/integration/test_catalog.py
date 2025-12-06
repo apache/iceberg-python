@@ -18,9 +18,9 @@
 import os
 from collections.abc import Generator
 from pathlib import Path, PosixPath
+from unittest.mock import patch
 
 import pytest
-from unittest.mock import patch
 
 from pyiceberg.catalog import Catalog, MetastoreCatalog, load_catalog
 from pyiceberg.catalog.hive import HiveCatalog
@@ -306,11 +306,7 @@ def test_update_schema_conflict(test_catalog: Catalog, test_schema: Schema, tabl
     identifier = (database_name, table_name)
 
     test_catalog.create_namespace(database_name)
-    table = test_catalog.create_table(
-        identifier,
-        test_schema,
-        properties={TableProperties.COMMIT_NUM_RETRIES: "1"}
-    )
+    table = test_catalog.create_table(identifier, test_schema, properties={TableProperties.COMMIT_NUM_RETRIES: "1"})
     assert test_catalog.table_exists(identifier)
 
     original_update = table.update_schema().add_column("new_col", LongType())
@@ -330,18 +326,16 @@ def test_update_schema_conflict(test_catalog: Catalog, test_schema: Schema, tabl
 
 @pytest.mark.integration
 @pytest.mark.parametrize("test_catalog", CATALOGS)
-def test_update_schema_conflict_with_retry(test_catalog: Catalog, test_schema: Schema, table_name: str, database_name: str) -> None:
+def test_update_schema_conflict_with_retry(
+    test_catalog: Catalog, test_schema: Schema, table_name: str, database_name: str
+) -> None:
     if isinstance(test_catalog, HiveCatalog):
         pytest.skip("HiveCatalog fails in this test, need to investigate")
 
     identifier = (database_name, table_name)
 
     test_catalog.create_namespace(database_name)
-    table = test_catalog.create_table(
-        identifier,
-        test_schema,
-        properties={TableProperties.COMMIT_NUM_RETRIES: "2"}
-    )
+    table = test_catalog.create_table(identifier, test_schema, properties={TableProperties.COMMIT_NUM_RETRIES: "2"})
     assert test_catalog.table_exists(identifier)
 
     original_update = table.update_schema().add_column("new_col", LongType())
@@ -361,7 +355,7 @@ def test_update_schema_conflict_with_retry(test_catalog: Catalog, test_schema: S
         concurrent_update.commit()
         original_update.commit()
 
-    assert commit_count == 3 # concurrent_update, original_update(fail), retry original_update(success)
+    assert commit_count == 3  # concurrent_update, original_update(fail), retry original_update(success)
 
     table = test_catalog.load_table(identifier)
     expected_schema = Schema(
@@ -578,10 +572,7 @@ def test_update_table_spec_conflict(test_catalog: Catalog, test_schema: Schema, 
     test_catalog.create_namespace(database_name)
     spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=BucketTransform(16), name="id_bucket"))
     table = test_catalog.create_table(
-        identifier,
-        test_schema,
-        partition_spec=spec,
-        properties={TableProperties.COMMIT_NUM_RETRIES: "1"}
+        identifier, test_schema, partition_spec=spec, properties={TableProperties.COMMIT_NUM_RETRIES: "1"}
     )
 
     update = table.update_spec()
@@ -603,15 +594,14 @@ def test_update_table_spec_conflict(test_catalog: Catalog, test_schema: Schema, 
 
 @pytest.mark.integration
 @pytest.mark.parametrize("test_catalog", CATALOGS)
-def test_update_table_spec_conflict_with_retry(test_catalog: Catalog, test_schema: Schema, table_name: str, database_name: str) -> None:
+def test_update_table_spec_conflict_with_retry(
+    test_catalog: Catalog, test_schema: Schema, table_name: str, database_name: str
+) -> None:
     identifier = (database_name, table_name)
     test_catalog.create_namespace(database_name)
     spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=BucketTransform(16), name="id_bucket"))
     table = test_catalog.create_table(
-        identifier,
-        test_schema,
-        partition_spec=spec,
-        properties={TableProperties.COMMIT_NUM_RETRIES: "2"}
+        identifier, test_schema, partition_spec=spec, properties={TableProperties.COMMIT_NUM_RETRIES: "2"}
     )
     update = table.update_spec()
     update.add_field(source_column_name="tpep_pickup_datetime", transform=BucketTransform(16), partition_field_name="shard")

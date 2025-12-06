@@ -91,13 +91,13 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
     _case_sensitive: bool
 
     # Store user intent for retry support
-    _column_additions: list[tuple[str | tuple[str, ...], IcebergType, str | None, bool, L | None]]
+    _column_additions: list[tuple[str | tuple[str, ...], IcebergType, str | None, bool, Any]]
     _column_updates: list[tuple[str | tuple[str, ...], IcebergType | None, bool | None, str | None]]
     _column_deletions: list[str | tuple[str, ...]]
     _column_renames: list[tuple[str | tuple[str, ...], str]]
     _move_operations: list[tuple[str, str | tuple[str, ...], str | tuple[str, ...] | None]]
     _optional_columns: list[str | tuple[str, ...]]
-    _default_value_updates: list[tuple[str | tuple[str, ...], L | None]]
+    _default_value_updates: list[tuple[str | tuple[str, ...], Any]]
 
     def __init__(
         self,
@@ -167,8 +167,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         for path_from, new_name in self._column_renames:
             self._do_rename_column(path_from, new_name)
 
-        for path, field_type, required, doc in self._column_updates:
-            self._do_update_column(path, field_type, required, doc)
+        for upd_path, upd_field_type, upd_required, upd_doc in self._column_updates:
+            self._do_update_column(upd_path, upd_field_type, upd_required, upd_doc)
 
         for path in self._optional_columns:
             self._set_column_requirement(path, required=False)
@@ -255,7 +255,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         required: bool,
         default_value: L | None,
     ) -> None:
-        """Internal method to add a column. Used by add_column and _reset_state."""
+        """Add a column to the schema. Used by add_column and _reset_state."""
         if isinstance(path, str):
             if "." in path:
                 raise ValueError(f"Cannot add column with ambiguous name: {path}, provide a tuple instead")
@@ -340,7 +340,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         return self
 
     def _do_delete_column(self, path: str | tuple[str, ...]) -> None:
-        """Internal method to delete a column. Used by delete_column and _reset_state."""
+        """Delete a column from the schema. Used by delete_column and _reset_state."""
         name = (path,) if isinstance(path, str) else path
         full_name = ".".join(name)
 
@@ -381,7 +381,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         return self
 
     def _do_rename_column(self, path_from: str | tuple[str, ...], new_name: str) -> None:
-        """Internal method to rename a column. Used by rename_column and _reset_state."""
+        """Rename a column in the schema. Used by rename_column and _reset_state."""
         path_from = ".".join(path_from) if isinstance(path_from, tuple) else path_from
         field_from = self._schema.find_field(path_from, self._case_sensitive)
 
@@ -547,7 +547,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         required: bool | None,
         doc: str | None,
     ) -> None:
-        """Internal method to update a column. Used by update_column and _reset_state."""
+        """Update a column in the schema. Used by update_column and _reset_state."""
         path = (path,) if isinstance(path, str) else path
         full_name = ".".join(path)
 
@@ -638,7 +638,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         return self
 
     def _do_move_first(self, path: str | tuple[str, ...]) -> None:
-        """Internal method to move a field to first position. Used by move_first and _reset_state."""
+        """Move a field to first position. Used by move_first and _reset_state."""
         full_name = ".".join(path) if isinstance(path, tuple) else path
 
         field_id = self._find_for_move(full_name)
@@ -662,7 +662,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         return self
 
     def _do_move_before(self, path: str | tuple[str, ...], before_path: str | tuple[str, ...]) -> None:
-        """Internal method to move a field before another. Used by move_before and _reset_state."""
+        """Move a field before another. Used by move_before and _reset_state."""
         full_name = ".".join(path) if isinstance(path, tuple) else path
         field_id = self._find_for_move(full_name)
 
@@ -700,7 +700,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         return self
 
     def _do_move_after(self, path: str | tuple[str, ...], after_name: str | tuple[str, ...]) -> None:
-        """Internal method to move a field after another. Used by move_after and _reset_state."""
+        """Move a field after another. Used by move_after and _reset_state."""
         full_name = ".".join(path) if isinstance(path, tuple) else path
 
         field_id = self._find_for_move(full_name)

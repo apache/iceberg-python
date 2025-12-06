@@ -15,10 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from unittest.mock import patch
+
 import pyarrow as pa
 import pytest
 from pyspark.sql import SparkSession
-from unittest.mock import patch
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import CommitFailedException
@@ -34,7 +35,12 @@ def test_conflict_delete_delete(
 ) -> None:
     """This test should start passing once optimistic concurrency control has been implemented."""
     identifier = "default.test_conflict"
-    tbl1 = _create_table(session_catalog, identifier, {"format-version": format_version, TableProperties.COMMIT_NUM_RETRIES: "1"}, [arrow_table_with_null])
+    tbl1 = _create_table(
+        session_catalog,
+        identifier,
+        {"format-version": format_version, TableProperties.COMMIT_NUM_RETRIES: "1"},
+        [arrow_table_with_null],
+    )
     tbl2 = session_catalog.load_table(identifier)
 
     tbl1.delete("string == 'z'")
@@ -51,7 +57,12 @@ def test_conflict_delete_delete_with_retry(
 ) -> None:
     """This test should start passing once optimistic concurrency control has been implemented."""
     identifier = "default.test_conflict"
-    tbl1 = _create_table(session_catalog, identifier, {"format-version": format_version, TableProperties.COMMIT_NUM_RETRIES: "2"}, [arrow_table_with_null])
+    tbl1 = _create_table(
+        session_catalog,
+        identifier,
+        {"format-version": format_version, TableProperties.COMMIT_NUM_RETRIES: "2"},
+        [arrow_table_with_null],
+    )
     tbl2 = session_catalog.load_table(identifier)
 
     tbl1.delete("string == 'z'")
@@ -73,6 +84,7 @@ def test_conflict_delete_delete_with_retry(
 
     assert commit_count == 2
 
+
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_conflict_delete_append(
@@ -80,7 +92,12 @@ def test_conflict_delete_append(
 ) -> None:
     """This test should start passing once optimistic concurrency control has been implemented."""
     identifier = "default.test_conflict"
-    tbl1 = _create_table(session_catalog, identifier, {"format-version": format_version, TableProperties.COMMIT_NUM_RETRIES: "1"}, [arrow_table_with_null])
+    tbl1 = _create_table(
+        session_catalog,
+        identifier,
+        {"format-version": format_version, TableProperties.COMMIT_NUM_RETRIES: "1"},
+        [arrow_table_with_null],
+    )
     tbl2 = session_catalog.load_table(identifier)
 
     # This is allowed
@@ -98,7 +115,12 @@ def test_conflict_delete_append_with_retry(
 ) -> None:
     """This test should start passing once optimistic concurrency control has been implemented."""
     identifier = "default.test_conflict"
-    tbl1 = _create_table(session_catalog, identifier, {"format-version": format_version, TableProperties.COMMIT_NUM_RETRIES: "2"}, [arrow_table_with_null])
+    tbl1 = _create_table(
+        session_catalog,
+        identifier,
+        {"format-version": format_version, TableProperties.COMMIT_NUM_RETRIES: "2"},
+        [arrow_table_with_null],
+    )
     tbl2 = session_catalog.load_table(identifier)
 
     # This is allowed
@@ -129,7 +151,12 @@ def test_conflict_append_delete(
 ) -> None:
     """This test should start passing once optimistic concurrency control has been implemented."""
     identifier = "default.test_conflict"
-    tbl1 = _create_table(session_catalog, identifier, {"format-version": format_version, TableProperties.COMMIT_NUM_RETRIES: "1"}, [arrow_table_with_null])
+    tbl1 = _create_table(
+        session_catalog,
+        identifier,
+        {"format-version": format_version, TableProperties.COMMIT_NUM_RETRIES: "1"},
+        [arrow_table_with_null],
+    )
     tbl2 = session_catalog.load_table(identifier)
 
     tbl1.append(arrow_table_with_null)
@@ -146,7 +173,12 @@ def test_conflict_append_delete_with_retry(
 ) -> None:
     """This test should start passing once optimistic concurrency control has been implemented."""
     identifier = "default.test_conflict"
-    tbl1 = _create_table(session_catalog, identifier, {"format-version": format_version, TableProperties.COMMIT_NUM_RETRIES: "2"}, [arrow_table_with_null])
+    tbl1 = _create_table(
+        session_catalog,
+        identifier,
+        {"format-version": format_version, TableProperties.COMMIT_NUM_RETRIES: "2"},
+        [arrow_table_with_null],
+    )
     tbl2 = session_catalog.load_table(identifier)
 
     tbl1.append(arrow_table_with_null)
@@ -176,7 +208,12 @@ def test_conflict_append_append(
 ) -> None:
     """This test should start passing once optimistic concurrency control has been implemented."""
     identifier = "default.test_conflict"
-    tbl1 = _create_table(session_catalog, identifier, {"format-version": format_version, TableProperties.COMMIT_NUM_RETRIES: "1"}, [arrow_table_with_null])
+    tbl1 = _create_table(
+        session_catalog,
+        identifier,
+        {"format-version": format_version, TableProperties.COMMIT_NUM_RETRIES: "1"},
+        [arrow_table_with_null],
+    )
     tbl2 = session_catalog.load_table(identifier)
 
     tbl1.append(arrow_table_with_null)
@@ -193,7 +230,12 @@ def test_conflict_append_append_with_retry(
 ) -> None:
     """This test should start passing once optimistic concurrency control has been implemented."""
     identifier = "default.test_conflict"
-    tbl1 = _create_table(session_catalog, identifier, {"format-version": format_version, TableProperties.COMMIT_NUM_RETRIES: "2"}, [arrow_table_with_null])
+    tbl1 = _create_table(
+        session_catalog,
+        identifier,
+        {"format-version": format_version, TableProperties.COMMIT_NUM_RETRIES: "2"},
+        [arrow_table_with_null],
+    )
     tbl2 = session_catalog.load_table(identifier)
 
     tbl1.append(arrow_table_with_null)

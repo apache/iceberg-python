@@ -39,7 +39,6 @@ from pyiceberg.catalog.sql import (
     SqlCatalogBaseTable,
 )
 from pyiceberg.exceptions import (
-    CommitFailedException,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchNamespaceError,
