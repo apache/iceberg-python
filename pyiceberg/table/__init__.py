@@ -282,6 +282,9 @@ class _StaticUpdate:
         self._updates = updates
         self._requirements = requirements
 
+    def _reset_state(self) -> None:
+        """No-op for static updates that don't cache metadata-derived state."""
+
     def _commit(self) -> UpdatesAndRequirements:
         """Return the stored updates and requirements."""
         return self._updates, self._requirements
@@ -1090,14 +1093,8 @@ class Transaction:
         This is called on retry to regenerate all pending updates
         based on the latest table metadata, similar to Java's BaseTransaction.applyUpdates().
 
-        All updates are rebuilt from _pending_updates to ensure consistency.
-        This includes:
-        - Static updates (properties, format version) via _StaticUpdate
-        - Snapshot operations via snapshot producers with _reset_state()
-
-        NOTE: Every operation that should survive retry must be tracked in _pending_updates.
-        Simple operations use _StaticUpdate wrapper, complex operations (like snapshot
-        producers) implement _reset_state() and _commit() directly.
+        NOTE: When adding new cached properties to UpdateTableMetadata subclasses,
+        ensure they are cleared in _reset_state() to avoid stale data on retry.
         """
         self._table.refresh()
 
@@ -1106,11 +1103,7 @@ class Transaction:
         self._working_metadata = self._table.metadata
 
         for pending_update in self._pending_updates:
-            # NOTE: When adding new cached properties to snapshot producers,
-            # ensure they are cleared in _reset_state() to avoid stale data on retry
-            if hasattr(pending_update, "_reset_state"):
-                pending_update._reset_state()
-
+            pending_update._reset_state()
             updates, requirements = pending_update._commit()
             self._updates += updates
             self._working_metadata = update_table_metadata(self._working_metadata, updates)

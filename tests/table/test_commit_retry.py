@@ -1126,8 +1126,6 @@ class TestUpdateSpecRetry:
 
 
 class TestUpdateSchemaRetry:
-    """Tests for UpdateSchema retry behavior (Java-like behavior)."""
-
     def test_update_schema_retried_on_conflict(self, catalog: SqlCatalog, schema: Schema) -> None:
         """Test that UpdateSchema operations are retried on CommitFailedException."""
         from pyiceberg.types import StringType
@@ -1273,3 +1271,196 @@ class TestUpdateSchemaRetry:
         assert table.schema().schema_id == 1
         assert len(table.schema().fields) == 2
         assert table.schema().find_field("new_col").field_type == StringType()
+
+
+class TestUpdateSortOrderRetry:
+    def test_update_sort_order_retried_on_conflict(self, catalog: SqlCatalog, schema: Schema) -> None:
+        """Test that UpdateSortOrder operations are retried on CommitFailedException."""
+        from pyiceberg.transforms import IdentityTransform
+
+        table = catalog.create_table(
+            "default.test_sort_order_retry",
+            schema=schema,
+            properties={
+                TableProperties.COMMIT_NUM_RETRIES: "3",
+                TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+                TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "10",
+            },
+        )
+
+        original_commit = catalog.commit_table
+        commit_count = 0
+
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
+            nonlocal commit_count
+            commit_count += 1
+            if commit_count == 1:
+                raise CommitFailedException("Simulated sort order conflict")
+            return original_commit(tbl, requirements, updates)
+
+        with patch.object(catalog, "commit_table", side_effect=mock_commit):
+            with table.update_sort_order() as update_sort_order:
+                update_sort_order.asc("id", IdentityTransform())
+
+        assert commit_count == 2
+
+        # Verify sort order was updated
+        table.refresh()
+        sort_order = table.sort_order()
+        assert sort_order.order_id == 1
+        assert len(sort_order.fields) == 1
+        assert sort_order.fields[0].source_id == 1  # "id" column
+
+    def test_update_sort_order_resolves_conflict_on_retry(self, catalog: SqlCatalog, schema: Schema) -> None:
+        """Test that sort order update can resolve conflicts via retry."""
+        from pyiceberg.table.sorting import SortDirection
+        from pyiceberg.transforms import IdentityTransform
+
+        table = catalog.create_table(
+            "default.test_sort_order_conflict_resolved",
+            schema=schema,
+            properties={
+                TableProperties.COMMIT_NUM_RETRIES: "5",
+                TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+                TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "10",
+            },
+        )
+
+        with table.update_sort_order() as update_sort_order:
+            update_sort_order.asc("id", IdentityTransform())
+
+        table2 = catalog.load_table("default.test_sort_order_conflict_resolved")
+        with table2.update_sort_order() as update_sort_order2:
+            update_sort_order2.desc("id", IdentityTransform())
+
+        assert table.sort_order().order_id == 1
+        assert table2.sort_order().order_id == 2
+
+        original_commit = catalog.commit_table
+        commit_count = 0
+
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
+            nonlocal commit_count
+            commit_count += 1
+            return original_commit(tbl, requirements, updates)
+
+        with patch.object(catalog, "commit_table", side_effect=mock_commit):
+            with table.update_sort_order() as update_sort_order:
+                update_sort_order.asc("id", IdentityTransform())
+
+        assert commit_count == 2
+
+        table.refresh()
+        sort_order = table.sort_order()
+        assert sort_order.order_id == 1  # Reused existing order with same fields
+        assert len(sort_order.fields) == 1
+        assert sort_order.fields[0].direction == SortDirection.ASC
+
+    def test_transaction_with_sort_order_change_and_append_retries(
+        self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table
+    ) -> None:
+        """Test that a transaction with sort order change and append handles retry correctly."""
+        from pyiceberg.transforms import IdentityTransform
+
+        table = catalog.create_table(
+            "default.test_transaction_sort_order_and_append",
+            schema=schema,
+            properties={
+                TableProperties.COMMIT_NUM_RETRIES: "3",
+                TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+                TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "10",
+            },
+        )
+
+        original_commit = catalog.commit_table
+        commit_count = 0
+        captured_updates: list[tuple[TableUpdate, ...]] = []
+
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
+            nonlocal commit_count
+            commit_count += 1
+            captured_updates.append(updates)
+            if commit_count == 1:
+                raise CommitFailedException("Simulated conflict")
+            return original_commit(tbl, requirements, updates)
+
+        with patch.object(catalog, "commit_table", side_effect=mock_commit):
+            with table.transaction() as txn:
+                with txn.update_sort_order() as update_sort_order:
+                    update_sort_order.asc("id", IdentityTransform())
+                txn.append(arrow_table)
+
+        assert commit_count == 2
+
+        first_attempt_update_types = [type(u).__name__ for u in captured_updates[0]]
+        assert "AddSortOrderUpdate" in first_attempt_update_types
+        assert "AddSnapshotUpdate" in first_attempt_update_types
+
+        retry_attempt_update_types = [type(u).__name__ for u in captured_updates[1]]
+        assert "AddSortOrderUpdate" in retry_attempt_update_types
+        assert "AddSnapshotUpdate" in retry_attempt_update_types
+
+        assert len(table.scan().to_arrow()) == 3
+
+        sort_order = table.sort_order()
+        assert sort_order.order_id == 1
+        assert len(sort_order.fields) == 1
+        assert sort_order.fields[0].source_id == 1  # "id" column
+
+    def test_sort_order_column_name_re_resolved_on_retry(self, catalog: SqlCatalog, schema: Schema) -> None:
+        """Test that column names are re-resolved from refreshed schema on retry.
+
+        This ensures that if the schema changes between retries (e.g., column ID changes),
+        the sort order will use the correct field ID from the refreshed schema.
+        """
+        from pyiceberg.transforms import IdentityTransform
+
+        table = catalog.create_table(
+            "default.test_sort_order_column_re_resolved",
+            schema=schema,
+            properties={
+                TableProperties.COMMIT_NUM_RETRIES: "3",
+                TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+                TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "10",
+            },
+        )
+
+        original_commit = catalog.commit_table
+        commit_count = 0
+        captured_sort_fields: list[list[int]] = []
+
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
+            nonlocal commit_count
+            commit_count += 1
+
+            # Extract sort field source IDs from updates
+            from pyiceberg.table.update import AddSortOrderUpdate
+
+            for update in updates:
+                if isinstance(update, AddSortOrderUpdate):
+                    source_ids = [f.source_id for f in update.sort_order.fields]
+                    captured_sort_fields.append(source_ids)
+
+            if commit_count == 1:
+                raise CommitFailedException("Simulated conflict")
+            return original_commit(tbl, requirements, updates)
+
+        with patch.object(catalog, "commit_table", side_effect=mock_commit):
+            with table.update_sort_order() as update_sort_order:
+                update_sort_order.asc("id", IdentityTransform())
+
+        assert commit_count == 2
+        assert len(captured_sort_fields) == 2
+
+        # Both attempts should resolve "id" to the same source_id (1)
+        # This verifies the column name is being re-resolved correctly
+        assert captured_sort_fields[0] == [1]  # First attempt
+        assert captured_sort_fields[1] == [1]  # Retry attempt

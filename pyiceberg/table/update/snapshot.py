@@ -972,6 +972,9 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         self._updates = ()
         self._requirements = ()
 
+    def _reset_state(self) -> None:
+        """No-op: updates contain user-provided snapshot IDs that don't need refresh."""
+
     def _commit(self) -> UpdatesAndRequirements:
         """Apply the pending changes and commit."""
         return self._updates, self._requirements
@@ -1092,6 +1095,15 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         self._updates = ()
         self._requirements = ()
         self._snapshot_ids_to_expire = set()
+
+    def _reset_state(self) -> None:
+        """Clear accumulated updates for retry.
+
+        The _snapshot_ids_to_expire are user-provided and preserved.
+        The _updates are cleared so _commit() can rebuild them with
+        refreshed protected snapshot IDs.
+        """
+        self._updates = ()
 
     def _commit(self) -> UpdatesAndRequirements:
         """
