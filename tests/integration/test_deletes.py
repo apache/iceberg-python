@@ -43,7 +43,7 @@ def run_spark_commands(spark: SparkSession, sqls: list[str]) -> None:
 def test_table(session_catalog: RestCatalog) -> Generator[Table, None, None]:
     identifier = "default.__test_table"
     arrow_table = pa.Table.from_arrays([pa.array([1, 2, 3, 4, 5]), pa.array(["a", "b", "c", "d", "e"])], names=["idx", "value"])
-    test_table = session_catalog.create_table_if_not_exists(
+    test_table = session_catalog.create_table(
         identifier,
         schema=Schema(
             NestedField(1, "idx", LongType()),
