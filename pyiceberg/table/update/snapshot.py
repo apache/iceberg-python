@@ -25,7 +25,7 @@ from collections.abc import Callable
 from concurrent.futures import Future
 from datetime import datetime
 from functools import cached_property
-from typing import TYPE_CHECKING, Generic
+from typing import TYPE_CHECKING, Any, Generic
 
 from sortedcontainers import SortedList
 
@@ -440,31 +440,19 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
 
         properties = self._transaction.table_metadata.properties
 
+        # Use explicit None checks to honor zero-valued properties
+        max_attempts = property_as_int(properties, TableProperties.COMMIT_NUM_RETRIES)
+        min_wait_ms = property_as_int(properties, TableProperties.COMMIT_MIN_RETRY_WAIT_MS)
+        max_wait_ms = property_as_int(properties, TableProperties.COMMIT_MAX_RETRY_WAIT_MS)
+        total_timeout_ms = property_as_int(properties, TableProperties.COMMIT_TOTAL_RETRY_TIME_MS)
+
         retry_config = RetryConfig(
-            max_attempts=property_as_int(
-                properties,
-                TableProperties.COMMIT_NUM_RETRIES,
-                TableProperties.COMMIT_NUM_RETRIES_DEFAULT,
-            )
-            or TableProperties.COMMIT_NUM_RETRIES_DEFAULT,
-            min_wait_ms=property_as_int(
-                properties,
-                TableProperties.COMMIT_MIN_RETRY_WAIT_MS,
-                TableProperties.COMMIT_MIN_RETRY_WAIT_MS_DEFAULT,
-            )
-            or TableProperties.COMMIT_MIN_RETRY_WAIT_MS_DEFAULT,
-            max_wait_ms=property_as_int(
-                properties,
-                TableProperties.COMMIT_MAX_RETRY_WAIT_MS,
-                TableProperties.COMMIT_MAX_RETRY_WAIT_MS_DEFAULT,
-            )
-            or TableProperties.COMMIT_MAX_RETRY_WAIT_MS_DEFAULT,
-            total_timeout_ms=property_as_int(
-                properties,
-                TableProperties.COMMIT_TOTAL_RETRY_TIME_MS,
-                TableProperties.COMMIT_TOTAL_RETRY_TIME_MS_DEFAULT,
-            )
-            or TableProperties.COMMIT_TOTAL_RETRY_TIME_MS_DEFAULT,
+            max_attempts=max_attempts if max_attempts is not None else TableProperties.COMMIT_NUM_RETRIES_DEFAULT,
+            min_wait_ms=min_wait_ms if min_wait_ms is not None else TableProperties.COMMIT_MIN_RETRY_WAIT_MS_DEFAULT,
+            max_wait_ms=max_wait_ms if max_wait_ms is not None else TableProperties.COMMIT_MAX_RETRY_WAIT_MS_DEFAULT,
+            total_timeout_ms=total_timeout_ms
+            if total_timeout_ms is not None
+            else TableProperties.COMMIT_TOTAL_RETRY_TIME_MS_DEFAULT,
         )
 
         first_attempt = True
@@ -966,28 +954,38 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
 
     _updates: tuple[TableUpdate, ...]
     _requirements: tuple[TableRequirement, ...]
+    # Store operations for retry support
+    _operations: list[tuple[Any, ...]]
 
     def __init__(self, transaction: Transaction) -> None:
         super().__init__(transaction)
         self._updates = ()
         self._requirements = ()
+        self._operations = []
 
     def _reset_state(self) -> None:
-        """No-op: updates contain user-provided snapshot IDs that don't need refresh."""
+        """Reset state for retry, rebuilding updates and requirements from refreshed metadata."""
+        self._updates = ()
+        self._requirements = ()
+
+        for operation in self._operations:
+            op_type = operation[0]
+            if op_type == "remove_ref":
+                _, ref_name = operation
+                self._do_remove_ref_snapshot(ref_name)
+            elif op_type == "create_tag":
+                _, snapshot_id, tag_name, max_ref_age_ms = operation
+                self._do_create_tag(snapshot_id, tag_name, max_ref_age_ms)
+            elif op_type == "create_branch":
+                _, snapshot_id, branch_name, max_ref_age_ms, max_snapshot_age_ms, min_snapshots_to_keep = operation
+                self._do_create_branch(snapshot_id, branch_name, max_ref_age_ms, max_snapshot_age_ms, min_snapshots_to_keep)
 
     def _commit(self) -> UpdatesAndRequirements:
         """Apply the pending changes and commit."""
         return self._updates, self._requirements
 
-    def _remove_ref_snapshot(self, ref_name: str) -> ManageSnapshots:
-        """Remove a snapshot ref.
-
-        Args:
-            ref_name: branch / tag name to remove
-        Stages the updates and requirements for the remove-snapshot-ref.
-        Returns
-            This method for chaining
-        """
+    def _do_remove_ref_snapshot(self, ref_name: str) -> None:
+        """Remove a snapshot ref (internal implementation for retry support)."""
         updates = (RemoveSnapshotRefUpdate(ref_name=ref_name),)
         requirements = (
             AssertRefSnapshotId(
@@ -999,20 +997,14 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         )
         self._updates += updates
         self._requirements += requirements
+
+    def _remove_ref_snapshot(self, ref_name: str) -> ManageSnapshots:
+        self._operations.append(("remove_ref", ref_name))
+        self._do_remove_ref_snapshot(ref_name)
         return self
 
-    def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: int | None = None) -> ManageSnapshots:
-        """
-        Create a new tag pointing to the given snapshot id.
-
-        Args:
-            snapshot_id (int): snapshot id of the existing snapshot to tag
-            tag_name (str): name of the tag
-            max_ref_age_ms (Optional[int]): max ref age in milliseconds
-
-        Returns:
-            This for method chaining
-        """
+    def _do_create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: int | None) -> None:
+        """Create a tag (internal implementation for retry support)."""
         update, requirement = self._transaction._set_ref_snapshot(
             snapshot_id=snapshot_id,
             ref_name=tag_name,
@@ -1021,6 +1013,10 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         )
         self._updates += update
         self._requirements += requirement
+
+    def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: int | None = None) -> ManageSnapshots:
+        self._operations.append(("create_tag", snapshot_id, tag_name, max_ref_age_ms))
+        self._do_create_tag(snapshot_id, tag_name, max_ref_age_ms)
         return self
 
     def remove_tag(self, tag_name: str) -> ManageSnapshots:
@@ -1033,6 +1029,25 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             This for method chaining
         """
         return self._remove_ref_snapshot(ref_name=tag_name)
+
+    def _do_create_branch(
+        self,
+        snapshot_id: int,
+        branch_name: str,
+        max_ref_age_ms: int | None,
+        max_snapshot_age_ms: int | None,
+        min_snapshots_to_keep: int | None,
+    ) -> None:
+        update, requirement = self._transaction._set_ref_snapshot(
+            snapshot_id=snapshot_id,
+            ref_name=branch_name,
+            type="branch",
+            max_ref_age_ms=max_ref_age_ms,
+            max_snapshot_age_ms=max_snapshot_age_ms,
+            min_snapshots_to_keep=min_snapshots_to_keep,
+        )
+        self._updates += update
+        self._requirements += requirement
 
     def create_branch(
         self,
@@ -1054,16 +1069,10 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         Returns:
             This for method chaining
         """
-        update, requirement = self._transaction._set_ref_snapshot(
-            snapshot_id=snapshot_id,
-            ref_name=branch_name,
-            type="branch",
-            max_ref_age_ms=max_ref_age_ms,
-            max_snapshot_age_ms=max_snapshot_age_ms,
-            min_snapshots_to_keep=min_snapshots_to_keep,
+        self._operations.append(
+            ("create_branch", snapshot_id, branch_name, max_ref_age_ms, max_snapshot_age_ms, min_snapshots_to_keep)
         )
-        self._updates += update
-        self._requirements += requirement
+        self._do_create_branch(snapshot_id, branch_name, max_ref_age_ms, max_snapshot_age_ms, min_snapshots_to_keep)
         return self
 
     def remove_branch(self, branch_name: str) -> ManageSnapshots:

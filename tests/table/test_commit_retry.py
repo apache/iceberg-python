@@ -1775,3 +1775,488 @@ class TestUpdateSortOrderRetry:
         sort_order = table.sort_order()
         assert len(sort_order.fields) == 1
         assert sort_order.fields[0].source_id == 2  # New "id" column
+
+
+class TestCombinedOperationsRetry:
+    """Tests for retry behavior with combined operations in a single transaction.
+
+    These tests verify that multiple different operations (schema changes, spec changes,
+    sort order changes, data operations) work correctly together when retries occur.
+    """
+
+    def test_transaction_schema_and_spec_change_on_retry(
+        self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table
+    ) -> None:
+        """Test that schema change and partition spec change together handle retry correctly."""
+        from pyiceberg.transforms import IdentityTransform
+        from pyiceberg.types import StringType
+
+        table = catalog.create_table(
+            "default.test_combined_schema_and_spec",
+            schema=schema,
+            properties={
+                TableProperties.COMMIT_NUM_RETRIES: "3",
+                TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+                TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "10",
+            },
+        )
+
+        original_commit = catalog.commit_table
+        commit_count = 0
+
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
+            nonlocal commit_count
+            commit_count += 1
+            if commit_count == 1:
+                raise CommitFailedException("Simulated conflict")
+            return original_commit(tbl, requirements, updates)
+
+        with patch.object(catalog, "commit_table", side_effect=mock_commit):
+            with table.transaction() as txn:
+                with txn.update_schema() as update_schema:
+                    update_schema.add_column("category", StringType())
+                with txn.update_spec() as update_spec:
+                    update_spec.add_field("id", IdentityTransform(), "id_partition")
+
+        assert commit_count == 2
+
+        table.refresh()
+        # Verify schema change
+        assert "category" in [f.name for f in table.schema().fields]
+        # Verify spec change
+        assert len(table.spec().fields) == 1
+        assert table.spec().fields[0].name == "id_partition"
+
+    def test_transaction_schema_spec_and_sort_order_on_retry(self, catalog: SqlCatalog, schema: Schema) -> None:
+        """Test that schema, spec, and sort order changes together handle retry correctly."""
+        from pyiceberg.transforms import IdentityTransform
+        from pyiceberg.types import StringType
+
+        table = catalog.create_table(
+            "default.test_combined_schema_spec_sort",
+            schema=schema,
+            properties={
+                TableProperties.COMMIT_NUM_RETRIES: "3",
+                TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+                TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "10",
+            },
+        )
+
+        original_commit = catalog.commit_table
+        commit_count = 0
+
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
+            nonlocal commit_count
+            commit_count += 1
+            if commit_count == 1:
+                raise CommitFailedException("Simulated conflict")
+            return original_commit(tbl, requirements, updates)
+
+        with patch.object(catalog, "commit_table", side_effect=mock_commit):
+            with table.transaction() as txn:
+                with txn.update_schema() as update_schema:
+                    update_schema.add_column("name", StringType())
+                with txn.update_spec() as update_spec:
+                    update_spec.add_field("id", IdentityTransform(), "id_partition")
+                with txn.update_sort_order() as update_sort_order:
+                    update_sort_order.asc("id", IdentityTransform())
+
+        assert commit_count == 2
+
+        table.refresh()
+        # Verify schema change
+        assert "name" in [f.name for f in table.schema().fields]
+        # Verify spec change
+        assert len(table.spec().fields) == 1
+        # Verify sort order change
+        assert len(table.sort_order().fields) == 1
+
+    def test_transaction_all_operations_with_append_on_retry(
+        self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table
+    ) -> None:
+        """Test schema, spec, sort order changes, and data append together handle retry correctly."""
+        from pyiceberg.transforms import IdentityTransform
+        from pyiceberg.types import StringType
+
+        table = catalog.create_table(
+            "default.test_combined_all_with_append",
+            schema=schema,
+            properties={
+                TableProperties.COMMIT_NUM_RETRIES: "3",
+                TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+                TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "10",
+            },
+        )
+
+        original_commit = catalog.commit_table
+        commit_count = 0
+        captured_snapshot_ids: list[int] = []
+
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
+            nonlocal commit_count
+            commit_count += 1
+
+            # Capture snapshot IDs from AddSnapshotUpdate
+            for update in updates:
+                if hasattr(update, "snapshot") and update.snapshot is not None:
+                    captured_snapshot_ids.append(update.snapshot.snapshot_id)
+
+            if commit_count == 1:
+                raise CommitFailedException("Simulated conflict")
+            return original_commit(tbl, requirements, updates)
+
+        with patch.object(catalog, "commit_table", side_effect=mock_commit):
+            with table.transaction() as txn:
+                with txn.update_schema() as update_schema:
+                    update_schema.add_column("extra_col", StringType())
+                with txn.update_spec() as update_spec:
+                    update_spec.add_field("id", IdentityTransform(), "id_part")
+                with txn.update_sort_order() as update_sort_order:
+                    update_sort_order.asc("id", IdentityTransform())
+                txn.append(arrow_table)
+
+        assert commit_count == 2
+
+        table.refresh()
+        # Verify schema
+        assert "extra_col" in [f.name for f in table.schema().fields]
+        # Verify spec
+        assert len(table.spec().fields) == 1
+        # Verify sort order
+        assert len(table.sort_order().fields) == 1
+        # Verify data was appended
+        assert table.current_snapshot() is not None
+        # Verify snapshot ID changed between attempts
+        assert len(captured_snapshot_ids) == 2
+        assert captured_snapshot_ids[0] != captured_snapshot_ids[1]
+
+    def test_transaction_multiple_schema_operations_on_retry(self, catalog: SqlCatalog, schema: Schema) -> None:
+        """Test multiple schema operations (add, delete, rename, update) together handle retry."""
+        from pyiceberg.types import StringType
+
+        # Create table with multiple columns
+        multi_col_schema = Schema(
+            NestedField(field_id=1, name="id", field_type=LongType(), required=False),
+            NestedField(field_id=2, name="old_name", field_type=LongType(), required=False),
+            NestedField(field_id=3, name="to_delete", field_type=LongType(), required=False),
+        )
+
+        table = catalog.create_table(
+            "default.test_combined_multiple_schema_ops",
+            schema=multi_col_schema,
+            properties={
+                TableProperties.COMMIT_NUM_RETRIES: "3",
+                TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+                TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "10",
+            },
+        )
+
+        original_commit = catalog.commit_table
+        commit_count = 0
+
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
+            nonlocal commit_count
+            commit_count += 1
+            if commit_count == 1:
+                raise CommitFailedException("Simulated conflict")
+            return original_commit(tbl, requirements, updates)
+
+        with patch.object(catalog, "commit_table", side_effect=mock_commit):
+            with table.update_schema() as update_schema:
+                # Multiple operations in specific order
+                update_schema.add_column("new_col", StringType())
+                update_schema.delete_column("to_delete")
+                update_schema.rename_column("old_name", "new_name")
+                update_schema.update_column("id", doc="Updated documentation")
+
+        assert commit_count == 2
+
+        table.refresh()
+        field_names = [f.name for f in table.schema().fields]
+        # Verify all operations were applied
+        assert "new_col" in field_names
+        assert "to_delete" not in field_names
+        assert "old_name" not in field_names
+        assert "new_name" in field_names
+        assert table.schema().find_field("id").doc == "Updated documentation"
+
+    def test_transaction_spec_add_remove_rename_on_retry(self, catalog: SqlCatalog, schema: Schema) -> None:
+        """Test partition spec add, remove, and rename operations together handle retry."""
+        from pyiceberg.transforms import IdentityTransform
+
+        # Create table with initial partition spec
+        table = catalog.create_table(
+            "default.test_combined_spec_ops",
+            schema=schema,
+            properties={
+                TableProperties.COMMIT_NUM_RETRIES: "3",
+                TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+                TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "10",
+            },
+        )
+
+        # First, add a partition field
+        with table.update_spec() as update_spec:
+            update_spec.add_field("id", IdentityTransform(), "original_partition")
+
+        original_commit = catalog.commit_table
+        commit_count = 0
+
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
+            nonlocal commit_count
+            commit_count += 1
+            if commit_count == 1:
+                raise CommitFailedException("Simulated conflict")
+            return original_commit(tbl, requirements, updates)
+
+        with patch.object(catalog, "commit_table", side_effect=mock_commit):
+            with table.update_spec() as update_spec:
+                update_spec.rename_field("original_partition", "renamed_partition")
+
+        assert commit_count == 2
+
+        table.refresh()
+        # Verify rename was applied
+        partition_names = [f.name for f in table.spec().fields]
+        assert "renamed_partition" in partition_names
+        assert "original_partition" not in partition_names
+
+    def test_transaction_with_concurrent_schema_change_and_append(
+        self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table
+    ) -> None:
+        """Test that transaction handles concurrent schema changes during retry with append."""
+        from pyiceberg.types import StringType
+
+        table_name = "default.test_concurrent_schema_and_append"
+        table = catalog.create_table(
+            table_name,
+            schema=schema,
+            properties={
+                TableProperties.COMMIT_NUM_RETRIES: "3",
+                TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+                TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "10",
+            },
+        )
+
+        original_commit = catalog.commit_table
+        commit_count = 0
+        bypass_mock = False
+
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
+            nonlocal commit_count, bypass_mock
+            if bypass_mock:
+                return original_commit(tbl, requirements, updates)
+
+            commit_count += 1
+            if commit_count == 1:
+                # Simulate concurrent schema change
+                bypass_mock = True
+                try:
+                    concurrent_table = catalog.load_table(table_name)
+                    with concurrent_table.update_schema() as concurrent_schema:
+                        concurrent_schema.add_column("concurrent_col", StringType())
+                finally:
+                    bypass_mock = False
+                raise CommitFailedException("Simulated conflict due to concurrent change")
+            return original_commit(tbl, requirements, updates)
+
+        with patch.object(catalog, "commit_table", side_effect=mock_commit):
+            with table.transaction() as txn:
+                with txn.update_schema() as update_schema:
+                    update_schema.add_column("my_col", StringType())
+                txn.append(arrow_table)
+
+        assert commit_count == 2
+
+        table.refresh()
+        field_names = [f.name for f in table.schema().fields]
+        # Both columns should exist
+        assert "concurrent_col" in field_names
+        assert "my_col" in field_names
+        # Data should be appended
+        assert table.current_snapshot() is not None
+
+    def test_transaction_multiple_appends_with_schema_change_on_retry(
+        self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table
+    ) -> None:
+        """Test multiple appends with schema change in same transaction handle retry correctly."""
+        from pyiceberg.types import StringType
+
+        table = catalog.create_table(
+            "default.test_multi_append_with_schema",
+            schema=schema,
+            properties={
+                TableProperties.COMMIT_NUM_RETRIES: "3",
+                TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+                TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "10",
+            },
+        )
+
+        original_commit = catalog.commit_table
+        commit_count = 0
+        captured_snapshot_count: list[int] = []
+
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
+            nonlocal commit_count
+            commit_count += 1
+
+            # Count snapshot updates
+            snapshot_updates = sum(1 for u in updates if hasattr(u, "snapshot") and u.snapshot is not None)
+            captured_snapshot_count.append(snapshot_updates)
+
+            if commit_count == 1:
+                raise CommitFailedException("Simulated conflict")
+            return original_commit(tbl, requirements, updates)
+
+        with patch.object(catalog, "commit_table", side_effect=mock_commit):
+            with table.transaction() as txn:
+                with txn.update_schema() as update_schema:
+                    update_schema.add_column("added_col", StringType())
+                txn.append(arrow_table)
+                txn.append(arrow_table)
+
+        assert commit_count == 2
+
+        table.refresh()
+        # Verify schema change
+        assert "added_col" in [f.name for f in table.schema().fields]
+        # Verify both appends created snapshots (2 snapshots per attempt)
+        assert captured_snapshot_count[0] == 2
+        assert captured_snapshot_count[1] == 2
+        # Verify snapshots exist
+        assert len(list(table.snapshots())) == 2
+
+    def test_manage_snapshots_remove_tag_with_concurrent_change_on_retry(
+        self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table
+    ) -> None:
+        """Test that ManageSnapshots remove_tag handles concurrent snapshot changes on retry.
+
+        This test exposes a bug where ManageSnapshots._reset_state() is a no-op,
+        causing stale AssertRefSnapshotId requirements to be used on retry.
+
+        Scenario:
+        1. Create table with snapshot and tag
+        2. First remove_tag attempt captures current snapshot_id in AssertRefSnapshotId
+        3. Concurrent writer adds new snapshot and moves the tag
+        4. Retry should use refreshed snapshot_id, but currently uses stale one
+        """
+        table_name = "default.test_manage_snapshots_concurrent"
+        table = catalog.create_table(
+            table_name,
+            schema=schema,
+            properties={
+                TableProperties.COMMIT_NUM_RETRIES: "3",
+                TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+                TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "10",
+            },
+        )
+
+        # Create initial snapshot and tag
+        table.append(arrow_table)
+        table.refresh()
+        current_snapshot = table.current_snapshot()
+        assert current_snapshot is not None
+        initial_snapshot_id = current_snapshot.snapshot_id
+
+        with table.manage_snapshots() as ms:
+            ms.create_tag(initial_snapshot_id, "test_tag")
+
+        original_commit = catalog.commit_table
+        commit_count = 0
+        bypass_mock = False
+
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
+            nonlocal commit_count, bypass_mock
+            if bypass_mock:
+                return original_commit(tbl, requirements, updates)
+
+            commit_count += 1
+            if commit_count == 1:
+                # Simulate concurrent change: add new snapshot and update the tag
+                bypass_mock = True
+                try:
+                    concurrent_table = catalog.load_table(table_name)
+                    concurrent_table.append(arrow_table)
+                    concurrent_table.refresh()
+                    concurrent_snapshot = concurrent_table.current_snapshot()
+                    assert concurrent_snapshot is not None
+                    new_snapshot_id = concurrent_snapshot.snapshot_id
+
+                    # Move the tag to point to new snapshot
+                    with concurrent_table.manage_snapshots() as concurrent_ms:
+                        concurrent_ms.remove_tag("test_tag")
+                    with concurrent_table.manage_snapshots() as concurrent_ms:
+                        concurrent_ms.create_tag(new_snapshot_id, "test_tag")
+                finally:
+                    bypass_mock = False
+                raise CommitFailedException("Simulated conflict")
+            return original_commit(tbl, requirements, updates)
+
+        # This should succeed on retry with refreshed requirement
+        with patch.object(catalog, "commit_table", side_effect=mock_commit):
+            with table.manage_snapshots() as ms:
+                ms.remove_tag("test_tag")
+
+        assert commit_count == 2
+
+        # Verify tag was removed
+        table.refresh()
+        assert "test_tag" not in table.metadata.refs
+
+    def test_manage_snapshots_create_branch_on_retry(self, catalog: SqlCatalog, schema: Schema, arrow_table: pa.Table) -> None:
+        """Test ManageSnapshots create_branch handles retry correctly."""
+        table = catalog.create_table(
+            "default.test_manage_snapshots_create_branch",
+            schema=schema,
+            properties={
+                TableProperties.COMMIT_NUM_RETRIES: "3",
+                TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+                TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "10",
+            },
+        )
+
+        # Create initial snapshot
+        table.append(arrow_table)
+        table.refresh()
+        current_snapshot = table.current_snapshot()
+        assert current_snapshot is not None
+        snapshot_id = current_snapshot.snapshot_id
+
+        original_commit = catalog.commit_table
+        commit_count = 0
+
+        def mock_commit(
+            tbl: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+        ) -> CommitTableResponse:
+            nonlocal commit_count
+            commit_count += 1
+            if commit_count == 1:
+                raise CommitFailedException("Simulated conflict")
+            return original_commit(tbl, requirements, updates)
+
+        with patch.object(catalog, "commit_table", side_effect=mock_commit):
+            with table.manage_snapshots() as ms:
+                ms.create_branch(snapshot_id, "test_branch")
+
+        assert commit_count == 2
+
+        table.refresh()
+        # Verify branch was created
+        assert "test_branch" in table.metadata.refs
+        assert table.metadata.refs["test_branch"].snapshot_id == snapshot_id
