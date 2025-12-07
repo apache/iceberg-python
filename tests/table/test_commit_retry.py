@@ -1775,4 +1775,3 @@ class TestUpdateSortOrderRetry:
         sort_order = table.sort_order()
         assert len(sort_order.fields) == 1
         assert sort_order.fields[0].source_id == 2  # New "id" column
-
