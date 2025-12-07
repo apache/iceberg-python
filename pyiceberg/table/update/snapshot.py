@@ -1109,10 +1109,11 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         """Clear accumulated updates for retry.
 
         The _snapshot_ids_to_expire are user-provided and preserved.
-        The _updates are cleared so _commit() can rebuild them with
+        The _updates and _requirements are cleared so _commit() can rebuild them with
         refreshed protected snapshot IDs.
         """
         self._updates = ()
+        self._requirements = ()
 
     def _commit(self) -> UpdatesAndRequirements:
         """

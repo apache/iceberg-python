@@ -146,9 +146,13 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         """
         self._init_state_from_metadata(self._provided_schema)
 
-        # Refresh name mapping from the latest table metadata to avoid overwriting concurrent changes
+        # Refresh name mapping from the latest table metadata to avoid overwriting concurrent changes.
         if self._name_mapping is not None:
-            self._name_mapping = self._transaction.table_metadata.name_mapping()
+            refreshed_mapping = self._transaction.table_metadata.name_mapping()
+
+            # Check refreshed_mapping because if another transaction removes schema.name-mapping.default, refreshed_mapping may become null.
+            if refreshed_mapping is not None:
+                self._name_mapping = refreshed_mapping
 
         for operation in self._operations:
             op_type = operation[0]

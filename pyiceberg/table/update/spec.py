@@ -153,7 +153,8 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
         transform: str | Transform[Any, Any],
         partition_field_name: str | None = None,
     ) -> UpdateSpec:
-        transform = parse_transform(transform)
+        if isinstance(transform, str):
+            transform = parse_transform(transform)
         self._operations.append(("add", source_column_name, transform, partition_field_name))
         self._do_add_field(source_column_name, transform, partition_field_name)
         return self
