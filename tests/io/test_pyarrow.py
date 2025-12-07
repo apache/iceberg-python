@@ -2852,7 +2852,7 @@ def test_task_to_record_batches_nanos(format_version: TableVersion, tmpdir: str)
             projected_schema=table_schema,
             table_schema=table_schema,
             projected_field_ids={1},
-            positional_deletes=None,
+            deletes=None,
             case_sensitive=True,
             format_version=format_version,
         )
@@ -4722,7 +4722,7 @@ def write_equality_delete_file(tmp_path: str, table_schema_simple: Schema) -> st
 
 
 def test_read_equality_deletes_file(write_equality_delete_file: str) -> None:
-    deletes = _read_eq_deletes(
+    deletes = _read_deletes(
         PyArrowFileIO(),
         DataFile.from_args(
             file_path=write_equality_delete_file,
@@ -4950,81 +4950,3 @@ def test_mor_read_with_duplicate_deletes(example_task: FileScanTask, table_schem
     assert result["bar"].to_pylist() == [1, 3]
     assert result["foo"].to_pylist() == ["a", "c"]
     assert result["baz"].to_pylist() == [True, None]
-
-
-@pytest.mark.parametrize("format_version", [1, 2, 3])
-def test_task_to_record_batches_nanos(format_version: TableVersion, tmpdir: str) -> None:
-    arrow_table = pa.table(
-        [
-            pa.array(
-                [
-                    datetime(2025, 8, 14, 12, 0, 0),
-                    datetime(2025, 8, 14, 13, 0, 0),
-                ],
-                type=pa.timestamp("ns"),
-            )
-        ],
-        pa.schema((pa.field("ts_field", pa.timestamp("ns"), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),)),
-    )
-
-    data_file = _write_table_to_data_file(f"{tmpdir}/test_task_to_record_batches_nanos.parquet", arrow_table.schema, arrow_table)
-
-    if format_version <= 2:
-        table_schema = Schema(NestedField(1, "ts_field", TimestampType(), required=False))
-    else:
-        table_schema = Schema(NestedField(1, "ts_field", TimestampNanoType(), required=False))
-
-    actual_result = list(
-        _task_to_record_batches(
-            PyArrowFileIO(),
-            FileScanTask(data_file),
-            bound_row_filter=AlwaysTrue(),
-            projected_schema=table_schema,
-            projected_field_ids={1},
-            deletes=None,
-            case_sensitive=True,
-            format_version=format_version,
-        )
-    )[0]
-
-    def _expected_batch(unit: str) -> pa.RecordBatch:
-        return pa.record_batch(
-            [
-                pa.array(
-                    [
-                        datetime(2025, 8, 14, 12, 0, 0),
-                        datetime(2025, 8, 14, 13, 0, 0),
-                    ],
-                    type=pa.timestamp(unit),
-                )
-            ],
-            names=["ts_field"],
-        )
-
-    assert _expected_batch("ns" if format_version > 2 else "us").equals(actual_result)
-
-
-def test_parse_location_defaults() -> None:
-    """Test that parse_location uses defaults."""
-
-    from pyiceberg.io.pyarrow import PyArrowFileIO
-
-    # if no default scheme or netloc is provided, use file scheme and empty netloc
-    scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar")
-    assert scheme == "file"
-    assert netloc == ""
-    assert path == "/foo/bar"
-
-    scheme, netloc, path = PyArrowFileIO.parse_location(
-        "/foo/bar", properties={"DEFAULT_SCHEME": "scheme", "DEFAULT_NETLOC": "netloc:8000"}
-    )
-    assert scheme == "scheme"
-    assert netloc == "netloc:8000"
-    assert path == "/foo/bar"
-
-    scheme, netloc, path = PyArrowFileIO.parse_location(
-        "/foo/bar", properties={"DEFAULT_SCHEME": "hdfs", "DEFAULT_NETLOC": "netloc:8000"}
-    )
-    assert scheme == "hdfs"
-    assert netloc == "netloc:8000"
-    assert path == "/foo/bar"

@@ -1070,9 +1070,7 @@ def _get_file_format(file_format: FileFormat, **kwargs: dict[str, Any]) -> ds.Fi
 
 def _construct_fragment(io: FileIO, data_file: DataFile, file_format_kwargs: dict[str, Any] = EMPTY_DICT) -> ds.Fragment:
     with io.new_input(data_file.file_path).open() as fi:
-        return _get_file_format(
-            data_file.file_format, **file_format_kwargs
-        ).make_fragment(fi)
+        return _get_file_format(data_file.file_format, **file_format_kwargs).make_fragment(fi)
 
 
 def _read_deletes(io: FileIO, data_file: DataFile) -> dict[str, pa.ChunkedArray] | pa.Table:
@@ -3041,16 +3039,16 @@ def _get_field_from_arrow_table(arrow_table: pa.Table, field_path: str) -> pa.Ar
 
 
 def _group_deletes_by_equality_ids(
-    task_eq_files: List[DataFile], equality_delete_tables: List[pa.Table]
-) -> dict[FrozenSet[int], pa.Table]:
+    task_eq_files: list[DataFile], equality_delete_tables: list[pa.Table]
+) -> dict[frozenset[int], pa.Table]:
     """Concatenate equality delete tables by their equality IDs to reduce number of anti joins."""
     from collections import defaultdict
 
-    equality_delete_groups: Dict[FrozenSet[int], pa.Table] = {}
+    equality_delete_groups: dict[frozenset[int], pa.Table] = {}
     group_map = defaultdict(list)
 
     # Group the tables by their equality IDs
-    for delete_file, delete_table in zip(task_eq_files, equality_delete_tables):
+    for delete_file, delete_table in zip(task_eq_files, equality_delete_tables, strict=True):
         if delete_file.equality_ids is not None:
             key = frozenset(delete_file.equality_ids)
             group_map[key].append(delete_table)
@@ -3063,7 +3061,7 @@ def _group_deletes_by_equality_ids(
 
 
 def _apply_equality_deletes(
-    data_table: pa.Table, delete_table: pa.Table, equality_ids: List[int], data_schema: Optional[Schema]
+    data_table: pa.Table, delete_table: pa.Table, equality_ids: list[int], data_schema: Schema | None
 ) -> pa.Table:
     """Apply equality deletes to a data table.
 

@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 from bisect import bisect_left
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 from pyiceberg.conversions import from_bytes
 from pyiceberg.expressions import EqualTo
@@ -43,11 +43,11 @@ class EqualityDeleteFileWrapper:
         self.delete_file = manifest_entry.data_file
         self.schema = schema
         self.apply_sequence_number = (manifest_entry.sequence_number or 0) - 1
-        self._converted_lower_bounds: Optional[Dict[int, Any]] = None
-        self._converted_upper_bounds: Optional[Dict[int, Any]] = None
-        self._equality_fields: Optional[List[NestedField]] = None
+        self._converted_lower_bounds: dict[int, Any] | None = None
+        self._converted_upper_bounds: dict[int, Any] | None = None
+        self._equality_fields: list[NestedField] | None = None
 
-    def equality_fields(self) -> List[NestedField]:
+    def equality_fields(self) -> list[NestedField]:
         """Get equality fields for current delete file.
 
         Returns:
@@ -62,7 +62,7 @@ class EqualityDeleteFileWrapper:
             self._equality_fields = fields
         return self._equality_fields
 
-    def lower_bound(self, field_id: int) -> Optional[Any]:
+    def lower_bound(self, field_id: int) -> Any | None:
         """Convert or get lower bound for a field.
 
         Args:
@@ -75,7 +75,7 @@ class EqualityDeleteFileWrapper:
             self._converted_lower_bounds = self._convert_bounds(self.delete_file.lower_bounds)
         return self._converted_lower_bounds.get(field_id)
 
-    def upper_bound(self, field_id: int) -> Optional[Any]:
+    def upper_bound(self, field_id: int) -> Any | None:
         """Convert or get upper bound for a field.
 
         Args:
@@ -88,7 +88,7 @@ class EqualityDeleteFileWrapper:
             self._converted_upper_bounds = self._convert_bounds(self.delete_file.upper_bounds)
         return self._converted_upper_bounds.get(field_id)
 
-    def _convert_bounds(self, bounds: Dict[int, bytes]) -> Dict[int, Any]:
+    def _convert_bounds(self, bounds: dict[int, bytes]) -> dict[int, Any]:
         """Convert byte bounds to their proper types.
 
         Args:
@@ -132,10 +132,10 @@ class DeletesGroup:
 
     def __init__(self) -> None:
         """Initialize a new DeletesGroup."""
-        self._buffer: Optional[List[Any]] = []
+        self._buffer: list[Any] | None = []
         self._sorted: bool = False  # Lazy sorting flag
-        self._seqs: Optional[List[int]] = None
-        self._files: Optional[List[Any]] = None
+        self._seqs: list[int] | None = None
+        self._files: list[Any] | None = None
 
     def add(self, wrapper: Any) -> None:
         """Add a delete file wrapper to the group.
@@ -163,7 +163,7 @@ class DeletesGroup:
             self._buffer = None
             self._sorted = True
 
-    def _get_candidates(self, seq: int) -> List[Any]:
+    def _get_candidates(self, seq: int) -> list[Any]:
         """Get delete files with apply_sequence_number >= seq using binary search.
 
         Args:
@@ -193,7 +193,7 @@ class EqualityDeletesGroup(DeletesGroup):
     during scan planning.
     """
 
-    def filter(self, seq: int, data_file: DataFile) -> List[DataFile]:
+    def filter(self, seq: int, data_file: DataFile) -> list[DataFile]:
         """Find equality deletes that could apply to the data file.
 
         Args:
@@ -327,7 +327,7 @@ class PositionalDeletesGroup(DeletesGroup):
         evaluator = _InclusiveMetricsEvaluator(POSITIONAL_DELETE_SCHEMA, EqualTo("file_path", data_file.file_path))
         return evaluator.eval(delete_file)
 
-    def filter(self, seq: int, data_file: DataFile) -> List[DataFile]:
+    def filter(self, seq: int, data_file: DataFile) -> list[DataFile]:
         """Filter positional delete files that apply to the given sequence number and data file.
 
         Args:
@@ -355,7 +355,7 @@ class DeleteFileIndex:
     to enable efficient lookup of delete files that apply to a given data file.
     """
 
-    def __init__(self, table_schema: Schema, partition_specs: Optional[Dict[int, PartitionSpec]] = None) -> None:
+    def __init__(self, table_schema: Schema, partition_specs: dict[int, PartitionSpec] | None = None) -> None:
         """Initialize a DeleteFileIndex.
 
         Args:
@@ -373,12 +373,12 @@ class DeleteFileIndex:
         self.pos_deletes_by_partition: PartitionMap[PositionalDeletesGroup] = PartitionMap(self.partition_specs)
 
         # Path-specific deletes
-        self.pos_deletes_by_path: Dict[str, PositionalDeletesGroup] = {}
-        self.dv: Dict[str, Tuple[DataFile, int]] = {}
-        self.dv_values: Optional[List[Tuple[DataFile, int]]] = None
+        self.pos_deletes_by_path: dict[str, PositionalDeletesGroup] = {}
+        self.dv: dict[str, tuple[DataFile, int]] = {}
+        self.dv_values: list[tuple[DataFile, int]] | None = None
         self.dv_sorted: bool = False
 
-    def add_delete_file(self, manifest_entry: ManifestEntry, partition_key: Optional[Record] = None) -> None:
+    def add_delete_file(self, manifest_entry: ManifestEntry, partition_key: Record | None = None) -> None:
         """Add delete file to the appropriate partition group based on its type.
 
         Args:
@@ -392,7 +392,7 @@ class DeleteFileIndex:
 
         if delete_file.content == DataFileContent.EQUALITY_DELETES:
             # Skip equality deletes without equality_ids
-            if not delete_file.equality_ids or len(delete_file.equality_ids) == 0:
+            if not delete_file.equality_ids:
                 return
 
             wrapper = EqualityDeleteFileWrapper(manifest_entry, self.table_schema)
@@ -418,10 +418,7 @@ class DeleteFileIndex:
             if delete_file.file_format == FileFormat.PUFFIN:
                 sequence_number = manifest_entry.sequence_number or 0
                 path = delete_file.file_path
-                if path not in self.dv:
-                    self.dv[path] = (delete_file, sequence_number)
-                else:
-                    raise ValueError(f"Can't index multiple DVs for {path}: {self.dv[path]} and {(delete_file, sequence_number)}")
+                self.dv[path] = (delete_file, sequence_number)
             else:
                 pos_wrapper = PositionalDeleteFileWrapper(manifest_entry)
 
@@ -433,7 +430,7 @@ class DeleteFileIndex:
                     # Index by partition
                     self._add_to_partition_group(pos_wrapper, partition_key)
 
-    def _get_referenced_data_file(self, data_file: DataFile) -> Optional[str]:
+    def _get_referenced_data_file(self, data_file: DataFile) -> str | None:
         """Extract the target data file path from a position delete file.
 
         Args:
@@ -457,7 +454,7 @@ class DeleteFileIndex:
         return None
 
     def _add_to_partition_group(
-        self, wrapper: Union[EqualityDeleteFileWrapper, PositionalDeleteFileWrapper], partition_key: Optional[Record]
+        self, wrapper: EqualityDeleteFileWrapper | PositionalDeleteFileWrapper, partition_key: Record | None
     ) -> None:
         """Add wrapper to the appropriate partition group based on wrapper type.
 
@@ -481,7 +478,7 @@ class DeleteFileIndex:
             group_pos = self.pos_deletes_by_partition.compute_if_absent(spec_id, partition_key, lambda: PositionalDeletesGroup())
             group_pos.add(wrapper)
 
-    def for_data_file(self, seq: int, data_file: DataFile, partition_key: Optional[Record] = None) -> List[DataFile]:
+    def for_data_file(self, seq: int, data_file: DataFile, partition_key: Record | None = None) -> list[DataFile]:
         """Find all delete files that apply to the given data file.
 
         This method combines global deletes, partition-specific deletes, and path-specific deletes
@@ -504,7 +501,7 @@ class DeleteFileIndex:
         # Partition-specific equality deletes
         spec_id = data_file.spec_id or 0
         if partition_key is not None:
-            eq_group: Optional[EqualityDeletesGroup] = self.eq_deletes_by_partition.get(spec_id, partition_key)
+            eq_group: EqualityDeletesGroup | None = self.eq_deletes_by_partition.get(spec_id, partition_key)
             if eq_group:
                 deletes.extend(eq_group.filter(seq, data_file))
 
@@ -519,7 +516,7 @@ class DeleteFileIndex:
                 deletes.extend([item[0] for item in self.dv_values[start_idx:]])
 
         # Add position deletes
-        pos_group: Optional[PositionalDeletesGroup] = self.pos_deletes_by_partition.get(spec_id, partition_key)
+        pos_group: PositionalDeletesGroup | None = self.pos_deletes_by_partition.get(spec_id, partition_key)
         if pos_group:
             deletes.extend(pos_group.filter(seq, data_file))
 

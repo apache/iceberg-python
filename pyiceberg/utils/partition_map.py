@@ -14,7 +14,8 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from typing import Any, Callable, Dict, Generic, Iterator, Optional, Tuple, TypeVar
+from collections.abc import Callable, Iterator
+from typing import Any, Generic, TypeVar
 
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.typedef import Record
@@ -31,24 +32,24 @@ class PartitionMap(Generic[T]):
 
     """
 
-    def __init__(self, specs_by_id: Optional[Dict[int, PartitionSpec]] = None) -> None:
+    def __init__(self, specs_by_id: dict[int, PartitionSpec] | None = None) -> None:
         """Initialize a new PartitionMap."""
         self._specs_by_id = specs_by_id or {}
-        self._map: Dict[Tuple[int, Tuple[Any, ...]], T] = {}
+        self._map: dict[tuple[int, tuple[Any, ...]], T] = {}
 
-    def get(self, spec_id: int, partition: Optional[Record]) -> Optional[T]:
+    def get(self, spec_id: int, partition: Record | None) -> T | None:
         """Get a value by spec ID and partition."""
         key = self._make_key(spec_id, partition)
         return self._map.get(key)
 
-    def put(self, spec_id: int, partition: Optional[Record], value: T) -> None:
+    def put(self, spec_id: int, partition: Record | None, value: T) -> None:
         """Put a value by spec ID and partition."""
         if spec_id not in self._specs_by_id:
             raise ValueError(f"Cannot find spec with ID {spec_id}: {self._specs_by_id}")
         key = self._make_key(spec_id, partition)
         self._map[key] = value
 
-    def compute_if_absent(self, spec_id: int, partition: Optional[Record], factory: Callable[[], T]) -> T:
+    def compute_if_absent(self, spec_id: int, partition: Record | None, factory: Callable[[], T]) -> T:
         """Get a value by spec ID and partition, creating it if it doesn't exist."""
         if spec_id not in self._specs_by_id:
             raise ValueError(f"Cannot find spec with ID {spec_id}: {self._specs_by_id}")
@@ -58,7 +59,7 @@ class PartitionMap(Generic[T]):
             self._map[key] = factory()
         return self._map[key]
 
-    def _make_key(self, spec_id: int, partition: Optional[Record]) -> Tuple[int, Tuple[Any, ...]]:
+    def _make_key(self, spec_id: int, partition: Record | None) -> tuple[int, tuple[Any, ...]]:
         """Create a composite key from spec ID and partition."""
         if partition is None:
             partition_values = ()

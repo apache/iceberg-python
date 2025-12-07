@@ -2439,7 +2439,9 @@ def data_file(table_schema_simple: Schema, tmp_path: str) -> str:
 
 @pytest.fixture
 def example_task(data_file: str) -> FileScanTask:
-    datafile = DataFile.from_args(file_path=data_file, file_format=FileFormat.PARQUET, file_size_in_bytes=1925)
+    datafile = DataFile.from_args(
+        file_path=data_file, file_format=FileFormat.PARQUET, file_size_in_bytes=1925, content=DataFileContent.POSITION_DELETES
+    )
     datafile.spec_id = 0
     return FileScanTask(
         data_file=datafile,
@@ -2447,28 +2449,33 @@ def example_task(data_file: str) -> FileScanTask:
 
 
 @pytest.fixture
-def data_file_orc(table_schema_simple: Schema, tmp_path: str) -> str:
+def equality_delete_task(table_schema_simple: Schema, tmp_path: str) -> FileScanTask:
     import pyarrow as pa
-    import pyarrow.orc as orc
+    from pyarrow import parquet as pq
 
     from pyiceberg.io.pyarrow import schema_to_pyarrow
 
     table = pa.table(
-        {"foo": ["a", "b", "c"], "bar": [1, 2, 3], "baz": [True, False, None]},
+        {"foo": ["a", "b", "c", "d"], "bar": [1, 2, 3, 4], "baz": [True, False, None, True]},
         schema=schema_to_pyarrow(table_schema_simple),
     )
 
-    file_path = f"{tmp_path}/0000-data.orc"
-    orc.write_table(table=table, where=file_path)
-    return file_path
+    file_path = f"{tmp_path}/equality-data.parquet"
+    pq.write_table(table=table, where=file_path)
 
-
-@pytest.fixture
-def example_task_orc(data_file_orc: str) -> FileScanTask:
-    datafile = DataFile.from_args(file_path=data_file_orc, file_format=FileFormat.ORC, file_size_in_bytes=1925)
-    datafile.spec_id = 0
     return FileScanTask(
-        data_file=datafile,
+        data_file=DataFile.from_args(
+            file_path=file_path,
+            file_format=FileFormat.PARQUET,
+            record_count=4,
+            column_sizes={1: 10, 2: 10},
+            value_counts={1: 4, 2: 4},
+            null_value_counts={1: 0, 2: 0},
+            nan_value_counts={},
+            lower_bounds={1: b"a", 2: b"\x01\x00\x00\x00"},
+            upper_bounds={1: b"d", 2: b"\x04\x00\x00\x00"},
+            key_metadata=None,
+        ),
     )
 
 
@@ -2502,6 +2509,32 @@ def simple_scan_task(table_schema_simple: Schema, tmp_path: str) -> FileScanTask
     data_file.spec_id = 0
 
     return FileScanTask(data_file=data_file)
+
+
+@pytest.fixture
+def data_file_orc(table_schema_simple: Schema, tmp_path: str) -> str:
+    import pyarrow as pa
+    import pyarrow.orc as orc
+
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+    table = pa.table(
+        {"foo": ["a", "b", "c"], "bar": [1, 2, 3], "baz": [True, False, None]},
+        schema=schema_to_pyarrow(table_schema_simple),
+    )
+
+    file_path = f"{tmp_path}/0000-data.orc"
+    orc.write_table(table=table, where=file_path)
+    return file_path
+
+
+@pytest.fixture
+def example_task_orc(data_file_orc: str) -> FileScanTask:
+    datafile = DataFile.from_args(file_path=data_file_orc, file_format=FileFormat.ORC, file_size_in_bytes=1925)
+    datafile.spec_id = 0
+    return FileScanTask(
+        data_file=datafile,
+    )
 
 
 @pytest.fixture(scope="session")
@@ -2997,12 +3030,12 @@ def pyarrow_table_with_promoted_types(pyarrow_schema_with_promoted_types: "pa.Sc
 
 def create_equality_delete_entry(
     sequence_number: int = 1,
-    equality_ids: Optional[List[int]] = None,
-    partition: Optional[Record] = None,
-    value_counts: Optional[Dict[int, int]] = None,
-    null_value_counts: Optional[Dict[int, int]] = None,
-    lower_bounds: Optional[Dict[int, bytes]] = None,
-    upper_bounds: Optional[Dict[int, bytes]] = None,
+    equality_ids: list[int] | None = None,
+    partition: Record | None = None,
+    value_counts: dict[int, int] | None = None,
+    null_value_counts: dict[int, int] | None = None,
+    lower_bounds: dict[int, bytes] | None = None,
+    upper_bounds: dict[int, bytes] | None = None,
     spec_id: int = 0,
 ) -> ManifestEntry:
     partition_record = partition
@@ -3025,7 +3058,7 @@ def create_equality_delete_entry(
 
 
 def create_positional_delete_entry(
-    sequence_number: int = 1, file_path: str = "s3://bucket/data.parquet", spec_id: int = 0, partition: Optional[Record] = None
+    sequence_number: int = 1, file_path: str = "s3://bucket/data.parquet", spec_id: int = 0, partition: Record | None = None
 ) -> ManifestEntry:
     delete_file = DataFile.from_args(
         content=DataFileContent.POSITION_DELETES,
@@ -3043,7 +3076,7 @@ def create_positional_delete_entry(
 
 
 def create_partition_positional_delete_entry(
-    sequence_number: int = 1, spec_id: int = 0, partition: Optional[Record] = None
+    sequence_number: int = 1, spec_id: int = 0, partition: Record | None = None
 ) -> ManifestEntry:
     delete_file = DataFile.from_args(
         content=DataFileContent.POSITION_DELETES,
@@ -3052,7 +3085,6 @@ def create_partition_positional_delete_entry(
         partition=partition or Record(),
         record_count=10,
         file_size_in_bytes=100,
-        # No lower_bounds/upper_bounds = partition-scoped delete
     )
     delete_file._spec_id = spec_id
 
@@ -3079,15 +3111,15 @@ def create_deletion_vector_entry(
 
 def create_equality_delete_file(
     file_path: str = "s3://bucket/eq-delete.parquet",
-    equality_ids: Optional[List[int]] = None,
+    equality_ids: list[int] | None = None,
     sequence_number: int = 1,
-    partition: Optional[Record] = None,
+    partition: Record | None = None,
     record_count: int = 5,
     file_size_in_bytes: int = 50,
-    lower_bounds: Optional[Dict[int, Any]] = None,
-    upper_bounds: Optional[Dict[int, Any]] = None,
-    value_counts: Optional[Dict[int, Any]] = None,
-    null_value_counts: Optional[Dict[int, Any]] = None,
+    lower_bounds: dict[int, Any] | None = None,
+    upper_bounds: dict[int, Any] | None = None,
+    value_counts: dict[int, Any] | None = None,
+    null_value_counts: dict[int, Any] | None = None,
     spec_id: int = 0,
 ) -> DataFile:
     partition_record = partition
@@ -3112,14 +3144,13 @@ def create_data_file(
     file_path: str = "s3://bucket/data.parquet",
     record_count: int = 100,
     file_size_in_bytes: int = 1000,
-    partition: Optional[Dict[str, Any]] = None,
-    lower_bounds: Optional[Dict[int, Any]] = None,
-    upper_bounds: Optional[Dict[int, Any]] = None,
-    value_counts: Optional[Dict[int, Any]] = None,
-    null_value_counts: Optional[Dict[int, Any]] = None,
+    partition: dict[str, Any] | None = None,
+    lower_bounds: dict[int, Any] | None = None,
+    upper_bounds: dict[int, Any] | None = None,
+    value_counts: dict[int, Any] | None = None,
+    null_value_counts: dict[int, Any] | None = None,
     spec_id: int = 0,
 ) -> DataFile:
-    # Set default value counts and null value counts if not provided
     if value_counts is None and null_value_counts is None:
         value_counts = {1: record_count, 2: record_count}
         null_value_counts = {1: 0, 2: 0}
