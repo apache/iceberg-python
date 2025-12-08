@@ -805,7 +805,11 @@ class _ApplyChanges(SchemaVisitor[IcebergType | None]):
         if element_type is None:
             raise ValueError(f"Cannot delete element type from list: {element_result}")
 
-        return ListType(element_id=list_type.element_id, element=element_type, element_required=list_type.element_required)
+        element_required = list_type.element_required
+        if update := self._updates.get(list_type.element_id):
+            element_required = update.required
+
+        return ListType(element_id=list_type.element_id, element=element_type, element_required=element_required)
 
     def map(self, map_type: MapType, key_result: IcebergType | None, value_result: IcebergType | None) -> IcebergType | None:
         key_id: int = map_type.key_field.field_id
@@ -827,12 +831,16 @@ class _ApplyChanges(SchemaVisitor[IcebergType | None]):
         if value_type is None:
             raise ValueError(f"Cannot delete value type from map: {value_field}")
 
+        value_required = map_type.value_required
+        if update := self._updates.get(map_type.value_id):
+            value_required = update.required
+
         return MapType(
             key_id=map_type.key_id,
             key_type=map_type.key_type,
             value_id=map_type.value_id,
             value_type=value_type,
-            value_required=map_type.value_required,
+            value_required=value_required,
         )
 
     def primitive(self, primitive: PrimitiveType) -> IcebergType | None:
