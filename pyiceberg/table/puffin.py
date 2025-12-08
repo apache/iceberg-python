@@ -219,14 +219,16 @@ class PuffinWriter:
             for blob_payload in self._blob_payloads:
                 payload_buffer.write(blob_payload)
 
-            # Set offsets and lengths in metadata
-            current_offset = 4  # Start after file magic
+            updated_blobs_metadata: List[PuffinBlobMetadata] = []
+            current_offset = 4  # Start after file magic (4 bytes)
             for i, blob_payload in enumerate(self._blob_payloads):
-                self._blobs[i].offset = current_offset
-                self._blobs[i].length = len(blob_payload)
+                original_metadata_dict = self._blobs[i].model_dump(by_alias=True, exclude_none=True)
+                original_metadata_dict["offset"] = current_offset
+                original_metadata_dict["length"] = len(blob_payload)
+                updated_blobs_metadata.append(PuffinBlobMetadata(**original_metadata_dict))
                 current_offset += len(blob_payload)
 
-            footer = Footer(blobs=self._blobs)
+            footer = Footer(blobs=updated_blobs_metadata)
             footer_payload_bytes = footer.model_dump_json(by_alias=True, exclude_none=True).encode("utf-8")
 
             # Final assembly

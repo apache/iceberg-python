@@ -19,7 +19,7 @@ from os import path
 import pytest
 from pyroaring import BitMap
 
-from pyiceberg.table.puffin import _deserialize_bitmap, PuffinFile, PuffinWriter
+from pyiceberg.table.puffin import _deserialize_bitmap, PuffinFile, PuffinWriter, PROPERTY_REFERENCED_DATA_FILE
 
 
 def _open_file(file: str) -> bytes:
@@ -94,11 +94,11 @@ def test_puffin_round_trip():
     assert len(reader.footer.blobs) == 2
     
     blob1_meta = reader.footer.blobs[0]
-    assert blob1_meta.properties[PuffinFile.PROPERTY_REFERENCED_DATA_FILE] == file1_path
+    assert blob1_meta.properties[PROPERTY_REFERENCED_DATA_FILE] == file1_path
     assert blob1_meta.properties["cardinality"] == str(len(deletions1))
 
     blob2_meta = reader.footer.blobs[1]
-    assert blob2_meta.properties[PuffinFile.PROPERTY_REFERENCED_DATA_FILE] == file2_path
+    assert blob2_meta.properties[PROPERTY_REFERENCED_DATA_FILE] == file2_path
     assert blob2_meta.properties["cardinality"] == str(len(deletions2))
 
     # Assert the content of deletion vectors
