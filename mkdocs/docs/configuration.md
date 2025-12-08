@@ -573,6 +573,19 @@ catalog:
 
 <!-- prettier-ignore-end -->
 
+##### Microsoft Fabric OneLake Catalog REST
+
+```yaml
+catalog:
+  onelake_catalog:
+    type: rest
+    uri: https://onelake.table.fabric.microsoft.com/iceberg
+    warehouse: <fabric_workspace_id>/<fabric_data_item_id> # Example : DB0CE1EE-B014-47D3-8F0C-9D64C39C0FC2/F470A1D2-6D6D-4C9D-8796-46286C80B7C0
+    adls.account-name: onelake,
+    adls.account-host: onelake.blob.fabric.microsoft.com,
+    adls.credential: <credential>, # You can use DefautlAzureCredential from `azure.identity` package or refer to other authentication flows from [here](https://learn.microsoft.com/en-us/entra/identity-platform/authentication-flows-app-scenarios)
+```
+
 ### SQL Catalog
 
 The SQL catalog requires a database for its backend. PyIceberg supports PostgreSQL and SQLite through psycopg2. The database connection has to be configured using the `uri` property. The init_catalog_tables is optional and defaults to True. If it is set to False, the catalog tables will not be created when the SQLCatalog is initialized. See SQLAlchemy's [documentation for URL format](https://docs.sqlalchemy.org/en/20/core/engines.html#backend-specific-urls):
