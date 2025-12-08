@@ -592,7 +592,7 @@ catalog:
 <!-- prettier-ignore-start -->
 
 !!! Note "OneLake Authentication Models"
-    For Authentication: You can use DefautlAzureCredential from `azure.identity` package or refer to other authentication flows from [here](https://learn.microsoft.com/en-us/entra/identity-platform/authentication-flows-app-scenarios).<br/>
+    For Authentication: You can use DefautlAzureCredential from `azure.identity` package or refer to other [authentication flows](https://learn.microsoft.com/en-us/entra/identity-platform/authentication-flows-app-scenarios) for detailed documentation.
 <!-- prettier-ignore-end -->
 
 ### SQL Catalog
