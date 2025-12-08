@@ -581,10 +581,20 @@ catalog:
     type: rest
     uri: https://onelake.table.fabric.microsoft.com/iceberg
     warehouse: <fabric_workspace_id>/<fabric_data_item_id> # Example : DB0CE1EE-B014-47D3-8F0C-9D64C39C0FC2/F470A1D2-6D6D-4C9D-8796-46286C80B7C0
+    token: <token>,
     adls.account-name: onelake,
     adls.account-host: onelake.blob.fabric.microsoft.com,
-    adls.credential: <credential>, # You can use DefautlAzureCredential from `azure.identity` package or refer to other authentication flows from [here](https://learn.microsoft.com/en-us/entra/identity-platform/authentication-flows-app-scenarios)
+    adls.credential: <credential>
 ```
+
+<!-- prettier-ignore-start -->
+
+!!! Note "OneLake Authentication Models"
+    For Authentication: You can use DefautlAzureCredential from `azure.identity` package or refer to other authentication flows from [here](https://learn.microsoft.com/en-us/entra/identity-platform/authentication-flows-app-scenarios).<br/>
+    Please refer to [OneLake table APIs for Iceberg](https://aka.ms/onelakeircdocs) for more details.
+
+
+<!-- prettier-ignore-end -->
 
 ### SQL Catalog
 
