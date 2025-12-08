@@ -17,7 +17,8 @@
 import io
 import math
 import zlib
-from typing import TYPE_CHECKING, Dict, Iterable, List, Literal, Optional
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import Field
 from pyroaring import BitMap, FrozenBitMap
@@ -65,9 +66,9 @@ def _deserialize_bitmap(pl: bytes) -> list[BitMap]:
     return bitmaps
 
 
-def _serialize_bitmaps(bitmaps: Dict[int, BitMap]) -> bytes:
+def _serialize_bitmaps(bitmaps: dict[int, BitMap]) -> bytes:
     """
-    Serializes a dictionary of bitmaps into a byte array.
+    Serialize a dictionary of bitmaps into a byte array.
 
     The format is:
     - 8 bytes: number of bitmaps (little-endian)
@@ -149,8 +150,8 @@ class PuffinFile:
 
 
 class PuffinWriter:
-    _blobs: List[PuffinBlobMetadata]
-    _blob_payloads: List[bytes]
+    _blobs: list[PuffinBlobMetadata]
+    _blob_payloads: list[bytes]
 
     def __init__(self) -> None:
         self._blobs = []
@@ -162,7 +163,7 @@ class PuffinWriter:
         referenced_data_file: str,
     ) -> None:
         # 1. Create bitmaps from positions
-        bitmaps: Dict[int, BitMap] = {}
+        bitmaps: dict[int, BitMap] = {}
         cardinality = 0
         for pos in positions:
             cardinality += 1
@@ -219,7 +220,7 @@ class PuffinWriter:
             for blob_payload in self._blob_payloads:
                 payload_buffer.write(blob_payload)
 
-            updated_blobs_metadata: List[PuffinBlobMetadata] = []
+            updated_blobs_metadata: list[PuffinBlobMetadata] = []
             current_offset = 4  # Start after file magic (4 bytes)
             for i, blob_payload in enumerate(self._blob_payloads):
                 original_metadata_dict = self._blobs[i].model_dump(by_alias=True, exclude_none=True)

@@ -19,7 +19,7 @@ from os import path
 import pytest
 from pyroaring import BitMap
 
-from pyiceberg.table.puffin import _deserialize_bitmap, PuffinFile, PuffinWriter, PROPERTY_REFERENCED_DATA_FILE
+from pyiceberg.table.puffin import PROPERTY_REFERENCED_DATA_FILE, PuffinFile, PuffinWriter, _deserialize_bitmap
 
 
 def _open_file(file: str) -> bytes:
@@ -73,10 +73,10 @@ def test_map_high_vals() -> None:
         _ = _deserialize_bitmap(puffin)
 
 
-def test_puffin_round_trip():
+def test_puffin_round_trip() -> None:
     # Define some deletion positions for multiple files
     deletions1 = [10, 20, 30]
-    deletions2 = [5, (1 << 32) + 1] # Test with a high-bit position
+    deletions2 = [5, (1 << 32) + 1]  # Test with a high-bit position
 
     file1_path = "path/to/data1.parquet"
     file2_path = "path/to/data2.parquet"
@@ -92,7 +92,7 @@ def test_puffin_round_trip():
 
     # Assert footer metadata
     assert len(reader.footer.blobs) == 2
-    
+
     blob1_meta = reader.footer.blobs[0]
     assert blob1_meta.properties[PROPERTY_REFERENCED_DATA_FILE] == file1_path
     assert blob1_meta.properties["cardinality"] == str(len(deletions1))
@@ -103,7 +103,7 @@ def test_puffin_round_trip():
 
     # Assert the content of deletion vectors
     read_vectors = reader.to_vector()
-    
+
     assert file1_path in read_vectors
     assert file2_path in read_vectors
 
@@ -111,7 +111,7 @@ def test_puffin_round_trip():
     assert read_vectors[file2_path].to_pylist() == sorted(deletions2)
 
 
-def test_write_and_read_puffin_file():
+def test_write_and_read_puffin_file() -> None:
     writer = PuffinWriter()
     writer.add(positions=[1, 2, 3], referenced_data_file="file1.parquet")
     writer.add(positions=[4, 5, 6], referenced_data_file="file2.parquet")
@@ -139,7 +139,7 @@ def test_write_and_read_puffin_file():
     assert vectors["file2.parquet"].to_pylist() == [4, 5, 6]
 
 
-def test_puffin_file_with_no_blobs():
+def test_puffin_file_with_no_blobs() -> None:
     writer = PuffinWriter()
     puffin_bytes = writer.finish()
 
