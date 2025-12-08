@@ -573,7 +573,9 @@ catalog:
 
 <!-- prettier-ignore-end -->
 
-##### Microsoft Fabric OneLake Catalog REST
+##### Microsoft OneLake Iceberg REST Catalog
+
+See [OneLake table APIs for Iceberg](https://aka.ms/onelakeircdocs) for detailed documentation.
 
 ```yaml
 catalog:
@@ -591,9 +593,6 @@ catalog:
 
 !!! Note "OneLake Authentication Models"
     For Authentication: You can use DefautlAzureCredential from `azure.identity` package or refer to other authentication flows from [here](https://learn.microsoft.com/en-us/entra/identity-platform/authentication-flows-app-scenarios).<br/>
-    Please refer to [OneLake table APIs for Iceberg](https://aka.ms/onelakeircdocs) for more details.
-
-
 <!-- prettier-ignore-end -->
 
 ### SQL Catalog
