@@ -105,6 +105,8 @@ from pyiceberg.types import (
     UUIDType,
 )
 
+__all__: list[str] = []
+
 STRUCT_ROOT = -1
 
 
