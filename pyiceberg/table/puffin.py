@@ -14,8 +14,10 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import io
 import math
-from typing import TYPE_CHECKING, Literal
+import zlib
+from typing import TYPE_CHECKING, Dict, Iterable, List, Literal, Optional
 
 from pydantic import Field
 from pyroaring import BitMap, FrozenBitMap
@@ -27,6 +29,7 @@ if TYPE_CHECKING:
 
 # Short for: Puffin Fratercula arctica, version 1
 MAGIC_BYTES = b"PFA1"
+DELETION_VECTOR_MAGIC = b"\xd1\xd3\x39\x64"
 EMPTY_BITMAP = FrozenBitMap()
 MAX_JAVA_SIGNED = int(math.pow(2, 31)) - 1
 PROPERTY_REFERENCED_DATA_FILE = "referenced-data-file"
@@ -60,6 +63,35 @@ def _deserialize_bitmap(pl: bytes) -> list[BitMap]:
         last_key = key
 
     return bitmaps
+
+
+def _serialize_bitmaps(bitmaps: Dict[int, BitMap]) -> bytes:
+    """
+    Serializes a dictionary of bitmaps into a byte array.
+
+    The format is:
+    - 8 bytes: number of bitmaps (little-endian)
+    - For each bitmap:
+        - 4 bytes: key (little-endian)
+        - n bytes: serialized bitmap
+    """
+    with io.BytesIO() as out:
+        sorted_keys = sorted(bitmaps.keys())
+
+        # number of bitmaps
+        out.write(len(sorted_keys).to_bytes(8, "little"))
+
+        for key in sorted_keys:
+            if key < 0:
+                raise ValueError(f"Invalid unsigned key: {key}")
+            if key > MAX_JAVA_SIGNED:
+                raise ValueError(f"Key {key} is too large, max {MAX_JAVA_SIGNED} to maintain compatibility with Java impl")
+
+            # key
+            out.write(key.to_bytes(4, "little"))
+            # bitmap
+            out.write(bitmaps[key].serialize())
+        return out.getvalue()
 
 
 class PuffinBlobMetadata(IcebergBaseModel):
@@ -114,3 +146,95 @@ class PuffinFile:
 
     def to_vector(self) -> dict[str, "pa.ChunkedArray"]:
         return {path: _bitmaps_to_chunked_array(bitmaps) for path, bitmaps in self._deletion_vectors.items()}
+
+
+class PuffinWriter:
+    _blobs: List[PuffinBlobMetadata]
+    _blob_payloads: List[bytes]
+
+    def __init__(self) -> None:
+        self._blobs = []
+        self._blob_payloads = []
+
+    def add(
+        self,
+        positions: Iterable[int],
+        referenced_data_file: str,
+    ) -> None:
+        # 1. Create bitmaps from positions
+        bitmaps: Dict[int, BitMap] = {}
+        cardinality = 0
+        for pos in positions:
+            cardinality += 1
+            key = pos >> 32
+            low_bits = pos & 0xFFFFFFFF
+            if key not in bitmaps:
+                bitmaps[key] = BitMap()
+            bitmaps[key].add(low_bits)
+
+        # 2. Serialize bitmaps for the vector payload
+        vector_payload = _serialize_bitmaps(bitmaps)
+
+        # 3. Construct the full blob payload for deletion-vector-v1
+        with io.BytesIO() as blob_payload_buffer:
+            # Magic bytes for DV
+            blob_payload_buffer.write(DELETION_VECTOR_MAGIC)
+            # The vector itself
+            blob_payload_buffer.write(vector_payload)
+
+            # The content for CRC calculation
+            crc_content = blob_payload_buffer.getvalue()
+            crc32 = zlib.crc32(crc_content)
+
+            # The full blob to be stored in the Puffin file
+            with io.BytesIO() as full_blob_buffer:
+                # Combined length of the vector and magic bytes stored as 4 bytes, big-endian
+                full_blob_buffer.write(len(crc_content).to_bytes(4, "big"))
+                # The content (magic + vector)
+                full_blob_buffer.write(crc_content)
+                # A CRC-32 checksum of the magic bytes and serialized vector as 4 bytes, big-endian
+                full_blob_buffer.write(crc32.to_bytes(4, "big"))
+
+                self._blob_payloads.append(full_blob_buffer.getvalue())
+
+        # 4. Create blob metadata
+        properties = {PROPERTY_REFERENCED_DATA_FILE: referenced_data_file, "cardinality": str(cardinality)}
+
+        self._blobs.append(
+            PuffinBlobMetadata(
+                type="deletion-vector-v1",
+                fields=[],
+                snapshot_id=-1,
+                sequence_number=-1,
+                offset=0,  # Will be set later
+                length=0,  # Will be set later
+                properties=properties,
+                compression_codec=None,  # Explicitly None
+            )
+        )
+
+    def finish(self) -> bytes:
+        with io.BytesIO() as out:
+            payload_buffer = io.BytesIO()
+            for blob_payload in self._blob_payloads:
+                payload_buffer.write(blob_payload)
+
+            # Set offsets and lengths in metadata
+            current_offset = 4  # Start after file magic
+            for i, blob_payload in enumerate(self._blob_payloads):
+                self._blobs[i].offset = current_offset
+                self._blobs[i].length = len(blob_payload)
+                current_offset += len(blob_payload)
+
+            footer = Footer(blobs=self._blobs)
+            footer_payload_bytes = footer.model_dump_json(by_alias=True, exclude_none=True).encode("utf-8")
+
+            # Final assembly
+            out.write(MAGIC_BYTES)
+            out.write(payload_buffer.getvalue())
+            out.write(footer_payload_bytes)
+            out.write(len(footer_payload_bytes).to_bytes(4, "little"))
+            out.write((0).to_bytes(4, "little"))  # flags
+            out.write(MAGIC_BYTES)
+
+            return out.getvalue()
