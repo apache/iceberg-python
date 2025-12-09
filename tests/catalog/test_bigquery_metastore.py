@@ -151,7 +151,7 @@ def test_list_tables(mocker: MockFixture, gcp_dataset_name: str) -> None:
     catalog_name = "test_catalog"
     test_catalog = BigQueryMetastoreCatalog(catalog_name, **{"gcp.bigquery.project-id": "my-project"})
 
-    tables = test_catalog.list_tables(gcp_dataset_name)
+    tables = list(test_catalog.list_tables(gcp_dataset_name))
 
     # Assert that all tables returned by client.list_tables are listed
     assert len(tables) == 2
@@ -173,7 +173,7 @@ def test_list_namespaces(mocker: MockFixture) -> None:
     catalog_name = "test_catalog"
     test_catalog = BigQueryMetastoreCatalog(catalog_name, **{"gcp.bigquery.project-id": "my-project"})
 
-    namespaces = test_catalog.list_namespaces()
+    namespaces = list(test_catalog.list_namespaces())
     assert len(namespaces) == 2
     assert ("dataset1",) in namespaces
     assert ("dataset2",) in namespaces
