@@ -15,7 +15,7 @@
 #  specific language governing permissions and limitations
 #  under the License.
 from json import JSONDecodeError
-from typing import Literal
+from typing import Literal, TypeAlias
 
 from pydantic import Field, ValidationError
 from requests import HTTPError
@@ -23,12 +23,21 @@ from requests import HTTPError
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
     BadRequestError,
+    CommitFailedException,
+    CommitStateUnknownException,
     ForbiddenError,
+    NamespaceAlreadyExistsError,
+    NamespaceNotEmptyError,
+    NoSuchNamespaceError,
+    NoSuchTableError,
+    NoSuchViewError,
     OAuthError,
     RESTError,
     ServerError,
     ServiceUnavailableError,
+    TableAlreadyExistsError,
     UnauthorizedError,
+    ViewAlreadyExistsError,
 )
 from pyiceberg.typedef import IcebergBaseModel
 
@@ -60,33 +69,92 @@ class OAuthErrorResponse(IcebergBaseModel):
     error_uri: str | None = None
 
 
-def _handle_non_200_response(exc: HTTPError, error_handler: dict[int, type[Exception]]) -> None:
+_ErrorHandler: TypeAlias = dict[int, type[Exception]]
+
+
+class ErrorHandlers:
+    """
+    Utility class providing static methods to handle HTTP errors for table, namespace, and view operations.
+
+    Maps HTTP error responses to appropriate custom exceptions, ensuring consistent error handling.
+    """
+
+    @staticmethod
+    def default_error_handler(exc: HTTPError) -> None:
+        _handle_non_200_response(exc, {})
+
+    @staticmethod
+    def namespace_error_handler(exc: HTTPError) -> None:
+        handler: _ErrorHandler = {
+            400: BadRequestError,
+            404: NoSuchNamespaceError,
+            409: NamespaceAlreadyExistsError,
+            422: RESTError,
+        }
+
+        if "NamespaceNotEmpty" in exc.response.text:
+            handler[400] = NamespaceNotEmptyError
+
+        _handle_non_200_response(exc, handler)
+
+    @staticmethod
+    def drop_namespace_error_handler(exc: HTTPError) -> None:
+        handler: _ErrorHandler = {404: NoSuchNamespaceError, 409: NamespaceNotEmptyError}
+
+        _handle_non_200_response(exc, handler)
+
+    @staticmethod
+    def table_error_handler(exc: HTTPError) -> None:
+        handler: _ErrorHandler = {404: NoSuchTableError, 409: TableAlreadyExistsError}
+
+        if "NoSuchNamespace" in exc.response.text:
+            handler[404] = NoSuchNamespaceError
+
+        _handle_non_200_response(exc, handler)
+
+    @staticmethod
+    def commit_error_handler(exc: HTTPError) -> None:
+        handler: _ErrorHandler = {
+            404: NoSuchTableError,
+            409: CommitFailedException,
+            500: CommitStateUnknownException,
+            502: CommitStateUnknownException,
+            503: CommitStateUnknownException,
+            504: CommitStateUnknownException,
+        }
+
+        _handle_non_200_response(exc, handler)
+
+    @staticmethod
+    def view_error_handler(exc: HTTPError) -> None:
+        handler: _ErrorHandler = {404: NoSuchViewError, 409: ViewAlreadyExistsError}
+
+        if "NoSuchNamespace" in exc.response.text:
+            handler[404] = NoSuchNamespaceError
+
+        _handle_non_200_response(exc, handler)
+
+
+def _handle_non_200_response(exc: HTTPError, handler: _ErrorHandler) -> None:
     exception: type[Exception]
 
     if exc.response is None:
         raise ValueError("Did not receive a response")
 
     code = exc.response.status_code
-    if code in error_handler:
-        exception = error_handler[code]
-    elif code == 400:
-        exception = BadRequestError
-    elif code == 401:
-        exception = UnauthorizedError
-    elif code == 403:
-        exception = ForbiddenError
-    elif code == 422:
-        exception = RESTError
-    elif code == 419:
-        exception = AuthorizationExpiredError
-    elif code == 501:
-        exception = NotImplementedError
-    elif code == 503:
-        exception = ServiceUnavailableError
-    elif 500 <= code < 600:
-        exception = ServerError
-    else:
-        exception = RESTError
+
+    default_handler: _ErrorHandler = {
+        400: BadRequestError,
+        401: UnauthorizedError,
+        403: ForbiddenError,
+        419: AuthorizationExpiredError,
+        422: RESTError,
+        501: NotImplementedError,
+        503: ServiceUnavailableError,
+    }
+
+    # Merge handler passed with default handler map, if no match exception will be ServerError or RESTError
+    exception = handler.get(code, default_handler.get(code, ServerError if 500 <= code < 600 else RESTError))
 
     try:
         if exception == OAuthError:
