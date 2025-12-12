@@ -1990,6 +1990,33 @@ def test_rest_catalog_with_google_credentials_path(
     actual_headers = history[0].headers
     assert actual_headers["Authorization"] == expected_auth_header
 
+    assert actual_headers["Authorization"] == expected_auth_header
+
+
+def test_custom_namespace_separator(rest_mock: Mocker) -> None:
+    custom_separator = "-"
+    namespace_part1 = "some"
+    namespace_part2 = "namespace"
+    # The expected URL path segment should use the literal custom_separator
+    expected_url_path_segment = f"{namespace_part1}{custom_separator}{namespace_part2}"
+
+    rest_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{expected_url_path_segment}",
+        json={"namespace": [namespace_part1, namespace_part2], "properties": {"prop": "yes"}},
+        status_code=204,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{"namespace-separator": custom_separator})
+    catalog.load_namespace_properties((namespace_part1, namespace_part2))
+
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/{expected_url_path_segment}"
+
 
 @pytest.mark.filterwarnings(
     "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
