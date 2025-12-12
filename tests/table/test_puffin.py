@@ -74,68 +74,55 @@ def test_map_high_vals() -> None:
 
 
 def test_puffin_round_trip() -> None:
-    # Define some deletion positions for multiple files
-    deletions1 = [10, 20, 30]
-    deletions2 = [5, (1 << 32) + 1]  # Test with a high-bit position
+    # Define some deletion positions for a file
+    deletions = [5, (1 << 32) + 1, 5]  # Test with a high-bit position and duplicate
 
-    file1_path = "path/to/data1.parquet"
-    file2_path = "path/to/data2.parquet"
+    file_path = "path/to/data.parquet"
 
     # Write the Puffin file
-    writer = PuffinWriter()
-    writer.add(positions=deletions1, referenced_data_file=file1_path)
-    writer.add(positions=deletions2, referenced_data_file=file2_path)
+    writer = PuffinWriter(created_by="my-test-app")
+    writer.set_blob(positions=deletions, referenced_data_file=file_path)
     puffin_bytes = writer.finish()
 
     # Read the Puffin file back
     reader = PuffinFile(puffin_bytes)
 
     # Assert footer metadata
-    assert len(reader.footer.blobs) == 2
+    assert reader.footer.properties["created-by"] == "my-test-app"
+    assert len(reader.footer.blobs) == 1
 
-    blob1_meta = reader.footer.blobs[0]
-    assert blob1_meta.properties[PROPERTY_REFERENCED_DATA_FILE] == file1_path
-    assert blob1_meta.properties["cardinality"] == str(len(deletions1))
-
-    blob2_meta = reader.footer.blobs[1]
-    assert blob2_meta.properties[PROPERTY_REFERENCED_DATA_FILE] == file2_path
-    assert blob2_meta.properties["cardinality"] == str(len(deletions2))
+    blob_meta = reader.footer.blobs[0]
+    assert blob_meta.properties[PROPERTY_REFERENCED_DATA_FILE] == file_path
+    assert blob_meta.properties["cardinality"] == str(len(set(deletions)))
 
     # Assert the content of deletion vectors
     read_vectors = reader.to_vector()
 
-    assert file1_path in read_vectors
-    assert file2_path in read_vectors
-
-    assert read_vectors[file1_path].to_pylist() == sorted(deletions1)
-    assert read_vectors[file2_path].to_pylist() == sorted(deletions2)
+    assert file_path in read_vectors
+    assert read_vectors[file_path].to_pylist() == sorted(list(set(deletions)))
 
 
 def test_write_and_read_puffin_file() -> None:
     writer = PuffinWriter()
-    writer.add(positions=[1, 2, 3], referenced_data_file="file1.parquet")
-    writer.add(positions=[4, 5, 6], referenced_data_file="file2.parquet")
+    writer.set_blob(positions=[1, 2, 3], referenced_data_file="file1.parquet")
+    writer.set_blob(positions=[4, 5, 6], referenced_data_file="file2.parquet")
     puffin_bytes = writer.finish()
 
     reader = PuffinFile(puffin_bytes)
 
-    assert len(reader.footer.blobs) == 2
-    blob1 = reader.footer.blobs[0]
-    blob2 = reader.footer.blobs[1]
+    assert len(reader.footer.blobs) == 1
+    blob = reader.footer.blobs[0]
 
-    assert blob1.properties["referenced-data-file"] == "file1.parquet"
-    assert blob1.properties["cardinality"] == "3"
-    assert blob1.type == "deletion-vector-v1"
-    assert blob1.snapshot_id == -1
-    assert blob1.sequence_number == -1
-    assert blob1.compression_codec is None
-
-    assert blob2.properties["referenced-data-file"] == "file2.parquet"
-    assert blob2.properties["cardinality"] == "3"
+    assert blob.properties["referenced-data-file"] == "file2.parquet"
+    assert blob.properties["cardinality"] == "3"
+    assert blob.type == "deletion-vector-v1"
+    assert blob.snapshot_id == -1
+    assert blob.sequence_number == -1
+    assert blob.compression_codec is None
 
     vectors = reader.to_vector()
-    assert len(vectors) == 2
-    assert vectors["file1.parquet"].to_pylist() == [1, 2, 3]
+    assert len(vectors) == 1
+    assert "file1.parquet" not in vectors
     assert vectors["file2.parquet"].to_pylist() == [4, 5, 6]
 
 
@@ -146,3 +133,4 @@ def test_puffin_file_with_no_blobs() -> None:
     reader = PuffinFile(puffin_bytes)
     assert len(reader.footer.blobs) == 0
     assert len(reader.to_vector()) == 0
+    assert "created-by" not in reader.footer.properties

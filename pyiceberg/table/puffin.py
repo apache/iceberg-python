@@ -152,26 +152,33 @@ class PuffinFile:
 class PuffinWriter:
     _blobs: list[PuffinBlobMetadata]
     _blob_payloads: list[bytes]
+    _created_by: str | None
 
-    def __init__(self) -> None:
+    def __init__(self, created_by: str | None = None) -> None:
         self._blobs = []
         self._blob_payloads = []
+        self._created_by = created_by
 
-    def add(
+    def set_blob(
         self,
         positions: Iterable[int],
         referenced_data_file: str,
     ) -> None:
+        # We only support one blob at the moment
+        self._blobs = []
+        self._blob_payloads = []
+
         # 1. Create bitmaps from positions
         bitmaps: dict[int, BitMap] = {}
-        cardinality = 0
         for pos in positions:
-            cardinality += 1
             key = pos >> 32
             low_bits = pos & 0xFFFFFFFF
             if key not in bitmaps:
                 bitmaps[key] = BitMap()
             bitmaps[key].add(low_bits)
+
+        # Calculate the cardinality from the bitmaps
+        cardinality = sum(len(bm) for bm in bitmaps.values())
 
         # 2. Serialize bitmaps for the vector payload
         vector_payload = _serialize_bitmaps(bitmaps)
@@ -204,13 +211,13 @@ class PuffinWriter:
         self._blobs.append(
             PuffinBlobMetadata(
                 type="deletion-vector-v1",
-                fields=[],
+                fields=[2147483645], # Java INT_MAX - 2, reserved field id for deletion vectors
                 snapshot_id=-1,
                 sequence_number=-1,
-                offset=0,  # Will be set later
-                length=0,  # Will be set later
+                offset=0, # TODO: Use DeleteFileIndex data
+                length=0, # TODO: Use DeleteFileIndex data
                 properties=properties,
-                compression_codec=None,  # Explicitly None
+                compression_codec=None,
             )
         )
 
@@ -229,12 +236,15 @@ class PuffinWriter:
                 updated_blobs_metadata.append(PuffinBlobMetadata(**original_metadata_dict))
                 current_offset += len(blob_payload)
 
-            footer = Footer(blobs=updated_blobs_metadata)
+            footer = Footer(
+                blobs=updated_blobs_metadata, properties={"created-by": self._created_by} if self._created_by else {}
+            )
             footer_payload_bytes = footer.model_dump_json(by_alias=True, exclude_none=True).encode("utf-8")
 
             # Final assembly
             out.write(MAGIC_BYTES)
             out.write(payload_buffer.getvalue())
+            out.write(MAGIC_BYTES)
             out.write(footer_payload_bytes)
             out.write(len(footer_payload_bytes).to_bytes(4, "little"))
             out.write((0).to_bytes(4, "little"))  # flags
