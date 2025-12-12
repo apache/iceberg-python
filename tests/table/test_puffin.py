@@ -99,7 +99,7 @@ def test_puffin_round_trip() -> None:
     read_vectors = reader.to_vector()
 
     assert file_path in read_vectors
-    assert read_vectors[file_path].to_pylist() == sorted(list(set(deletions)))
+    assert read_vectors[file_path].to_pylist() == sorted(set(deletions))
 
 
 def test_write_and_read_puffin_file() -> None:

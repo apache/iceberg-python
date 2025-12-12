@@ -211,11 +211,11 @@ class PuffinWriter:
         self._blobs.append(
             PuffinBlobMetadata(
                 type="deletion-vector-v1",
-                fields=[2147483645], # Java INT_MAX - 2, reserved field id for deletion vectors
+                fields=[2147483645],  # Java INT_MAX - 2, reserved field id for deletion vectors
                 snapshot_id=-1,
                 sequence_number=-1,
-                offset=0, # TODO: Use DeleteFileIndex data
-                length=0, # TODO: Use DeleteFileIndex data
+                offset=0,  # TODO: Use DeleteFileIndex data
+                length=0,  # TODO: Use DeleteFileIndex data
                 properties=properties,
                 compression_codec=None,
             )
@@ -236,9 +236,7 @@ class PuffinWriter:
                 updated_blobs_metadata.append(PuffinBlobMetadata(**original_metadata_dict))
                 current_offset += len(blob_payload)
 
-            footer = Footer(
-                blobs=updated_blobs_metadata, properties={"created-by": self._created_by} if self._created_by else {}
-            )
+            footer = Footer(blobs=updated_blobs_metadata, properties={"created-by": self._created_by} if self._created_by else {})
             footer_payload_bytes = footer.model_dump_json(by_alias=True, exclude_none=True).encode("utf-8")
 
             # Final assembly

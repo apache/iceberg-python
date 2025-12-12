@@ -87,7 +87,7 @@ def test_read_spark_written_puffin_dv(spark: SparkSession, session_catalog: Rest
     dv_dict = puffin.to_vector()
     assert len(dv_dict) == 1, "Expected one data file's deletions"
 
-    for data_file_path, chunked_array in dv_dict.items():
+    for _data_file_path, chunked_array in dv_dict.items():
         positions = chunked_array.to_pylist()
         assert len(positions) == 4, f"Expected 4 deleted positions, got {len(positions)}"
         assert sorted(positions) == [9, 19, 29, 39], f"Unexpected positions: {positions}"
