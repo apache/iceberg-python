@@ -349,6 +349,8 @@ class RestCatalog(Catalog):
         self._fetch_config()
         self._session = self._create_session()
         separator_from_properties = self.properties.get(NAMESPACE_SEPARATOR_PROPERTY, DEFAULT_NAMESPACE_SEPARATOR)
+        if not separator_from_properties:
+            raise ValueError("Namespace separator cannot be an empty string")
         self._namespace_separator = unquote(separator_from_properties)
 
     def _create_session(self) -> Session:
@@ -652,8 +654,6 @@ class RestCatalog(Catalog):
     def _split_identifier_for_path(
         self, identifier: str | Identifier | TableIdentifier, kind: IdentifierKind = IdentifierKind.TABLE
     ) -> Properties:
-        from urllib.parse import quote
-
         if isinstance(identifier, TableIdentifier):
             return {
                 "namespace": self._encode_namespace_path(tuple(identifier.namespace.root)),
@@ -1056,7 +1056,7 @@ class RestCatalog(Catalog):
         namespace_tuple = self.identifier_to_tuple(namespace)
         response = self._session.get(
             self.url(
-                f"{Endpoints.list_namespaces}?parent={self._namespace_separator.join(namespace_tuple)}"
+                f"{Endpoints.list_namespaces}?parent={self._encode_namespace_path(namespace_tuple)}"
                 if namespace_tuple
                 else Endpoints.list_namespaces
             ),
@@ -1105,14 +1105,6 @@ class RestCatalog(Catalog):
     def namespace_exists(self, namespace: str | Identifier) -> bool:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace = self._encode_namespace_path(namespace_tuple)
-
-        # fallback in order to work with older rest catalog implementations
-        if Capability.V1_NAMESPACE_EXISTS not in self._supported_endpoints:
-            try:
-                self.load_namespace_properties(namespace_tuple)
-                return True
-            except NoSuchNamespaceError:
-                return False
 
         response = self._session.head(self.url(Endpoints.namespace_exists, namespace=namespace))
 

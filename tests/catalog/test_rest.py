@@ -1990,8 +1990,6 @@ def test_rest_catalog_with_google_credentials_path(
     actual_headers = history[0].headers
     assert actual_headers["Authorization"] == expected_auth_header
 
-    assert actual_headers["Authorization"] == expected_auth_header
-
 
 def test_custom_namespace_separator(rest_mock: Mocker) -> None:
     custom_separator = "-"
@@ -2008,7 +2006,7 @@ def test_custom_namespace_separator(rest_mock: Mocker) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces/{expected_url_path_segment}",
         json={"namespace": [namespace_part1, namespace_part2], "properties": {"prop": "yes"}},
-        status_code=204,
+        status_code=200,
         request_headers=TEST_HEADERS,
     )
 
