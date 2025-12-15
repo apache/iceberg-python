@@ -565,9 +565,7 @@ class RestCatalog(Catalog):
                 # For empty bodies, explicitly set the content hash header to the SHA256 of an empty string
                 body = request.body
                 if body in (None, b"", ""):
-                    request.headers["x-amz-content-sha256"] = (
-                    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-                )
+                    request.headers["x-amz-content-sha256"] = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
                 aws_request = AWSRequest(
                     method=request.method, url=url, params=params, data=request.body, headers=dict(request.headers)
