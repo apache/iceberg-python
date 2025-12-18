@@ -3479,14 +3479,14 @@ wheels = [
 
 [[package]]
 name = "pyarrow-stubs"
-version = "20.0.0.20251107"
+version = "20.0.0.20251215"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyarrow" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9d/f1/40fa277fe20dfc6253f8e11edb96120050174209afc84019cd52386c5769/pyarrow_stubs-20.0.0.20251107.tar.gz", hash = "sha256:c0885c09f63e2be51bacb6b0e20b39083f43da1cb214d31e406f982e874bcb5a", size = 236584, upload-time = "2025-11-07T03:46:59.872Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/30/16/ca991ada0416dc02c246e4b3c853f35053676eb704c63720ef24547d2d68/pyarrow_stubs-20.0.0.20251215.tar.gz", hash = "sha256:92c1fda4998f0c13e608d8abc7e4b8537e3ef108f6bf42c58e5af97e7d143e75", size = 236578, upload-time = "2025-12-15T06:47:46.187Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/86/fa/a8ebb2cc3a301604f5ca2628e399232ba2d53c1590c1a9b7f8695667db4e/pyarrow_stubs-20.0.0.20251107-py3-none-any.whl", hash = "sha256:09da6809f37cc6dbbbf59c9c8e42269290d19ac09f65d2b3456c671f1c3a8765", size = 235744, upload-time = "2025-11-07T03:47:00.868Z" },
+    { url = "https://files.pythonhosted.org/packages/b3/7c/a467f91c6c3aa4c34d5a1dafca9ae4db01b757877577d6b0ae04908a0180/pyarrow_stubs-20.0.0.20251215-py3-none-any.whl", hash = "sha256:0634e70388cd23e7c78e2abbb1989822edc34df2d2ff4fd50a2316dd0cdafd9f", size = 235697, upload-time = "2025-12-15T06:47:44.643Z" },
 ]
 
 [[package]]
