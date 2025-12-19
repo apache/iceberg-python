@@ -2248,6 +2248,12 @@ def test_bin_pack_arrow_table(arrow_table_with_null: pa.Table) -> None:
     assert len(list(bin_packed)) == 5
 
 
+def test_bin_pack_arrow_table_target_size_smaller_than_row(arrow_table_with_null: pa.Table) -> None:
+    bin_packed = list(bin_pack_arrow_table(arrow_table_with_null, target_file_size=1))
+    assert len(bin_packed) == arrow_table_with_null.num_rows
+    assert sum(batch.num_rows for bin_ in bin_packed for batch in bin_) == arrow_table_with_null.num_rows
+
+
 def test_schema_mismatch_type(table_schema_simple: Schema) -> None:
     other_schema = pa.schema(
         (
