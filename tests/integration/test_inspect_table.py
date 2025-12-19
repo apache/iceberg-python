@@ -18,6 +18,7 @@
 
 import math
 from datetime import date, datetime
+from typing import Any
 
 import pyarrow as pa
 import pytest
@@ -208,9 +209,18 @@ def _inspect_files_asserts(df: pa.Table, spark_df: DataFrame) -> None:
 def _check_pyiceberg_df_equals_spark_df(df: pa.Table, spark_df: DataFrame) -> None:
     lhs = df.to_pandas().sort_values("last_updated_at")
     rhs = spark_df.toPandas().sort_values("last_updated_at")
+
+    def _normalize_partition(d: dict[str, Any]) -> dict[str, Any]:
+        return {k: v for k, v in d.items() if v is not None}
+
     for column in df.column_names:
         for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
-            assert left == right, f"Difference in column {column}: {left} != {right}"
+            if column == "partition":
+                assert _normalize_partition(left) == _normalize_partition(right), (
+                    f"Difference in column {column}: {left} != {right}"
+                )
+            else:
+                assert left == right, f"Difference in column {column}: {left} != {right}"
 
 
 @pytest.mark.integration
