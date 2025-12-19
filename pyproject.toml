@@ -112,7 +112,7 @@ dev = [
     "pyspark[connect]==4.0.1",
     "protobuf==6.33.2", # match Spark Connect's gencode
     "cython>=3.0.0",
-    "deptry>=0.14,<0.24",
+    "deptry>=0.14,<0.25",
     "docutils!=0.21.post1",
     "mypy-boto3-glue>=1.28.18",
     "mypy-boto3-dynamodb>=1.28.18",
