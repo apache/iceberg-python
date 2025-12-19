@@ -28,6 +28,7 @@ from fsspec.implementations.local import LocalFileSystem
 from fsspec.spec import AbstractFileSystem
 from requests_mock import Mocker
 
+from pyiceberg.catalog import AUTH_MANAGER
 from pyiceberg.exceptions import SignError
 from pyiceberg.io import fsspec
 from pyiceberg.io.fsspec import FsspecFileIO, S3V4RestSigner
@@ -948,3 +949,53 @@ def test_s3v4_rest_signer_forbidden(requests_mock: Mocker) -> None:
         """Failed to sign request 401: {'method': 'HEAD', 'region': 'us-west-2', 'uri': 'https://bucket/metadata/snap-8048355899640248710-1-a5c8ea2d-aa1f-48e8-89f4-1fa69db8c742.avro', 'headers': {'User-Agent': ['Botocore/1.27.59 Python/3.10.7 Darwin/21.5.0']}}"""
         in str(exc_info.value)
     )
+
+
+def test_s3v4_rest_signer_uses_auth_manager(requests_mock: Mocker) -> None:
+    new_uri = "https://bucket/metadata/snap-signed.avro"
+    requests_mock.post(
+        f"{TEST_URI}/v1/aws/s3/sign",
+        json={
+            "uri": new_uri,
+            "headers": {
+                "Authorization": ["AWS4-HMAC-SHA256 Credential=ASIA.../s3/aws4_request, SignedHeaders=host, Signature=abc"],
+                "Host": ["bucket.s3.us-west-2.amazonaws.com"],
+            },
+            "extensions": {},
+        },
+        status_code=200,
+    )
+
+    request = AWSRequest(
+        method="HEAD",
+        url="https://bucket/metadata/snap-foo.avro",
+        headers={"User-Agent": "Botocore/1.27.59 Python/3.10.7 Darwin/21.5.0"},
+        data=b"",
+        params={},
+        auth_path="/metadata/snap-foo.avro",
+    )
+    request.context = {
+        "client_region": "us-west-2",
+        "has_streaming_input": False,
+        "auth_type": None,
+        "signing": {"bucket": "bucket"},
+        "retries": {"attempt": 1, "invocation-id": "75d143fb-0219-439b-872c-18213d1c8d54"},
+    }
+
+    class DummyAuthManager:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def auth_header(self) -> str:
+            self.calls += 1
+            return "Bearer via-manager"
+
+    auth_manager = DummyAuthManager()
+
+    signer = S3V4RestSigner(properties={AUTH_MANAGER: auth_manager, "uri": TEST_URI})
+    signer(request)
+
+    assert auth_manager.calls == 1
+    assert requests_mock.last_request is not None
+    assert requests_mock.last_request.headers["Authorization"] == "Bearer via-manager"
+    assert request.url == new_uri

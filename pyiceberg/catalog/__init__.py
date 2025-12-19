@@ -77,6 +77,7 @@ logger = logging.getLogger(__name__)
 _ENV_CONFIG = Config()
 
 TOKEN = "token"
+AUTH_MANAGER = "auth.manager"
 TYPE = "type"
 PY_CATALOG_IMPL = "py-catalog-impl"
 ICEBERG = "iceberg"
