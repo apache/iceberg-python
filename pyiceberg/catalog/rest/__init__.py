@@ -133,6 +133,7 @@ SNAPSHOT_LOADING_MODE = "snapshot-loading-mode"
 AUTH = "auth"
 CUSTOM = "custom"
 REST_SCAN_PLANNING_ENABLED = "rest-scan-planning-enabled"
+REST_SCAN_PLANNING_ENABLED_DEFAULT = False
 
 NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
 
@@ -272,13 +273,13 @@ class RestCatalog(Catalog):
 
         return session
 
-    def is_scan_planning_enabled(self) -> bool:
-        """Check if server-side scan planning is enabled.
+    def is_rest_scan_planning_enabled(self) -> bool:
+        """Check if rest server-side scan planning is enabled.
 
         Returns:
             True if enabled, False otherwise.
         """
-        return property_as_bool(self.properties, REST_SCAN_PLANNING_ENABLED, False)
+        return property_as_bool(self.properties, REST_SCAN_PLANNING_ENABLED, REST_SCAN_PLANNING_ENABLED_DEFAULT)
 
     def _create_legacy_oauth2_auth_manager(self, session: Session) -> AuthManager:
         """Create the LegacyOAuth2AuthManager by fetching required properties.
