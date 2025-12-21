@@ -275,6 +275,7 @@ class RestCatalog(Catalog):
         if self._auth_manager:
             merged_properties[AUTH_MANAGER] = self._auth_manager
         return load_file_io(merged_properties, location)
+
     def is_rest_scan_planning_enabled(self) -> bool:
         """Check if rest server-side scan planning is enabled.
 
