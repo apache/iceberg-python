@@ -21,10 +21,11 @@ import itertools
 import uuid
 from abc import abstractmethod
 from collections import defaultdict
+from collections.abc import Callable
 from concurrent.futures import Future
 from datetime import datetime
 from functools import cached_property
-from typing import TYPE_CHECKING, Callable, Generic
+from typing import TYPE_CHECKING, Generic
 
 from sortedcontainers import SortedList
 

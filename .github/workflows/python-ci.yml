@@ -50,7 +50,7 @@ jobs:
         python: ['3.10', '3.11', '3.12']
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: actions/setup-python@v6
       with:
         python-version: ${{ matrix.python }}
@@ -74,10 +74,12 @@ jobs:
         python: ['3.10', '3.11', '3.12']
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: actions/setup-python@v6
       with:
         python-version: ${{ matrix.python }}
+    - name: Install UV
+      uses: astral-sh/setup-uv@v7
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
     - name: Install

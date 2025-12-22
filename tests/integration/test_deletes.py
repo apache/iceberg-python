@@ -15,8 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
+from collections.abc import Generator
 from datetime import datetime
-from typing import Generator
 
 import pyarrow as pa
 import pytest

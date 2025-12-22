@@ -21,9 +21,10 @@ import importlib
 import struct
 import types
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from enum import IntEnum
 from functools import singledispatch
-from typing import TYPE_CHECKING, Any, Callable, Generic, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Optional, TypeVar
 from typing import Literal as LiteralType
 from uuid import UUID
 
@@ -183,10 +184,10 @@ class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
         ...
 
     @abstractmethod
-    def project(self, name: str, pred: BoundPredicate[L]) -> UnboundPredicate[Any] | None: ...
+    def project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None: ...
 
     @abstractmethod
-    def strict_project(self, name: str, pred: BoundPredicate[Any]) -> UnboundPredicate[Any] | None: ...
+    def strict_project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None: ...
 
     @property
     def preserves_order(self) -> bool:
@@ -269,7 +270,7 @@ class BucketTransform(Transform[S, int]):
     def result_type(self, source: IcebergType) -> IcebergType:
         return IntegerType()
 
-    def project(self, name: str, pred: BoundPredicate[L]) -> UnboundPredicate[Any] | None:
+    def project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         transformer = self.transform(pred.term.ref().field.field_type)
 
         if isinstance(pred.term, BoundTransform):
@@ -279,14 +280,14 @@ class BucketTransform(Transform[S, int]):
         elif isinstance(pred, BoundEqualTo):
             return pred.as_unbound(Reference(name), _transform_literal(transformer, pred.literal))
         elif isinstance(pred, BoundIn):  # NotIn can't be projected
-            return pred.as_unbound(Reference(name), {_transform_literal(transformer, literal) for literal in pred.literals})
+            return pred.as_unbound(Reference(name), {_transform_literal(transformer, literal) for literal in pred.literals})  # type: ignore
         else:
             # - Comparison predicates can't be projected, notEq can't be projected
             # - Small ranges can be projected:
             #   For example, (x > 0) and (x < 3) can be turned into in({1, 2}) and projected.
-            return None
+            return None  # type: ignore
 
-    def strict_project(self, name: str, pred: BoundPredicate[Any]) -> UnboundPredicate[Any] | None:
+    def strict_project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         transformer = self.transform(pred.term.ref().field.field_type)
 
         if isinstance(pred.term, BoundTransform):
@@ -296,10 +297,10 @@ class BucketTransform(Transform[S, int]):
         elif isinstance(pred, BoundNotEqualTo):
             return pred.as_unbound(Reference(name), _transform_literal(transformer, pred.literal))
         elif isinstance(pred, BoundNotIn):
-            return pred.as_unbound(Reference(name), {_transform_literal(transformer, literal) for literal in pred.literals})
+            return pred.as_unbound(Reference(name), {_transform_literal(transformer, literal) for literal in pred.literals})  # type: ignore
         else:
             # no strict projection for comparison or equality
-            return None
+            return None  # type: ignore
 
     def can_transform(self, source: IcebergType) -> bool:
         return isinstance(
@@ -420,7 +421,7 @@ class TimeTransform(Transform[S, int], Generic[S], Singleton):
     @abstractmethod
     def transform(self, source: IcebergType) -> Callable[[Any | None], int | None]: ...
 
-    def project(self, name: str, pred: BoundPredicate[L]) -> UnboundPredicate[Any] | None:
+    def project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         transformer = self.transform(pred.term.ref().field.field_type)
         if isinstance(pred.term, BoundTransform):
             return _project_transform_predicate(self, name, pred)
@@ -430,10 +431,8 @@ class TimeTransform(Transform[S, int], Generic[S], Singleton):
             return _truncate_number(name, pred, transformer)
         elif isinstance(pred, BoundIn):  # NotIn can't be projected
             return _set_apply_transform(name, pred, transformer)
-        else:
-            return None
 
-    def strict_project(self, name: str, pred: BoundPredicate[Any]) -> UnboundPredicate[Any] | None:
+    def strict_project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         transformer = self.transform(pred.term.ref().field.field_type)
         if isinstance(pred.term, BoundTransform):
             return _project_transform_predicate(self, name, pred)
@@ -443,8 +442,6 @@ class TimeTransform(Transform[S, int], Generic[S], Singleton):
             return _truncate_number_strict(name, pred, transformer)
         elif isinstance(pred, BoundNotIn):
             return _set_apply_transform(name, pred, transformer)
-        else:
-            return None
 
     @property
     def dedup_name(self) -> str:
@@ -725,7 +722,7 @@ class IdentityTransform(Transform[S, S]):
     def result_type(self, source: IcebergType) -> IcebergType:
         return source
 
-    def project(self, name: str, pred: BoundPredicate[L]) -> UnboundPredicate[Any] | None:
+    def project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         if isinstance(pred.term, BoundTransform):
             return _project_transform_predicate(self, name, pred)
         elif isinstance(pred, BoundUnaryPredicate):
@@ -737,7 +734,7 @@ class IdentityTransform(Transform[S, S]):
         else:
             return None
 
-    def strict_project(self, name: str, pred: BoundPredicate[Any]) -> UnboundPredicate[Any] | None:
+    def strict_project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         if isinstance(pred, BoundUnaryPredicate):
             return pred.as_unbound(Reference(name))
         elif isinstance(pred, BoundLiteralPredicate):
@@ -801,7 +798,7 @@ class TruncateTransform(Transform[S, S]):
     def source_type(self) -> IcebergType:
         return self._source_type
 
-    def project(self, name: str, pred: BoundPredicate[L]) -> UnboundPredicate[Any] | None:
+    def project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         field_type = pred.term.ref().field.field_type
 
         if isinstance(pred.term, BoundTransform):
@@ -811,15 +808,14 @@ class TruncateTransform(Transform[S, S]):
             return pred.as_unbound(Reference(name))
         elif isinstance(pred, BoundIn):
             return _set_apply_transform(name, pred, self.transform(field_type))
-        elif isinstance(field_type, (IntegerType, LongType, DecimalType)):
+        elif isinstance(field_type, (IntegerType, LongType, DecimalType)):  # type: ignore
             if isinstance(pred, BoundLiteralPredicate):
                 return _truncate_number(name, pred, self.transform(field_type))
         elif isinstance(field_type, (BinaryType, StringType)):
             if isinstance(pred, BoundLiteralPredicate):
                 return _truncate_array(name, pred, self.transform(field_type))
-        return None
 
-    def strict_project(self, name: str, pred: BoundPredicate[Any]) -> UnboundPredicate[Any] | None:
+    def strict_project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         field_type = pred.term.ref().field.field_type
 
         if isinstance(pred.term, BoundTransform):
@@ -834,7 +830,7 @@ class TruncateTransform(Transform[S, S]):
             elif isinstance(pred, BoundNotIn):
                 return _set_apply_transform(name, pred, self.transform(field_type))
             else:
-                return None
+                return None  # type: ignore
 
         if isinstance(pred, BoundLiteralPredicate):
             if isinstance(pred, BoundStartsWith):
@@ -859,7 +855,7 @@ class TruncateTransform(Transform[S, S]):
         elif isinstance(pred, BoundNotIn):
             return _set_apply_transform(name, pred, self.transform(field_type))
         else:
-            return None
+            return None  # type: ignore
 
     @property
     def width(self) -> int:
@@ -987,10 +983,10 @@ class UnknownTransform(Transform[S, T]):
     def result_type(self, source: IcebergType) -> StringType:
         return StringType()
 
-    def project(self, name: str, pred: BoundPredicate[L]) -> UnboundPredicate[Any] | None:
+    def project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         return None
 
-    def strict_project(self, name: str, pred: BoundPredicate[Any]) -> UnboundPredicate[Any] | None:
+    def strict_project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         return None
 
     def __repr__(self) -> str:
@@ -1015,10 +1011,10 @@ class VoidTransform(Transform[S, None], Singleton):
     def result_type(self, source: IcebergType) -> IcebergType:
         return source
 
-    def project(self, name: str, pred: BoundPredicate[L]) -> UnboundPredicate[Any] | None:
+    def project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         return None
 
-    def strict_project(self, name: str, pred: BoundPredicate[L]) -> UnboundPredicate[Any] | None:
+    def strict_project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         return None
 
     def to_human_string(self, _: IcebergType, value: S | None) -> str:
@@ -1038,8 +1034,8 @@ class VoidTransform(Transform[S, None], Singleton):
 
 
 def _truncate_number(
-    name: str, pred: BoundLiteralPredicate[L], transform: Callable[[L | None], L | None]
-) -> UnboundPredicate[Any] | None:
+    name: str, pred: BoundLiteralPredicate, transform: Callable[[Any | None], Any | None]
+) -> UnboundPredicate | None:
     boundary = pred.literal
 
     if not isinstance(boundary, (LongLiteral, DecimalLiteral, DateLiteral, TimestampLiteral)):
@@ -1060,8 +1056,8 @@ def _truncate_number(
 
 
 def _truncate_number_strict(
-    name: str, pred: BoundLiteralPredicate[L], transform: Callable[[L | None], L | None]
-) -> UnboundPredicate[Any] | None:
+    name: str, pred: BoundLiteralPredicate, transform: Callable[[Any | None], Any | None]
+) -> UnboundPredicate | None:
     boundary = pred.literal
 
     if not isinstance(boundary, (LongLiteral, DecimalLiteral, DateLiteral, TimestampLiteral)):
@@ -1086,8 +1082,8 @@ def _truncate_number_strict(
 
 
 def _truncate_array_strict(
-    name: str, pred: BoundLiteralPredicate[L], transform: Callable[[L | None], L | None]
-) -> UnboundPredicate[Any] | None:
+    name: str, pred: BoundLiteralPredicate, transform: Callable[[Any | None], Any | None]
+) -> UnboundPredicate | None:
     boundary = pred.literal
 
     if isinstance(pred, (BoundLessThan, BoundLessThanOrEqual)):
@@ -1101,8 +1097,8 @@ def _truncate_array_strict(
 
 
 def _truncate_array(
-    name: str, pred: BoundLiteralPredicate[L], transform: Callable[[L | None], L | None]
-) -> UnboundPredicate[Any] | None:
+    name: str, pred: BoundLiteralPredicate, transform: Callable[[Any | None], Any | None]
+) -> UnboundPredicate | None:
     boundary = pred.literal
 
     if isinstance(pred, (BoundLessThan, BoundLessThanOrEqual)):
@@ -1120,26 +1116,26 @@ def _truncate_array(
 
 
 def _project_transform_predicate(
-    transform: Transform[Any, Any], partition_name: str, pred: BoundPredicate[L]
-) -> UnboundPredicate[Any] | None:
+    transform: Transform[Any, Any], partition_name: str, pred: BoundPredicate
+) -> UnboundPredicate | None:
     term = pred.term
     if isinstance(term, BoundTransform) and transform == term.transform:
         return _remove_transform(partition_name, pred)
     return None
 
 
-def _remove_transform(partition_name: str, pred: BoundPredicate[L]) -> UnboundPredicate[Any]:
+def _remove_transform(partition_name: str, pred: BoundPredicate) -> UnboundPredicate:
     if isinstance(pred, BoundUnaryPredicate):
         return pred.as_unbound(Reference(partition_name))
     elif isinstance(pred, BoundLiteralPredicate):
         return pred.as_unbound(Reference(partition_name), pred.literal)
     elif isinstance(pred, (BoundIn, BoundNotIn)):
-        return pred.as_unbound(Reference(partition_name), pred.literals)
+        return pred.as_unbound(Reference(partition_name), pred.literals)  # type: ignore
     else:
         raise ValueError(f"Cannot replace transform in unknown predicate: {pred}")
 
 
-def _set_apply_transform(name: str, pred: BoundSetPredicate[L], transform: Callable[[L], L]) -> UnboundPredicate[Any]:
+def _set_apply_transform(name: str, pred: BoundSetPredicate, transform: Callable[[Any], Any]) -> UnboundPredicate:
     literals = pred.literals
     if isinstance(pred, BoundSetPredicate):
         transformed_literals = {_transform_literal(transform, literal) for literal in literals}
@@ -1148,11 +1144,11 @@ def _set_apply_transform(name: str, pred: BoundSetPredicate[L], transform: Calla
         raise ValueError(f"Unknown BoundSetPredicate: {pred}")
 
 
-class BoundTransform(BoundTerm[L]):
+class BoundTransform(BoundTerm):
     """A transform expression."""
 
-    transform: Transform[L, Any]
+    transform: Transform[Any, Any]
 
-    def __init__(self, term: BoundTerm[L], transform: Transform[L, Any]):
-        self.term: BoundTerm[L] = term
+    def __init__(self, term: BoundTerm, transform: Transform[Any, Any]):
+        self.term: BoundTerm = term
         self.transform = transform

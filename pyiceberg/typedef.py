@@ -17,15 +17,16 @@
 from __future__ import annotations
 
 from abc import abstractmethod
+from collections.abc import Callable
 from datetime import date, datetime, time
 from decimal import Decimal
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Generic,
     Literal,
     Protocol,
+    TypeAlias,
     TypeVar,
     Union,
     runtime_checkable,
@@ -33,10 +34,16 @@ from typing import (
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, RootModel
-from typing_extensions import Self, TypeAlias
+from typing_extensions import Self
 
 if TYPE_CHECKING:
+    from pyiceberg.expressions.literals import Literal as IcebergLiteral
     from pyiceberg.types import StructType
+
+    LiteralValue = IcebergLiteral[Any]
+else:
+    # Use Any for runtime to avoid circular import - type checkers will use TYPE_CHECKING version
+    LiteralValue = Any  # type: ignore[assignment,misc]
 
 
 class FrozenDict(dict[Any, Any]):

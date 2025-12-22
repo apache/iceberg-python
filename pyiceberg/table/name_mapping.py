@@ -26,8 +26,9 @@ from __future__ import annotations
 import builtins
 from abc import ABC, abstractmethod
 from collections import ChainMap
+from collections.abc import Iterator
 from functools import cached_property, singledispatch
-from typing import Any, Generic, Iterator, TypeVar
+from typing import Any, Generic, TypeVar
 
 from pydantic import Field, conlist, field_validator, model_serializer
 

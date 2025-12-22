@@ -31,6 +31,7 @@ import socket
 import string
 import time
 import uuid
+from collections.abc import Generator
 from datetime import date, datetime, timezone
 from pathlib import Path
 from random import choice, randint
@@ -38,7 +39,6 @@ from tempfile import TemporaryDirectory
 from typing import (
     TYPE_CHECKING,
     Any,
-    Generator,
 )
 
 import boto3
@@ -2558,17 +2558,17 @@ def table_v2_with_statistics(table_metadata_v2_with_statistics: dict[str, Any]) 
 
 
 @pytest.fixture
-def bound_reference_str() -> BoundReference[str]:
+def bound_reference_str() -> BoundReference:
     return BoundReference(field=NestedField(1, "field", StringType(), required=False), accessor=Accessor(position=0, inner=None))
 
 
 @pytest.fixture
-def bound_reference_binary() -> BoundReference[str]:
+def bound_reference_binary() -> BoundReference:
     return BoundReference(field=NestedField(1, "field", BinaryType(), required=False), accessor=Accessor(position=0, inner=None))
 
 
 @pytest.fixture
-def bound_reference_uuid() -> BoundReference[str]:
+def bound_reference_uuid() -> BoundReference:
     return BoundReference(field=NestedField(1, "field", UUIDType(), required=False), accessor=Accessor(position=0, inner=None))
 
 

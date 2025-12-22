@@ -21,6 +21,7 @@ import os
 import uuid
 import warnings
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from functools import cached_property
 from itertools import chain
@@ -28,9 +29,6 @@ from types import TracebackType
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
-    Iterable,
-    Iterator,
     TypeVar,
 )
 
@@ -1788,22 +1786,16 @@ class FileScanTask(ScanTask):
 
     file: DataFile
     delete_files: set[DataFile]
-    start: int
-    length: int
     residual: BooleanExpression
 
     def __init__(
         self,
         data_file: DataFile,
         delete_files: set[DataFile] | None = None,
-        start: int | None = None,
-        length: int | None = None,
         residual: BooleanExpression = ALWAYS_TRUE,
     ) -> None:
         self.file = data_file
         self.delete_files = delete_files or set()
-        self.start = start or 0
-        self.length = length or data_file.file_size_in_bytes
         self.residual = residual
 
 

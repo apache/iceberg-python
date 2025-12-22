@@ -633,12 +633,12 @@ def test_list_type_to_pyarrow() -> None:
 
 
 @pytest.fixture
-def bound_reference(table_schema_simple: Schema) -> BoundReference[str]:
+def bound_reference(table_schema_simple: Schema) -> BoundReference:
     return BoundReference(table_schema_simple.find_field(1), table_schema_simple.accessor_for_field(1))
 
 
 @pytest.fixture
-def bound_double_reference() -> BoundReference[float]:
+def bound_double_reference() -> BoundReference:
     schema = Schema(
         NestedField(field_id=1, name="foo", field_type=DoubleType(), required=False),
         schema_id=1,
@@ -647,68 +647,68 @@ def bound_double_reference() -> BoundReference[float]:
     return BoundReference(schema.find_field(1), schema.accessor_for_field(1))
 
 
-def test_expr_is_null_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_is_null_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundIsNull(bound_reference)))
         == "<pyarrow.compute.Expression is_null(foo, {nan_is_null=false})>"
     )
 
 
-def test_expr_not_null_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_not_null_to_pyarrow(bound_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(BoundNotNull(bound_reference))) == "<pyarrow.compute.Expression is_valid(foo)>"
 
 
-def test_expr_is_nan_to_pyarrow(bound_double_reference: BoundReference[str]) -> None:
+def test_expr_is_nan_to_pyarrow(bound_double_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(BoundIsNaN(bound_double_reference))) == "<pyarrow.compute.Expression is_nan(foo)>"
 
 
-def test_expr_not_nan_to_pyarrow(bound_double_reference: BoundReference[str]) -> None:
+def test_expr_not_nan_to_pyarrow(bound_double_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(BoundNotNaN(bound_double_reference))) == "<pyarrow.compute.Expression invert(is_nan(foo))>"
 
 
-def test_expr_equal_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_equal_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundEqualTo(bound_reference, literal("hello"))))
         == '<pyarrow.compute.Expression (foo == "hello")>'
     )
 
 
-def test_expr_not_equal_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_not_equal_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundNotEqualTo(bound_reference, literal("hello"))))
         == '<pyarrow.compute.Expression (foo != "hello")>'
     )
 
 
-def test_expr_greater_than_or_equal_equal_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_greater_than_or_equal_equal_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundGreaterThanOrEqual(bound_reference, literal("hello"))))
         == '<pyarrow.compute.Expression (foo >= "hello")>'
     )
 
 
-def test_expr_greater_than_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_greater_than_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundGreaterThan(bound_reference, literal("hello"))))
         == '<pyarrow.compute.Expression (foo > "hello")>'
     )
 
 
-def test_expr_less_than_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_less_than_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundLessThan(bound_reference, literal("hello"))))
         == '<pyarrow.compute.Expression (foo < "hello")>'
     )
 
 
-def test_expr_less_than_or_equal_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_less_than_or_equal_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundLessThanOrEqual(bound_reference, literal("hello"))))
         == '<pyarrow.compute.Expression (foo <= "hello")>'
     )
 
 
-def test_expr_in_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_in_to_pyarrow(bound_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(BoundIn(bound_reference, {literal("hello"), literal("world")}))) in (
         """<pyarrow.compute.Expression is_in(foo, {value_set=large_string:[
   "hello",
@@ -721,7 +721,7 @@ def test_expr_in_to_pyarrow(bound_reference: BoundReference[str]) -> None:
     )
 
 
-def test_expr_not_in_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_not_in_to_pyarrow(bound_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(BoundNotIn(bound_reference, {literal("hello"), literal("world")}))) in (
         """<pyarrow.compute.Expression invert(is_in(foo, {value_set=large_string:[
   "hello",
@@ -734,46 +734,46 @@ def test_expr_not_in_to_pyarrow(bound_reference: BoundReference[str]) -> None:
     )
 
 
-def test_expr_starts_with_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_starts_with_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundStartsWith(bound_reference, literal("he"))))
         == '<pyarrow.compute.Expression starts_with(foo, {pattern="he", ignore_case=false})>'
     )
 
 
-def test_expr_not_starts_with_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_not_starts_with_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundNotStartsWith(bound_reference, literal("he"))))
         == '<pyarrow.compute.Expression invert(starts_with(foo, {pattern="he", ignore_case=false}))>'
     )
 
 
-def test_and_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_and_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(And(BoundEqualTo(bound_reference, literal("hello")), BoundIsNull(bound_reference))))
         == '<pyarrow.compute.Expression ((foo == "hello") and is_null(foo, {nan_is_null=false}))>'
     )
 
 
-def test_or_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_or_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(Or(BoundEqualTo(bound_reference, literal("hello")), BoundIsNull(bound_reference))))
         == '<pyarrow.compute.Expression ((foo == "hello") or is_null(foo, {nan_is_null=false}))>'
     )
 
 
-def test_not_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_not_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(Not(BoundEqualTo(bound_reference, literal("hello")))))
         == '<pyarrow.compute.Expression invert((foo == "hello"))>'
     )
 
 
-def test_always_true_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_always_true_to_pyarrow(bound_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(AlwaysTrue())) == "<pyarrow.compute.Expression true>"
 
 
-def test_always_false_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_always_false_to_pyarrow(bound_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(AlwaysFalse())) == "<pyarrow.compute.Expression false>"
 
 
@@ -3840,8 +3840,46 @@ def test_orc_schema_conversion_with_field_ids() -> None:
     id_field_no_ids = arrow_schema_no_ids.field(0)
     name_field_no_ids = arrow_schema_no_ids.field(1)
 
-    assert not id_field_no_ids.metadata
-    assert not name_field_no_ids.metadata
+    assert ORC_FIELD_ID_KEY not in id_field_no_ids.metadata
+    assert ORC_FIELD_ID_KEY not in name_field_no_ids.metadata
+    assert PYARROW_PARQUET_FIELD_ID_KEY not in id_field_no_ids.metadata
+    assert PYARROW_PARQUET_FIELD_ID_KEY not in name_field_no_ids.metadata
+
+
+def test_orc_schema_conversion_with_required_attribute() -> None:
+    """
+    Test that schema_to_pyarrow correctly adds ORC iceberg.required attribute.
+    To run just this test:
+        pytest tests/io/test_pyarrow.py -k test_orc_schema_conversion_with_required_attribute
+    """
+    from pyiceberg.io.pyarrow import ORC_FIELD_REQUIRED_KEY, schema_to_pyarrow
+    from pyiceberg.manifest import FileFormat
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import IntegerType, StringType
+
+    # Define schema
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(2, "name", StringType(), required=False),
+    )
+
+    # Test 1: Specify Parquet format
+    arrow_schema_default = schema_to_pyarrow(schema, file_format=FileFormat.PARQUET)
+
+    id_field = arrow_schema_default.field(0)
+    name_field = arrow_schema_default.field(1)
+
+    assert ORC_FIELD_REQUIRED_KEY not in id_field.metadata
+    assert ORC_FIELD_REQUIRED_KEY not in name_field.metadata
+
+    # Test 2: Specify ORC format
+    arrow_schema_orc = schema_to_pyarrow(schema, file_format=FileFormat.ORC)
+
+    id_field_orc = arrow_schema_orc.field(0)
+    name_field_orc = arrow_schema_orc.field(1)
+
+    assert id_field_orc.metadata[ORC_FIELD_REQUIRED_KEY] == b"true"
+    assert name_field_orc.metadata[ORC_FIELD_REQUIRED_KEY] == b"false"
 
 
 def test_orc_batching_behavior_documentation(tmp_path: Path) -> None:

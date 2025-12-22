@@ -58,8 +58,7 @@ select = [
     "UP", # pyupgrade
 ]
 ignore = [
-    "E501",
-    "UP035"
+    "E501"
 ]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided.

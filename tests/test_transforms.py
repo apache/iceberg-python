@@ -16,9 +16,10 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=eval-used,protected-access,redefined-outer-name
+from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
-from typing import Annotated, Any, Callable
+from typing import Annotated, Any
 from uuid import UUID
 
 import mmh3 as mmh3
@@ -91,7 +92,7 @@ from pyiceberg.transforms import (
     YearTransform,
     parse_transform,
 )
-from pyiceberg.typedef import UTF8, L
+from pyiceberg.typedef import UTF8
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -650,146 +651,146 @@ def test_datetime_transform_repr(transform: TimeTransform[Any], transform_repr: 
 
 
 @pytest.fixture
-def bound_reference_date() -> BoundReference[int]:
+def bound_reference_date() -> BoundReference:
     return BoundReference(field=NestedField(1, "field", DateType(), required=False), accessor=Accessor(position=0, inner=None))
 
 
 @pytest.fixture
-def bound_reference_timestamp() -> BoundReference[int]:
+def bound_reference_timestamp() -> BoundReference:
     return BoundReference(
         field=NestedField(1, "field", TimestampType(), required=False), accessor=Accessor(position=0, inner=None)
     )
 
 
 @pytest.fixture
-def bound_reference_decimal() -> BoundReference[Decimal]:
+def bound_reference_decimal() -> BoundReference:
     return BoundReference(
         field=NestedField(1, "field", DecimalType(8, 2), required=False), accessor=Accessor(position=0, inner=None)
     )
 
 
 @pytest.fixture
-def bound_reference_int() -> BoundReference[int]:
+def bound_reference_int() -> BoundReference:
     return BoundReference(field=NestedField(1, "field", IntegerType(), required=False), accessor=Accessor(position=0, inner=None))
 
 
 @pytest.fixture
-def bound_reference_long() -> BoundReference[int]:
+def bound_reference_long() -> BoundReference:
     return BoundReference(field=NestedField(1, "field", LongType(), required=False), accessor=Accessor(position=0, inner=None))
 
 
-def test_projection_bucket_unary(bound_reference_str: BoundReference[str]) -> None:
+def test_projection_bucket_unary(bound_reference_str: BoundReference) -> None:
     assert BucketTransform(2).project("name", BoundNotNull(term=bound_reference_str)) == NotNull(term=Reference(name="name"))
 
 
-def test_projection_bucket_literal(bound_reference_str: BoundReference[str]) -> None:
+def test_projection_bucket_literal(bound_reference_str: BoundReference) -> None:
     assert BucketTransform(2).project("name", BoundEqualTo(term=bound_reference_str, literal=literal("data"))) == EqualTo(
         term="name", literal=1
     )
 
 
-def test_projection_bucket_set_same_bucket(bound_reference_str: BoundReference[str]) -> None:
+def test_projection_bucket_set_same_bucket(bound_reference_str: BoundReference) -> None:
     assert BucketTransform(2).project(
         "name", BoundIn(term=bound_reference_str, literals={literal("hello"), literal("world")})
     ) == EqualTo(term="name", literal=1)
 
 
-def test_projection_bucket_set_in(bound_reference_str: BoundReference[str]) -> None:
+def test_projection_bucket_set_in(bound_reference_str: BoundReference) -> None:
     assert BucketTransform(3).project(
         "name", BoundIn(term=bound_reference_str, literals={literal("hello"), literal("world")})
     ) == In(term="name", literals={1, 2})
 
 
-def test_projection_bucket_set_not_in(bound_reference_str: BoundReference[str]) -> None:
+def test_projection_bucket_set_not_in(bound_reference_str: BoundReference) -> None:
     assert (
         BucketTransform(3).project("name", BoundNotIn(term=bound_reference_str, literals={literal("hello"), literal("world")}))
         is None
     )
 
 
-def test_projection_year_unary(bound_reference_date: BoundReference[int]) -> None:
+def test_projection_year_unary(bound_reference_date: BoundReference) -> None:
     assert YearTransform().project("name", BoundNotNull(term=bound_reference_date)) == NotNull(term="name")
 
 
-def test_projection_year_literal(bound_reference_date: BoundReference[int]) -> None:
+def test_projection_year_literal(bound_reference_date: BoundReference) -> None:
     assert YearTransform().project("name", BoundEqualTo(term=bound_reference_date, literal=DateLiteral(1925))) == EqualTo(
         term="name", literal=5
     )
 
 
-def test_projection_year_set_same_year(bound_reference_date: BoundReference[int]) -> None:
+def test_projection_year_set_same_year(bound_reference_date: BoundReference) -> None:
     assert YearTransform().project(
         "name", BoundIn(term=bound_reference_date, literals={DateLiteral(1925), DateLiteral(1926)})
     ) == EqualTo(term="name", literal=5)
 
 
-def test_projection_year_set_in(bound_reference_date: BoundReference[int]) -> None:
+def test_projection_year_set_in(bound_reference_date: BoundReference) -> None:
     assert YearTransform().project(
         "name", BoundIn(term=bound_reference_date, literals={DateLiteral(1925), DateLiteral(2925)})
     ) == In(term="name", literals={8, 5})
 
 
-def test_projection_year_set_not_in(bound_reference_date: BoundReference[int]) -> None:
+def test_projection_year_set_not_in(bound_reference_date: BoundReference) -> None:
     assert (
         YearTransform().project("name", BoundNotIn(term=bound_reference_date, literals={DateLiteral(1925), DateLiteral(2925)}))
         is None
     )
 
 
-def test_projection_month_unary(bound_reference_date: BoundReference[int]) -> None:
+def test_projection_month_unary(bound_reference_date: BoundReference) -> None:
     assert MonthTransform().project("name", BoundNotNull(term=bound_reference_date)) == NotNull(term="name")
 
 
-def test_projection_month_literal(bound_reference_date: BoundReference[int]) -> None:
+def test_projection_month_literal(bound_reference_date: BoundReference) -> None:
     assert MonthTransform().project("name", BoundEqualTo(term=bound_reference_date, literal=DateLiteral(1925))) == EqualTo(
         term="name", literal=63
     )
 
 
-def test_projection_month_set_same_month(bound_reference_date: BoundReference[int]) -> None:
+def test_projection_month_set_same_month(bound_reference_date: BoundReference) -> None:
     assert MonthTransform().project(
         "name", BoundIn(term=bound_reference_date, literals={DateLiteral(1925), DateLiteral(1926)})
     ) == EqualTo(term="name", literal=63)
 
 
-def test_projection_month_set_in(bound_reference_date: BoundReference[int]) -> None:
+def test_projection_month_set_in(bound_reference_date: BoundReference) -> None:
     assert MonthTransform().project(
         "name", BoundIn(term=bound_reference_date, literals={DateLiteral(1925), DateLiteral(2925)})
     ) == In(term="name", literals={96, 63})
 
 
-def test_projection_day_month_not_in(bound_reference_date: BoundReference[int]) -> None:
+def test_projection_day_month_not_in(bound_reference_date: BoundReference) -> None:
     assert (
         MonthTransform().project("name", BoundNotIn(term=bound_reference_date, literals={DateLiteral(1925), DateLiteral(2925)}))
         is None
     )
 
 
-def test_projection_day_unary(bound_reference_timestamp: BoundReference[int]) -> None:
+def test_projection_day_unary(bound_reference_timestamp: BoundReference) -> None:
     assert DayTransform().project("name", BoundNotNull(term=bound_reference_timestamp)) == NotNull(term="name")
 
 
-def test_projection_day_literal(bound_reference_timestamp: BoundReference[int]) -> None:
+def test_projection_day_literal(bound_reference_timestamp: BoundReference) -> None:
     assert DayTransform().project(
         "name", BoundEqualTo(term=bound_reference_timestamp, literal=TimestampLiteral(1667696874000))
     ) == EqualTo(term="name", literal=19)
 
 
-def test_projection_day_set_same_day(bound_reference_timestamp: BoundReference[int]) -> None:
+def test_projection_day_set_same_day(bound_reference_timestamp: BoundReference) -> None:
     assert DayTransform().project(
         "name",
         BoundIn(term=bound_reference_timestamp, literals={TimestampLiteral(1667696874001), TimestampLiteral(1667696874000)}),
     ) == EqualTo(term="name", literal=19)
 
 
-def test_projection_day_set_in(bound_reference_timestamp: BoundReference[int]) -> None:
+def test_projection_day_set_in(bound_reference_timestamp: BoundReference) -> None:
     assert DayTransform().project(
         "name",
         BoundIn(term=bound_reference_timestamp, literals={TimestampLiteral(1667696874001), TimestampLiteral(1567696874000)}),
     ) == In(term="name", literals={18, 19})
 
 
-def test_projection_day_set_not_in(bound_reference_timestamp: BoundReference[int]) -> None:
+def test_projection_day_set_not_in(bound_reference_timestamp: BoundReference) -> None:
     assert (
         DayTransform().project(
             "name",
@@ -799,7 +800,7 @@ def test_projection_day_set_not_in(bound_reference_timestamp: BoundReference[int
     )
 
 
-def test_projection_day_human(bound_reference_date: BoundReference[int]) -> None:
+def test_projection_day_human(bound_reference_date: BoundReference) -> None:
     date_literal = DateLiteral(17532)
     assert DayTransform().project("dt", BoundEqualTo(term=bound_reference_date, literal=date_literal)) == EqualTo(
         term="dt", literal=17532
@@ -822,7 +823,7 @@ def test_projection_day_human(bound_reference_date: BoundReference[int]) -> None
     )  # >= 2018, 1, 2
 
 
-def test_projection_hour_unary(bound_reference_timestamp: BoundReference[int]) -> None:
+def test_projection_hour_unary(bound_reference_timestamp: BoundReference) -> None:
     assert HourTransform().project("name", BoundNotNull(term=bound_reference_timestamp)) == NotNull(term="name")
 
 
@@ -830,13 +831,13 @@ TIMESTAMP_EXAMPLE = 1667696874000000  # Sun Nov 06 2022 01:07:54
 HOUR_IN_MICROSECONDS = 60 * 60 * 1000 * 1000
 
 
-def test_projection_hour_literal(bound_reference_timestamp: BoundReference[int]) -> None:
+def test_projection_hour_literal(bound_reference_timestamp: BoundReference) -> None:
     assert HourTransform().project(
         "name", BoundEqualTo(term=bound_reference_timestamp, literal=TimestampLiteral(TIMESTAMP_EXAMPLE))
     ) == EqualTo(term="name", literal=463249)
 
 
-def test_projection_hour_set_same_hour(bound_reference_timestamp: BoundReference[int]) -> None:
+def test_projection_hour_set_same_hour(bound_reference_timestamp: BoundReference) -> None:
     assert HourTransform().project(
         "name",
         BoundIn(
@@ -846,7 +847,7 @@ def test_projection_hour_set_same_hour(bound_reference_timestamp: BoundReference
     ) == EqualTo(term="name", literal=463249)
 
 
-def test_projection_hour_set_in(bound_reference_timestamp: BoundReference[int]) -> None:
+def test_projection_hour_set_in(bound_reference_timestamp: BoundReference) -> None:
     assert HourTransform().project(
         "name",
         BoundIn(
@@ -856,7 +857,7 @@ def test_projection_hour_set_in(bound_reference_timestamp: BoundReference[int]) 
     ) == In(term="name", literals={463249, 463250})
 
 
-def test_projection_hour_set_not_in(bound_reference_timestamp: BoundReference[int]) -> None:
+def test_projection_hour_set_not_in(bound_reference_timestamp: BoundReference) -> None:
     assert (
         HourTransform().project(
             "name",
@@ -869,17 +870,17 @@ def test_projection_hour_set_not_in(bound_reference_timestamp: BoundReference[in
     )
 
 
-def test_projection_identity_unary(bound_reference_timestamp: BoundReference[int]) -> None:
+def test_projection_identity_unary(bound_reference_timestamp: BoundReference) -> None:
     assert IdentityTransform().project("name", BoundNotNull(term=bound_reference_timestamp)) == NotNull(term="name")
 
 
-def test_projection_identity_literal(bound_reference_timestamp: BoundReference[int]) -> None:
+def test_projection_identity_literal(bound_reference_timestamp: BoundReference) -> None:
     assert IdentityTransform().project(
         "name", BoundEqualTo(term=bound_reference_timestamp, literal=TimestampLiteral(TIMESTAMP_EXAMPLE))
     ) == EqualTo(term="name", literal=TimestampLiteral(TIMESTAMP_EXAMPLE))
 
 
-def test_projection_identity_set_in(bound_reference_timestamp: BoundReference[int]) -> None:
+def test_projection_identity_set_in(bound_reference_timestamp: BoundReference) -> None:
     assert IdentityTransform().project(
         "name",
         BoundIn(
@@ -892,7 +893,7 @@ def test_projection_identity_set_in(bound_reference_timestamp: BoundReference[in
     )
 
 
-def test_projection_identity_set_not_in(bound_reference_timestamp: BoundReference[int]) -> None:
+def test_projection_identity_set_not_in(bound_reference_timestamp: BoundReference) -> None:
     assert IdentityTransform().project(
         "name",
         BoundNotIn(
@@ -905,78 +906,78 @@ def test_projection_identity_set_not_in(bound_reference_timestamp: BoundReferenc
     )
 
 
-def test_projection_truncate_string_unary(bound_reference_str: BoundReference[str]) -> None:
+def test_projection_truncate_string_unary(bound_reference_str: BoundReference) -> None:
     assert TruncateTransform(2).project("name", BoundNotNull(term=bound_reference_str)) == NotNull(term="name")
 
 
-def test_projection_truncate_string_literal_eq(bound_reference_str: BoundReference[str]) -> None:
+def test_projection_truncate_string_literal_eq(bound_reference_str: BoundReference) -> None:
     assert TruncateTransform(2).project("name", BoundEqualTo(term=bound_reference_str, literal=literal("data"))) == EqualTo(
         term="name", literal=literal("da")
     )
 
 
-def test_projection_truncate_string_literal_gt(bound_reference_str: BoundReference[str]) -> None:
+def test_projection_truncate_string_literal_gt(bound_reference_str: BoundReference) -> None:
     assert TruncateTransform(2).project(
         "name", BoundGreaterThan(term=bound_reference_str, literal=literal("data"))
     ) == GreaterThanOrEqual(term="name", literal=literal("da"))
 
 
-def test_projection_truncate_string_literal_gte(bound_reference_str: BoundReference[str]) -> None:
+def test_projection_truncate_string_literal_gte(bound_reference_str: BoundReference) -> None:
     assert TruncateTransform(2).project(
         "name", BoundGreaterThanOrEqual(term=bound_reference_str, literal=literal("data"))
     ) == GreaterThanOrEqual(term="name", literal=literal("da"))
 
 
-def test_projection_truncate_string_literal_lt(bound_reference_str: BoundReference[str]) -> None:
+def test_projection_truncate_string_literal_lt(bound_reference_str: BoundReference) -> None:
     assert TruncateTransform(2).project(
         "name", BoundLessThan(term=bound_reference_str, literal=literal("data"))
     ) == LessThanOrEqual(term="name", literal=literal("da"))
 
 
-def test_projection_truncate_string_literal_lte(bound_reference_str: BoundReference[str]) -> None:
+def test_projection_truncate_string_literal_lte(bound_reference_str: BoundReference) -> None:
     assert TruncateTransform(2).project(
         "name", BoundLessThanOrEqual(term=bound_reference_str, literal=literal("data"))
     ) == LessThanOrEqual(term="name", literal=literal("da"))
 
 
-def test_projection_truncate_string_set_same_result(bound_reference_str: BoundReference[str]) -> None:
+def test_projection_truncate_string_set_same_result(bound_reference_str: BoundReference) -> None:
     assert TruncateTransform(2).project(
         "name", BoundIn(term=bound_reference_str, literals={literal("hello"), literal("helloworld")})
     ) == EqualTo(term="name", literal=literal("he"))
 
 
-def test_projection_truncate_string_set_in(bound_reference_str: BoundReference[str]) -> None:
+def test_projection_truncate_string_set_in(bound_reference_str: BoundReference) -> None:
     assert TruncateTransform(3).project(
         "name", BoundIn(term=bound_reference_str, literals={literal("hello"), literal("world")})
     ) == In(term="name", literals={literal("hel"), literal("wor")})  # codespell:ignore hel
 
 
-def test_projection_truncate_string_set_not_in(bound_reference_str: BoundReference[str]) -> None:
+def test_projection_truncate_string_set_not_in(bound_reference_str: BoundReference) -> None:
     assert (
         TruncateTransform(3).project("name", BoundNotIn(term=bound_reference_str, literals={literal("hello"), literal("world")}))
         is None
     )
 
 
-def test_projection_truncate_decimal_literal_eq(bound_reference_decimal: BoundReference[Decimal]) -> None:
+def test_projection_truncate_decimal_literal_eq(bound_reference_decimal: BoundReference) -> None:
     assert TruncateTransform(2).project(
         "name", BoundEqualTo(term=bound_reference_decimal, literal=DecimalLiteral(Decimal(19.25)))
     ) == EqualTo(term="name", literal=Decimal("19.24"))
 
 
-def test_projection_truncate_decimal_literal_gt(bound_reference_decimal: BoundReference[Decimal]) -> None:
+def test_projection_truncate_decimal_literal_gt(bound_reference_decimal: BoundReference) -> None:
     assert TruncateTransform(2).project(
         "name", BoundGreaterThan(term=bound_reference_decimal, literal=DecimalLiteral(Decimal(19.25)))
     ) == GreaterThanOrEqual(term="name", literal=Decimal("19.26"))
 
 
-def test_projection_truncate_decimal_literal_gte(bound_reference_decimal: BoundReference[Decimal]) -> None:
+def test_projection_truncate_decimal_literal_gte(bound_reference_decimal: BoundReference) -> None:
     assert TruncateTransform(2).project(
         "name", BoundGreaterThanOrEqual(term=bound_reference_decimal, literal=DecimalLiteral(Decimal(19.25)))
     ) == GreaterThanOrEqual(term="name", literal=Decimal("19.24"))
 
 
-def test_projection_truncate_decimal_in(bound_reference_decimal: BoundReference[Decimal]) -> None:
+def test_projection_truncate_decimal_in(bound_reference_decimal: BoundReference) -> None:
     assert TruncateTransform(2).project(
         "name", BoundIn(term=bound_reference_decimal, literals={literal(Decimal(19.25)), literal(Decimal(18.15))})
     ) == In(
@@ -988,25 +989,25 @@ def test_projection_truncate_decimal_in(bound_reference_decimal: BoundReference[
     )
 
 
-def test_projection_truncate_long_literal_eq(bound_reference_decimal: BoundReference[Decimal]) -> None:
+def test_projection_truncate_long_literal_eq(bound_reference_decimal: BoundReference) -> None:
     assert TruncateTransform(2).project(
         "name", BoundEqualTo(term=bound_reference_decimal, literal=DecimalLiteral(Decimal(19.25)))
     ) == EqualTo(term="name", literal=Decimal("19.24"))
 
 
-def test_projection_truncate_long_literal_gt(bound_reference_decimal: BoundReference[Decimal]) -> None:
+def test_projection_truncate_long_literal_gt(bound_reference_decimal: BoundReference) -> None:
     assert TruncateTransform(2).project(
         "name", BoundGreaterThan(term=bound_reference_decimal, literal=DecimalLiteral(Decimal(19.25)))
     ) == GreaterThanOrEqual(term="name", literal=Decimal("19.26"))
 
 
-def test_projection_truncate_long_literal_gte(bound_reference_decimal: BoundReference[Decimal]) -> None:
+def test_projection_truncate_long_literal_gte(bound_reference_decimal: BoundReference) -> None:
     assert TruncateTransform(2).project(
         "name", BoundGreaterThanOrEqual(term=bound_reference_decimal, literal=DecimalLiteral(Decimal(19.25)))
     ) == GreaterThanOrEqual(term="name", literal=Decimal("19.24"))
 
 
-def test_projection_truncate_long_in(bound_reference_decimal: BoundReference[Decimal]) -> None:
+def test_projection_truncate_long_in(bound_reference_decimal: BoundReference) -> None:
     assert TruncateTransform(2).project(
         "name", BoundIn(term=bound_reference_decimal, literals={DecimalLiteral(Decimal(19.25)), DecimalLiteral(Decimal(18.15))})
     ) == In(
@@ -1018,19 +1019,19 @@ def test_projection_truncate_long_in(bound_reference_decimal: BoundReference[Dec
     )
 
 
-def test_projection_truncate_string_starts_with(bound_reference_str: BoundReference[str]) -> None:
+def test_projection_truncate_string_starts_with(bound_reference_str: BoundReference) -> None:
     assert TruncateTransform(2).project(
         "name", BoundStartsWith(term=bound_reference_str, literal=literal("hello"))
     ) == StartsWith(term="name", literal=literal("he"))
 
 
-def test_projection_truncate_string_not_starts_with(bound_reference_str: BoundReference[str]) -> None:
+def test_projection_truncate_string_not_starts_with(bound_reference_str: BoundReference) -> None:
     assert TruncateTransform(2).project(
         "name", BoundNotStartsWith(term=bound_reference_str, literal=literal("hello"))
     ) == NotStartsWith(term="name", literal=literal("he"))
 
 
-def _test_projection(lhs: UnboundPredicate[L] | None, rhs: UnboundPredicate[L] | None) -> None:
+def _test_projection(lhs: UnboundPredicate | None, rhs: UnboundPredicate | None) -> None:
     assert type(lhs) is type(lhs), f"Different classes: {type(lhs)} != {type(rhs)}"
     if lhs is None and rhs is None:
         # Both null
@@ -1068,7 +1069,7 @@ def _assert_projection_strict(
         assert actual_human_str == expected_human_str
 
 
-def test_month_projection_strict_epoch(bound_reference_date: BoundReference[int]) -> None:
+def test_month_projection_strict_epoch(bound_reference_date: BoundReference) -> None:
     date = literal("1970-01-01").to(DateType())
     transform = MonthTransform()
     _assert_projection_strict(BoundLessThan(term=bound_reference_date, literal=date), transform, LessThan, "1970-01")
@@ -1091,7 +1092,7 @@ def test_month_projection_strict_epoch(bound_reference_date: BoundReference[int]
     )
 
 
-def test_month_projection_strict_lower_bound(bound_reference_date: BoundReference[int]) -> None:
+def test_month_projection_strict_lower_bound(bound_reference_date: BoundReference) -> None:
     date = literal("2017-01-01").to(DateType())  # == 564 months since epoch
     transform = MonthTransform()
 
@@ -1115,7 +1116,7 @@ def test_month_projection_strict_lower_bound(bound_reference_date: BoundReferenc
     )
 
 
-def test_negative_month_projection_strict_lower_bound(bound_reference_date: BoundReference[int]) -> None:
+def test_negative_month_projection_strict_lower_bound(bound_reference_date: BoundReference) -> None:
     date = literal("1969-01-01").to(DateType())  # == 564 months since epoch
     transform = MonthTransform()
 
@@ -1140,7 +1141,7 @@ def test_negative_month_projection_strict_lower_bound(bound_reference_date: Boun
     )
 
 
-def test_month_projection_strict_upper_bound(bound_reference_date: BoundReference[int]) -> None:
+def test_month_projection_strict_upper_bound(bound_reference_date: BoundReference) -> None:
     date = literal("2017-12-31").to(DateType())  # == 564 months since epoch
     transform = MonthTransform()
 
@@ -1164,7 +1165,7 @@ def test_month_projection_strict_upper_bound(bound_reference_date: BoundReferenc
     )
 
 
-def test_negative_month_projection_strict_upper_bound(bound_reference_date: BoundReference[int]) -> None:
+def test_negative_month_projection_strict_upper_bound(bound_reference_date: BoundReference) -> None:
     date = literal("1969-12-31").to(DateType())  # == 564 months since epoch
     transform = MonthTransform()
 
@@ -1188,7 +1189,7 @@ def test_negative_month_projection_strict_upper_bound(bound_reference_date: Boun
     )
 
 
-def test_day_strict(bound_reference_date: BoundReference[int]) -> None:
+def test_day_strict(bound_reference_date: BoundReference) -> None:
     date = literal("2017-01-01").to(DateType())
     transform = DayTransform()
 
@@ -1216,7 +1217,7 @@ def test_day_strict(bound_reference_date: BoundReference[int]) -> None:
     )
 
 
-def test_day_negative_strict(bound_reference_date: BoundReference[int]) -> None:
+def test_day_negative_strict(bound_reference_date: BoundReference) -> None:
     date = literal("1969-12-30").to(DateType())
     transform = DayTransform()
 
@@ -1244,7 +1245,7 @@ def test_day_negative_strict(bound_reference_date: BoundReference[int]) -> None:
     )
 
 
-def test_year_strict_lower_bound(bound_reference_date: BoundReference[int]) -> None:
+def test_year_strict_lower_bound(bound_reference_date: BoundReference) -> None:
     date = literal("2017-01-01").to(DateType())
     transform = YearTransform()
 
@@ -1265,7 +1266,7 @@ def test_year_strict_lower_bound(bound_reference_date: BoundReference[int]) -> N
     )
 
 
-def test_negative_year_strict_lower_bound(bound_reference_date: BoundReference[int]) -> None:
+def test_negative_year_strict_lower_bound(bound_reference_date: BoundReference) -> None:
     date = literal("1970-01-01").to(DateType())
     transform = YearTransform()
 
@@ -1289,7 +1290,7 @@ def test_negative_year_strict_lower_bound(bound_reference_date: BoundReference[i
     )
 
 
-def test_year_strict_upper_bound(bound_reference_date: BoundReference[int]) -> None:
+def test_year_strict_upper_bound(bound_reference_date: BoundReference) -> None:
     date = literal("2017-12-31").to(DateType())
     transform = YearTransform()
 
@@ -1313,7 +1314,7 @@ def test_year_strict_upper_bound(bound_reference_date: BoundReference[int]) -> N
     )
 
 
-def test_negative_year_strict_upper_bound(bound_reference_date: BoundReference[int]) -> None:
+def test_negative_year_strict_upper_bound(bound_reference_date: BoundReference) -> None:
     date = literal("2017-12-31").to(DateType())
     transform = YearTransform()
 
@@ -1330,7 +1331,7 @@ def test_negative_year_strict_upper_bound(bound_reference_date: BoundReference[i
     _assert_projection_strict(BoundIn(term=bound_reference_date, literals={date, another_date}), transform, NotIn)
 
 
-def test_strict_bucket_integer(bound_reference_int: BoundReference[int]) -> None:
+def test_strict_bucket_integer(bound_reference_int: BoundReference) -> None:
     value = literal(100).to(IntegerType())
     transform = BucketTransform(num_buckets=10)
 
@@ -1346,7 +1347,7 @@ def test_strict_bucket_integer(bound_reference_int: BoundReference[int]) -> None
     _assert_projection_strict(BoundIn(term=bound_reference_int, literals=literals), transform, AlwaysFalse)
 
 
-def test_strict_bucket_long(bound_reference_long: BoundReference[int]) -> None:
+def test_strict_bucket_long(bound_reference_long: BoundReference) -> None:
     value = literal(100).to(LongType())
     transform = BucketTransform(num_buckets=10)
 
@@ -1362,7 +1363,7 @@ def test_strict_bucket_long(bound_reference_long: BoundReference[int]) -> None:
     _assert_projection_strict(BoundIn(term=bound_reference_long, literals=literals), transform, AlwaysFalse)
 
 
-def test_strict_bucket_decimal(bound_reference_decimal: BoundReference[int]) -> None:
+def test_strict_bucket_decimal(bound_reference_decimal: BoundReference) -> None:
     dec = DecimalType(9, 2)
     value = literal("100.00").to(dec)
     transform = BucketTransform(num_buckets=10)
@@ -1379,7 +1380,7 @@ def test_strict_bucket_decimal(bound_reference_decimal: BoundReference[int]) -> 
     _assert_projection_strict(BoundIn(term=bound_reference_decimal, literals=literals), transform, AlwaysFalse)
 
 
-def test_strict_bucket_string(bound_reference_str: BoundReference[int]) -> None:
+def test_strict_bucket_string(bound_reference_str: BoundReference) -> None:
     value = literal("abcdefg").to(StringType())
     transform = BucketTransform(num_buckets=10)
 
@@ -1395,7 +1396,7 @@ def test_strict_bucket_string(bound_reference_str: BoundReference[int]) -> None:
     _assert_projection_strict(BoundIn(term=bound_reference_str, literals={value, other_value}), transform, AlwaysFalse)
 
 
-def test_strict_bucket_bytes(bound_reference_binary: BoundReference[int]) -> None:
+def test_strict_bucket_bytes(bound_reference_binary: BoundReference) -> None:
     value = literal(str.encode("abcdefg")).to(BinaryType())
     transform = BucketTransform(num_buckets=10)
 
@@ -1411,7 +1412,7 @@ def test_strict_bucket_bytes(bound_reference_binary: BoundReference[int]) -> Non
     _assert_projection_strict(BoundIn(term=bound_reference_binary, literals={value, other_value}), transform, AlwaysFalse)
 
 
-def test_strict_bucket_uuid(bound_reference_uuid: BoundReference[int]) -> None:
+def test_strict_bucket_uuid(bound_reference_uuid: BoundReference) -> None:
     value = literal("00000000-0000-007b-0000-0000000001c8").to(UUIDType())
     transform = BucketTransform(num_buckets=10)
 
@@ -1427,7 +1428,7 @@ def test_strict_bucket_uuid(bound_reference_uuid: BoundReference[int]) -> None:
     _assert_projection_strict(BoundIn(term=bound_reference_uuid, literals={value, other_value}), transform, AlwaysFalse)
 
 
-def test_strict_identity_projection(bound_reference_long: BoundReference[int]) -> None:
+def test_strict_identity_projection(bound_reference_long: BoundReference) -> None:
     transform: Transform[Any, Any] = IdentityTransform()
     predicates = [
         BoundNotNull(term=bound_reference_long),
@@ -1458,7 +1459,7 @@ def test_strict_identity_projection(bound_reference_long: BoundReference[int]) -
             )
 
 
-def test_truncate_strict_integer_lower_bound(bound_reference_int: BoundReference[int]) -> None:
+def test_truncate_strict_integer_lower_bound(bound_reference_int: BoundReference) -> None:
     value = literal(100).to(IntegerType())
     transform = TruncateTransform(10)
 
@@ -1476,7 +1477,7 @@ def test_truncate_strict_integer_lower_bound(bound_reference_int: BoundReference
     _assert_projection_strict(BoundIn(term=bound_reference_int, literals={value_dec, value, value_inc}), transform, NotIn)
 
 
-def test_truncate_strict_integer_upper_bound(bound_reference_int: BoundReference[int]) -> None:
+def test_truncate_strict_integer_upper_bound(bound_reference_int: BoundReference) -> None:
     value = literal(99).to(IntegerType())
     transform = TruncateTransform(10)
 
@@ -1492,7 +1493,7 @@ def test_truncate_strict_integer_upper_bound(bound_reference_int: BoundReference
     _assert_projection_strict(BoundIn(term=bound_reference_int, literals=literals), transform, NotIn)
 
 
-def test_truncate_strict_long_lower_bound(bound_reference_long: BoundReference[int]) -> None:
+def test_truncate_strict_long_lower_bound(bound_reference_long: BoundReference) -> None:
     value = literal(100).to(IntegerType())
     transform = TruncateTransform(10)
 
@@ -1510,7 +1511,7 @@ def test_truncate_strict_long_lower_bound(bound_reference_long: BoundReference[i
     _assert_projection_strict(BoundIn(term=bound_reference_long, literals={value_dec, value, value_inc}), transform, NotIn)
 
 
-def test_truncate_strict_long_upper_bound(bound_reference_long: BoundReference[int]) -> None:
+def test_truncate_strict_long_upper_bound(bound_reference_long: BoundReference) -> None:
     value = literal(99).to(IntegerType())
     transform = TruncateTransform(10)
 
@@ -1528,7 +1529,7 @@ def test_truncate_strict_long_upper_bound(bound_reference_long: BoundReference[i
     _assert_projection_strict(BoundIn(term=bound_reference_long, literals={value_dec, value, value_inc}), transform, NotIn)
 
 
-def test_truncate_strict_decimal_lower_bound(bound_reference_decimal: BoundReference[Decimal]) -> None:
+def test_truncate_strict_decimal_lower_bound(bound_reference_decimal: BoundReference) -> None:
     dec = DecimalType(9, 2)
     value = literal("100.00").to(dec)
     transform = TruncateTransform(10)
@@ -1549,7 +1550,7 @@ def test_truncate_strict_decimal_lower_bound(bound_reference_decimal: BoundRefer
     _assert_projection_strict(BoundIn(term=bound_reference_decimal, literals=literals), transform, NotIn)
 
 
-def test_truncate_strict_decimal_upper_bound(bound_reference_decimal: BoundReference[Decimal]) -> None:
+def test_truncate_strict_decimal_upper_bound(bound_reference_decimal: BoundReference) -> None:
     dec = DecimalType(9, 2)
     value = literal("99.99").to(dec)
     transform = TruncateTransform(10)
@@ -1570,7 +1571,7 @@ def test_truncate_strict_decimal_upper_bound(bound_reference_decimal: BoundRefer
     _assert_projection_strict(BoundIn(term=bound_reference_decimal, literals=literals), transform, NotIn)
 
 
-def test_string_strict(bound_reference_str: BoundReference[str]) -> None:
+def test_string_strict(bound_reference_str: BoundReference) -> None:
     value = literal("abcdefg").to(StringType())
     transform: Transform[Any, Any] = TruncateTransform(width=5)
 
@@ -1585,7 +1586,7 @@ def test_string_strict(bound_reference_str: BoundReference[str]) -> None:
     _assert_projection_strict(BoundIn(term=bound_reference_str, literals={value, other_value}), transform, NotIn)
 
 
-def test_strict_binary(bound_reference_binary: BoundReference[str]) -> None:
+def test_strict_binary(bound_reference_binary: BoundReference) -> None:
     value = literal(b"abcdefg").to(BinaryType())
     transform: Transform[Any, Any] = TruncateTransform(width=5)
 

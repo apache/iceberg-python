@@ -19,8 +19,9 @@ from __future__ import annotations
 import time
 import warnings
 from collections import defaultdict
+from collections.abc import Iterable, Mapping
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Iterable, Mapping
+from typing import TYPE_CHECKING, Any
 
 from pydantic import Field, PrivateAttr, model_serializer
 

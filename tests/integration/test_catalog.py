@@ -16,8 +16,8 @@
 #  under the License.
 
 import os
+from collections.abc import Generator
 from pathlib import Path, PosixPath
-from typing import Generator
 
 import pytest
 

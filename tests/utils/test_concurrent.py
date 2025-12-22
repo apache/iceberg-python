@@ -17,8 +17,8 @@
 
 import multiprocessing
 import os
+from collections.abc import Generator
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from typing import Generator
 from unittest import mock
 
 import pytest

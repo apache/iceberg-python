@@ -17,7 +17,8 @@
 # pylint: disable=redefined-outer-name,unused-argument
 import base64
 import os
-from typing import Any, Callable, cast
+from collections.abc import Callable
+from typing import Any, cast
 from unittest import mock
 
 import pytest
@@ -1992,3 +1993,53 @@ class TestRestCatalogClose:
 
         assert catalog is not None and hasattr(catalog, "_session")
         assert len(catalog._session.adapters) == self.EXPECTED_ADAPTERS_SIGV4
+
+    def test_rest_scan_planning_disabled_by_default(self, rest_mock: Mocker) -> None:
+        rest_mock.get(
+            f"{TEST_URI}v1/config",
+            json={"defaults": {}, "overrides": {}},
+            status_code=200,
+        )
+        catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+        assert catalog.is_rest_scan_planning_enabled() is False
+
+    def test_rest_scan_planning_enabled_by_property(self, rest_mock: Mocker) -> None:
+        rest_mock.get(
+            f"{TEST_URI}v1/config",
+            json={"defaults": {}, "overrides": {}},
+            status_code=200,
+        )
+        catalog = RestCatalog(
+            "rest",
+            uri=TEST_URI,
+            token=TEST_TOKEN,
+            **{"rest-scan-planning-enabled": "true"},
+        )
+
+        assert catalog.is_rest_scan_planning_enabled() is True
+
+    def test_rest_scan_planning_explicitly_disabled(self, rest_mock: Mocker) -> None:
+        rest_mock.get(
+            f"{TEST_URI}v1/config",
+            json={"defaults": {}, "overrides": {}},
+            status_code=200,
+        )
+        catalog = RestCatalog(
+            "rest",
+            uri=TEST_URI,
+            token=TEST_TOKEN,
+            **{"rest-scan-planning-enabled": "false"},
+        )
+
+        assert catalog.is_rest_scan_planning_enabled() is False
+
+    def test_rest_scan_planning_enabled_from_server_config(self, rest_mock: Mocker) -> None:
+        rest_mock.get(
+            f"{TEST_URI}v1/config",
+            json={"defaults": {"rest-scan-planning-enabled": "true"}, "overrides": {}},
+            status_code=200,
+        )
+        catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+        assert catalog.is_rest_scan_planning_enabled() is True

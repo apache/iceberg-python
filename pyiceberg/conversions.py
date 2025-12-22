@@ -31,13 +31,13 @@ Note:
 
 import codecs
 import uuid
+from collections.abc import Callable
 from datetime import date, datetime, time
 from decimal import Decimal
 from functools import singledispatch
 from struct import Struct
 from typing import (
     Any,
-    Callable,
 )
 
 from pyiceberg.typedef import UTF8, L

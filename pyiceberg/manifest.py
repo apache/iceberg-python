@@ -19,12 +19,12 @@ from __future__ import annotations
 import math
 import threading
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from copy import copy
 from enum import Enum
 from types import TracebackType
 from typing import (
     Any,
-    Iterator,
     Literal,
 )
 

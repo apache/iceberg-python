@@ -15,10 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=arguments-renamed,unused-argument
+from collections.abc import Callable
 from enum import Enum
-from typing import (
-    Callable,
-)
 
 from pyiceberg.avro.decoder import BinaryDecoder
 from pyiceberg.avro.reader import (

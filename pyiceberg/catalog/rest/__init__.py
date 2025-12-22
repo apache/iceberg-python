@@ -96,6 +96,8 @@ class Endpoints:
     list_views: str = "namespaces/{namespace}/views"
     drop_view: str = "namespaces/{namespace}/views/{view}"
     view_exists: str = "namespaces/{namespace}/views/{view}"
+    plan_table_scan: str = "namespaces/{namespace}/tables/{table}/plan"
+    fetch_scan_tasks: str = "namespaces/{namespace}/tables/{table}/tasks"
 
 
 class IdentifierKind(Enum):
@@ -130,6 +132,8 @@ OAUTH2_SERVER_URI = "oauth2-server-uri"
 SNAPSHOT_LOADING_MODE = "snapshot-loading-mode"
 AUTH = "auth"
 CUSTOM = "custom"
+REST_SCAN_PLANNING_ENABLED = "rest-scan-planning-enabled"
+REST_SCAN_PLANNING_ENABLED_DEFAULT = False
 
 NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
 
@@ -268,6 +272,14 @@ class RestCatalog(Catalog):
             self._init_sigv4(session)
 
         return session
+
+    def is_rest_scan_planning_enabled(self) -> bool:
+        """Check if rest server-side scan planning is enabled.
+
+        Returns:
+            True if enabled, False otherwise.
+        """
+        return property_as_bool(self.properties, REST_SCAN_PLANNING_ENABLED, REST_SCAN_PLANNING_ENABLED_DEFAULT)
 
     def _create_legacy_oauth2_auth_manager(self, session: Session) -> AuthManager:
         """Create the LegacyOAuth2AuthManager by fetching required properties.

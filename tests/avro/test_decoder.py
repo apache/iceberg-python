@@ -18,9 +18,9 @@ from __future__ import annotations
 
 import itertools
 import struct
+from collections.abc import Callable
 from io import SEEK_SET
 from types import TracebackType
-from typing import Callable
 from unittest.mock import MagicMock, patch
 
 import pytest
