@@ -108,13 +108,20 @@ def list(ctx: Context, parent: str | None) -> None:  # pylint: disable=redefined
     """List tables or namespaces."""
     catalog, output = _catalog_and_output(ctx)
 
-    identifiers = []
+    identifiers = None
     if parent:
-        # Do we have tables under parent namespace?
         identifiers = catalog.list_tables(parent)
-    if not identifiers:
-        # List hierarchical namespaces if parent, root namespaces otherwise.
+        try:
+            first_item = next(identifiers)
+            from itertools import chain
+
+            identifiers = chain([first_item], identifiers)
+        except StopIteration:
+            identifiers = None
+
+    if identifiers is None:
         identifiers = catalog.list_namespaces(parent or ())
+
     output.identifiers(identifiers)
 
 

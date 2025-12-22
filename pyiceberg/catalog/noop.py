@@ -14,6 +14,7 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+from collections.abc import Iterator
 from typing import (
     TYPE_CHECKING,
     Union,
@@ -102,10 +103,10 @@ class NoopCatalog(Catalog):
     def drop_namespace(self, namespace: str | Identifier) -> None:
         raise NotImplementedError
 
-    def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> Iterator[Identifier]:
         raise NotImplementedError
 
-    def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> Iterator[Identifier]:
         raise NotImplementedError
 
     def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
@@ -116,7 +117,7 @@ class NoopCatalog(Catalog):
     ) -> PropertiesUpdateSummary:
         raise NotImplementedError
 
-    def list_views(self, namespace: str | Identifier) -> list[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> Iterator[Identifier]:
         raise NotImplementedError
 
     def view_exists(self, identifier: str | Identifier) -> bool:

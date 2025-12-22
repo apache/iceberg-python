@@ -465,7 +465,7 @@ def test_list_tables(
 
     for table_name in table_list:
         test_catalog.create_table((database_name, table_name), table_schema_nested)
-    loaded_table_list = test_catalog.list_tables(database_name)
+    loaded_table_list = list(test_catalog.list_tables(database_name))
 
     assert (database_name, non_iceberg_table_name) not in loaded_table_list
     assert (database_name, non_table_type_table_name) not in loaded_table_list
@@ -487,7 +487,7 @@ def test_list_namespaces(_bucket_initialize: None, moto_endpoint_url: str, datab
 def test_create_namespace_no_properties(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
-    loaded_database_list = test_catalog.list_namespaces()
+    loaded_database_list = list(test_catalog.list_namespaces())
     assert len(loaded_database_list) == 1
     assert (database_name,) in loaded_database_list
     properties = test_catalog.load_namespace_properties(database_name)
@@ -503,7 +503,7 @@ def test_create_namespace_with_comment_and_location(_bucket_initialize: None, mo
     }
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name, properties=test_properties)
-    loaded_database_list = test_catalog.list_namespaces()
+    loaded_database_list = list(test_catalog.list_namespaces())
     assert len(loaded_database_list) == 1
     assert (database_name,) in loaded_database_list
     properties = test_catalog.load_namespace_properties(database_name)
@@ -515,7 +515,7 @@ def test_create_namespace_with_comment_and_location(_bucket_initialize: None, mo
 def test_create_duplicated_namespace(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
-    loaded_database_list = test_catalog.list_namespaces()
+    loaded_database_list = list(test_catalog.list_namespaces())
     assert len(loaded_database_list) == 1
     assert (database_name,) in loaded_database_list
     with pytest.raises(NamespaceAlreadyExistsError):
@@ -526,11 +526,11 @@ def test_create_duplicated_namespace(_bucket_initialize: None, moto_endpoint_url
 def test_drop_namespace(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
-    loaded_database_list = test_catalog.list_namespaces()
+    loaded_database_list = list(test_catalog.list_namespaces())
     assert len(loaded_database_list) == 1
     assert (database_name,) in loaded_database_list
     test_catalog.drop_namespace(database_name)
-    loaded_database_list = test_catalog.list_namespaces()
+    loaded_database_list = list(test_catalog.list_namespaces())
     assert len(loaded_database_list) == 0
 
 
@@ -542,7 +542,7 @@ def test_drop_non_empty_namespace(
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
-    assert len(test_catalog.list_tables(database_name)) == 1
+    assert len(list(test_catalog.list_tables(database_name))) == 1
     with pytest.raises(NamespaceNotEmptyError):
         test_catalog.drop_namespace(database_name)
 

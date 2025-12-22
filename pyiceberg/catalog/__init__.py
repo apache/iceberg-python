@@ -22,7 +22,7 @@ import logging
 import re
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from enum import Enum
 from typing import (
@@ -581,42 +581,42 @@ class Catalog(ABC):
         """
 
     @abstractmethod
-    def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> Iterator[Identifier]:
         """List tables under the given namespace in the catalog.
 
         Args:
             namespace (str | Identifier): Namespace identifier to search.
 
         Returns:
-            List[Identifier]: list of table identifiers.
+            Iterator[Identifier]: iterator of table identifiers.
 
         Raises:
             NoSuchNamespaceError: If a namespace with the given name does not exist.
         """
 
     @abstractmethod
-    def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> Iterator[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
 
         Args:
             namespace (str | Identifier): Namespace identifier to search.
 
         Returns:
-            List[Identifier]: a List of namespace identifiers.
+            Iterator[Identifier]: iterator of namespace identifiers.
 
         Raises:
             NoSuchNamespaceError: If a namespace with the given name does not exist.
         """
 
     @abstractmethod
-    def list_views(self, namespace: str | Identifier) -> list[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> Iterator[Identifier]:
         """List views under the given namespace in the catalog.
 
         Args:
             namespace (str | Identifier): Namespace identifier to search.
 
         Returns:
-            List[Identifier]: list of table identifiers.
+            Iterator[Identifier]: iterator of table identifiers.
 
         Raises:
             NoSuchNamespaceError: If a namespace with the given name does not exist.
