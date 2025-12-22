@@ -157,6 +157,8 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IcebergType,
     IntegerType,
     ListType,
@@ -796,6 +798,26 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.null()
 
     def visit_binary(self, _: BinaryType) -> pa.DataType:
+        return pa.large_binary()
+
+    def visit_geometry(self, geometry_type: GeometryType) -> pa.DataType:
+        """Convert geometry type to PyArrow binary.
+
+        Note: PyArrow 21.0.0+ supports native GEOMETRY logical type from Arrow GEO.
+        For now, we use large_binary which stores WKB bytes.
+        Future enhancement: detect PyArrow version and use pa.geometry() when available.
+        """
+        # TODO: When PyArrow 21.0.0+ is available, use pa.geometry() with CRS metadata
+        return pa.large_binary()
+
+    def visit_geography(self, geography_type: GeographyType) -> pa.DataType:
+        """Convert geography type to PyArrow binary.
+
+        Note: PyArrow 21.0.0+ supports native GEOGRAPHY logical type from Arrow GEO.
+        For now, we use large_binary which stores WKB bytes.
+        Future enhancement: detect PyArrow version and use pa.geography() when available.
+        """
+        # TODO: When PyArrow 21.0.0+ is available, use pa.geography() with CRS and algorithm metadata
         return pa.large_binary()
 
 
@@ -2110,6 +2132,12 @@ class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
 
     def visit_unknown(self, unknown_type: UnknownType) -> str:
         return "UNKNOWN"
+
+    def visit_geometry(self, geometry_type: GeometryType) -> str:
+        return "BYTE_ARRAY"
+
+    def visit_geography(self, geography_type: GeographyType) -> str:
+        return "BYTE_ARRAY"
 
 
 _PRIMITIVE_TO_PHYSICAL_TYPE_VISITOR = PrimitiveToPhysicalType()
