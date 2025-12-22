@@ -69,7 +69,7 @@ from pyiceberg.expressions.literals import (
 from pyiceberg.typedef import L
 from pyiceberg.types import strtobool
 
-ParserElement.enablePackrat()
+ParserElement.enable_packrat()
 
 AND = CaselessKeyword("and")
 OR = CaselessKeyword("or")
