@@ -801,24 +801,35 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.large_binary()
 
     def visit_geometry(self, geometry_type: GeometryType) -> pa.DataType:
-        """Convert geometry type to PyArrow binary.
+        """Convert geometry type to PyArrow type.
 
-        Note: PyArrow 21.0.0+ supports native GEOMETRY logical type from Arrow GEO.
-        For now, we use large_binary which stores WKB bytes.
-        Future enhancement: detect PyArrow version and use pa.geometry() when available.
+        When geoarrow-pyarrow is available, returns a GeoArrow WKB extension type
+        with CRS metadata. Otherwise, falls back to large_binary which stores WKB bytes.
         """
-        # TODO: When PyArrow 21.0.0+ is available, use pa.geometry() with CRS metadata
-        return pa.large_binary()
+        try:
+            import geoarrow.pyarrow as ga
+
+            return ga.wkb().with_crs(geometry_type.crs)
+        except ImportError:
+            return pa.large_binary()
 
     def visit_geography(self, geography_type: GeographyType) -> pa.DataType:
-        """Convert geography type to PyArrow binary.
+        """Convert geography type to PyArrow type.
 
-        Note: PyArrow 21.0.0+ supports native GEOGRAPHY logical type from Arrow GEO.
-        For now, we use large_binary which stores WKB bytes.
-        Future enhancement: detect PyArrow version and use pa.geography() when available.
+        When geoarrow-pyarrow is available, returns a GeoArrow WKB extension type
+        with CRS and edge type metadata. Otherwise, falls back to large_binary which stores WKB bytes.
         """
-        # TODO: When PyArrow 21.0.0+ is available, use pa.geography() with CRS and algorithm metadata
-        return pa.large_binary()
+        try:
+            import geoarrow.pyarrow as ga
+
+            wkb_type = ga.wkb().with_crs(geography_type.crs)
+            # Map Iceberg algorithm to GeoArrow edge type
+            if geography_type.algorithm == "spherical":
+                wkb_type = wkb_type.with_edge_type(ga.EdgeType.SPHERICAL)
+            # "planar" is the default edge type in GeoArrow, no need to set explicitly
+            return wkb_type
+        except ImportError:
+            return pa.large_binary()
 
 
 def _convert_scalar(value: Any, iceberg_type: IcebergType) -> pa.scalar:

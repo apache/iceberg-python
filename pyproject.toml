@@ -96,6 +96,7 @@ hf = ["huggingface-hub>=0.24.0"]
 pyiceberg-core = ["pyiceberg-core>=0.5.1,<0.8.0"]
 datafusion = ["datafusion>=45,<49"]
 gcp-auth = ["google-auth>=2.4.0"]
+geoarrow = ["geoarrow-pyarrow>=0.2.0"]
 
 [dependency-groups]
 dev = [
