@@ -69,7 +69,7 @@ from pyiceberg.expressions.literals import (
 from pyiceberg.typedef import L
 from pyiceberg.types import strtobool
 
-ParserElement.enablePackrat()
+ParserElement.enable_packrat()
 
 AND = CaselessKeyword("and")
 OR = CaselessKeyword("or")
@@ -82,7 +82,7 @@ LIKE = CaselessKeyword("like")
 BETWEEN = CaselessKeyword("between")
 
 unquoted_identifier = Word(alphas + "_", alphanums + "_$")
-quoted_identifier = QuotedString('"', escChar="\\", unquoteResults=True)
+quoted_identifier = QuotedString('"', esc_quote="\\", unquote_results=True)
 
 
 @quoted_identifier.set_parse_action
