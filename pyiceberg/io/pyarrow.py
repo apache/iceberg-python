@@ -2681,7 +2681,7 @@ def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[list[
     from pyiceberg.utils.bin_packing import PackingIterator
 
     avg_row_size_bytes = tbl.nbytes / tbl.num_rows
-    target_rows_per_file = target_file_size // avg_row_size_bytes
+    target_rows_per_file = max(1, int(target_file_size / avg_row_size_bytes))
     batches = tbl.to_batches(max_chunksize=target_rows_per_file)
     bin_packed_record_batches = PackingIterator(
         items=batches,

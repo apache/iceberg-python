@@ -82,7 +82,7 @@ LIKE = CaselessKeyword("like")
 BETWEEN = CaselessKeyword("between")
 
 unquoted_identifier = Word(alphas + "_", alphanums + "_$")
-quoted_identifier = QuotedString('"', escChar="\\", unquoteResults=True)
+quoted_identifier = QuotedString('"', esc_quote="\\", unquote_results=True)
 
 
 @quoted_identifier.set_parse_action
