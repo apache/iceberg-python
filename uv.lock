@@ -3875,7 +3875,7 @@ dev = [
     { name = "prek", specifier = ">=0.2.1,<0.3" },
     { name = "protobuf", specifier = "==6.33.2" },
     { name = "pyarrow-stubs", specifier = ">=20.0.0.20251107" },
-    { name = "pyspark", extras = ["connect"], specifier = "==4.0.1" },
+    { name = "pyspark", extras = ["connect"], specifier = "==4.1.0" },
     { name = "pytest", specifier = "==7.4.4" },
     { name = "pytest-checkdocs", specifier = "==2.13.0" },
     { name = "pytest-lazy-fixture", specifier = "==0.6.3" },
@@ -4021,12 +4021,12 @@ wheels = [
 
 [[package]]
 name = "pyspark"
-version = "4.0.1"
+version = "4.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "py4j" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ae/40/1414582f16c1d7b051c668c2e19c62d21a18bd181d944cb24f5ddbb2423f/pyspark-4.0.1.tar.gz", hash = "sha256:9d1f22d994f60369228397e3479003ffe2dd736ba79165003246ff7bd48e2c73", size = 434204896, upload-time = "2025-09-06T07:15:57.091Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/88/0d/f280cbd070e424008f370c068c6a371e0cbb902e33d9709b01e97d479b01/pyspark-4.1.0.tar.gz", hash = "sha256:09c714ada88dfac3e1213c066617c6f473c1e22fbe279855028f77e12434147d", size = 455337789, upload-time = "2025-12-16T12:30:47.141Z" }
 
 [package.optional-dependencies]
 connect = [
@@ -4036,6 +4036,7 @@ connect = [
     { name = "numpy" },
     { name = "pandas" },
     { name = "pyarrow" },
+    { name = "zstandard" },
 ]
 
 [[package]]
