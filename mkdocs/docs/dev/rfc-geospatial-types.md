@@ -13,6 +13,7 @@ This RFC describes the design and implementation of these types in PyIceberg.
 ## Scope
 
 **In scope:**
+
 - `geometry(C)` and `geography(C, A)` primitive type definitions
 - Type parsing and serialization (round-trip support)
 - Avro mapping (WKB bytes)
@@ -20,6 +21,7 @@ This RFC describes the design and implementation of these types in PyIceberg.
 - Format version enforcement (v3 required)
 
 **Out of scope (future work):**
+
 - Spatial predicate pushdown (e.g., ST_Contains, ST_Intersects)
 - WKB/WKT conversion (requires external dependencies)
 - Geometry/geography bounds metrics
@@ -36,9 +38,11 @@ This RFC describes the design and implementation of these types in PyIceberg.
 ### Type Parameters
 
 **GeometryType:**
+
 - `crs` (string): Coordinate Reference System, defaults to `"OGC:CRS84"`
 
 **GeographyType:**
+
 - `crs` (string): Coordinate Reference System, defaults to `"OGC:CRS84"`
 - `algorithm` (string): Geographic algorithm, defaults to `"spherical"`
 
@@ -74,11 +78,13 @@ Both geometry and geography types map to Avro `bytes` type, consistent with `Bin
 ### PyArrow/Parquet Mapping
 
 **With geoarrow-pyarrow installed:**
+
 - Geometry types convert to GeoArrow WKB extension type with CRS metadata
 - Geography types convert to GeoArrow WKB extension type with CRS and edge type metadata
 - Uses `geoarrow.pyarrow.wkb().with_crs()` and `.with_edge_type()` for full GeoArrow compatibility
 
 **Without geoarrow-pyarrow:**
+
 - Geometry and geography types fall back to `pa.large_binary()`
 - This provides WKB storage without GEO logical type metadata
 
@@ -101,9 +107,11 @@ None. These are new types that do not affect existing functionality.
 ## Dependency/Versioning
 
 **Required:**
+
 - PyIceberg core (no new dependencies)
 
 **Optional for full functionality:**
+
 - PyArrow 21.0.0+ for native Parquet GEO logical types
 
 ## Testing Strategy
