@@ -834,3 +834,54 @@ def test_stage_only_upsert(catalog: Catalog) -> None:
     assert operations == ["append", "append", "append"]
     # both subsequent parent id should be the first snapshot id
     assert parent_snapshot_id == [None, current_snapshot, current_snapshot]
+
+
+def test_upsert_snapshot_properties(catalog: Catalog) -> None:
+    """Test that snapshot_properties are applied to snapshots created by upsert."""
+    identifier = "default.test_upsert_snapshot_properties"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "city", StringType(), required=True),
+        NestedField(2, "population", IntegerType(), required=True),
+        identifier_field_ids=[1],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+    arrow_schema = pa.schema(
+        [
+            pa.field("city", pa.string(), nullable=False),
+            pa.field("population", pa.int32(), nullable=False),
+        ]
+    )
+
+    # Initial data
+    df = pa.Table.from_pylist(
+        [{"city": "Amsterdam", "population": 921402}],
+        schema=arrow_schema,
+    )
+    tbl.append(df)
+    initial_snapshot_count = len(list(tbl.snapshots()))
+
+    # Upsert with snapshot_properties (both update and insert)
+    df = pa.Table.from_pylist(
+        [
+            {"city": "Amsterdam", "population": 950000},  # Update
+            {"city": "Berlin", "population": 3432000},  # Insert
+        ],
+        schema=arrow_schema,
+    )
+    result = tbl.upsert(df, snapshot_properties={"test_prop": "test_value"})
+
+    assert result.rows_updated == 1
+    assert result.rows_inserted == 1
+
+    # Verify properties are on the snapshots created by upsert
+    snapshots = list(tbl.snapshots())
+    # Upsert should have created additional snapshots (overwrite + append)
+    assert len(snapshots) > initial_snapshot_count
+
+    # Check that all new snapshots have the snapshot_properties
+    for snapshot in snapshots[initial_snapshot_count:]:
+        assert snapshot.summary is not None
+        assert snapshot.summary.additional_properties.get("test_prop") == "test_value"
