@@ -63,6 +63,7 @@ from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import (
+    AssertCreate,
     TableRequirement,
     TableUpdate,
 )
@@ -423,6 +424,10 @@ class SqlCatalog(MetastoreCatalog):
         current_table: Table | None
         try:
             current_table = self.load_table(table_identifier)
+
+            if AssertCreate() in requirements:
+                raise TableAlreadyExistsError(f"Table already exists: {table_identifier}")
+
         except NoSuchTableError:
             current_table = None
 
