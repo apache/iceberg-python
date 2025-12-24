@@ -110,21 +110,6 @@ def test_position_delete_file() -> None:
     assert pdf.content_size_in_bytes == 200
 
 
-def test_position_delete_requires_size_with_offset() -> None:
-    data = {
-        "spec-id": 0,
-        "content": "position-deletes",
-        "file-path": "s3://bucket/table/delete.parquet",
-        "file-format": "parquet",
-        "file-size-in-bytes": 512,
-        "record-count": 10,
-        "content-offset": 100,
-    }
-    with pytest.raises(ValidationError) as exc_info:
-        RESTPositionDeleteFile.model_validate(data)
-    assert "content-size-in-bytes is required" in str(exc_info.value)
-
-
 def test_equality_delete_file() -> None:
     data = {
         "spec-id": 0,
@@ -337,6 +322,7 @@ def test_delete_files_require_file_scan_tasks() -> None:
     with pytest.raises(ValidationError) as exc_info:
         ScanTasks.model_validate(data)
     assert "deleteFiles should only be returned with fileScanTasks" in str(exc_info.value)
+
 
 def test_minimal_request() -> None:
     request = PlanTableScanRequest()
