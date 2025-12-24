@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import datetime
 import uuid
+from collections.abc import Iterable
 from copy import copy
 from typing import Annotated, Any, Literal
 
@@ -262,18 +263,23 @@ class TableMetadataCommonFields(IcebergBaseModel):
         """Return a dict the partition specs this table."""
         return {spec.spec_id: spec for spec in self.partition_specs}
 
-    def specs_struct(self) -> StructType:
-        """Produce a struct of all the combined PartitionSpecs.
+    def specs_struct(self, spec_ids: Iterable[int] | None = None) -> StructType:
+        """Produce a struct of the combined PartitionSpecs.
 
         The partition fields should be optional: Partition fields may be added later,
         in which case not all files would have the result field, and it may be null.
 
-        :return: A StructType that represents all the combined PartitionSpecs of the table
+        Args:
+            spec_ids: Optional iterable of spec IDs to include. When not provided,
+                all table specs are used.
+
+        :return: A StructType that represents the combined PartitionSpecs of the table
         """
         specs = self.specs()
+        selected_specs = specs.values() if spec_ids is None else [specs[spec_id] for spec_id in spec_ids if spec_id in specs]
 
         # Collect all the fields
-        struct_fields = {field.field_id: field for spec in specs.values() for field in spec.fields}
+        struct_fields = {field.field_id: field for spec in selected_specs for field in spec.fields}
 
         schema = self.schema()
 
