@@ -2595,7 +2595,7 @@ def test_inspect_partitions_respects_partition_evolution(catalog: InMemoryCatalo
     )
     spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="dt"))
     catalog.create_namespace("default")
-    table = catalog.create_table("default.test_partition_evolution_inspect", schema=schema, partition_spec=spec)
+    table = catalog.create_table("default.test_inspect_partitions_respects_partition_evolution", schema=schema, partition_spec=spec)
 
     old_spec_id = table.spec().spec_id
     old_data = [{"dt": date(2025, 1, 1), "category": "old"}]
