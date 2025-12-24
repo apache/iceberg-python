@@ -163,6 +163,9 @@ filterwarnings = [
   "ignore:You are using a Python version.*which Google will stop supporting:FutureWarning:google.api_core",
   # Python 3.13 sqlite3 module ResourceWarnings for unclosed database connections
   "ignore:unclosed database in <sqlite3.Connection object*:ResourceWarning",
+  # Ignore Ray subprocess cleanup warnings
+  "ignore:unclosed file:ResourceWarning",
+  "ignore:subprocess.*is still running:ResourceWarning",
 ]
 
 [tool.black]
