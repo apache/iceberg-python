@@ -22,15 +22,12 @@ import json
 import logging
 import os
 import threading
+from collections.abc import Callable
 from copy import copy
 from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
-    Dict,
-    Type,
-    Union,
 )
 from urllib.parse import urlparse
 
@@ -149,7 +146,7 @@ class S3V4RestSigner(S3RequestSigner):
         request.url = response_json["uri"]
 
 
-SIGNERS: Dict[str, Type[S3RequestSigner]] = {"S3V4RestSigner": S3V4RestSigner}
+SIGNERS: dict[str, type[S3RequestSigner]] = {"S3V4RestSigner": S3V4RestSigner}
 
 
 def _file(_: Properties) -> LocalFileSystem:
@@ -167,7 +164,7 @@ def _s3(properties: Properties) -> AbstractFileSystem:
         "region_name": get_first_property_value(properties, S3_REGION, AWS_REGION),
     }
     config_kwargs = {}
-    register_events: Dict[str, Callable[[AWSRequest], None]] = {}
+    register_events: dict[str, Callable[[AWSRequest], None]] = {}
 
     if signer := properties.get(S3_SIGNER):
         logger.info("Loading signer %s", signer)
@@ -426,7 +423,7 @@ class FsspecFileIO(FileIO):
         fs = self.get_fs(uri.scheme)
         return FsspecOutputFile(location=location, fs=fs)
 
-    def delete(self, location: Union[str, InputFile, OutputFile]) -> None:
+    def delete(self, location: str | InputFile | OutputFile) -> None:
         """Delete the file at the given location.
 
         Args:
@@ -456,13 +453,13 @@ class FsspecFileIO(FileIO):
             raise ValueError(f"No registered filesystem for scheme: {scheme}")
         return self._scheme_to_fs[scheme](self.properties)
 
-    def __getstate__(self) -> Dict[str, Any]:
+    def __getstate__(self) -> dict[str, Any]:
         """Create a dictionary of the FsSpecFileIO fields used when pickling."""
         fileio_copy = copy(self.__dict__)
         del fileio_copy["_thread_locals"]
         return fileio_copy
 
-    def __setstate__(self, state: Dict[str, Any]) -> None:
+    def __setstate__(self, state: dict[str, Any]) -> None:
         """Deserialize the state into a FsSpecFileIO instance."""
         self.__dict__ = state
         self._thread_locals = threading.local()

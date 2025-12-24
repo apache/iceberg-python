@@ -21,9 +21,6 @@ import uuid
 from decimal import Decimal
 from typing import (
     Any,
-    List,
-    Set,
-    Type,
 )
 
 import pytest
@@ -95,14 +92,14 @@ def test_literal_from_nan_error() -> None:
         BinaryLiteral,
     ],
 )
-def test_literal_classes_with_none_type_error(literal_class: Type[PrimitiveType]) -> None:
+def test_literal_classes_with_none_type_error(literal_class: type[PrimitiveType]) -> None:
     with pytest.raises(TypeError) as e:
         literal_class(None)
     assert "Invalid literal value: None" in str(e.value)
 
 
 @pytest.mark.parametrize("literal_class", [FloatLiteral, DoubleLiteral])
-def test_literal_classes_with_nan_value_error(literal_class: Type[PrimitiveType]) -> None:
+def test_literal_classes_with_nan_value_error(literal_class: type[PrimitiveType]) -> None:
     with pytest.raises(ValueError) as e:
         literal_class(float("nan"))
     assert "Cannot create expression literal from NaN." in str(e.value)
@@ -824,7 +821,7 @@ def test_invalid_binary_conversions() -> None:
     )
 
 
-def assert_invalid_conversions(lit: Literal[Any], types: List[PrimitiveType]) -> None:
+def assert_invalid_conversions(lit: Literal[Any], types: list[PrimitiveType]) -> None:
     for type_var in types:
         with pytest.raises(TypeError):
             _ = lit.to(type_var)
@@ -958,4 +955,4 @@ assert_type(literal(123), Literal[int])
 assert_type(literal(123.4), Literal[float])
 assert_type(literal(bytes([0x01, 0x02, 0x03])), Literal[bytes])
 assert_type(literal(Decimal("19.25")), Literal[Decimal])
-assert_type({literal(1), literal(2), literal(3)}, Set[Literal[int]])
+assert_type({literal(1), literal(2), literal(3)}, set[Literal[int]])

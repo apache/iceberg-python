@@ -27,16 +27,12 @@ read schema is different, while respecting the read schema.
 from __future__ import annotations
 
 from abc import abstractmethod
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from dataclasses import field as dataclassfield
 from decimal import Decimal
 from typing import (
     Any,
-    Callable,
-    List,
-    Mapping,
-    Optional,
-    Tuple,
 )
 from uuid import UUID
 
@@ -292,7 +288,7 @@ class DecimalReader(Reader):
 class OptionReader(Reader):
     option: Reader = dataclassfield()
 
-    def read(self, decoder: BinaryDecoder) -> Optional[Any]:
+    def read(self, decoder: BinaryDecoder) -> Any | None:
         # For the Iceberg spec it is required to set the default value to null
         # From https://iceberg.apache.org/spec/#avro
         # Optional fields must always set the Avro field default value to null.
@@ -320,14 +316,14 @@ class StructReader(Reader):
         "_hash",
         "_max_pos",
     )
-    field_readers: Tuple[Tuple[Optional[int], Reader], ...]
+    field_readers: tuple[tuple[int | None, Reader], ...]
     create_struct: Callable[..., StructProtocol]
     struct: StructType
-    field_reader_functions = Tuple[Tuple[Optional[str], int, Optional[Callable[[BinaryDecoder], Any]]], ...]
+    field_reader_functions = tuple[tuple[str | None, int, Callable[[BinaryDecoder], Any] | None], ...]
 
     def __init__(
         self,
-        field_readers: Tuple[Tuple[Optional[int], Reader], ...],
+        field_readers: tuple[tuple[int | None, Reader], ...],
         create_struct: Callable[..., StructProtocol],
         struct: StructType,
     ) -> None:
@@ -339,7 +335,7 @@ class StructReader(Reader):
         if not isinstance(self.create_struct(), StructProtocol):
             raise ValueError(f"Incompatible with StructProtocol: {self.create_struct}")
 
-        reading_callbacks: List[Tuple[Optional[int], Callable[[BinaryDecoder], Any]]] = []
+        reading_callbacks: list[tuple[int | None, Callable[[BinaryDecoder], Any]]] = []
         max_pos = -1
         for pos, field in field_readers:
             if pos is not None:
@@ -395,8 +391,8 @@ class ListReader(Reader):
         self._hash = hash(self.element)
         self._is_int_list = isinstance(self.element, IntegerReader)
 
-    def read(self, decoder: BinaryDecoder) -> List[Any]:
-        read_items: List[Any] = []
+    def read(self, decoder: BinaryDecoder) -> list[Any]:
+        read_items: list[Any] = []
         block_count = decoder.read_int()
         while block_count != 0:
             if block_count < 0:
@@ -462,7 +458,7 @@ class MapReader(Reader):
         if block_count == 0:
             return EMPTY_DICT
 
-        contents_array: List[Tuple[int, ...]] = []
+        contents_array: list[tuple[int, ...]] = []
 
         while block_count != 0:
             if block_count < 0:

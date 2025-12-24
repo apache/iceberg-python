@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=W0212
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 
@@ -40,7 +40,7 @@ from pyiceberg.types import (
 from pyiceberg.utils.schema_conversion import AvroSchemaConversion
 
 
-def test_avro_to_iceberg(avro_schema_manifest_file_v1: Dict[str, Any]) -> None:
+def test_avro_to_iceberg(avro_schema_manifest_file_v1: dict[str, Any]) -> None:
     iceberg_schema = AvroSchemaConversion().avro_to_iceberg(avro_schema_manifest_file_v1)
     expected_iceberg_schema = Schema(
         NestedField(
@@ -377,14 +377,14 @@ def test_logical_map_with_invalid_fields() -> None:
     assert "Invalid key-value pair schema:" in str(exc_info.value)
 
 
-def test_iceberg_to_avro_manifest_list(avro_schema_manifest_file_v1: Dict[str, Any]) -> None:
+def test_iceberg_to_avro_manifest_list(avro_schema_manifest_file_v1: dict[str, Any]) -> None:
     """Round trip the manifest list"""
     iceberg_schema = AvroSchemaConversion().avro_to_iceberg(avro_schema_manifest_file_v1)
     avro_result = AvroSchemaConversion().iceberg_to_avro(iceberg_schema, schema_name="manifest_file")
     assert avro_schema_manifest_file_v1 == avro_result
 
 
-def test_iceberg_to_avro_manifest(avro_schema_manifest_entry: Dict[str, Any]) -> None:
+def test_iceberg_to_avro_manifest(avro_schema_manifest_entry: dict[str, Any]) -> None:
     """Round trip the manifest itself"""
     iceberg_schema = AvroSchemaConversion().avro_to_iceberg(avro_schema_manifest_entry)
     avro_result = AvroSchemaConversion().iceberg_to_avro(iceberg_schema, schema_name="manifest_entry")

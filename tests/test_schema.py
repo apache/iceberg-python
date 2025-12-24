@@ -16,7 +16,7 @@
 # under the License.
 
 from textwrap import dedent
-from typing import Any, Dict, List
+from typing import Any
 
 import pyarrow as pa
 import pytest
@@ -25,6 +25,7 @@ from pyiceberg.exceptions import ResolveError, ValidationError
 from pyiceberg.schema import (
     Accessor,
     Schema,
+    _check_schema_compatible,
     build_position_accessors,
     index_by_id,
     index_by_name,
@@ -409,8 +410,8 @@ def test_build_position_accessors(table_schema_nested: Schema) -> None:
 
 def test_build_position_accessors_with_struct(table_schema_nested: Schema) -> None:
     class TestStruct(StructProtocol):
-        def __init__(self, pos: Dict[int, Any] = EMPTY_DICT):
-            self._pos: Dict[int, Any] = pos
+        def __init__(self, pos: dict[int, Any] = EMPTY_DICT):
+            self._pos: dict[int, Any] = pos
 
         def __setitem__(self, pos: int, value: Any) -> None:
             pass
@@ -952,14 +953,14 @@ def test_unknown_type_promotion_to_non_primitive_raises_resolve_error() -> None:
 
 
 @pytest.fixture()
-def primitive_fields() -> List[NestedField]:
+def primitive_fields() -> list[NestedField]:
     return [
         NestedField(field_id=1, name=str(primitive_type), field_type=primitive_type, required=False)
         for primitive_type in TEST_PRIMITIVE_TYPES
     ]
 
 
-def test_add_top_level_primitives(primitive_fields: List[NestedField], table_v2: Table) -> None:
+def test_add_top_level_primitives(primitive_fields: list[NestedField], table_v2: Table) -> None:
     for primitive_field in primitive_fields:
         new_schema = Schema(primitive_field)
         applied = UpdateSchema(transaction=Transaction(table_v2), schema=Schema()).union_by_name(new_schema)._apply()
@@ -1025,7 +1026,7 @@ def test_add_nested_primitive(primitive_fields: NestedField, table_v2: Table) ->
         assert applied.as_struct() == new_schema.as_struct()
 
 
-def _primitive_fields(types: List[PrimitiveType], start_id: int = 0) -> List[NestedField]:
+def _primitive_fields(types: list[PrimitiveType], start_id: int = 0) -> list[NestedField]:
     fields = []
     for iceberg_type in types:
         fields.append(NestedField(field_id=start_id, name=str(iceberg_type), field_type=iceberg_type, required=False))
@@ -1687,3 +1688,107 @@ def test_arrow_schema() -> None:
     )
 
     assert base_schema.as_arrow() == expected_schema
+
+
+def test_check_schema_compatible_optional_map_field_missing() -> None:
+    """Test that optional map field missing from provided schema is compatible (issue #2684)."""
+    requested_schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
+        NestedField(
+            field_id=2,
+            name="data",
+            field_type=MapType(key_id=3, key_type=StringType(), value_id=4, value_type=StringType()),
+            required=False,  # Optional map field
+        ),
+    )
+    # Provided schema is missing the optional map field
+    provided_schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
+    )
+    # Should not raise - optional field can be missing
+    _check_schema_compatible(requested_schema, provided_schema)
+
+
+def test_check_schema_compatible_required_map_field_missing() -> None:
+    """Test that required map field missing from provided schema raises error."""
+    requested_schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
+        NestedField(
+            field_id=2,
+            name="data",
+            field_type=MapType(key_id=3, key_type=StringType(), value_id=4, value_type=StringType()),
+            required=True,  # Required map field
+        ),
+    )
+    # Provided schema is missing the required map field
+    provided_schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
+    )
+    # Should raise - required field cannot be missing
+    with pytest.raises(ValueError, match="Mismatch in fields"):
+        _check_schema_compatible(requested_schema, provided_schema)
+
+
+def test_check_schema_compatible_optional_list_field_missing() -> None:
+    """Test that optional list field missing from provided schema is compatible."""
+    requested_schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
+        NestedField(
+            field_id=2,
+            name="items",
+            field_type=ListType(element_id=3, element_type=StringType(), element_required=True),
+            required=False,  # Optional list field
+        ),
+    )
+    # Provided schema is missing the optional list field
+    provided_schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
+    )
+    # Should not raise - optional field can be missing
+    _check_schema_compatible(requested_schema, provided_schema)
+
+
+def test_check_schema_compatible_optional_struct_field_missing() -> None:
+    """Test that optional struct field missing from provided schema is compatible."""
+    requested_schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
+        NestedField(
+            field_id=2,
+            name="details",
+            field_type=StructType(
+                NestedField(field_id=3, name="name", field_type=StringType(), required=True),
+                NestedField(field_id=4, name="count", field_type=IntegerType(), required=True),
+            ),
+            required=False,  # Optional struct field
+        ),
+    )
+    # Provided schema is missing the optional struct field
+    provided_schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
+    )
+    # Should not raise - optional field can be missing
+    _check_schema_compatible(requested_schema, provided_schema)
+
+
+def test_check_schema_compatible_optional_map_field_present() -> None:
+    """Test that optional map field present in provided schema is compatible."""
+    requested_schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
+        NestedField(
+            field_id=2,
+            name="data",
+            field_type=MapType(key_id=3, key_type=StringType(), value_id=4, value_type=StringType()),
+            required=False,
+        ),
+    )
+    provided_schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
+        NestedField(
+            field_id=2,
+            name="data",
+            field_type=MapType(key_id=3, key_type=StringType(), value_id=4, value_type=StringType()),
+            required=False,
+        ),
+    )
+    # Should not raise - schemas match
+    _check_schema_compatible(requested_schema, provided_schema)

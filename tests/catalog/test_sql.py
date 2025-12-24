@@ -16,8 +16,9 @@
 # under the License.
 
 import os
+from collections.abc import Generator
 from pathlib import Path
-from typing import Any, Generator, cast
+from typing import Any, cast
 
 import pyarrow as pa
 import pytest

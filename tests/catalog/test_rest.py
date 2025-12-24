@@ -17,7 +17,8 @@
 # pylint: disable=redefined-outer-name,unused-argument
 import base64
 import os
-from typing import Any, Callable, Dict, cast
+from collections.abc import Callable
+from typing import Any, cast
 from unittest import mock
 
 import pytest
@@ -50,7 +51,7 @@ from pyiceberg.typedef import RecursiveDict
 from pyiceberg.utils.config import Config
 
 TEST_URI = "https://iceberg-test-catalog/"
-TEST_CREDENTIALS = "client:secret"
+TEST_CREDENTIALS = "client:secret_with:colon"
 TEST_OAUTH2_SERVER_URI = "https://auth-endpoint/"
 TEST_TOKEN = "some_jwt_token"
 TEST_SCOPE = "openid_offline_corpds_ds_profile"
@@ -69,7 +70,7 @@ OAUTH_TEST_HEADERS = {
 
 
 @pytest.fixture
-def example_table_metadata_with_snapshot_v1_rest_json(example_table_metadata_with_snapshot_v1: Dict[str, Any]) -> Dict[str, Any]:
+def example_table_metadata_with_snapshot_v1_rest_json(example_table_metadata_with_snapshot_v1: dict[str, Any]) -> dict[str, Any]:
     return {
         "metadata-location": "s3://warehouse/database/table/metadata/00001-5f2f8166-244c-4eae-ac36-384ecdec81fc.gz.metadata.json",
         "metadata": example_table_metadata_with_snapshot_v1,
@@ -81,7 +82,7 @@ def example_table_metadata_with_snapshot_v1_rest_json(example_table_metadata_wit
 
 
 @pytest.fixture
-def example_table_metadata_with_no_location(example_table_metadata_with_snapshot_v1: Dict[str, Any]) -> Dict[str, Any]:
+def example_table_metadata_with_no_location(example_table_metadata_with_snapshot_v1: dict[str, Any]) -> dict[str, Any]:
     return {
         "metadata": example_table_metadata_with_snapshot_v1,
         "config": {
@@ -92,7 +93,7 @@ def example_table_metadata_with_no_location(example_table_metadata_with_snapshot
 
 
 @pytest.fixture
-def example_table_metadata_no_snapshot_v1_rest_json(example_table_metadata_no_snapshot_v1: Dict[str, Any]) -> Dict[str, Any]:
+def example_table_metadata_no_snapshot_v1_rest_json(example_table_metadata_no_snapshot_v1: dict[str, Any]) -> dict[str, Any]:
     return {
         "metadata-location": "s3://warehouse/database/table/metadata.json",
         "metadata": example_table_metadata_no_snapshot_v1,
@@ -837,7 +838,7 @@ def test_update_namespace_properties_404(rest_mock: Mocker) -> None:
     assert "Namespace does not exist" in str(e.value)
 
 
-def test_load_table_200(rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]) -> None:
+def test_load_table_200(rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces/fokko/tables/table",
         json=example_table_metadata_with_snapshot_v1_rest_json,
@@ -859,7 +860,7 @@ def test_load_table_200(rest_mock: Mocker, example_table_metadata_with_snapshot_
 
 
 def test_load_table_200_loading_mode(
-    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
 ) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces/fokko/tables/table?snapshots=refs",
@@ -882,7 +883,7 @@ def test_load_table_200_loading_mode(
 
 
 def test_load_table_honor_access_delegation(
-    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
 ) -> None:
     test_headers_with_remote_signing = {**TEST_HEADERS, "X-Iceberg-Access-Delegation": "remote-signing"}
     rest_mock.get(
@@ -914,7 +915,7 @@ def test_load_table_honor_access_delegation(
 
 
 def test_load_table_from_self_identifier_200(
-    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
 ) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces/pdames/tables/table",
@@ -1017,7 +1018,7 @@ def test_drop_table_404(rest_mock: Mocker) -> None:
 
 
 def test_create_table_200(
-    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: Dict[str, Any]
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any]
 ) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/fokko/tables",
@@ -1047,7 +1048,7 @@ def test_create_table_200(
 
 
 def test_create_table_with_given_location_removes_trailing_slash_200(
-    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: Dict[str, Any]
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any]
 ) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/fokko/tables",
@@ -1074,8 +1075,8 @@ def test_create_table_with_given_location_removes_trailing_slash_200(
 def test_create_staged_table_200(
     rest_mock: Mocker,
     table_schema_simple: Schema,
-    example_table_metadata_with_no_location: Dict[str, Any],
-    example_table_metadata_no_snapshot_v1_rest_json: Dict[str, Any],
+    example_table_metadata_with_no_location: dict[str, Any],
+    example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any],
 ) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/fokko/tables",
@@ -1163,12 +1164,12 @@ def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> Non
 
 
 def test_create_table_if_not_exists_200(
-    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: Dict[str, Any]
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any]
 ) -> None:
-    def json_callback() -> Callable[[Any, Any], Dict[str, Any]]:
+    def json_callback() -> Callable[[Any, Any], dict[str, Any]]:
         call_count = 0
 
-        def callback(request: Any, context: Any) -> Dict[str, Any]:
+        def callback(request: Any, context: Any) -> dict[str, Any]:
             nonlocal call_count
             call_count += 1
 
@@ -1250,7 +1251,7 @@ def test_create_table_419(rest_mock: Mocker, table_schema_simple: Schema) -> Non
 
 
 def test_register_table_200(
-    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: Dict[str, Any]
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any]
 ) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/default/register",
@@ -1318,7 +1319,7 @@ def test_delete_table_204(rest_mock: Mocker) -> None:
 
 
 def test_delete_table_from_self_identifier_204(
-    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
 ) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces/pdames/tables/table",
@@ -1337,7 +1338,7 @@ def test_delete_table_from_self_identifier_204(
     catalog.drop_table(table.name())
 
 
-def test_rename_table_200(rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]) -> None:
+def test_rename_table_200(rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/tables/rename",
         json={
@@ -1374,7 +1375,7 @@ def test_rename_table_200(rest_mock: Mocker, example_table_metadata_with_snapsho
 
 
 def test_rename_table_from_self_identifier_200(
-    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
 ) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces/pdames/tables/source",
@@ -1795,7 +1796,7 @@ def test_catalog_from_parameters_empty_env(rest_mock: Mocker) -> None:
 
 
 def test_table_identifier_in_commit_table_request(
-    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_v2: Dict[str, Any]
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_v2: dict[str, Any]
 ) -> None:
     metadata_location = "s3://some_bucket/metadata.json"
     rest_mock.post(
@@ -1992,3 +1993,53 @@ class TestRestCatalogClose:
 
         assert catalog is not None and hasattr(catalog, "_session")
         assert len(catalog._session.adapters) == self.EXPECTED_ADAPTERS_SIGV4
+
+    def test_rest_scan_planning_disabled_by_default(self, rest_mock: Mocker) -> None:
+        rest_mock.get(
+            f"{TEST_URI}v1/config",
+            json={"defaults": {}, "overrides": {}},
+            status_code=200,
+        )
+        catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+        assert catalog.is_rest_scan_planning_enabled() is False
+
+    def test_rest_scan_planning_enabled_by_property(self, rest_mock: Mocker) -> None:
+        rest_mock.get(
+            f"{TEST_URI}v1/config",
+            json={"defaults": {}, "overrides": {}},
+            status_code=200,
+        )
+        catalog = RestCatalog(
+            "rest",
+            uri=TEST_URI,
+            token=TEST_TOKEN,
+            **{"rest-scan-planning-enabled": "true"},
+        )
+
+        assert catalog.is_rest_scan_planning_enabled() is True
+
+    def test_rest_scan_planning_explicitly_disabled(self, rest_mock: Mocker) -> None:
+        rest_mock.get(
+            f"{TEST_URI}v1/config",
+            json={"defaults": {}, "overrides": {}},
+            status_code=200,
+        )
+        catalog = RestCatalog(
+            "rest",
+            uri=TEST_URI,
+            token=TEST_TOKEN,
+            **{"rest-scan-planning-enabled": "false"},
+        )
+
+        assert catalog.is_rest_scan_planning_enabled() is False
+
+    def test_rest_scan_planning_enabled_from_server_config(self, rest_mock: Mocker) -> None:
+        rest_mock.get(
+            f"{TEST_URI}v1/config",
+            json={"defaults": {"rest-scan-planning-enabled": "true"}, "overrides": {}},
+            status_code=200,
+        )
+        catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+        assert catalog.is_rest_scan_planning_enabled() is True

@@ -19,8 +19,9 @@ from __future__ import annotations
 import time
 import warnings
 from collections import defaultdict
+from collections.abc import Iterable, Mapping
 from enum import Enum
-from typing import TYPE_CHECKING, Any, DefaultDict, Dict, Iterable, List, Mapping, Optional
+from typing import TYPE_CHECKING, Any
 
 from pydantic import Field, PrivateAttr, model_serializer
 
@@ -154,8 +155,8 @@ class UpdateMetrics:
         else:
             raise ValueError(f"Unknown data file content: {data_file.content}")
 
-    def to_dict(self) -> Dict[str, str]:
-        properties: Dict[str, str] = {}
+    def to_dict(self) -> dict[str, str]:
+        properties: dict[str, str] = {}
         set_when_positive(properties, self.added_file_size, ADDED_FILE_SIZE)
         set_when_positive(properties, self.removed_file_size, REMOVED_FILE_SIZE)
         set_when_positive(properties, self.added_data_files, ADDED_DATA_FILES)
@@ -183,16 +184,16 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
     """
 
     operation: Operation = Field()
-    _additional_properties: Dict[str, str] = PrivateAttr()
+    _additional_properties: dict[str, str] = PrivateAttr()
 
-    def __init__(self, operation: Optional[Operation] = None, **data: Any) -> None:
+    def __init__(self, operation: Operation | None = None, **data: Any) -> None:
         if operation is None:
-            warnings.warn("Encountered invalid snapshot summary: operation is missing, defaulting to overwrite")
+            warnings.warn("Encountered invalid snapshot summary: operation is missing, defaulting to overwrite", stacklevel=2)
             operation = Operation.OVERWRITE
         super().__init__(operation=operation, **data)
         self._additional_properties = data
 
-    def __getitem__(self, __key: str) -> Optional[Any]:  # type: ignore
+    def __getitem__(self, __key: str) -> Any | None:  # type: ignore
         """Return a key as it is a map."""
         if __key.lower() == "operation":
             return self.operation
@@ -212,14 +213,14 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
         return 1 + len(self._additional_properties)
 
     @model_serializer
-    def ser_model(self) -> Dict[str, str]:
+    def ser_model(self) -> dict[str, str]:
         return {
             "operation": str(self.operation.value),
             **self._additional_properties,
         }
 
     @property
-    def additional_properties(self) -> Dict[str, str]:
+    def additional_properties(self) -> dict[str, str]:
         return self._additional_properties
 
     def __repr__(self) -> str:
@@ -238,16 +239,16 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
 
 class Snapshot(IcebergBaseModel):
     snapshot_id: int = Field(alias="snapshot-id")
-    parent_snapshot_id: Optional[int] = Field(alias="parent-snapshot-id", default=None)
-    sequence_number: Optional[int] = Field(alias="sequence-number", default=INITIAL_SEQUENCE_NUMBER)
+    parent_snapshot_id: int | None = Field(alias="parent-snapshot-id", default=None)
+    sequence_number: int | None = Field(alias="sequence-number", default=INITIAL_SEQUENCE_NUMBER)
     timestamp_ms: int = Field(alias="timestamp-ms", default_factory=lambda: int(time.time() * 1000))
     manifest_list: str = Field(alias="manifest-list", description="Location of the snapshot's manifest list file")
-    summary: Optional[Summary] = Field(default=None)
-    schema_id: Optional[int] = Field(alias="schema-id", default=None)
-    first_row_id: Optional[int] = Field(
+    summary: Summary | None = Field(default=None)
+    schema_id: int | None = Field(alias="schema-id", default=None)
+    first_row_id: int | None = Field(
         alias="first-row-id", default=None, description="assigned to the first row in the first data file in the first manifest"
     )
-    added_rows: Optional[int] = Field(
+    added_rows: int | None = Field(
         alias="added-rows", default=None, description="The upper bound of the number of rows with assigned row IDs"
     )
 
@@ -275,7 +276,7 @@ class Snapshot(IcebergBaseModel):
         filtered_fields = [field for field in fields if field is not None]
         return f"Snapshot({', '.join(filtered_fields)})"
 
-    def manifests(self, io: FileIO) -> List[ManifestFile]:
+    def manifests(self, io: FileIO) -> list[ManifestFile]:
         """Return the manifests for the given snapshot."""
         return list(_manifests(io, self.manifest_list))
 
@@ -292,7 +293,7 @@ class SnapshotLogEntry(IcebergBaseModel):
 
 class SnapshotSummaryCollector:
     metrics: UpdateMetrics
-    partition_metrics: DefaultDict[str, UpdateMetrics]
+    partition_metrics: defaultdict[str, UpdateMetrics]
     max_changed_partitions_for_summaries: int
 
     def __init__(self, partition_summary_limit: int = 0) -> None:
@@ -324,7 +325,7 @@ class SnapshotSummaryCollector:
         else:
             partition_metrics.remove_file(file)
 
-    def build(self) -> Dict[str, str]:
+    def build(self) -> dict[str, str]:
         properties = self.metrics.to_dict()
         changed_partitions_size = len(self.partition_metrics)
         set_when_positive(properties, changed_partitions_size, CHANGED_PARTITION_COUNT_PROP)
@@ -376,7 +377,7 @@ def _truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str
 
 
 def update_snapshot_summaries(
-    summary: Summary, previous_summary: Optional[Mapping[str, str]] = None, truncate_full_table: bool = False
+    summary: Summary, previous_summary: Mapping[str, str] | None = None, truncate_full_table: bool = False
 ) -> Summary:
     if summary.operation not in {Operation.APPEND, Operation.OVERWRITE, Operation.DELETE}:
         raise ValueError(f"Operation not implemented: {summary.operation}")
@@ -447,12 +448,12 @@ def update_snapshot_summaries(
     return summary
 
 
-def set_when_positive(properties: Dict[str, str], num: int, property_name: str) -> None:
+def set_when_positive(properties: dict[str, str], num: int, property_name: str) -> None:
     if num > 0:
         properties[property_name] = str(num)
 
 
-def ancestors_of(current_snapshot: Optional[Snapshot], table_metadata: TableMetadata) -> Iterable[Snapshot]:
+def ancestors_of(current_snapshot: Snapshot | None, table_metadata: TableMetadata) -> Iterable[Snapshot]:
     """Get the ancestors of and including the given snapshot."""
     snapshot = current_snapshot
     while snapshot is not None:
@@ -462,9 +463,7 @@ def ancestors_of(current_snapshot: Optional[Snapshot], table_metadata: TableMeta
         snapshot = table_metadata.snapshot_by_id(snapshot.parent_snapshot_id)
 
 
-def ancestors_between(
-    from_snapshot: Optional[Snapshot], to_snapshot: Snapshot, table_metadata: TableMetadata
-) -> Iterable[Snapshot]:
+def ancestors_between(from_snapshot: Snapshot | None, to_snapshot: Snapshot, table_metadata: TableMetadata) -> Iterable[Snapshot]:
     """Get the ancestors of and including the given snapshot between the to and from snapshots."""
     if from_snapshot is not None:
         for snapshot in ancestors_of(to_snapshot, table_metadata):

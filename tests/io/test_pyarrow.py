@@ -22,7 +22,7 @@ import uuid
 import warnings
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -633,12 +633,12 @@ def test_list_type_to_pyarrow() -> None:
 
 
 @pytest.fixture
-def bound_reference(table_schema_simple: Schema) -> BoundReference[str]:
+def bound_reference(table_schema_simple: Schema) -> BoundReference:
     return BoundReference(table_schema_simple.find_field(1), table_schema_simple.accessor_for_field(1))
 
 
 @pytest.fixture
-def bound_double_reference() -> BoundReference[float]:
+def bound_double_reference() -> BoundReference:
     schema = Schema(
         NestedField(field_id=1, name="foo", field_type=DoubleType(), required=False),
         schema_id=1,
@@ -647,68 +647,68 @@ def bound_double_reference() -> BoundReference[float]:
     return BoundReference(schema.find_field(1), schema.accessor_for_field(1))
 
 
-def test_expr_is_null_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_is_null_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundIsNull(bound_reference)))
         == "<pyarrow.compute.Expression is_null(foo, {nan_is_null=false})>"
     )
 
 
-def test_expr_not_null_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_not_null_to_pyarrow(bound_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(BoundNotNull(bound_reference))) == "<pyarrow.compute.Expression is_valid(foo)>"
 
 
-def test_expr_is_nan_to_pyarrow(bound_double_reference: BoundReference[str]) -> None:
+def test_expr_is_nan_to_pyarrow(bound_double_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(BoundIsNaN(bound_double_reference))) == "<pyarrow.compute.Expression is_nan(foo)>"
 
 
-def test_expr_not_nan_to_pyarrow(bound_double_reference: BoundReference[str]) -> None:
+def test_expr_not_nan_to_pyarrow(bound_double_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(BoundNotNaN(bound_double_reference))) == "<pyarrow.compute.Expression invert(is_nan(foo))>"
 
 
-def test_expr_equal_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_equal_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundEqualTo(bound_reference, literal("hello"))))
         == '<pyarrow.compute.Expression (foo == "hello")>'
     )
 
 
-def test_expr_not_equal_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_not_equal_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundNotEqualTo(bound_reference, literal("hello"))))
         == '<pyarrow.compute.Expression (foo != "hello")>'
     )
 
 
-def test_expr_greater_than_or_equal_equal_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_greater_than_or_equal_equal_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundGreaterThanOrEqual(bound_reference, literal("hello"))))
         == '<pyarrow.compute.Expression (foo >= "hello")>'
     )
 
 
-def test_expr_greater_than_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_greater_than_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundGreaterThan(bound_reference, literal("hello"))))
         == '<pyarrow.compute.Expression (foo > "hello")>'
     )
 
 
-def test_expr_less_than_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_less_than_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundLessThan(bound_reference, literal("hello"))))
         == '<pyarrow.compute.Expression (foo < "hello")>'
     )
 
 
-def test_expr_less_than_or_equal_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_less_than_or_equal_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundLessThanOrEqual(bound_reference, literal("hello"))))
         == '<pyarrow.compute.Expression (foo <= "hello")>'
     )
 
 
-def test_expr_in_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_in_to_pyarrow(bound_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(BoundIn(bound_reference, {literal("hello"), literal("world")}))) in (
         """<pyarrow.compute.Expression is_in(foo, {value_set=large_string:[
   "hello",
@@ -721,7 +721,7 @@ def test_expr_in_to_pyarrow(bound_reference: BoundReference[str]) -> None:
     )
 
 
-def test_expr_not_in_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_not_in_to_pyarrow(bound_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(BoundNotIn(bound_reference, {literal("hello"), literal("world")}))) in (
         """<pyarrow.compute.Expression invert(is_in(foo, {value_set=large_string:[
   "hello",
@@ -734,46 +734,46 @@ def test_expr_not_in_to_pyarrow(bound_reference: BoundReference[str]) -> None:
     )
 
 
-def test_expr_starts_with_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_starts_with_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundStartsWith(bound_reference, literal("he"))))
         == '<pyarrow.compute.Expression starts_with(foo, {pattern="he", ignore_case=false})>'
     )
 
 
-def test_expr_not_starts_with_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_not_starts_with_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundNotStartsWith(bound_reference, literal("he"))))
         == '<pyarrow.compute.Expression invert(starts_with(foo, {pattern="he", ignore_case=false}))>'
     )
 
 
-def test_and_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_and_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(And(BoundEqualTo(bound_reference, literal("hello")), BoundIsNull(bound_reference))))
         == '<pyarrow.compute.Expression ((foo == "hello") and is_null(foo, {nan_is_null=false}))>'
     )
 
 
-def test_or_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_or_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(Or(BoundEqualTo(bound_reference, literal("hello")), BoundIsNull(bound_reference))))
         == '<pyarrow.compute.Expression ((foo == "hello") or is_null(foo, {nan_is_null=false}))>'
     )
 
 
-def test_not_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_not_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(Not(BoundEqualTo(bound_reference, literal("hello")))))
         == '<pyarrow.compute.Expression invert((foo == "hello"))>'
     )
 
 
-def test_always_true_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_always_true_to_pyarrow(bound_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(AlwaysTrue())) == "<pyarrow.compute.Expression true>"
 
 
-def test_always_false_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_always_false_to_pyarrow(bound_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(AlwaysFalse())) == "<pyarrow.compute.Expression false>"
 
 
@@ -1014,7 +1014,7 @@ def file_map(schema_map: Schema, tmpdir: str) -> str:
 
 
 def project(
-    schema: Schema, files: List[str], expr: Optional[BooleanExpression] = None, table_schema: Optional[Schema] = None
+    schema: Schema, files: list[str], expr: BooleanExpression | None = None, table_schema: Schema | None = None
 ) -> pa.Table:
     def _set_spec_id(datafile: DataFile) -> DataFile:
         datafile.spec_id = 0
@@ -1076,16 +1076,16 @@ def test_projection_add_column(file_int: str) -> None:
     for col in result_table.columns:
         assert len(col) == 3
 
-    for actual, expected in zip(result_table.columns[0], [None, None, None]):
+    for actual, expected in zip(result_table.columns[0], [None, None, None], strict=True):
         assert actual.as_py() == expected
 
-    for actual, expected in zip(result_table.columns[1], [None, None, None]):
+    for actual, expected in zip(result_table.columns[1], [None, None, None], strict=True):
         assert actual.as_py() == expected
 
-    for actual, expected in zip(result_table.columns[2], [None, None, None]):
+    for actual, expected in zip(result_table.columns[2], [None, None, None], strict=True):
         assert actual.as_py() == expected
 
-    for actual, expected in zip(result_table.columns[3], [None, None, None]):
+    for actual, expected in zip(result_table.columns[3], [None, None, None], strict=True):
         assert actual.as_py() == expected
     assert (
         repr(result_table.schema)
@@ -1106,7 +1106,9 @@ def test_read_list(schema_list: Schema, file_list: str) -> None:
     result_table = project(schema_list, [file_list])
 
     assert len(result_table.columns[0]) == 3
-    for actual, expected in zip(result_table.columns[0], [list(range(1, 10)), list(range(2, 20)), list(range(3, 30))]):
+    for actual, expected in zip(
+        result_table.columns[0], [list(range(1, 10)), list(range(2, 20)), list(range(3, 30))], strict=True
+    ):
         assert actual.as_py() == expected
 
     assert (
@@ -1120,7 +1122,7 @@ def test_read_map(schema_map: Schema, file_map: str) -> None:
     result_table = project(schema_map, [file_map])
 
     assert len(result_table.columns[0]) == 3
-    for actual, expected in zip(result_table.columns[0], [[("a", "b")], [("c", "d")], [("e", "f"), ("g", "h")]]):
+    for actual, expected in zip(result_table.columns[0], [[("a", "b")], [("c", "d")], [("e", "f"), ("g", "h")]], strict=True):
         assert actual.as_py() == expected
 
     assert (
@@ -1177,7 +1179,7 @@ def test_projection_rename_column(schema_int: Schema, file_int: str) -> None:
     )
     result_table = project(schema, [file_int])
     assert len(result_table.columns[0]) == 3
-    for actual, expected in zip(result_table.columns[0], [0, 1, 2]):
+    for actual, expected in zip(result_table.columns[0], [0, 1, 2], strict=True):
         assert actual.as_py() == expected
 
     assert repr(result_table.schema) == "other_name: int32 not null"
@@ -1186,7 +1188,7 @@ def test_projection_rename_column(schema_int: Schema, file_int: str) -> None:
 def test_projection_concat_files(schema_int: Schema, file_int: str) -> None:
     result_table = project(schema_int, [file_int, file_int])
 
-    for actual, expected in zip(result_table.columns[0], [0, 1, 2, 0, 1, 2]):
+    for actual, expected in zip(result_table.columns[0], [0, 1, 2, 0, 1, 2], strict=True):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 6
     assert repr(result_table.schema) == "id: int32"
@@ -1350,7 +1352,7 @@ def test_projection_filter_add_column(schema_int: Schema, file_int: str, file_st
     """We have one file that has the column, and the other one doesn't"""
     result_table = project(schema_int, [file_int, file_string])
 
-    for actual, expected in zip(result_table.columns[0], [0, 1, 2, None, None, None]):
+    for actual, expected in zip(result_table.columns[0], [0, 1, 2, None, None, None], strict=True):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 6
     assert repr(result_table.schema) == "id: int32"
@@ -1360,7 +1362,7 @@ def test_projection_filter_add_column_promote(file_int: str) -> None:
     schema_long = Schema(NestedField(1, "id", LongType(), required=True))
     result_table = project(schema_long, [file_int])
 
-    for actual, expected in zip(result_table.columns[0], [0, 1, 2]):
+    for actual, expected in zip(result_table.columns[0], [0, 1, 2], strict=True):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 3
     assert repr(result_table.schema) == "id: int64 not null"
@@ -1388,7 +1390,7 @@ def test_projection_nested_struct_subset(file_struct: str) -> None:
 
     result_table = project(schema, [file_struct])
 
-    for actual, expected in zip(result_table.columns[0], [52.371807, 52.387386, 52.078663]):
+    for actual, expected in zip(result_table.columns[0], [52.371807, 52.387386, 52.078663], strict=True):
         assert actual.as_py() == {"lat": expected}
 
     assert len(result_table.columns[0]) == 3
@@ -1413,7 +1415,7 @@ def test_projection_nested_new_field(file_struct: str) -> None:
 
     result_table = project(schema, [file_struct])
 
-    for actual, expected in zip(result_table.columns[0], [None, None, None]):
+    for actual, expected in zip(result_table.columns[0], [None, None, None], strict=True):
         assert actual.as_py() == {"null": expected}
     assert len(result_table.columns[0]) == 3
     assert (
@@ -1445,6 +1447,7 @@ def test_projection_nested_struct(schema_struct: Schema, file_struct: str) -> No
             {"lat": 52.387386, "long": 4.646219, "null": None},
             {"lat": 52.078663, "long": 4.288788, "null": None},
         ],
+        strict=True,
     ):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 3
@@ -1536,6 +1539,7 @@ def test_projection_maps_of_structs(schema_map_of_structs: Schema, file_map_of_s
                 ("4", {"latitude": 52.387386, "longitude": 4.646219, "altitude": None}),
             ],
         ],
+        strict=True,
     ):
         assert actual.as_py() == expected
     assert (
@@ -1563,7 +1567,7 @@ def test_projection_nested_struct_different_parent_id(file_struct: str) -> None:
     )
 
     result_table = project(schema, [file_struct])
-    for actual, expected in zip(result_table.columns[0], [None, None, None]):
+    for actual, expected in zip(result_table.columns[0], [None, None, None], strict=True):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 3
     assert (
@@ -1579,10 +1583,7 @@ def test_projection_filter_on_unprojected_field(schema_int_str: Schema, file_int
 
     result_table = project(schema, [file_int_str], GreaterThan("data", "1"), schema_int_str)
 
-    for actual, expected in zip(
-        result_table.columns[0],
-        [2],
-    ):
+    for actual, expected in zip(result_table.columns[0], [2], strict=True):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 1
     assert repr(result_table.schema) == "id: int32 not null"
@@ -2159,7 +2160,7 @@ def test_make_compatible_name() -> None:
         ([None, None, None], DateType(), None),
     ],
 )
-def test_stats_aggregator_update_min(vals: List[Any], primitive_type: PrimitiveType, expected_result: Any) -> None:
+def test_stats_aggregator_update_min(vals: list[Any], primitive_type: PrimitiveType, expected_result: Any) -> None:
     stats = StatsAggregator(primitive_type, _primitive_to_physical(primitive_type))
 
     for val in vals:
@@ -2179,13 +2180,50 @@ def test_stats_aggregator_update_min(vals: List[Any], primitive_type: PrimitiveT
         ([None, None, None], DateType(), None),
     ],
 )
-def test_stats_aggregator_update_max(vals: List[Any], primitive_type: PrimitiveType, expected_result: Any) -> None:
+def test_stats_aggregator_update_max(vals: list[Any], primitive_type: PrimitiveType, expected_result: Any) -> None:
     stats = StatsAggregator(primitive_type, _primitive_to_physical(primitive_type))
 
     for val in vals:
         stats.update_max(val)
 
     assert stats.current_max == expected_result
+
+
+@pytest.mark.parametrize(
+    "iceberg_type, physical_type_string",
+    [
+        # Exact match
+        (IntegerType(), "INT32"),
+        # Allowed INT32 -> INT64 promotion
+        (LongType(), "INT32"),
+        # Allowed FLOAT -> DOUBLE promotion
+        (DoubleType(), "FLOAT"),
+        # Allowed FIXED_LEN_BYTE_ARRAY -> INT32
+        (DecimalType(precision=2, scale=2), "FIXED_LEN_BYTE_ARRAY"),
+        # Allowed FIXED_LEN_BYTE_ARRAY -> INT64
+        (DecimalType(precision=12, scale=2), "FIXED_LEN_BYTE_ARRAY"),
+    ],
+)
+def test_stats_aggregator_conditionally_allowed_types_pass(iceberg_type: PrimitiveType, physical_type_string: str) -> None:
+    stats = StatsAggregator(iceberg_type, physical_type_string)
+
+    assert stats.primitive_type == iceberg_type
+    assert stats.current_min is None
+    assert stats.current_max is None
+
+
+@pytest.mark.parametrize(
+    "iceberg_type, physical_type_string",
+    [
+        # Fail case: INT64 cannot be cast to INT32
+        (IntegerType(), "INT64"),
+    ],
+)
+def test_stats_aggregator_physical_type_does_not_match_expected_raise_error(
+    iceberg_type: PrimitiveType, physical_type_string: str
+) -> None:
+    with pytest.raises(ValueError, match="Unexpected physical type"):
+        StatsAggregator(iceberg_type, physical_type_string)
 
 
 def test_bin_pack_arrow_table(arrow_table_with_null: pa.Table) -> None:
@@ -2208,6 +2246,12 @@ def test_bin_pack_arrow_table(arrow_table_with_null: pa.Table) -> None:
     # and will produce half the number of files if we double the target size
     bin_packed = bin_pack_arrow_table(bigger_arrow_tbl, target_file_size=arrow_table_with_null.nbytes * 2)
     assert len(list(bin_packed)) == 5
+
+
+def test_bin_pack_arrow_table_target_size_smaller_than_row(arrow_table_with_null: pa.Table) -> None:
+    bin_packed = list(bin_pack_arrow_table(arrow_table_with_null, target_file_size=1))
+    assert len(bin_packed) == arrow_table_with_null.num_rows
+    assert sum(batch.num_rows for bin_ in bin_packed for batch in bin_) == arrow_table_with_null.num_rows
 
 
 def test_schema_mismatch_type(table_schema_simple: Schema) -> None:
@@ -2442,7 +2486,7 @@ def test_partition_for_demo() -> None:
         PartitionField(source_id=2, field_id=1002, transform=IdentityTransform(), name="n_legs_identity"),
         PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="year_identity"),
     )
-    result = _determine_partitions(partition_spec, test_schema, arrow_table)
+    result = list(_determine_partitions(partition_spec, test_schema, arrow_table))
     assert {table_partition.partition_key.partition for table_partition in result} == {
         Record(2, 2020),
         Record(100, 2021),
@@ -2481,7 +2525,7 @@ def test_partition_for_nested_field() -> None:
     ]
 
     arrow_table = pa.Table.from_pylist(test_data, schema=schema.as_arrow())
-    partitions = _determine_partitions(spec, schema, arrow_table)
+    partitions = list(_determine_partitions(spec, schema, arrow_table))
     partition_values = {p.partition_key.partition[0] for p in partitions}
 
     assert partition_values == {486729, 486730}
@@ -2513,7 +2557,7 @@ def test_partition_for_deep_nested_field() -> None:
     ]
 
     arrow_table = pa.Table.from_pylist(test_data, schema=schema.as_arrow())
-    partitions = _determine_partitions(spec, schema, arrow_table)
+    partitions = list(_determine_partitions(spec, schema, arrow_table))
 
     assert len(partitions) == 2  # 2 unique partitions
     partition_values = {p.partition_key.partition[0] for p in partitions}
@@ -2550,6 +2594,36 @@ def test_inspect_partition_for_nested_field(catalog: InMemoryCatalog) -> None:
     assert {part["part"] for part in partitions} == {"data-a", "data-b"}
 
 
+def test_inspect_partitions_respects_partition_evolution(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="dt", field_type=DateType(), required=False),
+        NestedField(id=2, name="category", field_type=StringType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="dt"))
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test_inspect_partitions_respects_partition_evolution", schema=schema, partition_spec=spec
+    )
+
+    old_spec_id = table.spec().spec_id
+    old_data = [{"dt": date(2025, 1, 1), "category": "old"}]
+    table.append(pa.Table.from_pylist(old_data, schema=table.schema().as_arrow()))
+
+    table.update_spec().add_identity("category").commit()
+    new_spec_id = table.spec().spec_id
+    assert new_spec_id != old_spec_id
+
+    partitions_table = table.inspect.partitions()
+    partitions = partitions_table["partition"].to_pylist()
+    assert all("category" not in partition for partition in partitions)
+
+    new_data = [{"dt": date(2025, 1, 2), "category": "new"}]
+    table.append(pa.Table.from_pylist(new_data, schema=table.schema().as_arrow()))
+
+    partitions_table = table.inspect.partitions()
+    assert set(partitions_table["spec_id"].to_pylist()) == {old_spec_id, new_spec_id}
+
+
 def test_identity_partition_on_multi_columns() -> None:
     test_pa_schema = pa.schema([("born_year", pa.int64()), ("n_legs", pa.int64()), ("animal", pa.string())])
     test_schema = Schema(
@@ -2584,7 +2658,7 @@ def test_identity_partition_on_multi_columns() -> None:
         }
         arrow_table = pa.Table.from_pydict(test_data, schema=test_pa_schema)
 
-        result = _determine_partitions(partition_spec, test_schema, arrow_table)
+        result = list(_determine_partitions(partition_spec, test_schema, arrow_table))
 
         assert {table_partition.partition_key.partition for table_partition in result} == expected
         concatenated_arrow_table = pa.concat_tables([table_partition.arrow_table_partition for table_partition in result])
@@ -2766,7 +2840,7 @@ def test_pyarrow_io_multi_fs() -> None:
 class SomeRetryStrategy(AwsDefaultS3RetryStrategy):
     def __init__(self) -> None:
         super().__init__()
-        warnings.warn("Initialized SomeRetryStrategy 👍")
+        warnings.warn("Initialized SomeRetryStrategy 👍", stacklevel=2)
 
 
 def test_retry_strategy() -> None:
@@ -2809,6 +2883,7 @@ def test_task_to_record_batches_nanos(format_version: TableVersion, tmpdir: str)
             FileScanTask(data_file),
             bound_row_filter=AlwaysTrue(),
             projected_schema=table_schema,
+            table_schema=table_schema,
             projected_field_ids={1},
             positional_deletes=None,
             case_sensitive=True,
@@ -3801,8 +3876,46 @@ def test_orc_schema_conversion_with_field_ids() -> None:
     id_field_no_ids = arrow_schema_no_ids.field(0)
     name_field_no_ids = arrow_schema_no_ids.field(1)
 
-    assert not id_field_no_ids.metadata
-    assert not name_field_no_ids.metadata
+    assert ORC_FIELD_ID_KEY not in id_field_no_ids.metadata
+    assert ORC_FIELD_ID_KEY not in name_field_no_ids.metadata
+    assert PYARROW_PARQUET_FIELD_ID_KEY not in id_field_no_ids.metadata
+    assert PYARROW_PARQUET_FIELD_ID_KEY not in name_field_no_ids.metadata
+
+
+def test_orc_schema_conversion_with_required_attribute() -> None:
+    """
+    Test that schema_to_pyarrow correctly adds ORC iceberg.required attribute.
+    To run just this test:
+        pytest tests/io/test_pyarrow.py -k test_orc_schema_conversion_with_required_attribute
+    """
+    from pyiceberg.io.pyarrow import ORC_FIELD_REQUIRED_KEY, schema_to_pyarrow
+    from pyiceberg.manifest import FileFormat
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import IntegerType, StringType
+
+    # Define schema
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(2, "name", StringType(), required=False),
+    )
+
+    # Test 1: Specify Parquet format
+    arrow_schema_default = schema_to_pyarrow(schema, file_format=FileFormat.PARQUET)
+
+    id_field = arrow_schema_default.field(0)
+    name_field = arrow_schema_default.field(1)
+
+    assert ORC_FIELD_REQUIRED_KEY not in id_field.metadata
+    assert ORC_FIELD_REQUIRED_KEY not in name_field.metadata
+
+    # Test 2: Specify ORC format
+    arrow_schema_orc = schema_to_pyarrow(schema, file_format=FileFormat.ORC)
+
+    id_field_orc = arrow_schema_orc.field(0)
+    name_field_orc = arrow_schema_orc.field(1)
+
+    assert id_field_orc.metadata[ORC_FIELD_REQUIRED_KEY] == b"true"
+    assert name_field_orc.metadata[ORC_FIELD_REQUIRED_KEY] == b"false"
 
 
 def test_orc_batching_behavior_documentation(tmp_path: Path) -> None:
@@ -4553,3 +4666,72 @@ def test_orc_stripe_based_batching(tmp_path: Path) -> None:
         # Verify total rows
         total_rows = sum(batch.num_rows for batch in batches)
         assert total_rows == 10000, f"Expected 10000 total rows, got {total_rows}"
+
+
+def test_partition_column_projection_with_schema_evolution(catalog: InMemoryCatalog) -> None:
+    """Test column projection on partitioned table after schema evolution (https://github.com/apache/iceberg-python/issues/2672)."""
+    initial_schema = Schema(
+        NestedField(1, "partition_date", DateType(), required=False),
+        NestedField(2, "id", IntegerType(), required=False),
+        NestedField(3, "name", StringType(), required=False),
+        NestedField(4, "value", IntegerType(), required=False),
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="partition_date"),
+    )
+
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test_schema_evolution_projection",
+        schema=initial_schema,
+        partition_spec=partition_spec,
+    )
+
+    data_v1 = pa.Table.from_pylist(
+        [
+            {"partition_date": date(2024, 1, 1), "id": 1, "name": "Alice", "value": 100},
+            {"partition_date": date(2024, 1, 1), "id": 2, "name": "Bob", "value": 200},
+        ],
+        schema=pa.schema(
+            [
+                ("partition_date", pa.date32()),
+                ("id", pa.int32()),
+                ("name", pa.string()),
+                ("value", pa.int32()),
+            ]
+        ),
+    )
+
+    table.append(data_v1)
+
+    with table.update_schema() as update:
+        update.add_column("new_column", StringType())
+
+    table = catalog.load_table("default.test_schema_evolution_projection")
+
+    data_v2 = pa.Table.from_pylist(
+        [
+            {"partition_date": date(2024, 1, 2), "id": 3, "name": "Charlie", "value": 300, "new_column": "new1"},
+            {"partition_date": date(2024, 1, 2), "id": 4, "name": "David", "value": 400, "new_column": "new2"},
+        ],
+        schema=pa.schema(
+            [
+                ("partition_date", pa.date32()),
+                ("id", pa.int32()),
+                ("name", pa.string()),
+                ("value", pa.int32()),
+                ("new_column", pa.string()),
+            ]
+        ),
+    )
+
+    table.append(data_v2)
+
+    result = table.scan(selected_fields=("id", "name", "value", "new_column")).to_arrow()
+
+    assert set(result.schema.names) == {"id", "name", "value", "new_column"}
+    assert result.num_rows == 4
+    result_sorted = result.sort_by("name")
+    assert result_sorted["name"].to_pylist() == ["Alice", "Bob", "Charlie", "David"]
+    assert result_sorted["new_column"].to_pylist() == [None, None, "new1", "new2"]

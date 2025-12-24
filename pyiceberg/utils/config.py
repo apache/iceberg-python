@@ -16,7 +16,6 @@
 # under the License.
 import logging
 import os
-from typing import List, Optional
 
 import strictyaml
 
@@ -66,14 +65,14 @@ class Config:
         self.config = FrozenDict(**config)
 
     @staticmethod
-    def _from_configuration_files() -> Optional[RecursiveDict]:
+    def _from_configuration_files() -> RecursiveDict | None:
         """Load the first configuration file that its finds.
 
         Will first look in the PYICEBERG_HOME env variable,
         and then in the home directory.
         """
 
-        def _load_yaml(directory: Optional[str]) -> Optional[RecursiveDict]:
+        def _load_yaml(directory: str | None) -> RecursiveDict | None:
             if directory:
                 path = os.path.join(directory, PYICEBERG_YML)
                 if os.path.isfile(path):
@@ -106,7 +105,7 @@ class Config:
             Amended configuration.
         """
 
-        def set_property(_config: RecursiveDict, path: List[str], config_value: str) -> None:
+        def set_property(_config: RecursiveDict, path: list[str], config_value: str) -> None:
             while len(path) > 0:
                 element = path.pop(0)
                 if len(path) == 0:
@@ -146,7 +145,7 @@ class Config:
             return default_catalog_name
         return DEFAULT
 
-    def get_catalog_config(self, catalog_name: str) -> Optional[RecursiveDict]:
+    def get_catalog_config(self, catalog_name: str) -> RecursiveDict | None:
         if CATALOG in self.config:
             catalog_name_lower = catalog_name.lower()
             catalogs = self.config[CATALOG]
@@ -159,13 +158,13 @@ class Config:
                 return catalog_conf
         return None
 
-    def get_known_catalogs(self) -> List[str]:
+    def get_known_catalogs(self) -> list[str]:
         catalogs = self.config.get(CATALOG, {})
         if not isinstance(catalogs, dict):
             raise ValueError("Catalog configurations needs to be an object")
         return list(catalogs.keys())
 
-    def get_int(self, key: str) -> Optional[int]:
+    def get_int(self, key: str) -> int | None:
         if (val := self.config.get(key)) is not None:
             try:
                 return int(val)  # type: ignore
@@ -173,7 +172,7 @@ class Config:
                 raise ValueError(f"{key} should be an integer or left unset. Current value: {val}") from err
         return None
 
-    def get_bool(self, key: str) -> Optional[bool]:
+    def get_bool(self, key: str) -> bool | None:
         if (val := self.config.get(key)) is not None:
             try:
                 return strtobool(val)  # type: ignore

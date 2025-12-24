@@ -47,6 +47,7 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 
@@ -165,6 +166,28 @@ def test_partition_spec_to_path() -> None:
     assert spec.partition_to_path(record, schema) == "my%23str%25bucket=my%2Bstr/other+str%2Bbucket=%28+%29/my%21int%3Abucket=10"
 
 
+def test_partition_spec_to_path_dropped_source_id() -> None:
+    schema = Schema(
+        NestedField(field_id=1, name="str", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="other_str", field_type=StringType(), required=False),
+        NestedField(field_id=3, name="int", field_type=IntegerType(), required=True),
+    )
+
+    spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="my#str%bucket"),
+        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="other str+bucket"),
+        # Point partition field to missing source id
+        PartitionField(source_id=4, field_id=1002, transform=BucketTransform(num_buckets=25), name="my!int:bucket"),
+        spec_id=3,
+    )
+
+    record = Record("my+str", "( )", 10)
+
+    # Both partition field names and values should be URL encoded, with spaces mapping to plus signs, to match the Java
+    # behaviour: https://github.com/apache/iceberg/blob/ca3db931b0f024f0412084751ac85dd4ef2da7e7/api/src/main/java/org/apache/iceberg/PartitionSpec.java#L198-L204
+    assert spec.partition_to_path(record, schema) == "my%23str%25bucket=my%2Bstr/other+str%2Bbucket=%28+%29/my%21int%3Abucket=10"
+
+
 def test_partition_type(table_schema_simple: Schema) -> None:
     spec = PartitionSpec(
         PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate"),
@@ -175,6 +198,19 @@ def test_partition_type(table_schema_simple: Schema) -> None:
     assert spec.partition_type(table_schema_simple) == StructType(
         NestedField(field_id=1000, name="str_truncate", field_type=StringType(), required=False),
         NestedField(field_id=1001, name="int_bucket", field_type=IntegerType(), required=True),
+    )
+
+
+def test_partition_type_missing_source_field(table_schema_simple: Schema) -> None:
+    spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate"),
+        PartitionField(source_id=10, field_id=1001, transform=BucketTransform(num_buckets=25), name="int_bucket"),
+        spec_id=3,
+    )
+
+    assert spec.partition_type(table_schema_simple) == StructType(
+        NestedField(field_id=1000, name="str_truncate", field_type=StringType(), required=False),
+        NestedField(field_id=1001, name="int_bucket", field_type=UnknownType(), required=False),
     )
 
 

@@ -19,7 +19,7 @@ from __future__ import annotations
 import codecs
 import gzip
 from abc import ABC, abstractmethod
-from typing import Callable
+from collections.abc import Callable
 
 from pyiceberg.io import InputFile, InputStream, OutputFile
 from pyiceberg.table.metadata import TableMetadata, TableMetadataUtil

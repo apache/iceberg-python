@@ -15,7 +15,7 @@
 #  specific language governing permissions and limitations
 #  under the License.
 from json import JSONDecodeError
-from typing import Dict, Literal, Optional, Type
+from typing import Literal
 
 from pydantic import Field, ValidationError
 from requests import HTTPError
@@ -36,10 +36,10 @@ from pyiceberg.typedef import IcebergBaseModel
 class TokenResponse(IcebergBaseModel):
     access_token: str = Field()
     token_type: str = Field()
-    expires_in: Optional[int] = Field(default=None)
-    issued_token_type: Optional[str] = Field(default=None)
-    refresh_token: Optional[str] = Field(default=None)
-    scope: Optional[str] = Field(default=None)
+    expires_in: int | None = Field(default=None)
+    issued_token_type: str | None = Field(default=None)
+    refresh_token: str | None = Field(default=None)
+    scope: str | None = Field(default=None)
 
 
 class ErrorResponseMessage(IcebergBaseModel):
@@ -56,12 +56,12 @@ class OAuthErrorResponse(IcebergBaseModel):
     error: Literal[
         "invalid_request", "invalid_client", "invalid_grant", "unauthorized_client", "unsupported_grant_type", "invalid_scope"
     ]
-    error_description: Optional[str] = None
-    error_uri: Optional[str] = None
+    error_description: str | None = None
+    error_uri: str | None = None
 
 
-def _handle_non_200_response(exc: HTTPError, error_handler: Dict[int, Type[Exception]]) -> None:
-    exception: Type[Exception]
+def _handle_non_200_response(exc: HTTPError, error_handler: dict[int, type[Exception]]) -> None:
+    exception: type[Exception]
 
     if exc.response is None:
         raise ValueError("Did not receive a response")

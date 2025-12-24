@@ -18,7 +18,6 @@
 
 
 from pathlib import PosixPath
-from typing import Generator, Union
 
 import pyarrow as pa
 import pytest
@@ -203,7 +202,7 @@ def test_create_table_removes_trailing_slash_from_location(catalog: InMemoryCata
     ],
 )
 def test_convert_schema_if_needed(
-    schema: Union[Schema, pa.Schema],
+    schema: Schema | pa.Schema,
     expected: Schema,
     catalog: InMemoryCatalog,
 ) -> None:

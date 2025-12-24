@@ -14,7 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 
@@ -35,7 +35,7 @@ PARTITION_KEY = PartitionKey(
 
 
 class CustomLocationProvider(LocationProvider):
-    def new_data_location(self, data_file_name: str, partition_key: Optional[PartitionKey] = None) -> str:
+    def new_data_location(self, data_file_name: str, partition_key: PartitionKey | None = None) -> str:
         return f"custom_location_provider/{data_file_name}"
 
 
@@ -107,7 +107,7 @@ def test_object_storage_with_partition() -> None:
 # NB: We test here with None partition key too because disabling partitioned paths still replaces final / with - even in
 # paths of un-partitioned files. This matches the behaviour of the Java implementation.
 @pytest.mark.parametrize("partition_key", [PARTITION_KEY, None])
-def test_object_storage_partitioned_paths_disabled(partition_key: Optional[PartitionKey]) -> None:
+def test_object_storage_partitioned_paths_disabled(partition_key: PartitionKey | None) -> None:
     provider = load_location_provider(
         table_location="table_location",
         table_properties={

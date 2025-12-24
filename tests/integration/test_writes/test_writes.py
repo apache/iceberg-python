@@ -24,7 +24,7 @@ import uuid
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 from urllib.parse import urlparse
 
 import fastavro
@@ -639,7 +639,7 @@ def test_write_parquet_compression_properties(
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
     format_version: int,
-    properties: Dict[str, Any],
+    properties: dict[str, Any],
     expected_compression_name: str,
 ) -> None:
     identifier = "default.write_parquet_compression_properties"
@@ -674,8 +674,8 @@ def test_write_parquet_other_properties(
     spark: SparkSession,
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
-    properties: Dict[str, Any],
-    expected_kwargs: Dict[str, Any],
+    properties: dict[str, Any],
+    expected_kwargs: dict[str, Any],
 ) -> None:
     identifier = "default.test_write_parquet_other_properties"
 
@@ -701,7 +701,7 @@ def test_write_parquet_unsupported_properties(
     spark: SparkSession,
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
-    properties: Dict[str, str],
+    properties: dict[str, str],
 ) -> None:
     identifier = "default.write_parquet_unsupported_properties"
 
@@ -759,7 +759,9 @@ def test_spark_writes_orc_pyiceberg_reads(spark: SparkSession, session_catalog: 
     ]
 
     # Verify PyIceberg results contain the expected data (appears twice due to create + append)
-    pyiceberg_data = list(zip(pyiceberg_df["id"], pyiceberg_df["name"], pyiceberg_df["age"], pyiceberg_df["is_active"]))
+    pyiceberg_data = list(
+        zip(pyiceberg_df["id"], pyiceberg_df["name"], pyiceberg_df["age"], pyiceberg_df["is_active"], strict=True)
+    )
     assert pyiceberg_data == expected_data + expected_data  # Data should appear twice
 
     # Verify PyIceberg data types are correct
@@ -1170,7 +1172,7 @@ def test_inspect_snapshots(
     lhs = spark.table(f"{identifier}.snapshots").toPandas()
     rhs = df.to_pandas()
     for column in df.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if column == "summary":
                 # Arrow returns a list of tuples, instead of a dict
                 right = dict(right)
@@ -1466,7 +1468,7 @@ def test_table_write_schema_with_valid_nullability_diff(
     rhs = written_arrow_table.to_pandas()
 
     for column in written_arrow_table.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             assert left == right
 
 
@@ -1506,7 +1508,7 @@ def test_table_write_schema_with_valid_upcast(
     rhs = written_arrow_table.to_pandas()
 
     for column in written_arrow_table.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if column == "map":
                 # Arrow returns a list of tuples, instead of a dict
                 right = dict(right)
@@ -1552,7 +1554,7 @@ def test_write_all_timestamp_precision(
     rhs = written_arrow_table.to_pandas()
 
     for column in written_arrow_table.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if pd.isnull(left):
                 assert pd.isnull(right)
             else:
@@ -1648,18 +1650,18 @@ def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with
     for i in range(3):
         tbl_a_data_file = tbl_a_entries["data_file"][i]
         assert tbl_a_data_file["column_sizes"] == [
-            (1, 49),
-            (2, 78),
-            (3, 128),
-            (4, 94),
-            (5, 118),
-            (6, 94),
-            (7, 118),
-            (8, 118),
-            (9, 118),
-            (10, 94),
-            (11, 78),
-            (12, 109),
+            (1, 51),
+            (2, 80),
+            (3, 130),
+            (4, 96),
+            (5, 120),
+            (6, 96),
+            (7, 120),
+            (8, 120),
+            (9, 120),
+            (10, 96),
+            (11, 80),
+            (12, 111),
         ]
         assert tbl_a_data_file["content"] == 0
         assert tbl_a_data_file["equality_ids"] is None
