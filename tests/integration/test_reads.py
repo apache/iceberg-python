@@ -366,6 +366,7 @@ def test_ray_nan(catalog: Catalog, ray_session: Any) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.filterwarnings("ignore")
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_ray_nan_rewritten(catalog: Catalog, ray_session: Any) -> None:
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
@@ -378,6 +379,7 @@ def test_ray_nan_rewritten(catalog: Catalog, ray_session: Any) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.filterwarnings("ignore")
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 @pytest.mark.skip(reason="Fixing issues with NaN's: https://github.com/apache/arrow/issues/34162")
 def test_ray_not_nan_count(catalog: Catalog, ray_session: Any) -> None:
@@ -387,6 +389,7 @@ def test_ray_not_nan_count(catalog: Catalog, ray_session: Any) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.filterwarnings("ignore")
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_ray_all_types(catalog: Catalog, ray_session: Any) -> None:
     table_test_all_types = catalog.load_table("default.test_all_types")
