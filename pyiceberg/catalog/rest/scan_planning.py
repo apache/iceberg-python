@@ -25,8 +25,14 @@ from pydantic import Field, model_validator
 
 from pyiceberg.catalog.rest.response import ErrorResponseMessage
 from pyiceberg.expressions import BooleanExpression
-from pyiceberg.manifest import FileFormat
+from pyiceberg.manifest import DataFileContent, FileFormat
 from pyiceberg.typedef import IcebergBaseModel
+
+CONTENT_TYPE_MAP: dict[str, DataFileContent] = {
+    "data": DataFileContent.DATA,
+    "position-deletes": DataFileContent.POSITION_DELETES,
+    "equality-deletes": DataFileContent.EQUALITY_DELETES,
+}
 
 # Primitive types that can appear in partition values and bounds
 PrimitiveTypeValue: TypeAlias = bool | int | float | str | Decimal | UUID | date | time | datetime | bytes

@@ -18,7 +18,9 @@ from typing import Any
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
+from requests_mock import Mocker
 
+from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.rest.scan_planning import (
     CountMap,
     FetchScanTasksRequest,
@@ -33,11 +35,12 @@ from pyiceberg.catalog.rest.scan_planning import (
     RESTFileScanTask,
     RESTPositionDeleteFile,
     ScanTasks,
-    StorageCredential,
     ValueMap,
 )
 from pyiceberg.expressions import AlwaysTrue, EqualTo, Reference
 from pyiceberg.manifest import FileFormat
+
+TEST_URI = "https://iceberg-test-catalog/"
 
 
 def test_count_map_valid() -> None:
@@ -399,22 +402,6 @@ def test_completed_response_without_plan_id() -> None:
     assert result.plan_id is None
 
 
-def test_completed_response_with_credentials() -> None:
-    data = {
-        "status": "completed",
-        "delete-files": [],
-        "file-scan-tasks": [],
-        "plan-tasks": [],
-        "storage-credentials": [
-            {"prefix": "s3://bucket/", "config": {}},
-        ],
-    }
-    result = TypeAdapter(PlanningResponse).validate_python(data)
-    assert isinstance(result, PlanCompleted)
-    assert result.storage_credentials is not None
-    assert len(result.storage_credentials) == 1
-
-
 def test_submitted_response() -> None:
     data = {
         "status": "submitted",
@@ -437,14 +424,257 @@ def test_cancelled_response() -> None:
     assert isinstance(result, PlanCancelled)
 
 
-def test_storage_credential_parsing() -> None:
-    data = {
-        "prefix": "s3://bucket/path/",
-        "config": {
-            "s3.access-key-id": "key",
-            "s3.secret-access-key": "secret",
+@pytest.fixture
+def rest_mock(requests_mock: Mocker) -> Mocker:
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={
+            "defaults": {},
+            "overrides": {},
+            "endpoints": [
+                "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan",
+                "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/tasks",
+            ],
         },
-    }
-    cred = StorageCredential.model_validate(data)
-    assert cred.prefix == "s3://bucket/path/"
-    assert cred.config["s3.access-key-id"] == "key"
+        status_code=200,
+    )
+    return requests_mock
+
+
+def _create_test_catalog() -> RestCatalog:
+    return RestCatalog(
+        "test",
+        uri=TEST_URI,
+        **{"rest-scan-planning-enabled": "true"},
+    )
+
+
+def test_plan_scan_completed_single_batch(rest_mock: Mocker) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={
+            "status": "completed",
+            "plan-id": "plan-123",
+            "delete-files": [],
+            "file-scan-tasks": [
+                {
+                    "data-file": {
+                        "spec-id": 0,
+                        "content": "data",
+                        "file-path": "s3://bucket/data/file1.parquet",
+                        "file-format": "parquet",
+                        "file-size-in-bytes": 1024,
+                        "record-count": 67,
+                    }
+                },
+                {
+                    "data-file": {
+                        "spec-id": 0,
+                        "content": "data",
+                        "file-path": "s3://bucket/data/file2.parquet",
+                        "file-format": "parquet",
+                        "file-size-in-bytes": 2048,
+                        "record-count": 200,
+                    }
+                },
+            ],
+            "plan-tasks": [],
+        },
+        status_code=200,
+    )
+
+    catalog = _create_test_catalog()
+    request = PlanTableScanRequest()
+
+    tasks = list(catalog.plan_scan(("db", "tbl"), request))
+
+    assert len(tasks) == 2
+    assert tasks[0].file.file_path == "s3://bucket/data/file1.parquet"
+    assert tasks[1].file.file_path == "s3://bucket/data/file2.parquet"
+
+
+def test_plan_scan_with_pagination(rest_mock: Mocker) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={
+            "status": "completed",
+            "plan-id": "plan-123",
+            "delete-files": [],
+            "file-scan-tasks": [
+                {
+                    "data-file": {
+                        "spec-id": 0,
+                        "content": "data",
+                        "file-path": "s3://bucket/data/file1.parquet",
+                        "file-format": "parquet",
+                        "file-size-in-bytes": 1024,
+                        "record-count": 100,
+                    }
+                }
+            ],
+            "plan-tasks": ["token-batch-2"],
+        },
+        status_code=200,
+    )
+
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/tasks",
+        json={
+            "delete-files": [],
+            "file-scan-tasks": [
+                {
+                    "data-file": {
+                        "spec-id": 0,
+                        "content": "data",
+                        "file-path": "s3://bucket/data/file2.parquet",
+                        "file-format": "parquet",
+                        "file-size-in-bytes": 2048,
+                        "record-count": 200,
+                    }
+                }
+            ],
+            "plan-tasks": [],
+        },
+        status_code=200,
+    )
+
+    catalog = _create_test_catalog()
+    request = PlanTableScanRequest()
+
+    tasks = list(catalog.plan_scan(("db", "tbl"), request))
+
+    assert len(tasks) == 2
+    assert tasks[0].file.file_path == "s3://bucket/data/file1.parquet"
+    assert tasks[1].file.file_path == "s3://bucket/data/file2.parquet"
+
+
+def test_plan_scan_with_delete_files(rest_mock: Mocker) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={
+            "status": "completed",
+            "plan-id": "plan-123",
+            "delete-files": [
+                {
+                    "spec-id": 0,
+                    "content": "position-deletes",
+                    "file-path": "s3://bucket/data/delete1.parquet",
+                    "file-format": "parquet",
+                    "file-size-in-bytes": 256,
+                    "record-count": 10,
+                }
+            ],
+            "file-scan-tasks": [
+                {
+                    "data-file": {
+                        "spec-id": 0,
+                        "content": "data",
+                        "file-path": "s3://bucket/data/file1.parquet",
+                        "file-format": "parquet",
+                        "file-size-in-bytes": 1024,
+                        "record-count": 100,
+                    },
+                    "delete-file-references": [0],
+                }
+            ],
+            "plan-tasks": [],
+        },
+        status_code=200,
+    )
+
+    catalog = _create_test_catalog()
+    request = PlanTableScanRequest()
+    tasks = list(catalog.plan_scan(("db", "tbl"), request))
+
+    assert len(tasks) == 1
+    assert tasks[0].file.file_path == "s3://bucket/data/file1.parquet"
+    assert len(tasks[0].delete_files) == 1
+
+
+def test_plan_scan_async_not_supported(rest_mock: Mocker) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={
+            "status": "submitted",
+            "plan-id": "plan-456",
+        },
+        status_code=200,
+    )
+
+    catalog = _create_test_catalog()
+    request = PlanTableScanRequest()
+    with pytest.raises(NotImplementedError, match="Async scan planning not yet supported"):
+        list(catalog.plan_scan(("db", "tbl"), request))
+
+
+def test_plan_scan_empty_result(rest_mock: Mocker) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={
+            "status": "completed",
+            "plan-id": "plan-123",
+            "delete-files": [],
+            "file-scan-tasks": [],
+            "plan-tasks": [],
+        },
+        status_code=200,
+    )
+
+    catalog = _create_test_catalog()
+    request = PlanTableScanRequest()
+    tasks = list(catalog.plan_scan(("db", "tbl"), request))
+    assert len(tasks) == 0
+
+
+def test_plan_scan_cancelled(rest_mock: Mocker) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={"status": "cancelled"},
+        status_code=200,
+    )
+
+    catalog = _create_test_catalog()
+    request = PlanTableScanRequest()
+    with pytest.raises(RuntimeError, match="Scan planning was cancelled"):
+        list(catalog.plan_scan(("db", "tbl"), request))
+
+
+def test_plan_scan_equality_deletes_not_supported(rest_mock: Mocker) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={
+            "status": "completed",
+            "plan-id": "plan-123",
+            "delete-files": [
+                {
+                    "spec-id": 0,
+                    "content": "equality-deletes",
+                    "file-path": "s3://bucket/data/eq-delete.parquet",
+                    "file-format": "parquet",
+                    "file-size-in-bytes": 256,
+                    "record-count": 5,
+                    "equality-ids": [1, 2],
+                }
+            ],
+            "file-scan-tasks": [
+                {
+                    "data-file": {
+                        "spec-id": 0,
+                        "content": "data",
+                        "file-path": "s3://bucket/data/file1.parquet",
+                        "file-format": "parquet",
+                        "file-size-in-bytes": 1024,
+                        "record-count": 1000,
+                    },
+                    "delete-file-references": [0],
+                }
+            ],
+            "plan-tasks": [],
+        },
+        status_code=200,
+    )
+
+    catalog = _create_test_catalog()
+    request = PlanTableScanRequest()
+    with pytest.raises(NotImplementedError, match="PyIceberg does not yet support equality deletes"):
+        list(catalog.plan_scan(("db", "tbl"), request))

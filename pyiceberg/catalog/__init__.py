@@ -794,6 +794,13 @@ class Catalog(ABC):
         Default implementation does nothing. Override in subclasses that need cleanup.
         """
 
+    def is_rest_scan_planning_enabled(self) -> bool:
+        """Check if server-side scan planning is enabled.
+
+        Returns False by default.
+        """
+        return False
+
     def __enter__(self) -> Catalog:
         """Enter the context manager.
 
