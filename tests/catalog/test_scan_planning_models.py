@@ -635,7 +635,7 @@ def test_plan_scan_cancelled(rest_mock: Mocker) -> None:
 
     catalog = _create_test_catalog()
     request = PlanTableScanRequest()
-    with pytest.raises(RuntimeError, match="Scan planning was cancelled"):
+    with pytest.raises(RuntimeError, match="Received status: cancelled"):
         list(catalog.plan_scan(("db", "tbl"), request))
 
 
