@@ -15,7 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
+from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal
 from typing import Any
+from uuid import uuid4
 
 import pyarrow as pa
 import pytest
@@ -23,17 +26,50 @@ from pyspark.sql import SparkSession
 
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.rest import RestCatalog
-from pyiceberg.expressions import And, BooleanExpression, EqualTo, GreaterThan, LessThan
+from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.expressions import (
+    And,
+    BooleanExpression,
+    EqualTo,
+    GreaterThan,
+    GreaterThanOrEqual,
+    In,
+    IsNull,
+    LessThan,
+    LessThanOrEqual,
+    Not,
+    NotEqualTo,
+    NotIn,
+    NotNull,
+    Or,
+    StartsWith,
+)
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import ALWAYS_TRUE, Table
-from pyiceberg.transforms import IdentityTransform
-from pyiceberg.types import LongType, NestedField, StringType
+from pyiceberg.transforms import (
+    IdentityTransform,
+)
+from pyiceberg.types import (
+    BinaryType,
+    BooleanType,
+    DateType,
+    DecimalType,
+    DoubleType,
+    FixedType,
+    LongType,
+    NestedField,
+    StringType,
+    TimestampType,
+    TimestamptzType,
+    TimeType,
+    UUIDType,
+)
 
 
 @pytest.fixture(scope="session")
 def scan_catalog() -> Catalog:
-    return load_catalog(
+    catalog = load_catalog(
         "local",
         **{
             "type": "rest",
@@ -44,13 +80,15 @@ def scan_catalog() -> Catalog:
             "rest-scan-planning-enabled": "true",
         },
     )
+    catalog.create_namespace_if_not_exists("default")
+    return catalog
 
 
 def recreate_table(catalog: Catalog, identifier: str, **kwargs: Any) -> Table:
     """Drop table if exists and create a new one."""
     try:
         catalog.drop_table(identifier)
-    except Exception:
+    except NoSuchTableError:
         pass
     return catalog.create_table(identifier, **kwargs)
 
@@ -184,5 +222,126 @@ def test_rest_scan_with_partitioning(scan_catalog: RestCatalog, session_catalog:
             identifier,
             row_filter=EqualTo("category", "a"),
         )
+    finally:
+        scan_catalog.drop_table(identifier)
+
+
+@pytest.mark.integration
+def test_rest_scan_primitive_types(scan_catalog: RestCatalog, session_catalog: Catalog) -> None:
+    identifier = "default.test_primitives"
+
+    schema = Schema(
+        NestedField(1, "bool_col", BooleanType()),
+        NestedField(2, "long_col", LongType()),
+        NestedField(3, "double_col", DoubleType()),
+        NestedField(4, "decimal_col", DecimalType(10, 2)),
+        NestedField(5, "string_col", StringType()),
+        NestedField(6, "date_col", DateType()),
+        NestedField(7, "time_col", TimeType()),
+        NestedField(8, "timestamp_col", TimestampType()),
+        NestedField(9, "timestamptz_col", TimestamptzType()),
+        NestedField(10, "uuid_col", UUIDType()),
+        NestedField(11, "fixed_col", FixedType(16)),
+        NestedField(12, "binary_col", BinaryType()),
+    )
+
+    table = recreate_table(scan_catalog, identifier, schema=schema)
+
+    now = datetime.now()
+    now_tz = datetime.now(tz=timezone.utc)
+    today = date.today()
+    uuid1, uuid2, uuid3 = uuid4(), uuid4(), uuid4()
+
+    arrow_table = pa.Table.from_pydict(
+        {
+            "bool_col": [True, False, True],
+            "long_col": [100, 200, 300],
+            "double_col": [1.11, 2.22, 3.33],
+            "decimal_col": [Decimal("1.23"), Decimal("4.56"), Decimal("7.89")],
+            "string_col": ["a", "b", "c"],
+            "date_col": [today, today - timedelta(days=1), today - timedelta(days=2)],
+            "time_col": [time(8, 30, 0), time(12, 0, 0), time(18, 45, 30)],
+            "timestamp_col": [now, now - timedelta(hours=1), now - timedelta(hours=2)],
+            "timestamptz_col": [now_tz, now_tz - timedelta(hours=1), now_tz - timedelta(hours=2)],
+            "uuid_col": [uuid1.bytes, uuid2.bytes, uuid3.bytes],
+            "fixed_col": [b"0123456789abcdef", b"abcdef0123456789", b"fedcba9876543210"],
+            "binary_col": [b"hello", b"world", b"test"],
+        },
+        schema=schema.as_arrow(),
+    )
+    table.append(arrow_table)
+
+    try:
+        _assert_remote_scan_matches_local_scan(table, session_catalog, identifier)
+    finally:
+        scan_catalog.drop_table(identifier)
+
+
+@pytest.mark.integration
+def test_rest_scan_complex_filters(scan_catalog: RestCatalog, session_catalog: Catalog) -> None:
+    identifier = "default.test_complex_filters"
+
+    schema = Schema(
+        NestedField(1, "id", LongType()),
+        NestedField(2, "name", StringType()),
+        NestedField(3, "value", LongType()),
+        NestedField(4, "optional", StringType(), required=False),
+    )
+
+    table = recreate_table(scan_catalog, identifier, schema=schema)
+
+    table.append(
+        pa.Table.from_pydict(
+            {
+                "id": list(range(1, 21)),
+                "name": [f"item_{i}" for i in range(1, 21)],
+                "value": [i * 100 for i in range(1, 21)],
+                "optional": [None if i % 3 == 0 else f"opt_{i}" for i in range(1, 21)],
+            }
+        )
+    )
+
+    try:
+        filters = [
+            EqualTo("id", 10),
+            NotEqualTo("id", 10),
+            GreaterThan("value", 1000),
+            GreaterThanOrEqual("value", 1000),
+            LessThan("value", 500),
+            LessThanOrEqual("value", 500),
+            In("id", [1, 5, 10, 15]),
+            NotIn("id", [1, 5, 10, 15]),
+            IsNull("optional"),
+            NotNull("optional"),
+            StartsWith("name", "item_1"),
+            And(GreaterThan("id", 5), LessThan("id", 15)),
+            Or(EqualTo("id", 1), EqualTo("id", 20)),
+            Not(EqualTo("id", 10)),
+        ]
+
+        for filter_expr in filters:
+            _assert_remote_scan_matches_local_scan(table, session_catalog, identifier, row_filter=filter_expr)
+    finally:
+        scan_catalog.drop_table(identifier)
+
+
+@pytest.mark.integration
+def test_rest_scan_empty_table(scan_catalog: RestCatalog, session_catalog: Catalog) -> None:
+    identifier = "default.test_empty_table"
+
+    schema = Schema(
+        NestedField(1, "id", LongType()),
+        NestedField(2, "data", StringType()),
+    )
+
+    table = recreate_table(scan_catalog, identifier, schema=schema)
+
+    try:
+        rest_tasks = list(table.scan().plan_files())
+        local_table = session_catalog.load_table(identifier)
+        local_tasks = list(local_table.scan().plan_files())
+
+        assert len(rest_tasks) == 0
+        assert len(local_tasks) == 0
     finally:
         scan_catalog.drop_table(identifier)

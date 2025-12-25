@@ -24,7 +24,7 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from pyiceberg.catalog.rest.response import ErrorResponseMessage
-from pyiceberg.expressions import BooleanExpression
+from pyiceberg.expressions import BooleanExpression, SerializableBooleanExpression
 from pyiceberg.manifest import DataFileContent, FileFormat
 from pyiceberg.typedef import IcebergBaseModel
 
@@ -192,7 +192,7 @@ class PlanTableScanRequest(IcebergBaseModel):
 
     snapshot_id: int | None = Field(alias="snapshot-id", default=None)
     select: list[str] | None = Field(default=None)
-    filter: BooleanExpression | None = Field(default=None)
+    filter: SerializableBooleanExpression | None = Field(default=None)
     case_sensitive: bool = Field(alias="case-sensitive", default=True)
     use_snapshot_schema: bool = Field(alias="use-snapshot-schema", default=False)
     start_snapshot_id: int | None = Field(alias="start-snapshot-id", default=None)

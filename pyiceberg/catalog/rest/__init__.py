@@ -424,7 +424,7 @@ class RestCatalog(Catalog):
         self._check_endpoint(Capability.V1_SUBMIT_TABLE_SCAN_PLAN)
         response = self._session.post(
             self.url(Endpoints.plan_table_scan, prefixed=True, **self._split_identifier_for_path(identifier)),
-            json=request.model_dump(by_alias=True, exclude_none=True),
+            data=request.model_dump_json(by_alias=True, exclude_none=True).encode(UTF8),
         )
         try:
             response.raise_for_status()
@@ -451,7 +451,7 @@ class RestCatalog(Catalog):
         request = FetchScanTasksRequest(plan_task=plan_task)
         response = self._session.post(
             self.url(Endpoints.fetch_scan_tasks, prefixed=True, **self._split_identifier_for_path(identifier)),
-            json=request.model_dump(by_alias=True),
+            data=request.model_dump_json(by_alias=True).encode(UTF8),
         )
         try:
             response.raise_for_status()
