@@ -45,6 +45,7 @@ jobs:
             3.10
             3.11
             3.12
+            3.13
 
       - name: Install UV
         uses: astral-sh/setup-uv@v7
@@ -68,7 +69,7 @@ jobs:
         env:
           # Ignore 32 bit architectures
           CIBW_ARCHS: "auto64"
-          CIBW_PROJECT_REQUIRES_PYTHON: ">=3.10"
+          CIBW_PROJECT_REQUIRES_PYTHON: ">=3.10,<3.14"
           CIBW_TEST_REQUIRES: "pytest==7.4.2 moto==5.0.1"
           CIBW_TEST_COMMAND: "pytest {project}/tests/avro/test_decoder.py"
           # Ignore tests for pypy since not all dependencies are compiled for it
