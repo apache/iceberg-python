@@ -21,7 +21,7 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
 from functools import singledispatch
-from typing import TYPE_CHECKING, Annotated, Any, Generic, Literal, TypeVar, cast
+from typing import TYPE_CHECKING, Annotated, Any, Generic, Literal, TypeVar, cast, Self
 
 from pydantic import Field, field_validator, model_serializer, model_validator
 
@@ -179,13 +179,9 @@ class SetStatisticsUpdate(IcebergBaseModel):
         description="snapshot-id is **DEPRECATED for REMOVAL** since it contains redundant information. Use `statistics.snapshot-id` field instead.",
     )
 
-    @model_validator(mode="before")
-    def validate_snapshot_id(cls, data: dict[str, Any]) -> dict[str, Any]:
-        stats = cast(StatisticsFile, data["statistics"])
-
-        data["snapshot_id"] = stats.snapshot_id
-
-        return data
+    @model_validator(mode="after")
+    def validate_snapshot_id(self) -> Self:
+        return self.model_copy(update={"snapshot_id": self.statistics.snapshot_id})
 
 
 class RemoveStatisticsUpdate(IcebergBaseModel):
