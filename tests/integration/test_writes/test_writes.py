@@ -2041,9 +2041,8 @@ def test_evolve_and_write(
         # This is not known by other_table
         upd.add_column("id", IntegerType())
 
+    other_table.refresh()
     with other_table.transaction() as tx:
-        # Refreshes the underlying metadata, and the schema
-        other_table.refresh()
         tx.append(
             pa.Table.from_arrays(
                 [
