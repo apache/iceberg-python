@@ -68,6 +68,28 @@ OAUTH_TEST_HEADERS = {
     "Content-type": "application/x-www-form-urlencoded",
 }
 
+TEST_SUPPORTED_ENDPOINTS = [
+    Capability.V1_LIST_NAMESPACES,
+    Capability.V1_LOAD_NAMESPACE,
+    Capability.V1_NAMESPACE_EXISTS,
+    Capability.V1_UPDATE_NAMESPACE,
+    Capability.V1_CREATE_NAMESPACE,
+    Capability.V1_DELETE_NAMESPACE,
+    Capability.V1_LIST_TABLES,
+    Capability.V1_LOAD_TABLE,
+    Capability.V1_TABLE_EXISTS,
+    Capability.V1_CREATE_TABLE,
+    Capability.V1_UPDATE_TABLE,
+    Capability.V1_DELETE_TABLE,
+    Capability.V1_RENAME_TABLE,
+    Capability.V1_REGISTER_TABLE,
+    Capability.V1_LIST_VIEWS,
+    Capability.V1_VIEW_EXISTS,
+    Capability.V1_DELETE_VIEW,
+    Capability.V1_SUBMIT_TABLE_SCAN_PLAN,
+    Capability.V1_TABLE_SCAN_PLAN_TASKS,
+]
+
 
 @pytest.fixture
 def example_table_metadata_with_snapshot_v1_rest_json(example_table_metadata_with_snapshot_v1: dict[str, Any]) -> dict[str, Any]:
@@ -112,7 +134,7 @@ def rest_mock(requests_mock: Mocker) -> Mocker:
     """
     requests_mock.get(
         f"{TEST_URI}v1/config",
-        json={"defaults": {}, "overrides": {}},
+        json={"defaults": {}, "overrides": {}, "endpoints": [str(endpoint) for endpoint in TEST_SUPPORTED_ENDPOINTS]},
         status_code=200,
     )
     return requests_mock
@@ -457,9 +479,7 @@ def test_list_views_200(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
 
-    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{"view-endpoints-supported": "true"}).list_views(namespace) == [
-        ("examples", "fooshare")
-    ]
+    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace) == [("examples", "fooshare")]
 
 
 def test_list_views_200_sigv4(rest_mock: Mocker) -> None:
@@ -471,9 +491,9 @@ def test_list_views_200_sigv4(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
 
-    assert RestCatalog(
-        "rest", **{"uri": TEST_URI, "token": TEST_TOKEN, "rest.sigv4-enabled": "true", "view-endpoints-supported": "true"}
-    ).list_views(namespace) == [("examples", "fooshare")]
+    assert RestCatalog("rest", **{"uri": TEST_URI, "token": TEST_TOKEN, "rest.sigv4-enabled": "true"}).list_views(namespace) == [
+        ("examples", "fooshare")
+    ]
     assert rest_mock.called
 
 
@@ -492,7 +512,7 @@ def test_list_views_404(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
     with pytest.raises(NoSuchNamespaceError) as e:
-        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{"view-endpoints-supported": "true"}).list_views(namespace)
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace)
     assert "Namespace does not exist" in str(e.value)
 
 
@@ -504,7 +524,7 @@ def test_view_exists_204(rest_mock: Mocker) -> None:
         status_code=204,
         request_headers=TEST_HEADERS,
     )
-    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{"view-endpoints-supported": "true"})
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
     assert catalog.view_exists((namespace, view))
 
 
@@ -516,7 +536,7 @@ def test_view_exists_404(rest_mock: Mocker) -> None:
         status_code=404,
         request_headers=TEST_HEADERS,
     )
-    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{"view-endpoints-supported": "true"})
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
     assert not catalog.view_exists((namespace, view))
 
 
@@ -784,7 +804,6 @@ def test_namespace_exists_200(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
-    catalog._supported_endpoints.add(Capability.V1_NAMESPACE_EXISTS)
 
     assert catalog.namespace_exists("fokko")
 
@@ -796,7 +815,6 @@ def test_namespace_exists_204(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
-    catalog._supported_endpoints.add(Capability.V1_NAMESPACE_EXISTS)
 
     assert catalog.namespace_exists("fokko")
 
@@ -808,7 +826,6 @@ def test_namespace_exists_404(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
-    catalog._supported_endpoints.add(Capability.V1_NAMESPACE_EXISTS)
 
     assert not catalog.namespace_exists("fokko")
 
@@ -820,7 +837,6 @@ def test_namespace_exists_500(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
-    catalog._supported_endpoints.add(Capability.V1_NAMESPACE_EXISTS)
 
     with pytest.raises(ServerError):
         catalog.namespace_exists("fokko")
@@ -963,15 +979,6 @@ def test_load_table_404(rest_mock: Mocker) -> None:
 
 
 def test_table_exists_200(rest_mock: Mocker) -> None:
-    rest_mock.get(
-        f"{TEST_URI}v1/config",
-        json={
-            "defaults": {},
-            "overrides": {},
-            "endpoints": [str(Capability.V1_TABLE_EXISTS)],
-        },
-        status_code=200,
-    )
     rest_mock.head(
         f"{TEST_URI}v1/namespaces/fokko/tables/table",
         status_code=200,
@@ -982,15 +989,6 @@ def test_table_exists_200(rest_mock: Mocker) -> None:
 
 
 def test_table_exists_204(rest_mock: Mocker) -> None:
-    rest_mock.get(
-        f"{TEST_URI}v1/config",
-        json={
-            "defaults": {},
-            "overrides": {},
-            "endpoints": [str(Capability.V1_TABLE_EXISTS)],
-        },
-        status_code=200,
-    )
     rest_mock.head(
         f"{TEST_URI}v1/namespaces/fokko/tables/table",
         status_code=204,
@@ -1001,15 +999,6 @@ def test_table_exists_204(rest_mock: Mocker) -> None:
 
 
 def test_table_exists_404(rest_mock: Mocker) -> None:
-    rest_mock.get(
-        f"{TEST_URI}v1/config",
-        json={
-            "defaults": {},
-            "overrides": {},
-            "endpoints": [str(Capability.V1_TABLE_EXISTS)],
-        },
-        status_code=200,
-    )
     rest_mock.head(
         f"{TEST_URI}v1/namespaces/fokko/tables/table",
         status_code=404,
@@ -1020,15 +1009,6 @@ def test_table_exists_404(rest_mock: Mocker) -> None:
 
 
 def test_table_exists_500(rest_mock: Mocker) -> None:
-    rest_mock.get(
-        f"{TEST_URI}v1/config",
-        json={
-            "defaults": {},
-            "overrides": {},
-            "endpoints": [str(Capability.V1_TABLE_EXISTS)],
-        },
-        status_code=200,
-    )
     rest_mock.head(
         f"{TEST_URI}v1/namespaces/fokko/tables/table",
         status_code=500,
@@ -1381,15 +1361,6 @@ def test_delete_table_from_self_identifier_204(
 
 
 def test_rename_table_200(rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]) -> None:
-    rest_mock.get(
-        f"{TEST_URI}v1/config",
-        json={
-            "defaults": {},
-            "overrides": {},
-            "endpoints": [str(Capability.V1_NAMESPACE_EXISTS), str(Capability.V1_RENAME_TABLE), str(Capability.V1_LOAD_TABLE)],
-        },
-        status_code=200,
-    )
     rest_mock.post(
         f"{TEST_URI}v1/tables/rename",
         json={
@@ -1428,15 +1399,6 @@ def test_rename_table_200(rest_mock: Mocker, example_table_metadata_with_snapsho
 def test_rename_table_from_self_identifier_200(
     rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
 ) -> None:
-    rest_mock.get(
-        f"{TEST_URI}v1/config",
-        json={
-            "defaults": {},
-            "overrides": {},
-            "endpoints": [str(Capability.V1_NAMESPACE_EXISTS), str(Capability.V1_RENAME_TABLE), str(Capability.V1_LOAD_TABLE)],
-        },
-        status_code=200,
-    )
     rest_mock.get(
         f"{TEST_URI}v1/namespaces/pdames/tables/source",
         json=example_table_metadata_with_snapshot_v1_rest_json,
@@ -1480,15 +1442,6 @@ def test_rename_table_from_self_identifier_200(
 
 
 def test_rename_table_source_namespace_does_not_exist(rest_mock: Mocker) -> None:
-    rest_mock.get(
-        f"{TEST_URI}v1/config",
-        json={
-            "defaults": {},
-            "overrides": {},
-            "endpoints": [str(Capability.V1_NAMESPACE_EXISTS), str(Capability.V1_RENAME_TABLE), str(Capability.V1_LOAD_TABLE)],
-        },
-        status_code=200,
-    )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
     from_identifier = ("invalid", "source")
     to_identifier = ("pdames", "destination")
@@ -1510,15 +1463,6 @@ def test_rename_table_source_namespace_does_not_exist(rest_mock: Mocker) -> None
 
 
 def test_rename_table_destination_namespace_does_not_exist(rest_mock: Mocker) -> None:
-    rest_mock.get(
-        f"{TEST_URI}v1/config",
-        json={
-            "defaults": {},
-            "overrides": {},
-            "endpoints": [str(Capability.V1_NAMESPACE_EXISTS), str(Capability.V1_RENAME_TABLE), str(Capability.V1_LOAD_TABLE)],
-        },
-        status_code=200,
-    )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
     from_identifier = ("pdames", "source")
     to_identifier = ("invalid", "destination")
@@ -1902,15 +1846,6 @@ def test_table_identifier_in_commit_table_request(
 
 
 def test_drop_view_invalid_namespace(rest_mock: Mocker) -> None:
-    rest_mock.get(
-        f"{TEST_URI}v1/config",
-        json={
-            "defaults": {},
-            "overrides": {},
-            "endpoints": [str(Capability.V1_DELETE_VIEW)],
-        },
-        status_code=200,
-    )
     view = "view"
     with pytest.raises(NoSuchIdentifierError) as e:
         # Missing namespace
@@ -1920,15 +1855,6 @@ def test_drop_view_invalid_namespace(rest_mock: Mocker) -> None:
 
 
 def test_drop_view_404(rest_mock: Mocker) -> None:
-    rest_mock.get(
-        f"{TEST_URI}v1/config",
-        json={
-            "defaults": {},
-            "overrides": {},
-            "endpoints": [str(Capability.V1_DELETE_VIEW)],
-        },
-        status_code=200,
-    )
     rest_mock.delete(
         f"{TEST_URI}v1/namespaces/some_namespace/views/does_not_exists",
         json={
@@ -1948,15 +1874,6 @@ def test_drop_view_404(rest_mock: Mocker) -> None:
 
 
 def test_drop_view_204(rest_mock: Mocker) -> None:
-    rest_mock.get(
-        f"{TEST_URI}v1/config",
-        json={
-            "defaults": {},
-            "overrides": {},
-            "endpoints": [str(Capability.V1_DELETE_VIEW)],
-        },
-        status_code=200,
-    )
     rest_mock.delete(
         f"{TEST_URI}v1/namespaces/some_namespace/views/some_view",
         json={},
@@ -2100,25 +2017,11 @@ class TestRestCatalogClose:
         assert len(catalog._session.adapters) == self.EXPECTED_ADAPTERS_SIGV4
 
     def test_rest_scan_planning_disabled_by_default(self, rest_mock: Mocker) -> None:
-        rest_mock.get(
-            f"{TEST_URI}v1/config",
-            json={"defaults": {}, "overrides": {}},
-            status_code=200,
-        )
         catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
 
         assert catalog.is_rest_scan_planning_enabled() is False
 
     def test_rest_scan_planning_enabled_by_property(self, rest_mock: Mocker) -> None:
-        rest_mock.get(
-            f"{TEST_URI}v1/config",
-            json={
-                "defaults": {},
-                "overrides": {},
-                "endpoints": ["POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan"],
-            },
-            status_code=200,
-        )
         catalog = RestCatalog(
             "rest",
             uri=TEST_URI,
@@ -2128,8 +2031,8 @@ class TestRestCatalogClose:
 
         assert catalog.is_rest_scan_planning_enabled() is True
 
-    def test_rest_scan_planning_disabled_without_endpoint_support(self, rest_mock: Mocker) -> None:
-        rest_mock.get(
+    def test_rest_scan_planning_disabled_when_endpoint_unsupported(self, requests_mock: Mocker) -> None:
+        requests_mock.get(
             f"{TEST_URI}v1/config",
             json={"defaults": {}, "overrides": {}},
             status_code=200,
@@ -2144,15 +2047,6 @@ class TestRestCatalogClose:
         assert catalog.is_rest_scan_planning_enabled() is False
 
     def test_rest_scan_planning_explicitly_disabled(self, rest_mock: Mocker) -> None:
-        rest_mock.get(
-            f"{TEST_URI}v1/config",
-            json={
-                "defaults": {},
-                "overrides": {},
-                "endpoints": ["POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan"],
-            },
-            status_code=200,
-        )
         catalog = RestCatalog(
             "rest",
             uri=TEST_URI,

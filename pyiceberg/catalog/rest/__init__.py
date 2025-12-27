@@ -92,8 +92,6 @@ class Endpoint(IcebergBaseModel):
     @field_validator("path", mode="before")
     @classmethod
     def _validate_path(cls, raw_path: str) -> str:
-        if not raw_path:
-            raise ValueError("Invalid path: empty")
         raw_path = raw_path.strip()
         if not raw_path:
             raise ValueError("Invalid path: empty")
@@ -104,10 +102,8 @@ class Endpoint(IcebergBaseModel):
         return f"{self.http_method.value} {self.path}"
 
     @classmethod
-    def from_string(cls, endpoint: str | None) -> "Endpoint":
-        if endpoint is None:
-            raise ValueError("Invalid endpoint (must consist of 'METHOD /path'): None")
-        elements = endpoint.split(None, 1)
+    def from_string(cls, endpoint: str) -> "Endpoint":
+        elements = endpoint.strip().split(None, 1)
         if len(elements) != 2:
             raise ValueError(f"Invalid endpoint (must consist of two elements separated by a single space): {endpoint}")
         return cls(http_method=HttpMethod(elements[0].upper()), path=elements[1])
@@ -137,36 +133,31 @@ class Endpoints:
     fetch_scan_tasks: str = "namespaces/{namespace}/tables/{table}/tasks"
 
 
+API_PREFIX = "/v1/{prefix}"
+
+
 class Capability:
-    V1_LIST_NAMESPACES = Endpoint(http_method=HttpMethod.GET, path="/v1/{prefix}/namespaces")
-    V1_LOAD_NAMESPACE = Endpoint(http_method=HttpMethod.GET, path="/v1/{prefix}/namespaces/{namespace}")
-    V1_NAMESPACE_EXISTS = Endpoint(http_method=HttpMethod.HEAD, path="/v1/{prefix}/namespaces/{namespace}")
-    V1_UPDATE_NAMESPACE = Endpoint(http_method=HttpMethod.POST, path="/v1/{prefix}/namespaces/{namespace}/properties")
-    V1_CREATE_NAMESPACE = Endpoint(http_method=HttpMethod.POST, path="/v1/{prefix}/namespaces")
-    V1_DELETE_NAMESPACE = Endpoint(http_method=HttpMethod.DELETE, path="/v1/{prefix}/namespaces/{namespace}")
+    V1_LIST_NAMESPACES = Endpoint(http_method=HttpMethod.GET, path=f"{API_PREFIX}/{Endpoints.list_namespaces}")
+    V1_LOAD_NAMESPACE = Endpoint(http_method=HttpMethod.GET, path=f"{API_PREFIX}/{Endpoints.load_namespace_metadata}")
+    V1_NAMESPACE_EXISTS = Endpoint(http_method=HttpMethod.HEAD, path=f"{API_PREFIX}/{Endpoints.namespace_exists}")
+    V1_UPDATE_NAMESPACE = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.update_namespace_properties}")
+    V1_CREATE_NAMESPACE = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.create_namespace}")
+    V1_DELETE_NAMESPACE = Endpoint(http_method=HttpMethod.DELETE, path=f"{API_PREFIX}/{Endpoints.drop_namespace}")
 
-    V1_LIST_TABLES = Endpoint(http_method=HttpMethod.GET, path="/v1/{prefix}/namespaces/{namespace}/tables")
-    V1_LOAD_TABLE = Endpoint(http_method=HttpMethod.GET, path="/v1/{prefix}/namespaces/{namespace}/tables/{table}")
-    V1_TABLE_EXISTS = Endpoint(http_method=HttpMethod.HEAD, path="/v1/{prefix}/namespaces/{namespace}/tables/{table}")
-    V1_CREATE_TABLE = Endpoint(http_method=HttpMethod.POST, path="/v1/{prefix}/namespaces/{namespace}/tables")
-    V1_UPDATE_TABLE = Endpoint(http_method=HttpMethod.POST, path="/v1/{prefix}/namespaces/{namespace}/tables/{table}")
-    V1_DELETE_TABLE = Endpoint(http_method=HttpMethod.DELETE, path="/v1/{prefix}/namespaces/{namespace}/tables/{table}")
-    V1_RENAME_TABLE = Endpoint(http_method=HttpMethod.POST, path="/v1/{prefix}/tables/rename")
-    V1_REGISTER_TABLE = Endpoint(http_method=HttpMethod.POST, path="/v1/{prefix}/namespaces/{namespace}/register")
+    V1_LIST_TABLES = Endpoint(http_method=HttpMethod.GET, path=f"{API_PREFIX}/{Endpoints.list_tables}")
+    V1_LOAD_TABLE = Endpoint(http_method=HttpMethod.GET, path=f"{API_PREFIX}/{Endpoints.load_table}")
+    V1_TABLE_EXISTS = Endpoint(http_method=HttpMethod.HEAD, path=f"{API_PREFIX}/{Endpoints.table_exists}")
+    V1_CREATE_TABLE = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.create_table}")
+    V1_UPDATE_TABLE = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.update_table}")
+    V1_DELETE_TABLE = Endpoint(http_method=HttpMethod.DELETE, path=f"{API_PREFIX}/{Endpoints.drop_table}")
+    V1_RENAME_TABLE = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.rename_table}")
+    V1_REGISTER_TABLE = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.register_table}")
 
-    V1_LIST_VIEWS = Endpoint(http_method=HttpMethod.GET, path="/v1/{prefix}/namespaces/{namespace}/views")
-    V1_LOAD_VIEW = Endpoint(http_method=HttpMethod.GET, path="/v1/{prefix}/namespaces/{namespace}/views/{view}")
-    V1_VIEW_EXISTS = Endpoint(http_method=HttpMethod.HEAD, path="/v1/{prefix}/namespaces/{namespace}/views/{view}")
-    V1_CREATE_VIEW = Endpoint(http_method=HttpMethod.POST, path="/v1/{prefix}/namespaces/{namespace}/views")
-    V1_UPDATE_VIEW = Endpoint(http_method=HttpMethod.POST, path="/v1/{prefix}/namespaces/{namespace}/views/{view}")
-    V1_DELETE_VIEW = Endpoint(http_method=HttpMethod.DELETE, path="/v1/{prefix}/namespaces/{namespace}/views/{view}")
-    V1_RENAME_VIEW = Endpoint(http_method=HttpMethod.POST, path="/v1/{prefix}/views/rename")
-    V1_SUBMIT_TABLE_SCAN_PLAN = Endpoint(
-        http_method=HttpMethod.POST, path="/v1/{prefix}/namespaces/{namespace}/tables/{table}/plan"
-    )
-    V1_TABLE_SCAN_PLAN_TASKS = Endpoint(
-        http_method=HttpMethod.POST, path="/v1/{prefix}/namespaces/{namespace}/tables/{table}/tasks"
-    )
+    V1_LIST_VIEWS = Endpoint(http_method=HttpMethod.GET, path=f"{API_PREFIX}/{Endpoints.list_views}")
+    V1_VIEW_EXISTS = Endpoint(http_method=HttpMethod.HEAD, path=f"{API_PREFIX}/{Endpoints.view_exists}")
+    V1_DELETE_VIEW = Endpoint(http_method=HttpMethod.DELETE, path=f"{API_PREFIX}/{Endpoints.drop_view}")
+    V1_SUBMIT_TABLE_SCAN_PLAN = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.plan_table_scan}")
+    V1_TABLE_SCAN_PLAN_TASKS = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.fetch_scan_tasks}")
 
 
 # Default endpoints for backwards compatibility with legacy servers that don't return endpoints
@@ -231,6 +222,8 @@ AUTH = "auth"
 CUSTOM = "custom"
 REST_SCAN_PLANNING_ENABLED = "rest-scan-planning-enabled"
 REST_SCAN_PLANNING_ENABLED_DEFAULT = False
+# for backwards compatibility with older REST servers where it can be assumed that a particular
+# server supports view endpoints but doesn't send the "endpoints" field in the ConfigResponse
 VIEW_ENDPOINTS_SUPPORTED = "view-endpoints-supported"
 VIEW_ENDPOINTS_SUPPORTED_DEFAULT = False
 
@@ -966,7 +959,7 @@ class RestCatalog(Catalog):
     def namespace_exists(self, namespace: str | Identifier) -> bool:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
-
+        # fallback in order to work with older rest catalog implementations
         if Capability.V1_NAMESPACE_EXISTS not in self._supported_endpoints:
             try:
                 self.load_namespace_properties(namespace_tuple)
@@ -998,6 +991,7 @@ class RestCatalog(Catalog):
         Returns:
             bool: True if the table exists, False otherwise.
         """
+        # fallback in order to work with older rest catalog implementations
         if Capability.V1_TABLE_EXISTS not in self._supported_endpoints:
             try:
                 self.load_table(identifier)
