@@ -14,6 +14,7 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+from collections import deque
 from enum import Enum
 from typing import (
     TYPE_CHECKING,
@@ -21,7 +22,7 @@ from typing import (
     Union,
 )
 
-from pydantic import Field, field_validator
+from pydantic import ConfigDict, Field, TypeAdapter, field_validator
 from requests import HTTPError, Session
 from tenacity import RetryCallState, retry, retry_if_exception_type, stop_after_attempt
 
@@ -36,6 +37,16 @@ from pyiceberg.catalog import (
 )
 from pyiceberg.catalog.rest.auth import AuthManager, AuthManagerAdapter, AuthManagerFactory, LegacyOAuth2AuthManager
 from pyiceberg.catalog.rest.response import _handle_non_200_response
+from pyiceberg.catalog.rest.scan_planning import (
+    FetchScanTasksRequest,
+    PlanCancelled,
+    PlanCompleted,
+    PlanFailed,
+    PlanningResponse,
+    PlanSubmitted,
+    PlanTableScanRequest,
+    ScanTasks,
+)
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
     CommitFailedException,
@@ -44,6 +55,7 @@ from pyiceberg.exceptions import (
     NamespaceNotEmptyError,
     NoSuchIdentifierError,
     NoSuchNamespaceError,
+    NoSuchPlanTaskError,
     NoSuchTableError,
     NoSuchViewError,
     TableAlreadyExistsError,
@@ -56,6 +68,7 @@ from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
     CreateTableTransaction,
+    FileScanTask,
     StagedTable,
     Table,
     TableIdentifier,
@@ -76,6 +89,43 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
 
+class HttpMethod(str, Enum):
+    GET = "GET"
+    HEAD = "HEAD"
+    POST = "POST"
+    DELETE = "DELETE"
+
+
+class Endpoint(IcebergBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    http_method: HttpMethod = Field()
+    path: str = Field()
+
+    @field_validator("path", mode="before")
+    @classmethod
+    def _validate_path(cls, raw_path: str) -> str:
+        if not raw_path:
+            raise ValueError("Invalid path: empty")
+        raw_path = raw_path.strip()
+        if not raw_path:
+            raise ValueError("Invalid path: empty")
+        return raw_path
+
+    def __str__(self) -> str:
+        """Return the string representation of the Endpoint class."""
+        return f"{self.http_method.value} {self.path}"
+
+    @classmethod
+    def from_string(cls, endpoint: str | None) -> "Endpoint":
+        if endpoint is None:
+            raise ValueError("Invalid endpoint (must consist of 'METHOD /path'): None")
+        elements = endpoint.split(None, 1)
+        if len(elements) != 2:
+            raise ValueError(f"Invalid endpoint (must consist of two elements separated by a single space): {endpoint}")
+        return cls(http_method=HttpMethod(elements[0].upper()), path=elements[1])
+
+
 class Endpoints:
     get_config: str = "config"
     list_namespaces: str = "namespaces"
@@ -86,7 +136,7 @@ class Endpoints:
     namespace_exists: str = "namespaces/{namespace}"
     list_tables: str = "namespaces/{namespace}/tables"
     create_table: str = "namespaces/{namespace}/tables"
-    register_table = "namespaces/{namespace}/register"
+    register_table: str = "namespaces/{namespace}/register"
     load_table: str = "namespaces/{namespace}/tables/{table}"
     update_table: str = "namespaces/{namespace}/tables/{table}"
     drop_table: str = "namespaces/{namespace}/tables/{table}"
@@ -98,6 +148,66 @@ class Endpoints:
     view_exists: str = "namespaces/{namespace}/views/{view}"
     plan_table_scan: str = "namespaces/{namespace}/tables/{table}/plan"
     fetch_scan_tasks: str = "namespaces/{namespace}/tables/{table}/tasks"
+
+
+class Capability:
+    V1_LIST_NAMESPACES = Endpoint(http_method=HttpMethod.GET, path="/v1/{prefix}/namespaces")
+    V1_LOAD_NAMESPACE = Endpoint(http_method=HttpMethod.GET, path="/v1/{prefix}/namespaces/{namespace}")
+    V1_NAMESPACE_EXISTS = Endpoint(http_method=HttpMethod.HEAD, path="/v1/{prefix}/namespaces/{namespace}")
+    V1_UPDATE_NAMESPACE = Endpoint(http_method=HttpMethod.POST, path="/v1/{prefix}/namespaces/{namespace}/properties")
+    V1_CREATE_NAMESPACE = Endpoint(http_method=HttpMethod.POST, path="/v1/{prefix}/namespaces")
+    V1_DELETE_NAMESPACE = Endpoint(http_method=HttpMethod.DELETE, path="/v1/{prefix}/namespaces/{namespace}")
+
+    V1_LIST_TABLES = Endpoint(http_method=HttpMethod.GET, path="/v1/{prefix}/namespaces/{namespace}/tables")
+    V1_LOAD_TABLE = Endpoint(http_method=HttpMethod.GET, path="/v1/{prefix}/namespaces/{namespace}/tables/{table}")
+    V1_TABLE_EXISTS = Endpoint(http_method=HttpMethod.HEAD, path="/v1/{prefix}/namespaces/{namespace}/tables/{table}")
+    V1_CREATE_TABLE = Endpoint(http_method=HttpMethod.POST, path="/v1/{prefix}/namespaces/{namespace}/tables")
+    V1_UPDATE_TABLE = Endpoint(http_method=HttpMethod.POST, path="/v1/{prefix}/namespaces/{namespace}/tables/{table}")
+    V1_DELETE_TABLE = Endpoint(http_method=HttpMethod.DELETE, path="/v1/{prefix}/namespaces/{namespace}/tables/{table}")
+    V1_RENAME_TABLE = Endpoint(http_method=HttpMethod.POST, path="/v1/{prefix}/tables/rename")
+    V1_REGISTER_TABLE = Endpoint(http_method=HttpMethod.POST, path="/v1/{prefix}/namespaces/{namespace}/register")
+
+    V1_LIST_VIEWS = Endpoint(http_method=HttpMethod.GET, path="/v1/{prefix}/namespaces/{namespace}/views")
+    V1_LOAD_VIEW = Endpoint(http_method=HttpMethod.GET, path="/v1/{prefix}/namespaces/{namespace}/views/{view}")
+    V1_VIEW_EXISTS = Endpoint(http_method=HttpMethod.HEAD, path="/v1/{prefix}/namespaces/{namespace}/views/{view}")
+    V1_CREATE_VIEW = Endpoint(http_method=HttpMethod.POST, path="/v1/{prefix}/namespaces/{namespace}/views")
+    V1_UPDATE_VIEW = Endpoint(http_method=HttpMethod.POST, path="/v1/{prefix}/namespaces/{namespace}/views/{view}")
+    V1_DELETE_VIEW = Endpoint(http_method=HttpMethod.DELETE, path="/v1/{prefix}/namespaces/{namespace}/views/{view}")
+    V1_RENAME_VIEW = Endpoint(http_method=HttpMethod.POST, path="/v1/{prefix}/views/rename")
+    V1_SUBMIT_TABLE_SCAN_PLAN = Endpoint(
+        http_method=HttpMethod.POST, path="/v1/{prefix}/namespaces/{namespace}/tables/{table}/plan"
+    )
+    V1_TABLE_SCAN_PLAN_TASKS = Endpoint(
+        http_method=HttpMethod.POST, path="/v1/{prefix}/namespaces/{namespace}/tables/{table}/tasks"
+    )
+
+
+# Default endpoints for backwards compatibility with legacy servers that don't return endpoints
+# in ConfigResponse. Only includes namespace and table endpoints.
+DEFAULT_ENDPOINTS: frozenset[Endpoint] = frozenset(
+    (
+        Capability.V1_LIST_NAMESPACES,
+        Capability.V1_LOAD_NAMESPACE,
+        Capability.V1_CREATE_NAMESPACE,
+        Capability.V1_UPDATE_NAMESPACE,
+        Capability.V1_DELETE_NAMESPACE,
+        Capability.V1_LIST_TABLES,
+        Capability.V1_LOAD_TABLE,
+        Capability.V1_CREATE_TABLE,
+        Capability.V1_UPDATE_TABLE,
+        Capability.V1_DELETE_TABLE,
+        Capability.V1_RENAME_TABLE,
+        Capability.V1_REGISTER_TABLE,
+    )
+)
+
+# View endpoints conditionally added based on VIEW_ENDPOINTS_SUPPORTED property.
+VIEW_ENDPOINTS: frozenset[Endpoint] = frozenset(
+    (
+        Capability.V1_LIST_VIEWS,
+        Capability.V1_DELETE_VIEW,
+    )
+)
 
 
 class IdentifierKind(Enum):
@@ -134,6 +244,8 @@ AUTH = "auth"
 CUSTOM = "custom"
 REST_SCAN_PLANNING_ENABLED = "rest-scan-planning-enabled"
 REST_SCAN_PLANNING_ENABLED_DEFAULT = False
+VIEW_ENDPOINTS_SUPPORTED = "view-endpoints-supported"
+VIEW_ENDPOINTS_SUPPORTED_DEFAULT = False
 
 NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
 
@@ -180,6 +292,14 @@ class RegisterTableRequest(IcebergBaseModel):
 class ConfigResponse(IcebergBaseModel):
     defaults: Properties | None = Field(default_factory=dict)
     overrides: Properties | None = Field(default_factory=dict)
+    endpoints: set[Endpoint] | None = Field(default=None)
+
+    @field_validator("endpoints", mode="before")
+    @classmethod
+    def _parse_endpoints(cls, v: list[str] | None) -> set[Endpoint] | None:
+        if v is None:
+            return None
+        return {Endpoint.from_string(s) for s in v}
 
 
 class ListNamespaceResponse(IcebergBaseModel):
@@ -215,9 +335,13 @@ class ListViewsResponse(IcebergBaseModel):
     identifiers: list[ListViewResponseEntry] = Field()
 
 
+_PLANNING_RESPONSE_ADAPTER = TypeAdapter(PlanningResponse)
+
+
 class RestCatalog(Catalog):
     uri: str
     _session: Session
+    _supported_endpoints: set[Endpoint]
 
     def __init__(self, name: str, **properties: str):
         """Rest Catalog.
@@ -279,7 +403,109 @@ class RestCatalog(Catalog):
         Returns:
             True if enabled, False otherwise.
         """
-        return property_as_bool(self.properties, REST_SCAN_PLANNING_ENABLED, REST_SCAN_PLANNING_ENABLED_DEFAULT)
+        return Capability.V1_SUBMIT_TABLE_SCAN_PLAN in self._supported_endpoints and property_as_bool(
+            self.properties, REST_SCAN_PLANNING_ENABLED, REST_SCAN_PLANNING_ENABLED_DEFAULT
+        )
+
+    @retry(**_RETRY_ARGS)
+    def _plan_table_scan(self, identifier: str | Identifier, request: PlanTableScanRequest) -> PlanningResponse:
+        """Submit a scan plan request to the REST server.
+
+        Args:
+            identifier: Table identifier.
+            request: The scan plan request parameters.
+
+        Returns:
+            PlanningResponse the result of the scan plan request representing the status
+        Raises:
+            NoSuchTableError: If a table with the given identifier does not exist.
+        """
+        self._check_endpoint(Capability.V1_SUBMIT_TABLE_SCAN_PLAN)
+        response = self._session.post(
+            self.url(Endpoints.plan_table_scan, prefixed=True, **self._split_identifier_for_path(identifier)),
+            data=request.model_dump_json(by_alias=True, exclude_none=True).encode(UTF8),
+        )
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            _handle_non_200_response(exc, {404: NoSuchTableError})
+
+        return _PLANNING_RESPONSE_ADAPTER.validate_json(response.text)
+
+    @retry(**_RETRY_ARGS)
+    def _fetch_scan_tasks(self, identifier: str | Identifier, plan_task: str) -> ScanTasks:
+        """Fetch additional scan tasks using a plan task token.
+
+        Args:
+            identifier: Table identifier.
+            plan_task: The plan task token from a previous response.
+
+        Returns:
+            ScanTasks containing file scan tasks and possibly more plan-task tokens.
+
+        Raises:
+            NoSuchPlanTaskError: If a plan task with the given identifier or task does not exist.
+        """
+        self._check_endpoint(Capability.V1_TABLE_SCAN_PLAN_TASKS)
+        request = FetchScanTasksRequest(plan_task=plan_task)
+        response = self._session.post(
+            self.url(Endpoints.fetch_scan_tasks, prefixed=True, **self._split_identifier_for_path(identifier)),
+            data=request.model_dump_json(by_alias=True).encode(UTF8),
+        )
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            _handle_non_200_response(exc, {404: NoSuchPlanTaskError})
+
+        return ScanTasks.model_validate_json(response.text)
+
+    def plan_scan(self, identifier: str | Identifier, request: PlanTableScanRequest) -> list["FileScanTask"]:
+        """Plan a table scan and return FileScanTasks.
+
+        Handles the full scan planning lifecycle including pagination.
+
+        Args:
+            identifier: Table identifier.
+            request: The scan plan request parameters.
+
+        Returns:
+            List of FileScanTask objects ready for execution.
+
+        Raises:
+            RuntimeError: If planning fails, is cancelled, or returns unexpected response.
+            NotImplementedError: If async planning is required but not yet supported.
+        """
+        response = self._plan_table_scan(identifier, request)
+
+        if isinstance(response, PlanFailed):
+            raise RuntimeError(f"Received status: failed: {response.error.message}")
+
+        if isinstance(response, PlanCancelled):
+            raise RuntimeError("Received status: cancelled")
+
+        if isinstance(response, PlanSubmitted):
+            # TODO: implement polling for async planning
+            raise NotImplementedError(f"Async scan planning not yet supported for planId: {response.plan_id}")
+
+        if not isinstance(response, PlanCompleted):
+            raise RuntimeError(f"Invalid planStatus for response: {type(response).__name__}")
+
+        tasks: list[FileScanTask] = []
+
+        # Collect tasks from initial response
+        for task in response.file_scan_tasks:
+            tasks.append(FileScanTask.from_rest_response(task, response.delete_files))
+
+        # Fetch and collect from additional batches
+        pending_tasks = deque(response.plan_tasks)
+        while pending_tasks:
+            plan_task = pending_tasks.popleft()
+            batch = self._fetch_scan_tasks(identifier, plan_task)
+            for task in batch.file_scan_tasks:
+                tasks.append(FileScanTask.from_rest_response(task, batch.delete_files))
+            pending_tasks.extend(batch.plan_tasks)
+
+        return tasks
 
     def _create_legacy_oauth2_auth_manager(self, session: Session) -> AuthManager:
         """Create the LegacyOAuth2AuthManager by fetching required properties.
@@ -326,6 +552,18 @@ class RestCatalog(Catalog):
             url = url if url.endswith("/") else url + "/"
 
         return url + endpoint.format(**kwargs)
+
+    def _check_endpoint(self, endpoint: Endpoint) -> None:
+        """Check if an endpoint is supported by the server.
+
+        Args:
+            endpoint: The endpoint to check against the set of supported endpoints
+
+        Raises:
+            NotImplementedError: If the endpoint is not supported.
+        """
+        if endpoint not in self._supported_endpoints:
+            raise NotImplementedError(f"Server does not support endpoint: {endpoint}")
 
     @property
     def auth_url(self) -> str:
@@ -383,6 +621,17 @@ class RestCatalog(Catalog):
 
         # Update URI based on overrides
         self.uri = config[URI]
+
+        # Determine supported endpoints
+        endpoints = config_response.endpoints
+        if endpoints:
+            self._supported_endpoints = set(endpoints)
+        else:
+            # Use default endpoints for legacy servers that don't return endpoints
+            self._supported_endpoints = set(DEFAULT_ENDPOINTS)
+            # Conditionally add view endpoints based on config
+            if property_as_bool(self.properties, VIEW_ENDPOINTS_SUPPORTED, VIEW_ENDPOINTS_SUPPORTED_DEFAULT):
+                self._supported_endpoints.update(VIEW_ENDPOINTS)
 
     def _identifier_to_validated_tuple(self, identifier: str | Identifier) -> Identifier:
         identifier_tuple = self.identifier_to_tuple(identifier)
@@ -503,6 +752,7 @@ class RestCatalog(Catalog):
         properties: Properties = EMPTY_DICT,
         stage_create: bool = False,
     ) -> TableResponse:
+        self._check_endpoint(Capability.V1_CREATE_TABLE)
         iceberg_schema = self._convert_schema_if_needed(
             schema,
             int(properties.get(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION)),  # type: ignore
@@ -591,6 +841,7 @@ class RestCatalog(Catalog):
         Raises:
             TableAlreadyExistsError: If the table already exists
         """
+        self._check_endpoint(Capability.V1_REGISTER_TABLE)
         namespace_and_table = self._split_identifier_for_path(identifier)
         request = RegisterTableRequest(
             name=namespace_and_table["table"],
@@ -611,6 +862,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
+        self._check_endpoint(Capability.V1_LIST_TABLES)
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
         response = self._session.get(self.url(Endpoints.list_tables, namespace=namespace_concat))
@@ -622,6 +874,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def load_table(self, identifier: str | Identifier) -> Table:
+        self._check_endpoint(Capability.V1_LOAD_TABLE)
         params = {}
         if mode := self.properties.get(SNAPSHOT_LOADING_MODE):
             if mode in {"all", "refs"}:
@@ -642,6 +895,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def drop_table(self, identifier: str | Identifier, purge_requested: bool = False) -> None:
+        self._check_endpoint(Capability.V1_DELETE_TABLE)
         response = self._session.delete(
             self.url(Endpoints.drop_table, prefixed=True, **self._split_identifier_for_path(identifier)),
             params={"purgeRequested": purge_requested},
@@ -657,6 +911,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def rename_table(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> Table:
+        self._check_endpoint(Capability.V1_RENAME_TABLE)
         payload = {
             "source": self._split_identifier_for_json(from_identifier),
             "destination": self._split_identifier_for_json(to_identifier),
@@ -692,6 +947,8 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def list_views(self, namespace: str | Identifier) -> list[Identifier]:
+        if Capability.V1_LIST_VIEWS not in self._supported_endpoints:
+            return []
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
         response = self._session.get(self.url(Endpoints.list_views, namespace=namespace_concat))
@@ -720,6 +977,7 @@ class RestCatalog(Catalog):
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
             CommitStateUnknownException: Failed due to an internal exception on the side of the catalog.
         """
+        self._check_endpoint(Capability.V1_UPDATE_TABLE)
         identifier = table.name()
         table_identifier = TableIdentifier(namespace=identifier[:-1], name=identifier[-1])
         table_request = CommitTableRequest(identifier=table_identifier, requirements=requirements, updates=updates)
@@ -749,6 +1007,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def create_namespace(self, namespace: str | Identifier, properties: Properties = EMPTY_DICT) -> None:
+        self._check_endpoint(Capability.V1_CREATE_NAMESPACE)
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         payload = {"namespace": namespace_tuple, "properties": properties}
         response = self._session.post(self.url(Endpoints.create_namespace), json=payload)
@@ -759,6 +1018,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def drop_namespace(self, namespace: str | Identifier) -> None:
+        self._check_endpoint(Capability.V1_DELETE_NAMESPACE)
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
         response = self._session.delete(self.url(Endpoints.drop_namespace, namespace=namespace))
@@ -769,6 +1029,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
+        self._check_endpoint(Capability.V1_LIST_NAMESPACES)
         namespace_tuple = self.identifier_to_tuple(namespace)
         response = self._session.get(
             self.url(
@@ -786,6 +1047,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
+        self._check_endpoint(Capability.V1_LOAD_NAMESPACE)
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
         response = self._session.get(self.url(Endpoints.load_namespace_metadata, namespace=namespace))
@@ -800,6 +1062,7 @@ class RestCatalog(Catalog):
     def update_namespace_properties(
         self, namespace: str | Identifier, removals: set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
+        self._check_endpoint(Capability.V1_UPDATE_NAMESPACE)
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
         payload = {"removals": list(removals or []), "updates": updates}
@@ -819,6 +1082,14 @@ class RestCatalog(Catalog):
     def namespace_exists(self, namespace: str | Identifier) -> bool:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
+
+        if Capability.V1_NAMESPACE_EXISTS not in self._supported_endpoints:
+            try:
+                self.load_namespace_properties(namespace_tuple)
+                return True
+            except NoSuchNamespaceError:
+                return False
+
         response = self._session.head(self.url(Endpoints.namespace_exists, namespace=namespace))
 
         if response.status_code == 404:
@@ -843,6 +1114,13 @@ class RestCatalog(Catalog):
         Returns:
             bool: True if the table exists, False otherwise.
         """
+        if Capability.V1_TABLE_EXISTS not in self._supported_endpoints:
+            try:
+                self.load_table(identifier)
+                return True
+            except NoSuchTableError:
+                return False
+
         response = self._session.head(
             self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier))
         )
@@ -886,6 +1164,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def drop_view(self, identifier: str) -> None:
+        self._check_endpoint(Capability.V1_DELETE_VIEW)
         response = self._session.delete(
             self.url(Endpoints.drop_view, prefixed=True, **self._split_identifier_for_path(identifier, IdentifierKind.VIEW)),
         )
