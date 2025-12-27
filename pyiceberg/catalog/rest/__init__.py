@@ -15,7 +15,6 @@
 #  specific language governing permissions and limitations
 #  under the License.
 from collections import deque
-from collections.abc import Iterator
 from enum import Enum
 from typing import (
     TYPE_CHECKING,
@@ -460,18 +459,17 @@ class RestCatalog(Catalog):
 
         return ScanTasks.model_validate_json(response.text)
 
-    def plan_scan(self, identifier: str | Identifier, request: PlanTableScanRequest) -> Iterator["FileScanTask"]:
-        """Plan a table scan and yield FileScanTasks.
+    def plan_scan(self, identifier: str | Identifier, request: PlanTableScanRequest) -> list["FileScanTask"]:
+        """Plan a table scan and return FileScanTasks.
 
         Handles the full scan planning lifecycle including pagination.
-        Each response batch is self-contained, so tasks are yielded as received.
 
         Args:
             identifier: Table identifier.
             request: The scan plan request parameters.
 
-        Yields:
-            FileScanTask objects ready for execution.
+        Returns:
+            List of FileScanTask objects ready for execution.
 
         Raises:
             RuntimeError: If planning fails, is cancelled, or returns unexpected response.
@@ -492,18 +490,22 @@ class RestCatalog(Catalog):
         if not isinstance(response, PlanCompleted):
             raise RuntimeError(f"Invalid planStatus for response: {type(response).__name__}")
 
-        # Yield tasks from initial response
-        for task in response.file_scan_tasks:
-            yield FileScanTask.from_rest_response(task, response.delete_files)
+        tasks: list[FileScanTask] = []
 
-        # Fetch and yield from additional batches
+        # Collect tasks from initial response
+        for task in response.file_scan_tasks:
+            tasks.append(FileScanTask.from_rest_response(task, response.delete_files))
+
+        # Fetch and collect from additional batches
         pending_tasks = deque(response.plan_tasks)
         while pending_tasks:
             plan_task = pending_tasks.popleft()
             batch = self._fetch_scan_tasks(identifier, plan_task)
             for task in batch.file_scan_tasks:
-                yield FileScanTask.from_rest_response(task, batch.delete_files)
+                tasks.append(FileScanTask.from_rest_response(task, batch.delete_files))
             pending_tasks.extend(batch.plan_tasks)
+
+        return tasks
 
     def _create_legacy_oauth2_auth_manager(self, session: Session) -> AuthManager:
         """Create the LegacyOAuth2AuthManager by fetching required properties.

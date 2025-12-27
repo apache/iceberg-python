@@ -1847,7 +1847,7 @@ class FileScanTask(ScanTask):
         )
 
 
-def _rest_file_to_data_file(rest_file: RESTContentFile, *, include_stats: bool) -> DataFile:
+def _rest_file_to_data_file(rest_file: RESTContentFile, include_stats: bool) -> DataFile:
     """Convert a REST content file to a manifest DataFile."""
     from pyiceberg.catalog.rest.scan_planning import CONTENT_TYPE_MAP
 
@@ -1856,7 +1856,7 @@ def _rest_file_to_data_file(rest_file: RESTContentFile, *, include_stats: bool) 
     null_value_counts = getattr(rest_file, "null_value_counts", None)
     nan_value_counts = getattr(rest_file, "nan_value_counts", None)
 
-    return DataFile.from_args(
+    data_file = DataFile.from_args(
         content=CONTENT_TYPE_MAP[rest_file.content],
         file_path=rest_file.file_path,
         file_format=rest_file.file_format,
@@ -1869,8 +1869,9 @@ def _rest_file_to_data_file(rest_file: RESTContentFile, *, include_stats: bool) 
         nan_value_counts=nan_value_counts.to_dict() if include_stats and nan_value_counts else None,
         split_offsets=rest_file.split_offsets,
         sort_order_id=rest_file.sort_order_id,
-        spec_id=rest_file.spec_id,
     )
+    data_file.spec_id = rest_file.spec_id
+    return data_file
 
 
 def _open_manifest(

@@ -198,6 +198,7 @@ class PlanTableScanRequest(IcebergBaseModel):
     start_snapshot_id: int | None = Field(alias="start-snapshot-id", default=None)
     end_snapshot_id: int | None = Field(alias="end-snapshot-id", default=None)
     stats_fields: list[str] | None = Field(alias="stats-fields", default=None)
+    min_rows_requested: int | None = Field(alias="min-rows-requested", default=None)
 
     @model_validator(mode="after")
     def _validate_snapshot_fields(self) -> PlanTableScanRequest:
