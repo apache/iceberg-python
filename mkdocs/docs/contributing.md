@@ -258,6 +258,27 @@ Which will warn:
 Deprecated in 0.1.0, will be removed in 0.2.0. The old_property is deprecated. Please use the something_else property instead.
 ```
 
+### Logging
+
+PyIceberg uses Python's standard logging module. You can control the logging level using either:
+
+**CLI option:**
+
+```bash
+pyiceberg --log-level DEBUG describe my_table
+```
+
+**Environment variable:**
+
+```bash
+export PYICEBERG_LOG_LEVEL=DEBUG
+pyiceberg describe my_table
+```
+
+Valid log levels are: `DEBUG`, `INFO`, `WARNING` (default), `ERROR`, `CRITICAL`.
+
+Debug logging is particularly useful for troubleshooting issues with FileIO implementations, catalog connections, and other integration points.
+
 ### Type annotations
 
 For the type annotation the types from the `Typing` package are used.
