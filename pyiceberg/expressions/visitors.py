@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import copy
 import math
 import threading
 from abc import ABC, abstractmethod
@@ -1988,7 +1989,7 @@ def _residual_evaluator_cache_key(
     key=_residual_evaluator_cache_key,
     lock=threading.RLock(),
 )
-def residual_evaluator_of(
+def _cached_residual_evaluator_template(
     spec: PartitionSpec, expr: BooleanExpression, case_sensitive: bool, schema: Schema
 ) -> ResidualEvaluator:
     return (
@@ -1996,3 +1997,15 @@ def residual_evaluator_of(
         if spec.is_unpartitioned()
         else ResidualEvaluator(spec=spec, expr=expr, schema=schema, case_sensitive=case_sensitive)
     )
+
+
+def residual_evaluator_of(
+    spec: PartitionSpec, expr: BooleanExpression, case_sensitive: bool, schema: Schema
+) -> ResidualEvaluator:
+    """Create a residual evaluator.
+
+    Always returns a fresh evaluator instance because evaluators are stateful
+    (they set `self.struct` during evaluation) and may be used from multiple
+    threads.
+    """
+    return copy.copy(_cached_residual_evaluator_template(spec=spec, expr=expr, case_sensitive=case_sensitive, schema=schema))
