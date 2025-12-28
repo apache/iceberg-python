@@ -279,8 +279,12 @@ def test_import_file_io() -> None:
 
 
 def test_import_file_io_does_not_exist(caplog: Any) -> None:
+    import logging
+
+    caplog.set_level(logging.DEBUG)
     assert _import_file_io("pyiceberg.does.not.exist.FileIO", {}) is None
     assert "Could not initialize FileIO: pyiceberg.does.not.exist.FileIO" in caplog.text
+    assert "ModuleNotFoundError: No module named 'pyiceberg.does'" in caplog.text
 
 
 def test_load_file() -> None:
