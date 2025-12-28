@@ -286,7 +286,9 @@ def delete_files(io: FileIO, files_to_delete: set[str], file_type: str) -> None:
         try:
             io.delete(file)
         except OSError as exc:
-            logger.warning(f"Failed to delete {file_type} file {file}", exc_info=exc if logger.isEnabledFor(logging.DEBUG) else None)
+            logger.warning(
+                f"Failed to delete {file_type} file {file}", exc_info=exc if logger.isEnabledFor(logging.DEBUG) else None
+            )
 
 
 def delete_data_files(io: FileIO, manifests_to_delete: list[ManifestFile]) -> None:
@@ -306,7 +308,9 @@ def delete_data_files(io: FileIO, manifests_to_delete: list[ManifestFile]) -> No
                 try:
                     io.delete(path)
                 except OSError as exc:
-                    logger.warning(f"Failed to delete data file {path}", exc_info=exc if logger.isEnabledFor(logging.DEBUG) else None)
+                    logger.warning(
+                        f"Failed to delete data file {path}", exc_info=exc if logger.isEnabledFor(logging.DEBUG) else None
+                    )
                 deleted_files[path] = True
 
 
@@ -320,7 +324,9 @@ def _import_catalog(name: str, catalog_impl: str, properties: Properties) -> Cat
         class_ = getattr(module, class_name)
         return class_(name, **properties)
     except ModuleNotFoundError as exc:
-        logger.warning(f"Could not initialize Catalog: {catalog_impl}", exc_info=exc if logger.isEnabledFor(logging.DEBUG) else None)
+        logger.warning(
+            f"Could not initialize Catalog: {catalog_impl}", exc_info=exc if logger.isEnabledFor(logging.DEBUG) else None
+        )
         return None
 
 
