@@ -16,7 +16,6 @@
 # under the License.
 # pylint: disable=broad-except,redefined-builtin,redefined-outer-name
 import logging
-import os
 from collections.abc import Callable
 from functools import wraps
 from typing import (
@@ -34,8 +33,6 @@ from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchPropertyException, 
 from pyiceberg.table import TableProperties
 from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
 from pyiceberg.utils.properties import property_as_int
-
-DEFAULT_LOG_LEVEL = "WARNING"
 
 
 def catch_exception() -> Callable:  # type: ignore
@@ -62,7 +59,9 @@ def catch_exception() -> Callable:  # type: ignore
 @click.option(
     "--log-level",
     type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], case_sensitive=False),
-    help="Set the logging level (also configurable via PYICEBERG_LOG_LEVEL environment variable)",
+    default="WARNING",
+    envvar="PYICEBERG_LOG_LEVEL",
+    help="Set the logging level",
 )
 @click.option("--ugi")
 @click.option("--uri")
@@ -73,15 +72,13 @@ def run(
     catalog: str | None,
     verbose: bool,
     output: str,
-    log_level: str | None,
+    log_level: str,
     ugi: str | None,
     uri: str | None,
     credential: str | None,
 ) -> None:
-    # Configure logging level from CLI option or environment variable
-    level = log_level or os.getenv("PYICEBERG_LOG_LEVEL") or DEFAULT_LOG_LEVEL
     logging.basicConfig(
-        level=getattr(logging, level.upper()),
+        level=getattr(logging, log_level.upper()),
         format="%(levelname)s:%(name)s:%(message)s",
     )
 
