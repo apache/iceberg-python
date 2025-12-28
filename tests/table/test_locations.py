@@ -70,7 +70,7 @@ def test_custom_location_provider_not_found(caplog: Any) -> None:
         load_location_provider(
             table_location="table_location", table_properties={"write.py-location-provider.impl": "module.not_found"}
         )
-    assert "ModuleNotFoundError: No module named 'module'" in caplog.text
+    assert "Could not initialize LocationProvider: module.not_found" in caplog.text
 
 
 def test_object_storage_no_partition() -> None:
