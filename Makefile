@@ -72,7 +72,10 @@ setup-venv: ## Create virtual environment
 install-dependencies: setup-venv ## Install all dependencies including extras
 	uv sync $(PYTHON_ARG) --all-extras
 
-install: install-uv install-dependencies ## Install uv and dependencies
+install: install-uv install-dependencies build-ext ## Install uv and dependencies
+
+build-ext: ## Build Cython extensions
+	uv run $(PYTHON_ARG) python setup.py build_ext --inplace
 
 # ===============
 # Code Validation
