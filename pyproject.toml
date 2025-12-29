@@ -94,7 +94,7 @@ gcsfs = ["gcsfs>=2023.1.0"]
 rest-sigv4 = ["boto3>=1.24.59"]
 hf = ["huggingface-hub>=0.24.0"]
 pyiceberg-core = ["pyiceberg-core>=0.5.1,<0.8.0"]
-datafusion = ["datafusion>=45,<49"]
+datafusion = ["datafusion>=45,<51"]
 gcp-auth = ["google-auth>=2.4.0"]
 
 [dependency-groups]
