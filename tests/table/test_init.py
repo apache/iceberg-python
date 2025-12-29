@@ -21,7 +21,7 @@ from copy import copy
 from typing import Any
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from sortedcontainers import SortedList
 
 from pyiceberg.catalog.noop import NoopCatalog
@@ -1391,6 +1391,8 @@ def test_set_statistics_update(table_v2_with_statistics: Table) -> None:
         statistics=statistics_file,
     )
 
+    assert model_roundtrips(update)
+
     new_metadata = update_table_metadata(
         table_v2_with_statistics.metadata,
         (update,),
@@ -1423,6 +1425,57 @@ def test_set_statistics_update(table_v2_with_statistics: Table) -> None:
 
     assert len(updated_statistics) == 1
     assert json.loads(updated_statistics[0].model_dump_json()) == json.loads(expected)
+
+
+def test_set_statistics_update_handles_deprecated_snapshot_id(table_v2_with_statistics: Table) -> None:
+    snapshot_id = table_v2_with_statistics.metadata.current_snapshot_id
+
+    blob_metadata = BlobMetadata(
+        type="apache-datasketches-theta-v1",
+        snapshot_id=snapshot_id,
+        sequence_number=2,
+        fields=[1],
+        properties={"prop-key": "prop-value"},
+    )
+
+    statistics_file = StatisticsFile(
+        snapshot_id=snapshot_id,
+        statistics_path="s3://bucket/warehouse/stats.puffin",
+        file_size_in_bytes=124,
+        file_footer_size_in_bytes=27,
+        blob_metadata=[blob_metadata],
+    )
+    update_with_model = SetStatisticsUpdate(statistics=statistics_file)
+    assert model_roundtrips(update_with_model)
+    assert update_with_model.snapshot_id == snapshot_id
+
+    update_with_dict = SetStatisticsUpdate.model_validate({"statistics": statistics_file.model_dump()})
+    assert model_roundtrips(update_with_dict)
+    assert update_with_dict.snapshot_id == snapshot_id
+
+    update_json = """
+        {
+            "statistics":
+                 {
+                     "snapshot-id": 3055729675574597004,
+                     "statistics-path": "s3://a/b/stats.puffin",
+                     "file-size-in-bytes": 413,
+                     "file-footer-size-in-bytes": 42,
+                     "blob-metadata": [
+                         {
+                             "type": "apache-datasketches-theta-v1",
+                             "snapshot-id": 3055729675574597004,
+                             "sequence-number": 1,
+                             "fields": [1]
+                         }
+                     ]
+                 }
+        }
+    """
+
+    update_with_json = SetStatisticsUpdate.model_validate_json(update_json)
+    assert model_roundtrips(update_with_json)
+    assert update_with_json.snapshot_id == snapshot_id
 
 
 def test_remove_statistics_update(table_v2_with_statistics: Table) -> None:
@@ -1575,3 +1628,14 @@ def test_add_snapshot_update_updates_next_row_id(table_v3: Table) -> None:
 
     new_metadata = update_table_metadata(table_v3.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
     assert new_metadata.next_row_id == 11
+
+
+def model_roundtrips(model: BaseModel) -> bool:
+    """Helper assertion that tests if a pydantic model roundtrips
+    successfully.
+    """
+    __tracebackhide__ = True
+    model_data = model.model_dump()
+    if model != type(model).model_validate(model_data):
+        pytest.fail(f"model {type(model)} did not roundtrip successfully")
+    return True
