@@ -64,13 +64,14 @@ from pyiceberg.io import (
     load_file_io,
 )
 from pyiceberg.io.fsspec import FsspecFileIO
-from pyiceberg.manifest import DataFile, FileFormat
+from pyiceberg.manifest import DataFile, DataFileContent, FileFormat, ManifestEntry, ManifestEntryStatus
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
 from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2, TableMetadataV3
 from pyiceberg.transforms import DayTransform, IdentityTransform
+from pyiceberg.typedef import Record
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -540,6 +541,19 @@ def iceberg_schema_nested_no_ids() -> Schema:
             ),
             required=False,
         ),
+    )
+
+
+@pytest.fixture(scope="session")
+def simple_id_schema() -> Schema:
+    return Schema(NestedField(1, "id", IntegerType(), required=True))
+
+
+@pytest.fixture(scope="session")
+def id_data_schema() -> Schema:
+    return Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(2, "data", StringType(), required=True),
     )
 
 
@@ -2425,11 +2439,76 @@ def data_file(table_schema_simple: Schema, tmp_path: str) -> str:
 
 @pytest.fixture
 def example_task(data_file: str) -> FileScanTask:
-    datafile = DataFile.from_args(file_path=data_file, file_format=FileFormat.PARQUET, file_size_in_bytes=1925)
+    datafile = DataFile.from_args(
+        file_path=data_file, file_format=FileFormat.PARQUET, file_size_in_bytes=1925, content=DataFileContent.POSITION_DELETES
+    )
     datafile.spec_id = 0
     return FileScanTask(
         data_file=datafile,
     )
+
+
+@pytest.fixture
+def equality_delete_task(table_schema_simple: Schema, tmp_path: str) -> FileScanTask:
+    import pyarrow as pa
+    from pyarrow import parquet as pq
+
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+    table = pa.table(
+        {"foo": ["a", "b", "c", "d"], "bar": [1, 2, 3, 4], "baz": [True, False, None, True]},
+        schema=schema_to_pyarrow(table_schema_simple),
+    )
+
+    file_path = f"{tmp_path}/equality-data.parquet"
+    pq.write_table(table=table, where=file_path)
+
+    return FileScanTask(
+        data_file=DataFile.from_args(
+            file_path=file_path,
+            file_format=FileFormat.PARQUET,
+            record_count=4,
+            column_sizes={1: 10, 2: 10},
+            value_counts={1: 4, 2: 4},
+            null_value_counts={1: 0, 2: 0},
+            nan_value_counts={},
+            lower_bounds={1: b"a", 2: b"\x01\x00\x00\x00"},
+            upper_bounds={1: b"d", 2: b"\x04\x00\x00\x00"},
+            key_metadata=None,
+        ),
+    )
+
+
+@pytest.fixture
+def simple_scan_task(table_schema_simple: Schema, tmp_path: str) -> FileScanTask:
+    import pyarrow as pa
+    from pyarrow import parquet as pq
+
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+    table = pa.table(
+        {"foo": ["a", "b", "c", "d"], "bar": [1, 2, 3, 4], "baz": [True, False, None, True]},
+        schema=schema_to_pyarrow(table_schema_simple),
+    )
+
+    file_path = f"{tmp_path}/equality-data.parquet"
+    pq.write_table(table=table, where=file_path)
+
+    data_file = DataFile.from_args(
+        file_path=file_path,
+        file_format=FileFormat.PARQUET,
+        record_count=4,
+        column_sizes={1: 10, 2: 10},
+        value_counts={1: 4, 2: 4},
+        null_value_counts={1: 0, 2: 0},
+        nan_value_counts={},
+        lower_bounds={1: b"a", 2: b"\x01\x00\x00\x00"},
+        upper_bounds={1: b"d", 2: b"\x04\x00\x00\x00"},
+        key_metadata=None,
+    )
+    data_file.spec_id = 0
+
+    return FileScanTask(data_file=data_file)
 
 
 @pytest.fixture
@@ -2946,4 +3025,157 @@ def pyarrow_table_with_promoted_types(pyarrow_schema_with_promoted_types: "pa.Sc
             ],
         },
         schema=pyarrow_schema_with_promoted_types,
+    )
+
+
+def create_equality_delete_entry(
+    sequence_number: int = 1,
+    equality_ids: list[int] | None = None,
+    partition: Record | None = None,
+    value_counts: dict[int, int] | None = None,
+    null_value_counts: dict[int, int] | None = None,
+    lower_bounds: dict[int, bytes] | None = None,
+    upper_bounds: dict[int, bytes] | None = None,
+    spec_id: int = 0,
+) -> ManifestEntry:
+    partition_record = partition
+    delete_file = DataFile.from_args(
+        content=DataFileContent.EQUALITY_DELETES,
+        file_path=f"s3://bucket/eq-delete-{sequence_number}.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=partition_record,
+        record_count=10,
+        file_size_in_bytes=100,
+        equality_ids=equality_ids or [1],
+        value_counts=value_counts,
+        null_value_counts=null_value_counts,
+        lower_bounds=lower_bounds,
+        upper_bounds=upper_bounds,
+    )
+    delete_file._spec_id = spec_id
+
+    return ManifestEntry.from_args(status=ManifestEntryStatus.DELETED, sequence_number=sequence_number, data_file=delete_file)
+
+
+def create_positional_delete_entry(
+    sequence_number: int = 1, file_path: str = "s3://bucket/data.parquet", spec_id: int = 0, partition: Record | None = None
+) -> ManifestEntry:
+    delete_file = DataFile.from_args(
+        content=DataFileContent.POSITION_DELETES,
+        file_path=f"s3://bucket/pos-delete-{sequence_number}.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=partition or Record(),
+        record_count=10,
+        file_size_in_bytes=100,
+        lower_bounds={2147483546: file_path.encode()},
+        upper_bounds={2147483546: file_path.encode()},
+    )
+    delete_file._spec_id = spec_id
+
+    return ManifestEntry.from_args(status=ManifestEntryStatus.DELETED, sequence_number=sequence_number, data_file=delete_file)
+
+
+def create_partition_positional_delete_entry(
+    sequence_number: int = 1, spec_id: int = 0, partition: Record | None = None
+) -> ManifestEntry:
+    delete_file = DataFile.from_args(
+        content=DataFileContent.POSITION_DELETES,
+        file_path=f"s3://bucket/pos-delete-{sequence_number}.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=partition or Record(),
+        record_count=10,
+        file_size_in_bytes=100,
+    )
+    delete_file._spec_id = spec_id
+
+    return ManifestEntry.from_args(status=ManifestEntryStatus.DELETED, sequence_number=sequence_number, data_file=delete_file)
+
+
+def create_deletion_vector_entry(
+    sequence_number: int = 1, file_path: str = "s3://bucket/data.parquet", spec_id: int = 0
+) -> ManifestEntry:
+    """Create a deletion vector manifest entry."""
+    delete_file = DataFile.from_args(
+        content=DataFileContent.POSITION_DELETES,
+        file_path=f"s3://bucket/deletion-vector-{sequence_number}.puffin",
+        file_format=FileFormat.PUFFIN,
+        partition=Record(),
+        record_count=10,
+        file_size_in_bytes=100,
+        reference_file_path=file_path,
+    )
+    delete_file._spec_id = spec_id
+
+    return ManifestEntry.from_args(status=ManifestEntryStatus.DELETED, sequence_number=sequence_number, data_file=delete_file)
+
+
+def create_equality_delete_file(
+    file_path: str = "s3://bucket/eq-delete.parquet",
+    equality_ids: list[int] | None = None,
+    sequence_number: int = 1,
+    partition: Record | None = None,
+    record_count: int = 5,
+    file_size_in_bytes: int = 50,
+    lower_bounds: dict[int, Any] | None = None,
+    upper_bounds: dict[int, Any] | None = None,
+    value_counts: dict[int, Any] | None = None,
+    null_value_counts: dict[int, Any] | None = None,
+    spec_id: int = 0,
+) -> DataFile:
+    partition_record = partition
+    data_file = DataFile.from_args(
+        content=DataFileContent.EQUALITY_DELETES,
+        file_path=file_path,
+        file_format=FileFormat.PARQUET,
+        partition=partition_record,
+        record_count=record_count,
+        file_size_in_bytes=file_size_in_bytes,
+        equality_ids=equality_ids or [1],
+        lower_bounds=lower_bounds,
+        upper_bounds=upper_bounds,
+        value_counts=value_counts,
+        null_value_counts=null_value_counts,
+    )
+    data_file._spec_id = spec_id
+    return data_file
+
+
+def create_data_file(
+    file_path: str = "s3://bucket/data.parquet",
+    record_count: int = 100,
+    file_size_in_bytes: int = 1000,
+    partition: dict[str, Any] | None = None,
+    lower_bounds: dict[int, Any] | None = None,
+    upper_bounds: dict[int, Any] | None = None,
+    value_counts: dict[int, Any] | None = None,
+    null_value_counts: dict[int, Any] | None = None,
+    spec_id: int = 0,
+) -> DataFile:
+    if value_counts is None and null_value_counts is None:
+        value_counts = {1: record_count, 2: record_count}
+        null_value_counts = {1: 0, 2: 0}
+
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=file_path,
+        file_format=FileFormat.PARQUET,
+        partition=Record(*partition.values()) if partition else Record(),
+        record_count=record_count,
+        file_size_in_bytes=file_size_in_bytes,
+        lower_bounds=lower_bounds,
+        upper_bounds=upper_bounds,
+        value_counts=value_counts,
+        null_value_counts=null_value_counts,
+    )
+    data_file._spec_id = spec_id
+    return data_file
+
+
+def create_manifest_entry_with_delete_file(
+    delete_file: DataFile, sequence_number: int = 1, status: ManifestEntryStatus = ManifestEntryStatus.DELETED
+) -> ManifestEntry:
+    return ManifestEntry.from_args(
+        status=status,
+        sequence_number=sequence_number,
+        data_file=delete_file,
     )
