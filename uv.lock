@@ -3877,7 +3877,7 @@ dev = [
     { name = "pyarrow-stubs", specifier = ">=20.0.0.20251107" },
     { name = "pyspark", extras = ["connect"], specifier = "==4.0.1" },
     { name = "pytest", specifier = "==7.4.4" },
-    { name = "pytest-checkdocs", specifier = "==2.13.0" },
+    { name = "pytest-checkdocs", specifier = "==2.14.0" },
     { name = "pytest-lazy-fixture", specifier = "==0.6.3" },
     { name = "pytest-mock", specifier = "==3.15.1" },
     { name = "requests-mock", specifier = "==1.12.1" },
@@ -4057,15 +4057,15 @@ wheels = [
 
 [[package]]
 name = "pytest-checkdocs"
-version = "2.13.0"
+version = "2.14.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "docutils" },
     { name = "jaraco-packaging" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1d/1c/58df89a6dc6fdaccacd51759fe46ffefa15d1d7d5303cf6c687deecc6348/pytest_checkdocs-2.13.0.tar.gz", hash = "sha256:b0e67169c543986142e15afbc17c772da87fcdb0922c7b1e4f6c60f8769f11f9", size = 8770, upload-time = "2024-04-30T07:34:20.183Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/45/75/a8392f38791958165f09d18b260d01520f0ae818c85b9c8cbf3d3f1ca56c/pytest_checkdocs-2.14.0.tar.gz", hash = "sha256:367805c63392bd50853f9cae35caa2d2888fce06002ddf88d74830494b828e12", size = 11261, upload-time = "2025-12-26T21:02:30.619Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/11/e3/aa6a737fd1f1d2d727180f84b6795b874c7d7c6d9bd4b4ec03a8a48adebd/pytest_checkdocs-2.13.0-py3-none-any.whl", hash = "sha256:5df5bbd7e9753aa51a5f6954a301a4066bd4a04eb7e0c712c5d5d7ede1cbe153", size = 3870, upload-time = "2024-04-30T07:34:18.504Z" },
+    { url = "https://files.pythonhosted.org/packages/e4/70/c88b56f37f72cc9a3e83ed7bdc206857692a00fc74adfc24db6d1e55ac1c/pytest_checkdocs-2.14.0-py3-none-any.whl", hash = "sha256:5a42eb9cce43042fc8b743eaee17eae35cc9d5d8c5f1c58c3d96aba48a6981b7", size = 5094, upload-time = "2025-12-26T21:02:29.499Z" },
 ]
 
 [[package]]
