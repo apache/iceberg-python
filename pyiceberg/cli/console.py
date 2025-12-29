@@ -79,7 +79,7 @@ def run(
 ) -> None:
     logging.basicConfig(
         level=getattr(logging, log_level.upper()),
-        format="%(levelname)s:%(name)s:%(message)s",
+        format="%(asctime)s:%(levelname)s:%(name)s:%(message)s",
     )
 
     properties = {}
