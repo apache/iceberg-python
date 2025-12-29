@@ -97,7 +97,7 @@ test: ## Run all unit tests (excluding integration)
 
 test-integration: test-integration-setup test-integration-exec test-integration-cleanup ## Run integration tests
 
-test-integration-setup: ## Start Docker services for integration tests
+test-integration-setup: install ## Start Docker services for integration tests
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml up -d --wait
@@ -159,9 +159,14 @@ docs-build: ## Build the static documentation site
 
 ##@ Experimentation
 
-notebook: ## Launch notebook for experimentation
-	uv sync $(PYTHON_ARG) --group notebook
-	uv run jupyter lab
+notebook-install: ## Install notebook dependencies
+	uv sync $(PYTHON_ARG) --all-extras --group notebook
+
+notebook: notebook-install ## Launch notebook for experimentation
+	uv run jupyter lab --notebook-dir=notebooks
+
+notebook-infra: notebook-install test-integration-setup ## Launch notebook with integration test infra (Spark, Iceberg Rest Catalog, object storage, etc.)
+	uv run jupyter lab --notebook-dir=notebooks
 
 # ===================
 # Project Maintenance
