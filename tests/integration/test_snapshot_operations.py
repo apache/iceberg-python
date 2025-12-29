@@ -72,3 +72,91 @@ def test_remove_branch(catalog: Catalog) -> None:
     # now, remove the branch
     tbl.manage_snapshots().remove_branch(branch_name=branch_name).commit()
     assert tbl.metadata.refs.get(branch_name, None) is None
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_set_current_snapshot(catalog: Catalog) -> None:
+    identifier = "default.test_table_snapshot_operations"
+    tbl = catalog.load_table(identifier)
+    assert len(tbl.history()) > 2
+
+    # first get the current snapshot and an older one
+    current_snapshot_id = tbl.history()[-1].snapshot_id
+    older_snapshot_id = tbl.history()[-2].snapshot_id
+
+    # set the current snapshot to the older one
+    tbl.manage_snapshots().set_current_snapshot(snapshot_id=older_snapshot_id).commit()
+
+    tbl = catalog.load_table(identifier)
+    updated_snapshot = tbl.current_snapshot()
+    assert updated_snapshot and updated_snapshot.snapshot_id == older_snapshot_id
+
+    # restore table
+    tbl.manage_snapshots().set_current_snapshot(snapshot_id=current_snapshot_id).commit()
+    tbl = catalog.load_table(identifier)
+    restored_snapshot = tbl.current_snapshot()
+    assert restored_snapshot and restored_snapshot.snapshot_id == current_snapshot_id
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_set_current_snapshot_by_ref(catalog: Catalog) -> None:
+    identifier = "default.test_table_snapshot_operations"
+    tbl = catalog.load_table(identifier)
+    assert len(tbl.history()) > 2
+
+    # first get the current snapshot and an older one
+    current_snapshot_id = tbl.history()[-1].snapshot_id
+    older_snapshot_id = tbl.history()[-2].snapshot_id
+    assert older_snapshot_id != current_snapshot_id
+
+    # create a tag pointing to the older snapshot
+    tag_name = "my-tag"
+    tbl.manage_snapshots().create_tag(snapshot_id=older_snapshot_id, tag_name=tag_name).commit()
+
+    # set current snapshot using the tag name
+    tbl = catalog.load_table(identifier)
+    tbl.manage_snapshots().set_current_snapshot(ref_name=tag_name).commit()
+
+    tbl = catalog.load_table(identifier)
+    updated_snapshot = tbl.current_snapshot()
+    assert updated_snapshot and updated_snapshot.snapshot_id == older_snapshot_id
+
+    # restore table
+    tbl.manage_snapshots().set_current_snapshot(snapshot_id=current_snapshot_id).commit()
+    tbl = catalog.load_table(identifier)
+    tbl.manage_snapshots().remove_tag(tag_name=tag_name).commit()
+    assert tbl.metadata.refs.get(tag_name, None) is None
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_set_current_snapshot_chained_with_create_tag(catalog: Catalog) -> None:
+    identifier = "default.test_table_snapshot_operations"
+    tbl = catalog.load_table(identifier)
+    assert len(tbl.history()) > 2
+
+    current_snapshot_id = tbl.history()[-1].snapshot_id
+    older_snapshot_id = tbl.history()[-2].snapshot_id
+    assert older_snapshot_id != current_snapshot_id
+
+    # create a tag and use it to set current snapshot
+    tag_name = "my-tag"
+    (
+        tbl.manage_snapshots()
+        .create_tag(snapshot_id=older_snapshot_id, tag_name=tag_name)
+        .set_current_snapshot(ref_name=tag_name)
+        .commit()
+    )
+
+    tbl = catalog.load_table(identifier)
+    updated_snapshot = tbl.current_snapshot()
+    assert updated_snapshot
+    assert updated_snapshot.snapshot_id == older_snapshot_id
+
+    # restore table
+    tbl.manage_snapshots().set_current_snapshot(snapshot_id=current_snapshot_id).commit()
+    tbl = catalog.load_table(identifier)
+    tbl.manage_snapshots().remove_tag(tag_name=tag_name).commit()
+    assert tbl.metadata.refs.get(tag_name, None) is None
