@@ -153,6 +153,16 @@ docs-serve: ## Serve local docs preview (hot reload)
 docs-build: ## Build the static documentation site
 	uv run $(PYTHON_ARG) mkdocs build -f mkdocs/mkdocs.yml --strict
 
+# ========================
+# Experimentation
+# ========================
+
+##@ Experimentation
+
+notebook: ## Launch notebook for experimentation
+	uv sync $(PYTHON_ARG) --group notebook
+	uv run jupyter lab
+
 # ===================
 # Project Maintenance
 # ===================
@@ -167,4 +177,6 @@ clean: ## Remove build artifacts and caches
 	@find . -name "__pycache__" -exec echo Deleting {} \; -exec rm -rf {} +
 	@find . -name "*.pyd" -exec echo Deleting {} \; -delete
 	@find . -name "*.pyo" -exec echo Deleting {} \; -delete
+	@echo "Cleaning up Jupyter notebook checkpoints..."
+	@find . -name ".ipynb_checkpoints" -exec echo Deleting {} \; -exec rm -rf {} +
 	@echo "Cleanup complete."
