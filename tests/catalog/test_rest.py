@@ -2032,6 +2032,7 @@ class TestRestCatalogClose:
         assert catalog.is_rest_scan_planning_enabled() is True
 
     def test_rest_scan_planning_disabled_when_endpoint_unsupported(self, requests_mock: Mocker) -> None:
+        # config endpoint does not populate endpoint falling back to default
         requests_mock.get(
             f"{TEST_URI}v1/config",
             json={"defaults": {}, "overrides": {}},
