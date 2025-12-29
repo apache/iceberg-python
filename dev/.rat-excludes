@@ -5,3 +5,4 @@ build
 .gitignore
 uv.lock
 mkdocs/*
+notebooks/*
