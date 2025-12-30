@@ -967,3 +967,65 @@ def test_json_properties_remove_table_does_not_exist(catalog: InMemoryCatalog) -
     result = runner.invoke(run, ["--output=json", "properties", "remove", "table", "default.doesnotexist", "location"])
     assert result.exit_code == 1
     assert result.output == """{"type": "NoSuchTableError", "message": "Table does not exist: default.doesnotexist"}\n"""
+
+
+def test_log_level_cli_option(mocker: MockFixture) -> None:
+    mock_basicConfig = mocker.patch("logging.basicConfig")
+
+    runner = CliRunner()
+    runner.invoke(run, ["--log-level", "DEBUG", "list"])
+
+    # Verify logging.basicConfig was called with DEBUG level
+    import logging
+
+    mock_basicConfig.assert_called_once()
+    call_kwargs = mock_basicConfig.call_args[1]
+    assert call_kwargs["level"] == logging.DEBUG
+
+
+def test_log_level_env_variable(mocker: MockFixture) -> None:
+    mock_basicConfig = mocker.patch("logging.basicConfig")
+    mocker.patch.dict(os.environ, {"PYICEBERG_LOG_LEVEL": "INFO"})
+
+    runner = CliRunner()
+    runner.invoke(run, ["list"])
+
+    # Verify logging.basicConfig was called with INFO level
+    import logging
+
+    mock_basicConfig.assert_called_once()
+    call_kwargs = mock_basicConfig.call_args[1]
+    assert call_kwargs["level"] == logging.INFO
+
+
+def test_log_level_default_warning(mocker: MockFixture) -> None:
+    mock_basicConfig = mocker.patch("logging.basicConfig")
+    # Ensure PYICEBERG_LOG_LEVEL is not set
+    mocker.patch.dict(os.environ, {}, clear=False)
+    if "PYICEBERG_LOG_LEVEL" in os.environ:
+        del os.environ["PYICEBERG_LOG_LEVEL"]
+
+    runner = CliRunner()
+    runner.invoke(run, ["list"])
+
+    # Verify logging.basicConfig was called with WARNING level (default)
+    import logging
+
+    mock_basicConfig.assert_called_once()
+    call_kwargs = mock_basicConfig.call_args[1]
+    assert call_kwargs["level"] == logging.WARNING
+
+
+def test_log_level_cli_overrides_env(mocker: MockFixture) -> None:
+    mock_basicConfig = mocker.patch("logging.basicConfig")
+    mocker.patch.dict(os.environ, {"PYICEBERG_LOG_LEVEL": "INFO"})
+
+    runner = CliRunner()
+    runner.invoke(run, ["--log-level", "ERROR", "list"])
+
+    # Verify CLI option overrides environment variable
+    import logging
+
+    mock_basicConfig.assert_called_once()
+    call_kwargs = mock_basicConfig.call_args[1]
+    assert call_kwargs["level"] == logging.ERROR
