@@ -32,6 +32,7 @@ from hive_metastore.ttypes import (
     CheckLockRequest,
     EnvironmentContext,
     FieldSchema,
+    InvalidObjectException,
     InvalidOperationException,
     LockComponent,
     LockLevel,
@@ -83,6 +84,7 @@ from pyiceberg.table import (
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import (
+    AssertCreate,
     TableRequirement,
     TableUpdate,
 )
@@ -381,6 +383,9 @@ class HiveCatalog(MetastoreCatalog):
             open_client.create_table(hive_table)
         except AlreadyExistsException as e:
             raise TableAlreadyExistsError(f"Table {hive_table.dbName}.{hive_table.tableName} already exists") from e
+        except InvalidObjectException as e:
+            if "database" in e.message:
+                raise NoSuchNamespaceError(f"Namespace does not exists: {hive_table.dbName}]") from e
 
     def _get_hive_table(self, open_client: Client, database_name: str, table_name: str) -> HiveTable:
         try:
@@ -535,6 +540,10 @@ class HiveCatalog(MetastoreCatalog):
                 try:
                     hive_table = self._get_hive_table(open_client, database_name, table_name)
                     current_table = self._convert_hive_into_iceberg(hive_table)
+
+                    if AssertCreate() in requirements:
+                        raise TableAlreadyExistsError(f"Table already exists: {table_name}")
+
                 except NoSuchTableError:
                     hive_table = None
                     current_table = None

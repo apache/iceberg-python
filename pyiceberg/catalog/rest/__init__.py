@@ -35,18 +35,11 @@ from pyiceberg.catalog import (
     PropertiesUpdateSummary,
 )
 from pyiceberg.catalog.rest.auth import AuthManager, AuthManagerAdapter, AuthManagerFactory, LegacyOAuth2AuthManager
-from pyiceberg.catalog.rest.response import _handle_non_200_response
+from pyiceberg.catalog.rest.response import ErrorHandlers
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
-    CommitFailedException,
-    CommitStateUnknownException,
-    NamespaceAlreadyExistsError,
-    NamespaceNotEmptyError,
     NoSuchIdentifierError,
     NoSuchNamespaceError,
-    NoSuchTableError,
-    NoSuchViewError,
-    TableAlreadyExistsError,
     UnauthorizedError,
 )
 from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
@@ -64,6 +57,7 @@ from pyiceberg.table import (
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
 from pyiceberg.table.update import (
+    AssertCreate,
     TableRequirement,
     TableUpdate,
 )
@@ -488,7 +482,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {})
+            ErrorHandlers.default_error_handler(exc)
         config_response = ConfigResponse.model_validate_json(response.text)
 
         config = config_response.defaults
@@ -658,7 +652,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {409: TableAlreadyExistsError, 404: NoSuchNamespaceError})
+            ErrorHandlers.table_error_handler(exc)
         return TableResponse.model_validate_json(response.text)
 
     @retry(**_RETRY_ARGS)
@@ -732,7 +726,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {409: TableAlreadyExistsError})
+            ErrorHandlers.table_error_handler(exc)
 
         table_response = TableResponse.model_validate_json(response.text)
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
@@ -746,7 +740,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchNamespaceError})
+            ErrorHandlers.namespace_error_handler(exc)
         return [(*table.namespace, table.name) for table in ListTablesResponse.model_validate_json(response.text).identifiers]
 
     @retry(**_RETRY_ARGS)
@@ -765,7 +759,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchTableError})
+            ErrorHandlers.table_error_handler(exc)
 
         table_response = TableResponse.model_validate_json(response.text)
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
@@ -780,7 +774,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchTableError})
+            ErrorHandlers.table_error_handler(exc)
 
     @retry(**_RETRY_ARGS)
     def purge_table(self, identifier: str | Identifier) -> None:
@@ -807,7 +801,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchTableError, 409: TableAlreadyExistsError})
+            ErrorHandlers.table_error_handler(exc)
 
         return self.load_table(to_identifier)
 
@@ -832,7 +826,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchNamespaceError})
+            ErrorHandlers.view_error_handler(exc)
         return [(*view.namespace, view.name) for view in ListViewsResponse.model_validate_json(response.text).identifiers]
 
     @retry(**_RETRY_ARGS)
@@ -871,15 +865,10 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(
-                exc,
-                {
-                    409: CommitFailedException,
-                    500: CommitStateUnknownException,
-                    502: CommitStateUnknownException,
-                    504: CommitStateUnknownException,
-                },
-            )
+            if AssertCreate() in requirements:
+                ErrorHandlers.table_error_handler(exc)
+            else:
+                ErrorHandlers.commit_error_handler(exc)
         return CommitTableResponse.model_validate_json(response.text)
 
     @retry(**_RETRY_ARGS)
@@ -891,7 +880,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {409: NamespaceAlreadyExistsError})
+            ErrorHandlers.namespace_error_handler(exc)
 
     @retry(**_RETRY_ARGS)
     def drop_namespace(self, namespace: str | Identifier) -> None:
@@ -902,7 +891,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchNamespaceError, 409: NamespaceNotEmptyError})
+            ErrorHandlers.drop_namespace_error_handler(exc)
 
     @retry(**_RETRY_ARGS)
     def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
@@ -918,7 +907,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchNamespaceError})
+            ErrorHandlers.namespace_error_handler(exc)
 
         return ListNamespaceResponse.model_validate_json(response.text).namespaces
 
@@ -931,7 +920,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchNamespaceError})
+            ErrorHandlers.namespace_error_handler(exc)
 
         return NamespaceResponse.model_validate_json(response.text).properties
 
@@ -947,7 +936,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchNamespaceError})
+            ErrorHandlers.namespace_error_handler(exc)
         parsed_response = UpdateNamespacePropertiesResponse.model_validate_json(response.text)
         return PropertiesUpdateSummary(
             removed=parsed_response.removed,
@@ -977,7 +966,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {})
+            ErrorHandlers.namespace_error_handler(exc)
 
         return False
 
@@ -1011,7 +1000,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {})
+            ErrorHandlers.table_error_handler(exc)
 
         return False
 
@@ -1036,7 +1025,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {})
+            ErrorHandlers.view_error_handler(exc)
 
         return False
 
@@ -1049,7 +1038,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchViewError})
+            ErrorHandlers.view_error_handler(exc)
 
     def close(self) -> None:
         """Close the catalog and release Session connection adapters.
