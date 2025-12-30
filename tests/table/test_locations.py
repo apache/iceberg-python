@@ -66,10 +66,14 @@ def test_custom_location_provider_single_path() -> None:
 
 
 def test_custom_location_provider_not_found(caplog: Any) -> None:
+    import logging
+
+    caplog.set_level(logging.DEBUG)
     with pytest.raises(ValueError, match=r"Could not initialize LocationProvider"):
         load_location_provider(
             table_location="table_location", table_properties={"write.py-location-provider.impl": "module.not_found"}
         )
+    assert "Could not initialize LocationProvider: module.not_found" in caplog.text
     assert "ModuleNotFoundError: No module named 'module'" in caplog.text
 
 
