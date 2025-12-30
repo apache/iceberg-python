@@ -14,11 +14,9 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-import copy
 import math
-import threading
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Hashable
+from collections.abc import Callable
 from functools import singledispatch
 from typing import (
     Any,
@@ -26,9 +24,6 @@ from typing import (
     SupportsFloat,
     TypeVar,
 )
-
-from cachetools import LRUCache, cached
-from cachetools.keys import hashkey
 
 from pyiceberg.conversions import from_bytes
 from pyiceberg.expressions import (
@@ -1975,37 +1970,17 @@ class UnpartitionedResidualEvaluator(ResidualEvaluator):
         return self.expr
 
 
-_DEFAULT_RESIDUAL_EVALUATOR_CACHE_SIZE = 128
-
-
-def _residual_evaluator_cache_key(
-    spec: PartitionSpec, expr: BooleanExpression, case_sensitive: bool, schema: Schema
-) -> tuple[Hashable, ...]:
-    return hashkey(spec.spec_id, repr(expr), case_sensitive, schema.schema_id)
-
-
-@cached(
-    cache=LRUCache(maxsize=_DEFAULT_RESIDUAL_EVALUATOR_CACHE_SIZE),
-    key=_residual_evaluator_cache_key,
-    lock=threading.RLock(),
-)
-def _cached_residual_evaluator_template(
-    spec: PartitionSpec, expr: BooleanExpression, case_sensitive: bool, schema: Schema
-) -> ResidualEvaluator:
-    return (
-        UnpartitionedResidualEvaluator(schema=schema, expr=expr)
-        if spec.is_unpartitioned()
-        else ResidualEvaluator(spec=spec, expr=expr, schema=schema, case_sensitive=case_sensitive)
-    )
-
-
 def residual_evaluator_of(
     spec: PartitionSpec, expr: BooleanExpression, case_sensitive: bool, schema: Schema
 ) -> ResidualEvaluator:
     """Create a residual evaluator.
 
-    Always returns a fresh evaluator instance because evaluators are stateful
+    Returns a fresh evaluator instance because evaluators are stateful
     (they set `self.struct` during evaluation) and may be used from multiple
     threads.
     """
-    return copy.copy(_cached_residual_evaluator_template(spec=spec, expr=expr, case_sensitive=case_sensitive, schema=schema))
+    return (
+        UnpartitionedResidualEvaluator(schema=schema, expr=expr)
+        if spec.is_unpartitioned()
+        else ResidualEvaluator(spec=spec, expr=expr, schema=schema, case_sensitive=case_sensitive)
+    )
