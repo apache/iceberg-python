@@ -52,6 +52,9 @@ class UpdateStatistics(UpdateTableMetadata["UpdateStatistics"]):
     def __init__(self, transaction: "Transaction") -> None:
         super().__init__(transaction)
 
+    def _reset_state(self) -> None:
+        """No-op: updates contain user-provided data that doesn't need refresh."""
+
     def set_statistics(self, statistics_file: StatisticsFile) -> "UpdateStatistics":
         self._updates += (
             SetStatisticsUpdate(

@@ -66,10 +66,23 @@ class UpdateTableMetadata(ABC, Generic[U]):
         self._transaction = transaction
 
     @abstractmethod
-    def _commit(self) -> UpdatesAndRequirements: ...
+    def _commit(self) -> UpdatesAndRequirements:
+        """Generate the table updates and requirements for this operation."""
+        ...
+
+    @abstractmethod
+    def _reset_state(self) -> None:
+        """Reset internal state for retry after table metadata refresh.
+
+        This is called by Transaction._reapply_updates() when retrying after a
+        CommitFailedException. Implementations should rebuild any cached state
+        from self._transaction.table_metadata.
+        """
+        ...
 
     def commit(self) -> None:
-        self._transaction._apply(*self._commit())
+        updates, requirements = self._commit()
+        self._transaction._apply(updates, requirements, pending_update=self)
 
     def __exit__(self, _: Any, value: Any, traceback: Any) -> None:
         """Close and commit the change."""
@@ -759,6 +772,10 @@ class ValidatableTableRequirement(IcebergBaseModel):
         """
         ...
 
+    def key(self) -> tuple[Any, ...]:
+        """Return a deduplication key for this requirement."""
+        return (type(self),)
+
 
 class AssertCreate(ValidatableTableRequirement):
     """The table must not already exist; used for create transactions."""
@@ -816,6 +833,9 @@ class AssertRefSnapshotId(ValidatableTableRequirement):
                 )
         elif self.snapshot_id is not None:
             raise CommitFailedException(f"Requirement failed: branch or tag {self.ref} is missing, expected {self.snapshot_id}")
+
+    def key(self) -> tuple[Any, ...]:
+        return (type(self), self.ref)
 
 
 class AssertLastAssignedFieldId(ValidatableTableRequirement):

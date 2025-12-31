@@ -137,7 +137,7 @@ def test_schema_evolution_via_transaction(catalog: Catalog) -> None:
         NestedField(field_id=1, name="col_uuid", field_type=UUIDType(), required=False),
         NestedField(field_id=2, name="col_fixed", field_type=FixedType(25), required=False),
     )
-    tbl = _create_table_with_schema(catalog, schema)
+    tbl = _create_table_with_schema(catalog, schema, properties={TableProperties.COMMIT_NUM_RETRIES: "1"})
 
     assert tbl.schema() == schema
 
@@ -159,7 +159,7 @@ def test_schema_evolution_via_transaction(catalog: Catalog) -> None:
         NestedField(field_id=4, name="col_integer", field_type=IntegerType(), required=False),
     )
 
-    with pytest.raises(CommitFailedException, match="Requirement failed: current schema id has changed: expected 2, found 3"):
+    with pytest.raises(CommitFailedException, match="Requirement failed: current schema"):
         with tbl.transaction() as tx:
             # Start a new update
             schema_update = tx.update_schema()
@@ -176,6 +176,55 @@ def test_schema_evolution_via_transaction(catalog: Catalog) -> None:
         NestedField(field_id=3, name="col_string", field_type=StringType(), required=False),
         NestedField(field_id=4, name="col_integer", field_type=IntegerType(), required=False),
         NestedField(field_id=5, name="col_long", field_type=LongType(), required=False),
+    )
+
+
+@pytest.mark.integration
+def test_schema_evolution_via_transaction_with_retry(catalog: Catalog) -> None:
+    schema = Schema(
+        NestedField(field_id=1, name="col_uuid", field_type=UUIDType(), required=False),
+        NestedField(field_id=2, name="col_fixed", field_type=FixedType(25), required=False),
+    )
+    tbl = _create_table_with_schema(catalog, schema, properties={TableProperties.COMMIT_NUM_RETRIES: "2"})
+
+    assert tbl.schema() == schema
+
+    with tbl.transaction() as tx:
+        tx.update_schema().add_column("col_string", StringType()).commit()
+
+    assert tbl.schema() == Schema(
+        NestedField(field_id=1, name="col_uuid", field_type=UUIDType(), required=False),
+        NestedField(field_id=2, name="col_fixed", field_type=FixedType(25), required=False),
+        NestedField(field_id=3, name="col_string", field_type=StringType(), required=False),
+    )
+
+    tbl.update_schema().add_column("col_integer", IntegerType()).commit()
+
+    assert tbl.schema() == Schema(
+        NestedField(field_id=1, name="col_uuid", field_type=UUIDType(), required=False),
+        NestedField(field_id=2, name="col_fixed", field_type=FixedType(25), required=False),
+        NestedField(field_id=3, name="col_string", field_type=StringType(), required=False),
+        NestedField(field_id=4, name="col_integer", field_type=IntegerType(), required=False),
+    )
+
+    with tbl.transaction() as tx:
+        # Start a new update
+        schema_update = tx.update_schema()
+
+        # Do a concurrent update
+        tbl.update_schema().add_column("col_long", LongType()).commit()
+
+        # stage another update in the transaction
+        schema_update.add_column("col_double", DoubleType()).commit()
+
+    assert tbl.schema() == Schema(
+        NestedField(field_id=1, name="col_uuid", field_type=UUIDType(), required=False),
+        NestedField(field_id=2, name="col_fixed", field_type=FixedType(25), required=False),
+        NestedField(field_id=3, name="col_string", field_type=StringType(), required=False),
+        NestedField(field_id=4, name="col_integer", field_type=IntegerType(), required=False),
+        NestedField(field_id=5, name="col_long", field_type=LongType(), required=False),
+        NestedField(field_id=6, name="col_double", field_type=DoubleType(), required=False),
+        schema_id=4,
     )
 
 

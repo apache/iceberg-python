@@ -39,12 +39,22 @@ class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
     _last_assigned_order_id: int | None
     _case_sensitive: bool
     _fields: list[SortField]
+    # Store user intent for retry support: (column_name, transform, direction, null_order)
+    _field_additions: list[tuple[str, Transform[Any, Any], SortDirection, NullOrder]]
 
     def __init__(self, transaction: Transaction, case_sensitive: bool = True) -> None:
         super().__init__(transaction)
-        self._fields: list[SortField] = []
-        self._case_sensitive: bool = case_sensitive
-        self._last_assigned_order_id: int | None = None
+        self._fields = []
+        self._case_sensitive = case_sensitive
+        self._last_assigned_order_id = None
+        self._field_additions = []
+
+    def _reset_state(self) -> None:
+        """Reset state for retry, re-resolving column names from refreshed metadata."""
+        self._fields = []
+        self._last_assigned_order_id = None
+        for column_name, transform, direction, null_order in self._field_additions:
+            self._do_add_sort_field(column_name, transform, direction, null_order)
 
     def _column_name_to_id(self, column_name: str) -> int:
         """Map the column name to the column field id."""
@@ -57,23 +67,22 @@ class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
             .field_id
         )
 
-    def _add_sort_field(
+    def _do_add_sort_field(
         self,
-        source_id: int,
+        source_column_name: str,
         transform: Transform[Any, Any],
         direction: SortDirection,
         null_order: NullOrder,
-    ) -> UpdateSortOrder:
-        """Add a sort field to the sort order list."""
+    ) -> None:
+        """Add a sort field to the sort order list (internal implementation for retry support)."""
         self._fields.append(
             SortField(
-                source_id=source_id,
+                source_id=self._column_name_to_id(source_column_name),
                 transform=transform,
                 direction=direction,
                 null_order=null_order,
             )
         )
-        return self
 
     def _reuse_or_create_sort_order_id(self) -> int:
         """Return the last assigned sort order id or create a new one."""
@@ -90,23 +99,17 @@ class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
         self, source_column_name: str, transform: Transform[Any, Any], null_order: NullOrder = NullOrder.NULLS_LAST
     ) -> UpdateSortOrder:
         """Add a sort field with ascending order."""
-        return self._add_sort_field(
-            source_id=self._column_name_to_id(source_column_name),
-            transform=transform,
-            direction=SortDirection.ASC,
-            null_order=null_order,
-        )
+        self._field_additions.append((source_column_name, transform, SortDirection.ASC, null_order))
+        self._do_add_sort_field(source_column_name, transform, SortDirection.ASC, null_order)
+        return self
 
     def desc(
         self, source_column_name: str, transform: Transform[Any, Any], null_order: NullOrder = NullOrder.NULLS_LAST
     ) -> UpdateSortOrder:
         """Add a sort field with descending order."""
-        return self._add_sort_field(
-            source_id=self._column_name_to_id(source_column_name),
-            transform=transform,
-            direction=SortDirection.DESC,
-            null_order=null_order,
-        )
+        self._field_additions.append((source_column_name, transform, SortDirection.DESC, null_order))
+        self._do_add_sort_field(source_column_name, transform, SortDirection.DESC, null_order)
+        return self
 
     def _apply(self) -> SortOrder:
         """Return the sort order."""
