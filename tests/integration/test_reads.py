@@ -339,7 +339,6 @@ def test_daft_nan_rewritten(catalog: Catalog) -> None:
     assert math.isnan(df.to_pydict()["col_numeric"][0])
 
 
-@pytest.mark.skip(reason="Bodo should not monekeypatch PyArrowFileIO, https://github.com/apache/iceberg-python/issues/2400")
 @pytest.mark.integration
 @pytest.mark.filterwarnings("ignore")
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
