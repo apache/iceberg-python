@@ -28,6 +28,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
     "mmh3>=4.0.0,<6.0.0",
@@ -66,7 +67,7 @@ duckdb = [
     "pyarrow>=17.0.0",
 ]
 ray = [
-    "ray>=2.10.0,<=2.44.0",
+    "ray>=2.10.0,<3.0.0",
     "pyarrow>=17.0.0",
     "pandas>=1.0.0,<3.0.0",
 ]
@@ -160,6 +161,11 @@ filterwarnings = [
   "error",
   # Ignore Python version deprecation warning from google.api_core while we still support 3.10
   "ignore:You are using a Python version.*which Google will stop supporting:FutureWarning:google.api_core",
+  # Python 3.13 sqlite3 module ResourceWarnings for unclosed database connections
+  "ignore:unclosed database in <sqlite3.Connection object*:ResourceWarning",
+  # Ignore Ray subprocess cleanup warnings
+  "ignore:unclosed file:ResourceWarning",
+  "ignore:subprocess.*is still running:ResourceWarning",
 ]
 
 [tool.black]
