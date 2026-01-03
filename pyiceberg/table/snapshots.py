@@ -472,3 +472,24 @@ def ancestors_between(from_snapshot: Snapshot | None, to_snapshot: Snapshot, tab
                 break
     else:
         yield from ancestors_of(to_snapshot, table_metadata)
+
+
+def latest_ancestor_before_timestamp(table_metadata: TableMetadata, timestamp_ms: int) -> Snapshot | None:
+    """Find the latest ancestor snapshot whose timestamp is before the provided timestamp.
+
+    Args:
+        table_metadata: The table metadata for a table
+        timestamp_ms: lookup snapshots before this timestamp
+
+    Returns:
+        The latest ancestor snapshot older than the timestamp, or None if not found.
+    """
+    result: Snapshot | None = None
+    result_timestamp: int = 0
+
+    for ancestor in ancestors_of(table_metadata.current_snapshot(), table_metadata):
+        if timestamp_ms > ancestor.timestamp_ms > result_timestamp:
+            result = ancestor
+            result_timestamp = ancestor.timestamp_ms
+
+    return result
