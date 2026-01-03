@@ -303,3 +303,78 @@ def test_rollback_to_current_snapshot(table_v2: Table) -> None:
 
     table_v2.manage_snapshots().rollback_to_snapshot(snapshot_id=current_snapshot.snapshot_id).commit()
     table_v2.catalog.commit_table.assert_called_once()
+
+
+def test_rollback_to_timestamp() -> None:
+    from pyiceberg.table.metadata import TableMetadataV2
+
+    metadata_dict = {
+        "format-version": 2,
+        "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
+        "location": "s3://bucket/test/location",
+        "last-sequence-number": 4,
+        "last-updated-ms": 1602638573590,
+        "last-column-id": 1,
+        "current-schema-id": 0,
+        "schemas": [{"type": "struct", "schema-id": 0, "fields": [{"id": 1, "name": "x", "required": True, "type": "long"}]}],
+        "default-spec-id": 0,
+        "partition-specs": [{"spec-id": 0, "fields": []}],
+        "last-partition-id": 999,
+        "default-sort-order-id": 0,
+        "sort-orders": [{"order-id": 0, "fields": []}],
+        "current-snapshot-id": 4,
+        "snapshots": [
+            {"snapshot-id": 1, "timestamp-ms": 1000, "sequence-number": 1, "manifest-list": "s3://a/1.avro"},
+            {
+                "snapshot-id": 2,
+                "parent-snapshot-id": 1,
+                "timestamp-ms": 2000,
+                "sequence-number": 2,
+                "manifest-list": "s3://a/2.avro",
+            },
+            {
+                "snapshot-id": 3,
+                "parent-snapshot-id": 2,
+                "timestamp-ms": 3000,
+                "sequence-number": 3,
+                "manifest-list": "s3://a/3.avro",
+            },
+            {
+                "snapshot-id": 4,
+                "parent-snapshot-id": 3,
+                "timestamp-ms": 4000,
+                "sequence-number": 4,
+                "manifest-list": "s3://a/4.avro",
+            },
+        ],
+    }
+
+    mock_catalog = MagicMock()
+    table = Table(
+        identifier=("db", "table"),
+        metadata=TableMetadataV2(**metadata_dict),
+        metadata_location="s3://bucket/test/metadata.json",
+        io=load_file_io(),
+        catalog=mock_catalog,
+    )
+    mock_catalog.commit_table.return_value = _mock_commit_response(table)
+
+    # verify we find the ancestor before timestamp 2500
+    table.manage_snapshots().rollback_to_timestamp(timestamp_ms=2500).commit()
+
+    updates = _get_updates(mock_catalog)
+    set_ref_updates = [u for u in updates if isinstance(u, SetSnapshotRefUpdate)]
+
+    assert len(set_ref_updates) == 1
+    assert set_ref_updates[0].snapshot_id == 2
+    assert set_ref_updates[0].ref_name == "main"
+
+
+def test_rollback_to_timestamp_no_valid_snapshot(table_v2: Table) -> None:
+    # The oldest snapshot is at timestamp 1515100955770
+    table_v2.catalog = MagicMock()
+
+    with pytest.raises(ValueError, match="Cannot roll back, no valid snapshot older than"):
+        table_v2.manage_snapshots().rollback_to_timestamp(timestamp_ms=1515100955770).commit()
+
+    table_v2.catalog.commit_table.assert_not_called()

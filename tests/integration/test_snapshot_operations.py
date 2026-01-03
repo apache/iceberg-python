@@ -186,3 +186,32 @@ def test_rollback_to_snapshot(catalog: Catalog) -> None:
     tbl = catalog.load_table(identifier)
     restored_snapshot = tbl.current_snapshot()
     assert restored_snapshot and restored_snapshot.snapshot_id == current_snapshot_id
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_rollback_to_timestamp(catalog: Catalog) -> None:
+    identifier = "default.test_table_snapshot_operations"
+    tbl = catalog.load_table(identifier)
+
+    current_snapshot = tbl.current_snapshot()
+    assert current_snapshot is not None
+    assert current_snapshot.parent_snapshot_id is not None
+
+    parent_snapshot = tbl.metadata.snapshot_by_id(current_snapshot.parent_snapshot_id)
+    assert parent_snapshot is not None
+
+    # rollback_to_timestamp finds the latest ancestor with timestamp less than given timestamp
+    tbl.manage_snapshots().rollback_to_timestamp(timestamp_ms=current_snapshot.timestamp_ms).commit()
+
+    tbl = catalog.load_table(identifier)
+    updated_snapshot = tbl.current_snapshot()
+    assert updated_snapshot is not None
+    assert updated_snapshot.snapshot_id == parent_snapshot.snapshot_id
+
+    # restore table
+    tbl.manage_snapshots().set_current_snapshot(snapshot_id=current_snapshot.snapshot_id).commit()
+    tbl = catalog.load_table(identifier)
+    restored_snapshot = tbl.current_snapshot()
+    assert restored_snapshot is not None
+    assert restored_snapshot.snapshot_id == current_snapshot.snapshot_id
