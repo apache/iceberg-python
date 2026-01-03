@@ -160,3 +160,29 @@ def test_set_current_snapshot_chained_with_create_tag(catalog: Catalog) -> None:
     tbl = catalog.load_table(identifier)
     tbl.manage_snapshots().remove_tag(tag_name=tag_name).commit()
     assert tbl.metadata.refs.get(tag_name, None) is None
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_rollback_to_snapshot(catalog: Catalog) -> None:
+    identifier = "default.test_table_snapshot_operations"
+    tbl = catalog.load_table(identifier)
+    assert len(tbl.history()) > 2
+
+    # get the current snapshot and an ancestor
+    current_snapshot_id = tbl.history()[-1].snapshot_id
+    ancestor_snapshot_id = tbl.history()[-2].snapshot_id
+    assert ancestor_snapshot_id != current_snapshot_id
+
+    # rollback to the ancestor snapshot
+    tbl.manage_snapshots().rollback_to_snapshot(snapshot_id=ancestor_snapshot_id).commit()
+
+    tbl = catalog.load_table(identifier)
+    updated_snapshot = tbl.current_snapshot()
+    assert updated_snapshot and updated_snapshot.snapshot_id == ancestor_snapshot_id
+
+    # restore table
+    tbl.manage_snapshots().set_current_snapshot(snapshot_id=current_snapshot_id).commit()
+    tbl = catalog.load_table(identifier)
+    restored_snapshot = tbl.current_snapshot()
+    assert restored_snapshot and restored_snapshot.snapshot_id == current_snapshot_id
