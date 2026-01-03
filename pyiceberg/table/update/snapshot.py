@@ -999,7 +999,6 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         Raises:
             ValueError: If the snapshot does not exist or is not an ancestor of the current table state.
         """
-
         if not self._transaction.table_metadata.snapshot_by_id(snapshot_id):
             raise ValueError(f"Cannot roll back to unknown snapshot id: {snapshot_id}")
 
