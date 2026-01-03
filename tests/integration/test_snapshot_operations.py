@@ -268,3 +268,66 @@ def test_rollback_to_snapshot_unknown_id(table_with_snapshots: Table) -> None:
 
     with pytest.raises(ValueError, match="Cannot roll back to unknown snapshot id"):
         table_with_snapshots.manage_snapshots().rollback_to_snapshot(snapshot_id=invalid_snapshot_id).commit()
+
+
+@pytest.mark.integration
+def test_rollback_to_timestamp_no_valid_snapshot(table_with_snapshots: Table) -> None:
+    history = table_with_snapshots.history()
+    assert len(history) >= 1
+
+    oldest_timestamp = history[0].timestamp_ms
+
+    with pytest.raises(ValueError, match="Cannot roll back, no valid snapshot older than"):
+        table_with_snapshots.manage_snapshots().rollback_to_timestamp(timestamp_ms=oldest_timestamp).commit()
+
+
+@pytest.mark.integration
+def test_rollback_to_timestamp(table_with_snapshots: Table) -> None:
+    current_snapshot = table_with_snapshots.current_snapshot()
+    assert current_snapshot is not None
+    assert current_snapshot.parent_snapshot_id is not None
+
+    parent_snapshot_id = current_snapshot.parent_snapshot_id
+
+    table_with_snapshots.manage_snapshots().rollback_to_timestamp(timestamp_ms=current_snapshot.timestamp_ms).commit()
+
+    updated_snapshot = table_with_snapshots.current_snapshot()
+    assert updated_snapshot is not None
+    assert updated_snapshot.snapshot_id == parent_snapshot_id
+
+
+@pytest.mark.integration
+def test_rollback_to_timestamp_current_snapshot(table_with_snapshots: Table) -> None:
+    current_snapshot = table_with_snapshots.current_snapshot()
+    assert current_snapshot is not None
+
+    timestamp_after_current = current_snapshot.timestamp_ms + 100
+    table_with_snapshots.manage_snapshots().rollback_to_timestamp(timestamp_ms=timestamp_after_current).commit()
+
+    updated_snapshot = table_with_snapshots.current_snapshot()
+    assert updated_snapshot is not None
+    assert updated_snapshot.snapshot_id == current_snapshot.snapshot_id
+
+
+@pytest.mark.integration
+def test_rollback_to_timestamp_chained_with_tag(table_with_snapshots: Table) -> None:
+    current_snapshot = table_with_snapshots.current_snapshot()
+    assert current_snapshot is not None
+    assert current_snapshot.parent_snapshot_id is not None
+
+    parent_snapshot_id = current_snapshot.parent_snapshot_id
+    tag_name = "my-tag"
+
+    (
+        table_with_snapshots.manage_snapshots()
+        .create_tag(snapshot_id=current_snapshot.snapshot_id, tag_name=tag_name)
+        .rollback_to_timestamp(timestamp_ms=current_snapshot.timestamp_ms)
+        .commit()
+    )
+
+    updated_snapshot = table_with_snapshots.current_snapshot()
+    assert updated_snapshot is not None
+    assert updated_snapshot.snapshot_id == parent_snapshot_id
+    assert table_with_snapshots.metadata.refs[tag_name] == SnapshotRef(
+        snapshot_id=current_snapshot.snapshot_id, snapshot_ref_type="tag"
+    )
