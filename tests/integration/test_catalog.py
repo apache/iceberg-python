@@ -16,6 +16,7 @@
 #  under the License.
 
 import os
+import uuid
 from collections.abc import Generator
 from pathlib import Path, PosixPath
 
@@ -601,3 +602,36 @@ def test_register_table_existing(test_catalog: Catalog, table_schema_nested: Sch
     # Assert that registering the table again raises TableAlreadyExistsError
     with pytest.raises(TableAlreadyExistsError):
         test_catalog.register_table(identifier, metadata_location=table.metadata_location)
+
+
+@pytest.mark.integration
+def test_rest_custom_namespace_separator(rest_catalog: Catalog, table_schema_simple: Schema):
+    """
+    Tests that the REST catalog correctly picks up the namespace-separator from the config endpoint.
+    The REST Catalog is configured with a '.' namespace separator.
+    """
+    assert rest_catalog._namespace_separator == "."
+
+    unique_id = uuid.uuid4().hex
+    parent_namespace = (f"test_parent_{unique_id}",)
+    child_namespace_part = "child"
+    full_namespace_tuple = (*parent_namespace, child_namespace_part)
+
+    table_name = "my_table"
+    full_table_identifier_tuple = (*full_namespace_tuple, table_name)
+
+    rest_catalog.create_namespace(namespace=parent_namespace)
+    rest_catalog.create_namespace(namespace=full_namespace_tuple)
+
+    namespaces = rest_catalog.list_namespaces(parent_namespace)
+    assert full_namespace_tuple in namespaces
+
+    # Test with a table
+    table = rest_catalog.create_table(identifier=full_table_identifier_tuple, schema=table_schema_simple)
+    assert table.identifier == full_table_identifier_tuple
+
+    tables = rest_catalog.list_tables(full_namespace_tuple)
+    assert full_table_identifier_tuple in tables
+
+    loaded_table = rest_catalog.load_table(identifier=full_table_identifier_tuple)
+    assert loaded_table.identifier == full_table_identifier_tuple
