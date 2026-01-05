@@ -1650,18 +1650,18 @@ def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with
     for i in range(3):
         tbl_a_data_file = tbl_a_entries["data_file"][i]
         assert tbl_a_data_file["column_sizes"] == [
-            (1, 49),
-            (2, 78),
-            (3, 128),
-            (4, 94),
-            (5, 118),
-            (6, 94),
-            (7, 118),
-            (8, 118),
-            (9, 118),
-            (10, 94),
-            (11, 78),
-            (12, 109),
+            (1, 51),
+            (2, 80),
+            (3, 130),
+            (4, 96),
+            (5, 120),
+            (6, 96),
+            (7, 120),
+            (8, 120),
+            (9, 120),
+            (10, 96),
+            (11, 80),
+            (12, 111),
         ]
         assert tbl_a_data_file["content"] == 0
         assert tbl_a_data_file["equality_ids"] is None

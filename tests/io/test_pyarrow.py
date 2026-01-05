@@ -2248,6 +2248,12 @@ def test_bin_pack_arrow_table(arrow_table_with_null: pa.Table) -> None:
     assert len(list(bin_packed)) == 5
 
 
+def test_bin_pack_arrow_table_target_size_smaller_than_row(arrow_table_with_null: pa.Table) -> None:
+    bin_packed = list(bin_pack_arrow_table(arrow_table_with_null, target_file_size=1))
+    assert len(bin_packed) == arrow_table_with_null.num_rows
+    assert sum(batch.num_rows for bin_ in bin_packed for batch in bin_) == arrow_table_with_null.num_rows
+
+
 def test_schema_mismatch_type(table_schema_simple: Schema) -> None:
     other_schema = pa.schema(
         (
@@ -2586,6 +2592,36 @@ def test_inspect_partition_for_nested_field(catalog: InMemoryCatalog) -> None:
 
     assert len(partitions) == 2
     assert {part["part"] for part in partitions} == {"data-a", "data-b"}
+
+
+def test_inspect_partitions_respects_partition_evolution(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="dt", field_type=DateType(), required=False),
+        NestedField(id=2, name="category", field_type=StringType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="dt"))
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test_inspect_partitions_respects_partition_evolution", schema=schema, partition_spec=spec
+    )
+
+    old_spec_id = table.spec().spec_id
+    old_data = [{"dt": date(2025, 1, 1), "category": "old"}]
+    table.append(pa.Table.from_pylist(old_data, schema=table.schema().as_arrow()))
+
+    table.update_spec().add_identity("category").commit()
+    new_spec_id = table.spec().spec_id
+    assert new_spec_id != old_spec_id
+
+    partitions_table = table.inspect.partitions()
+    partitions = partitions_table["partition"].to_pylist()
+    assert all("category" not in partition for partition in partitions)
+
+    new_data = [{"dt": date(2025, 1, 2), "category": "new"}]
+    table.append(pa.Table.from_pylist(new_data, schema=table.schema().as_arrow()))
+
+    partitions_table = table.inspect.partitions()
+    assert set(partitions_table["spec_id"].to_pylist()) == {old_spec_id, new_spec_id}
 
 
 def test_identity_partition_on_multi_columns() -> None:

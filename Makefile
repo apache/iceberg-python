@@ -70,7 +70,7 @@ setup-venv: ## Create virtual environment
 	uv venv $(PYTHON_ARG)
 
 install-dependencies: setup-venv ## Install all dependencies including extras
-	uv sync $(PYTHON_ARG) --all-extras
+	uv sync $(PYTHON_ARG) --all-extras --reinstall
 
 install: install-uv install-dependencies ## Install uv and dependencies
 

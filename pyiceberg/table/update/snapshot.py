@@ -880,7 +880,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         update, requirement = self._transaction._set_ref_snapshot(
             snapshot_id=snapshot_id,
             ref_name=tag_name,
-            type="tag",
+            type=SnapshotRefType.TAG,
             max_ref_age_ms=max_ref_age_ms,
         )
         self._updates += update
@@ -921,7 +921,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         update, requirement = self._transaction._set_ref_snapshot(
             snapshot_id=snapshot_id,
             ref_name=branch_name,
-            type="branch",
+            type=SnapshotRefType.BRANCH,
             max_ref_age_ms=max_ref_age_ms,
             max_snapshot_age_ms=max_snapshot_age_ms,
             min_snapshots_to_keep=min_snapshots_to_keep,
