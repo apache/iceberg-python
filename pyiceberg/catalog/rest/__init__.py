@@ -335,10 +335,6 @@ class RestCatalog(Catalog):
         self.uri = properties[URI]
         self._fetch_config()
         self._session = self._create_session()
-        separator_from_properties = self.properties.get(NAMESPACE_SEPARATOR_PROPERTY, DEFAULT_NAMESPACE_SEPARATOR)
-        if not separator_from_properties:
-            raise ValueError("Namespace separator cannot be an empty string")
-        self._namespace_separator = unquote(separator_from_properties)
 
     def _create_session(self) -> Session:
         """Create a request session with provided catalog configuration."""
@@ -526,6 +522,11 @@ class RestCatalog(Catalog):
             if property_as_bool(self.properties, VIEW_ENDPOINTS_SUPPORTED, VIEW_ENDPOINTS_SUPPORTED_DEFAULT):
                 self._supported_endpoints.update(VIEW_ENDPOINTS)
 
+        separator_from_properties = self.properties.get(NAMESPACE_SEPARATOR_PROPERTY, DEFAULT_NAMESPACE_SEPARATOR)
+        if not separator_from_properties:
+            raise ValueError("Namespace separator cannot be an empty string")
+        self._namespace_separator = unquote(separator_from_properties)
+
     def _identifier_to_validated_tuple(self, identifier: str | Identifier) -> Identifier:
         identifier_tuple = self.identifier_to_tuple(identifier)
         if len(identifier_tuple) <= 1:
@@ -542,6 +543,7 @@ class RestCatalog(Catalog):
             }
         identifier_tuple = self._identifier_to_validated_tuple(identifier)
 
+        # Use quote to ensure that '/' aren't treated as path separators.
         return {
             "namespace": self._encode_namespace_path(identifier_tuple[:-1]),
             kind.value: quote(identifier_tuple[-1], safe=""),
