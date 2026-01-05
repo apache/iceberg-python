@@ -100,7 +100,7 @@ test-integration: test-integration-setup test-integration-exec test-integration-
 test-integration-setup: ## Start Docker services for integration tests
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
-	docker compose -f dev/docker-compose-integration.yml up -d --wait
+	docker compose -f dev/docker-compose-integration.yml up -d --build --wait
 	uv run $(PYTHON_ARG) python dev/provision.py
 
 test-integration-exec: ## Run integration tests (excluding provision)
