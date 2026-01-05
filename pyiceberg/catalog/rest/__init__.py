@@ -564,8 +564,7 @@ class RestCatalog(Catalog):
                 if "connection" in request.headers:
                     del request.headers["connection"]
                 # For empty bodies, explicitly set the content hash header to the SHA256 of an empty string
-                body = request.body
-                if body in (None, b"", ""):
+                if not request.body:
                     request.headers["x-amz-content-sha256"] = EMPTY_BODY_SHA256
 
                 aws_request = AWSRequest(
