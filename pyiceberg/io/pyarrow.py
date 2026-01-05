@@ -203,6 +203,10 @@ MAP_KEY_NAME = "key"
 MAP_VALUE_NAME = "value"
 DOC = "doc"
 UTC_ALIASES = {"UTC", "+00:00", "Etc/UTC", "Z"}
+UUID_FILTER_NOT_SUPPORTED_ERROR_MESSAGE = (
+    f"Filtering on UUID columns is not supported by the installed PyArrow version ({pa.__version__})"
+)
+
 
 T = TypeVar("T")
 
@@ -1641,7 +1645,12 @@ def _task_to_record_batches(
                 bound_row_filter, file_schema, case_sensitive=case_sensitive, projected_field_values=projected_missing_fields
             )
             bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
-            pyarrow_filter = expression_to_pyarrow(bound_file_filter, file_schema)
+            try:
+                pyarrow_filter = expression_to_pyarrow(bound_file_filter, file_schema)
+            except pyarrow.lib.ArrowNotImplementedError as e:
+                if "arrow.uuid" in str(e):
+                    raise NotImplementedError(UUID_FILTER_NOT_SUPPORTED_ERROR_MESSAGE) from e
+                raise
 
         file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
 
