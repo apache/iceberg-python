@@ -627,6 +627,54 @@ def test_add_nested_list_type_column(table_v2: Table) -> None:
     assert new_schema.highest_field_id == 7
 
 
+def test_update_list_element_required(table_v2: Table) -> None:
+    """Test that update_column can change list element's required property."""
+    # Add a list column with optional elements
+    update = UpdateSchema(transaction=table_v2.transaction())
+    list_type = ListType(element_id=1, element_type=StringType(), element_required=False)
+    update.add_column(path="tags", field_type=list_type)
+    schema_with_list = update._apply()
+
+    # Verify initial state
+    field = schema_with_list.find_field("tags")
+    assert isinstance(field.field_type, ListType)
+    assert field.field_type.element_required is False
+
+    # Update element to required
+    update2 = UpdateSchema(transaction=table_v2.transaction(), schema=schema_with_list)
+    update2._allow_incompatible_changes = True  # Allow optional -> required
+    new_schema = update2.update_column(("tags", "element"), required=True)._apply()
+
+    # Verify the update
+    field = new_schema.find_field("tags")
+    assert isinstance(field.field_type, ListType)
+    assert field.field_type.element_required is True
+
+
+def test_update_map_value_required(table_v2: Table) -> None:
+    """Test that update_column can change map value's required property."""
+    # Add a map column with optional values
+    update = UpdateSchema(transaction=table_v2.transaction())
+    map_type = MapType(key_id=1, key_type=StringType(), value_id=2, value_type=IntegerType(), value_required=False)
+    update.add_column(path="metadata", field_type=map_type)
+    schema_with_map = update._apply()
+
+    # Verify initial state
+    field = schema_with_map.find_field("metadata")
+    assert isinstance(field.field_type, MapType)
+    assert field.field_type.value_required is False
+
+    # Update value to required
+    update2 = UpdateSchema(transaction=table_v2.transaction(), schema=schema_with_map)
+    update2._allow_incompatible_changes = True  # Allow optional -> required
+    new_schema = update2.update_column(("metadata", "value"), required=True)._apply()
+
+    # Verify the update
+    field = new_schema.find_field("metadata")
+    assert isinstance(field.field_type, MapType)
+    assert field.field_type.value_required is True
+
+
 def test_apply_set_properties_update(table_v2: Table) -> None:
     base_metadata = table_v2.metadata
 
