@@ -21,6 +21,7 @@ import time
 import uuid
 from datetime import datetime, timedelta
 from pathlib import PosixPath
+from typing import Any
 from urllib.parse import urlparse
 
 import pyarrow as pa
@@ -357,7 +358,7 @@ def test_bodo_nan(catalog: Catalog, monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.integration
 @pytest.mark.filterwarnings("ignore")
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_ray_nan(catalog: Catalog) -> None:
+def test_ray_nan(catalog: Catalog, ray_session: Any) -> None:
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     ray_dataset = table_test_null_nan_rewritten.scan().to_ray()
     assert ray_dataset.count() == 3
@@ -365,8 +366,9 @@ def test_ray_nan(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.filterwarnings("ignore")
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_ray_nan_rewritten(catalog: Catalog) -> None:
+def test_ray_nan_rewritten(catalog: Catalog, ray_session: Any) -> None:
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     ray_dataset = table_test_null_nan_rewritten.scan(
         row_filter=IsNaN("col_numeric"), selected_fields=("idx", "col_numeric")
@@ -377,17 +379,19 @@ def test_ray_nan_rewritten(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.filterwarnings("ignore")
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 @pytest.mark.skip(reason="Fixing issues with NaN's: https://github.com/apache/arrow/issues/34162")
-def test_ray_not_nan_count(catalog: Catalog) -> None:
+def test_ray_not_nan_count(catalog: Catalog, ray_session: Any) -> None:
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     ray_dataset = table_test_null_nan_rewritten.scan(row_filter=NotNaN("col_numeric"), selected_fields=("idx",)).to_ray()
     assert ray_dataset.count() == 2
 
 
 @pytest.mark.integration
+@pytest.mark.filterwarnings("ignore")
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_ray_all_types(catalog: Catalog) -> None:
+def test_ray_all_types(catalog: Catalog, ray_session: Any) -> None:
     table_test_all_types = catalog.load_table("default.test_all_types")
     ray_dataset = table_test_all_types.scan().to_ray()
     pandas_dataframe = table_test_all_types.scan().to_pandas()
