@@ -36,7 +36,8 @@ from fsspec import AbstractFileSystem
 from fsspec.implementations.local import LocalFileSystem
 from requests import HTTPError
 
-from pyiceberg.catalog import AUTH_MANAGER, TOKEN, URI
+from pyiceberg.catalog import TOKEN, URI
+from pyiceberg.catalog.rest.auth import AUTH_MANAGER
 from pyiceberg.exceptions import SignError
 from pyiceberg.io import (
     ADLS_ACCOUNT_HOST,
@@ -124,12 +125,10 @@ class S3V4RestSigner(S3RequestSigner):
         signer_headers: dict[str, str] = {}
 
         auth_header: str | None = None
-        if token := self.properties.get(TOKEN):
+        if auth_manager := self.properties.get(AUTH_MANAGER):
+            auth_header = auth_manager.auth_header()
+        elif token := self.properties.get(TOKEN):
             auth_header = f"Bearer {token}"
-        elif auth_manager := self.properties.get(AUTH_MANAGER):
-            header = getattr(auth_manager, "auth_header", None)
-            if callable(header):
-                auth_header = header()
 
         if auth_header:
             signer_headers["Authorization"] = auth_header
