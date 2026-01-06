@@ -148,7 +148,7 @@ docs-install: ## Install docs dependencies (included in default groups)
 	uv sync $(PYTHON_ARG) --group docs
 
 docs-serve: ## Serve local docs preview (hot reload)
-	uv run $(PYTHON_ARG) mkdocs serve -f mkdocs/mkdocs.yml
+	uv run $(PYTHON_ARG) mkdocs serve -f mkdocs/mkdocs.yml --livereload
 
 docs-build: ## Build the static documentation site
 	uv run $(PYTHON_ARG) mkdocs build -f mkdocs/mkdocs.yml --strict
