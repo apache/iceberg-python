@@ -275,7 +275,12 @@ class Transaction:
         if exctype is None and excinst is None and exctb is None:
             self.commit_transaction()
 
-    def _apply(self, updates: tuple[TableUpdate, ...], requirements: tuple[TableRequirement, ...] = ()) -> Transaction:
+    def _apply(
+        self,
+        updates: tuple[TableUpdate, ...],
+        requirements: tuple[TableRequirement, ...] = (),
+        commit_transaction_if_autocommit: bool = True,
+    ) -> Transaction:
         """Check if the requirements are met, and applies the updates to the metadata."""
         for requirement in requirements:
             requirement.validate(self.table_metadata)
@@ -289,7 +294,7 @@ class Transaction:
             if type(new_requirement) not in existing_requirements:
                 self._requirements = self._requirements + (new_requirement,)
 
-        if self._autocommit:
+        if self._autocommit and commit_transaction_if_autocommit:
             self.commit_transaction()
 
         return self
