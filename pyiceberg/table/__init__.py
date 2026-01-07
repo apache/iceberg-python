@@ -275,13 +275,20 @@ class Transaction:
         if exctype is None and excinst is None and exctb is None:
             self.commit_transaction()
 
-    def _apply(
+    def _stage(
         self,
         updates: tuple[TableUpdate, ...],
         requirements: tuple[TableRequirement, ...] = (),
-        commit_transaction_if_autocommit: bool = True,
     ) -> Transaction:
-        """Check if the requirements are met, and applies the updates to the metadata."""
+        """Stage updates to the transaction state without committing to the catalog.
+
+        Args:
+            updates: The updates to stage.
+            requirements: The requirements that must be met.
+
+        Returns:
+            This transaction for method chaining.
+        """
         for requirement in requirements:
             requirement.validate(self.table_metadata)
 
@@ -294,7 +301,17 @@ class Transaction:
             if type(new_requirement) not in existing_requirements:
                 self._requirements = self._requirements + (new_requirement,)
 
-        if self._autocommit and commit_transaction_if_autocommit:
+        return self
+
+    def _apply(
+        self,
+        updates: tuple[TableUpdate, ...],
+        requirements: tuple[TableRequirement, ...] = (),
+    ) -> Transaction:
+        """Check if the requirements are met, and applies the updates to the metadata."""
+        self._stage(updates, requirements)
+
+        if self._autocommit:
             self.commit_transaction()
 
         return self

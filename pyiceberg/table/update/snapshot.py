@@ -844,9 +844,9 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         return self._updates, self._requirements
 
     def _commit_if_ref_updates_exist(self) -> None:
-        """Commit any pending ref updates to the transaction."""
+        """Stage any pending ref updates to the transaction state."""
         if self._updates:
-            self._transaction._apply(*self._commit(), commit_transaction_if_autocommit=False)
+            self._transaction._stage(*self._commit())
             self._updates = ()
             self._requirements = ()
 
@@ -980,10 +980,9 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         update, requirement = self._transaction._set_ref_snapshot(
             snapshot_id=target_snapshot_id,
             ref_name=MAIN_BRANCH,
-            type="branch",
+            type=SnapshotRefType.BRANCH,
         )
-        self._updates += update
-        self._requirements += requirement
+        self._transaction._stage(update, requirement)
         return self
 
 
