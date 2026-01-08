@@ -1440,7 +1440,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema]):
                 raise ValueError(
                     "Null type (pa.null()) is not supported in Iceberg format version "
                     f"{self._format_version}. Field: {field_path}. "
-                    "Use a concrete type (string, int, boolean, etc.) or set format-version=3."
+                    "Requires format-version=3+ or use a concrete type (string, int, boolean, etc.)."
                 )
             return UnknownType()
         elif isinstance(primitive, pa.UuidType):
