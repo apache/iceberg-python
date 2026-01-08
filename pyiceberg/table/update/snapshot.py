@@ -843,6 +843,13 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         """Apply the pending changes and commit."""
         return self._updates, self._requirements
 
+    def _commit_if_ref_updates_exist(self) -> None:
+        """Stage any pending ref updates to the transaction state."""
+        if self._updates:
+            self._transaction._stage(*self._commit())
+            self._updates = ()
+            self._requirements = ()
+
     def _remove_ref_snapshot(self, ref_name: str) -> ManageSnapshots:
         """Remove a snapshot ref.
 
@@ -940,6 +947,43 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             This for method chaining
         """
         return self._remove_ref_snapshot(ref_name=branch_name)
+
+    def set_current_snapshot(self, snapshot_id: int | None = None, ref_name: str | None = None) -> ManageSnapshots:
+        """Set the current snapshot to a specific snapshot ID or ref.
+
+        Args:
+            snapshot_id: The ID of the snapshot to set as current.
+            ref_name: The snapshot reference (branch or tag) to set as current.
+
+        Returns:
+            This for method chaining.
+
+        Raises:
+            ValueError: If neither or both arguments are provided, or if the snapshot/ref does not exist.
+        """
+        self._commit_if_ref_updates_exist()
+
+        if (snapshot_id is None) == (ref_name is None):
+            raise ValueError("Either snapshot_id or ref_name must be provided, not both")
+
+        target_snapshot_id: int
+        if snapshot_id is not None:
+            target_snapshot_id = snapshot_id
+        else:
+            if ref_name not in self._transaction.table_metadata.refs:
+                raise ValueError(f"Cannot find matching snapshot ID for ref: {ref_name}")
+            target_snapshot_id = self._transaction.table_metadata.refs[ref_name].snapshot_id
+
+        if self._transaction.table_metadata.snapshot_by_id(target_snapshot_id) is None:
+            raise ValueError(f"Cannot set current snapshot to unknown snapshot id: {target_snapshot_id}")
+
+        update, requirement = self._transaction._set_ref_snapshot(
+            snapshot_id=target_snapshot_id,
+            ref_name=MAIN_BRANCH,
+            type=SnapshotRefType.BRANCH,
+        )
+        self._transaction._stage(update, requirement)
+        return self
 
 
 class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
