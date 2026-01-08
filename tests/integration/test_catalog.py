@@ -605,7 +605,7 @@ def test_register_table_existing(test_catalog: Catalog, table_schema_nested: Sch
 
 
 @pytest.mark.integration
-def test_rest_custom_namespace_separator(rest_catalog: Catalog, table_schema_simple: Schema):
+def test_rest_custom_namespace_separator(rest_catalog: RestCatalog, table_schema_simple: Schema) -> None:
     """
     Tests that the REST catalog correctly picks up the namespace-separator from the config endpoint.
     The REST Catalog is configured with a '.' namespace separator.
