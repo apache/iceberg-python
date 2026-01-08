@@ -628,10 +628,10 @@ def test_rest_custom_namespace_separator(rest_catalog: Catalog, table_schema_sim
 
     # Test with a table
     table = rest_catalog.create_table(identifier=full_table_identifier_tuple, schema=table_schema_simple)
-    assert table.identifier == full_table_identifier_tuple
+    assert table.name() == full_table_identifier_tuple
 
     tables = rest_catalog.list_tables(full_namespace_tuple)
     assert full_table_identifier_tuple in tables
 
     loaded_table = rest_catalog.load_table(identifier=full_table_identifier_tuple)
-    assert loaded_table.identifier == full_table_identifier_tuple
+    assert loaded_table.name() == full_table_identifier_tuple
