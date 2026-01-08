@@ -1435,6 +1435,13 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema]):
         elif pa.types.is_null(primitive):
             # PyArrow null type (pa.null()) is converted to Iceberg UnknownType
             # UnknownType can be promoted to any primitive type in V3+ tables per the Iceberg spec
+            if self._format_version < 3:
+                field_path = ".".join(self._field_names) if self._field_names else "<root>"
+                raise ValueError(
+                    "Null type (pa.null()) is not supported in Iceberg format version "
+                    f"{self._format_version}. Field: {field_path}. "
+                    "Requires format-version=3+ or use a concrete type (string, int, boolean, etc.)."
+                )
             return UnknownType()
         elif isinstance(primitive, pa.UuidType):
             return UUIDType()

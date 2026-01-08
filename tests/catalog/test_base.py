@@ -210,6 +210,16 @@ def test_convert_schema_if_needed(
     assert expected == catalog._convert_schema_if_needed(schema)
 
 
+def test_convert_schema_if_needed_rejects_null_type(catalog: InMemoryCatalog) -> None:
+    schema = pa.schema([pa.field("n1", pa.null())])
+    with pytest.raises(ValueError) as exc_info:
+        catalog._convert_schema_if_needed(schema)
+    message = str(exc_info.value)
+    assert "Null type" in message
+    assert "n1" in message
+    assert "format-version=3" in message
+
+
 def test_create_table_pyarrow_schema(catalog: InMemoryCatalog, pyarrow_schema_simple_without_ids: pa.Schema) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE)
     table = catalog.create_table(
