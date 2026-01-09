@@ -789,7 +789,7 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.large_string()
 
     def visit_uuid(self, _: UUIDType) -> pa.DataType:
-        return pa.uuid()
+        return pa.binary(16)
 
     def visit_unknown(self, _: UnknownType) -> pa.DataType:
         """Type `UnknownType` can be promoted to any primitive type in V3+ tables per the Iceberg spec."""
