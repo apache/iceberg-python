@@ -48,6 +48,7 @@ from pyiceberg.table.metadata import TableMetadataV1
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import RecursiveDict
+from pyiceberg.types import StringType
 from pyiceberg.utils.config import Config
 
 TEST_URI = "https://iceberg-test-catalog/"
@@ -2155,3 +2156,87 @@ class TestRestCatalogClose:
         # View endpoints should be supported when enabled
         catalog._check_endpoint(Capability.V1_LIST_VIEWS)
         catalog._check_endpoint(Capability.V1_DELETE_VIEW)
+
+
+def test_table_uuid_check_on_commit(rest_mock: Mocker, example_table_metadata_v2: dict[str, Any]) -> None:
+    """Test that UUID mismatch is detected on commit response (matches Java RESTTableOperations behavior)."""
+    original_uuid = "9c12d441-03fe-4693-9a96-a0705ddf69c1"
+    different_uuid = "550e8400-e29b-41d4-a716-446655440000"
+    metadata_location = "s3://warehouse/database/table/metadata.json"
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": example_table_metadata_v2,
+            "config": {},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    table = catalog.load_table(("namespace", "table_name"))
+
+    assert str(table.metadata.table_uuid) == original_uuid
+
+    metadata_with_different_uuid = {**example_table_metadata_v2, "table-uuid": different_uuid}
+
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": metadata_with_different_uuid,
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        table.update_schema().add_column("new_col", StringType()).commit()
+
+    assert "Table UUID does not match" in str(exc_info.value)
+    assert f"current={original_uuid}" in str(exc_info.value)
+    assert f"refreshed={different_uuid}" in str(exc_info.value)
+
+
+def test_table_uuid_check_on_refresh(rest_mock: Mocker, example_table_metadata_v2: dict[str, Any]) -> None:
+    original_uuid = "9c12d441-03fe-4693-9a96-a0705ddf69c1"
+    different_uuid = "550e8400-e29b-41d4-a716-446655440000"
+    metadata_location = "s3://warehouse/database/table/metadata.json"
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": example_table_metadata_v2,
+            "config": {},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    table = catalog.load_table(("namespace", "table_name"))
+
+    assert str(table.metadata.table_uuid) == original_uuid
+
+    metadata_with_different_uuid = {**example_table_metadata_v2, "table-uuid": different_uuid}
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": metadata_with_different_uuid,
+            "config": {},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        table.refresh()
+
+    assert "Table UUID does not match" in str(exc_info.value)
+    assert f"current={original_uuid}" in str(exc_info.value)
+    assert f"refreshed={different_uuid}" in str(exc_info.value)
