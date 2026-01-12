@@ -168,13 +168,6 @@ filterwarnings = [
   "ignore:subprocess.*is still running:ResourceWarning",
 ]
 
-[tool.black]
-line-length = 130
-target-version = ['py38']
-
-[tool.pycln]
-all = true
-
 [tool.mypy]
 mypy_path = "python"
 no_implicit_optional = true
