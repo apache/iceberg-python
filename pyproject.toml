@@ -168,9 +168,6 @@ filterwarnings = [
   "ignore:subprocess.*is still running:ResourceWarning",
 ]
 
-[tool.pycln]
-all = true
-
 [tool.mypy]
 mypy_path = "python"
 no_implicit_optional = true
