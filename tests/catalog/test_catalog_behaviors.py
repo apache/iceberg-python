@@ -41,9 +41,10 @@ from pyiceberg.exceptions import (
 from pyiceberg.io.pyarrow import _dataframe_to_data_files, schema_to_pyarrow
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import AddSchemaUpdate, SetCurrentSchemaUpdate, TableProperties
+from pyiceberg.table import TableProperties
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
+from pyiceberg.table.update import AddSchemaUpdate, SetCurrentSchemaUpdate
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Identifier
 from pyiceberg.types import BooleanType, IntegerType, LongType, NestedField, StringType
@@ -236,7 +237,11 @@ def test_create_table_with_default_warehouse_location(
 
 
 def test_create_table_location_override(
-    catalog: Catalog, tmp_path: Path, table_schema_nested: Schema, test_table_identifier: Identifier, test_table_properties: dict
+    catalog: Catalog,
+    tmp_path: Path,
+    table_schema_nested: Schema,
+    test_table_identifier: Identifier,
+    test_table_properties: dict[str, str],
 ) -> None:
     test_partition_spec = PartitionSpec(PartitionField(name="x", transform=IdentityTransform(), source_id=1, field_id=1000))
     new_location = f"file://{tmp_path}/new_location"
@@ -272,12 +277,15 @@ def test_create_table_removes_trailing_slash_from_location(
 
 def test_create_tables_idempotency(catalog: Catalog) -> None:
     # Second initialization should not fail even if tables are already created
-    catalog.create_tables()
-    catalog.create_tables()
+    catalog.create_tables()  # type: ignore[attr-defined]
+    catalog.create_tables()  # type: ignore[attr-defined]
 
 
 def test_create_table_pyarrow_schema(
-    catalog: Catalog, pyarrow_schema_simple_without_ids: pa.Schema, test_table_identifier: Identifier, test_table_properties: dict
+    catalog: Catalog,
+    pyarrow_schema_simple_without_ids: pa.Schema,
+    test_table_identifier: Identifier,
+    test_table_properties: dict[str, str],
 ) -> None:
     namespace = Catalog.namespace_from(test_table_identifier)
     catalog.create_namespace(namespace)
@@ -544,7 +552,7 @@ def test_commit_table(catalog: Catalog, table_schema_nested: Schema, test_table_
     original_table_metadata_location = table.metadata_location
     original_table_last_updated_ms = table.metadata.last_updated_ms
 
-    assert catalog._parse_metadata_version(table.metadata_location) == 0
+    assert catalog._parse_metadata_version(table.metadata_location) == 0  # type: ignore[attr-defined]
     assert table.metadata.current_schema_id == 0
 
     transaction = table.transaction()
@@ -555,7 +563,7 @@ def test_commit_table(catalog: Catalog, table_schema_nested: Schema, test_table_
 
     updated_table_metadata = table.metadata
 
-    assert catalog._parse_metadata_version(table.metadata_location) == 1
+    assert catalog._parse_metadata_version(table.metadata_location) == 1  # type: ignore[attr-defined]
     assert updated_table_metadata.current_schema_id == 1
     assert len(updated_table_metadata.schemas) == 2
     new_schema = next(schema for schema in updated_table_metadata.schemas if schema.schema_id == 1)
@@ -731,7 +739,9 @@ def test_table_writes_metadata_to_custom_location(
         schema=schema_to_pyarrow(table_schema_simple),
     )
     table.append(df)
-    manifests = table.current_snapshot().manifests(table.io)
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    manifests = snapshot.manifests(table.io)
     location_provider = table.location_provider()
 
     assert location_provider.new_metadata_location("").startswith(metadata_path)
@@ -744,7 +754,7 @@ def test_table_writes_metadata_to_default_path(
     catalog: Catalog,
     test_table_identifier: Identifier,
     table_schema_simple: Schema,
-    test_table_properties: dict,
+    test_table_properties: dict[str, str],
 ) -> None:
     namespace = Catalog.namespace_from(test_table_identifier)
     catalog.create_namespace(namespace)
@@ -759,7 +769,9 @@ def test_table_writes_metadata_to_default_path(
         schema=schema_to_pyarrow(table_schema_simple),
     )
     table.append(df)
-    manifests = table.current_snapshot().manifests(table.io)
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    manifests = snapshot.manifests(table.io)
     location_provider = table.location_provider()
 
     assert location_provider.new_metadata_location("").startswith(metadata_path)
@@ -932,15 +944,15 @@ def test_add_column_with_statement(catalog: Catalog, table_schema_simple: Schema
 # Namespace tests
 
 
-def test_create_namespace(catalog: Catalog, test_namespace: Identifier, test_table_properties: dict) -> None:
+def test_create_namespace(catalog: Catalog, test_namespace: Identifier, test_table_properties: dict[str, str]) -> None:
     catalog.create_namespace(test_namespace, test_table_properties)
-    assert catalog._namespace_exists(test_namespace)
+    assert catalog._namespace_exists(test_namespace)  # type: ignore[attr-defined]
     assert (Catalog.identifier_to_tuple(test_namespace)[:1]) in catalog.list_namespaces()
     assert test_table_properties == catalog.load_namespace_properties(test_namespace)
 
 
 def test_create_namespace_raises_error_on_existing_namespace(
-    catalog: Catalog, test_namespace: Identifier, test_table_properties: dict
+    catalog: Catalog, test_namespace: Identifier, test_table_properties: dict[str, str]
 ) -> None:
     catalog.create_namespace(test_namespace, test_table_properties)
     with pytest.raises(NamespaceAlreadyExistsError):
@@ -1003,12 +1015,16 @@ def test_get_namespace_metadata_raises_error_when_namespace_does_not_exist(catal
 def test_namespace_exists(catalog: Catalog) -> None:
     for ns in [("db1",), ("db1", "ns1"), ("db2", "ns1"), ("db3", "ns1", "ns2")]:
         catalog.create_namespace(ns)
-        assert catalog._namespace_exists(ns)
+        assert catalog._namespace_exists(ns)  # type: ignore[attr-defined]
 
-    assert catalog._namespace_exists("db2")  # `db2` exists because `db2.ns1` exists
-    assert catalog._namespace_exists("db3.ns1")  # `db3.ns1` exists because `db3.ns1.ns2` exists
-    assert not catalog._namespace_exists("db_")  # make sure '_' is escaped in the query
-    assert not catalog._namespace_exists("db%")  # make sure '%' is escaped in the query
+    # `db2` exists because `db2.ns1` exists
+    assert catalog._namespace_exists("db2")  # type: ignore[attr-defined]
+    # `db3.ns1` exists because `db3.ns1.ns2` exists
+    assert catalog._namespace_exists("db3.ns1")  # type: ignore[attr-defined]
+    # make sure '_' is escaped in the query
+    assert not catalog._namespace_exists("db_")  # type: ignore[attr-defined]
+    # make sure '%' is escaped in the query
+    assert not catalog._namespace_exists("db%")  # type: ignore[attr-defined]
 
 
 # Namespace properties
@@ -1048,7 +1064,7 @@ def test_load_empty_namespace_properties(catalog: Catalog, test_namespace: Ident
 def test_list_namespaces(catalog: Catalog) -> None:
     namespace_list = ["db", "db.ns1", "db.ns1.ns2", "db.ns2", "db2", "db2.ns1", "db%"]
     for namespace in namespace_list:
-        if not catalog._namespace_exists(namespace):
+        if not catalog._namespace_exists(namespace):  # type: ignore[attr-defined]
             catalog.create_namespace(namespace)
 
     ns_list = catalog.list_namespaces()
@@ -1068,7 +1084,7 @@ def test_list_namespaces(catalog: Catalog) -> None:
 def test_list_namespaces_fuzzy_match(catalog: Catalog) -> None:
     namespace_list = ["db.ns1", "db.ns1.ns2", "db.ns2", "db.ns1X.ns3", "db_.ns1.ns2", "db2.ns1.ns2"]
     for namespace in namespace_list:
-        if not catalog._namespace_exists(namespace):
+        if not catalog._namespace_exists(namespace):  # type: ignore[attr-defined]
             catalog.create_namespace(namespace)
 
     assert catalog.list_namespaces("db.ns1") == [("db", "ns1", "ns2")]
@@ -1124,7 +1140,7 @@ def test_update_namespace_metadata(catalog: Catalog, test_namespace: Identifier,
     catalog.create_namespace(test_namespace, test_table_properties)
     new_metadata = {"key3": "value3", "key4": "value4"}
     summary = catalog.update_namespace_properties(test_namespace, updates=new_metadata)
-    assert catalog._namespace_exists(test_namespace)
+    assert catalog._namespace_exists(test_namespace)  # type: ignore[attr-defined]
     assert new_metadata.items() <= catalog.load_namespace_properties(test_namespace).items()
     assert summary.removed == []
     assert sorted(summary.updated) == ["key3", "key4"]
@@ -1138,7 +1154,7 @@ def test_update_namespace_metadata_removals(
     new_metadata = {"key3": "value3", "key4": "value4"}
     remove_metadata = {"key1"}
     summary = catalog.update_namespace_properties(test_namespace, remove_metadata, new_metadata)
-    assert catalog._namespace_exists(test_namespace)
+    assert catalog._namespace_exists(test_namespace)  # type: ignore[attr-defined]
     assert new_metadata.items() <= catalog.load_namespace_properties(test_namespace).items()
     assert remove_metadata.isdisjoint(catalog.load_namespace_properties(test_namespace).keys())
     assert summary.removed == ["key1"]
@@ -1152,13 +1168,13 @@ def test_update_namespace_metadata_removals(
 def test_drop_namespace(catalog: Catalog, table_schema_nested: Schema, test_table_identifier: Identifier) -> None:
     namespace = Catalog.namespace_from(test_table_identifier)
     catalog.create_namespace(namespace)
-    assert catalog._namespace_exists(namespace)
+    assert catalog._namespace_exists(namespace)  # type: ignore[attr-defined]
     catalog.create_table(test_table_identifier, table_schema_nested)
     with pytest.raises(NamespaceNotEmptyError):
         catalog.drop_namespace(namespace)
     catalog.drop_table(test_table_identifier)
     catalog.drop_namespace(namespace)
-    assert not catalog._namespace_exists(namespace)
+    assert not catalog._namespace_exists(namespace)  # type: ignore[attr-defined]
 
 
 def test_drop_namespace_raises_error_when_namespace_does_not_exist(catalog: Catalog) -> None:
