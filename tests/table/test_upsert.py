@@ -27,11 +27,11 @@ from pyiceberg.expressions import AlwaysTrue, And, EqualTo, Reference
 from pyiceberg.expressions.literals import LongLiteral
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema
-from pyiceberg.table import UpsertResult
+from pyiceberg.table import Table, UpsertResult
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.upsert_util import create_match_filter
 from pyiceberg.types import IntegerType, NestedField, StringType, StructType
-from tests.catalog.test_base import InMemoryCatalog, Table
+from tests.catalog.test_base import InMemoryCatalog
 
 
 @pytest.fixture

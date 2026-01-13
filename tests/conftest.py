@@ -435,17 +435,6 @@ def iceberg_schema_simple_no_ids() -> Schema:
 
 
 @pytest.fixture(scope="session")
-def iceberg_table_schema_simple() -> Schema:
-    return Schema(
-        NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
-        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
-        schema_id=0,
-        identifier_field_ids=[],
-    )
-
-
-@pytest.fixture(scope="session")
 def iceberg_schema_nested() -> Schema:
     return Schema(
         NestedField(field_id=1, name="foo", field_type=StringType(), required=True),
@@ -1887,7 +1876,7 @@ def test_schema() -> Schema:
 
 
 @pytest.fixture(scope="session")
-def test_partition_spec() -> Schema:
+def test_partition_spec() -> PartitionSpec:
     return PartitionSpec(
         PartitionField(1, 1000, IdentityTransform(), "VendorID"),
         PartitionField(2, 1001, DayTransform(), "tpep_pickup_day"),
