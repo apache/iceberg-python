@@ -1922,6 +1922,12 @@ def test_auth_header(rest_mock: Mocker) -> None:
     assert mock_request.last_request.text == "grant_type=client_credentials&client_id=client&client_secret=secret&scope=catalog"
 
 
+def test_client_version_header(rest_mock: Mocker) -> None:
+    catalog = RestCatalog("rest", uri=TEST_URI, warehouse="s3://some-bucket")
+    assert catalog._session.headers.get("X-Client-Version") == f"Apache PyIceberg {pyiceberg.__version__}"
+    assert rest_mock.last_request.headers["X-Client-Version"] == f"Apache PyIceberg {pyiceberg.__version__}"
+
+
 class TestRestCatalogClose:
     """Tests RestCatalog close functionality"""
 
