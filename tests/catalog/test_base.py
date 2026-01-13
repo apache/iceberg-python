@@ -17,6 +17,7 @@
 # pylint:disable=redefined-outer-name
 
 
+from collections.abc import Generator
 from pathlib import PosixPath
 
 import pytest
@@ -29,8 +30,10 @@ from pyiceberg.types import NestedField, StringType
 
 
 @pytest.fixture
-def catalog(tmp_path: PosixPath) -> InMemoryCatalog:
-    return InMemoryCatalog("test.in_memory.catalog", **{WAREHOUSE: tmp_path.absolute().as_posix(), "test.key": "test.value"})
+def catalog(tmp_path: PosixPath) -> Generator[Catalog, None, None]:
+    catalog = InMemoryCatalog("test.in_memory.catalog", **{WAREHOUSE: tmp_path.absolute().as_posix(), "test.key": "test.value"})
+    yield catalog
+    catalog.close()
 
 
 def test_load_catalog_in_memory() -> None:

@@ -27,7 +27,7 @@ from requests_mock import Mocker
 
 import pyiceberg
 from pyiceberg.catalog import PropertiesUpdateSummary, load_catalog
-from pyiceberg.catalog.rest import OAUTH2_SERVER_URI, SNAPSHOT_LOADING_MODE, RestCatalog
+from pyiceberg.catalog.rest import DEFAULT_ENDPOINTS, OAUTH2_SERVER_URI, SNAPSHOT_LOADING_MODE, Capability, RestCatalog
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
     NamespaceAlreadyExistsError,
@@ -67,6 +67,28 @@ TEST_HEADERS = {
 OAUTH_TEST_HEADERS = {
     "Content-type": "application/x-www-form-urlencoded",
 }
+
+TEST_SUPPORTED_ENDPOINTS = [
+    Capability.V1_LIST_NAMESPACES,
+    Capability.V1_LOAD_NAMESPACE,
+    Capability.V1_NAMESPACE_EXISTS,
+    Capability.V1_UPDATE_NAMESPACE,
+    Capability.V1_CREATE_NAMESPACE,
+    Capability.V1_DELETE_NAMESPACE,
+    Capability.V1_LIST_TABLES,
+    Capability.V1_LOAD_TABLE,
+    Capability.V1_TABLE_EXISTS,
+    Capability.V1_CREATE_TABLE,
+    Capability.V1_UPDATE_TABLE,
+    Capability.V1_DELETE_TABLE,
+    Capability.V1_RENAME_TABLE,
+    Capability.V1_REGISTER_TABLE,
+    Capability.V1_LIST_VIEWS,
+    Capability.V1_VIEW_EXISTS,
+    Capability.V1_DELETE_VIEW,
+    Capability.V1_SUBMIT_TABLE_SCAN_PLAN,
+    Capability.V1_TABLE_SCAN_PLAN_TASKS,
+]
 
 
 @pytest.fixture
@@ -112,7 +134,7 @@ def rest_mock(requests_mock: Mocker) -> Mocker:
     """
     requests_mock.get(
         f"{TEST_URI}v1/config",
-        json={"defaults": {}, "overrides": {}},
+        json={"defaults": {}, "overrides": {}, "endpoints": [str(endpoint) for endpoint in TEST_SUPPORTED_ENDPOINTS]},
         status_code=200,
     )
     return requests_mock
@@ -1995,17 +2017,23 @@ class TestRestCatalogClose:
         assert len(catalog._session.adapters) == self.EXPECTED_ADAPTERS_SIGV4
 
     def test_rest_scan_planning_disabled_by_default(self, rest_mock: Mocker) -> None:
-        rest_mock.get(
-            f"{TEST_URI}v1/config",
-            json={"defaults": {}, "overrides": {}},
-            status_code=200,
-        )
         catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
 
         assert catalog.is_rest_scan_planning_enabled() is False
 
     def test_rest_scan_planning_enabled_by_property(self, rest_mock: Mocker) -> None:
-        rest_mock.get(
+        catalog = RestCatalog(
+            "rest",
+            uri=TEST_URI,
+            token=TEST_TOKEN,
+            **{"rest-scan-planning-enabled": "true"},
+        )
+
+        assert catalog.is_rest_scan_planning_enabled() is True
+
+    def test_rest_scan_planning_disabled_when_endpoint_unsupported(self, requests_mock: Mocker) -> None:
+        # config endpoint does not populate endpoint falling back to default
+        requests_mock.get(
             f"{TEST_URI}v1/config",
             json={"defaults": {}, "overrides": {}},
             status_code=200,
@@ -2017,14 +2045,9 @@ class TestRestCatalogClose:
             **{"rest-scan-planning-enabled": "true"},
         )
 
-        assert catalog.is_rest_scan_planning_enabled() is True
+        assert catalog.is_rest_scan_planning_enabled() is False
 
     def test_rest_scan_planning_explicitly_disabled(self, rest_mock: Mocker) -> None:
-        rest_mock.get(
-            f"{TEST_URI}v1/config",
-            json={"defaults": {}, "overrides": {}},
-            status_code=200,
-        )
         catalog = RestCatalog(
             "rest",
             uri=TEST_URI,
@@ -2037,9 +2060,98 @@ class TestRestCatalogClose:
     def test_rest_scan_planning_enabled_from_server_config(self, rest_mock: Mocker) -> None:
         rest_mock.get(
             f"{TEST_URI}v1/config",
-            json={"defaults": {"rest-scan-planning-enabled": "true"}, "overrides": {}},
+            json={
+                "defaults": {"rest-scan-planning-enabled": "true"},
+                "overrides": {},
+                "endpoints": ["POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan"],
+            },
             status_code=200,
         )
         catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
 
         assert catalog.is_rest_scan_planning_enabled() is True
+
+    def test_supported_endpoint(self, requests_mock: Mocker) -> None:
+        requests_mock.get(
+            f"{TEST_URI}v1/config",
+            json={
+                "defaults": {},
+                "overrides": {},
+                "endpoints": ["GET /v1/{prefix}/namespaces", "GET /v1/{prefix}/namespaces/{namespace}/tables"],
+            },
+            status_code=200,
+        )
+        catalog = RestCatalog("rest", uri=TEST_URI, token="token")
+
+        # Should not raise since these endpoints are in the supported set
+        catalog._check_endpoint(Capability.V1_LIST_NAMESPACES)
+        catalog._check_endpoint(Capability.V1_LIST_TABLES)
+
+    def test_unsupported_endpoint(self, requests_mock: Mocker) -> None:
+        requests_mock.get(
+            f"{TEST_URI}v1/config",
+            json={
+                "defaults": {},
+                "overrides": {},
+                "endpoints": ["GET /v1/{prefix}/namespaces"],
+            },
+            status_code=200,
+        )
+        catalog = RestCatalog("rest", uri=TEST_URI, token="token")
+
+        with pytest.raises(NotImplementedError, match="Server does not support endpoint"):
+            catalog._check_endpoint(Capability.V1_LIST_TABLES)
+
+    def test_config_returns_invalid_endpoint(self, requests_mock: Mocker) -> None:
+        requests_mock.get(
+            f"{TEST_URI}v1/config",
+            json={
+                "defaults": {},
+                "overrides": {},
+                "endpoints": ["INVALID_ENDPOINT"],
+            },
+            status_code=200,
+        )
+
+        with pytest.raises(ValueError, match="Invalid endpoint"):
+            RestCatalog("rest", uri=TEST_URI, token="token")
+
+    def test_default_endpoints_used_when_none_returned(self, requests_mock: Mocker) -> None:
+        requests_mock.get(
+            f"{TEST_URI}v1/config",
+            json={"defaults": {}, "overrides": {}},
+            status_code=200,
+        )
+        catalog = RestCatalog("rest", uri=TEST_URI, token="token")
+
+        # Should not raise for default endpoints
+        for endpoint in DEFAULT_ENDPOINTS:
+            catalog._check_endpoint(endpoint)
+
+    def test_view_endpoints_not_included_by_default(self, requests_mock: Mocker) -> None:
+        requests_mock.get(
+            f"{TEST_URI}v1/config",
+            json={"defaults": {}, "overrides": {}},
+            status_code=200,
+        )
+        catalog = RestCatalog("rest", uri=TEST_URI, token="token")
+
+        with pytest.raises(NotImplementedError, match="Server does not support endpoint"):
+            catalog._check_endpoint(Capability.V1_LIST_VIEWS)
+
+    def test_view_endpoints_enabled_with_config(self, requests_mock: Mocker) -> None:
+        requests_mock.get(
+            f"{TEST_URI}v1/config",
+            json={"defaults": {}, "overrides": {}},
+            status_code=200,
+        )
+        catalog = RestCatalog(
+            "rest",
+            uri=TEST_URI,
+            token="token",
+            **{"view-endpoints-supported": "true"},
+        )
+
+        # View endpoints should be supported when enabled
+        catalog._check_endpoint(Capability.V1_LIST_VIEWS)
+        catalog._check_endpoint(Capability.V1_DELETE_VIEW)

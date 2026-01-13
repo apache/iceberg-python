@@ -275,8 +275,20 @@ class Transaction:
         if exctype is None and excinst is None and exctb is None:
             self.commit_transaction()
 
-    def _apply(self, updates: tuple[TableUpdate, ...], requirements: tuple[TableRequirement, ...] = ()) -> Transaction:
-        """Check if the requirements are met, and applies the updates to the metadata."""
+    def _stage(
+        self,
+        updates: tuple[TableUpdate, ...],
+        requirements: tuple[TableRequirement, ...] = (),
+    ) -> Transaction:
+        """Stage updates to the transaction state without committing to the catalog.
+
+        Args:
+            updates: The updates to stage.
+            requirements: The requirements that must be met.
+
+        Returns:
+            This transaction for method chaining.
+        """
         for requirement in requirements:
             requirement.validate(self.table_metadata)
 
@@ -288,6 +300,16 @@ class Transaction:
         for new_requirement in requirements:
             if type(new_requirement) not in existing_requirements:
                 self._requirements = self._requirements + (new_requirement,)
+
+        return self
+
+    def _apply(
+        self,
+        updates: tuple[TableUpdate, ...],
+        requirements: tuple[TableRequirement, ...] = (),
+    ) -> Transaction:
+        """Check if the requirements are met, and applies the updates to the metadata."""
+        self._stage(updates, requirements)
 
         if self._autocommit:
             self.commit_transaction()
@@ -734,6 +756,7 @@ class Transaction:
         when_not_matched_insert_all: bool = True,
         case_sensitive: bool = True,
         branch: str | None = MAIN_BRANCH,
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
     ) -> UpsertResult:
         """Shorthand API for performing an upsert to an iceberg table.
 
@@ -745,6 +768,7 @@ class Transaction:
             when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any existing rows in the table
             case_sensitive: Bool indicating if the match should be case-sensitive
             branch: Branch Reference to run the upsert operation
+            snapshot_properties: Custom properties to be added to the snapshot summary
 
             To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
 
@@ -861,12 +885,13 @@ class Transaction:
                 rows_to_update,
                 overwrite_filter=Or(*overwrite_predicates) if len(overwrite_predicates) > 1 else overwrite_predicates[0],
                 branch=branch,
+                snapshot_properties=snapshot_properties,
             )
 
         if when_not_matched_insert_all:
             insert_row_cnt = len(rows_to_insert)
             if rows_to_insert:
-                self.append(rows_to_insert, branch=branch)
+                self.append(rows_to_insert, branch=branch, snapshot_properties=snapshot_properties)
 
         return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 
@@ -1327,6 +1352,7 @@ class Table:
         when_not_matched_insert_all: bool = True,
         case_sensitive: bool = True,
         branch: str | None = MAIN_BRANCH,
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
     ) -> UpsertResult:
         """Shorthand API for performing an upsert to an iceberg table.
 
@@ -1338,6 +1364,7 @@ class Table:
             when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any existing rows in the table
             case_sensitive: Bool indicating if the match should be case-sensitive
             branch: Branch Reference to run the upsert operation
+            snapshot_properties: Custom properties to be added to the snapshot summary
 
             To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
 
@@ -1371,6 +1398,7 @@ class Table:
                 when_not_matched_insert_all=when_not_matched_insert_all,
                 case_sensitive=case_sensitive,
                 branch=branch,
+                snapshot_properties=snapshot_properties,
             )
 
     def append(self, df: pa.Table, snapshot_properties: dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH) -> None:

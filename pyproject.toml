@@ -28,6 +28,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
     "mmh3>=4.0.0,<6.0.0",
@@ -66,7 +67,7 @@ duckdb = [
     "pyarrow>=17.0.0",
 ]
 ray = [
-    "ray>=2.10.0,<=2.44.0",
+    "ray>=2.10.0,<3.0.0",
     "pyarrow>=17.0.0",
     "pandas>=1.0.0,<3.0.0",
 ]
@@ -100,7 +101,7 @@ gcp-auth = ["google-auth>=2.4.0"]
 [dependency-groups]
 dev = [
     "pytest==7.4.4",
-    "pytest-checkdocs==2.13.0",
+    "pytest-checkdocs==2.14.0",
     "prek>=0.2.1,<0.3",
     "pytest-lazy-fixture==0.6.3",
     "fastavro==1.12.1",
@@ -110,7 +111,7 @@ dev = [
     "typing-extensions==4.15.0",
     "pytest-mock==3.15.1",
     "pyspark[connect]==4.0.1",
-    "protobuf==6.33.2", # match Spark Connect's gencode
+    "protobuf==6.33.4", # match Spark Connect's gencode
     "cython>=3.0.0",
     "deptry>=0.14,<0.25",
     "docutils!=0.21.post1",
@@ -160,14 +161,12 @@ filterwarnings = [
   "error",
   # Ignore Python version deprecation warning from google.api_core while we still support 3.10
   "ignore:You are using a Python version.*which Google will stop supporting:FutureWarning:google.api_core",
+  # Python 3.13 sqlite3 module ResourceWarnings for unclosed database connections
+  "ignore:unclosed database in <sqlite3.Connection object*:ResourceWarning",
+  # Ignore Ray subprocess cleanup warnings
+  "ignore:unclosed file:ResourceWarning",
+  "ignore:subprocess.*is still running:ResourceWarning",
 ]
-
-[tool.black]
-line-length = 130
-target-version = ['py38']
-
-[tool.pycln]
-all = true
 
 [tool.mypy]
 mypy_path = "python"
