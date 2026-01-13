@@ -22,7 +22,7 @@ from pathlib import PosixPath
 
 import pytest
 
-from pyiceberg.catalog import load_catalog
+from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.memory import InMemoryCatalog
 from pyiceberg.io import WAREHOUSE
 from pyiceberg.schema import Schema
