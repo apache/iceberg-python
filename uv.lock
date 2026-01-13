@@ -1404,16 +1404,16 @@ wheels = [
 
 [[package]]
 name = "fsspec"
-version = "2025.12.0"
+version = "2026.1.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/b6/27/954057b0d1f53f086f681755207dda6de6c660ce133c829158e8e8fe7895/fsspec-2025.12.0.tar.gz", hash = "sha256:c505de011584597b1060ff778bb664c1bc022e87921b0e4f10cc9c44f9635973", size = 309748, upload-time = "2025-12-03T15:23:42.687Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d5/7d/5df2650c57d47c57232af5ef4b4fdbff182070421e405e0d62c6cdbfaa87/fsspec-2026.1.0.tar.gz", hash = "sha256:e987cb0496a0d81bba3a9d1cee62922fb395e7d4c3b575e57f547953334fe07b", size = 310496, upload-time = "2026-01-09T15:21:35.562Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/51/c7/b64cae5dba3a1b138d7123ec36bb5ccd39d39939f18454407e5468f4763f/fsspec-2025.12.0-py3-none-any.whl", hash = "sha256:8bf1fe301b7d8acfa6e8571e3b1c3d158f909666642431cc78a1b7b4dbc5ec5b", size = 201422, upload-time = "2025-12-03T15:23:41.434Z" },
+    { url = "https://files.pythonhosted.org/packages/01/c9/97cc5aae1648dcb851958a3ddf73ccd7dbe5650d95203ecb4d7720b4cdbf/fsspec-2026.1.0-py3-none-any.whl", hash = "sha256:cb76aa913c2285a3b49bdd5fc55b1d7c708d7208126b60f2eb8194fe1b4cbdcc", size = 201838, upload-time = "2026-01-09T15:21:34.041Z" },
 ]
 
 [[package]]
 name = "gcsfs"
-version = "2025.12.0"
+version = "2026.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -1425,9 +1425,9 @@ dependencies = [
     { name = "google-cloud-storage-control" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3e/3e/453b42bbcda2177daba97ebc5202faf5c57cc0c2bb4aac7081c12b0471da/gcsfs-2025.12.0.tar.gz", hash = "sha256:9a9c1c32b7899a3967ba30a7e9422cdfda596266f03476cdf5545402b8af4cd5", size = 95148, upload-time = "2025-12-03T15:44:59.703Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2b/b7/5337521e212dcd63eeb9e46046ec21a43353435c962de3f1d994079af0a2/gcsfs-2026.1.0.tar.gz", hash = "sha256:ce76686bcab4ac21dd60e3d4dc5ae920046ee081f1fbcecebeabe65c257982c8", size = 129230, upload-time = "2026-01-09T16:02:46.275Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b1/bf/e664cbeab8f2a8b097c0604252760410fde191fe6ac7d5081b29e601ac52/gcsfs-2025.12.0-py3-none-any.whl", hash = "sha256:e06aaec53797dc6b83d5cc90c4d3ae7247b4ee0cf8d8b1ce50e8d6b78e3a9aea", size = 41204, upload-time = "2025-12-03T15:44:58.464Z" },
+    { url = "https://files.pythonhosted.org/packages/53/14/b460d85183aea49af192a5b275bd73e63f8a1e9805c41e860fe1c1eeefd2/gcsfs-2026.1.0-py3-none-any.whl", hash = "sha256:f0016a487d58a99c73e6547085439598995b281142b5d0cae1c1f06cc8f25f03", size = 48531, upload-time = "2026-01-09T16:02:44.799Z" },
 ]
 
 [[package]]
@@ -1524,7 +1524,7 @@ wheels = [
 
 [[package]]
 name = "google-cloud-storage"
-version = "3.5.0"
+version = "3.7.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "google-api-core" },
@@ -1534,9 +1534,9 @@ dependencies = [
     { name = "google-resumable-media" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6d/98/c0c6d10f893509585c755a6567689e914df3501ae269f46b0d67d7e7c70a/google_cloud_storage-3.5.0.tar.gz", hash = "sha256:10b89e1d1693114b3e0ca921bdd28c5418701fd092e39081bb77e5cee0851ab7", size = 17242207, upload-time = "2025-11-05T12:41:02.715Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d2/8e/fab2de1a0ab7fdbd452eaae5a9a5c933d0911c26b04efa0c76ddfd921259/google_cloud_storage-3.7.0.tar.gz", hash = "sha256:9ce59c65f4d6e372effcecc0456680a8d73cef4f2dc9212a0704799cb3d69237", size = 17258914, upload-time = "2025-12-09T18:24:48.97Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/20/81/a567236070e7fe79a17a11b118d7f5ce4adefe2edd18caf1824d7e29a30a/google_cloud_storage-3.5.0-py3-none-any.whl", hash = "sha256:e28fd6ad8764e60dbb9a398a7bc3296e7920c494bc329057d828127e5f9630d3", size = 289998, upload-time = "2025-11-05T12:41:01.212Z" },
+    { url = "https://files.pythonhosted.org/packages/2d/80/6e5c7c83cea15ed4dfc4843b9df9db0716bc551ac938f7b5dd18a72bd5e4/google_cloud_storage-3.7.0-py3-none-any.whl", hash = "sha256:469bc9540936e02f8a4bfd1619e9dca1e42dec48f95e4204d783b36476a15093", size = 303364, upload-time = "2025-12-09T18:24:47.343Z" },
 ]
 
 [[package]]
@@ -4603,16 +4603,16 @@ wheels = [
 
 [[package]]
 name = "s3fs"
-version = "2025.12.0"
+version = "2026.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiobotocore" },
     { name = "aiohttp" },
     { name = "fsspec" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/cf/26/fff848df6a76d6fec20208e61548244639c46a741e296244c3404d6e7df0/s3fs-2025.12.0.tar.gz", hash = "sha256:8612885105ce14d609c5b807553f9f9956b45541576a17ff337d9435ed3eb01f", size = 81217, upload-time = "2025-12-03T15:34:04.754Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/97/f2/d6e725d4a037fe65fe341d3c16e7b6f3e69a198d6115c77b0c45dffaebe7/s3fs-2026.1.0.tar.gz", hash = "sha256:b7a352dfb9553a2263b7ea4575d90cd3c64eb76cfc083b99cb90b36b31e9d09d", size = 81224, upload-time = "2026-01-09T15:29:49.025Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/44/8c/04797ebb53748b4d594d4c334b2d9a99f2d2e06e19ad505f1313ca5d56eb/s3fs-2025.12.0-py3-none-any.whl", hash = "sha256:89d51e0744256baad7ae5410304a368ca195affd93a07795bc8ba9c00c9effbb", size = 30726, upload-time = "2025-12-03T15:34:03.576Z" },
+    { url = "https://files.pythonhosted.org/packages/93/cf/0af92a4d3f36dd9ff675e0419e7efc48d7808641ac2b2ce2c1f09a9dc632/s3fs-2026.1.0-py3-none-any.whl", hash = "sha256:c1f4ad1fca6dd052ffaa104a293ba209772f4a60c164818382833868e1b1597d", size = 30713, upload-time = "2026-01-09T15:29:47.418Z" },
 ]
 
 [[package]]
