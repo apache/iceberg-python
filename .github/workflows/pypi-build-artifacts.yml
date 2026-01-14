@@ -71,7 +71,7 @@ jobs:
           CIBW_ARCHS: "auto64"
           CIBW_PROJECT_REQUIRES_PYTHON: ">=3.10,<3.14"
           CIBW_BEFORE_TEST: "uv sync --group dev --no-install-project"
-          CIBW_TEST_COMMAND: "pytest {project}/tests/avro/test_decoder.py"
+          CIBW_TEST_COMMAND: "uv run pytest {project}/tests/avro/test_decoder.py"
           # Ignore tests for pypy since not all dependencies are compiled for it
           # and would require a local rust build chain
           CIBW_TEST_SKIP: "pp*"
