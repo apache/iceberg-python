@@ -617,6 +617,7 @@ class RestCatalog(Catalog):
         session.headers.update(header_properties)
         session.headers["Content-type"] = "application/json"
         session.headers["User-Agent"] = f"PyIceberg/{__version__}"
+        session.headers["X-Client-Version"] = f"PyIceberg {__version__}"
         session.headers.setdefault("X-Iceberg-Access-Delegation", ACCESS_DELEGATION_DEFAULT)
 
     def _create_table(
