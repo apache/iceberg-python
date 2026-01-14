@@ -70,7 +70,7 @@ jobs:
           # Ignore 32 bit architectures
           CIBW_ARCHS: "auto64"
           CIBW_PROJECT_REQUIRES_PYTHON: ">=3.10,<3.14"
-          CIBW_TEST_REQUIRES: 'pytest==7.4.2 moto==5.0.1 pytest-lazy-fixture==0.6.3 "sqlalchemy>=2.0.18,<3"'
+          CIBW_TEST_REQUIRES: "pytest==7.4.2 moto==5.0.1 pytest-lazy-fixture==0.6.3"
           CIBW_TEST_COMMAND: "pytest {project}/tests/avro/test_decoder.py"
           # Ignore tests for pypy since not all dependencies are compiled for it
           # and would require a local rust build chain
