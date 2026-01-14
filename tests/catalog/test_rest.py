@@ -1924,8 +1924,8 @@ def test_auth_header(rest_mock: Mocker) -> None:
 
 def test_client_version_header(rest_mock: Mocker) -> None:
     catalog = RestCatalog("rest", uri=TEST_URI, warehouse="s3://some-bucket")
-    assert catalog._session.headers.get("X-Client-Version") == f"Apache PyIceberg {pyiceberg.__version__}"
-    assert rest_mock.last_request.headers["X-Client-Version"] == f"Apache PyIceberg {pyiceberg.__version__}"
+    assert catalog._session.headers.get("X-Client-Version") == f"PyIceberg {pyiceberg.__version__}"
+    assert rest_mock.last_request.headers["X-Client-Version"] == f"PyIceberg {pyiceberg.__version__}"
 
 
 class TestRestCatalogClose:
