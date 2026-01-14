@@ -722,6 +722,10 @@ class Catalog(ABC):
 
         return ".".join(segment.strip() for segment in tuple_identifier)
 
+    def supports_server_side_planning(self) -> bool:
+        """Check if the catalog supports server-side scan planning."""
+        return False
+
     @staticmethod
     def identifier_to_database(
         identifier: str | Identifier, err: type[ValueError] | type[NoSuchNamespaceError] = ValueError

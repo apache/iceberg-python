@@ -1849,7 +1849,7 @@ class FileScanTask(ScanTask):
 
 def _rest_file_to_data_file(rest_file: RESTContentFile) -> DataFile:
     """Convert a REST content file to a manifest DataFile."""
-    from pyiceberg.catalog.rest.scan_planning import CONTENT_TYPE_MAP, RESTDataFile
+    from pyiceberg.catalog.rest.scan_planning import RESTDataFile
 
     if isinstance(rest_file, RESTDataFile):
         column_sizes = rest_file.column_sizes.to_dict() if rest_file.column_sizes else None
@@ -1863,7 +1863,7 @@ def _rest_file_to_data_file(rest_file: RESTContentFile) -> DataFile:
         nan_value_counts = None
 
     data_file = DataFile.from_args(
-        content=CONTENT_TYPE_MAP[rest_file.content],
+        content=DataFileContent.from_rest_type(rest_file.content),
         file_path=rest_file.file_path,
         file_format=rest_file.file_format,
         partition=Record(*rest_file.partition) if rest_file.partition else Record(),
@@ -2051,15 +2051,13 @@ class DataScan(TableScan):
             ],
         )
 
-    def _should_use_rest_planning(self) -> bool:
-        """Check if REST scan planning should be used for this scan."""
-        from pyiceberg.catalog.rest import RestCatalog
-
-        if not isinstance(self.catalog, RestCatalog):
+    def _should_use_server_side_planning(self) -> bool:
+        """Check if server-side scan planning should be used for this scan."""
+        if not self.catalog:
             return False
-        return self.catalog.is_rest_scan_planning_enabled()
+        return self.catalog.supports_server_side_planning()
 
-    def _plan_files_rest(self) -> Iterable[FileScanTask]:
+    def _plan_files_server_side(self) -> Iterable[FileScanTask]:
         """Plan files using REST server-side scan planning."""
         from pyiceberg.catalog.rest import RestCatalog
         from pyiceberg.catalog.rest.scan_planning import PlanTableScanRequest
@@ -2120,8 +2118,8 @@ class DataScan(TableScan):
         Returns:
             List of FileScanTasks that contain both data and delete files.
         """
-        if self._should_use_rest_planning():
-            return self._plan_files_rest()
+        if self._should_use_server_side_planning():
+            return self._plan_files_server_side()
         return self._plan_files_local()
 
     def to_arrow(self) -> pa.Table:

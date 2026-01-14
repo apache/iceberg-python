@@ -390,12 +390,8 @@ class RestCatalog(Catalog):
 
         return session
 
-    def is_rest_scan_planning_enabled(self) -> bool:
-        """Check if rest server-side scan planning is enabled.
-
-        Returns:
-            True if enabled, False otherwise.
-        """
+    def supports_server_side_planning(self) -> bool:
+        """Check if the catalog supports server-side scan planning."""
         return Capability.V1_SUBMIT_TABLE_SCAN_PLAN in self._supported_endpoints and property_as_bool(
             self.properties, REST_SCAN_PLANNING_ENABLED, REST_SCAN_PLANNING_ENABLED_DEFAULT
         )
@@ -410,6 +406,7 @@ class RestCatalog(Catalog):
 
         Returns:
             PlanningResponse the result of the scan plan request representing the status
+
         Raises:
             NoSuchTableError: If a table with the given identifier does not exist.
         """
