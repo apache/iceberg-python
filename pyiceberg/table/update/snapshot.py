@@ -64,6 +64,7 @@ from pyiceberg.table.snapshots import (
     Snapshot,
     SnapshotSummaryCollector,
     Summary,
+    ancestors_of,
     update_snapshot_summaries,
 )
 from pyiceberg.table.update import (
@@ -984,6 +985,40 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         )
         self._transaction._stage(update, requirement)
         return self
+
+    def rollback_to_snapshot(self, snapshot_id: int) -> ManageSnapshots:
+        """Rollback the table to the given snapshot id.
+
+        The snapshot needs to be an ancestor of the current table state.
+
+        Args:
+            snapshot_id (int): rollback to this snapshot_id that used to be current.
+
+        Returns:
+            This for method chaining
+
+        Raises:
+            ValueError: If the snapshot does not exist or is not an ancestor of the current table state.
+        """
+        if not self._transaction.table_metadata.snapshot_by_id(snapshot_id):
+            raise ValueError(f"Cannot roll back to unknown snapshot id: {snapshot_id}")
+
+        if not self._is_current_ancestor(snapshot_id):
+            raise ValueError(f"Cannot roll back to snapshot, not an ancestor of the current state: {snapshot_id}")
+
+        return self.set_current_snapshot(snapshot_id=snapshot_id)
+
+    def _is_current_ancestor(self, snapshot_id: int) -> bool:
+        return snapshot_id in self._current_ancestors()
+
+    def _current_ancestors(self) -> set[int]:
+        return {
+            a.snapshot_id
+            for a in ancestors_of(
+                self._transaction.table_metadata.current_snapshot(),
+                self._transaction.table_metadata,
+            )
+        }
 
 
 class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
