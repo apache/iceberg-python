@@ -1504,7 +1504,7 @@ class Table:
     def _do_commit(self, updates: tuple[TableUpdate, ...], requirements: tuple[TableRequirement, ...]) -> None:
         response = self.catalog.commit_table(self, requirements, updates)
 
-        # Check UUID to detect table replacement
+        # ensure table uuid has not changed 
         self._check_uuid(self.metadata, response.metadata)
 
         # https://github.com/apache/iceberg/blob/f6faa58/core/src/main/java/org/apache/iceberg/CatalogUtil.java#L527
