@@ -1101,6 +1101,9 @@ def test_create_staged_table_200(
     example_table_metadata_with_no_location: dict[str, Any],
     example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any],
 ) -> None:
+    expected_table_uuid = example_table_metadata_with_no_location["metadata"]["table-uuid"]
+    example_table_metadata_no_snapshot_v1_rest_json["metadata"]["table-uuid"] = expected_table_uuid
+
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/fokko/tables",
         json=example_table_metadata_with_no_location,
