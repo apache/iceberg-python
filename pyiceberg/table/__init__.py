@@ -1504,9 +1504,8 @@ class Table:
     def _do_commit(self, updates: tuple[TableUpdate, ...], requirements: tuple[TableRequirement, ...]) -> None:
         response = self.catalog.commit_table(self, requirements, updates)
 
-        # Check UUID to detect table replacement (matches Java's RESTTableOperations.updateCurrentMetadata)
-        if not isinstance(self, StagedTable):
-            self._check_uuid(self.metadata, response.metadata)
+        # Check UUID to detect table replacement
+        self._check_uuid(self.metadata, response.metadata)
 
         # https://github.com/apache/iceberg/blob/f6faa58/core/src/main/java/org/apache/iceberg/CatalogUtil.java#L527
         # delete old metadata if METADATA_DELETE_AFTER_COMMIT_ENABLED is set to true and uses
