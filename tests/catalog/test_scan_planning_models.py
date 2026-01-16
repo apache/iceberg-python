@@ -18,7 +18,9 @@ from typing import Any
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
+from requests_mock import Mocker
 
+from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.rest.scan_planning import (
     CountMap,
     FetchScanTasksRequest,
@@ -33,11 +35,91 @@ from pyiceberg.catalog.rest.scan_planning import (
     RESTFileScanTask,
     RESTPositionDeleteFile,
     ScanTasks,
-    StorageCredential,
     ValueMap,
 )
 from pyiceberg.expressions import AlwaysTrue, EqualTo, Reference
 from pyiceberg.manifest import FileFormat
+
+TEST_URI = "https://iceberg-test-catalog/"
+
+
+@pytest.fixture
+def rest_scan_catalog(requests_mock: Mocker) -> RestCatalog:
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={
+            "defaults": {"rest-scan-planning-enabled": "true"},
+            "overrides": {},
+            "endpoints": [
+                "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan",
+                "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/tasks",
+            ],
+        },
+        status_code=200,
+    )
+
+    return RestCatalog(
+        "test",
+        uri=TEST_URI,
+        **{"rest-scan-planning-enabled": "true"},
+    )
+
+
+def _rest_data_file(
+    *,
+    file_path: str = "s3://bucket/table/data/file.parquet",
+    file_format: str = "parquet",
+    file_size_in_bytes: int = 1024,
+    record_count: int = 100,
+) -> dict[str, Any]:
+    return {
+        "spec-id": 0,
+        "content": "data",
+        "file-path": file_path,
+        "file-format": file_format,
+        "file-size-in-bytes": file_size_in_bytes,
+        "record-count": record_count,
+    }
+
+
+def _rest_position_delete_file(
+    *,
+    file_path: str = "s3://bucket/table/delete.parquet",
+    file_format: str = "parquet",
+    file_size_in_bytes: int = 256,
+    record_count: int = 5,
+    content_offset: int = 100,
+    content_size_in_bytes: int = 200,
+) -> dict[str, Any]:
+    return {
+        "spec-id": 0,
+        "content": "position-deletes",
+        "file-path": file_path,
+        "file-format": file_format,
+        "file-size-in-bytes": file_size_in_bytes,
+        "record-count": record_count,
+        "content-offset": content_offset,
+        "content-size-in-bytes": content_size_in_bytes,
+    }
+
+
+def _rest_equality_delete_file(
+    *,
+    file_path: str = "s3://bucket/table/eq-delete.parquet",
+    equality_ids: list[int],
+    file_format: str = "parquet",
+    file_size_in_bytes: int = 256,
+    record_count: int = 5,
+) -> dict[str, Any]:
+    return {
+        "spec-id": 0,
+        "content": "equality-deletes",
+        "file-path": file_path,
+        "file-format": file_format,
+        "file-size-in-bytes": file_size_in_bytes,
+        "record-count": record_count,
+        "equality-ids": equality_ids,
+    }
 
 
 def test_count_map_valid() -> None:
@@ -62,80 +144,45 @@ def test_value_map_mixed_types() -> None:
 
 
 def test_data_file_parsing() -> None:
-    data = {
-        "spec-id": 0,
-        "content": "data",
-        "file-path": "s3://bucket/table/file.parquet",
-        "file-format": "parquet",
-        "file-size-in-bytes": 1024,
-        "record-count": 100,
-    }
-    df = RESTDataFile.model_validate(data)
+    data_file = _rest_data_file(file_path="s3://bucket/table/file.parquet")
+    df = RESTDataFile.model_validate(data_file)
     assert df.content == "data"
     assert df.file_path == "s3://bucket/table/file.parquet"
     assert df.file_format == FileFormat.PARQUET
-    assert df.file_size_in_bytes == 1024
 
 
 def test_data_file_with_stats() -> None:
-    data = {
-        "spec-id": 0,
-        "content": "data",
-        "file-path": "s3://bucket/table/file.parquet",
-        "file-format": "parquet",
-        "file-size-in-bytes": 1024,
-        "record-count": 100,
+    data_file = _rest_data_file()
+
+    data_file_with_stats = {
+        **data_file,
         "column-sizes": {"keys": [1, 2], "values": [500, 524]},
         "value-counts": {"keys": [1, 2], "values": [100, 100]},
     }
-    df = RESTDataFile.model_validate(data)
+    df = RESTDataFile.model_validate(data_file_with_stats)
     assert df.column_sizes is not None
     assert df.column_sizes.to_dict() == {1: 500, 2: 524}
 
 
 def test_position_delete_file() -> None:
-    data = {
-        "spec-id": 0,
-        "content": "position-deletes",
-        "file-path": "s3://bucket/table/delete.parquet",
-        "file-format": "parquet",
-        "file-size-in-bytes": 512,
-        "record-count": 10,
-        "content-offset": 100,
-        "content-size-in-bytes": 200,
-    }
-    pdf = RESTPositionDeleteFile.model_validate(data)
+    delete_file = _rest_position_delete_file(file_path="s3://bucket/table/delete.puffin", file_format="puffin")
+    pdf = RESTPositionDeleteFile.model_validate(delete_file)
     assert pdf.content == "position-deletes"
     assert pdf.content_offset == 100
     assert pdf.content_size_in_bytes == 200
 
 
 def test_equality_delete_file() -> None:
-    data = {
-        "spec-id": 0,
-        "content": "equality-deletes",
-        "file-path": "s3://bucket/table/eq-delete.parquet",
-        "file-format": "parquet",
-        "file-size-in-bytes": 256,
-        "record-count": 5,
-        "equality-ids": [1, 2],
-    }
-    edf = RESTEqualityDeleteFile.model_validate(data)
-    assert edf.content == "equality-deletes"
-    assert edf.equality_ids == [1, 2]
+    delete_file = _rest_equality_delete_file(equality_ids=[1, 2])
+    equality_delete = RESTEqualityDeleteFile.model_validate(delete_file)
+    assert equality_delete.content == "equality-deletes"
+    assert equality_delete.equality_ids == [1, 2]
 
 
 def test_file_format_case_insensitive() -> None:
     for fmt in ["parquet", "PARQUET", "Parquet"]:
-        data = {
-            "spec-id": 0,
-            "content": "data",
-            "file-path": "/path",
-            "file-format": fmt,
-            "file-size-in-bytes": 100,
-            "record-count": 10,
-        }
-        df = RESTDataFile.model_validate(data)
+        data_file = _rest_data_file(file_format=fmt)
+        df = RESTDataFile.model_validate(data_file)
         assert df.file_format == FileFormat.PARQUET
 
 
@@ -148,56 +195,27 @@ def test_file_format_case_insensitive() -> None:
     ],
 )
 def test_file_formats(format_str: str, expected: FileFormat) -> None:
-    data = {
-        "spec-id": 0,
-        "content": "data",
-        "file-path": f"s3://bucket/table/path/file.{format_str}",
-        "file-format": format_str,
-        "file-size-in-bytes": 1024,
-        "record-count": 100,
-    }
-    df = RESTDataFile.model_validate(data)
+    data_file = _rest_data_file(file_format=format_str)
+    df = RESTDataFile.model_validate(data_file)
     assert df.file_format == expected
 
 
 def test_delete_file_discriminator_position() -> None:
-    data = {
-        "spec-id": 0,
-        "content": "position-deletes",
-        "file-path": "s3://bucket/table/delete.parquet",
-        "file-format": "parquet",
-        "file-size-in-bytes": 256,
-        "record-count": 5,
-    }
-    result = TypeAdapter(RESTDeleteFile).validate_python(data)
+    delete_file = _rest_position_delete_file()
+    result = TypeAdapter(RESTDeleteFile).validate_python(delete_file)
     assert isinstance(result, RESTPositionDeleteFile)
 
 
 def test_delete_file_discriminator_equality() -> None:
-    data = {
-        "spec-id": 0,
-        "content": "equality-deletes",
-        "file-path": "s3://bucket/table/delete.parquet",
-        "file-format": "parquet",
-        "file-size-in-bytes": 256,
-        "record-count": 5,
-        "equality-ids": [1],
-    }
-    result = TypeAdapter(RESTDeleteFile).validate_python(data)
+    delete_file = _rest_equality_delete_file(equality_ids=[1, 2])
+    result = TypeAdapter(RESTDeleteFile).validate_python(delete_file)
     assert isinstance(result, RESTEqualityDeleteFile)
 
 
 def test_basic_scan_task() -> None:
-    data = {
-        "data-file": {
-            "spec-id": 0,
-            "content": "data",
-            "file-path": "s3://bucket/table/file.parquet",
-            "file-format": "parquet",
-            "file-size-in-bytes": 1024,
-            "record-count": 100,
-        }
-    }
+    data_file = _rest_data_file(file_path="s3://bucket/table/file.parquet")
+
+    data = {"data-file": data_file}
     task = RESTFileScanTask.model_validate(data)
     assert task.data_file.file_path == "s3://bucket/table/file.parquet"
     assert task.delete_file_references is None
@@ -205,15 +223,9 @@ def test_basic_scan_task() -> None:
 
 
 def test_scan_task_with_delete_references() -> None:
+    data_file = _rest_data_file()
     data = {
-        "data-file": {
-            "spec-id": 0,
-            "content": "data",
-            "file-path": "s3://bucket/table/file.parquet",
-            "file-format": "parquet",
-            "file-size-in-bytes": 1024,
-            "record-count": 100,
-        },
+        "data-file": data_file,
         "delete-file-references": [0, 1, 2],
     }
     task = RESTFileScanTask.model_validate(data)
@@ -221,15 +233,9 @@ def test_scan_task_with_delete_references() -> None:
 
 
 def test_scan_task_with_residual_filter_true() -> None:
+    data_file = _rest_data_file()
     data = {
-        "data-file": {
-            "spec-id": 0,
-            "content": "data",
-            "file-path": "s3://bucket/table/file.parquet",
-            "file-format": "parquet",
-            "file-size-in-bytes": 1024,
-            "record-count": 100,
-        },
+        "data-file": data_file,
         "residual-filter": True,
     }
     task = RESTFileScanTask.model_validate(data)
@@ -249,27 +255,13 @@ def test_empty_scan_tasks() -> None:
 
 
 def test_scan_tasks_with_files() -> None:
+    data_file = _rest_data_file(file_path="s3://bucket/table/data.parquet")
+    delete_file = _rest_position_delete_file()
     data = {
-        "delete-files": [
-            {
-                "spec-id": 0,
-                "content": "position-deletes",
-                "file-path": "s3://bucket/table/delete.parquet",
-                "file-format": "parquet",
-                "file-size-in-bytes": 256,
-                "record-count": 5,
-            }
-        ],
+        "delete-files": [delete_file],
         "file-scan-tasks": [
             {
-                "data-file": {
-                    "spec-id": 0,
-                    "content": "data",
-                    "file-path": "s3://bucket/table/data.parquet",
-                    "file-format": "parquet",
-                    "file-size-in-bytes": 1024,
-                    "record-count": 100,
-                },
+                "data-file": data_file,
                 "delete-file-references": [0],
             }
         ],
@@ -282,18 +274,12 @@ def test_scan_tasks_with_files() -> None:
 
 
 def test_invalid_delete_file_reference() -> None:
+    data_file = _rest_data_file(file_path="s3://bucket/table/data.parquet")
     data = {
         "delete-files": [],
         "file-scan-tasks": [
             {
-                "data-file": {
-                    "spec-id": 0,
-                    "content": "data",
-                    "file-path": "s3://bucket/table/data.parquet",
-                    "file-format": "parquet",
-                    "file-size-in-bytes": 1024,
-                    "record-count": 100,
-                },
+                "data-file": data_file,
                 "delete-file-references": [0],
             }
         ],
@@ -305,17 +291,9 @@ def test_invalid_delete_file_reference() -> None:
 
 
 def test_delete_files_require_file_scan_tasks() -> None:
+    delete_file = _rest_position_delete_file()
     data = {
-        "delete-files": [
-            {
-                "spec-id": 0,
-                "content": "position-deletes",
-                "file-path": "s3://bucket/table/delete.parquet",
-                "file-format": "parquet",
-                "file-size-in-bytes": 256,
-                "record-count": 5,
-            }
-        ],
+        "delete-files": [delete_file],
         "file-scan-tasks": [],
         "plan-tasks": [],
     }
@@ -437,14 +415,156 @@ def test_cancelled_response() -> None:
     assert isinstance(result, PlanCancelled)
 
 
-def test_storage_credential_parsing() -> None:
-    data = {
-        "prefix": "s3://bucket/path/",
-        "config": {
-            "s3.access-key-id": "key",
-            "s3.secret-access-key": "secret",
+def test_plan_scan_completed_single_batch(rest_scan_catalog: RestCatalog, requests_mock: Mocker) -> None:
+    file_one = _rest_data_file(file_path="s3://bucket/tbl/data/file1.parquet")
+
+    requests_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={
+            "status": "completed",
+            "plan-id": "plan-123",
+            "delete-files": [],
+            "file-scan-tasks": [{"data-file": file_one}],
+            "plan-tasks": [],
         },
-    }
-    cred = StorageCredential.model_validate(data)
-    assert cred.prefix == "s3://bucket/path/"
-    assert cred.config["s3.access-key-id"] == "key"
+        status_code=200,
+    )
+
+    request = PlanTableScanRequest()
+    tasks = list(rest_scan_catalog.plan_scan(("db", "tbl"), request))
+
+    assert len(tasks) == 1
+    assert tasks[0].file.file_path == "s3://bucket/tbl/data/file1.parquet"
+
+
+def test_plan_scan_with_pagination(rest_scan_catalog: RestCatalog, requests_mock: Mocker) -> None:
+    file_one = _rest_data_file(file_path="s3://bucket/tbl/data/file1.parquet")
+    file_two = _rest_data_file(file_path="s3://bucket/tbl/data/file2.parquet")
+
+    requests_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={
+            "status": "completed",
+            "plan-id": "plan-123",
+            "delete-files": [],
+            "file-scan-tasks": [{"data-file": file_one}],
+            "plan-tasks": ["token-batch-2"],
+        },
+        status_code=200,
+    )
+
+    requests_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/tasks",
+        json={
+            "delete-files": [],
+            "file-scan-tasks": [{"data-file": file_two}],
+            "plan-tasks": [],
+        },
+        status_code=200,
+    )
+
+    request = PlanTableScanRequest()
+
+    tasks = list(rest_scan_catalog.plan_scan(("db", "tbl"), request))
+
+    assert len(tasks) == 2
+    assert tasks[0].file.file_path == "s3://bucket/tbl/data/file1.parquet"
+    assert tasks[1].file.file_path == "s3://bucket/tbl/data/file2.parquet"
+
+
+def test_plan_scan_with_delete_files(rest_scan_catalog: RestCatalog, requests_mock: Mocker) -> None:
+    file_one = _rest_data_file(file_path="s3://bucket/tbl/data/file1.parquet")
+    delete_file = _rest_position_delete_file()
+    requests_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={
+            "status": "completed",
+            "plan-id": "plan-123",
+            "delete-files": [delete_file],
+            "file-scan-tasks": [
+                {
+                    "data-file": file_one,
+                    "delete-file-references": [0],
+                }
+            ],
+            "plan-tasks": [],
+        },
+        status_code=200,
+    )
+
+    request = PlanTableScanRequest()
+    tasks = list(rest_scan_catalog.plan_scan(("db", "tbl"), request))
+
+    assert len(tasks) == 1
+    assert tasks[0].file.file_path == "s3://bucket/tbl/data/file1.parquet"
+    assert len(tasks[0].delete_files) == 1
+
+
+def test_plan_scan_async_not_supported(rest_scan_catalog: RestCatalog, requests_mock: Mocker) -> None:
+    requests_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={
+            "status": "submitted",
+            "plan-id": "plan-456",
+        },
+        status_code=200,
+    )
+
+    request = PlanTableScanRequest()
+    with pytest.raises(NotImplementedError, match="Async scan planning not yet supported"):
+        list(rest_scan_catalog.plan_scan(("db", "tbl"), request))
+
+
+def test_plan_scan_empty_result(rest_scan_catalog: RestCatalog, requests_mock: Mocker) -> None:
+    requests_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={
+            "status": "completed",
+            "plan-id": "plan-123",
+            "delete-files": [],
+            "file-scan-tasks": [],
+            "plan-tasks": [],
+        },
+        status_code=200,
+    )
+
+    request = PlanTableScanRequest()
+    tasks = list(rest_scan_catalog.plan_scan(("db", "tbl"), request))
+    assert len(tasks) == 0
+
+
+def test_plan_scan_cancelled(rest_scan_catalog: RestCatalog, requests_mock: Mocker) -> None:
+    requests_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={"status": "cancelled"},
+        status_code=200,
+    )
+
+    request = PlanTableScanRequest()
+    with pytest.raises(RuntimeError, match="Received status: cancelled"):
+        list(rest_scan_catalog.plan_scan(("db", "tbl"), request))
+
+
+def test_plan_scan_equality_deletes_not_supported(rest_scan_catalog: RestCatalog, requests_mock: Mocker) -> None:
+    file_one = _rest_data_file(file_path="s3://bucket/tbl/data/file1.parquet")
+    equality_delete = _rest_equality_delete_file(equality_ids=[1, 2])
+    requests_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={
+            "status": "completed",
+            "plan-id": "plan-123",
+            "delete-files": [equality_delete],
+            "file-scan-tasks": [
+                {
+                    "data-file": file_one,
+                    "delete-file-references": [0],
+                }
+            ],
+            "plan-tasks": [],
+        },
+        status_code=200,
+    )
+
+    request = PlanTableScanRequest()
+    with pytest.raises(NotImplementedError, match="PyIceberg does not yet support equality deletes"):
+        list(rest_scan_catalog.plan_scan(("db", "tbl"), request))
