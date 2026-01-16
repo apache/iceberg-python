@@ -1133,6 +1133,7 @@ class Table:
             An updated instance of the same Iceberg table
         """
         fresh = self.catalog.load_table(self._identifier)
+        self._check_uuid(self.metadata, fresh.metadata)
         self.metadata = fresh.metadata
         self.io = fresh.io
         self.metadata_location = fresh.metadata_location
@@ -1513,8 +1514,20 @@ class Table:
         """Return the snapshot references in the table."""
         return self.metadata.refs
 
+    @staticmethod
+    def _check_uuid(current_metadata: TableMetadata, new_metadata: TableMetadata) -> None:
+        """Validate that the table UUID matches after refresh."""
+        current = current_metadata.table_uuid
+        refreshed = new_metadata.table_uuid
+
+        if current != refreshed:
+            raise ValueError(f"Table UUID does not match: current={current} != refreshed={refreshed}")
+
     def _do_commit(self, updates: tuple[TableUpdate, ...], requirements: tuple[TableRequirement, ...]) -> None:
         response = self.catalog.commit_table(self, requirements, updates)
+
+        # Ensure table uuid has not changed
+        self._check_uuid(self.metadata, response.metadata)
 
         # https://github.com/apache/iceberg/blob/f6faa58/core/src/main/java/org/apache/iceberg/CatalogUtil.java#L527
         # delete old metadata if METADATA_DELETE_AFTER_COMMIT_ENABLED is set to true and uses
