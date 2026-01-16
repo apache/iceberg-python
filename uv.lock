@@ -3796,6 +3796,7 @@ dev = [
     { name = "pytest-lazy-fixture" },
     { name = "pytest-mock" },
     { name = "requests-mock" },
+    { name = "sqlalchemy" },
     { name = "typing-extensions" },
 ]
 docs = [
@@ -3880,6 +3881,7 @@ dev = [
     { name = "pytest-lazy-fixture", specifier = "==0.6.3" },
     { name = "pytest-mock", specifier = "==3.15.1" },
     { name = "requests-mock", specifier = "==1.12.1" },
+    { name = "sqlalchemy", specifier = ">=2.0.18,<3" },
     { name = "typing-extensions", specifier = "==4.15.0" },
 ]
 docs = [
