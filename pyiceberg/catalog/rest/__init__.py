@@ -216,6 +216,7 @@ SSL = "ssl"
 SIGV4 = "rest.sigv4-enabled"
 SIGV4_REGION = "rest.signing-region"
 SIGV4_SERVICE = "rest.signing-name"
+EMPTY_BODY_SHA256: str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 OAUTH2_SERVER_URI = "oauth2-server-uri"
 SNAPSHOT_LOADING_MODE = "snapshot-loading-mode"
 AUTH = "auth"
@@ -560,7 +561,11 @@ class RestCatalog(Catalog):
                 params = dict(parse.parse_qsl(query))
 
                 # remove the connection header as it will be updated after signing
-                del request.headers["connection"]
+                if "connection" in request.headers:
+                    del request.headers["connection"]
+                # For empty bodies, explicitly set the content hash header to the SHA256 of an empty string
+                if not request.body:
+                    request.headers["x-amz-content-sha256"] = EMPTY_BODY_SHA256
 
                 aws_request = AWSRequest(
                     method=request.method, url=url, params=params, data=request.body, headers=dict(request.headers)

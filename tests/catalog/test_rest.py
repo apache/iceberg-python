@@ -22,12 +22,21 @@ from typing import Any, cast
 from unittest import mock
 
 import pytest
+from requests import Request
+from requests.adapters import HTTPAdapter
 from requests.exceptions import HTTPError
 from requests_mock import Mocker
 
 import pyiceberg
 from pyiceberg.catalog import PropertiesUpdateSummary, load_catalog
-from pyiceberg.catalog.rest import DEFAULT_ENDPOINTS, OAUTH2_SERVER_URI, SNAPSHOT_LOADING_MODE, Capability, RestCatalog
+from pyiceberg.catalog.rest import (
+    DEFAULT_ENDPOINTS,
+    EMPTY_BODY_SHA256,
+    OAUTH2_SERVER_URI,
+    SNAPSHOT_LOADING_MODE,
+    Capability,
+    RestCatalog,
+)
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
     NamespaceAlreadyExistsError,
@@ -449,6 +458,62 @@ def test_list_tables_200_sigv4(rest_mock: Mocker) -> None:
         ("examples", "fooshare")
     ]
     assert rest_mock.called
+
+
+def test_sigv4_sign_request_without_body(rest_mock: Mocker) -> None:
+    existing_token = "existing_token"
+
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "token": existing_token,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-west-2",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+        },
+    )
+
+    prepared = catalog._session.prepare_request(Request("GET", f"{TEST_URI}v1/config"))
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+    adapter.add_headers(prepared)
+
+    assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256")
+    assert prepared.headers["Original-Authorization"] == f"Bearer {existing_token}"
+    assert prepared.headers["x-amz-content-sha256"] == EMPTY_BODY_SHA256
+
+
+def test_sigv4_sign_request_with_body(rest_mock: Mocker) -> None:
+    existing_token = "existing_token"
+
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "token": existing_token,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-west-2",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+        },
+    )
+
+    prepared = catalog._session.prepare_request(
+        Request(
+            "POST",
+            f"{TEST_URI}v1/namespaces",
+            data={"namespace": "asdfasd"},
+        )
+    )
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+    adapter.add_headers(prepared)
+
+    assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256")
+    assert prepared.headers["Original-Authorization"] == f"Bearer {existing_token}"
+    assert prepared.headers.get("x-amz-content-sha256") != EMPTY_BODY_SHA256
 
 
 def test_list_tables_404(rest_mock: Mocker) -> None:
