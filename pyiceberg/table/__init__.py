@@ -145,6 +145,11 @@ if TYPE_CHECKING:
     from pyiceberg_core.datafusion import IcebergDataFusionTable
 
     from pyiceberg.catalog import Catalog
+    from pyiceberg.catalog.rest.scan_planning import (
+        RESTContentFile,
+        RESTDeleteFile,
+        RESTFileScanTask,
+    )
 
 ALWAYS_TRUE = AlwaysTrue()
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
@@ -275,8 +280,20 @@ class Transaction:
         if exctype is None and excinst is None and exctb is None:
             self.commit_transaction()
 
-    def _apply(self, updates: tuple[TableUpdate, ...], requirements: tuple[TableRequirement, ...] = ()) -> Transaction:
-        """Check if the requirements are met, and applies the updates to the metadata."""
+    def _stage(
+        self,
+        updates: tuple[TableUpdate, ...],
+        requirements: tuple[TableRequirement, ...] = (),
+    ) -> Transaction:
+        """Stage updates to the transaction state without committing to the catalog.
+
+        Args:
+            updates: The updates to stage.
+            requirements: The requirements that must be met.
+
+        Returns:
+            This transaction for method chaining.
+        """
         for requirement in requirements:
             requirement.validate(self.table_metadata)
 
@@ -288,6 +305,16 @@ class Transaction:
         for new_requirement in requirements:
             if type(new_requirement) not in existing_requirements:
                 self._requirements = self._requirements + (new_requirement,)
+
+        return self
+
+    def _apply(
+        self,
+        updates: tuple[TableUpdate, ...],
+        requirements: tuple[TableRequirement, ...] = (),
+    ) -> Transaction:
+        """Check if the requirements are met, and applies the updates to the metadata."""
+        self._stage(updates, requirements)
 
         if self._autocommit:
             self.commit_transaction()
@@ -1111,6 +1138,7 @@ class Table:
             An updated instance of the same Iceberg table
         """
         fresh = self.catalog.load_table(self._identifier)
+        self._check_uuid(self.metadata, fresh.metadata)
         self.metadata = fresh.metadata
         self.io = fresh.io
         self.metadata_location = fresh.metadata_location
@@ -1171,6 +1199,8 @@ class Table:
             snapshot_id=snapshot_id,
             options=options,
             limit=limit,
+            catalog=self.catalog,
+            table_identifier=self._identifier,
         )
 
     @property
@@ -1491,8 +1521,20 @@ class Table:
         """Return the snapshot references in the table."""
         return self.metadata.refs
 
+    @staticmethod
+    def _check_uuid(current_metadata: TableMetadata, new_metadata: TableMetadata) -> None:
+        """Validate that the table UUID matches after refresh."""
+        current = current_metadata.table_uuid
+        refreshed = new_metadata.table_uuid
+
+        if current != refreshed:
+            raise ValueError(f"Table UUID does not match: current={current} != refreshed={refreshed}")
+
     def _do_commit(self, updates: tuple[TableUpdate, ...], requirements: tuple[TableRequirement, ...]) -> None:
         response = self.catalog.commit_table(self, requirements, updates)
+
+        # Ensure table uuid has not changed
+        self._check_uuid(self.metadata, response.metadata)
 
         # https://github.com/apache/iceberg/blob/f6faa58/core/src/main/java/org/apache/iceberg/CatalogUtil.java#L527
         # delete old metadata if METADATA_DELETE_AFTER_COMMIT_ENABLED is set to true and uses
@@ -1690,6 +1732,8 @@ class TableScan(ABC):
     snapshot_id: int | None
     options: Properties
     limit: int | None
+    catalog: Catalog | None
+    table_identifier: Identifier | None
 
     def __init__(
         self,
@@ -1701,6 +1745,8 @@ class TableScan(ABC):
         snapshot_id: int | None = None,
         options: Properties = EMPTY_DICT,
         limit: int | None = None,
+        catalog: Catalog | None = None,
+        table_identifier: Identifier | None = None,
     ):
         self.table_metadata = table_metadata
         self.io = io
@@ -1710,6 +1756,8 @@ class TableScan(ABC):
         self.snapshot_id = snapshot_id
         self.options = options
         self.limit = limit
+        self.catalog = catalog
+        self.table_identifier = table_identifier
 
     def snapshot(self) -> Snapshot | None:
         if self.snapshot_id:
@@ -1803,6 +1851,74 @@ class FileScanTask(ScanTask):
         self.file = data_file
         self.delete_files = delete_files or set()
         self.residual = residual
+
+    @staticmethod
+    def from_rest_response(
+        rest_task: RESTFileScanTask,
+        delete_files: list[RESTDeleteFile],
+    ) -> FileScanTask:
+        """Convert a RESTFileScanTask to a FileScanTask.
+
+        Args:
+            rest_task: The REST file scan task.
+            delete_files: The list of delete files from the ScanTasks response.
+
+        Returns:
+            A FileScanTask with the converted data and delete files.
+
+        Raises:
+            NotImplementedError: If equality delete files are encountered.
+        """
+        from pyiceberg.catalog.rest.scan_planning import RESTEqualityDeleteFile
+
+        data_file = _rest_file_to_data_file(rest_task.data_file)
+
+        resolved_deletes: set[DataFile] = set()
+        if rest_task.delete_file_references:
+            for idx in rest_task.delete_file_references:
+                delete_file = delete_files[idx]
+                if isinstance(delete_file, RESTEqualityDeleteFile):
+                    raise NotImplementedError(f"PyIceberg does not yet support equality deletes: {delete_file.file_path}")
+                resolved_deletes.add(_rest_file_to_data_file(delete_file))
+
+        return FileScanTask(
+            data_file=data_file,
+            delete_files=resolved_deletes,
+            residual=rest_task.residual_filter if rest_task.residual_filter else ALWAYS_TRUE,
+        )
+
+
+def _rest_file_to_data_file(rest_file: RESTContentFile) -> DataFile:
+    """Convert a REST content file to a manifest DataFile."""
+    from pyiceberg.catalog.rest.scan_planning import RESTDataFile
+
+    if isinstance(rest_file, RESTDataFile):
+        column_sizes = rest_file.column_sizes.to_dict() if rest_file.column_sizes else None
+        value_counts = rest_file.value_counts.to_dict() if rest_file.value_counts else None
+        null_value_counts = rest_file.null_value_counts.to_dict() if rest_file.null_value_counts else None
+        nan_value_counts = rest_file.nan_value_counts.to_dict() if rest_file.nan_value_counts else None
+    else:
+        column_sizes = None
+        value_counts = None
+        null_value_counts = None
+        nan_value_counts = None
+
+    data_file = DataFile.from_args(
+        content=DataFileContent.from_rest_type(rest_file.content),
+        file_path=rest_file.file_path,
+        file_format=rest_file.file_format,
+        partition=Record(*rest_file.partition) if rest_file.partition else Record(),
+        record_count=rest_file.record_count,
+        file_size_in_bytes=rest_file.file_size_in_bytes,
+        column_sizes=column_sizes,
+        value_counts=value_counts,
+        null_value_counts=null_value_counts,
+        nan_value_counts=nan_value_counts,
+        split_offsets=rest_file.split_offsets,
+        sort_order_id=rest_file.sort_order_id,
+    )
+    data_file.spec_id = rest_file.spec_id
+    return data_file
 
 
 def _open_manifest(
@@ -1976,12 +2092,33 @@ class DataScan(TableScan):
             ],
         )
 
-    def plan_files(self) -> Iterable[FileScanTask]:
-        """Plans the relevant files by filtering on the PartitionSpecs.
+    def _should_use_server_side_planning(self) -> bool:
+        """Check if server-side scan planning should be used for this scan."""
+        if not self.catalog:
+            return False
+        return self.catalog.supports_server_side_planning()
 
-        Returns:
-            List of FileScanTasks that contain both data and delete files.
-        """
+    def _plan_files_server_side(self) -> Iterable[FileScanTask]:
+        """Plan files using REST server-side scan planning."""
+        from pyiceberg.catalog.rest import RestCatalog
+        from pyiceberg.catalog.rest.scan_planning import PlanTableScanRequest
+
+        if not isinstance(self.catalog, RestCatalog):
+            raise TypeError("REST scan planning requires a RestCatalog")
+        if self.table_identifier is None:
+            raise ValueError("REST scan planning requires a table identifier")
+
+        request = PlanTableScanRequest(
+            snapshot_id=self.snapshot_id,
+            select=list(self.selected_fields) if self.selected_fields != ("*",) else None,
+            filter=self.row_filter if self.row_filter != ALWAYS_TRUE else None,
+            case_sensitive=self.case_sensitive,
+        )
+
+        return self.catalog.plan_scan(self.table_identifier, request)
+
+    def _plan_files_local(self) -> Iterable[FileScanTask]:
+        """Plan files locally by reading manifests."""
         data_entries: list[ManifestEntry] = []
         positional_delete_entries = SortedList(key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER)
 
@@ -2011,6 +2148,20 @@ class DataScan(TableScan):
             )
             for data_entry in data_entries
         ]
+
+    def plan_files(self) -> Iterable[FileScanTask]:
+        """Plans the relevant files by filtering on the PartitionSpecs.
+
+        If the table comes from a REST catalog with scan planning enabled,
+        this will use server-side scan planning. Otherwise, it falls back
+        to local planning.
+
+        Returns:
+            List of FileScanTasks that contain both data and delete files.
+        """
+        if self._should_use_server_side_planning():
+            return self._plan_files_server_side()
+        return self._plan_files_local()
 
     def to_arrow(self) -> pa.Table:
         """Read an Arrow table eagerly from this DataScan.

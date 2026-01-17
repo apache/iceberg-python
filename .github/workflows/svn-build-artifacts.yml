@@ -45,6 +45,7 @@ jobs:
             3.10
             3.11
             3.12
+            3.13
 
       - name: Install UV
         uses: astral-sh/setup-uv@v7
@@ -56,16 +57,16 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.3.0
+        uses: pypa/cibuildwheel@v3.3.1
         with:
           output-dir: wheelhouse
           config-file: "pyproject.toml"
         env:
           # Ignore 32 bit architectures
           CIBW_ARCHS: "auto64"
-          CIBW_PROJECT_REQUIRES_PYTHON: ">=3.10"
-          CIBW_TEST_REQUIRES: "pytest==7.4.2 moto==5.0.1"
-          CIBW_TEST_COMMAND: "pytest {project}/tests/avro/test_decoder.py"
+          CIBW_PROJECT_REQUIRES_PYTHON: ">=3.10,<3.14"
+          CIBW_BEFORE_TEST: "uv sync --directory {project} --only-group dev --no-install-project"
+          CIBW_TEST_COMMAND: "uv run --directory {project} pytest tests/avro/test_decoder.py"
           # Ignore tests for pypy since not all dependencies are compiled for it
           # and would require a local rust build chain
           CIBW_TEST_SKIP: "pp*"
