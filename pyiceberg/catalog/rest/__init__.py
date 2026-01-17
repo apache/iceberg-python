@@ -27,15 +27,8 @@ from requests import HTTPError, Session
 from tenacity import RetryCallState, retry, retry_if_exception_type, stop_after_attempt
 
 from pyiceberg import __version__
-from pyiceberg.catalog import (
-    BOTOCORE_SESSION,
-    TOKEN,
-    URI,
-    WAREHOUSE_LOCATION,
-    Catalog,
-    PropertiesUpdateSummary,
-)
-from pyiceberg.catalog.rest.auth import AuthManager, AuthManagerAdapter, AuthManagerFactory, LegacyOAuth2AuthManager
+from pyiceberg.catalog import BOTOCORE_SESSION, TOKEN, URI, WAREHOUSE_LOCATION, Catalog, PropertiesUpdateSummary
+from pyiceberg.catalog.rest.auth import AUTH_MANAGER, AuthManager, AuthManagerAdapter, AuthManagerFactory, LegacyOAuth2AuthManager
 from pyiceberg.catalog.rest.response import _handle_non_200_response
 from pyiceberg.catalog.rest.scan_planning import (
     FetchScanTasksRequest,
@@ -61,7 +54,7 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
     UnauthorizedError,
 )
-from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
+from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, FileIO, load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec, assign_fresh_partition_spec_ids
 from pyiceberg.schema import Schema, assign_fresh_schema_ids
 from pyiceberg.table import (
@@ -335,6 +328,7 @@ _PLANNING_RESPONSE_ADAPTER = TypeAdapter(PlanningResponse)
 class RestCatalog(Catalog):
     uri: str
     _session: Session
+    _auth_manager: AuthManager | None
     _supported_endpoints: set[Endpoint]
 
     def __init__(self, name: str, **properties: str):
@@ -347,6 +341,7 @@ class RestCatalog(Catalog):
             properties: Properties that are passed along to the configuration.
         """
         super().__init__(name, **properties)
+        self._auth_manager: AuthManager | None = None
         self.uri = properties[URI]
         self._fetch_config()
         self._session = self._create_session()
@@ -381,15 +376,23 @@ class RestCatalog(Catalog):
             if auth_type != CUSTOM and auth_impl:
                 raise ValueError("auth.impl can only be specified when using custom auth.type")
 
-            session.auth = AuthManagerAdapter(AuthManagerFactory.create(auth_impl or auth_type, auth_type_config))
+            self._auth_manager = AuthManagerFactory.create(auth_impl or auth_type, auth_type_config)
+            session.auth = AuthManagerAdapter(self._auth_manager)
         else:
-            session.auth = AuthManagerAdapter(self._create_legacy_oauth2_auth_manager(session))
+            self._auth_manager = self._create_legacy_oauth2_auth_manager(session)
+            session.auth = AuthManagerAdapter(self._auth_manager)
 
         # Configure SigV4 Request Signing
         if property_as_bool(self.properties, SIGV4, False):
             self._init_sigv4(session)
 
         return session
+
+    def _load_file_io(self, properties: Properties = EMPTY_DICT, location: str | None = None) -> FileIO:
+        merged_properties = {**self.properties, **properties}
+        if self._auth_manager:
+            merged_properties[AUTH_MANAGER] = self._auth_manager
+        return load_file_io(merged_properties, location)
 
     def supports_server_side_planning(self) -> bool:
         """Check if the catalog supports server-side scan planning."""

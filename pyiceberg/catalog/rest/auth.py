@@ -31,6 +31,8 @@ from requests.auth import AuthBase
 from pyiceberg.catalog.rest.response import TokenResponse, _handle_non_200_response
 from pyiceberg.exceptions import OAuthError
 
+AUTH_MANAGER = "auth.manager"
+
 COLON = ":"
 logger = logging.getLogger(__name__)
 
