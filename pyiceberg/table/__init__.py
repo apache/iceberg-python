@@ -1856,21 +1856,6 @@ def _min_sequence_number(manifests: list[ManifestFile]) -> int:
         return INITIAL_SEQUENCE_NUMBER
 
 
-def _match_deletes_to_data_file(data_entry: ManifestEntry, delete_file_index: DeleteFileIndex) -> set[DataFile]:
-    """Check if delete files are relevant for the data file.
-
-    Args:
-        data_entry (ManifestEntry): The manifest entry of the data file.
-        delete_file_index (DeleteFileIndex): Index containing all delete files.
-
-    Returns:
-        A set of delete files that are relevant for the data file.
-    """
-    return delete_file_index.for_data_file(
-        data_entry.sequence_number or 0, data_entry.data_file, partition_key=data_entry.data_file.partition
-    )
-
-
 class DataScan(TableScan):
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
         project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id], self.case_sensitive)
@@ -2008,13 +1993,13 @@ class DataScan(TableScan):
                 raise ValueError("PyIceberg does not yet support equality deletes: https://github.com/apache/iceberg/issues/6568")
             else:
                 raise ValueError(f"Unknown DataFileContent ({data_file.content}): {manifest_entry}")
-
         return [
             FileScanTask(
                 data_entry.data_file,
-                delete_files=_match_deletes_to_data_file(
-                    data_entry,
-                    delete_index,
+                delete_files=delete_index.for_data_file(
+                    data_entry.sequence_number or INITIAL_SEQUENCE_NUMBER,
+                    data_entry.data_file,
+                    partition_key=data_entry.data_file.partition,
                 ),
                 residual=residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(
                     data_entry.data_file.partition

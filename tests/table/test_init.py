@@ -32,7 +32,6 @@ from pyiceberg.expressions import (
     In,
 )
 from pyiceberg.io import PY_IO_IMPL, load_file_io
-from pyiceberg.manifest import DataFile, DataFileContent, FileFormat, ManifestEntry, ManifestEntryStatus
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
@@ -40,9 +39,7 @@ from pyiceberg.table import (
     StaticTable,
     Table,
     TableIdentifier,
-    _match_deletes_to_data_file,
 )
-from pyiceberg.table.delete_file_index import DeleteFileIndex
 from pyiceberg.table.metadata import TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
@@ -369,119 +366,6 @@ def test_static_table_version_hint_same_as_table(
 def test_static_table_io_does_not_exist(metadata_location: str) -> None:
     with pytest.raises(ValueError):
         StaticTable.from_metadata(metadata_location, {PY_IO_IMPL: "pyiceberg.does.not.exist.FileIO"})
-
-
-def test_match_deletes_to_datafile() -> None:
-    data_file = DataFile.from_args(
-        content=DataFileContent.DATA,
-        file_path="s3://bucket/0000.parquet",
-        file_format=FileFormat.PARQUET,
-        partition={},
-        record_count=3,
-        file_size_in_bytes=3,
-    )
-    data_file._spec_id = 0
-    data_entry = ManifestEntry.from_args(
-        status=ManifestEntryStatus.ADDED,
-        sequence_number=1,
-        data_file=data_file,
-    )
-    delete_file_1 = DataFile.from_args(
-        content=DataFileContent.POSITION_DELETES,
-        file_path="s3://bucket/0001-delete.parquet",
-        file_format=FileFormat.PARQUET,
-        partition={},
-        record_count=3,
-        file_size_in_bytes=3,
-    )
-    delete_file_1._spec_id = 0
-    delete_entry_1 = ManifestEntry.from_args(
-        status=ManifestEntryStatus.ADDED,
-        sequence_number=0,  # Older than the data
-        data_file=delete_file_1,
-    )
-    delete_file_2 = DataFile.from_args(
-        content=DataFileContent.POSITION_DELETES,
-        file_path="s3://bucket/0002-delete.parquet",
-        file_format=FileFormat.PARQUET,
-        partition={},
-        record_count=3,
-        file_size_in_bytes=3,
-    )
-    delete_file_2._spec_id = 0
-    delete_entry_2 = ManifestEntry.from_args(
-        status=ManifestEntryStatus.ADDED,
-        sequence_number=3,
-        data_file=delete_file_2,
-    )
-
-    delete_file_index = DeleteFileIndex()
-    delete_file_index.add_delete_file(delete_entry_1)
-    delete_file_index.add_delete_file(delete_entry_2)
-
-    assert _match_deletes_to_data_file(
-        data_entry,
-        delete_file_index,
-    ) == {
-        delete_entry_2.data_file,
-    }
-
-
-def test_match_deletes_to_datafile_duplicate_number() -> None:
-    data_file = DataFile.from_args(
-        content=DataFileContent.DATA,
-        file_path="s3://bucket/0000.parquet",
-        file_format=FileFormat.PARQUET,
-        partition={},
-        record_count=3,
-        file_size_in_bytes=3,
-    )
-    data_file._spec_id = 0
-    data_entry = ManifestEntry.from_args(
-        status=ManifestEntryStatus.ADDED,
-        sequence_number=1,
-        data_file=data_file,
-    )
-    delete_file_1 = DataFile.from_args(
-        content=DataFileContent.POSITION_DELETES,
-        file_path="s3://bucket/0001-delete.parquet",
-        file_format=FileFormat.PARQUET,
-        partition={},
-        record_count=3,
-        file_size_in_bytes=3,
-    )
-    delete_file_1._spec_id = 0
-    delete_entry_1 = ManifestEntry.from_args(
-        status=ManifestEntryStatus.ADDED,
-        sequence_number=3,
-        data_file=delete_file_1,
-    )
-    delete_file_2 = DataFile.from_args(
-        content=DataFileContent.POSITION_DELETES,
-        file_path="s3://bucket/0002-delete.parquet",
-        file_format=FileFormat.PARQUET,
-        partition={},
-        record_count=3,
-        file_size_in_bytes=3,
-    )
-    delete_file_2._spec_id = 0
-    delete_entry_2 = ManifestEntry.from_args(
-        status=ManifestEntryStatus.ADDED,
-        sequence_number=3,
-        data_file=delete_file_2,
-    )
-
-    delete_file_index = DeleteFileIndex()
-    delete_file_index.add_delete_file(delete_entry_1)
-    delete_file_index.add_delete_file(delete_entry_2)
-
-    assert _match_deletes_to_data_file(
-        data_entry,
-        delete_file_index,
-    ) == {
-        delete_entry_1.data_file,
-        delete_entry_2.data_file,
-    }
 
 
 def test_serialize_set_properties_updates() -> None:
