@@ -59,7 +59,7 @@ help: ## Display this help message
 ##@ Setup
 
 install-uv: ## Ensure uv is installed
-	@if ! command -v uv 2> /dev/null; then \
+	@if ! command -v uv > /dev/null 2>&1; then \
 		echo "uv not found. Installing..."; \
 		curl -LsSf https://astral.sh/uv/install.sh | sh; \
 	else \
