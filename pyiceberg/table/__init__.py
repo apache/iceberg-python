@@ -804,7 +804,6 @@ class Transaction:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
 
-        from pyiceberg.io.pyarrow import expression_to_pyarrow
         from pyiceberg.table import upsert_util
 
         if join_cols is None:
@@ -855,7 +854,7 @@ class Transaction:
 
         batches_to_overwrite = []
         overwrite_predicates = []
-        rows_to_insert = df
+        matched_target_keys: list[pa.Table] = []  # Accumulate matched keys for insert filtering
 
         for batch in matched_iceberg_record_batches:
             rows = pa.Table.from_batches([batch])
@@ -873,13 +872,34 @@ class Transaction:
                     batches_to_overwrite.append(rows_to_update)
                     overwrite_predicates.append(overwrite_mask_predicate)
 
+            # Collect matched keys for insert filtering (will use anti-join after loop)
             if when_not_matched_insert_all:
-                expr_match = upsert_util.create_match_filter(rows, join_cols)
-                expr_match_bound = bind(self.table_metadata.schema(), expr_match, case_sensitive=case_sensitive)
-                expr_match_arrow = expression_to_pyarrow(expr_match_bound)
+                matched_target_keys.append(rows.select(join_cols))
 
-                # Filter rows per batch.
-                rows_to_insert = rows_to_insert.filter(~expr_match_arrow)
+        batch_loop_end = time.perf_counter()
+        logger.info(
+            f"Batch processing: {batch_loop_end - batch_loop_start:.3f}s "
+            f"({batch_count} batches, get_rows_to_update total: {total_rows_to_update_time:.3f}s)"
+        )
+
+        # Use anti-join to find rows to insert (replaces per-batch expression filtering)
+        rows_to_insert = df
+        if when_not_matched_insert_all and matched_target_keys:
+            filter_start = time.perf_counter()
+            # Combine all matched keys and deduplicate
+            combined_matched_keys = pa.concat_tables(matched_target_keys).group_by(join_cols).aggregate([])
+            # Cast matched keys to source schema types for join compatibility
+            source_key_schema = df.select(join_cols).schema
+            combined_matched_keys = combined_matched_keys.cast(source_key_schema)
+            # Use anti-join on key columns only (with row indices) to avoid issues with
+            # struct/list types in non-key columns that PyArrow join doesn't support
+            row_indices = pa.chunked_array([pa.array(range(len(df)), type=pa.int64())])
+            source_keys_with_idx = df.select(join_cols).append_column("__row_idx__", row_indices)
+            not_matched_keys = source_keys_with_idx.join(combined_matched_keys, keys=join_cols, join_type="left anti")
+            indices_to_keep = not_matched_keys.column("__row_idx__").combine_chunks()
+            rows_to_insert = df.take(indices_to_keep)
+            filter_end = time.perf_counter()
+            logger.info(f"Insert filtering (anti-join): {filter_end - filter_start:.3f}s ({len(combined_matched_keys)} matched keys)")
 
         update_row_cnt = 0
         insert_row_cnt = 0
