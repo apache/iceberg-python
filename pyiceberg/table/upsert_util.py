@@ -16,7 +16,6 @@
 # under the License.
 import functools
 import operator
-from typing import Union
 
 import pyarrow as pa
 from pyarrow import Table as pyarrow_table
@@ -94,7 +93,7 @@ def has_duplicate_rows(df: pyarrow_table, join_cols: list[str]) -> bool:
 
 
 def _compare_columns_vectorized(
-    source_col: Union[pa.Array, pa.ChunkedArray], target_col: Union[pa.Array, pa.ChunkedArray]
+    source_col: pa.Array | pa.ChunkedArray, target_col: pa.Array | pa.ChunkedArray
 ) -> pa.Array:
     """
     Vectorized comparison of two columns, returning a boolean array where True means values differ.
@@ -105,6 +104,11 @@ def _compare_columns_vectorized(
     col_type = source_col.type
 
     if pa.types.is_struct(col_type):
+        # Handle struct-level nulls first
+        source_null = pc.is_null(source_col)
+        target_null = pc.is_null(target_col)
+        struct_null_diff = pc.xor(source_null, target_null)  # Different if exactly one is null
+
         # PyArrow cannot directly compare struct columns, so we recursively compare each field
         diff_masks = []
         for i, field in enumerate(col_type):
@@ -114,12 +118,14 @@ def _compare_columns_vectorized(
             diff_masks.append(field_diff)
 
         if not diff_masks:
-            # Empty struct - no fields to compare, so no differences
-            return pa.array([False] * len(source_col), type=pa.bool_())
+            # Empty struct - only null differences matter
+            return struct_null_diff
 
-        return functools.reduce(pc.or_, diff_masks)
+        # Combine field differences with struct-level null differences
+        field_diff = functools.reduce(pc.or_, diff_masks)
+        return pc.or_(field_diff, struct_null_diff)
 
-    elif pa.types.is_list(col_type) or pa.types.is_large_list(col_type) or pa.types.is_map(col_type):
+    elif pa.types.is_list(col_type) or pa.types.is_large_list(col_type) or pa.types.is_fixed_size_list(col_type) or pa.types.is_map(col_type):
         # For list/map types, fall back to Python comparison as PyArrow doesn't support vectorized comparison
         # This is still faster than the original row-by-row approach since we batch the conversion
         source_py = source_col.to_pylist()

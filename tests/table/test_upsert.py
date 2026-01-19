@@ -892,6 +892,7 @@ def test_coarse_match_filter_composite_key() -> None:
     Test that create_coarse_match_filter produces efficient In() predicates for composite keys.
     """
     from pyiceberg.table.upsert_util import create_coarse_match_filter, create_match_filter
+    from pyiceberg.expressions import Or, And, In
 
     # Create a table with composite key that has overlapping values
     # (1, 'x'), (2, 'y'), (1, 'z') - exact filter should have 3 conditions
@@ -908,10 +909,10 @@ def test_coarse_match_filter_composite_key() -> None:
     coarse_filter = create_coarse_match_filter(table, ["a", "b"])
 
     # Exact filter is an Or of And conditions
-    assert "Or" in str(exact_filter)
+    assert isinstance(exact_filter, Or)
 
     # Coarse filter is an And of In conditions
-    assert "And" in str(coarse_filter)
+    assert isinstance(coarse_filter, And)
     assert "In" in str(coarse_filter)
 
 
@@ -1071,3 +1072,48 @@ def test_upsert_with_list_field(catalog: Catalog) -> None:
     res = tbl.upsert(update_data, join_cols=["id"])
     assert res.rows_updated == 1
     assert res.rows_inserted == 1
+
+
+def test_vectorized_comparison_struct_level_nulls() -> None:
+    """Test vectorized comparison handles struct-level nulls correctly (not just field-level nulls)."""
+    from pyiceberg.table.upsert_util import _compare_columns_vectorized
+
+    struct_type = pa.struct([("x", pa.int32()), ("y", pa.string())])
+
+    # null struct vs non-null struct = different
+    source = pa.array([{"x": 1, "y": "a"}, None, {"x": 3, "y": "c"}], type=struct_type)
+    target = pa.array([{"x": 1, "y": "a"}, {"x": 2, "y": "b"}, {"x": 3, "y": "c"}], type=struct_type)
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, True, False]
+
+    # non-null struct vs null struct = different
+    source = pa.array([{"x": 1, "y": "a"}, {"x": 2, "y": "b"}, {"x": 3, "y": "c"}], type=struct_type)
+    target = pa.array([{"x": 1, "y": "a"}, None, {"x": 3, "y": "c"}], type=struct_type)
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, True, False]
+
+    # null struct vs null struct = same (no update needed)
+    source = pa.array([{"x": 1, "y": "a"}, None, {"x": 3, "y": "c"}], type=struct_type)
+    target = pa.array([{"x": 1, "y": "a"}, None, {"x": 3, "y": "c"}], type=struct_type)
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, False, False]
+
+
+def test_vectorized_comparison_empty_struct_with_nulls() -> None:
+    """Test that empty structs with null values are compared correctly."""
+    from pyiceberg.table.upsert_util import _compare_columns_vectorized
+
+    # Empty struct type - edge case where only struct-level null handling matters
+    empty_struct_type = pa.struct([])
+
+    # null vs non-null empty struct = different
+    source = pa.array([{}, None, {}], type=empty_struct_type)
+    target = pa.array([{}, {}, {}], type=empty_struct_type)
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, True, False]
+
+    # null vs null empty struct = same
+    source = pa.array([None, None], type=empty_struct_type)
+    target = pa.array([None, None], type=empty_struct_type)
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, False]
