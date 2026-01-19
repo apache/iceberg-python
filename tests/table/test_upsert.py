@@ -885,3 +885,189 @@ def test_upsert_snapshot_properties(catalog: Catalog) -> None:
     for snapshot in snapshots[initial_snapshot_count:]:
         assert snapshot.summary is not None
         assert snapshot.summary.additional_properties.get("test_prop") == "test_value"
+
+
+def test_coarse_match_filter_composite_key() -> None:
+    """
+    Test that create_coarse_match_filter produces efficient In() predicates for composite keys.
+    """
+    from pyiceberg.table.upsert_util import create_coarse_match_filter, create_match_filter
+
+    # Create a table with composite key that has overlapping values
+    # (1, 'x'), (2, 'y'), (1, 'z') - exact filter should have 3 conditions
+    # coarse filter should have In(a, [1,2]) AND In(b, ['x','y','z'])
+    data = [
+        {"a": 1, "b": "x", "val": 1},
+        {"a": 2, "b": "y", "val": 2},
+        {"a": 1, "b": "z", "val": 3},
+    ]
+    schema = pa.schema([pa.field("a", pa.int32()), pa.field("b", pa.string()), pa.field("val", pa.int32())])
+    table = pa.Table.from_pylist(data, schema=schema)
+
+    exact_filter = create_match_filter(table, ["a", "b"])
+    coarse_filter = create_coarse_match_filter(table, ["a", "b"])
+
+    # Exact filter is an Or of And conditions
+    assert "Or" in str(exact_filter)
+
+    # Coarse filter is an And of In conditions
+    assert "And" in str(coarse_filter)
+    assert "In" in str(coarse_filter)
+
+
+def test_vectorized_comparison_primitives() -> None:
+    """Test vectorized comparison with primitive types."""
+    from pyiceberg.table.upsert_util import _compare_columns_vectorized
+
+    # Test integers
+    source = pa.array([1, 2, 3, 4])
+    target = pa.array([1, 2, 5, 4])
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, False, True, False]
+
+    # Test strings
+    source = pa.array(["a", "b", "c"])
+    target = pa.array(["a", "x", "c"])
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, True, False]
+
+    # Test floats
+    source = pa.array([1.0, 2.5, 3.0])
+    target = pa.array([1.0, 2.5, 3.1])
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, False, True]
+
+
+def test_vectorized_comparison_nulls() -> None:
+    """Test vectorized comparison handles nulls correctly."""
+    from pyiceberg.table.upsert_util import _compare_columns_vectorized
+
+    # null vs non-null = different
+    source = pa.array([1, None, 3])
+    target = pa.array([1, 2, 3])
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, True, False]
+
+    # non-null vs null = different
+    source = pa.array([1, 2, 3])
+    target = pa.array([1, None, 3])
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, True, False]
+
+    # null vs null = same (no update needed)
+    source = pa.array([1, None, 3])
+    target = pa.array([1, None, 3])
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, False, False]
+
+
+def test_vectorized_comparison_structs() -> None:
+    """Test vectorized comparison with nested struct types."""
+    from pyiceberg.table.upsert_util import _compare_columns_vectorized
+
+    struct_type = pa.struct([("x", pa.int32()), ("y", pa.string())])
+
+    # Same structs
+    source = pa.array([{"x": 1, "y": "a"}, {"x": 2, "y": "b"}], type=struct_type)
+    target = pa.array([{"x": 1, "y": "a"}, {"x": 2, "y": "b"}], type=struct_type)
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, False]
+
+    # Different struct values
+    source = pa.array([{"x": 1, "y": "a"}, {"x": 2, "y": "b"}], type=struct_type)
+    target = pa.array([{"x": 1, "y": "a"}, {"x": 2, "y": "c"}], type=struct_type)
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, True]
+
+
+def test_vectorized_comparison_nested_structs() -> None:
+    """Test vectorized comparison with deeply nested struct types."""
+    from pyiceberg.table.upsert_util import _compare_columns_vectorized
+
+    inner_struct = pa.struct([("val", pa.int32())])
+    outer_struct = pa.struct([("inner", inner_struct), ("name", pa.string())])
+
+    source = pa.array(
+        [{"inner": {"val": 1}, "name": "a"}, {"inner": {"val": 2}, "name": "b"}],
+        type=outer_struct,
+    )
+    target = pa.array(
+        [{"inner": {"val": 1}, "name": "a"}, {"inner": {"val": 3}, "name": "b"}],
+        type=outer_struct,
+    )
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, True]
+
+
+def test_vectorized_comparison_lists() -> None:
+    """Test vectorized comparison with list types (falls back to Python comparison)."""
+    from pyiceberg.table.upsert_util import _compare_columns_vectorized
+
+    list_type = pa.list_(pa.int32())
+
+    source = pa.array([[1, 2], [3, 4]], type=list_type)
+    target = pa.array([[1, 2], [3, 5]], type=list_type)
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, True]
+
+
+def test_get_rows_to_update_no_non_key_cols() -> None:
+    """Test get_rows_to_update when all columns are key columns."""
+    from pyiceberg.table.upsert_util import get_rows_to_update
+
+    # All columns are key columns, so no non-key columns to compare
+    source = pa.Table.from_pydict({"id": [1, 2, 3]})
+    target = pa.Table.from_pydict({"id": [1, 2, 3]})
+    rows = get_rows_to_update(source, target, ["id"])
+    assert len(rows) == 0
+
+
+def test_upsert_with_list_field(catalog: Catalog) -> None:
+    """Test upsert with list type as non-key column."""
+    from pyiceberg.types import ListType
+
+    identifier = "default.test_upsert_with_list_field"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(
+            2,
+            "tags",
+            ListType(element_id=3, element_type=StringType(), element_required=False),
+            required=False,
+        ),
+        identifier_field_ids=[1],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=False),
+            pa.field("tags", pa.list_(pa.large_string()), nullable=True),
+        ]
+    )
+
+    initial_data = pa.Table.from_pylist(
+        [
+            {"id": 1, "tags": ["a", "b"]},
+            {"id": 2, "tags": ["c"]},
+        ],
+        schema=arrow_schema,
+    )
+    tbl.append(initial_data)
+
+    # Update with changed list
+    update_data = pa.Table.from_pylist(
+        [
+            {"id": 1, "tags": ["a", "b"]},  # Same - no update
+            {"id": 2, "tags": ["c", "d"]},  # Changed - should update
+            {"id": 3, "tags": ["e"]},  # New - should insert
+        ],
+        schema=arrow_schema,
+    )
+
+    res = tbl.upsert(update_data, join_cols=["id"])
+    assert res.rows_updated == 1
+    assert res.rows_inserted == 1

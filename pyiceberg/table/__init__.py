@@ -836,7 +836,8 @@ class Transaction:
         )
 
         # get list of rows that exist so we don't have to load the entire target table
-        matched_predicate = upsert_util.create_match_filter(df, join_cols)
+        # Use coarse filter for initial scan - exact matching happens in get_rows_to_update()
+        matched_predicate = upsert_util.create_coarse_match_filter(df, join_cols)
 
         # We must use Transaction.table_metadata for the scan. This includes all uncommitted - but relevant - changes.
 
