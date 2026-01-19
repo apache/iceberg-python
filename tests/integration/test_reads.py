@@ -136,6 +136,44 @@ def test_hive_properties(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive")])
+def test_hive_preserves_hms_specific_properties(catalog: Catalog) -> None:
+    """Test that HMS-specific table properties are preserved during table commits.
+
+    This verifies that HMS-specific properties that are not managed by Iceberg
+    are preserved during commits, rather than being lost.
+
+    Regression test for: https://github.com/apache/iceberg-python/issues/2926
+    """
+    table = create_table(catalog)
+    hive_client: _HiveClient = _HiveClient(catalog.properties["uri"])
+    with hive_client as open_client:
+        hive_table = open_client.get_table(*TABLE_NAME)
+        # Add HMS-specific properties that aren't managed by Iceberg
+        hive_table.parameters["table_category"] = "production"
+        hive_table.parameters["data_owner"] = "data_team"
+        open_client.alter_table(TABLE_NAME[0], TABLE_NAME[1], hive_table)
+
+    with hive_client as open_client:
+        hive_table = open_client.get_table(*TABLE_NAME)
+        assert hive_table.parameters.get("table_category") == "production"
+        assert hive_table.parameters.get("data_owner") == "data_team"
+
+    table.transaction().set_properties({"iceberg_property": "new_value"}).commit_transaction()
+
+    # Verify that HMS-specific properties are STILL present after commit
+    with hive_client as open_client:
+        hive_table = open_client.get_table(*TABLE_NAME)
+        # HMS-specific properties should be preserved
+        assert hive_table.parameters.get("table_category") == "production", (
+            "HMS property 'table_category' was lost during commit!"
+        )
+        assert hive_table.parameters.get("data_owner") == "data_team", "HMS property 'data_owner' was lost during commit!"
+        # Iceberg properties should also be present
+        assert hive_table.parameters.get("iceberg_property") == "new_value"
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_table_properties_dict(catalog: Catalog) -> None:
     table = create_table(catalog)

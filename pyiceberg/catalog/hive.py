@@ -551,11 +551,22 @@ class HiveCatalog(MetastoreCatalog):
 
                 if hive_table and current_table:
                     # Table exists, update it.
-                    hive_table.parameters = _construct_parameters(
+                    new_parameters = _construct_parameters(
                         metadata_location=updated_staged_table.metadata_location,
                         previous_metadata_location=current_table.metadata_location,
                         metadata_properties=updated_staged_table.properties,
                     )
+
+                    # Detect properties that were removed from Iceberg metadata
+                    old_iceberg_keys = set(current_table.properties.keys())
+                    new_iceberg_keys = set(updated_staged_table.properties.keys())
+                    removed_keys = old_iceberg_keys - new_iceberg_keys
+
+                    # Start with current HMS parameters, remove deleted Iceberg properties, then update with new ones
+                    updated_parameters = {k: v for k, v in hive_table.parameters.items() if k not in removed_keys}
+                    updated_parameters.update(new_parameters)
+                    hive_table.parameters = updated_parameters
+
                     # Update hive's schema and properties
                     hive_table.sd = _construct_hive_storage_descriptor(
                         updated_staged_table.schema(),
