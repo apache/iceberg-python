@@ -562,7 +562,9 @@ class HiveCatalog(MetastoreCatalog):
                     new_iceberg_keys = set(updated_staged_table.properties.keys())
                     removed_keys = old_iceberg_keys - new_iceberg_keys
 
-                    # Start with current HMS parameters, remove deleted Iceberg properties, then update with new ones
+                    # Merge HMS parameters: preserve HMS-only properties (e.g., table_category) while
+                    # ensuring Iceberg controls its metadata. Start with HMS params, remove deleted
+                    # Iceberg properties, then update with new Iceberg values (which take precedence).
                     updated_parameters = {k: v for k, v in hive_table.parameters.items() if k not in removed_keys}
                     updated_parameters.update(new_parameters)
                     hive_table.parameters = updated_parameters

@@ -174,6 +174,80 @@ def test_hive_preserves_hms_specific_properties(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive")])
+def test_hive_iceberg_property_takes_precedence(catalog: Catalog) -> None:
+    """Test that Iceberg properties take precedence over conflicting HMS properties.
+
+    If an external tool sets an HMS property with the same name as an Iceberg-managed
+    property, Iceberg's value should win during commits.
+    """
+    table = create_table(catalog)
+    hive_client: _HiveClient = _HiveClient(catalog.properties["uri"])
+
+    # Set an Iceberg property
+    table.transaction().set_properties({"my_prop": "iceberg_value"}).commit_transaction()
+
+    # External tool modifies the same property in HMS
+    with hive_client as open_client:
+        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table.parameters["my_prop"] = "hms_value"  # Conflicting value
+        open_client.alter_table(TABLE_NAME[0], TABLE_NAME[1], hive_table)
+
+    # Verify HMS has the external value
+    with hive_client as open_client:
+        hive_table = open_client.get_table(*TABLE_NAME)
+        assert hive_table.parameters.get("my_prop") == "hms_value"
+
+    # Perform another Iceberg commit
+    table.transaction().set_properties({"another_prop": "test"}).commit_transaction()
+
+    # Iceberg's value should take precedence
+    with hive_client as open_client:
+        hive_table = open_client.get_table(*TABLE_NAME)
+        assert hive_table.parameters.get("my_prop") == "iceberg_value", (
+            "Iceberg property value should take precedence over conflicting HMS value!"
+        )
+        assert hive_table.parameters.get("another_prop") == "test"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive")])
+def test_hive_critical_properties_always_from_iceberg(catalog: Catalog) -> None:
+    """Test that critical properties (EXTERNAL, table_type, metadata_location) always come from Iceberg.
+
+    These properties should never be carried over from old HMS state.
+    """
+    table = create_table(catalog)
+    hive_client: _HiveClient = _HiveClient(catalog.properties["uri"])
+
+    # Get original metadata_location
+    with hive_client as open_client:
+        hive_table = open_client.get_table(*TABLE_NAME)
+        original_metadata_location = hive_table.parameters.get("metadata_location")
+        assert original_metadata_location is not None
+        assert hive_table.parameters.get("EXTERNAL") == "TRUE"
+        assert hive_table.parameters.get("table_type") == "ICEBERG"
+
+    # Try to tamper with critical properties via HMS
+    with hive_client as open_client:
+        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table.parameters["EXTERNAL"] = "FALSE"  # Try to change
+        open_client.alter_table(TABLE_NAME[0], TABLE_NAME[1], hive_table)
+
+    # Perform Iceberg commit
+    table.transaction().set_properties({"test_prop": "value"}).commit_transaction()
+
+    # Critical properties should be restored by Iceberg
+    with hive_client as open_client:
+        hive_table = open_client.get_table(*TABLE_NAME)
+        assert hive_table.parameters.get("EXTERNAL") == "TRUE", "EXTERNAL should always be TRUE from Iceberg!"
+        assert hive_table.parameters.get("table_type") == "ICEBERG", "table_type should always be ICEBERG!"
+        # metadata_location should be updated (new metadata file)
+        new_metadata_location = hive_table.parameters.get("metadata_location")
+        assert new_metadata_location != original_metadata_location, "metadata_location should be updated!"
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_table_properties_dict(catalog: Catalog) -> None:
     table = create_table(catalog)
