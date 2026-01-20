@@ -1601,7 +1601,7 @@ class Table:
 
         To support DataFusion features such as push down filtering, this function will return a PyCapsule
         interface that conforms to the FFI Table Provider required by DataFusion. From an end user perspective
-        you should not need to call this function directly. Instead you can use ``register_table_provider`` in
+        you should not need to call this function directly. Instead you can use ``register_table`` in
         the DataFusion SessionContext.
 
         Returns:
@@ -1618,7 +1618,7 @@ class Table:
             iceberg_table = catalog.create_table("default.test", schema=data.schema)
             iceberg_table.append(data)
             ctx = SessionContext()
-            ctx.register_table_provider("test", iceberg_table)
+            ctx.register_table("test", iceberg_table)
             ctx.table("test").show()
             ```
             Results in
