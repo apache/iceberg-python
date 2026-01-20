@@ -85,6 +85,27 @@ jobs:
     - name: Install
       run: make install
 
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build and cache Spark image
+      uses: docker/build-push-action@v6
+      with:
+        context: dev/spark
+        load: true
+        tags: pyiceberg-spark:latest
+        cache-from: type=gha,scope=spark
+        cache-to: type=gha,mode=max,scope=spark
+
+    - name: Build and cache Hive image
+      uses: docker/build-push-action@v6
+      with:
+        context: dev/hive
+        load: true
+        tags: pyiceberg-hive:latest
+        cache-from: type=gha,scope=hive
+        cache-to: type=gha,mode=max,scope=hive
+
     - name: Run integration tests with coverage
       run: COVERAGE=1 make test-integration
     - name: Show debug logs

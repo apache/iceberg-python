@@ -18,7 +18,11 @@
 services:
   spark-iceberg:
     container_name: pyiceberg-spark
-    build: spark/
+    image: pyiceberg-spark:latest
+    build:
+      context: spark/
+      cache_from:
+        - pyiceberg-spark:latest
     networks:
       iceberg_net:
     depends_on:
@@ -91,7 +95,11 @@ services:
       tail -f /dev/null
       "
   hive:
-    build: hive/
+    image: pyiceberg-hive:latest
+    build:
+      context: hive/
+      cache_from:
+        - pyiceberg-hive:latest
     container_name: pyiceberg-hive
     hostname: hive
     networks:
