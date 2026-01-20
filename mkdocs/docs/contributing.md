@@ -90,6 +90,20 @@ For full control over your environment, you can use uv commands directly. See th
 - Running commands with `uv run`
 - Lock file management with `uv.lock`
 
+### Lock File Management
+
+When modifying dependencies in `pyproject.toml`, regenerate the lock file:
+
+```bash
+make uv-lock
+```
+
+Separately, to verify that the lock file is up to date without modifying it:
+
+```bash
+make uv-lock-check
+```
+
 ## Installation from source
 
 Clone the repository for local development:

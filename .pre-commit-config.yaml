@@ -70,3 +70,11 @@ repos:
     rev: v2.4.1
     hooks:
       - id: codespell
+  - repo: local
+    hooks:
+      - id: uv-lock-check
+        name: uv lock file check
+        entry: make uv-lock-check
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|uv\.lock)$
