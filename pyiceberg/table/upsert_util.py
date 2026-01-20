@@ -23,11 +23,23 @@ from pyarrow import compute as pc
 
 from pyiceberg.expressions import (
     AlwaysFalse,
+    AlwaysTrue,
+    And,
     BooleanExpression,
     EqualTo,
+    GreaterThanOrEqual,
     In,
+    LessThanOrEqual,
     Or,
 )
+
+# Threshold for switching from In() predicate to range-based or no filter.
+# When unique keys exceed this, the In() predicate becomes too expensive to process.
+LARGE_FILTER_THRESHOLD = 10_000
+
+# Minimum density (ratio of unique values to range size) for range filter to be effective.
+# Below this threshold, range filters read too much irrelevant data.
+DENSITY_THRESHOLD = 0.1
 
 
 def create_match_filter(df: pyarrow_table, join_cols: list[str]) -> BooleanExpression:
@@ -58,32 +70,119 @@ def create_match_filter(df: pyarrow_table, join_cols: list[str]) -> BooleanExpre
             return Or(*filters)
 
 
+def _is_numeric_type(arrow_type: pa.DataType) -> bool:
+    """Check if a PyArrow type is numeric (suitable for range filtering)."""
+    return pa.types.is_integer(arrow_type) or pa.types.is_floating(arrow_type)
+
+
+def _create_range_filter(col_name: str, values: pa.Array) -> BooleanExpression:
+    """Create a min/max range filter for a numeric column."""
+    min_val = pc.min(values).as_py()
+    max_val = pc.max(values).as_py()
+    return And(GreaterThanOrEqual(col_name, min_val), LessThanOrEqual(col_name, max_val))
+
+
 def create_coarse_match_filter(df: pyarrow_table, join_cols: list[str]) -> BooleanExpression:
     """
     Create a coarse Iceberg BooleanExpression filter for initial row scanning.
 
-    For single-column keys, uses an efficient In() predicate (exact match).
-    For composite keys, uses In() per column as a coarse filter (AND of In() predicates),
-    which may return false positives but is much more efficient than exact matching.
+    This is an optimization for reducing the scan size before exact matching happens
+    downstream (e.g., in get_rows_to_update() via the join operation). It trades filter
+    precision for filter evaluation speed.
 
-    This function should only be used for initial scans where exact matching happens
-    downstream (e.g., in get_rows_to_update() via the join operation).
+    IMPORTANT: This is not a silver bullet optimization. It only helps specific use cases:
+    - Datasets with < 10,000 unique keys benefit from In() predicates
+    - Large datasets with dense numeric keys (>10% density) benefit from range filters
+    - Large datasets with sparse keys or non-numeric columns fall back to full scan
+
+    For small datasets (< LARGE_FILTER_THRESHOLD unique keys, currently 10,000):
+      - Single-column keys: uses In() predicate
+      - Composite keys: uses AND of In() predicates per column
+
+    For large datasets (>= LARGE_FILTER_THRESHOLD unique keys):
+      - Single numeric column with dense IDs (>10% coverage): uses min/max range filter
+      - Otherwise: returns AlwaysTrue() to skip filtering (full scan)
+
+    The density threshold (DENSITY_THRESHOLD = 0.1 or 10%) determines whether a range
+    filter is efficient. Below this threshold, the range would include too many
+    non-matching rows, making a full scan more practical.
+
+    Args:
+        df: PyArrow table containing the source data with join columns
+        join_cols: List of column names to use for matching
+
+    Returns:
+        BooleanExpression filter for Iceberg table scan
     """
     unique_keys = df.select(join_cols).group_by(join_cols).aggregate([])
+    num_unique_keys = len(unique_keys)
 
-    if len(unique_keys) == 0:
+    if num_unique_keys == 0:
         return AlwaysFalse()
 
+    # For small datasets, use the standard In() approach
+    if num_unique_keys < LARGE_FILTER_THRESHOLD:
+        if len(join_cols) == 1:
+            return In(join_cols[0], unique_keys[0].to_pylist())
+        else:
+            column_filters = []
+            for col in join_cols:
+                unique_values = pc.unique(unique_keys[col]).to_pylist()
+                column_filters.append(In(col, unique_values))
+            if len(column_filters) == 0:
+                return AlwaysFalse()
+            if len(column_filters) == 1:
+                return column_filters[0]
+            return functools.reduce(operator.and_, column_filters)
+
+    # For large datasets, use optimized strategies
     if len(join_cols) == 1:
-        return In(join_cols[0], unique_keys[0].to_pylist())
+        col_name = join_cols[0]
+        col_data = unique_keys[col_name]
+        col_type = col_data.type
+
+        # For numeric columns, check if range filter is efficient (dense IDs)
+        if _is_numeric_type(col_type):
+            min_val = pc.min(col_data).as_py()
+            max_val = pc.max(col_data).as_py()
+            value_range = max_val - min_val + 1
+            density = num_unique_keys / value_range if value_range > 0 else 0
+
+            # If IDs are dense (>10% coverage of the range), use range filter
+            # Otherwise, range filter would read too much irrelevant data
+            if density > DENSITY_THRESHOLD:
+                return _create_range_filter(col_name, col_data)
+            else:
+                return AlwaysTrue()
+        else:
+            # Non-numeric single column with many values - skip filter
+            return AlwaysTrue()
     else:
-        # For composite keys: use In() per column as a coarse filter
-        # This is more efficient than creating Or(And(...), And(...), ...) for each row
-        # May include false positives, but fine-grained matching happens downstream
+        # Composite keys with many values - use range filters for numeric columns where possible
         column_filters = []
         for col in join_cols:
-            unique_values = pc.unique(unique_keys[col]).to_pylist()
-            column_filters.append(In(col, unique_values))
+            col_data = unique_keys[col]
+            col_type = col_data.type
+            unique_values = pc.unique(col_data)
+
+            if _is_numeric_type(col_type) and len(unique_values) >= LARGE_FILTER_THRESHOLD:
+                # Use range filter for large numeric columns
+                min_val = pc.min(unique_values).as_py()
+                max_val = pc.max(unique_values).as_py()
+                value_range = max_val - min_val + 1
+                density = len(unique_values) / value_range if value_range > 0 else 0
+
+                if density > DENSITY_THRESHOLD:
+                    column_filters.append(_create_range_filter(col, unique_values))
+                else:
+                    # Sparse numeric column - still use In() as it's part of composite key
+                    column_filters.append(In(col, unique_values.to_pylist()))
+            else:
+                # Small column or non-numeric - use In()
+                column_filters.append(In(col, unique_values.to_pylist()))
+
+        if len(column_filters) == 0:
+            return AlwaysTrue()
         return functools.reduce(operator.and_, column_filters)
 
 
@@ -98,8 +197,21 @@ def _compare_columns_vectorized(
     """
     Vectorized comparison of two columns, returning a boolean array where True means values differ.
 
-    Handles struct types recursively by comparing each nested field.
-    Handles null values correctly: null != non-null is True, null == null is True (no update needed).
+    Handles different PyArrow types:
+    - Primitive types: Uses pc.not_equal() with proper null handling
+    - Struct types: Recursively compares each nested field
+    - List/Map types: Falls back to Python comparison (still batched, not row-by-row)
+
+    Null handling semantics:
+    - null != non-null -> True (values differ, needs update)
+    - null == null -> False (values same, no update needed)
+
+    Args:
+        source_col: Column from the source table
+        target_col: Column from the target table (must have same length)
+
+    Returns:
+        Boolean PyArrow array where True indicates the values at that index differ
     """
     col_type = source_col.type
 
@@ -155,7 +267,32 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     Return a table with rows that need to be updated in the target table based on the join columns.
 
     Uses vectorized PyArrow operations for efficient comparison, avoiding row-by-row Python loops.
-    The table is joined on the identifier columns, and then checked if there are any updated rows.
+    The function performs an inner join on the identifier columns, then compares non-key columns
+    to find rows where values have actually changed.
+
+    Algorithm:
+    1. Prepare source and target index tables with row indices
+    2. Inner join on join columns to find matching rows
+    3. Use take() to extract matched rows in batch
+    4. Compare non-key columns using vectorized operations
+    5. Filter to rows where at least one non-key column differs
+
+    Note: The column names '__source_index' and '__target_index' are reserved for internal use
+    and cannot be used as join column names.
+
+    Args:
+        source_table: PyArrow table with new/updated data
+        target_table: PyArrow table with existing data
+        join_cols: List of column names that form the unique key
+
+    Returns:
+        PyArrow table containing only the rows from source_table that exist in target_table
+        and have at least one non-key column with a different value. Returns an empty table
+        if no updates are needed.
+
+    Raises:
+        ValueError: If target_table has duplicate rows based on join_cols
+        ValueError: If join_cols contains reserved column names
     """
     all_columns = set(source_table.column_names)
     join_cols_set = set(join_cols)
@@ -183,8 +320,8 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
         ) from None
 
     # Step 1: Prepare source index with join keys and a marker index
-    # Cast to target table schema, so we can do the join
-    # See: https://github.com/apache/arrow/issues/37542
+    # Cast source to target schema to ensure type compatibility for the join
+    # (e.g., source int32 vs target int64 would cause join issues)
     source_index = (
         source_table.cast(target_table.schema)
         .select(join_cols_set)

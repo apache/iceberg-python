@@ -834,8 +834,9 @@ class Transaction:
             format_version=self.table_metadata.format_version,
         )
 
-        # get list of rows that exist so we don't have to load the entire target table
-        # Use coarse filter for initial scan - exact matching happens in get_rows_to_update()
+        # Create a coarse filter for the initial scan to reduce the number of rows read.
+        # This filter is intentionally less precise but faster to evaluate than exact matching.
+        # Exact key matching happens downstream in get_rows_to_update() via PyArrow joins.
         matched_predicate = upsert_util.create_coarse_match_filter(df, join_cols)
 
         # We must use Transaction.table_metadata for the scan. This includes all uncommitted - but relevant - changes.
@@ -854,38 +855,32 @@ class Transaction:
 
         batches_to_overwrite = []
         overwrite_predicates = []
-        matched_target_keys: list[pa.Table] = []  # Accumulate matched keys for insert filtering
+        # Accumulate matched keys for anti-join insert filtering after the batch loop.
+        # We only store key columns (not full rows) to minimize memory usage.
+        matched_target_keys: list[pa.Table] = []
 
         for batch in matched_iceberg_record_batches:
             rows = pa.Table.from_batches([batch])
 
             if when_matched_update_all:
-                # function get_rows_to_update is doing a check on non-key columns to see if any of the values have actually changed
-                # we don't want to do just a blanket overwrite for matched rows if the actual non-key column data hasn't changed
-                # this extra step avoids unnecessary IO and writes
+                # Check non-key columns to see if values have actually changed.
+                # We don't want to do a blanket overwrite for matched rows if the
+                # actual non-key column data hasn't changed - this avoids unnecessary IO and writes.
                 rows_to_update = upsert_util.get_rows_to_update(df, rows, join_cols)
 
                 if len(rows_to_update) > 0:
-                    # build the match predicate filter
                     overwrite_mask_predicate = upsert_util.create_match_filter(rows_to_update, join_cols)
-
                     batches_to_overwrite.append(rows_to_update)
                     overwrite_predicates.append(overwrite_mask_predicate)
 
-            # Collect matched keys for insert filtering (will use anti-join after loop)
             if when_not_matched_insert_all:
                 matched_target_keys.append(rows.select(join_cols))
 
-        batch_loop_end = time.perf_counter()
-        logger.info(
-            f"Batch processing: {batch_loop_end - batch_loop_start:.3f}s "
-            f"({batch_count} batches, get_rows_to_update total: {total_rows_to_update_time:.3f}s)"
-        )
-
-        # Use anti-join to find rows to insert (replaces per-batch expression filtering)
+        # Use anti-join to find rows to insert. This is more efficient than per-batch
+        # expression filtering because: (1) we build expressions once, not per batch,
+        # and (2) PyArrow joins are faster than evaluating large Or(...) expressions.
         rows_to_insert = df
         if when_not_matched_insert_all and matched_target_keys:
-            filter_start = time.perf_counter()
             # Combine all matched keys and deduplicate
             combined_matched_keys = pa.concat_tables(matched_target_keys).group_by(join_cols).aggregate([])
             # Cast matched keys to source schema types for join compatibility
@@ -898,8 +893,6 @@ class Transaction:
             not_matched_keys = source_keys_with_idx.join(combined_matched_keys, keys=join_cols, join_type="left anti")
             indices_to_keep = not_matched_keys.column("__row_idx__").combine_chunks()
             rows_to_insert = df.take(indices_to_keep)
-            filter_end = time.perf_counter()
-            logger.info(f"Insert filtering (anti-join): {filter_end - filter_start:.3f}s ({len(combined_matched_keys)} matched keys)")
 
         update_row_cnt = 0
         insert_row_cnt = 0
