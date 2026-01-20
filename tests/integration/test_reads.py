@@ -174,8 +174,7 @@ def test_hive_preserves_hms_specific_properties(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive")])
-def test_iceberg_property_deletion_not_restored_from_old_hms_state(catalog: Catalog) -> None:
+def test_iceberg_property_deletion_not_restored_from_old_hms_state(session_catalog_hive: Catalog) -> None:
     """Test that deleted Iceberg properties are truly removed and not restored from old HMS state.
 
     When a property is removed through Iceberg, it should be deleted from HMS and not
