@@ -82,6 +82,7 @@ jobs:
         tags: pyiceberg-spark:latest
         cache-from: type=gha,scope=spark
         cache-to: type=gha,mode=max,scope=spark
+        outputs: type=docker,dest=/tmp/spark-image.tar
 
     - name: Build and cache Hive image
       uses: docker/build-push-action@v6
@@ -90,6 +91,15 @@ jobs:
         tags: pyiceberg-hive:latest
         cache-from: type=gha,scope=hive
         cache-to: type=gha,mode=max,scope=hive
+        outputs: type=docker,dest=/tmp/hive-image.tar
+
+    - name: Upload Docker images
+      uses: actions/upload-artifact@v4
+      with:
+        name: docker-images
+        path: /tmp/*-image.tar
+        retention-days: 1
+        compression-level: 0
 
   integration-test:
     runs-on: ubuntu-latest
@@ -110,24 +120,16 @@ jobs:
     - name: Install
       run: make install
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Build Spark image (from cache)
-      uses: docker/build-push-action@v6
+    - name: Download Docker images
+      uses: actions/download-artifact@v4
       with:
-        context: dev/spark
-        load: true
-        tags: pyiceberg-spark:latest
-        cache-from: type=gha,scope=spark
+        name: docker-images
+        path: /tmp
 
-    - name: Build Hive image (from cache)
-      uses: docker/build-push-action@v6
-      with:
-        context: dev/hive
-        load: true
-        tags: pyiceberg-hive:latest
-        cache-from: type=gha,scope=hive
+    - name: Load Docker images
+      run: |
+        docker load -i /tmp/spark-image.tar
+        docker load -i /tmp/hive-image.tar
 
     - name: Run integration tests with coverage
       run: COVERAGE=1 make test-integration
