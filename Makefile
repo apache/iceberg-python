@@ -97,7 +97,7 @@ test: ## Run all unit tests (excluding integration)
 
 test-integration: test-integration-setup test-integration-exec test-integration-cleanup ## Run integration tests
 
-test-integration-setup: ## Start Docker services for integration tests
+test-integration-setup: install ## Start Docker services for integration tests
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml up -d --build --wait
@@ -153,6 +153,21 @@ docs-serve: ## Serve local docs preview (hot reload)
 docs-build: ## Build the static documentation site
 	uv run $(PYTHON_ARG) mkdocs build -f mkdocs/mkdocs.yml --strict
 
+# ========================
+# Experimentation
+# ========================
+
+##@ Experimentation
+
+notebook-install: ## Install notebook dependencies
+	uv sync $(PYTHON_ARG) --all-extras --group notebook
+
+notebook: notebook-install ## Launch notebook for experimentation
+	uv run jupyter lab --notebook-dir=notebooks
+
+notebook-infra: notebook-install test-integration-setup ## Launch notebook with integration test infra (Spark, Iceberg Rest Catalog, object storage, etc.)
+	uv run jupyter lab --notebook-dir=notebooks
+
 # ===================
 # Project Maintenance
 # ===================
@@ -167,6 +182,8 @@ clean: ## Remove build artifacts and caches
 	@find . -name "__pycache__" -exec echo Deleting {} \; -exec rm -rf {} +
 	@find . -name "*.pyd" -exec echo Deleting {} \; -delete
 	@find . -name "*.pyo" -exec echo Deleting {} \; -delete
+	@echo "Cleaning up Jupyter notebook checkpoints..."
+	@find . -name ".ipynb_checkpoints" -exec echo Deleting {} \; -exec rm -rf {} +
 	@echo "Cleanup complete."
 
 uv-lock: ## Regenerate uv.lock file from pyproject.toml
