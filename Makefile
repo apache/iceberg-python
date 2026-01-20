@@ -168,3 +168,11 @@ clean: ## Remove build artifacts and caches
 	@find . -name "*.pyd" -exec echo Deleting {} \; -delete
 	@find . -name "*.pyo" -exec echo Deleting {} \; -delete
 	@echo "Cleanup complete."
+
+uv-lock: ## Regenerate uv.lock file from pyproject.toml
+	uv lock $(PYTHON_ARG)
+
+uv-lock-check: ## Verify uv.lock is up to date
+	@command -v uv >/dev/null || \
+	  (echo "uv is required. Run 'make install' or 'make install-uv' first." && exit 1)
+	uv lock --check $(PYTHON_ARG)
