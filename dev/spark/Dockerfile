@@ -18,50 +18,46 @@ ARG BASE_IMAGE_SPARK_VERSION=4.0.1
 FROM apache/spark:${BASE_IMAGE_SPARK_VERSION}
 
 # Dependency versions - keep these compatible
+# Changing these will invalidate the JAR download cache layer
 ARG ICEBERG_VERSION=1.10.1
 ARG ICEBERG_SPARK_RUNTIME_VERSION=4.0_2.13
 ARG HADOOP_VERSION=3.4.1
-ARG SCALA_VERSION=2.13
 ARG AWS_SDK_VERSION=2.24.6
 ARG MAVEN_MIRROR=https://repo.maven.apache.org/maven2
 
 USER root
 WORKDIR ${SPARK_HOME}
 
-# Install curl for JAR downloads
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl && \
-    rm -rf /var/lib/apt/lists/*
-
-# Copy configuration (early for better caching)
-COPY --chown=spark:spark spark-defaults.conf ${SPARK_HOME}/conf/
-
-# Create event log directory
-RUN mkdir -p /home/iceberg/spark-events && \
+# Install curl and create directories
+RUN apt-get update -qq && \
+    apt-get install -qq -y --no-install-recommends curl && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /home/iceberg/spark-events && \
     chown -R spark:spark /home/iceberg
 
-# Required JAR dependencies
-ENV JARS_TO_DOWNLOAD="\
-    org/apache/iceberg/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}/${ICEBERG_VERSION}/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar \
-    org/apache/iceberg/iceberg-aws-bundle/${ICEBERG_VERSION}/iceberg-aws-bundle-${ICEBERG_VERSION}.jar \
-    org/apache/hadoop/hadoop-aws/${HADOOP_VERSION}/hadoop-aws-${HADOOP_VERSION}.jar \
-    software/amazon/awssdk/bundle/${AWS_SDK_VERSION}/bundle-${AWS_SDK_VERSION}.jar"
-
-# Download JARs with retry logic
+# Download JARs with retry logic (most cacheable - only changes when versions change)
+# This is the slowest step, so we do it before copying config files
 RUN set -e && \
     cd "${SPARK_HOME}/jars" && \
-    for jar_path in ${JARS_TO_DOWNLOAD}; do \
+    for jar_path in \
+        "org/apache/iceberg/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}/${ICEBERG_VERSION}/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar" \
+        "org/apache/iceberg/iceberg-aws-bundle/${ICEBERG_VERSION}/iceberg-aws-bundle-${ICEBERG_VERSION}.jar" \
+        "org/apache/hadoop/hadoop-aws/${HADOOP_VERSION}/hadoop-aws-${HADOOP_VERSION}.jar" \
+        "software/amazon/awssdk/bundle/${AWS_SDK_VERSION}/bundle-${AWS_SDK_VERSION}.jar"; \
+    do \
         jar_name=$(basename "${jar_path}") && \
-        echo "Downloading ${jar_name}..." && \
         curl -fsSL --retry 3 --retry-delay 5 \
              -o "${jar_name}" \
              "${MAVEN_MIRROR}/${jar_path}" && \
-        echo "✓ Downloaded ${jar_name}"; \
-    done && \
-    chown -R spark:spark "${SPARK_HOME}/jars"
+        chown spark:spark "${jar_name}"; \
+    done
+
+# Copy configuration last (changes more frequently than JARs)
+COPY --chown=spark:spark spark-defaults.conf ${SPARK_HOME}/conf/
 
 USER spark
 WORKDIR ${SPARK_HOME}
 
 # Start Spark Connect server
-CMD ["sh", "-c", "SPARK_NO_DAEMONIZE=true ${SPARK_HOME}/sbin/start-connect-server.sh"]
+CMD ["bash", "-c", "SPARK_NO_DAEMONIZE=true ${SPARK_HOME}/sbin/start-connect-server.sh"]
