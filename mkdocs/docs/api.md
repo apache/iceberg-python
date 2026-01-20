@@ -1941,7 +1941,7 @@ PyIceberg integrates with [Apache DataFusion](https://datafusion.apache.org/) th
 
     The integration has a few caveats:
 
-    - Only works with `datafusion >= 45, < 49`
+    - Only works with `datafusion == 51`, aligns with the version used in `pyiceberg-core`
     - Depends directly on `iceberg-rust` instead of PyIceberg's implementation
     - Has limited features compared to the full PyIceberg API
 
@@ -1967,7 +1967,7 @@ iceberg_table.append(data)
 
 # Register the table with DataFusion
 ctx = SessionContext()
-ctx.register_table_provider("test", iceberg_table)
+ctx.register_table("test", iceberg_table)
 
 # Query the table using DataFusion SQL
 ctx.table("test").show()
