@@ -181,9 +181,15 @@ class SetStatisticsUpdate(IcebergBaseModel):
 
     @model_validator(mode="before")
     def validate_snapshot_id(cls, data: dict[str, Any]) -> dict[str, Any]:
-        stats = cast(StatisticsFile, data["statistics"])
+        stats = data["statistics"]
+        if isinstance(stats, StatisticsFile):
+            snapshot_id = stats.snapshot_id
+        elif isinstance(stats, dict):
+            snapshot_id = cast(int, stats.get("snapshot-id"))
+        else:
+            snapshot_id = None
 
-        data["snapshot_id"] = stats.snapshot_id
+        data["snapshot_id"] = snapshot_id
 
         return data
 

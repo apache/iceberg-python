@@ -285,7 +285,9 @@ class InspectTable:
             ]
         )
 
-        partition_record = self.tbl.metadata.specs_struct()
+        snapshot = self._get_snapshot(snapshot_id)
+        spec_ids = {manifest.partition_spec_id for manifest in snapshot.manifests(self.tbl.io)}
+        partition_record = self.tbl.metadata.specs_struct(spec_ids=spec_ids)
         has_partitions = len(partition_record.fields) > 0
 
         if has_partitions:
@@ -298,8 +300,6 @@ class InspectTable:
             )
 
             table_schema = pa.unify_schemas([partitions_schema, table_schema])
-
-        snapshot = self._get_snapshot(snapshot_id)
 
         scan = DataScan(
             table_metadata=self.tbl.metadata,

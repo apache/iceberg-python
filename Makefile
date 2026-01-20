@@ -59,7 +59,7 @@ help: ## Display this help message
 ##@ Setup
 
 install-uv: ## Ensure uv is installed
-	@if ! command -v uv &> /dev/null; then \
+	@if ! command -v uv > /dev/null 2>&1; then \
 		echo "uv not found. Installing..."; \
 		curl -LsSf https://astral.sh/uv/install.sh | sh; \
 	else \
@@ -70,7 +70,7 @@ setup-venv: ## Create virtual environment
 	uv venv $(PYTHON_ARG)
 
 install-dependencies: setup-venv ## Install all dependencies including extras
-	uv sync $(PYTHON_ARG) --all-extras
+	uv sync $(PYTHON_ARG) --all-extras --reinstall
 
 install: install-uv install-dependencies ## Install uv and dependencies
 
@@ -100,7 +100,7 @@ test-integration: test-integration-setup test-integration-exec test-integration-
 test-integration-setup: ## Start Docker services for integration tests
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
-	docker compose -f dev/docker-compose-integration.yml up -d --wait
+	docker compose -f dev/docker-compose-integration.yml up -d --build --wait
 	uv run $(PYTHON_ARG) python dev/provision.py
 
 test-integration-exec: ## Run integration tests (excluding provision)
@@ -148,7 +148,7 @@ docs-install: ## Install docs dependencies (included in default groups)
 	uv sync $(PYTHON_ARG) --group docs
 
 docs-serve: ## Serve local docs preview (hot reload)
-	uv run $(PYTHON_ARG) mkdocs serve -f mkdocs/mkdocs.yml
+	uv run $(PYTHON_ARG) mkdocs serve -f mkdocs/mkdocs.yml --livereload
 
 docs-build: ## Build the static documentation site
 	uv run $(PYTHON_ARG) mkdocs build -f mkdocs/mkdocs.yml --strict

@@ -23,6 +23,7 @@ from pyiceberg.utils.datetime import (
     datetime_to_millis,
     datetime_to_nanos,
     millis_to_datetime,
+    nanos_to_hours,
     nanos_to_micros,
     time_str_to_nanos,
     time_to_nanos,
@@ -132,3 +133,14 @@ def test_timestamptz_to_nanos(timestamp: str, nanos: int) -> None:
 @pytest.mark.parametrize("nanos, micros", [(1510871468000001001, 1510871468000001), (-1510871468000001001, -1510871468000002)])
 def test_nanos_to_micros(nanos: int, micros: int) -> None:
     assert micros == nanos_to_micros(nanos)
+
+
+@pytest.mark.parametrize(
+    "nanos, hours",
+    [
+        (1510871468000001001, 419686),
+        (-1510871468000001001, -419687),
+    ],
+)
+def test_nanos_to_hours(nanos: int, hours: int) -> None:
+    assert hours == nanos_to_hours(nanos)
