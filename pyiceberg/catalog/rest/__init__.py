@@ -1108,6 +1108,14 @@ class RestCatalog(Catalog):
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace = self._encode_namespace_path(namespace_tuple)
 
+        # fallback in order to work with older rest catalog implementations
+        if Capability.V1_NAMESPACE_EXISTS not in self._supported_endpoints:
+            try:
+                self.load_namespace_properties(namespace_tuple)
+                return True
+            except NoSuchNamespaceError:
+                return False
+
         response = self._session.head(self.url(Endpoints.namespace_exists, namespace=namespace))
 
         if response.status_code == 404:
