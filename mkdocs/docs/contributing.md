@@ -92,6 +92,9 @@ For full control over your environment, you can use uv commands directly. See th
 
 ### Lock File Management
 
+`uv.lock` is a cross-platform lockfile that contains exact information about the project's dependencies.
+See the [uv.lock documentation](https://docs.astral.sh/uv/guides/projects/#uvlock) for more details.
+
 When modifying dependencies in `pyproject.toml`, regenerate the lock file:
 
 ```bash
