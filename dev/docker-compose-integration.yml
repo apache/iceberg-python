@@ -18,6 +18,7 @@
 services:
   spark-iceberg:
     container_name: pyiceberg-spark
+    image: pyiceberg-spark:latest
     build: spark/
     networks:
       iceberg_net:
@@ -91,6 +92,7 @@ services:
       tail -f /dev/null
       "
   hive:
+    image: pyiceberg-hive:latest
     build: hive/
     container_name: pyiceberg-hive
     hostname: hive
