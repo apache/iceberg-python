@@ -1649,7 +1649,8 @@ def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with
     assert tbl_a_entries["file_sequence_number"] == [3, 2, 1] if format_version == 2 else [0, 0, 0]
     for i in range(3):
         tbl_a_data_file = tbl_a_entries["data_file"][i]
-        assert tbl_a_data_file["column_sizes"] == [
+        # Use set comparison since pyiceberg_core may return items in different order
+        assert set(tbl_a_data_file["column_sizes"]) == {
             (1, 51),
             (2, 80),
             (3, 130),
@@ -1662,7 +1663,7 @@ def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with
             (10, 96),
             (11, 80),
             (12, 111),
-        ]
+        }
         assert tbl_a_data_file["content"] == 0
         assert tbl_a_data_file["equality_ids"] is None
         assert tbl_a_data_file["file_format"] == "PARQUET"
@@ -1671,7 +1672,8 @@ def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with
             # verify that the snapshot id recorded should be the one where the file was added
             assert tbl_a_entries["snapshot_id"][i] == first_snapshot_id
         assert tbl_a_data_file["key_metadata"] is None
-        assert tbl_a_data_file["lower_bounds"] == [
+        # Use set comparison since pyiceberg_core may return items in different order
+        assert set(tbl_a_data_file["lower_bounds"]) == {
             (1, b"\x00"),
             (2, b"a"),
             (3, b"aaaaaaaaaaaaaaaa"),
@@ -1684,9 +1686,10 @@ def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with
             (10, b"\x9eK\x00\x00"),
             (11, b"\x01"),
             (12, b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"),
-        ]
+        }
         assert tbl_a_data_file["nan_value_counts"] == []
-        assert tbl_a_data_file["null_value_counts"] == [
+        # Use set comparison since pyiceberg_core may return items in different order
+        assert set(tbl_a_data_file["null_value_counts"]) == {
             (1, 1),
             (2, 1),
             (3, 1),
@@ -1699,12 +1702,13 @@ def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with
             (10, 1),
             (11, 1),
             (12, 1),
-        ]
+        }
         assert tbl_a_data_file["partition"] == {}
         assert tbl_a_data_file["record_count"] == 3
         assert tbl_a_data_file["sort_order_id"] is None
         assert tbl_a_data_file["split_offsets"] == [4]
-        assert tbl_a_data_file["upper_bounds"] == [
+        # Use set comparison since pyiceberg_core may return items in different order
+        assert set(tbl_a_data_file["upper_bounds"]) == {
             (1, b"\x01"),
             (2, b"z"),
             (3, b"zzzzzzzzzzzzzzz{"),
@@ -1717,8 +1721,9 @@ def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with
             (10, b"\xd9K\x00\x00"),
             (11, b"\x12"),
             (12, b"\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11"),
-        ]
-        assert tbl_a_data_file["value_counts"] == [
+        }
+        # Use set comparison since pyiceberg_core may return items in different order
+        assert set(tbl_a_data_file["value_counts"]) == {
             (1, 3),
             (2, 3),
             (3, 3),
@@ -1731,7 +1736,7 @@ def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with
             (10, 3),
             (11, 3),
             (12, 3),
-        ]
+        }
 
 
 @pytest.mark.integration
