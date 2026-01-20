@@ -175,8 +175,48 @@ def test_hive_preserves_hms_specific_properties(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive")])
-def test_hive_iceberg_property_takes_precedence(catalog: Catalog) -> None:
-    """Test that Iceberg properties take precedence over conflicting HMS properties.
+def test_iceberg_property_deletion_not_restored_from_old_hms_state(catalog: Catalog) -> None:
+    """Test that deleted Iceberg properties are truly removed and not restored from old HMS state.
+
+    When a property is removed through Iceberg, it should be deleted from HMS and not
+    come back from the old HMS state during merge operations.
+    """
+    table = create_table(catalog)
+    hive_client: _HiveClient = _HiveClient(catalog.properties["uri"])
+
+    # Set multiple Iceberg properties
+    table.transaction().set_properties({"prop_to_keep": "keep_value", "prop_to_delete": "delete_me"}).commit_transaction()
+
+    # Verify both properties exist
+    with hive_client as open_client:
+        hive_table = open_client.get_table(*TABLE_NAME)
+        assert hive_table.parameters.get("prop_to_keep") == "keep_value"
+        assert hive_table.parameters.get("prop_to_delete") == "delete_me"
+
+    # Delete one property through Iceberg
+    table.transaction().remove_properties("prop_to_delete").commit_transaction()
+
+    # Verify property is deleted from HMS
+    with hive_client as open_client:
+        hive_table = open_client.get_table(*TABLE_NAME)
+        assert hive_table.parameters.get("prop_to_keep") == "keep_value"
+        assert hive_table.parameters.get("prop_to_delete") is None, "Deleted property should not exist in HMS!"
+
+    # Perform another Iceberg commit
+    table.transaction().set_properties({"new_prop": "new_value"}).commit_transaction()
+
+    # Ensure deleted property doesn't come back from old state
+    with hive_client as open_client:
+        hive_table = open_client.get_table(*TABLE_NAME)
+        assert hive_table.parameters.get("prop_to_keep") == "keep_value"
+        assert hive_table.parameters.get("new_prop") == "new_value"
+        assert hive_table.parameters.get("prop_to_delete") is None, "Deleted property should NOT be restored from old HMS state!"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive")])
+def test_iceberg_metadata_is_source_of_truth(catalog: Catalog) -> None:
+    """Test that Iceberg metadata is the source of truth for all Iceberg-managed properties.
 
     If an external tool sets an HMS property with the same name as an Iceberg-managed
     property, Iceberg's value should win during commits.

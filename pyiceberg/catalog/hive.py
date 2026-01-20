@@ -558,22 +558,22 @@ class HiveCatalog(MetastoreCatalog):
                     )
 
                     # Detect properties that were removed from Iceberg metadata
-                    old_iceberg_keys = set(current_table.properties.keys())
-                    new_iceberg_keys = set(updated_staged_table.properties.keys())
-                    removed_keys = old_iceberg_keys - new_iceberg_keys
+                    removed_keys = current_table.properties.keys() - updated_staged_table.properties.keys()
 
-                    # Merge HMS parameters: preserve HMS-only properties (e.g., table_category) while
-                    # ensuring Iceberg controls its metadata. Start with HMS params, remove deleted
-                    # Iceberg properties, then update with new Iceberg values (which take precedence).
-                    updated_parameters = {k: v for k, v in hive_table.parameters.items() if k not in removed_keys}
-                    updated_parameters.update(new_parameters)
-                    hive_table.parameters = updated_parameters
+                    # Sync HMS parameters: Iceberg metadata is the source of truth, HMS parameters are
+                    # a projection of Iceberg state plus any HMS-only properties.
+                    # Start with existing HMS params, remove deleted Iceberg properties, then apply Iceberg values.
+                    merged_params = dict(hive_table.parameters or {})
+                    for key in removed_keys:
+                        merged_params.pop(key, None)
+                    merged_params.update(new_parameters)
+                    hive_table.parameters = merged_params
 
                     # Update hive's schema and properties
                     hive_table.sd = _construct_hive_storage_descriptor(
                         updated_staged_table.schema(),
                         updated_staged_table.location(),
-                        property_as_bool(updated_staged_table.properties, HIVE2_COMPATIBLE, HIVE2_COMPATIBLE_DEFAULT),
+                        property_as_bool(self.properties, HIVE2_COMPATIBLE, HIVE2_COMPATIBLE_DEFAULT),
                     )
                     open_client.alter_table_with_environment_context(
                         dbname=database_name,
