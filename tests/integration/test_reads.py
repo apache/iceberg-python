@@ -180,8 +180,8 @@ def test_iceberg_property_deletion_not_restored_from_old_hms_state(session_catal
     When a property is removed through Iceberg, it should be deleted from HMS and not
     come back from the old HMS state during merge operations.
     """
-    table = create_table(catalog)
-    hive_client: _HiveClient = _HiveClient(catalog.properties["uri"])
+    table = create_table(session_catalog_hive)
+    hive_client: _HiveClient = _HiveClient(session_catalog_hive.properties["uri"])
 
     # Set multiple Iceberg properties
     table.transaction().set_properties({"prop_to_keep": "keep_value", "prop_to_delete": "delete_me"}).commit_transaction()
