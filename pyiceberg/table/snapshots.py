@@ -479,7 +479,7 @@ def latest_ancestor_before_timestamp(table_metadata: TableMetadata, timestamp_ms
 
     Args:
         table_metadata: The table metadata for a table
-        timestamp_ms: lookup snapshots before this timestamp
+        timestamp_ms: lookup snapshots strictly before this timestamp
 
     Returns:
         The latest ancestor snapshot older than the timestamp, or None if not found.
