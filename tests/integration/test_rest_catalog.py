@@ -66,9 +66,9 @@ def test_create_namespace_if_already_existing(catalog: RestCatalog) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog")])
 def test_create_table_invalid_sort_order(catalog: RestCatalog) -> None:
+    from pyiceberg.catalog.rest import Endpoints
     from pyiceberg.schema import Schema
     from pyiceberg.types import LongType, NestedField
-    from pyiceberg.catalog.rest import Endpoints
 
     namespace = "default"
     table_name = "test_invalid_sort_order"
