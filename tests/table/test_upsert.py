@@ -1193,6 +1193,7 @@ def test_coarse_match_filter_small_dataset_uses_in_filter() -> None:
 
     assert num_keys < LARGE_FILTER_THRESHOLD
     assert isinstance(result, In)
+    assert isinstance(result.term, Reference)
     assert result.term.name == "id"
     assert len(result.literals) == num_keys
 
@@ -1212,6 +1213,7 @@ def test_coarse_match_filter_threshold_boundary_uses_in_filter() -> None:
     result = create_coarse_match_filter(table, ["id"])
 
     assert isinstance(result, In)
+    assert isinstance(result.term, Reference)
     assert result.term.name == "id"
     assert len(result.literals) == num_keys
 
@@ -1401,10 +1403,12 @@ def test_coarse_match_filter_single_value_dataset() -> None:
 
     # PyIceberg may optimize In() with a single value to EqualTo()
     if isinstance(result, In):
+        assert isinstance(result.term, Reference)
         assert result.term.name == "id"
         assert len(result.literals) == 1
-        assert result.literals[0].value == 42
+        assert next(iter(result.literals)).value == 42
     elif isinstance(result, EqualTo):
+        assert isinstance(result.term, Reference)
         assert result.term.name == "id"
         assert result.literal.value == 42
     else:
