@@ -1799,20 +1799,16 @@ class TableScan(ABC):
         return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
 
     @abstractmethod
-    def plan_files(self) -> Iterable[ScanTask]:
-        ...
+    def plan_files(self) -> Iterable[ScanTask]: ...
 
     @abstractmethod
-    def to_arrow(self) -> pa.Table:
-        ...
+    def to_arrow(self) -> pa.Table: ...
 
     @abstractmethod
-    def to_pandas(self, **kwargs: Any) -> pd.DataFrame:
-        ...
+    def to_pandas(self, **kwargs: Any) -> pd.DataFrame: ...
 
     @abstractmethod
-    def to_polars(self) -> pl.DataFrame:
-        ...
+    def to_polars(self) -> pl.DataFrame: ...
 
     def update(self: S, **overrides: Any) -> S:
         """Create a copy of this table scan with updated fields."""
@@ -1845,8 +1841,7 @@ class TableScan(ABC):
         return self.update(case_sensitive=case_sensitive)
 
     @abstractmethod
-    def count(self) -> int:
-        ...
+    def count(self) -> int: ...
 
 
 class ScanTask:
