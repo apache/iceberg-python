@@ -2541,8 +2541,7 @@ def test_write_uuid_in_pyiceberg_and_scan(session_catalog: Catalog, spark: Spark
     """
     identifier = "default.test_write_uuid_in_pyiceberg_and_scan"
 
-    catalog = load_catalog("default", type="in-memory")
-    catalog.create_namespace("ns")
+    session_catalog.create_namespace("ns")
 
     schema = Schema(NestedField(field_id=1, name="uuid_col", field_type=UUIDType(), required=False))
 
