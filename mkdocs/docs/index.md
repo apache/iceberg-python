@@ -198,6 +198,10 @@ Since the catalog was configured to use the local filesystem, we can explore how
 find /tmp/warehouse/
 ```
 
+## Try it yourself with Jupyter Notebooks
+
+PyIceberg provides Jupyter notebooks for hands-on experimentation with the examples above and more. Check out the [Notebooks for Experimentation](contributing.md#notebooks-for-experimentation) guide.
+
 ## More details
 
 For the details, please check the [CLI](cli.md) or [Python API](api.md) page.

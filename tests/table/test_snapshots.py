@@ -30,6 +30,7 @@ from pyiceberg.table.snapshots import (
     Summary,
     ancestors_between,
     ancestors_of,
+    latest_ancestor_before_timestamp,
     update_snapshot_summaries,
 )
 from pyiceberg.transforms import IdentityTransform
@@ -456,3 +457,79 @@ def test_ancestors_between(table_v2_with_extensive_snapshots: Table) -> None:
         )
         == 2000
     )
+
+
+def test_latest_ancestor_before_timestamp() -> None:
+    from pyiceberg.table.metadata import TableMetadataV2
+
+    # Create metadata with 4 snapshots at ordered timestamps
+    metadata = TableMetadataV2(
+        **{
+            "format-version": 2,
+            "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
+            "location": "s3://bucket/test/location",
+            "last-sequence-number": 4,
+            "last-updated-ms": 1602638573590,
+            "last-column-id": 1,
+            "current-schema-id": 0,
+            "schemas": [{"type": "struct", "schema-id": 0, "fields": [{"id": 1, "name": "x", "required": True, "type": "long"}]}],
+            "default-spec-id": 0,
+            "partition-specs": [{"spec-id": 0, "fields": []}],
+            "last-partition-id": 999,
+            "default-sort-order-id": 0,
+            "sort-orders": [{"order-id": 0, "fields": []}],
+            "current-snapshot-id": 4,
+            "snapshots": [
+                {
+                    "snapshot-id": 1,
+                    "timestamp-ms": 1000,
+                    "sequence-number": 1,
+                    "summary": {"operation": "append"},
+                    "manifest-list": "s3://a/1.avro",
+                },
+                {
+                    "snapshot-id": 2,
+                    "parent-snapshot-id": 1,
+                    "timestamp-ms": 2000,
+                    "sequence-number": 2,
+                    "summary": {"operation": "append"},
+                    "manifest-list": "s3://a/2.avro",
+                },
+                {
+                    "snapshot-id": 3,
+                    "parent-snapshot-id": 2,
+                    "timestamp-ms": 3000,
+                    "sequence-number": 3,
+                    "summary": {"operation": "append"},
+                    "manifest-list": "s3://a/3.avro",
+                },
+                {
+                    "snapshot-id": 4,
+                    "parent-snapshot-id": 3,
+                    "timestamp-ms": 4000,
+                    "sequence-number": 4,
+                    "summary": {"operation": "append"},
+                    "manifest-list": "s3://a/4.avro",
+                },
+            ],
+        }
+    )
+
+    result = latest_ancestor_before_timestamp(metadata, 3500)
+    assert result is not None
+    assert result.snapshot_id == 3
+
+    result = latest_ancestor_before_timestamp(metadata, 2500)
+    assert result is not None
+    assert result.snapshot_id == 2
+
+    result = latest_ancestor_before_timestamp(metadata, 5000)
+    assert result is not None
+    assert result.snapshot_id == 4
+
+    result = latest_ancestor_before_timestamp(metadata, 3000)
+    assert result is not None
+    assert result.snapshot_id == 2
+
+    result = latest_ancestor_before_timestamp(metadata, 1000)
+    assert result is None

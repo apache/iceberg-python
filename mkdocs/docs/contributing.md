@@ -90,6 +90,23 @@ For full control over your environment, you can use uv commands directly. See th
 - Running commands with `uv run`
 - Lock file management with `uv.lock`
 
+### Lock File Management
+
+`uv.lock` is a cross-platform lockfile that contains exact information about the project's dependencies.
+See the [uv.lock documentation](https://docs.astral.sh/uv/guides/projects/#uvlock) for more details.
+
+When modifying dependencies in `pyproject.toml`, regenerate the lock file:
+
+```bash
+make uv-lock
+```
+
+Separately, to verify that the lock file is up to date without modifying it:
+
+```bash
+make uv-lock-check
+```
+
 ## Installation from source
 
 Clone the repository for local development:
@@ -210,6 +227,41 @@ export PYICEBERG_CATALOG__TEST_CATALOG__URI=thrift://localhost:9083
 export PYICEBERG_CATALOG__TEST_CATALOG__ACCESS_KEY_ID=username
 export PYICEBERG_CATALOG__TEST_CATALOG__SECRET_ACCESS_KEY=password
 ```
+
+## Notebooks for Experimentation
+
+PyIceberg provides Jupyter notebooks for quick experimentation and learning. Two Make commands are available depending on your needs:
+
+### PyIceberg Examples (`make notebook`)
+
+For basic PyIceberg experimentation without additional infrastructure:
+
+```bash
+make notebook
+```
+
+This will install notebook dependencies and launch Jupyter Lab in the `notebooks/` directory.
+
+**PyIceberg Example Notebook** (`notebooks/pyiceberg_example.ipynb`) is based on the [Getting Started with PyIceberg](https://py.iceberg.apache.org/#getting-started-with-pyiceberg) page. It demonstrates basic PyIceberg operations like creating catalogs, schemas, and querying tables without requiring any external services.
+
+### Spark Integration Examples (`make notebook-infra`)
+
+For working with PyIceberg alongside Spark, use the infrastructure-enabled notebook environment:
+
+```bash
+make notebook-infra
+```
+
+This command spins up the full integration test infrastructure via Docker Compose, including:
+
+- **Spark** (with Spark Connect)
+- **Iceberg REST Catalog** (using the [`apache/iceberg-rest-fixture`](https://hub.docker.com/r/apache/iceberg-rest-fixture) image)
+- **Hive Metastore**
+- **S3-compatible object storage** (Minio)
+
+**Spark Example Notebook** (`notebooks/spark_integration_example.ipynb`) is based on the [Spark Getting Started](https://iceberg.apache.org/docs/nightly/spark-getting-started/) guide. This notebook demonstrates how to work with PyIceberg alongside Spark, leveraging the Docker-based testing setup for a complete local development environment.
+
+After running `make notebook-infra`, open `spark_integration_example.ipynb` in the Jupyter Lab interface to explore Spark integration capabilities.
 
 ## Code standards
 

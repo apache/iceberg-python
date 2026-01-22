@@ -41,6 +41,9 @@ bin/
 .mypy_cache/
 htmlcov
 
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
 pyiceberg/avro/decoder_fast.c
 pyiceberg/avro/*.html
 pyiceberg/avro/*.so
