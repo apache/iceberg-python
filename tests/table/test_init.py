@@ -1639,3 +1639,21 @@ def model_roundtrips(model: BaseModel) -> bool:
     if model != type(model).model_validate(model_data):
         pytest.fail(f"model {type(model)} did not roundtrip successfully")
     return True
+
+
+def test_check_uuid_raises_when_mismatch(table_v2: Table, example_table_metadata_v2: dict[str, Any]) -> None:
+    different_uuid = "550e8400-e29b-41d4-a716-446655440000"
+    metadata_with_different_uuid = {**example_table_metadata_v2, "table-uuid": different_uuid}
+    new_metadata = TableMetadataV2(**metadata_with_different_uuid)
+
+    with pytest.raises(ValueError) as exc_info:
+        Table._check_uuid(table_v2.metadata, new_metadata)
+
+    assert "Table UUID does not match" in str(exc_info.value)
+    assert different_uuid in str(exc_info.value)
+
+
+def test_check_uuid_passes_when_match(table_v2: Table, example_table_metadata_v2: dict[str, Any]) -> None:
+    new_metadata = TableMetadataV2(**example_table_metadata_v2)
+    # Should not raise with same uuid
+    Table._check_uuid(table_v2.metadata, new_metadata)

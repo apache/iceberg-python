@@ -59,7 +59,7 @@ help: ## Display this help message
 ##@ Setup
 
 install-uv: ## Ensure uv is installed
-	@if ! command -v uv &> /dev/null; then \
+	@if ! command -v uv > /dev/null 2>&1; then \
 		echo "uv not found. Installing..."; \
 		curl -LsSf https://astral.sh/uv/install.sh | sh; \
 	else \
@@ -72,7 +72,10 @@ setup-venv: ## Create virtual environment
 install-dependencies: setup-venv ## Install all dependencies including extras
 	uv sync $(PYTHON_ARG) --all-extras --reinstall
 
-install: install-uv install-dependencies ## Install uv and dependencies
+install-hooks: ## Install pre-commit hooks
+	uv run $(PYTHON_ARG) prek install
+
+install: install-uv install-dependencies install-hooks ## Install uv, dependencies, and pre-commit hooks
 
 # ===============
 # Code Validation
@@ -97,10 +100,10 @@ test: ## Run all unit tests (excluding integration)
 
 test-integration: test-integration-setup test-integration-exec test-integration-cleanup ## Run integration tests
 
-test-integration-setup: ## Start Docker services for integration tests
+test-integration-setup: install ## Start Docker services for integration tests
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
-	docker compose -f dev/docker-compose-integration.yml up -d --wait
+	docker compose -f dev/docker-compose-integration.yml up -d --build --wait
 	uv run $(PYTHON_ARG) python dev/provision.py
 
 test-integration-exec: ## Run integration tests (excluding provision)
@@ -148,10 +151,25 @@ docs-install: ## Install docs dependencies (included in default groups)
 	uv sync $(PYTHON_ARG) --group docs
 
 docs-serve: ## Serve local docs preview (hot reload)
-	uv run $(PYTHON_ARG) mkdocs serve -f mkdocs/mkdocs.yml
+	uv run $(PYTHON_ARG) mkdocs serve -f mkdocs/mkdocs.yml --livereload
 
 docs-build: ## Build the static documentation site
 	uv run $(PYTHON_ARG) mkdocs build -f mkdocs/mkdocs.yml --strict
+
+# ========================
+# Experimentation
+# ========================
+
+##@ Experimentation
+
+notebook-install: ## Install notebook dependencies
+	uv sync $(PYTHON_ARG) --all-extras --group notebook
+
+notebook: notebook-install ## Launch notebook for experimentation
+	uv run jupyter lab --notebook-dir=notebooks
+
+notebook-infra: notebook-install test-integration-setup ## Launch notebook with integration test infra (Spark, Iceberg Rest Catalog, object storage, etc.)
+	uv run jupyter lab --notebook-dir=notebooks
 
 # ===================
 # Project Maintenance
@@ -167,4 +185,14 @@ clean: ## Remove build artifacts and caches
 	@find . -name "__pycache__" -exec echo Deleting {} \; -exec rm -rf {} +
 	@find . -name "*.pyd" -exec echo Deleting {} \; -delete
 	@find . -name "*.pyo" -exec echo Deleting {} \; -delete
+	@echo "Cleaning up Jupyter notebook checkpoints..."
+	@find . -name ".ipynb_checkpoints" -exec echo Deleting {} \; -exec rm -rf {} +
 	@echo "Cleanup complete."
+
+uv-lock: ## Regenerate uv.lock file from pyproject.toml
+	uv lock $(PYTHON_ARG)
+
+uv-lock-check: ## Verify uv.lock is up to date
+	@command -v uv >/dev/null || \
+	  (echo "uv is required. Run 'make install' or 'make install-uv' first." && exit 1)
+	uv lock --check $(PYTHON_ARG)

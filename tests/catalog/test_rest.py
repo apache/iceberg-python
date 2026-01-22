@@ -22,12 +22,21 @@ from typing import Any, cast
 from unittest import mock
 
 import pytest
+from requests import Request
+from requests.adapters import HTTPAdapter
 from requests.exceptions import HTTPError
 from requests_mock import Mocker
 
 import pyiceberg
 from pyiceberg.catalog import PropertiesUpdateSummary, load_catalog
-from pyiceberg.catalog.rest import DEFAULT_ENDPOINTS, OAUTH2_SERVER_URI, SNAPSHOT_LOADING_MODE, Capability, RestCatalog
+from pyiceberg.catalog.rest import (
+    DEFAULT_ENDPOINTS,
+    EMPTY_BODY_SHA256,
+    OAUTH2_SERVER_URI,
+    SNAPSHOT_LOADING_MODE,
+    Capability,
+    RestCatalog,
+)
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
     NamespaceAlreadyExistsError,
@@ -48,6 +57,7 @@ from pyiceberg.table.metadata import TableMetadataV1
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import RecursiveDict
+from pyiceberg.types import StringType
 from pyiceberg.utils.config import Config
 
 TEST_URI = "https://iceberg-test-catalog/"
@@ -449,6 +459,62 @@ def test_list_tables_200_sigv4(rest_mock: Mocker) -> None:
         ("examples", "fooshare")
     ]
     assert rest_mock.called
+
+
+def test_sigv4_sign_request_without_body(rest_mock: Mocker) -> None:
+    existing_token = "existing_token"
+
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "token": existing_token,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-west-2",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+        },
+    )
+
+    prepared = catalog._session.prepare_request(Request("GET", f"{TEST_URI}v1/config"))
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+    adapter.add_headers(prepared)
+
+    assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256")
+    assert prepared.headers["Original-Authorization"] == f"Bearer {existing_token}"
+    assert prepared.headers["x-amz-content-sha256"] == EMPTY_BODY_SHA256
+
+
+def test_sigv4_sign_request_with_body(rest_mock: Mocker) -> None:
+    existing_token = "existing_token"
+
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "token": existing_token,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-west-2",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+        },
+    )
+
+    prepared = catalog._session.prepare_request(
+        Request(
+            "POST",
+            f"{TEST_URI}v1/namespaces",
+            data={"namespace": "asdfasd"},
+        )
+    )
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+    adapter.add_headers(prepared)
+
+    assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256")
+    assert prepared.headers["Original-Authorization"] == f"Bearer {existing_token}"
+    assert prepared.headers.get("x-amz-content-sha256") != EMPTY_BODY_SHA256
 
 
 def test_list_tables_404(rest_mock: Mocker) -> None:
@@ -1100,6 +1166,9 @@ def test_create_staged_table_200(
     example_table_metadata_with_no_location: dict[str, Any],
     example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any],
 ) -> None:
+    expected_table_uuid = example_table_metadata_with_no_location["metadata"]["table-uuid"]
+    example_table_metadata_no_snapshot_v1_rest_json["metadata"]["table-uuid"] = expected_table_uuid
+
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/fokko/tables",
         json=example_table_metadata_with_no_location,
@@ -1944,6 +2013,12 @@ def test_auth_header(rest_mock: Mocker) -> None:
     assert mock_request.last_request.text == "grant_type=client_credentials&client_id=client&client_secret=secret&scope=catalog"
 
 
+def test_client_version_header(rest_mock: Mocker) -> None:
+    catalog = RestCatalog("rest", uri=TEST_URI, warehouse="s3://some-bucket")
+    assert catalog._session.headers.get("X-Client-Version") == f"PyIceberg {pyiceberg.__version__}"
+    assert rest_mock.last_request.headers["X-Client-Version"] == f"PyIceberg {pyiceberg.__version__}"
+
+
 class TestRestCatalogClose:
     """Tests RestCatalog close functionality"""
 
@@ -2016,12 +2091,12 @@ class TestRestCatalogClose:
         assert catalog is not None and hasattr(catalog, "_session")
         assert len(catalog._session.adapters) == self.EXPECTED_ADAPTERS_SIGV4
 
-    def test_rest_scan_planning_disabled_by_default(self, rest_mock: Mocker) -> None:
+    def test_server_side_planning_disabled_by_default(self, rest_mock: Mocker) -> None:
         catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
 
-        assert catalog.is_rest_scan_planning_enabled() is False
+        assert catalog.supports_server_side_planning() is False
 
-    def test_rest_scan_planning_enabled_by_property(self, rest_mock: Mocker) -> None:
+    def test_server_side_planning_enabled_by_property(self, rest_mock: Mocker) -> None:
         catalog = RestCatalog(
             "rest",
             uri=TEST_URI,
@@ -2029,9 +2104,9 @@ class TestRestCatalogClose:
             **{"rest-scan-planning-enabled": "true"},
         )
 
-        assert catalog.is_rest_scan_planning_enabled() is True
+        assert catalog.supports_server_side_planning() is True
 
-    def test_rest_scan_planning_disabled_when_endpoint_unsupported(self, requests_mock: Mocker) -> None:
+    def test_server_side_planning_disabled_when_endpoint_unsupported(self, requests_mock: Mocker) -> None:
         # config endpoint does not populate endpoint falling back to default
         requests_mock.get(
             f"{TEST_URI}v1/config",
@@ -2045,9 +2120,9 @@ class TestRestCatalogClose:
             **{"rest-scan-planning-enabled": "true"},
         )
 
-        assert catalog.is_rest_scan_planning_enabled() is False
+        assert catalog.supports_server_side_planning() is False
 
-    def test_rest_scan_planning_explicitly_disabled(self, rest_mock: Mocker) -> None:
+    def test_server_side_planning_explicitly_disabled(self, rest_mock: Mocker) -> None:
         catalog = RestCatalog(
             "rest",
             uri=TEST_URI,
@@ -2055,9 +2130,9 @@ class TestRestCatalogClose:
             **{"rest-scan-planning-enabled": "false"},
         )
 
-        assert catalog.is_rest_scan_planning_enabled() is False
+        assert catalog.supports_server_side_planning() is False
 
-    def test_rest_scan_planning_enabled_from_server_config(self, rest_mock: Mocker) -> None:
+    def test_server_side_planning_enabled_from_server_config(self, rest_mock: Mocker) -> None:
         rest_mock.get(
             f"{TEST_URI}v1/config",
             json={
@@ -2069,7 +2144,7 @@ class TestRestCatalogClose:
         )
         catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
 
-        assert catalog.is_rest_scan_planning_enabled() is True
+        assert catalog.supports_server_side_planning() is True
 
     def test_supported_endpoint(self, requests_mock: Mocker) -> None:
         requests_mock.get(
@@ -2155,3 +2230,87 @@ class TestRestCatalogClose:
         # View endpoints should be supported when enabled
         catalog._check_endpoint(Capability.V1_LIST_VIEWS)
         catalog._check_endpoint(Capability.V1_DELETE_VIEW)
+
+
+def test_table_uuid_check_on_commit(rest_mock: Mocker, example_table_metadata_v2: dict[str, Any]) -> None:
+    """Test that UUID mismatch is detected on commit response (matches Java RESTTableOperations behavior)."""
+    original_uuid = "9c12d441-03fe-4693-9a96-a0705ddf69c1"
+    different_uuid = "550e8400-e29b-41d4-a716-446655440000"
+    metadata_location = "s3://warehouse/database/table/metadata.json"
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": example_table_metadata_v2,
+            "config": {},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    table = catalog.load_table(("namespace", "table_name"))
+
+    assert str(table.metadata.table_uuid) == original_uuid
+
+    metadata_with_different_uuid = {**example_table_metadata_v2, "table-uuid": different_uuid}
+
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": metadata_with_different_uuid,
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        table.update_schema().add_column("new_col", StringType()).commit()
+
+    assert "Table UUID does not match" in str(exc_info.value)
+    assert f"current={original_uuid}" in str(exc_info.value)
+    assert f"refreshed={different_uuid}" in str(exc_info.value)
+
+
+def test_table_uuid_check_on_refresh(rest_mock: Mocker, example_table_metadata_v2: dict[str, Any]) -> None:
+    original_uuid = "9c12d441-03fe-4693-9a96-a0705ddf69c1"
+    different_uuid = "550e8400-e29b-41d4-a716-446655440000"
+    metadata_location = "s3://warehouse/database/table/metadata.json"
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": example_table_metadata_v2,
+            "config": {},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    table = catalog.load_table(("namespace", "table_name"))
+
+    assert str(table.metadata.table_uuid) == original_uuid
+
+    metadata_with_different_uuid = {**example_table_metadata_v2, "table-uuid": different_uuid}
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": metadata_with_different_uuid,
+            "config": {},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        table.refresh()
+
+    assert "Table UUID does not match" in str(exc_info.value)
+    assert f"current={original_uuid}" in str(exc_info.value)
+    assert f"refreshed={different_uuid}" in str(exc_info.value)

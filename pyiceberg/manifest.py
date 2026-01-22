@@ -69,6 +69,28 @@ class DataFileContent(int, Enum):
         """Return the string representation of the DataFileContent class."""
         return f"DataFileContent.{self.name}"
 
+    @staticmethod
+    def from_rest_type(content_type: str) -> DataFileContent:
+        """Convert REST API content type string to DataFileContent.
+
+        Args:
+            content_type: REST API content type.
+
+        Returns:
+            The corresponding DataFileContent enum value.
+
+        Raises:
+            ValueError: If the content type is unknown.
+        """
+        mapping = {
+            "data": DataFileContent.DATA,
+            "position-deletes": DataFileContent.POSITION_DELETES,
+            "equality-deletes": DataFileContent.EQUALITY_DELETES,
+        }
+        if content_type not in mapping:
+            raise ValueError(f"Invalid file content value: {content_type}")
+        return mapping[content_type]
+
 
 class ManifestContent(int, Enum):
     DATA = 0
