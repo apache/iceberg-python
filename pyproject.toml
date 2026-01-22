@@ -19,7 +19,7 @@ name = "pyiceberg"
 version = "0.10.0"
 description = "Apache Iceberg is an open table format for huge analytic datasets"
 authors = [{ name = "Apache Software Foundation", email = "dev@iceberg.apache.org" }]
-requires-python = ">=3.10.0,<=3.13.0"
+requires-python = ">=3.10.0,<4.0.0"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
@@ -97,12 +97,6 @@ hf = ["huggingface-hub>=0.24.0"]
 pyiceberg-core = ["pyiceberg-core>=0.5.1,<0.9.0"]
 datafusion = ["datafusion>=51,<52"]
 gcp-auth = ["google-auth>=2.4.0"]
-
-[[tool.uv.index]]
-name = "testpypi"
-url = "https://test.pypi.org/simple/"
-publish-url = "https://test.pypi.org/legacy/"
-explicit = true
 
 [dependency-groups]
 dev = [

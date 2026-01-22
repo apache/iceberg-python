@@ -559,7 +559,7 @@ class InspectTable:
             if data_file_filter and data_file.content not in data_file_filter:
                 continue
             column_sizes = data_file.column_sizes or {}
-            value_counts = data_file.value_counts
+            value_counts = data_file.value_counts or {}
             null_value_counts = data_file.null_value_counts or {}
             nan_value_counts = data_file.nan_value_counts or {}
             lower_bounds = data_file.lower_bounds or {}
