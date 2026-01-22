@@ -80,6 +80,15 @@ Or, list existing namespaces:
 ns = catalog.list_namespaces()
 
 assert ns == [("docs_example",)]
+
+# Load namespace properties
+properties = catalog.load_namespace_properties("docs_example")
+
+# Update namespace properties
+catalog.update_namespace_properties("docs_example", updates={"owner": "iceberg"})
+
+# Drop a namespace
+# catalog.drop_namespace("docs_example")
 ```
 
 ## Create a table
@@ -165,6 +174,17 @@ with catalog.create_table_transaction(identifier="docs_example.bids", schema=sch
         update_spec.add_identity("symbol")
 
     txn.set_properties(test_a="test_aa", test_b="test_b", test_c="test_c")
+
+## Register a table
+
+To register a table using existing metadata:
+
+```python
+catalog.register_table(
+    identifier="docs_example.bids",
+    metadata_location="s3://warehouse/path/to/metadata.json"
+)
+```
 ```
 
 ## Load a table
@@ -215,6 +235,31 @@ catalog.table_exists("docs_example.bids")
 ```
 
 Returns `True` if the table already exists.
+
+## Rename a table
+
+To rename a table:
+
+```python
+catalog.rename_table(
+    from_identifier="docs_example.bids",
+    to_identifier="docs_example.bids_backup"
+)
+```
+
+## Drop a table
+
+To drop a table:
+
+```python
+catalog.drop_table("docs_example.bids")
+```
+
+To drop a table and purge all data and metadata files:
+
+```python
+catalog.purge_table("docs_example.bids")
+```
 
 ## Write to a table
 
