@@ -905,8 +905,8 @@ def test_coarse_match_filter_composite_key() -> None:
     """
     Test that create_coarse_match_filter produces efficient In() predicates for composite keys.
     """
+    from pyiceberg.expressions import And, Or
     from pyiceberg.table.upsert_util import create_coarse_match_filter, create_match_filter
-    from pyiceberg.expressions import Or, And, In
 
     # Create a table with composite key that has overlapping values
     # (1, 'x'), (2, 'y'), (1, 'z') - exact filter should have 3 conditions
@@ -1180,7 +1180,6 @@ def test_is_numeric_type(dtype: pa.DataType, expected_numeric: bool) -> None:
 def test_coarse_match_filter_small_dataset_uses_in_filter() -> None:
     """Test that small datasets (< 10,000 unique keys) use In() filter."""
     from pyiceberg.expressions import In
-
     from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
 
     # Create a dataset with 100 unique keys (well below threshold)
@@ -1201,7 +1200,6 @@ def test_coarse_match_filter_small_dataset_uses_in_filter() -> None:
 def test_coarse_match_filter_threshold_boundary_uses_in_filter() -> None:
     """Test that datasets at threshold - 1 (9,999 unique keys) still use In() filter."""
     from pyiceberg.expressions import In
-
     from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
 
     # Create a dataset with exactly threshold - 1 unique keys
@@ -1221,7 +1219,6 @@ def test_coarse_match_filter_threshold_boundary_uses_in_filter() -> None:
 def test_coarse_match_filter_above_threshold_uses_optimized_filter() -> None:
     """Test that datasets >= 10,000 unique keys use optimized filter strategy."""
     from pyiceberg.expressions import GreaterThanOrEqual, LessThanOrEqual
-
     from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
 
     # Create a dense dataset (consecutive IDs) with exactly threshold unique keys
@@ -1243,7 +1240,6 @@ def test_coarse_match_filter_above_threshold_uses_optimized_filter() -> None:
 def test_coarse_match_filter_large_dataset() -> None:
     """Test that large datasets (100,000 unique keys) use optimized filter."""
     from pyiceberg.expressions import GreaterThanOrEqual, LessThanOrEqual
-
     from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
 
     # Create a dense dataset with 100,000 unique keys
@@ -1269,7 +1265,6 @@ def test_coarse_match_filter_large_dataset() -> None:
 def test_coarse_match_filter_dense_ids_use_range_filter() -> None:
     """Test that dense IDs (density > 10%) use range filter."""
     from pyiceberg.expressions import GreaterThanOrEqual, LessThanOrEqual
-
     from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
 
     # Create dense IDs: all values from 0 to N-1 (100% density)
@@ -1290,7 +1285,6 @@ def test_coarse_match_filter_dense_ids_use_range_filter() -> None:
 def test_coarse_match_filter_moderately_dense_ids_use_range_filter() -> None:
     """Test that moderately dense IDs (50% density) use range filter."""
     from pyiceberg.expressions import GreaterThanOrEqual, LessThanOrEqual
-
     from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
 
     # Create IDs: 0, 2, 4, 6, ... (every other number) - 50% density
@@ -1330,7 +1324,6 @@ def test_coarse_match_filter_sparse_ids_use_always_true() -> None:
 def test_coarse_match_filter_density_boundary_at_10_percent() -> None:
     """Test exact 10% boundary density behavior."""
     from pyiceberg.expressions import GreaterThanOrEqual, LessThanOrEqual
-
     from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
 
     # Create IDs at exactly ~10% density
@@ -1379,7 +1372,6 @@ def test_coarse_match_filter_very_sparse_ids() -> None:
 def test_coarse_match_filter_empty_dataset_returns_always_false() -> None:
     """Test that empty dataset returns AlwaysFalse."""
     from pyiceberg.expressions import AlwaysFalse
-
     from pyiceberg.table.upsert_util import create_coarse_match_filter
 
     schema = pa.schema([pa.field("id", pa.int64()), pa.field("value", pa.int64())])
@@ -1393,7 +1385,6 @@ def test_coarse_match_filter_empty_dataset_returns_always_false() -> None:
 def test_coarse_match_filter_single_value_dataset() -> None:
     """Test that single value dataset uses In() or EqualTo() with single value."""
     from pyiceberg.expressions import In
-
     from pyiceberg.table.upsert_util import create_coarse_match_filter
 
     schema = pa.schema([pa.field("id", pa.int64()), pa.field("value", pa.int64())])
@@ -1418,7 +1409,6 @@ def test_coarse_match_filter_single_value_dataset() -> None:
 def test_coarse_match_filter_negative_numbers_range() -> None:
     """Test that negative number IDs produce correct min/max range."""
     from pyiceberg.expressions import GreaterThanOrEqual, LessThanOrEqual
-
     from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
 
     # Create dense negative IDs: -10000 to -1
@@ -1441,7 +1431,6 @@ def test_coarse_match_filter_negative_numbers_range() -> None:
 def test_coarse_match_filter_mixed_sign_numbers_range() -> None:
     """Test that mixed sign IDs (-500 to 500) produce correct range spanning zero."""
     from pyiceberg.expressions import GreaterThanOrEqual, LessThanOrEqual
-
     from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
 
     # Create IDs spanning zero: -5000 to 4999
@@ -1464,7 +1453,6 @@ def test_coarse_match_filter_mixed_sign_numbers_range() -> None:
 def test_coarse_match_filter_float_range_filter() -> None:
     """Test that float IDs use range filter correctly."""
     from pyiceberg.expressions import GreaterThanOrEqual, LessThanOrEqual
-
     from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
 
     # Create dense float IDs
@@ -1508,7 +1496,6 @@ def test_coarse_match_filter_non_numeric_column_skips_range_filter() -> None:
 
 def test_coarse_match_filter_composite_key_small_dataset() -> None:
     """Test that composite key with small dataset uses And(In(), In())."""
-    from pyiceberg.expressions import In
 
     from pyiceberg.table.upsert_util import create_coarse_match_filter
 
@@ -1531,7 +1518,6 @@ def test_coarse_match_filter_composite_key_small_dataset() -> None:
 
 def test_coarse_match_filter_composite_key_large_numeric_column() -> None:
     """Test composite key where one column has >10k unique numeric values."""
-    from pyiceberg.expressions import GreaterThanOrEqual, In, LessThanOrEqual
 
     from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
 
@@ -1557,7 +1543,6 @@ def test_coarse_match_filter_composite_key_large_numeric_column() -> None:
 
 def test_coarse_match_filter_composite_key_mixed_types() -> None:
     """Test composite key with mixed numeric and string columns with large dataset."""
-    from pyiceberg.expressions import In
 
     from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
 
