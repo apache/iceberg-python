@@ -101,6 +101,22 @@ def test_add_already_exists(catalog: Catalog, table_schema_nested: Schema) -> No
     assert "already exists: location.latitude" in str(exc_info.value)
 
 
+# @pytest.mark.integration
+def test_abort_transaction(catalog: Catalog, table_schema_nested: Schema) -> None:
+    table = _create_table_with_schema(catalog, table_schema_nested)
+    old_schema = table.schema()
+
+    with pytest.raises(ValueError) as exc_info:
+        with table.update_schema() as update:
+            update.add_column("123", IntegerType())  # "123" can be added succesfully
+            update.add_column("foo", IntegerType())
+    assert "already exists: foo" in str(exc_info.value)
+    # transaction raised, but "123" column is still added
+    print(f"Original Schema: {old_schema}")
+    print(f"New Schema: {table.schema()}")
+    assert old_schema == table.schema()
+
+
 @pytest.mark.integration
 def test_add_to_non_struct_type(catalog: Catalog, table_schema_simple: Schema) -> None:
     table = _create_table_with_schema(catalog, table_schema_simple)
