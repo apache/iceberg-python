@@ -191,9 +191,7 @@ def has_duplicate_rows(df: pyarrow_table, join_cols: list[str]) -> bool:
     return len(df.select(join_cols).group_by(join_cols).aggregate([([], "count_all")]).filter(pc.field("count_all") > 1)) > 0
 
 
-def _compare_columns_vectorized(
-    source_col: pa.Array | pa.ChunkedArray, target_col: pa.Array | pa.ChunkedArray
-) -> pa.Array:
+def _compare_columns_vectorized(source_col: pa.Array | pa.ChunkedArray, target_col: pa.Array | pa.ChunkedArray) -> pa.Array:
     """
     Vectorized comparison of two columns, returning a boolean array where True means values differ.
 
@@ -223,7 +221,7 @@ def _compare_columns_vectorized(
 
         # PyArrow cannot directly compare struct columns, so we recursively compare each field
         diff_masks = []
-        for i, field in enumerate(col_type):
+        for i, _field in enumerate(col_type):
             src_field = pc.struct_field(source_col, [i])
             tgt_field = pc.struct_field(target_col, [i])
             field_diff = _compare_columns_vectorized(src_field, tgt_field)
@@ -237,7 +235,12 @@ def _compare_columns_vectorized(
         field_diff = functools.reduce(pc.or_, diff_masks)
         return pc.or_(field_diff, struct_null_diff)
 
-    elif pa.types.is_list(col_type) or pa.types.is_large_list(col_type) or pa.types.is_fixed_size_list(col_type) or pa.types.is_map(col_type):
+    elif (
+        pa.types.is_list(col_type)
+        or pa.types.is_large_list(col_type)
+        or pa.types.is_fixed_size_list(col_type)
+        or pa.types.is_map(col_type)
+    ):
         # For list/map types, fall back to Python comparison as PyArrow doesn't support vectorized comparison
         # This is still faster than the original row-by-row approach since we batch the conversion
         source_py = source_col.to_pylist()

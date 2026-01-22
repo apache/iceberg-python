@@ -100,12 +100,14 @@ def gen_target_iceberg_table(
 ) -> Table:
     additional_columns = ", t.order_id + 1000 as order_line_id" if composite_key else ""
 
-    df = ctx.sql(f"""
+    df = ctx.sql(
+        f"""
         with t as (SELECT unnest(range({start_row},{end_row + 1})) as order_id)
         SELECT t.order_id {additional_columns}
             , date '2021-01-01' as order_date, 'A' as order_type
         from t
-    """).to_arrow_table()
+    """
+    ).to_arrow_table()
 
     table = catalog.create_table(identifier, df.schema)
 
@@ -166,23 +168,27 @@ def test_merge_scenario_skip_upd_row(catalog: Catalog) -> None:
 
     ctx = SessionContext()
 
-    df = ctx.sql("""
+    df = ctx.sql(
+        """
         select 1 as order_id, date '2021-01-01' as order_date, 'A' as order_type
         union all
         select 2 as order_id, date '2021-01-01' as order_date, 'A' as order_type
-    """).to_arrow_table()
+    """
+    ).to_arrow_table()
 
     table = catalog.create_table(identifier, df.schema)
 
     table.append(df)
 
-    source_df = ctx.sql("""
+    source_df = ctx.sql(
+        """
         select 1 as order_id, date '2021-01-01' as order_date, 'A' as order_type
         union all
         select 2 as order_id, date '2021-01-01' as order_date, 'B' as order_type
         union all
         select 3 as order_id, date '2021-01-01' as order_date, 'A' as order_type
-    """).to_arrow_table()
+    """
+    ).to_arrow_table()
 
     res = table.upsert(df=source_df, join_cols=["order_id"])
 
@@ -202,23 +208,27 @@ def test_merge_scenario_date_as_key(catalog: Catalog) -> None:
     identifier = "default.test_merge_scenario_date_as_key"
     _drop_table(catalog, identifier)
 
-    df = ctx.sql("""
+    df = ctx.sql(
+        """
         select date '2021-01-01' as order_date, 'A' as order_type
         union all
         select date '2021-01-02' as order_date, 'A' as order_type
-    """).to_arrow_table()
+    """
+    ).to_arrow_table()
 
     table = catalog.create_table(identifier, df.schema)
 
     table.append(df)
 
-    source_df = ctx.sql("""
+    source_df = ctx.sql(
+        """
         select date '2021-01-01' as order_date, 'A' as order_type
         union all
         select date '2021-01-02' as order_date, 'B' as order_type
         union all
         select date '2021-01-03' as order_date, 'A' as order_type
-    """).to_arrow_table()
+    """
+    ).to_arrow_table()
 
     res = table.upsert(df=source_df, join_cols=["order_date"])
 
@@ -238,23 +248,27 @@ def test_merge_scenario_string_as_key(catalog: Catalog) -> None:
 
     ctx = SessionContext()
 
-    df = ctx.sql("""
+    df = ctx.sql(
+        """
         select 'abc' as order_id, 'A' as order_type
         union all
         select 'def' as order_id, 'A' as order_type
-    """).to_arrow_table()
+    """
+    ).to_arrow_table()
 
     table = catalog.create_table(identifier, df.schema)
 
     table.append(df)
 
-    source_df = ctx.sql("""
+    source_df = ctx.sql(
+        """
         select 'abc' as order_id, 'A' as order_type
         union all
         select 'def' as order_id, 'B' as order_type
         union all
         select 'ghi' as order_id, 'A' as order_type
-    """).to_arrow_table()
+    """
+    ).to_arrow_table()
 
     res = table.upsert(df=source_df, join_cols=["order_id"])
 
@@ -1563,5 +1577,3 @@ def test_coarse_match_filter_composite_key_mixed_types() -> None:
     # numeric_id is sparse (density < 10%), so should use In()
     # string_id is non-numeric, so should use In()
     assert isinstance(result, And)
-
-
