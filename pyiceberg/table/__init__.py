@@ -33,7 +33,6 @@ from typing import (
 )
 
 from pydantic import Field
-from sortedcontainers import SortedList
 
 import pyiceberg.expressions.parser as parser
 from pyiceberg.expressions import (
@@ -56,7 +55,6 @@ from pyiceberg.expressions.visitors import (
 )
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import (
-    POSITIONAL_DELETE_SCHEMA,
     DataFile,
     DataFileContent,
     ManifestContent,
@@ -70,6 +68,7 @@ from pyiceberg.partitioning import (
     PartitionSpec,
 )
 from pyiceberg.schema import Schema
+from pyiceberg.table.delete_file_index import DeleteFileIndex
 from pyiceberg.table.inspect import InspectTable
 from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.table.maintenance import MaintenanceTable
@@ -1951,31 +1950,6 @@ def _min_sequence_number(manifests: list[ManifestFile]) -> int:
         return INITIAL_SEQUENCE_NUMBER
 
 
-def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_entries: SortedList[ManifestEntry]) -> set[DataFile]:
-    """Check if the delete file is relevant for the data file.
-
-    Using the column metrics to see if the filename is in the lower and upper bound.
-
-    Args:
-        data_entry (ManifestEntry): The manifest entry path of the datafile.
-        positional_delete_entries (List[ManifestEntry]): All the candidate positional deletes manifest entries.
-
-    Returns:
-        A set of files that are relevant for the data file.
-    """
-    relevant_entries = positional_delete_entries[positional_delete_entries.bisect_right(data_entry) :]
-
-    if len(relevant_entries) > 0:
-        evaluator = _InclusiveMetricsEvaluator(POSITIONAL_DELETE_SCHEMA, EqualTo("file_path", data_entry.data_file.file_path))
-        return {
-            positional_delete_entry.data_file
-            for positional_delete_entry in relevant_entries
-            if evaluator.eval(positional_delete_entry.data_file)
-        }
-    else:
-        return set()
-
-
 class DataScan(TableScan):
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
         project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id], self.case_sensitive)
@@ -2120,7 +2094,7 @@ class DataScan(TableScan):
     def _plan_files_local(self) -> Iterable[FileScanTask]:
         """Plan files locally by reading manifests."""
         data_entries: list[ManifestEntry] = []
-        positional_delete_entries = SortedList(key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER)
+        delete_index = DeleteFileIndex()
 
         residual_evaluators: dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
 
@@ -2129,18 +2103,18 @@ class DataScan(TableScan):
             if data_file.content == DataFileContent.DATA:
                 data_entries.append(manifest_entry)
             elif data_file.content == DataFileContent.POSITION_DELETES:
-                positional_delete_entries.add(manifest_entry)
+                delete_index.add_delete_file(manifest_entry, partition_key=data_file.partition)
             elif data_file.content == DataFileContent.EQUALITY_DELETES:
                 raise ValueError("PyIceberg does not yet support equality deletes: https://github.com/apache/iceberg/issues/6568")
             else:
                 raise ValueError(f"Unknown DataFileContent ({data_file.content}): {manifest_entry}")
-
         return [
             FileScanTask(
                 data_entry.data_file,
-                delete_files=_match_deletes_to_data_file(
-                    data_entry,
-                    positional_delete_entries,
+                delete_files=delete_index.for_data_file(
+                    data_entry.sequence_number or INITIAL_SEQUENCE_NUMBER,
+                    data_entry.data_file,
+                    partition_key=data_entry.data_file.partition,
                 ),
                 residual=residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(
                     data_entry.data_file.partition
