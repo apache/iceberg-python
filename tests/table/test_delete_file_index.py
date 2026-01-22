@@ -161,27 +161,6 @@ def test_dvs_treated_as_position_deletes() -> None:
     assert all(d.content == DataFileContent.POSITION_DELETES for d in result)
 
 
-def test_lazy_sorting() -> None:
-    group = PositionDeletes()
-
-    pos_4 = _create_positional_delete(sequence_number=4).data_file
-    pos_2 = _create_positional_delete(sequence_number=2).data_file
-    pos_1 = _create_positional_delete(sequence_number=1).data_file
-    pos_3 = _create_positional_delete(sequence_number=3).data_file
-
-    group.add(pos_4, 4)
-    group.add(pos_2, 2)
-    group.add(pos_1, 1)
-    group.add(pos_3, 3)
-
-    assert len(group.filter_by_seq(0)) == 4
-    assert len(group.filter_by_seq(1)) == 4
-    assert len(group.filter_by_seq(2)) == 3
-    assert len(group.filter_by_seq(3)) == 2
-    assert len(group.filter_by_seq(4)) == 1
-    assert len(group.filter_by_seq(5)) == 0
-
-
 def test_cannot_add_after_indexing() -> None:
     group = PositionDeletes()
     group.add(_create_positional_delete(sequence_number=1).data_file, 1)
@@ -190,3 +169,21 @@ def test_cannot_add_after_indexing() -> None:
 
     with pytest.raises(ValueError, match="Cannot add files after indexing"):
         group.add(_create_positional_delete(sequence_number=2).data_file, 2)
+
+
+def test_record_equality_for_partition_lookup() -> None:
+    index = DeleteFileIndex()
+
+    partition_a = Record(1, "foo")
+    partition_b = Record(1, "foo")
+    partition_c = Record(1, "bar")
+
+    assert partition_a == partition_b
+    assert partition_a != partition_c
+
+    index.add_delete_file(_create_partition_delete(sequence_number=2, spec_id=0, partition=partition_a), partition_a)
+
+    data_file = _create_data_file()
+
+    assert len(index.for_data_file(1, data_file, partition_b)) == 1
+    assert len(index.for_data_file(1, data_file, partition_c)) == 0

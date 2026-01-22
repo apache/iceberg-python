@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 from bisect import bisect_left
-from typing import Any
 
 from pyiceberg.expressions import EqualTo
 from pyiceberg.expressions.visitors import _InclusiveMetricsEvaluator
@@ -93,17 +92,17 @@ def _referenced_data_file_path(delete_file: DataFile) -> str | None:
     return None
 
 
-def _partition_key(spec_id: int, partition: Record | None) -> tuple[int, tuple[Any, ...]]:
+def _partition_key(spec_id: int, partition: Record | None) -> tuple[int, Record]:
     if partition:
-        return spec_id, tuple(partition._data)
-    return spec_id, ()  # unpartitioned handling
+        return spec_id, partition
+    return spec_id, Record()  # unpartitioned handling
 
 
 class DeleteFileIndex:
     """Indexes position delete files by partition and by exact data file path."""
 
     def __init__(self) -> None:
-        self._by_partition: dict[tuple[int, tuple[Any, ...]], PositionDeletes] = {}
+        self._by_partition: dict[tuple[int, Record], PositionDeletes] = {}
         self._by_path: dict[str, PositionDeletes] = {}
 
     def is_empty(self) -> bool:
