@@ -65,6 +65,7 @@ from pyiceberg.table.snapshots import (
     SnapshotSummaryCollector,
     Summary,
     ancestors_of,
+    latest_ancestor_before_timestamp,
     update_snapshot_summaries,
 )
 from pyiceberg.table.update import (
@@ -1007,6 +1008,26 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             raise ValueError(f"Cannot roll back to snapshot, not an ancestor of the current state: {snapshot_id}")
 
         return self.set_current_snapshot(snapshot_id=snapshot_id)
+
+    def rollback_to_timestamp(self, timestamp_ms: int) -> ManageSnapshots:
+        """Rollback the table to the latest snapshot before the given timestamp.
+
+        Finds the latest ancestor snapshot whose timestamp is before the given timestamp and rolls back to it.
+
+        Args:
+            timestamp_ms: Rollback to the latest snapshot before this timestamp in milliseconds.
+
+        Returns:
+            This for method chaining
+
+        Raises:
+            ValueError: If no valid snapshot exists older than the given timestamp.
+        """
+        snapshot = latest_ancestor_before_timestamp(self._transaction.table_metadata, timestamp_ms)
+        if snapshot is None:
+            raise ValueError(f"Cannot roll back, no valid snapshot older than: {timestamp_ms}")
+
+        return self.set_current_snapshot(snapshot_id=snapshot.snapshot_id)
 
     def _is_current_ancestor(self, snapshot_id: int) -> bool:
         return snapshot_id in self._current_ancestors()
