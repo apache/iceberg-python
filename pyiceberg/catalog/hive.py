@@ -551,23 +551,30 @@ class HiveCatalog(MetastoreCatalog):
 
                 if hive_table and current_table:
                     # Table exists, update it.
-                    new_parameters = _construct_parameters(
+
+                    # Note on table properties:
+                    # - Iceberg table properties are stored in both HMS and Iceberg metadata JSON.
+                    # - Updates are reflected in both locations
+                    # - Existing HMS table properties (set by external systems like Hive/Spark) are preserved.
+                    #
+                    # While it is possible to modify HMS table properties through this API, it is not recommended:
+                    # - New/Updated HMS table properties will also be stored in Iceberg metadata (even though it's HMS-specific)
+                    # - HMS properties cannot be deleted since they are not visible to Iceberg
+                    # - Mixing HMS-specific properties in Iceberg metadata can cause confusion
+                    new_iceberg_properties = _construct_parameters(
                         metadata_location=updated_staged_table.metadata_location,
                         previous_metadata_location=current_table.metadata_location,
                         metadata_properties=updated_staged_table.properties,
                     )
-
                     # Detect properties that were removed from Iceberg metadata
-                    removed_keys = current_table.properties.keys() - updated_staged_table.properties.keys()
+                    deleted_iceberg_properties = current_table.properties.keys() - updated_staged_table.properties.keys()
 
-                    # Sync HMS parameters: Iceberg metadata is the source of truth, HMS parameters are
-                    # a projection of Iceberg state plus any HMS-only properties.
-                    # Start with existing HMS params, remove deleted Iceberg properties, then apply Iceberg values.
-                    merged_params = dict(hive_table.parameters or {})
-                    for key in removed_keys:
-                        merged_params.pop(key, None)
-                    merged_params.update(new_parameters)
-                    hive_table.parameters = merged_params
+                    # Merge: preserve HMS-only properties, remove deleted Iceberg properties, apply new Iceberg properties
+                    existing_hms_parameters = dict(hive_table.parameters or {})
+                    for key in deleted_iceberg_properties:
+                        existing_hms_parameters.pop(key, None)
+                    existing_hms_parameters.update(new_iceberg_properties)
+                    hive_table.parameters = existing_hms_parameters
 
                     # Update hive's schema and properties
                     hive_table.sd = _construct_hive_storage_descriptor(
