@@ -326,25 +326,26 @@ identifier = "default.test_table"
             (CAST('example' AS BINARY), 'Associated string value for binary `example`')
             """,
         ),
-        (
-            [PartitionField(source_id=13, field_id=1001, transform=IdentityTransform(), name="decimal_field")],
-            [Decimal("123.45")],
-            Record(Decimal("123.45")),
-            "decimal_field=123.45",
-            f"""CREATE TABLE {identifier} (
-                decimal_field decimal(5,2),
-                string_field string
-            )
-            USING iceberg
-            PARTITIONED BY (
-                identity(decimal_field)
-            )
-            """,
-            f"""INSERT INTO {identifier}
-            VALUES
-            (123.45, 'Associated string value for decimal 123.45')
-            """,
-        ),
+        # DISCUSSED IN https://github.com/apache/iceberg-rust/discussions/2062
+        # (
+        #     [PartitionField(source_id=13, field_id=1001, transform=IdentityTransform(), name="decimal_field")],
+        #     [Decimal("123.45")],
+        #     Record(Decimal("123.45")),
+        #     "decimal_field=123.45",
+        #     f"""CREATE TABLE {identifier} (
+        #         decimal_field decimal(5,2),
+        #         string_field string
+        #     )
+        #     USING iceberg
+        #     PARTITIONED BY (
+        #         identity(decimal_field)
+        #     )
+        #     """,
+        #     f"""INSERT INTO {identifier}
+        #     VALUES
+        #     (123.45, 'Associated string value for decimal 123.45')
+        #     """,
+        # ),
         # # Year Month Day Hour Transform
         # Month Transform
         (

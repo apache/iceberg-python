@@ -879,31 +879,30 @@ class ManifestFile(Record):
         # but this is the easiest for now until we
         # have the write part in there as well
         def _convert_entry(entry: Any) -> ManifestEntry:
-            data_file = DataFile(
-                DataFileContent(entry.data_file.content),
-                entry.data_file.file_path,
-                FileFormat(entry.data_file.file_format),
-                Record(*(p.value() if p is not None else None for p in entry.data_file.partition)),
-                entry.data_file.record_count,
-                entry.data_file.file_size_in_bytes,
-                entry.data_file.column_sizes,
-                entry.data_file.value_counts,
-                entry.data_file.null_value_counts,
-                entry.data_file.nan_value_counts,
-                entry.data_file.lower_bounds,
-                entry.data_file.upper_bounds,
-                entry.data_file.key_metadata,
-                entry.data_file.split_offsets,
-                entry.data_file.equality_ids,
-                entry.data_file.sort_order_id,
-            )
-
+            data_file = entry.data_file
             return ManifestEntry(
                 ManifestEntryStatus(entry.status),
                 entry.snapshot_id,
                 entry.sequence_number,
                 entry.file_sequence_number,
-                data_file,
+                DataFile(
+                    DataFileContent(data_file.content),
+                    data_file.file_path,
+                    FileFormat(data_file.file_format),
+                    Record(*(p.value() if p is not None else None for p in data_file.partition)),
+                    data_file.record_count,
+                    data_file.file_size_in_bytes,
+                    data_file.column_sizes,
+                    data_file.value_counts,
+                    data_file.null_value_counts,
+                    data_file.nan_value_counts,
+                    data_file.lower_bounds,
+                    data_file.upper_bounds,
+                    data_file.key_metadata,
+                    data_file.split_offsets,
+                    data_file.equality_ids,
+                    data_file.sort_order_id,
+                ),
             )
 
         return [
