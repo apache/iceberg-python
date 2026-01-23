@@ -558,9 +558,11 @@ class HiveCatalog(MetastoreCatalog):
                     # - Existing HMS table properties (set by external systems like Hive/Spark) are preserved.
                     #
                     # While it is possible to modify HMS table properties through this API, it is not recommended:
-                    # - New/Updated HMS table properties will also be stored in Iceberg metadata (even though it is HMS-specific)
-                    # - HMS properties cannot be deleted since they are not visible to Iceberg
                     # - Mixing HMS-specific properties in Iceberg metadata can cause confusion
+                    # - New/updated HMS table properties will also be stored in Iceberg metadata (even though it is HMS-specific)
+                    # - HMS-native properties (set outside Iceberg) cannot be deleted since they are not visible to Iceberg
+                    #   (However, if you first SET an HMS property via Iceberg, it becomes tracked in Iceberg metadata,
+                    #   and can then be deleted via Iceberg - which removes it from both Iceberg metadata and HMS)
                     new_iceberg_properties = _construct_parameters(
                         metadata_location=updated_staged_table.metadata_location,
                         previous_metadata_location=current_table.metadata_location,
@@ -569,7 +571,7 @@ class HiveCatalog(MetastoreCatalog):
                     # Detect properties that were removed from Iceberg metadata
                     deleted_iceberg_properties = current_table.properties.keys() - updated_staged_table.properties.keys()
 
-                    # Merge: preserve HMS-only properties, remove deleted Iceberg properties, apply new Iceberg properties
+                    # Merge: preserve HMS-native properties, remove deleted Iceberg properties, apply new Iceberg properties
                     existing_hms_parameters = dict(hive_table.parameters or {})
                     for key in deleted_iceberg_properties:
                         existing_hms_parameters.pop(key, None)
