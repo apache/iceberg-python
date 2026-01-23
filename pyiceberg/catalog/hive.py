@@ -558,7 +558,7 @@ class HiveCatalog(MetastoreCatalog):
                     # - Existing HMS table properties (set by external systems like Hive/Spark) are preserved.
                     #
                     # While it is possible to modify HMS table properties through this API, it is not recommended:
-                    # - New/Updated HMS table properties will also be stored in Iceberg metadata (even though it's HMS-specific)
+                    # - New/Updated HMS table properties will also be stored in Iceberg metadata (even though it is HMS-specific)
                     # - HMS properties cannot be deleted since they are not visible to Iceberg
                     # - Mixing HMS-specific properties in Iceberg metadata can cause confusion
                     new_iceberg_properties = _construct_parameters(
