@@ -79,9 +79,9 @@ def test_read_manifest_entry(generated_manifest_entry_file: str) -> None:
     data_file = manifest_entry.data_file
 
     assert data_file.content == DataFileContent.DATA
-    assert (
-        data_file.file_path
-        == "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet"
+    assert data_file.file_path == (
+        "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/"
+        "00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet"
     )
     assert data_file.file_format == FileFormat.PARQUET
     assert repr(data_file.partition) == "Record[1, 1925]"
@@ -396,7 +396,10 @@ def test_write_manifest(
 
         expected_metadata = {
             "schema": test_schema.model_dump_json(),
-            "partition-spec": """[{"source-id":1,"field-id":1000,"transform":"identity","name":"VendorID"},{"source-id":2,"field-id":1001,"transform":"day","name":"tpep_pickup_day"}]""",
+            "partition-spec": (
+                '[{"source-id":1,"field-id":1000,"transform":"identity","name":"VendorID"},'
+                '{"source-id":2,"field-id":1001,"transform":"day","name":"tpep_pickup_day"}]'
+            ),
             "partition-spec-id": str(demo_manifest_file.partition_spec_id),
             "format-version": str(format_version),
         }
@@ -416,9 +419,9 @@ def test_write_manifest(
         data_file = manifest_entry.data_file
 
         assert data_file.content == DataFileContent.DATA
-        assert (
-            data_file.file_path
-            == "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet"
+        assert data_file.file_path == (
+            "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/"
+            "00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet"
         )
         assert data_file.file_format == FileFormat.PARQUET
         assert data_file.partition == Record(1, 1925)

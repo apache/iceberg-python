@@ -107,10 +107,12 @@ class AvroSchemaConversion:
             ... })
             >>> iceberg_schema = Schema(
             ...     NestedField(
-            ...         field_id=500, name="manifest_path", field_type=StringType(), required=False, doc="Location URI with FS scheme"
+            ...         field_id=500, name="manifest_path", field_type=StringType(),
+            ...         required=False, doc="Location URI with FS scheme"
             ...     ),
             ...     NestedField(
-            ...         field_id=501, name="manifest_length", field_type=LongType(), required=False, doc="Total file size in bytes"
+            ...         field_id=501, name="manifest_length", field_type=LongType(),
+            ...         required=False, doc="Total file size in bytes"
             ...     ),
             ...     schema_id=1
             ... )

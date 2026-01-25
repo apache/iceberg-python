@@ -406,7 +406,8 @@ class GlueCatalog(MetastoreCatalog):
             raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name} (Glue table version {version_id})") from e
         except self.glue.exceptions.ConcurrentModificationException as e:
             raise CommitFailedException(
-                f"Cannot commit {database_name}.{table_name} because Glue detected concurrent update to table version {version_id}"
+                f"Cannot commit {database_name}.{table_name} because Glue detected concurrent update "
+                f"to table version {version_id}"
             ) from e
 
     def _get_glue_table(self, database_name: str, table_name: str) -> "TableTypeDef":

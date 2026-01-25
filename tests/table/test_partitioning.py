@@ -120,9 +120,10 @@ def test_serialize_partition_spec() -> None:
         PartitionField(source_id=2, field_id=1001, transform=BucketTransform(num_buckets=25), name="int_bucket"),
         spec_id=3,
     )
-    assert (
-        partitioned.model_dump_json()
-        == """{"spec-id":3,"fields":[{"source-id":1,"field-id":1000,"transform":"truncate[19]","name":"str_truncate"},{"source-id":2,"field-id":1001,"transform":"bucket[25]","name":"int_bucket"}]}"""
+    assert partitioned.model_dump_json() == (
+        '{"spec-id":3,"fields":['
+        '{"source-id":1,"field-id":1000,"transform":"truncate[19]","name":"str_truncate"},'
+        '{"source-id":2,"field-id":1001,"transform":"bucket[25]","name":"int_bucket"}]}'
     )
 
 
@@ -134,7 +135,11 @@ def test_deserialize_unpartition_spec() -> None:
 
 
 def test_deserialize_partition_spec() -> None:
-    json_partition_spec = """{"spec-id": 3, "fields": [{"source-id": 1, "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}, {"source-id": 2, "field-id": 1001, "transform": "bucket[25]", "name": "int_bucket"}]}"""
+    json_partition_spec = (
+        '{"spec-id": 3, "fields": ['
+        '{"source-id": 1, "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}, '
+        '{"source-id": 2, "field-id": 1001, "transform": "bucket[25]", "name": "int_bucket"}]}'
+    )
 
     spec = PartitionSpec.model_validate_json(json_partition_spec)
 

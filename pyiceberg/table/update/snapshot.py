@@ -433,7 +433,8 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         def _copy_with_new_status(entry: ManifestEntry, status: ManifestEntryStatus) -> ManifestEntry:
             return ManifestEntry.from_args(
                 status=status,
-                # When a file is replaced or deleted from the dataset, its manifest entry fields store the snapshot ID in which the file was deleted and status 2 (deleted).
+                # When a file is replaced or deleted from the dataset, its manifest entry fields store the
+                # snapshot ID in which the file was deleted and status 2 (deleted).
                 snapshot_id=self.snapshot_id if status == ManifestEntryStatus.DELETED else entry.snapshot_id,
                 sequence_number=entry.sequence_number,
                 file_sequence_number=entry.file_sequence_number,

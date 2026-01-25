@@ -176,7 +176,8 @@ class SetStatisticsUpdate(IcebergBaseModel):
     snapshot_id: int | None = Field(
         None,
         alias="snapshot-id",
-        description="snapshot-id is **DEPRECATED for REMOVAL** since it contains redundant information. Use `statistics.snapshot-id` field instead.",
+        description="snapshot-id is **DEPRECATED for REMOVAL** since it contains redundant information. "
+        "Use `statistics.snapshot-id` field instead.",
     )
 
     @model_validator(mode="before")
@@ -450,7 +451,8 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
         and update.snapshot.first_row_id < base_metadata.next_row_id
     ):
         raise ValueError(
-            f"Cannot add a snapshot with first row id smaller than the table's next-row-id {update.snapshot.first_row_id} < {base_metadata.next_row_id}"
+            f"Cannot add a snapshot with first row id smaller than the table's next-row-id "
+            f"{update.snapshot.first_row_id} < {base_metadata.next_row_id}"
         )
 
     context.add_update(update)
@@ -812,7 +814,8 @@ class AssertRefSnapshotId(ValidatableTableRequirement):
                 raise CommitFailedException(f"Requirement failed: {ref_type} {self.ref} was created concurrently")
             elif self.snapshot_id != snapshot_ref.snapshot_id:
                 raise CommitFailedException(
-                    f"Requirement failed: {ref_type} {self.ref} has changed: expected id {self.snapshot_id}, found {snapshot_ref.snapshot_id}"
+                    f"Requirement failed: {ref_type} {self.ref} has changed: "
+                    f"expected id {self.snapshot_id}, found {snapshot_ref.snapshot_id}"
                 )
         elif self.snapshot_id is not None:
             raise CommitFailedException(f"Requirement failed: branch or tag {self.ref} is missing, expected {self.snapshot_id}")
@@ -829,7 +832,8 @@ class AssertLastAssignedFieldId(ValidatableTableRequirement):
             raise CommitFailedException("Requirement failed: current table metadata is missing")
         elif base_metadata.last_column_id != self.last_assigned_field_id:
             raise CommitFailedException(
-                f"Requirement failed: last assigned field id has changed: expected {self.last_assigned_field_id}, found {base_metadata.last_column_id}"
+                f"Requirement failed: last assigned field id has changed: "
+                f"expected {self.last_assigned_field_id}, found {base_metadata.last_column_id}"
             )
 
 
@@ -844,7 +848,8 @@ class AssertCurrentSchemaId(ValidatableTableRequirement):
             raise CommitFailedException("Requirement failed: current table metadata is missing")
         elif self.current_schema_id != base_metadata.current_schema_id:
             raise CommitFailedException(
-                f"Requirement failed: current schema id has changed: expected {self.current_schema_id}, found {base_metadata.current_schema_id}"
+                f"Requirement failed: current schema id has changed: "
+                f"expected {self.current_schema_id}, found {base_metadata.current_schema_id}"
             )
 
 
@@ -859,7 +864,8 @@ class AssertLastAssignedPartitionId(ValidatableTableRequirement):
             raise CommitFailedException("Requirement failed: current table metadata is missing")
         elif base_metadata.last_partition_id != self.last_assigned_partition_id:
             raise CommitFailedException(
-                f"Requirement failed: last assigned partition id has changed: expected {self.last_assigned_partition_id}, found {base_metadata.last_partition_id}"
+                f"Requirement failed: last assigned partition id has changed: "
+                f"expected {self.last_assigned_partition_id}, found {base_metadata.last_partition_id}"
             )
 
 
@@ -874,7 +880,8 @@ class AssertDefaultSpecId(ValidatableTableRequirement):
             raise CommitFailedException("Requirement failed: current table metadata is missing")
         elif self.default_spec_id != base_metadata.default_spec_id:
             raise CommitFailedException(
-                f"Requirement failed: default spec id has changed: expected {self.default_spec_id}, found {base_metadata.default_spec_id}"
+                f"Requirement failed: default spec id has changed: "
+                f"expected {self.default_spec_id}, found {base_metadata.default_spec_id}"
             )
 
 
@@ -889,7 +896,8 @@ class AssertDefaultSortOrderId(ValidatableTableRequirement):
             raise CommitFailedException("Requirement failed: current table metadata is missing")
         elif self.default_sort_order_id != base_metadata.default_sort_order_id:
             raise CommitFailedException(
-                f"Requirement failed: default sort order id has changed: expected {self.default_sort_order_id}, found {base_metadata.default_sort_order_id}"
+                f"Requirement failed: default sort order id has changed: "
+                f"expected {self.default_sort_order_id}, found {base_metadata.default_sort_order_id}"
             )
 
 

@@ -79,9 +79,9 @@ def test_serialize_summary_with_properties() -> None:
 
 
 def test_serialize_snapshot(snapshot: Snapshot) -> None:
-    assert (
-        snapshot.model_dump_json()
-        == """{"snapshot-id":25,"parent-snapshot-id":19,"sequence-number":200,"timestamp-ms":1602638573590,"manifest-list":"s3:/a/b/c.avro","summary":{"operation":"append"},"schema-id":3}"""
+    assert snapshot.model_dump_json() == (
+        '{"snapshot-id":25,"parent-snapshot-id":19,"sequence-number":200,"timestamp-ms":1602638573590,'
+        '"manifest-list":"s3:/a/b/c.avro","summary":{"operation":"append"},"schema-id":3}'
     )
 
 
@@ -96,14 +96,17 @@ def test_serialize_snapshot_without_sequence_number() -> None:
         schema_id=3,
     )
     actual = snapshot.model_dump_json()
-    expected = """{"snapshot-id":25,"parent-snapshot-id":19,"timestamp-ms":1602638573590,"manifest-list":"s3:/a/b/c.avro","summary":{"operation":"append"},"schema-id":3}"""
+    expected = (
+        '{"snapshot-id":25,"parent-snapshot-id":19,"timestamp-ms":1602638573590,'
+        '"manifest-list":"s3:/a/b/c.avro","summary":{"operation":"append"},"schema-id":3}'
+    )
     assert actual == expected
 
 
 def test_serialize_snapshot_with_properties(snapshot_with_properties: Snapshot) -> None:
-    assert (
-        snapshot_with_properties.model_dump_json()
-        == """{"snapshot-id":25,"parent-snapshot-id":19,"sequence-number":200,"timestamp-ms":1602638573590,"manifest-list":"s3:/a/b/c.avro","summary":{"operation":"append","foo":"bar"},"schema-id":3}"""
+    assert snapshot_with_properties.model_dump_json() == (
+        '{"snapshot-id":25,"parent-snapshot-id":19,"sequence-number":200,"timestamp-ms":1602638573590,'
+        '"manifest-list":"s3:/a/b/c.avro","summary":{"operation":"append","foo":"bar"},"schema-id":3}'
     )
 
 
@@ -119,36 +122,45 @@ def test_deserialize_summary_with_properties() -> None:
 
 
 def test_deserialize_snapshot(snapshot: Snapshot) -> None:
-    payload = """{"snapshot-id": 25, "parent-snapshot-id": 19, "sequence-number": 200, "timestamp-ms": 1602638573590, "manifest-list": "s3:/a/b/c.avro", "summary": {"operation": "append"}, "schema-id": 3}"""
+    payload = (
+        '{"snapshot-id": 25, "parent-snapshot-id": 19, "sequence-number": 200, "timestamp-ms": 1602638573590, '
+        '"manifest-list": "s3:/a/b/c.avro", "summary": {"operation": "append"}, "schema-id": 3}'
+    )
     actual = Snapshot.model_validate_json(payload)
     assert actual == snapshot
 
 
 def test_deserialize_snapshot_without_operation(snapshot: Snapshot) -> None:
-    payload = """{"snapshot-id": 25, "parent-snapshot-id": 19, "sequence-number": 200, "timestamp-ms": 1602638573590, "manifest-list": "s3:/a/b/c.avro", "summary": {}, "schema-id": 3}"""
+    payload = (
+        '{"snapshot-id": 25, "parent-snapshot-id": 19, "sequence-number": 200, "timestamp-ms": 1602638573590, '
+        '"manifest-list": "s3:/a/b/c.avro", "summary": {}, "schema-id": 3}'
+    )
     with pytest.warns(UserWarning, match="Encountered invalid snapshot summary: operation is missing, defaulting to overwrite"):
         actual = Snapshot.model_validate_json(payload)
     assert actual.summary.operation == Operation.OVERWRITE
 
 
 def test_deserialize_snapshot_with_properties(snapshot_with_properties: Snapshot) -> None:
-    payload = """{"snapshot-id":25,"parent-snapshot-id":19,"sequence-number":200,"timestamp-ms":1602638573590,"manifest-list":"s3:/a/b/c.avro","summary":{"operation":"append","foo":"bar"},"schema-id":3}"""
+    payload = (
+        '{"snapshot-id":25,"parent-snapshot-id":19,"sequence-number":200,"timestamp-ms":1602638573590,'
+        '"manifest-list":"s3:/a/b/c.avro","summary":{"operation":"append","foo":"bar"},"schema-id":3}'
+    )
     snapshot = Snapshot.model_validate_json(payload)
     assert snapshot == snapshot_with_properties
 
 
 def test_snapshot_repr(snapshot: Snapshot) -> None:
-    assert (
-        repr(snapshot)
-        == """Snapshot(snapshot_id=25, parent_snapshot_id=19, sequence_number=200, timestamp_ms=1602638573590, manifest_list='s3:/a/b/c.avro', summary=Summary(Operation.APPEND), schema_id=3)"""
+    assert repr(snapshot) == (
+        "Snapshot(snapshot_id=25, parent_snapshot_id=19, sequence_number=200, timestamp_ms=1602638573590, "
+        "manifest_list='s3:/a/b/c.avro', summary=Summary(Operation.APPEND), schema_id=3)"
     )
     assert snapshot == eval(repr(snapshot))
 
 
 def test_snapshot_with_properties_repr(snapshot_with_properties: Snapshot) -> None:
-    assert (
-        repr(snapshot_with_properties)
-        == """Snapshot(snapshot_id=25, parent_snapshot_id=19, sequence_number=200, timestamp_ms=1602638573590, manifest_list='s3:/a/b/c.avro', summary=Summary(Operation.APPEND, **{'foo': 'bar'}), schema_id=3)"""
+    assert repr(snapshot_with_properties) == (
+        "Snapshot(snapshot_id=25, parent_snapshot_id=19, sequence_number=200, timestamp_ms=1602638573590, "
+        "manifest_list='s3:/a/b/c.avro', summary=Summary(Operation.APPEND, **{'foo': 'bar'}), schema_id=3)"
     )
     assert snapshot_with_properties == eval(repr(snapshot_with_properties))
 
@@ -226,7 +238,10 @@ def test_snapshot_summary_collector_with_partition() -> None:
         "deleted-records": "300",
         "changed-partition-count": "2",
         "partition-summaries-included": "true",
-        "partitions.int_field=1": "added-files-size=1234,removed-files-size=1234,added-data-files=1,deleted-data-files=1,added-records=100,deleted-records=100",
+        "partitions.int_field=1": (
+            "added-files-size=1234,removed-files-size=1234,added-data-files=1,"
+            "deleted-data-files=1,added-records=100,deleted-records=100"
+        ),
         "partitions.int_field=2": "removed-files-size=4321,deleted-data-files=1,deleted-records=200",
     }
 
@@ -262,7 +277,10 @@ def test_snapshot_summary_collector_with_partition_limit_in_constructor() -> Non
         "deleted-records": "300",
         "changed-partition-count": "2",
         "partition-summaries-included": "true",
-        "partitions.int_field=1": "added-files-size=1234,removed-files-size=1234,added-data-files=1,deleted-data-files=1,added-records=100,deleted-records=100",
+        "partitions.int_field=1": (
+            "added-files-size=1234,removed-files-size=1234,added-data-files=1,"
+            "deleted-data-files=1,added-records=100,deleted-records=100"
+        ),
         "partitions.int_field=2": "removed-files-size=4321,deleted-data-files=1,deleted-records=200",
     }
 

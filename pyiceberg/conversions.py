@@ -188,8 +188,9 @@ def to_bytes(
 ) -> bytes:
     """Convert a built-in python value to bytes.
 
-    This conversion follows the serialization scheme for storing single values as individual binary values defined in the Iceberg specification that
-    can be found at https://iceberg.apache.org/spec/#appendix-d-single-value-serialization
+    This conversion follows the serialization scheme for storing single values as individual binary values
+    defined in the Iceberg specification that can be found at
+    https://iceberg.apache.org/spec/#appendix-d-single-value-serialization
 
     Args:
         primitive_type (PrimitiveType): An implementation of the PrimitiveType base class.

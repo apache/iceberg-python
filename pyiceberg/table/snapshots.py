@@ -70,9 +70,11 @@ class Operation(Enum):
 
     Possible operation values are:
         - append: Only data files were added and no files were removed.
-        - replace: Data and delete files were added and removed without changing table data; i.e., compaction, changing the data file format, or relocating data files.
+        - replace: Data and delete files were added and removed without changing table data;
+            i.e., compaction, changing the data file format, or relocating data files.
         - overwrite: Data and delete files were added and removed in a logical overwrite operation.
-        - delete: Data files were removed and their contents logically deleted and/or delete files were added to delete rows.
+        - delete: Data files were removed and their contents logically deleted and/or delete files
+            were added to delete rows.
     """
 
     APPEND = "append"

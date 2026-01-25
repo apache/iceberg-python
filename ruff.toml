@@ -57,9 +57,7 @@ select = [
     "I", # isort
     "UP", # pyupgrade
 ]
-ignore = [
-    "E501"
-]
+ignore = []
 
 # Allow autofix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]

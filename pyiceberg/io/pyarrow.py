@@ -248,7 +248,9 @@ class PyArrowLocalFileSystem(pyarrow.fs.LocalFileSystem):
 
 
 class PyArrowFile(InputFile, OutputFile):
-    """A combined InputFile and OutputFile implementation that uses a pyarrow filesystem to generate pyarrow.lib.NativeFile instances.
+    """A combined InputFile and OutputFile implementation using pyarrow filesystem.
+
+    This class generates pyarrow.lib.NativeFile instances.
 
     Args:
         location (str): A URI or a path to a local file.
@@ -645,8 +647,9 @@ class PyArrowFileIO(FileIO):
         """Delete the file at the given location.
 
         Args:
-            location (Union[str, InputFile, OutputFile]): The URI to the file--if an InputFile instance or an OutputFile instance is provided,
-                the location attribute for that instance is used as the location to delete.
+            location (Union[str, InputFile, OutputFile]): The URI to the file--if an InputFile instance or
+                an OutputFile instance is provided, the location attribute for that instance is used as
+                the location to delete.
 
         Raises:
             FileNotFoundError: When the file at the provided location does not exist.
@@ -1014,7 +1017,10 @@ class _NullNaNUnmentionedTermsCollector(BoundBooleanExpressionVisitor[None]):
         self,
         expr: BooleanExpression,
     ) -> None:
-        """Collect the bound references categorized by having at least one is_null or is_not_null in the expr and the remaining."""
+        """Collect bound references categorized by null predicates.
+
+        Categorizes by having at least one is_null or is_not_null in the expr and the remaining.
+        """
         boolean_expression_visit(expr, self)
 
 
@@ -1035,7 +1041,8 @@ def expression_to_pyarrow(expr: BooleanExpression, schema: Schema | None = None)
 def _expression_to_complementary_pyarrow(expr: BooleanExpression, schema: Schema | None = None) -> pc.Expression:
     """Complementary filter conversion function of expression_to_pyarrow.
 
-    Could not use expression_to_pyarrow(Not(expr)) to achieve this complementary effect because ~ in pyarrow.compute.Expression does not handle null.
+    Could not use expression_to_pyarrow(Not(expr)) to achieve this complementary effect because
+    ~ in pyarrow.compute.Expression does not handle null.
     """
     collector = _NullNaNUnmentionedTermsCollector()
     collector.collect(expr)
@@ -1417,7 +1424,9 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema]):
                         return TimestampNanoType()
                 else:
                     raise TypeError(
-                        "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write.",
+                        "Iceberg does not yet support 'ns' timestamp precision. "
+                        "Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically "
+                        "downcast 'ns' to 'us' on write.",
                     )
             else:
                 raise TypeError(f"Unsupported precision for timestamp type: {primitive.unit}")
@@ -1580,7 +1589,8 @@ def _task_to_record_batches(
         fragment = arrow_format.make_fragment(fin)
         physical_schema = fragment.physical_schema
 
-        # For V1 and V2, we only support Timestamp 'us' in Iceberg Schema, therefore it is reasonable to always cast 'ns' timestamp to 'us' on read.
+        # For V1 and V2, we only support Timestamp 'us' in Iceberg Schema,
+        # therefore it is reasonable to always cast 'ns' timestamp to 'us' on read.
         # For V3 this has to set explicitly to avoid nanosecond timestamp to be down-casted by default
         downcast_ns_timestamp_to_us = (
             downcast_ns_timestamp_to_us if downcast_ns_timestamp_to_us is not None else format_version <= 2
@@ -2450,7 +2460,8 @@ class DataFileStatistics:
 
         if not iceberg_transform.preserves_order:
             raise ValueError(
-                f"Cannot infer partition value from parquet metadata for a non-linear Partition Field: {partition_field.name} with transform {partition_field.transform}"
+                f"Cannot infer partition value from parquet metadata for a non-linear Partition Field: "
+                f"{partition_field.name} with transform {partition_field.transform}"
             )
 
         transform_func = iceberg_transform.transform(source_field.field_type)
@@ -2471,7 +2482,8 @@ class DataFileStatistics:
         )
         if lower_value != upper_value:
             raise ValueError(
-                f"Cannot infer partition value from parquet metadata as there are more than one partition values for Partition Field: {partition_field.name}. {lower_value=}, {upper_value=}"
+                f"Cannot infer partition value from parquet metadata as there are more than one partition values "
+                f"for Partition Field: {partition_field.name}. {lower_value=}, {upper_value=}"
             )
 
         return lower_value
@@ -2738,7 +2750,8 @@ def _check_pyarrow_schema_compatible(
         )
         additional_names = set(provided_schema._name_to_id.keys()) - set(requested_schema._name_to_id.keys())
         raise ValueError(
-            f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. Update the schema first (hint, use union_by_name)."
+            f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. "
+            "Update the schema first (hint, use union_by_name)."
         ) from e
     _check_schema_compatible(requested_schema, provided_schema)
 
