@@ -806,7 +806,7 @@ def test_manifest_cache_deduplicates_manifest_files() -> None:
         assert manifests2[1] is manifests3[1], "ManifestFile2 should be the same object instance across manifest lists"
 
         # Verify cache size - should only have 3 unique ManifestFile objects
-        # not 1 + 2 + 3 = 6 objects as with the old approach
+        # instead of 1 + 2 + 3 = 6 objects as with the old approach
         assert len(_manifest_cache) == 3, (
             f"Cache should contain exactly 3 unique ManifestFile objects, but has {len(_manifest_cache)}"
         )
