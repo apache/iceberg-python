@@ -1910,6 +1910,15 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
                         elif target_type.unit == "us" and values.type.unit in {"s", "ms", "us"}:
                             return values.cast(target_type)
                     raise ValueError(f"Unsupported schema projection from {values.type} to {target_type}")
+                elif isinstance(field.field_type, (IntegerType, LongType)):
+                    # Cast smaller integer types to target type for cross-platform compatibility
+                    # Only allow widening conversions (smaller bit width to larger)
+                    # Narrowing conversions fall through to promote() handling below
+                    if pa.types.is_integer(values.type):
+                        source_width = values.type.bit_width
+                        target_width = target_type.bit_width
+                        if source_width < target_width:
+                            return values.cast(target_type)
 
             if field.field_type != file_field.field_type:
                 target_schema = schema_to_pyarrow(
