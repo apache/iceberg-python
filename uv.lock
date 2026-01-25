@@ -4369,7 +4369,6 @@ dependencies = [
     { name = "pyroaring" },
     { name = "requests" },
     { name = "rich" },
-    { name = "sortedcontainers" },
     { name = "strictyaml" },
     { name = "tenacity" },
     { name = "zstandard" },
@@ -4530,7 +4529,6 @@ requires-dist = [
     { name = "requests", specifier = ">=2.20.0,<3.0.0" },
     { name = "rich", specifier = ">=10.11.0,<15.0.0" },
     { name = "s3fs", marker = "extra == 's3fs'", specifier = ">=2023.1.0" },
-    { name = "sortedcontainers", specifier = "==2.4.0" },
     { name = "sqlalchemy", marker = "extra == 'sql-postgres'", specifier = ">=2.0.18,<3" },
     { name = "sqlalchemy", marker = "extra == 'sql-sqlite'", specifier = ">=2.0.18,<3" },
     { name = "strictyaml", specifier = ">=1.7.0,<2.0.0" },
@@ -5481,15 +5479,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/75/a7/9810d872919697c9d01295633f5d574fb416d47e535f258272ca1f01f447/snowballstemmer-3.0.1.tar.gz", hash = "sha256:6d5eeeec8e9f84d4d56b847692bacf79bc2c8e90c7f80ca4444ff8b6f2e52895", size = 105575, upload-time = "2025-05-09T16:34:51.843Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c8/78/3565d011c61f5a43488987ee32b6f3f656e7f107ac2782dd57bdd7d91d9a/snowballstemmer-3.0.1-py3-none-any.whl", hash = "sha256:6cd7b3897da8d6c9ffb968a6781fa6532dce9c3618a4b127d920dab764a19064", size = 103274, upload-time = "2025-05-09T16:34:50.371Z" },
-]
-
-[[package]]
-name = "sortedcontainers"
-version = "2.4.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e8/c4/ba2f8066cceb6f23394729afe52f3bf7adec04bf9ed2c820b39e19299111/sortedcontainers-2.4.0.tar.gz", hash = "sha256:25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88", size = 30594, upload-time = "2021-05-16T22:03:42.897Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/32/46/9cb0e58b2deb7f82b84065f37f3bffeb12413f947f9388e4cac22c4621ce/sortedcontainers-2.4.0-py2.py3-none-any.whl", hash = "sha256:a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0", size = 29575, upload-time = "2021-05-16T22:03:41.177Z" },
 ]
 
 [[package]]
