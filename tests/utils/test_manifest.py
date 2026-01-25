@@ -893,7 +893,6 @@ def test_manifest_cache_efficiency_with_many_overlapping_lists() -> None:
 
         # Verify object identity - all references to the same manifest should be the same object
         for i in range(num_manifests):
-            manifest_path = manifest_files[i].manifest_path
             # Find all references to this manifest across all results
             references = []
             for j, result in enumerate(all_results):
