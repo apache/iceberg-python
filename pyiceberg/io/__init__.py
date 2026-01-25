@@ -41,12 +41,14 @@ from pyiceberg.typedef import EMPTY_DICT, Properties
 
 logger = logging.getLogger(__name__)
 
+AWS_PROFILE_NAME = "client.profile-name"
 AWS_REGION = "client.region"
 AWS_ACCESS_KEY_ID = "client.access-key-id"
 AWS_SECRET_ACCESS_KEY = "client.secret-access-key"
 AWS_SESSION_TOKEN = "client.session-token"
 AWS_ROLE_ARN = "client.role-arn"
 AWS_ROLE_SESSION_NAME = "client.role-session-name"
+S3_PROFILE_NAME = "s3.profile-name"
 S3_ANONYMOUS = "s3.anonymous"
 S3_ENDPOINT = "s3.endpoint"
 S3_ACCESS_KEY_ID = "s3.access-key-id"
