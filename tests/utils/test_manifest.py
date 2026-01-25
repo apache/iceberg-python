@@ -332,9 +332,6 @@ def test_read_manifest_cache(generated_manifest_file_file_v2: str) -> None:
         schema_id=3,
     )
 
-    # Clear cache to ensure clean state
-    _manifest_cache.clear()
-
     # Access the manifests property multiple times
     manifests_first_call = snapshot.manifests(io)
     manifests_second_call = snapshot.manifests(io)
@@ -781,9 +778,6 @@ def test_manifest_cache_deduplicates_manifest_files() -> None:
         ) as list_writer:
             list_writer.add_manifests([manifest_file1, manifest_file2, manifest_file3])
 
-        # Clear the cache before testing
-        _manifest_cache.clear()
-
         # Read all three manifest lists
         manifests1 = _manifests(io, manifest_list1_path)
         manifests2 = _manifests(io, manifest_list2_path)
@@ -870,9 +864,6 @@ def test_manifest_cache_efficiency_with_many_overlapping_lists() -> None:
             ) as list_writer:
                 list_writer.add_manifests(manifest_files[: i + 1])
             manifest_list_paths.append(list_path)
-
-        # Clear the cache
-        _manifest_cache.clear()
 
         # Read all manifest lists
         all_results = []
