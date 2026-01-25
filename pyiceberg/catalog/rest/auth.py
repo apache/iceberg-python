@@ -181,7 +181,8 @@ class OAuth2TokenProvider:
         expires_in = result.get("expires_in", self.expires_in)
         if expires_in is None:
             raise ValueError(
-                "The expiration time of the Token must be provided by the Server in the Access Token Response in `expires_in` field, or by the PyIceberg Client."
+                "The expiration time of the Token must be provided by the Server in the Access Token Response "
+                "in `expires_in` field, or by the PyIceberg Client."
             )
         self._expires_at = time.monotonic() + expires_in - self.refresh_margin
 
@@ -249,8 +250,9 @@ class GoogleAuthManager(AuthManager):
 
 
 class AuthManagerAdapter(AuthBase):
-    """A `requests.auth.AuthBase` adapter that integrates an `AuthManager` into a `requests.Session` to automatically attach the appropriate Authorization header to every request.
+    """A `requests.auth.AuthBase` adapter for integrating an `AuthManager` into a `requests.Session`.
 
+    This adapter automatically attaches the appropriate Authorization header to every request.
     This adapter is useful when working with `requests.Session.auth`
     and allows reuse of authentication strategies defined by `AuthManager`.
     This AuthManagerAdapter is only intended to be used against the REST Catalog

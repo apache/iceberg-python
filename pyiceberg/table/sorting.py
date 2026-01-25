@@ -67,7 +67,8 @@ class SortField(IcebergBaseModel):
       transform (str): Transform that is used to produce values to be sorted on from the source column.
                        This is the same transform as described in partition transforms.
       direction (SortDirection): Sort direction, that can only be either asc or desc.
-      null_order (NullOrder): Null order that describes the order of null values when sorted. Can only be either nulls-first or nulls-last.
+      null_order (NullOrder): Null order that describes the order of null values when sorted.
+                              Can only be either nulls-first or nulls-last.
     """
 
     def __init__(

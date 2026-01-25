@@ -560,7 +560,8 @@ class Transaction:
         for field in self.table_metadata.spec().fields:
             if not isinstance(field.transform, IdentityTransform):
                 raise ValueError(
-                    f"For now dynamic overwrite does not support a table with non-identity-transform field in the latest partition spec: {field}"
+                    f"For now dynamic overwrite does not support a table with non-identity-transform field "
+                    f"in the latest partition spec: {field}"
                 )
 
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
@@ -769,8 +770,10 @@ class Transaction:
 
             df: The input dataframe to upsert with the table's data.
             join_cols: Columns to join on, if not provided, it will use the identifier-field-ids.
-            when_matched_update_all: Bool indicating to update rows that are matched but require an update due to a value in a non-key column changing
-            when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any existing rows in the table
+            when_matched_update_all: Bool indicating to update rows that are matched but require an update
+                due to a value in a non-key column changing
+            when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any
+                existing rows in the table
             case_sensitive: Bool indicating if the match should be case-sensitive
             branch: Branch Reference to run the upsert operation
             snapshot_properties: Custom properties to be added to the snapshot summary
@@ -860,8 +863,9 @@ class Transaction:
             rows = pa.Table.from_batches([batch])
 
             if when_matched_update_all:
-                # function get_rows_to_update is doing a check on non-key columns to see if any of the values have actually changed
-                # we don't want to do just a blanket overwrite for matched rows if the actual non-key column data hasn't changed
+                # function get_rows_to_update is doing a check on non-key columns to see if any of the
+                # values have actually changed. We don't want to do just a blanket overwrite for matched
+                # rows if the actual non-key column data hasn't changed.
                 # this extra step avoids unnecessary IO and writes
                 rows_to_update = upsert_util.get_rows_to_update(df, rows, join_cols)
 
@@ -1368,8 +1372,10 @@ class Table:
 
             df: The input dataframe to upsert with the table's data.
             join_cols: Columns to join on, if not provided, it will use the identifier-field-ids.
-            when_matched_update_all: Bool indicating to update rows that are matched but require an update due to a value in a non-key column changing
-            when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any existing rows in the table
+            when_matched_update_all: Bool indicating to update rows that are matched but require an update
+                due to a value in a non-key column changing
+            when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any
+                existing rows in the table
             case_sensitive: Bool indicating if the match should be case-sensitive
             branch: Branch Reference to run the upsert operation
             snapshot_properties: Custom properties to be added to the snapshot summary

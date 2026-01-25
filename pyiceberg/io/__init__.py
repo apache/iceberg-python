@@ -368,5 +368,6 @@ def load_file_io(properties: Properties = EMPTY_DICT, location: str | None = Non
         return PyArrowFileIO(properties)
     except ModuleNotFoundError as e:
         raise ModuleNotFoundError(
-            'Could not load a FileIO, please consider installing one: pip3 install "pyiceberg[pyarrow]", for more options refer to the docs.'
+            "Could not load a FileIO, please consider installing one: "
+            'pip3 install "pyiceberg[pyarrow]", for more options refer to the docs.'
         ) from e
