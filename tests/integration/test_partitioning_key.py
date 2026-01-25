@@ -77,7 +77,7 @@ identifier = "default.test_table"
 
 
 @pytest.mark.parametrize(
-    "partition_fields, partition_values, expected_partition_record, expected_hive_partition_path_slice, spark_create_table_sql_for_justification, spark_data_insert_sql_for_justification",
+    "partition_fields, partition_values, expected_partition_record, expected_hive_partition_path_slice, spark_create_table_sql_for_justification, spark_data_insert_sql_for_justification",  # noqa: E501
     [
         # Identity Transform
         (
@@ -161,7 +161,7 @@ identifier = "default.test_table"
             [3.14],
             Record(3.14),
             "float_field=3.14",
-            # spark writes differently as pyiceberg, Record[float_field=3.140000104904175], path:float_field=3.14 (Record has difference)
+            # spark writes differently as pyiceberg, Record[float_field=3.140000104904175], path:float_field=3.14 (Record has difference) # noqa: E501
             # so justification (compare expected value with spark behavior) would fail.
             None,
             None,
@@ -184,7 +184,7 @@ identifier = "default.test_table"
             [6.282],
             Record(6.282),
             "double_field=6.282",
-            # spark writes differently as pyiceberg, Record[double_field=6.2820000648498535] path:double_field=6.282 (Record has difference)
+            # spark writes differently as pyiceberg, Record[double_field=6.2820000648498535] path:double_field=6.282 (Record has difference) # noqa: E501
             # so justification (compare expected value with spark behavior) would fail.
             None,
             None,
@@ -247,7 +247,7 @@ identifier = "default.test_table"
             "timestamp_field=2023-01-01T12%3A00%3A00",
             # Spark writes differently as pyiceberg, so justification (compare expected value with spark behavior) would fail
             # AssertionError: assert 'timestamp_field=2023-01-01T12%3A00%3A00' in 's3://warehouse/default/test_table/data/timestamp_field=2023-01-01T12%3A00/00000-5-f9dca69a-9fb7-4830-9ef6-62d3d7afc09e-00001.parquet'
-            # TLDR: CAST('2023-01-01 12:00:00' AS TIMESTAMP_NTZ) becomes 2023-01-01T12:00 in the hive partition path when spark writes it (without the seconds).
+            # TLDR: CAST('2023-01-01 12:00:00' AS TIMESTAMP_NTZ) becomes 2023-01-01T12:00 in the hive partition path when spark writes it (without the seconds). # noqa: E501
             None,
             None,
             # f"""CREATE TABLE {identifier} (
@@ -271,7 +271,7 @@ identifier = "default.test_table"
             "timestamptz_field=2023-01-01T09%3A00%3A01.000999%2B00%3A00",
             # Spark writes differently as pyiceberg, so justification (compare expected value with spark behavior) would fail
             # AssertionError: assert 'timestamptz_field=2023-01-01T09%3A00%3A01.000999%2B00%3A00' in 's3://warehouse/default/test_table/data/timestamptz_field=2023-01-01T09%3A00%3A01.000999Z/00000-5-b710fc4d-66b6-47f1-b8ae-6208f8aaa2d4-00001.parquet'
-            # TLDR: CAST('2023-01-01 12:00:01.000999+03:00' AS TIMESTAMP) becomes 2023-01-01T09:00:01.000999Z in the hive partition path when spark writes it (while iceberg: timestamptz_field=2023-01-01T09:00:01.000999+00:00).
+            # TLDR: CAST('2023-01-01 12:00:01.000999+03:00' AS TIMESTAMP) becomes 2023-01-01T09:00:01.000999Z in the hive partition path when spark writes it (while iceberg: timestamptz_field=2023-01-01T09:00:01.000999+00:00). # noqa: E501
             None,
             None,
             # f"""CREATE TABLE {identifier} (
@@ -285,7 +285,7 @@ identifier = "default.test_table"
             # """,
             # f"""INSERT INTO {identifier}
             # VALUES
-            # (CAST('2023-01-01 12:00:01.000999+03:00' AS TIMESTAMP), 'Associated string value for timestamp 2023-01-01 12:00:01.000999+03:00')
+            # (CAST('2023-01-01 12:00:01.000999+03:00' AS TIMESTAMP), 'Associated string value for timestamp 2023-01-01 12:00:01.000999+03:00') # noqa: E501
             # """
         ),
         (

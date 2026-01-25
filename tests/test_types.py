@@ -535,7 +535,7 @@ def test_repr_nested_field_default_nones_should_not_appear() -> None:
     )
     assert (
         repr(NestedField(1, "required_field", StringType(), required=False, initial_default="hello", write_default="bye"))
-        == "NestedField(field_id=1, name='required_field', field_type=StringType(), required=False, initial_default='hello', write_default='bye')"
+        == "NestedField(field_id=1, name='required_field', field_type=StringType(), required=False, initial_default='hello', write_default='bye')"  # noqa: E501
     )
 
 
@@ -635,7 +635,7 @@ def test_str_struct(simple_struct: StructType) -> None:
 def test_repr_struct(simple_struct: StructType) -> None:
     assert (
         repr(simple_struct)
-        == "StructType(fields=(NestedField(field_id=1, name='required_field', field_type=StringType(), required=True), NestedField(field_id=2, name='optional_field', field_type=IntegerType(), required=False),))"
+        == "StructType(fields=(NestedField(field_id=1, name='required_field', field_type=StringType(), required=True), NestedField(field_id=2, name='optional_field', field_type=IntegerType(), required=False),))"  # noqa: E501
     )
 
 

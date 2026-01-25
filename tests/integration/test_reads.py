@@ -1247,7 +1247,7 @@ def test_scan_source_field_missing_in_spec(catalog: Catalog, spark: SparkSession
     spark.sql(f"DROP TABLE IF EXISTS {identifier}")
     spark.sql(f"CREATE TABLE {identifier} (foo int, bar int, jaz string) USING ICEBERG PARTITIONED BY (foo, bar)")
     spark.sql(
-        f"INSERT INTO {identifier} (foo, bar, jaz) VALUES (1, 1, 'dummy data'), (1, 2, 'dummy data again'), (2, 1, 'another partition')"
+        f"INSERT INTO {identifier} (foo, bar, jaz) VALUES (1, 1, 'dummy data'), (1, 2, 'dummy data again'), (2, 1, 'another partition')"  # noqa: E501
     )
     spark.sql(f"ALTER TABLE {identifier} DROP PARTITION FIELD foo")
     spark.sql(f"ALTER TABLE {identifier} DROP COLUMN  foo")

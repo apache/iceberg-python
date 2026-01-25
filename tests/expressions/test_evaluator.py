@@ -1427,7 +1427,7 @@ def test_strict_integer_in(strict_data_file_schema: Schema, strict_data_file_1: 
 
 
 def test_strict_integer_not_in(strict_data_file_schema: Schema, strict_data_file_1: DataFile) -> None:
-    # should_read = _StrictMetricsEvaluator(strict_data_file_schema, NotIn("id", {INT_MIN_VALUE - 25, INT_MIN_VALUE - 24})).eval(strict_data_file_1)
+    # should_read = _StrictMetricsEvaluator(strict_data_file_schema, NotIn("id", {INT_MIN_VALUE - 25, INT_MIN_VALUE - 24})).eval(strict_data_file_1) # noqa: E501
     # assert should_read, "Should match: all values != 5 and != 6"
 
     should_read = _StrictMetricsEvaluator(strict_data_file_schema, NotIn("id", {INT_MIN_VALUE - 1, INT_MIN_VALUE})).eval(

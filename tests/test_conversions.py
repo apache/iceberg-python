@@ -66,7 +66,8 @@ Notes:
         - Stored directly
         - 'Z' -> 90
     Decimal:
-        - Stored as unscaled values in the form of two's-complement big-endian binary using the minimum number of bytes for the values
+        - Stored as unscaled values in the form of two's-complement big-endian binary
+          using the minimum number of bytes for the values
         - 345 is 0...1|01011001 in binary
         - 00000001 -> 1, 01011001 -> 89
     Float:

@@ -372,7 +372,7 @@ def test_dynamic_partition_overwrite_non_identity_transform(
     )
     with pytest.raises(
         ValueError,
-        match="For now dynamic overwrite does not support a table with non-identity-transform field in the latest partition spec: *",
+        match="For now dynamic overwrite does not support a table with non-identity-transform field in the latest partition spec: *",  # noqa: E501
     ):
         tbl.dynamic_partition_overwrite(arrow_table_with_null.slice(0, 1))
 
@@ -591,7 +591,7 @@ def test_data_files_with_table_partitioned_with_null(
     #                    the first snapshot generates M3 with 6 delete data entries collected from M1 and M2.
     #                    ML3 = [M3]
     #
-    #                    The second snapshot generates M4 with 3 appended data entries and since M3 (previous manifests) only has delete entries it does not lint to it.
+    #                    The second snapshot generates M4 with 3 appended data entries and since M3 (previous manifests) only has delete entries it does not lint to it. # noqa: E501
     #                    ML4 = [M4]
 
     # Append           : Append generates M5 with new data entries and links to all previous manifests which is M4 .
@@ -603,7 +603,7 @@ def test_data_files_with_table_partitioned_with_null(
     #                    then it generates M7 as remaining existing entries from M1 and M8 from M2
     #                    ML6 = [M6, M7, M8]
     #
-    #                    The second snapshot generates M9 with 3 appended data entries and it also looks at manifests in ML6 (previous manifests)
+    #                    The second snapshot generates M9 with 3 appended data entries and it also looks at manifests in ML6 (previous manifests) # noqa: E501
     #                    it ignores M6 since it only has delete entries but it links to M7 and M8.
     #                    ML7 = [M9, M7, M8]
 

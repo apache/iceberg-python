@@ -190,7 +190,7 @@ def test_pyarrow_timestamp_invalid_units() -> None:
     with pytest.raises(
         TypeError,
         match=re.escape(
-            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
+            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."  # noqa: E501
         ),
     ):
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
@@ -212,7 +212,7 @@ def test_pyarrow_timestamp_tz_invalid_units() -> None:
     with pytest.raises(
         TypeError,
         match=re.escape(
-            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
+            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."  # noqa: E501
         ),
     ):
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
@@ -832,8 +832,8 @@ def test_expression_to_complementary_pyarrow(
         Not(bound_is_null_double_field),
     )
     result = _expression_to_complementary_pyarrow(bound_expr)
-    # Notice an isNan predicate on a str column is automatically converted to always false and removed from Or and thus will not appear in the pc.expr.
+    # Notice an isNan predicate on a str column is automatically converted to always false and removed from Or and thus will not appear in the pc.expr. # noqa: E501
     assert (
         repr(result)
-        == """<pyarrow.compute.Expression (((invert(((((string_field == "hello") and (float_field > 100)) or ((is_nan(float_field) and (double_field == 0)) or (float_field > 100))) and invert(is_null(double_field, {nan_is_null=false})))) or is_null(float_field, {nan_is_null=false})) or is_null(string_field, {nan_is_null=false})) or is_nan(double_field))>"""
+        == """<pyarrow.compute.Expression (((invert(((((string_field == "hello") and (float_field > 100)) or ((is_nan(float_field) and (double_field == 0)) or (float_field > 100))) and invert(is_null(double_field, {nan_is_null=false})))) or is_null(float_field, {nan_is_null=false})) or is_null(string_field, {nan_is_null=false})) or is_nan(double_field))>"""  # noqa: E501
     )

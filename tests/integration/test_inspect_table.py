@@ -1096,11 +1096,13 @@ def test_inspect_files_format_version_3(spark: SparkSession, session_catalog: Ca
         },
     )
 
+    # fmt: off
     insert_data_sql = f"""INSERT INTO {identifier} VALUES
         (false, 'a', 'aaaaaaaaaaaaaaaaaaaaaa', 1, 1, 0.0, 0.0, TIMESTAMP('2023-01-01 19:25:00'), TIMESTAMP('2023-01-01 19:25:00+00:00'), DATE('2023-01-01'), X'01', X'00000000000000000000000000000000'),
         (NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
         (true, 'z', 'zzzzzzzzzzzzzzzzzzzzzz', 9, 9, 0.9, 0.9, TIMESTAMP('2023-03-01 19:25:00'), TIMESTAMP('2023-03-01 19:25:00+00:00'), DATE('2023-03-01'), X'12', X'11111111111111111111111111111111');
     """
+    # fmt: on
 
     spark.sql(insert_data_sql)
     spark.sql(insert_data_sql)

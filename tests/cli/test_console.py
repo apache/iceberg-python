@@ -629,7 +629,7 @@ def test_json_schema(catalog: InMemoryCatalog) -> None:
     assert result.exit_code == 0
     assert (
         result.output
-        == """{"type":"struct","fields":[{"id":1,"name":"x","type":"long","required":true},{"id":2,"name":"y","type":"long","required":true,"doc":"comment"},{"id":3,"name":"z","type":"long","required":true}],"schema-id":0,"identifier-field-ids":[]}\n"""
+        == """{"type":"struct","fields":[{"id":1,"name":"x","type":"long","required":true},{"id":2,"name":"y","type":"long","required":true,"doc":"comment"},{"id":3,"name":"z","type":"long","required":true}],"schema-id":0,"identifier-field-ids":[]}\n"""  # noqa: E501
     )
 
 
@@ -821,7 +821,7 @@ def test_json_properties_get_table_specific_property_that_doesnt_exist(catalog: 
     assert result.exit_code == 1
     assert (
         result.output
-        == """{"type": "NoSuchPropertyException", "message": "Could not find property doesnotexist on table default.my_table"}\n"""
+        == """{"type": "NoSuchPropertyException", "message": "Could not find property doesnotexist on table default.my_table"}\n"""  # noqa: E501
     )
 
 

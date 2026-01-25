@@ -156,7 +156,7 @@ def test_no_uri_supplied() -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"  # noqa: E501
 )
 def test_token_200(rest_mock: Mocker) -> None:
     rest_mock.post(
@@ -179,7 +179,7 @@ def test_token_200(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"  # noqa: E501
 )
 def test_token_200_without_optional_fields(rest_mock: Mocker) -> None:
     rest_mock.post(
@@ -198,7 +198,7 @@ def test_token_200_without_optional_fields(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"  # noqa: E501
 )
 def test_token_with_optional_oauth_params(rest_mock: Mocker) -> None:
     mock_request = rest_mock.post(
@@ -223,7 +223,7 @@ def test_token_with_optional_oauth_params(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"  # noqa: E501
 )
 def test_token_with_optional_oauth_params_as_empty(rest_mock: Mocker) -> None:
     mock_request = rest_mock.post(
@@ -246,7 +246,7 @@ def test_token_with_optional_oauth_params_as_empty(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"  # noqa: E501
 )
 def test_token_with_default_scope(rest_mock: Mocker) -> None:
     mock_request = rest_mock.post(
@@ -267,7 +267,7 @@ def test_token_with_default_scope(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"  # noqa: E501
 )
 def test_token_with_custom_scope(rest_mock: Mocker) -> None:
     mock_request = rest_mock.post(
@@ -289,7 +289,7 @@ def test_token_with_custom_scope(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"  # noqa: E501
 )
 def test_token_200_w_oauth2_server_uri(rest_mock: Mocker) -> None:
     rest_mock.post(
@@ -314,7 +314,7 @@ def test_token_200_w_oauth2_server_uri(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"  # noqa: E501
 )
 def test_config_200(requests_mock: Mocker) -> None:
     requests_mock.get(
@@ -402,7 +402,7 @@ def test_config_sets_headers(requests_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"  # noqa: E501
 )
 def test_token_400(rest_mock: Mocker) -> None:
     rest_mock.post(
@@ -418,7 +418,7 @@ def test_token_400(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"  # noqa: E501
 )
 def test_token_401(rest_mock: Mocker) -> None:
     message = "invalid_client"
@@ -664,7 +664,7 @@ def test_list_namespace_with_parent_404(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"  # noqa: E501
 )
 @pytest.mark.parametrize("status_code", [401, 419])
 def test_list_namespaces_token_expired_success_on_retries(rest_mock: Mocker, status_code: int) -> None:
@@ -2017,7 +2017,7 @@ def test_custom_namespace_separator(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"  # noqa: E501
 )
 def test_auth_header(rest_mock: Mocker) -> None:
     mock_request = rest_mock.post(
