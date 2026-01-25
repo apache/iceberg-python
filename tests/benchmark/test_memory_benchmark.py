@@ -185,7 +185,7 @@ def test_manifest_cache_deduplication_efficiency() -> None:
         FileFormat,
         ManifestEntry,
         ManifestEntryStatus,
-        read_manifest_list,
+        _manifests,
         write_manifest,
         write_manifest_list,
     )
@@ -255,9 +255,8 @@ def test_manifest_cache_deduplication_efficiency() -> None:
             ) as list_writer:
                 list_writer.add_manifests(manifests_to_include)
 
-            # Read the manifest list (this populates the cache)
-            input_file = io.new_input(list_path)
-            list(read_manifest_list(input_file))
+            # Read the manifest list using _manifests (this populates the cache)
+            _manifests(io, list_path)
 
         # Analyze cache efficiency
         cache_entries = len(_manifest_cache)
