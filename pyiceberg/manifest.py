@@ -891,9 +891,9 @@ class ManifestFile(Record):
         return hash(self.manifest_path)
 
 
-# Global cache for individual ManifestFile objects, keyed by manifest_path.
-# This avoids duplicating ManifestFile objects when multiple manifest lists
-# share the same manifests (which is common after appends).
+# Global cache for ManifestFile objects, keyed by manifest_path.
+# This deduplicates ManifestFile objects across manifest lists, which commonly
+# share manifests after append operations.
 _manifest_cache: LRUCache[str, ManifestFile] = LRUCache(maxsize=512)
 
 # Lock for thread-safe cache access
@@ -901,38 +901,39 @@ _manifest_cache_lock = threading.RLock()
 
 
 def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
-    """Read manifests from the given manifest list, caching individual ManifestFile objects.
+    """Read manifests from a manifest list, deduplicating ManifestFile objects via cache.
 
-    Unlike caching entire manifest lists, this approach caches individual ManifestFile
-    objects by their manifest_path. This is more memory-efficient because:
-    - ManifestList1 contains: (ManifestFile1)
-    - ManifestList2 contains: (ManifestFile1, ManifestFile2)
-    - ManifestList3 contains: (ManifestFile1, ManifestFile2, ManifestFile3)
+    Caches individual ManifestFile objects by manifest_path. This is memory-efficient
+    because consecutive manifest lists typically share most of their manifests:
 
-    With per-ManifestFile caching, ManifestFile1 is stored only once and reused,
-    instead of being duplicated in each manifest list's cached tuple.
+        ManifestList1: [ManifestFile1]
+        ManifestList2: [ManifestFile1, ManifestFile2]
+        ManifestList3: [ManifestFile1, ManifestFile2, ManifestFile3]
+
+    With per-ManifestFile caching, each ManifestFile is stored once and reused.
+
+    Note: The manifest list file is re-read on each call. This is intentional to
+    keep the implementation simple and avoid O(N²) memory growth from caching
+    overlapping manifest list tuples. Re-reading is cheap since manifest lists
+    are small metadata files.
 
     Args:
-        io: The FileIO to read the manifest list.
-        manifest_list: The path to the manifest list file.
+        io: FileIO instance for reading the manifest list.
+        manifest_list: Path to the manifest list file.
 
     Returns:
-        A tuple of ManifestFile objects (tuple to prevent modification).
+        A tuple of ManifestFile objects.
     """
-    # Read manifest list outside the lock to avoid blocking other threads during I/O
     file = io.new_input(manifest_list)
     manifest_files = list(read_manifest_list(file))
 
-    # Only hold the lock while updating the cache
     result = []
     with _manifest_cache_lock:
         for manifest_file in manifest_files:
             manifest_path = manifest_file.manifest_path
             if manifest_path in _manifest_cache:
-                # Reuse the cached ManifestFile object
                 result.append(_manifest_cache[manifest_path])
             else:
-                # Cache and use this ManifestFile
                 _manifest_cache[manifest_path] = manifest_file
                 result.append(manifest_file)
 
