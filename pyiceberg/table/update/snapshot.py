@@ -16,18 +16,14 @@
 # under the License.
 from __future__ import annotations
 
-import concurrent.futures
 import itertools
 import uuid
 from abc import abstractmethod
 from collections import defaultdict
 from collections.abc import Callable
-from concurrent.futures import Future
 from datetime import datetime
 from functools import cached_property
 from typing import TYPE_CHECKING, Generic
-
-from sortedcontainers import SortedList
 
 from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.expressions import (
@@ -792,14 +788,7 @@ class _ManifestMergeManager(Generic[U]):
 
         executor = ExecutorFactory.get_or_create()
         futures = [executor.submit(merge_bin, b) for b in bins]
-
-        # for consistent ordering, we need to maintain future order
-        futures_index = {f: i for i, f in enumerate(futures)}
-        completed_futures: SortedList[Future[list[ManifestFile]]] = SortedList(iterable=[], key=lambda f: futures_index[f])
-        for future in concurrent.futures.as_completed(futures):
-            completed_futures.add(future)
-
-        bin_results: list[list[ManifestFile]] = [f.result() for f in completed_futures if f.result()]
+        bin_results: list[list[ManifestFile]] = [r for f in futures if (r := f.result())]
 
         return [manifest for bin_result in bin_results for manifest in bin_result]
 
