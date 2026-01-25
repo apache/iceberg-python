@@ -260,20 +260,22 @@ def test_manifest_cache_deduplication_efficiency() -> None:
 
         # Analyze cache efficiency
         cache_entries = len(_manifest_cache)
+        # List i contains manifests 0..i, so only the first num_lists manifests are actually used
+        manifests_actually_used = num_lists
 
         print("\nResults:")
         print(f"  Manifest lists created: {num_lists}")
-        print(f"  Total unique manifest files: {num_manifests}")
+        print(f"  Manifest files created: {num_manifests}")
+        print(f"  Manifest files actually used: {manifests_actually_used}")
         print(f"  Cache entries: {cache_entries}")
 
-        # With efficient per-ManifestFile caching, we should have at most
-        # num_manifests entries (one per unique manifest path), not
-        # sum(1..num_lists) entries as with the old strategy
-        print(f"\n  Expected cache entries (efficient): <= {num_manifests}")
+        # With efficient per-ManifestFile caching, we should have exactly
+        # manifests_actually_used entries (one per unique manifest path)
+        print(f"\n  Expected cache entries (efficient): {manifests_actually_used}")
         print(f"  Actual cache entries: {cache_entries}")
 
         # The cache should be efficient - one entry per unique manifest path
-        assert cache_entries <= num_manifests + num_lists, (
-            f"Cache has {cache_entries} entries, expected at most {num_manifests + num_lists}. "
+        assert cache_entries == manifests_actually_used, (
+            f"Cache has {cache_entries} entries, expected exactly {manifests_actually_used}. "
             "The cache may not be deduplicating properly."
         )
