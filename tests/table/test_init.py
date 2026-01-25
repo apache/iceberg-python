@@ -513,8 +513,7 @@ def test_update_list_element_required(table_v2: Table) -> None:
     """Test that update_column can change list element's required property."""
     # Add a list column with optional elements
     update = UpdateSchema(transaction=table_v2.transaction())
-    list_type = ListType(element_id=1, element_type=StringType(), element_required=False)
-    update.add_column(path="tags", field_type=list_type)
+    update.add_column(path="tags", field_type=ListType(element_id=1, element_type=StringType(), element_required=False))
     schema_with_list = update._apply()
 
     # Verify initial state
@@ -523,8 +522,7 @@ def test_update_list_element_required(table_v2: Table) -> None:
     assert field.field_type.element_required is False
 
     # Update element to required
-    update2 = UpdateSchema(transaction=table_v2.transaction(), schema=schema_with_list)
-    update2._allow_incompatible_changes = True  # Allow optional -> required
+    update2 = UpdateSchema(transaction=table_v2.transaction(), allow_incompatible_changes=True, schema=schema_with_list)
     new_schema = update2.update_column(("tags", "element"), required=True)._apply()
 
     # Verify the update
@@ -537,8 +535,10 @@ def test_update_map_value_required(table_v2: Table) -> None:
     """Test that update_column can change map value's required property."""
     # Add a map column with optional values
     update = UpdateSchema(transaction=table_v2.transaction())
-    map_type = MapType(key_id=1, key_type=StringType(), value_id=2, value_type=IntegerType(), value_required=False)
-    update.add_column(path="metadata", field_type=map_type)
+    update.add_column(
+        path="metadata",
+        field_type=MapType(key_id=1, key_type=StringType(), value_id=2, value_type=IntegerType(), value_required=False),
+    )
     schema_with_map = update._apply()
 
     # Verify initial state
@@ -547,14 +547,175 @@ def test_update_map_value_required(table_v2: Table) -> None:
     assert field.field_type.value_required is False
 
     # Update value to required
-    update2 = UpdateSchema(transaction=table_v2.transaction(), schema=schema_with_map)
-    update2._allow_incompatible_changes = True  # Allow optional -> required
+    update2 = UpdateSchema(transaction=table_v2.transaction(), allow_incompatible_changes=True, schema=schema_with_map)
     new_schema = update2.update_column(("metadata", "value"), required=True)._apply()
 
     # Verify the update
     field = new_schema.find_field("metadata")
     assert isinstance(field.field_type, MapType)
     assert field.field_type.value_required is True
+
+
+def test_update_list_element_required_to_optional(table_v2: Table) -> None:
+    """Test that update_column can change list element from required to optional (safe direction)."""
+    # Add a list column with required elements
+    update = UpdateSchema(transaction=table_v2.transaction())
+    update.add_column(path="tags", field_type=ListType(element_id=1, element_type=StringType(), element_required=True))
+    schema_with_list = update._apply()
+
+    # Verify initial state
+    field = schema_with_list.find_field("tags")
+    assert isinstance(field.field_type, ListType)
+    assert field.field_type.element_required is True
+
+    # Update element to optional - should work without allow_incompatible_changes
+    update2 = UpdateSchema(transaction=table_v2.transaction(), schema=schema_with_list)
+    new_schema = update2.update_column(("tags", "element"), required=False)._apply()
+
+    # Verify the update
+    field = new_schema.find_field("tags")
+    assert isinstance(field.field_type, ListType)
+    assert field.field_type.element_required is False
+
+
+def test_update_list_element_required_fails_without_allow_incompatible(table_v2: Table) -> None:
+    """Test that optional -> required fails without allow_incompatible_changes."""
+    # Add a list column with optional elements
+    update = UpdateSchema(transaction=table_v2.transaction())
+    update.add_column(path="tags", field_type=ListType(element_id=1, element_type=StringType(), element_required=False))
+    schema_with_list = update._apply()
+
+    # Try to update element to required without allow_incompatible_changes - should fail
+    update2 = UpdateSchema(transaction=table_v2.transaction(), schema=schema_with_list)
+    with pytest.raises(ValueError, match="Cannot change column nullability"):
+        update2.update_column(("tags", "element"), required=True)._apply()
+
+
+def test_update_map_value_required_fails_without_allow_incompatible(table_v2: Table) -> None:
+    """Test that optional -> required for map value fails without allow_incompatible_changes."""
+    # Add a map column with optional values
+    update = UpdateSchema(transaction=table_v2.transaction())
+    update.add_column(
+        path="metadata",
+        field_type=MapType(key_id=1, key_type=StringType(), value_id=2, value_type=IntegerType(), value_required=False),
+    )
+    schema_with_map = update._apply()
+
+    # Try to update value to required without allow_incompatible_changes - should fail
+    update2 = UpdateSchema(transaction=table_v2.transaction(), schema=schema_with_map)
+    with pytest.raises(ValueError, match="Cannot change column nullability"):
+        update2.update_column(("metadata", "value"), required=True)._apply()
+
+
+def test_update_map_key_fails(table_v2: Table) -> None:
+    """Test that updating map keys is not allowed."""
+    # Add a map column
+    update = UpdateSchema(transaction=table_v2.transaction())
+    update.add_column(
+        path="metadata",
+        field_type=MapType(key_id=1, key_type=StringType(), value_id=2, value_type=IntegerType(), value_required=False),
+    )
+    schema_with_map = update._apply()
+
+    # Try to update the key - should fail even with allow_incompatible_changes
+    update2 = UpdateSchema(transaction=table_v2.transaction(), allow_incompatible_changes=True, schema=schema_with_map)
+    with pytest.raises(ValueError, match="Cannot update map keys"):
+        update2.update_column(("metadata", "key"), required=False)._apply()
+
+
+def test_update_map_value_required_to_optional(table_v2: Table) -> None:
+    """Test that update_column can change map value from required to optional (safe direction)."""
+    # Add a map column with required values
+    update = UpdateSchema(transaction=table_v2.transaction())
+    update.add_column(
+        path="metadata",
+        field_type=MapType(key_id=1, key_type=StringType(), value_id=2, value_type=IntegerType(), value_required=True),
+    )
+    schema_with_map = update._apply()
+
+    # Verify initial state
+    field = schema_with_map.find_field("metadata")
+    assert isinstance(field.field_type, MapType)
+    assert field.field_type.value_required is True
+
+    # Update value to optional - should work without allow_incompatible_changes
+    update2 = UpdateSchema(transaction=table_v2.transaction(), schema=schema_with_map)
+    new_schema = update2.update_column(("metadata", "value"), required=False)._apply()
+
+    # Verify the update
+    field = new_schema.find_field("metadata")
+    assert isinstance(field.field_type, MapType)
+    assert field.field_type.value_required is False
+
+
+def test_update_list_and_map_in_single_schema_change(table_v2: Table) -> None:
+    """Test updating both list element and map value required properties in a single schema change."""
+    # Add both a list and a map column with optional elements/values
+    update = UpdateSchema(transaction=table_v2.transaction())
+    update.add_column(path="tags", field_type=ListType(element_id=1, element_type=StringType(), element_required=False))
+    update.add_column(
+        path="metadata",
+        field_type=MapType(key_id=1, key_type=StringType(), value_id=2, value_type=IntegerType(), value_required=False),
+    )
+    schema_with_both = update._apply()
+
+    # Verify initial state
+    list_field = schema_with_both.find_field("tags")
+    assert isinstance(list_field.field_type, ListType)
+    assert list_field.field_type.element_required is False
+
+    map_field = schema_with_both.find_field("metadata")
+    assert isinstance(map_field.field_type, MapType)
+    assert map_field.field_type.value_required is False
+
+    # Update both in a single schema change
+    update2 = UpdateSchema(transaction=table_v2.transaction(), allow_incompatible_changes=True, schema=schema_with_both)
+    update2.update_column(("tags", "element"), required=True)
+    update2.update_column(("metadata", "value"), required=True)
+    new_schema = update2._apply()
+
+    # Verify both updates
+    list_field = new_schema.find_field("tags")
+    assert isinstance(list_field.field_type, ListType)
+    assert list_field.field_type.element_required is True
+
+    map_field = new_schema.find_field("metadata")
+    assert isinstance(map_field.field_type, MapType)
+    assert map_field.field_type.value_required is True
+
+
+def test_update_nested_list_in_struct_required(table_v2: Table) -> None:
+    """Test updating nested list element required property inside a struct."""
+
+    # Add a struct column containing a list
+    update = UpdateSchema(transaction=table_v2.transaction())
+    struct_type = StructType(
+        NestedField(
+            field_id=1,
+            name="coordinates",
+            field_type=ListType(element_id=2, element_type=DoubleType(), element_required=False),
+            required=False,
+        )
+    )
+    update.add_column(path="location", field_type=struct_type)
+    schema_with_nested = update._apply()
+
+    # Verify initial state
+    field = schema_with_nested.find_field("location")
+    assert isinstance(field.field_type, StructType)
+    nested_list = field.field_type.fields[0].field_type
+    assert isinstance(nested_list, ListType)
+    assert nested_list.element_required is False
+
+    # Update nested list element to required
+    update2 = UpdateSchema(transaction=table_v2.transaction(), allow_incompatible_changes=True, schema=schema_with_nested)
+    new_schema = update2.update_column(("location", "coordinates", "element"), required=True)._apply()
+
+    # Verify the update
+    field = new_schema.find_field("location")
+    nested_list = field.field_type.fields[0].field_type
+    assert isinstance(nested_list, ListType)
+    assert nested_list.element_required is True
 
 
 def test_apply_set_properties_update(table_v2: Table) -> None:
