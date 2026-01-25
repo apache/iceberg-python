@@ -919,11 +919,14 @@ def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
     Returns:
         A tuple of ManifestFile objects (tuple to prevent modification).
     """
+    # Read manifest list outside the lock to avoid blocking other threads during I/O
     file = io.new_input(manifest_list)
-    result = []
+    manifest_files = list(read_manifest_list(file))
 
+    # Only hold the lock while updating the cache
+    result = []
     with _manifest_cache_lock:
-        for manifest_file in read_manifest_list(file):
+        for manifest_file in manifest_files:
             manifest_path = manifest_file.manifest_path
             if manifest_path in _manifest_cache:
                 # Reuse the cached ManifestFile object
