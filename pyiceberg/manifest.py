@@ -922,9 +922,9 @@ def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
     file = io.new_input(manifest_list)
     result = []
 
-    for manifest_file in read_manifest_list(file):
-        manifest_path = manifest_file.manifest_path
-        with _manifest_cache_lock:
+    with _manifest_cache_lock:
+        for manifest_file in read_manifest_list(file):
+            manifest_path = manifest_file.manifest_path
             if manifest_path in _manifest_cache:
                 # Reuse the cached ManifestFile object
                 result.append(_manifest_cache[manifest_path])
