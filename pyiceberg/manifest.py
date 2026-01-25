@@ -28,8 +28,7 @@ from typing import (
     Literal,
 )
 
-from cachetools import LRUCache, cached
-from cachetools.keys import hashkey
+from cachetools import LRUCache
 from pydantic_core import to_json
 
 from pyiceberg.avro.codecs import AVRO_CODEC_KEY, AvroCompressionCodec
@@ -892,15 +891,49 @@ class ManifestFile(Record):
         return hash(self.manifest_path)
 
 
-# Global cache for manifest lists
-_manifest_cache: LRUCache[Any, tuple[ManifestFile, ...]] = LRUCache(maxsize=128)
+# Global cache for individual ManifestFile objects, keyed by manifest_path.
+# This avoids duplicating ManifestFile objects when multiple manifest lists
+# share the same manifests (which is common after appends).
+_manifest_cache: LRUCache[str, ManifestFile] = LRUCache(maxsize=512)
+
+# Lock for thread-safe cache access
+_manifest_cache_lock = threading.RLock()
 
 
-@cached(cache=_manifest_cache, key=lambda io, manifest_list: hashkey(manifest_list), lock=threading.RLock())
 def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
-    """Read and cache manifests from the given manifest list, returning a tuple to prevent modification."""
+    """Read manifests from the given manifest list, caching individual ManifestFile objects.
+
+    Unlike caching entire manifest lists, this approach caches individual ManifestFile
+    objects by their manifest_path. This is more memory-efficient because:
+    - ManifestList1 contains: (ManifestFile1)
+    - ManifestList2 contains: (ManifestFile1, ManifestFile2)
+    - ManifestList3 contains: (ManifestFile1, ManifestFile2, ManifestFile3)
+
+    With per-ManifestFile caching, ManifestFile1 is stored only once and reused,
+    instead of being duplicated in each manifest list's cached tuple.
+
+    Args:
+        io: The FileIO to read the manifest list.
+        manifest_list: The path to the manifest list file.
+
+    Returns:
+        A tuple of ManifestFile objects (tuple to prevent modification).
+    """
     file = io.new_input(manifest_list)
-    return tuple(read_manifest_list(file))
+    result = []
+
+    for manifest_file in read_manifest_list(file):
+        manifest_path = manifest_file.manifest_path
+        with _manifest_cache_lock:
+            if manifest_path in _manifest_cache:
+                # Reuse the cached ManifestFile object
+                result.append(_manifest_cache[manifest_path])
+            else:
+                # Cache and use this ManifestFile
+                _manifest_cache[manifest_path] = manifest_file
+                result.append(manifest_file)
+
+    return tuple(result)
 
 
 def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:

@@ -16,7 +16,6 @@
 # under the License.
 # pylint: disable=redefined-outer-name,arguments-renamed,fixme
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
 
 import fastavro
 import pytest
@@ -29,10 +28,12 @@ from pyiceberg.manifest import (
     DataFileContent,
     FileFormat,
     ManifestContent,
+    ManifestEntry,
     ManifestEntryStatus,
     ManifestFile,
     PartitionFieldSummary,
     _manifest_cache,
+    _manifests,
     read_manifest_list,
     write_manifest,
     write_manifest_list,
@@ -314,27 +315,36 @@ def test_read_manifest_v2(generated_manifest_file_file_v2: str) -> None:
 
 
 def test_read_manifest_cache(generated_manifest_file_file_v2: str) -> None:
-    with patch("pyiceberg.manifest.read_manifest_list") as mocked_read_manifest_list:
-        io = load_file_io()
+    """Test that ManifestFile objects are cached and reused across multiple reads.
 
-        snapshot = Snapshot(
-            snapshot_id=25,
-            parent_snapshot_id=19,
-            timestamp_ms=1602638573590,
-            manifest_list=generated_manifest_file_file_v2,
-            summary=Summary(Operation.APPEND),
-            schema_id=3,
-        )
+    The cache now stores individual ManifestFile objects by their manifest_path,
+    rather than caching entire manifest list tuples. This is more memory-efficient
+    when multiple manifest lists share overlapping ManifestFile objects.
+    """
+    io = load_file_io()
 
-        # Access the manifests property multiple times to test caching
-        manifests_first_call = snapshot.manifests(io)
-        manifests_second_call = snapshot.manifests(io)
+    snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        timestamp_ms=1602638573590,
+        manifest_list=generated_manifest_file_file_v2,
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+    )
 
-        # Ensure that read_manifest_list was called only once
-        mocked_read_manifest_list.assert_called_once()
+    # Clear cache to ensure clean state
+    _manifest_cache.clear()
 
-        # Ensure that the same manifest list is returned
-        assert manifests_first_call == manifests_second_call
+    # Access the manifests property multiple times
+    manifests_first_call = snapshot.manifests(io)
+    manifests_second_call = snapshot.manifests(io)
+
+    # Ensure that the same manifest list content is returned
+    assert manifests_first_call == manifests_second_call
+
+    # Verify that ManifestFile objects are the same instances (cached)
+    for mf1, mf2 in zip(manifests_first_call, manifests_second_call, strict=True):
+        assert mf1 is mf2, "ManifestFile objects should be the same cached instance"
 
 
 def test_write_empty_manifest() -> None:
@@ -629,3 +639,268 @@ def test_file_format_case_insensitive(raw_file_format: str, expected_file_format
     else:
         with pytest.raises(ValueError):
             _ = FileFormat(raw_file_format)
+
+
+def test_manifest_cache_deduplicates_manifest_files() -> None:
+    """Test that the manifest cache deduplicates ManifestFile objects across manifest lists.
+
+    This test verifies the fix for https://github.com/apache/iceberg-python/issues/2325
+
+    The issue was that when caching manifest lists by their path, overlapping ManifestFile
+    objects were duplicated. For example:
+    - ManifestList1: (ManifestFile1)
+    - ManifestList2: (ManifestFile1, ManifestFile2)
+    - ManifestList3: (ManifestFile1, ManifestFile2, ManifestFile3)
+
+    With the old approach, ManifestFile1 was stored 3 times in the cache.
+    With the new approach, ManifestFile objects are cached individually by their
+    manifest_path, so ManifestFile1 is stored only once and reused.
+    """
+    io = PyArrowFileIO()
+
+    with TemporaryDirectory() as tmp_dir:
+        # Create three manifest files to simulate manifests created during appends
+        manifest1_path = f"{tmp_dir}/manifest1.avro"
+        manifest2_path = f"{tmp_dir}/manifest2.avro"
+        manifest3_path = f"{tmp_dir}/manifest3.avro"
+
+        schema = Schema(NestedField(field_id=1, name="id", field_type=IntegerType(), required=True))
+        spec = UNPARTITIONED_PARTITION_SPEC
+
+        # Create manifest file 1
+        with write_manifest(
+            format_version=2,
+            spec=spec,
+            schema=schema,
+            output_file=io.new_output(manifest1_path),
+            snapshot_id=1,
+            avro_compression="zstandard",
+        ) as writer:
+            data_file1 = DataFile.from_args(
+                content=DataFileContent.DATA,
+                file_path=f"{tmp_dir}/data1.parquet",
+                file_format=FileFormat.PARQUET,
+                partition=Record(),
+                record_count=100,
+                file_size_in_bytes=1000,
+            )
+            writer.add_entry(
+                ManifestEntry.from_args(
+                    status=ManifestEntryStatus.ADDED,
+                    snapshot_id=1,
+                    data_file=data_file1,
+                )
+            )
+        manifest_file1 = writer.to_manifest_file()
+
+        # Create manifest file 2
+        with write_manifest(
+            format_version=2,
+            spec=spec,
+            schema=schema,
+            output_file=io.new_output(manifest2_path),
+            snapshot_id=2,
+            avro_compression="zstandard",
+        ) as writer:
+            data_file2 = DataFile.from_args(
+                content=DataFileContent.DATA,
+                file_path=f"{tmp_dir}/data2.parquet",
+                file_format=FileFormat.PARQUET,
+                partition=Record(),
+                record_count=200,
+                file_size_in_bytes=2000,
+            )
+            writer.add_entry(
+                ManifestEntry.from_args(
+                    status=ManifestEntryStatus.ADDED,
+                    snapshot_id=2,
+                    data_file=data_file2,
+                )
+            )
+        manifest_file2 = writer.to_manifest_file()
+
+        # Create manifest file 3
+        with write_manifest(
+            format_version=2,
+            spec=spec,
+            schema=schema,
+            output_file=io.new_output(manifest3_path),
+            snapshot_id=3,
+            avro_compression="zstandard",
+        ) as writer:
+            data_file3 = DataFile.from_args(
+                content=DataFileContent.DATA,
+                file_path=f"{tmp_dir}/data3.parquet",
+                file_format=FileFormat.PARQUET,
+                partition=Record(),
+                record_count=300,
+                file_size_in_bytes=3000,
+            )
+            writer.add_entry(
+                ManifestEntry.from_args(
+                    status=ManifestEntryStatus.ADDED,
+                    snapshot_id=3,
+                    data_file=data_file3,
+                )
+            )
+        manifest_file3 = writer.to_manifest_file()
+
+        # Create manifest list 1: contains only manifest1
+        manifest_list1_path = f"{tmp_dir}/manifest-list1.avro"
+        with write_manifest_list(
+            format_version=2,
+            output_file=io.new_output(manifest_list1_path),
+            snapshot_id=1,
+            parent_snapshot_id=None,
+            sequence_number=1,
+            avro_compression="zstandard",
+        ) as list_writer:
+            list_writer.add_manifests([manifest_file1])
+
+        # Create manifest list 2: contains manifest1 and manifest2 (overlapping manifest1)
+        manifest_list2_path = f"{tmp_dir}/manifest-list2.avro"
+        with write_manifest_list(
+            format_version=2,
+            output_file=io.new_output(manifest_list2_path),
+            snapshot_id=2,
+            parent_snapshot_id=1,
+            sequence_number=2,
+            avro_compression="zstandard",
+        ) as list_writer:
+            list_writer.add_manifests([manifest_file1, manifest_file2])
+
+        # Create manifest list 3: contains all three manifests (overlapping manifest1 and manifest2)
+        manifest_list3_path = f"{tmp_dir}/manifest-list3.avro"
+        with write_manifest_list(
+            format_version=2,
+            output_file=io.new_output(manifest_list3_path),
+            snapshot_id=3,
+            parent_snapshot_id=2,
+            sequence_number=3,
+            avro_compression="zstandard",
+        ) as list_writer:
+            list_writer.add_manifests([manifest_file1, manifest_file2, manifest_file3])
+
+        # Clear the cache before testing
+        _manifest_cache.clear()
+
+        # Read all three manifest lists
+        manifests1 = _manifests(io, manifest_list1_path)
+        manifests2 = _manifests(io, manifest_list2_path)
+        manifests3 = _manifests(io, manifest_list3_path)
+
+        # Verify the manifest files have the expected paths
+        assert len(manifests1) == 1
+        assert len(manifests2) == 2
+        assert len(manifests3) == 3
+
+        # Verify that ManifestFile objects with the same manifest_path are the same object (identity)
+        # This is the key assertion - if caching works correctly, the same ManifestFile
+        # object should be reused instead of creating duplicates
+
+        # manifest_file1 appears in all three lists - should be the same object
+        assert manifests1[0] is manifests2[0], "ManifestFile1 should be the same object instance across manifest lists"
+        assert manifests2[0] is manifests3[0], "ManifestFile1 should be the same object instance across manifest lists"
+
+        # manifest_file2 appears in lists 2 and 3 - should be the same object
+        assert manifests2[1] is manifests3[1], "ManifestFile2 should be the same object instance across manifest lists"
+
+        # Verify cache size - should only have 3 unique ManifestFile objects
+        # not 1 + 2 + 3 = 6 objects as with the old approach
+        assert len(_manifest_cache) == 3, (
+            f"Cache should contain exactly 3 unique ManifestFile objects, but has {len(_manifest_cache)}"
+        )
+
+
+def test_manifest_cache_efficiency_with_many_overlapping_lists() -> None:
+    """Test that the manifest cache remains efficient with many overlapping manifest lists.
+
+    This simulates the scenario from GitHub issue #2325 where many appends create
+    manifest lists that increasingly overlap.
+    """
+    io = PyArrowFileIO()
+
+    with TemporaryDirectory() as tmp_dir:
+        schema = Schema(NestedField(field_id=1, name="id", field_type=IntegerType(), required=True))
+        spec = UNPARTITIONED_PARTITION_SPEC
+
+        num_manifests = 10
+        manifest_files = []
+
+        # Create N manifest files
+        for i in range(num_manifests):
+            manifest_path = f"{tmp_dir}/manifest{i}.avro"
+            with write_manifest(
+                format_version=2,
+                spec=spec,
+                schema=schema,
+                output_file=io.new_output(manifest_path),
+                snapshot_id=i + 1,
+                avro_compression="zstandard",
+            ) as writer:
+                data_file = DataFile.from_args(
+                    content=DataFileContent.DATA,
+                    file_path=f"{tmp_dir}/data{i}.parquet",
+                    file_format=FileFormat.PARQUET,
+                    partition=Record(),
+                    record_count=100 * (i + 1),
+                    file_size_in_bytes=1000 * (i + 1),
+                )
+                writer.add_entry(
+                    ManifestEntry.from_args(
+                        status=ManifestEntryStatus.ADDED,
+                        snapshot_id=i + 1,
+                        data_file=data_file,
+                    )
+                )
+            manifest_files.append(writer.to_manifest_file())
+
+        # Create N manifest lists, each containing an increasing number of manifests
+        # list[i] contains manifests[0:i+1]
+        manifest_list_paths = []
+        for i in range(num_manifests):
+            list_path = f"{tmp_dir}/manifest-list{i}.avro"
+            with write_manifest_list(
+                format_version=2,
+                output_file=io.new_output(list_path),
+                snapshot_id=i + 1,
+                parent_snapshot_id=i if i > 0 else None,
+                sequence_number=i + 1,
+                avro_compression="zstandard",
+            ) as list_writer:
+                list_writer.add_manifests(manifest_files[: i + 1])
+            manifest_list_paths.append(list_path)
+
+        # Clear the cache
+        _manifest_cache.clear()
+
+        # Read all manifest lists
+        all_results = []
+        for path in manifest_list_paths:
+            result = _manifests(io, path)
+            all_results.append(result)
+
+        # With the old cache approach, we would have:
+        # 1 + 2 + 3 + ... + N = N*(N+1)/2 ManifestFile objects in memory
+        # With the new approach, we should have exactly N objects
+
+        # Verify cache has exactly N unique entries
+        assert len(_manifest_cache) == num_manifests, (
+            f"Cache should contain exactly {num_manifests} ManifestFile objects, "
+            f"but has {len(_manifest_cache)}. "
+            f"Old approach would have {num_manifests * (num_manifests + 1) // 2} objects."
+        )
+
+        # Verify object identity - all references to the same manifest should be the same object
+        for i in range(num_manifests):
+            manifest_path = manifest_files[i].manifest_path
+            # Find all references to this manifest across all results
+            references = []
+            for j, result in enumerate(all_results):
+                if j >= i:  # This manifest should be in lists from i onwards
+                    references.append(result[i])
+
+            # All references should be the same object
+            if len(references) > 1:
+                for ref in references[1:]:
+                    assert ref is references[0], f"All references to manifest {i} should be the same object instance"
