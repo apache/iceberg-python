@@ -686,7 +686,6 @@ def test_update_list_and_map_in_single_schema_change(table_v2: Table) -> None:
 
 def test_update_nested_list_in_struct_required(table_v2: Table) -> None:
     """Test updating nested list element required property inside a struct."""
-    from pyiceberg.types import DoubleType, StructType
 
     # Add a struct column containing a list
     update = UpdateSchema(transaction=table_v2.transaction())
