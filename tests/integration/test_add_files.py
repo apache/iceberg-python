@@ -470,8 +470,8 @@ def test_add_files_to_bucket_partitioned_table_fails(spark: SparkSession, sessio
     with pytest.raises(ValueError) as exc_info:
         tbl.add_files(file_paths=file_paths)
     assert (
-        "Cannot infer partition value from parquet metadata for a non-linear Partition Field: baz_bucket_3 with transform bucket[3]"  # noqa: E501
-        in str(exc_info.value)
+        "Cannot infer partition value from parquet metadata for a non-linear Partition Field: "
+        "baz_bucket_3 with transform bucket[3]" in str(exc_info.value)
     )
 
 
@@ -518,8 +518,8 @@ def test_add_files_to_partitioned_table_fails_with_lower_and_upper_mismatch(
     with pytest.raises(ValueError) as exc_info:
         tbl.add_files(file_paths=file_paths)
     assert (
-        "Cannot infer partition value from parquet metadata as there are more than one partition values for Partition Field: baz. lower_value=123, upper_value=124"  # noqa: E501
-        in str(exc_info.value)
+        "Cannot infer partition value from parquet metadata as there are more than one partition values "
+        "for Partition Field: baz. lower_value=123, upper_value=124" in str(exc_info.value)
     )
 
 
@@ -754,8 +754,8 @@ def test_add_files_with_timestamp_tz_ns_fails(session_catalog: Catalog, format_v
     exception_cause = exc_info.value.__cause__
     assert isinstance(exception_cause, TypeError)
     assert (
-        "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."  # noqa: E501
-        in exception_cause.args[0]
+        "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' "
+        "configuration property to automatically downcast 'ns' to 'us' on write." in exception_cause.args[0]
     )
 
 

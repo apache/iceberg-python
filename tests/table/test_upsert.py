@@ -120,7 +120,10 @@ def assert_upsert_result(res: UpsertResult, expected_updated: int, expected_inse
 
 
 @pytest.mark.parametrize(
-    "join_cols, src_start_row, src_end_row, target_start_row, target_end_row, when_matched_update_all, when_not_matched_insert_all, expected_updated, expected_inserted",  # noqa: E501
+    (
+        "join_cols, src_start_row, src_end_row, target_start_row, target_end_row, "
+        "when_matched_update_all, when_not_matched_insert_all, expected_updated, expected_inserted"
+    ),
     [
         (["order_id"], 1, 2, 2, 3, True, True, 1, 1),  # single row
         (["order_id"], 5001, 15000, 1, 10000, True, True, 5000, 5000),  # 10k rows

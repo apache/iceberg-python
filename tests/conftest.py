@@ -1188,7 +1188,10 @@ manifest_entry_records = [
         "status": 1,
         "snapshot_id": 8744736658442914487,
         "data_file": {
-            "file_path": "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet",  # noqa: E501
+            "file_path": (
+                "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/"
+                "00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet"
+            ),
             "file_format": "PARQUET",
             "partition": {"VendorID": 1, "tpep_pickup_day": 1925},
             "record_count": 19513,
@@ -1308,7 +1311,10 @@ manifest_entry_records = [
         "status": 1,
         "snapshot_id": 8744736658442914487,
         "data_file": {
-            "file_path": "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=1/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00002.parquet",  # noqa: E501
+            "file_path": (
+                "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=1/"
+                "00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00002.parquet"
+            ),
             "file_format": "PARQUET",
             "partition": {"VendorID": 1, "tpep_pickup_datetime": None},
             "record_count": 95050,
@@ -2146,7 +2152,10 @@ def adls_fsspec_fileio(request: pytest.FixtureRequest) -> Generator[FsspecFileIO
     azurite_url = request.config.getoption("--adls.endpoint")
     azurite_account_name = request.config.getoption("--adls.account-name")
     azurite_account_key = request.config.getoption("--adls.account-key")
-    azurite_connection_string = f"DefaultEndpointsProtocol=http;AccountName={azurite_account_name};AccountKey={azurite_account_key};BlobEndpoint={azurite_url}/{azurite_account_name};"  # noqa: E501
+    azurite_connection_string = (
+        f"DefaultEndpointsProtocol=http;AccountName={azurite_account_name};"
+        f"AccountKey={azurite_account_key};BlobEndpoint={azurite_url}/{azurite_account_name};"
+    )
     properties = {
         "adls.connection-string": azurite_connection_string,
         "adls.account-name": azurite_account_name,
@@ -2183,7 +2192,10 @@ def pyarrow_fileio_adls(request: pytest.FixtureRequest) -> Generator[Any, None, 
 
     azurite_account_name = request.config.getoption("--adls.account-name")
     azurite_account_key = request.config.getoption("--adls.account-key")
-    azurite_connection_string = f"DefaultEndpointsProtocol=http;AccountName={azurite_account_name};AccountKey={azurite_account_key};BlobEndpoint={azurite_url}/{azurite_account_name};"  # noqa: E501
+    azurite_connection_string = (
+        f"DefaultEndpointsProtocol=http;AccountName={azurite_account_name};"
+        f"AccountKey={azurite_account_key};BlobEndpoint={azurite_url}/{azurite_account_name};"
+    )
     properties = {
         ADLS_ACCOUNT_NAME: azurite_account_name,
         ADLS_ACCOUNT_KEY: azurite_account_key,
@@ -2623,7 +2635,8 @@ TEST_DATA_WITH_NULL = {
     # Not supported by Spark
     # 'time': [time(1, 22, 0), None, time(19, 25, 0)],
     # Not natively supported by Arrow
-    # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None, uuid.UUID('11111111-1111-1111-1111-111111111111').bytes], # noqa: E501
+    # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None,
+    #          uuid.UUID('11111111-1111-1111-1111-111111111111').bytes],
     "binary": [b"\01", None, b"\22"],
     "fixed": [
         uuid.UUID("00000000-0000-0000-0000-000000000000").bytes,
@@ -2676,7 +2689,8 @@ def arrow_table_with_null(pa_schema: "pa.Schema") -> "pa.Table":
             "long": [1, None, 9],
             "float": [0.0, None, 0.9],
             "double": [0.0, None, 0.9],
-            # 'time': [1_000_000, None, 3_000_000],  # Example times: 1s, none, and 3s past midnight #Spark does not support time fields # noqa: E501
+            # 'time': [1_000_000, None, 3_000_000],  # Example times: 1s, none, and 3s past midnight
+            # Spark does not support time fields
             "timestamp": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
             "timestamptz": [
                 datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
@@ -2687,7 +2701,8 @@ def arrow_table_with_null(pa_schema: "pa.Schema") -> "pa.Table":
             # Not supported by Spark
             # 'time': [time(1, 22, 0), None, time(19, 25, 0)],
             # Not natively supported by Arrow
-            # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None, uuid.UUID('11111111-1111-1111-1111-111111111111').bytes], # noqa: E501
+            # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None,
+            #          uuid.UUID('11111111-1111-1111-1111-111111111111').bytes],
             "binary": [b"\01", None, b"\22"],
             "fixed": [
                 uuid.UUID("00000000-0000-0000-0000-000000000000").bytes,

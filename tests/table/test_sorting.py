@@ -53,12 +53,22 @@ def test_serialize_sort_order_unsorted() -> None:
 
 
 def test_serialize_sort_order(sort_order: SortOrder) -> None:
-    expected = '{"order-id":22,"fields":[{"source-id":19,"transform":"identity","direction":"asc","null-order":"nulls-first"},{"source-id":25,"transform":"bucket[4]","direction":"desc","null-order":"nulls-last"},{"source-id":22,"transform":"void","direction":"asc","null-order":"nulls-first"}]}'  # noqa: E501
+    expected = (
+        '{"order-id":22,"fields":['
+        '{"source-id":19,"transform":"identity","direction":"asc","null-order":"nulls-first"},'
+        '{"source-id":25,"transform":"bucket[4]","direction":"desc","null-order":"nulls-last"},'
+        '{"source-id":22,"transform":"void","direction":"asc","null-order":"nulls-first"}]}'
+    )
     assert sort_order.model_dump_json() == expected
 
 
 def test_deserialize_sort_order(sort_order: SortOrder) -> None:
-    payload = '{"order-id": 22, "fields": [{"source-id": 19, "transform": "identity", "direction": "asc", "null-order": "nulls-first"}, {"source-id": 25, "transform": "bucket[4]", "direction": "desc", "null-order": "nulls-last"}, {"source-id": 22, "transform": "void", "direction": "asc", "null-order": "nulls-first"}]}'  # noqa: E501
+    payload = (
+        '{"order-id": 22, "fields": ['
+        '{"source-id": 19, "transform": "identity", "direction": "asc", "null-order": "nulls-first"}, '
+        '{"source-id": 25, "transform": "bucket[4]", "direction": "desc", "null-order": "nulls-last"}, '
+        '{"source-id": 22, "transform": "void", "direction": "asc", "null-order": "nulls-first"}]}'
+    )
 
     assert SortOrder.model_validate_json(payload) == sort_order
 
@@ -90,7 +100,16 @@ def test_sorting_to_string(sort_order: SortOrder) -> None:
 
 
 def test_sorting_to_repr(sort_order: SortOrder) -> None:
-    expected = """SortOrder(SortField(source_id=19, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_FIRST), SortField(source_id=25, transform=BucketTransform(num_buckets=4), direction=SortDirection.DESC, null_order=NullOrder.NULLS_LAST), SortField(source_id=22, transform=VoidTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_FIRST), order_id=22)"""  # noqa: E501
+    expected = (
+        "SortOrder("
+        "SortField(source_id=19, transform=IdentityTransform(), "
+        "direction=SortDirection.ASC, null_order=NullOrder.NULLS_FIRST), "
+        "SortField(source_id=25, transform=BucketTransform(num_buckets=4), "
+        "direction=SortDirection.DESC, null_order=NullOrder.NULLS_LAST), "
+        "SortField(source_id=22, transform=VoidTransform(), "
+        "direction=SortDirection.ASC, null_order=NullOrder.NULLS_FIRST), "
+        "order_id=22)"
+    )
     assert repr(sort_order) == expected
 
 

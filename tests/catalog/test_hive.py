@@ -970,7 +970,10 @@ def test_rename_table_to_namespace_does_not_exists() -> None:
 
     catalog._client = MagicMock()
     catalog._client.__enter__().alter_table_with_environment_context.side_effect = InvalidOperationException(
-        message="Unable to change partition or table. Database default does not exist Check metastore logs for detailed stack.does_not_exists"  # noqa: E501
+        message=(
+            "Unable to change partition or table. Database default does not exist "
+            "Check metastore logs for detailed stack.does_not_exists"
+        )
     )
 
     with pytest.raises(NoSuchNamespaceError) as exc_info:

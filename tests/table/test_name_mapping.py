@@ -192,16 +192,20 @@ def test_json_mapped_field_no_field_id_serialization() -> None:
         ]
     )
 
-    assert (
-        table_name_mapping_nested_no_field_id.model_dump_json()
-        == """[{"names":["foo"],"field-id":1},{"names":["bar"]},{"names":["qux"],"field-id":2,"fields":[{"names":["element"]}]}]"""  # noqa: E501
+    assert table_name_mapping_nested_no_field_id.model_dump_json() == (
+        '[{"names":["foo"],"field-id":1},{"names":["bar"]},{"names":["qux"],"field-id":2,"fields":[{"names":["element"]}]}]'
     )
 
 
 def test_json_serialization(table_name_mapping_nested: NameMapping) -> None:
-    assert (
-        table_name_mapping_nested.model_dump_json()
-        == """[{"names":["foo"],"field-id":1},{"names":["bar"],"field-id":2},{"names":["baz"],"field-id":3},{"names":["qux"],"field-id":4,"fields":[{"names":["element"],"field-id":5}]},{"names":["quux"],"field-id":6,"fields":[{"names":["key"],"field-id":7},{"names":["value"],"field-id":8,"fields":[{"names":["key"],"field-id":9},{"names":["value"],"field-id":10}]}]},{"names":["location"],"field-id":11,"fields":[{"names":["element"],"field-id":12,"fields":[{"names":["latitude"],"field-id":13},{"names":["longitude"],"field-id":14}]}]},{"names":["person"],"field-id":15,"fields":[{"names":["name"],"field-id":16},{"names":["age"],"field-id":17}]}]"""  # noqa: E501
+    assert table_name_mapping_nested.model_dump_json() == (
+        '[{"names":["foo"],"field-id":1},{"names":["bar"],"field-id":2},{"names":["baz"],"field-id":3},'
+        '{"names":["qux"],"field-id":4,"fields":[{"names":["element"],"field-id":5}]},'
+        '{"names":["quux"],"field-id":6,"fields":[{"names":["key"],"field-id":7},'
+        '{"names":["value"],"field-id":8,"fields":[{"names":["key"],"field-id":9},{"names":["value"],"field-id":10}]}]},'
+        '{"names":["location"],"field-id":11,"fields":[{"names":["element"],"field-id":12,"fields":'
+        '[{"names":["latitude"],"field-id":13},{"names":["longitude"],"field-id":14}]}]},'
+        '{"names":["person"],"field-id":15,"fields":[{"names":["name"],"field-id":16},{"names":["age"],"field-id":17}]}]'
     )
 
 
