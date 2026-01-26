@@ -790,7 +790,7 @@ class RestCatalog(Catalog):
         if location:
             location = location.rstrip("/")
         request = CreateTableRequest(
-            name=namespace_and_table["table"],
+            name=self._identifier_to_validated_tuple(identifier)[-1],
             location=location,
             table_schema=fresh_schema,
             partition_spec=fresh_partition_spec,
@@ -869,7 +869,7 @@ class RestCatalog(Catalog):
         self._check_endpoint(Capability.V1_REGISTER_TABLE)
         namespace_and_table = self._split_identifier_for_path(identifier)
         request = RegisterTableRequest(
-            name=namespace_and_table["table"],
+            name=self._identifier_to_validated_tuple(identifier)[-1],
             metadata_location=metadata_location,
         )
         serialized_json = request.model_dump_json().encode(UTF8)

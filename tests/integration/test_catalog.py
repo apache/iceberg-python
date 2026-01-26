@@ -674,7 +674,7 @@ def test_incompatible_partitioned_schema_evolution(
 @pytest.mark.integration
 @pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_namespace_with_slash(test_catalog: Catalog) -> None:
-    if isinstance(test_catalog, (HiveCatalog, SqlCatalog, RestCatalog)):
+    if isinstance(test_catalog, HiveCatalog):
         pytest.skip(f"{type(test_catalog).__name__} does not support slash in namespace")
 
     namespace = ("new/db",)
@@ -716,7 +716,7 @@ def test_incompatible_sorted_schema_evolution(
     )
 
 def test_namespace_with_dot(test_catalog: Catalog) -> None:
-    if isinstance(test_catalog, (HiveCatalog, SqlCatalog, RestCatalog)):
+    if isinstance(test_catalog, (HiveCatalog, SqlCatalog)):
         pytest.skip(f"{type(test_catalog).__name__} does not support dot in namespace")
 
     namespace = ("new.db",)
@@ -730,7 +730,11 @@ def test_namespace_with_dot(test_catalog: Catalog) -> None:
     assert test_catalog.namespace_exists(namespace)
 
     # list_namespaces returns a list of tuples
-    assert namespace in test_catalog.list_namespaces()
+    if isinstance(test_catalog, RestCatalog):
+        namespaces = test_catalog.list_namespaces()
+        assert ("new",) in namespaces or ("new.db",) in namespaces
+    else:
+        assert namespace in test_catalog.list_namespaces()
 
     properties = test_catalog.load_namespace_properties(namespace)
     assert properties is not None
@@ -742,7 +746,7 @@ def test_namespace_with_dot(test_catalog: Catalog) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_table_name_with_slash(test_catalog: Catalog, table_schema_simple: Schema) -> None:
-    if isinstance(test_catalog, (HiveCatalog, SqlCatalog, RestCatalog)):
+    if isinstance(test_catalog, (HiveCatalog, SqlCatalog)):
         pytest.skip(f"{type(test_catalog).__name__} does not support slash in table name")
 
     namespace = ("ns_slash",)
@@ -769,7 +773,7 @@ def test_table_name_with_slash(test_catalog: Catalog, table_schema_simple: Schem
 @pytest.mark.integration
 @pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_table_name_with_dot(test_catalog: Catalog, table_schema_simple: Schema) -> None:
-    if isinstance(test_catalog, (HiveCatalog, SqlCatalog, RestCatalog)):
+    if isinstance(test_catalog, (HiveCatalog, SqlCatalog)):
         pytest.skip(f"{type(test_catalog).__name__} does not support dot in table name")
 
     namespace = ("ns_dot",)
