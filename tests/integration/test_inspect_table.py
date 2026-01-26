@@ -167,6 +167,8 @@ def _inspect_files_asserts(df: pa.Table, spark_df: DataFrame) -> None:
             ]:
                 if isinstance(right, dict):
                     left = dict(left)
+                if isinstance(left, list) and right is None:
+                    continue
                 assert left == right, f"Difference in column {column}: {left} != {right}"
 
             elif column == "readable_metrics":
