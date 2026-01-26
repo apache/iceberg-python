@@ -122,7 +122,8 @@ def test_manifest_cache_memory_growth(memory_catalog: InMemoryCatalog) -> None:
         # We expect about 5-10 KB per iteration for typical workloads
         # The key improvement is that growth is O(N) not O(N²)
         # Threshold of 15KB/iteration based on observed behavior - O(N²) would show ~50KB+/iteration
-        assert growth_per_iteration < 15000, (
+        max_memory_growth_per_iteration_bytes = 15000
+        assert growth_per_iteration < max_memory_growth_per_iteration_bytes, (
             f"Memory growth per iteration ({growth_per_iteration:.0f} bytes) is too high. "
             "This may indicate the O(N²) cache inefficiency is present."
         )
