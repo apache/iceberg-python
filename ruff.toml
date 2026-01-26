@@ -56,6 +56,7 @@ select = [
     "C4", # flake8-comprehensions
     "I", # isort
     "UP", # pyupgrade
+    "T100", # flake8-debugger
 ]
 ignore = []
 
