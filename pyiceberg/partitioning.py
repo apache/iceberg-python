@@ -271,7 +271,10 @@ class PartitionSpec(IcebergBaseModel):
             if not source_type.is_primitive:
                 raise ValidationError(f"Cannot partition by non-primitive source field: {source_field}")
             if not field.transform.can_transform(source_type):
-                raise ValidationError(f"Invalid source type {source_type} for transform: {field.transform}")
+                raise ValidationError(
+                    f"Invalid source field {source_field.name} with type {source_type} "
+                    + f"for transform: {field.transform}"
+                )
 
             # The only valid parent types for a PartitionField are StructTypes. This must be checked recursively
             parent_id = parents.get(field.source_id)
