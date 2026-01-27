@@ -286,7 +286,7 @@ def test_incompatible_non_primitive_type() -> None:
     with pytest.raises(ValidationError) as exc:
         spec.check_compatible(schema)
 
-    assert "Cannot partition by non-primitive source field: struct<>" in str(exc.value)
+    assert "Cannot partition by non-primitive source field: 1: foo: optional struct<>" in str(exc.value)
 
 
 def test_incompatible_transform_source_type() -> None:
@@ -297,4 +297,4 @@ def test_incompatible_transform_source_type() -> None:
     with pytest.raises(ValidationError) as exc:
         spec.check_compatible(schema)
 
-    assert "Invalid source type int for transform: year" in str(exc.value)
+    assert "Invalid source field foo with type int for transform: year" in str(exc.value)
