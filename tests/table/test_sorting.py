@@ -20,6 +20,8 @@ from typing import Any
 
 import pytest
 
+from pyiceberg.exceptions import ValidationError
+from pyiceberg.schema import Schema
 from pyiceberg.table.metadata import TableMetadataUtil
 from pyiceberg.table.sorting import (
     UNSORTED_SORT_ORDER,
@@ -28,7 +30,8 @@ from pyiceberg.table.sorting import (
     SortField,
     SortOrder,
 )
-from pyiceberg.transforms import BucketTransform, IdentityTransform, VoidTransform
+from pyiceberg.transforms import BucketTransform, IdentityTransform, VoidTransform, YearTransform
+from pyiceberg.types import IntegerType, NestedField, StructType
 
 
 @pytest.fixture
@@ -133,3 +136,36 @@ def test_serialize_sort_field_v3() -> None:
     expected = SortField(source_id=19, transform=IdentityTransform(), null_order=NullOrder.NULLS_FIRST)
     payload = '{"source-ids":[19],"transform":"identity","direction":"asc","null-order":"nulls-first"}'
     assert SortField.model_validate_json(payload) == expected
+
+
+def test_incompatible_source_column_not_found(sort_order: SortOrder) -> None:
+    schema = Schema(NestedField(1, "foo", IntegerType()), NestedField(2, "bar", IntegerType()))
+
+    with pytest.raises(ValidationError) as exc:
+        sort_order.check_compatible(schema)
+
+    assert "Cannot find source column for sort field: 19 ASC NULLS FIRST" in str(exc.value)
+
+
+def test_incompatible_non_primitive_type() -> None:
+    schema = Schema(NestedField(1, "foo", StructType()), NestedField(2, "bar", IntegerType()))
+
+    sort_order = SortOrder(SortField(source_id=1, transform=IdentityTransform(), null_order=NullOrder.NULLS_FIRST))
+
+    with pytest.raises(ValidationError) as exc:
+        sort_order.check_compatible(schema)
+
+    assert "Cannot sort by non-primitive source field: 1: foo: optional struct<>" in str(exc.value)
+
+
+def test_incompatible_transform_source_type() -> None:
+    schema = Schema(NestedField(1, "foo", IntegerType()), NestedField(2, "bar", IntegerType()))
+
+    sort_order = SortOrder(
+        SortField(source_id=1, transform=YearTransform(), null_order=NullOrder.NULLS_FIRST),
+    )
+
+    with pytest.raises(ValidationError) as exc:
+        sort_order.check_compatible(schema)
+
+    assert "Invalid source field foo with type int for transform: year" in str(exc.value)

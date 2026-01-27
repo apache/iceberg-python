@@ -34,6 +34,7 @@ from pyiceberg.exceptions import (
     NoSuchNamespaceError,
     NoSuchTableError,
     TableAlreadyExistsError,
+    ValidationError,
 )
 from pyiceberg.io import WAREHOUSE
 from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -635,3 +636,56 @@ def test_rest_custom_namespace_separator(rest_catalog: RestCatalog, table_schema
 
     loaded_table = rest_catalog.load_table(identifier=full_table_identifier_tuple)
     assert loaded_table.name() == full_table_identifier_tuple
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_incompatible_partitioned_schema_evolution(
+    test_catalog: Catalog, test_schema: Schema, test_partition_spec: PartitionSpec, database_name: str, table_name: str
+) -> None:
+    if isinstance(test_catalog, HiveCatalog):
+        pytest.skip("HiveCatalog does not support schema evolution")
+
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(database_name)
+    table = test_catalog.create_table(identifier, test_schema, partition_spec=test_partition_spec)
+    assert test_catalog.table_exists(identifier)
+
+    with pytest.raises(ValidationError):
+        with table.update_schema() as update:
+            update.delete_column("VendorID")
+
+    # Assert column was not dropped
+    assert "VendorID" in table.schema().column_names
+
+    with table.transaction() as transaction:
+        with transaction.update_spec() as spec_update:
+            spec_update.remove_field("VendorID")
+
+        with transaction.update_schema() as schema_update:
+            schema_update.delete_column("VendorID")
+
+    assert table.spec() == PartitionSpec(PartitionField(2, 1001, DayTransform(), "tpep_pickup_day"), spec_id=1)
+    assert table.schema() == Schema(NestedField(2, "tpep_pickup_datetime", TimestampType(), False))
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_incompatible_sorted_schema_evolution(
+    test_catalog: Catalog, test_schema: Schema, test_sort_order: SortOrder, database_name: str, table_name: str
+) -> None:
+    if isinstance(test_catalog, HiveCatalog):
+        pytest.skip("HiveCatalog does not support schema evolution")
+
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(database_name)
+    table = test_catalog.create_table(identifier, test_schema, sort_order=test_sort_order)
+    assert test_catalog.table_exists(identifier)
+
+    with pytest.raises(ValidationError):
+        with table.update_schema() as update:
+            update.delete_column("VendorID")
+
+    assert table.schema() == Schema(
+        NestedField(1, "VendorID", IntegerType(), False), NestedField(2, "tpep_pickup_datetime", TimestampType(), False)
+    )

@@ -27,6 +27,7 @@ from pydantic import (
     model_validator,
 )
 
+from pyiceberg.exceptions import ValidationError
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import IdentityTransform, Transform, parse_transform
 from pyiceberg.typedef import IcebergBaseModel
@@ -169,6 +170,19 @@ class SortOrder(IcebergBaseModel):
         """Return the string representation of the SortOrder class."""
         fields = f"{', '.join(repr(column) for column in self.fields)}, " if self.fields else ""
         return f"SortOrder({fields}order_id={self.order_id})"
+
+    def check_compatible(self, schema: Schema) -> None:
+        for field in self.fields:
+            source_field = schema._lazy_id_to_field.get(field.source_id)
+            if source_field is None:
+                raise ValidationError(f"Cannot find source column for sort field: {field}")
+            if not source_field.field_type.is_primitive:
+                raise ValidationError(f"Cannot sort by non-primitive source field: {source_field}")
+            if not field.transform.can_transform(source_field.field_type):
+                raise ValidationError(
+                    f"Invalid source field {source_field.name} with type {source_field.field_type} "
+                    + f"for transform: {field.transform}"
+                )
 
 
 UNSORTED_SORT_ORDER_ID = 0
