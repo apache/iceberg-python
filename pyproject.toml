@@ -68,7 +68,7 @@ duckdb = [
 ray = [
     "ray>=2.10.0,<3.0.0",
     "pyarrow>=17.0.0",
-    "pandas>=1.0.0,<3.0.0",
+    "pandas>=1.0.0",
 ]
 bodo = ["bodo>=2025.7.4"]
 daft = ["daft>=0.5.0"]
