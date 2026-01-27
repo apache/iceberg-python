@@ -185,7 +185,8 @@ catalog.register_table(
     metadata_location="s3://warehouse/path/to/metadata.json"
 )
 ```
-```
+
+```python
 
 ## Load a table
 
