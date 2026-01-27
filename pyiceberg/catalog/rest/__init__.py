@@ -1106,7 +1106,7 @@ class RestCatalog(Catalog):
     @retry(**_RETRY_ARGS)
     def namespace_exists(self, namespace: str | Identifier) -> bool:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
-        namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
+        namespace = self._encode_namespace_path(namespace_tuple)
 
         # fallback in order to work with older rest catalog implementations
         if Capability.V1_NAMESPACE_EXISTS not in self._supported_endpoints:
