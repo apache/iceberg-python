@@ -1974,6 +1974,12 @@ class UnpartitionedResidualEvaluator(ResidualEvaluator):
 def residual_evaluator_of(
     spec: PartitionSpec, expr: BooleanExpression, case_sensitive: bool, schema: Schema
 ) -> ResidualEvaluator:
+    """Create a residual evaluator.
+
+    Returns a fresh evaluator instance because evaluators are stateful
+    (they set `self.struct` during evaluation) and may be used from multiple
+    threads.
+    """
     return (
         UnpartitionedResidualEvaluator(schema=schema, expr=expr)
         if spec.is_unpartitioned()
