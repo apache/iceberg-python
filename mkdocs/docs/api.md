@@ -84,8 +84,8 @@ assert ns == [("docs_example",)]
 # Load namespace properties
 properties = catalog.load_namespace_properties("docs_example")
 
-# Update namespace properties
-catalog.update_namespace_properties("docs_example", updates={"owner": "iceberg"})
+# Update namespace properties with additions and removals.
+catalog.update_namespace_properties("docs_example", removals={"remove-meee!"}, updates={"owner": "iceberg"})
 
 # Drop a namespace
 # catalog.drop_namespace("docs_example")
@@ -185,8 +185,6 @@ catalog.register_table(
     metadata_location="s3://warehouse/path/to/metadata.json"
 )
 ```
-
-```python
 
 ## Load a table
 
