@@ -97,7 +97,7 @@ Finally, drop the namespace (if you want!)
 
 ```python
 # Drop a namespace
-# catalog.drop_namespace("docs_example")
+catalog.drop_namespace("docs_example")
 ```
 
 ## Create a table
