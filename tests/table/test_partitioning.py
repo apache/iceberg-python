@@ -21,6 +21,7 @@ from uuid import UUID
 
 import pytest
 
+from pyiceberg.exceptions import ValidationError
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import (
@@ -264,3 +265,36 @@ def test_deserialize_partition_field_v3() -> None:
 
     field = PartitionField.model_validate_json(json_partition_spec)
     assert field == PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate")
+
+
+def test_incompatible_source_column_not_found() -> None:
+    schema = Schema(NestedField(1, "foo", IntegerType()), NestedField(2, "bar", IntegerType()))
+
+    spec = PartitionSpec(PartitionField(3, 1000, IdentityTransform(), "some_partition"))
+
+    with pytest.raises(ValidationError) as exc:
+        spec.check_compatible(schema)
+
+    assert "Cannot find source column for partition field: 1000: some_partition: identity(3)" in str(exc.value)
+
+
+def test_incompatible_non_primitive_type() -> None:
+    schema = Schema(NestedField(1, "foo", StructType()), NestedField(2, "bar", IntegerType()))
+
+    spec = PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "some_partition"))
+
+    with pytest.raises(ValidationError) as exc:
+        spec.check_compatible(schema)
+
+    assert "Cannot partition by non-primitive source field: 1: foo: optional struct<>" in str(exc.value)
+
+
+def test_incompatible_transform_source_type() -> None:
+    schema = Schema(NestedField(1, "foo", IntegerType()), NestedField(2, "bar", IntegerType()))
+
+    spec = PartitionSpec(PartitionField(1, 1000, YearTransform(), "some_partition"))
+
+    with pytest.raises(ValidationError) as exc:
+        spec.check_compatible(schema)
+
+    assert "Invalid source field foo with type int for transform: year" in str(exc.value)
