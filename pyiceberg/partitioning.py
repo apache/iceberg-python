@@ -269,7 +269,7 @@ class PartitionSpec(IcebergBaseModel):
 
             source_type = source_field.field_type
             if not source_type.is_primitive:
-                raise ValidationError(f"Cannot partition by non-primitive source field: {source_type}")
+                raise ValidationError(f"Cannot partition by non-primitive source field: {source_field}")
             if not field.transform.can_transform(source_type):
                 raise ValidationError(f"Invalid source type {source_type} for transform: {field.transform}")
 
