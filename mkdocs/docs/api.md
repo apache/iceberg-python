@@ -80,13 +80,22 @@ Or, list existing namespaces:
 ns = catalog.list_namespaces()
 
 assert ns == [("docs_example",)]
+```
+
+Next, update the namespace properties.
+
+```python
 
 # Load namespace properties
 properties = catalog.load_namespace_properties("docs_example")
 
 # Update namespace properties with additions and removals.
 catalog.update_namespace_properties("docs_example", removals={"remove-meee!"}, updates={"owner": "iceberg"})
+```
 
+Finally, drop the namespace (if you want!)
+
+```python
 # Drop a namespace
 # catalog.drop_namespace("docs_example")
 ```
@@ -174,6 +183,7 @@ with catalog.create_table_transaction(identifier="docs_example.bids", schema=sch
         update_spec.add_identity("symbol")
 
     txn.set_properties(test_a="test_aa", test_b="test_b", test_c="test_c")
+```
 
 ## Register a table
 
