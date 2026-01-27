@@ -532,17 +532,6 @@ class RestCatalog(Catalog):
             raise NoSuchNamespaceError(f"Empty namespace identifier: {identifier}")
         return identifier_tuple
 
-    def _encode_namespace_path(self, namespace: Identifier) -> str:
-        """Encode the namespace identifier into a path string.
-
-        Args:
-            namespace: Namespace identifier.
-
-        Returns:
-            The encoded namespace path string.
-        """
-        return NAMESPACE_SEPARATOR.join(namespace)
-
     def url(self, endpoint: str, prefixed: bool = True, **kwargs: Any) -> str:
         """Construct the endpoint.
 
@@ -1117,7 +1106,7 @@ class RestCatalog(Catalog):
     @retry(**_RETRY_ARGS)
     def namespace_exists(self, namespace: str | Identifier) -> bool:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
-        namespace = self._encode_namespace_path(namespace_tuple)
+        namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
 
         # fallback in order to work with older rest catalog implementations
         if Capability.V1_NAMESPACE_EXISTS not in self._supported_endpoints:
