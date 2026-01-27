@@ -410,7 +410,10 @@ def test_concurrent_create_transaction(test_catalog: Catalog, test_schema: Schem
 @pytest.mark.integration
 @pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_create_namespace(test_catalog: Catalog, database_name: str) -> None:
+    assert not test_catalog.namespace_exists(database_name)
+
     test_catalog.create_namespace(database_name)
+    assert test_catalog.namespace_exists(database_name)
     assert (database_name,) in test_catalog.list_namespaces()
 
 
