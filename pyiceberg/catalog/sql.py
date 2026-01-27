@@ -204,7 +204,7 @@ class SqlCatalog(MetastoreCatalog):
 
         namespace_identifier = Catalog.namespace_from(identifier)
         table_name = Catalog.table_name_from(identifier)
-        if not self._namespace_exists(namespace_identifier):
+        if not self.namespace_exists(namespace_identifier):
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace_identifier}")
 
         namespace = Catalog.namespace_to_string(namespace_identifier)
@@ -251,7 +251,7 @@ class SqlCatalog(MetastoreCatalog):
         namespace_tuple = Catalog.namespace_from(identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple)
         table_name = Catalog.table_name_from(identifier)
-        if not self._namespace_exists(namespace):
+        if not self.namespace_exists(namespace):
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}")
 
         with Session(self.engine) as session:
@@ -361,7 +361,7 @@ class SqlCatalog(MetastoreCatalog):
         to_namespace_tuple = Catalog.namespace_from(to_identifier)
         to_namespace = Catalog.namespace_to_string(to_namespace_tuple)
         to_table_name = Catalog.table_name_from(to_identifier)
-        if not self._namespace_exists(to_namespace):
+        if not self.namespace_exists(to_namespace):
             raise NoSuchNamespaceError(f"Namespace does not exist: {to_namespace}")
         with Session(self.engine) as session:
             try:
@@ -495,7 +495,7 @@ class SqlCatalog(MetastoreCatalog):
             metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
         )
 
-    def _namespace_exists(self, identifier: str | Identifier) -> bool:
+    def namespace_exists(self, identifier: str | Identifier) -> bool:
         namespace_tuple = Catalog.identifier_to_tuple(identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple, NoSuchNamespaceError)
         namespace_starts_with = namespace.replace("!", "!!").replace("_", "!_").replace("%", "!%") + ".%"
@@ -537,7 +537,7 @@ class SqlCatalog(MetastoreCatalog):
         Raises:
             NamespaceAlreadyExistsError: If a namespace with the given name already exists.
         """
-        if self._namespace_exists(namespace):
+        if self.namespace_exists(namespace):
             raise NamespaceAlreadyExistsError(f"Namespace {namespace} already exists")
 
         if not properties:
@@ -565,7 +565,7 @@ class SqlCatalog(MetastoreCatalog):
             NoSuchNamespaceError: If a namespace with the given name does not exist.
             NamespaceNotEmptyError: If the namespace is not empty.
         """
-        if not self._namespace_exists(namespace):
+        if not self.namespace_exists(namespace):
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}")
 
         namespace_str = Catalog.namespace_to_string(namespace)
@@ -593,7 +593,7 @@ class SqlCatalog(MetastoreCatalog):
         Raises:
             NoSuchNamespaceError: If a namespace with the given name does not exist.
         """
-        if namespace and not self._namespace_exists(namespace):
+        if namespace and not self.namespace_exists(namespace):
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}")
 
         namespace = Catalog.namespace_to_string(namespace)
@@ -614,7 +614,7 @@ class SqlCatalog(MetastoreCatalog):
         Raises:
             NoSuchNamespaceError: If a namespace with the given name does not exist.
         """
-        if namespace and not self._namespace_exists(namespace):
+        if namespace and not self.namespace_exists(namespace):
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}")
 
         table_stmt = select(IcebergTables.table_namespace).where(IcebergTables.catalog_name == self.name)
@@ -656,7 +656,7 @@ class SqlCatalog(MetastoreCatalog):
             NoSuchNamespaceError: If a namespace with the given name does not exist.
         """
         namespace_str = Catalog.namespace_to_string(namespace)
-        if not self._namespace_exists(namespace):
+        if not self.namespace_exists(namespace):
             raise NoSuchNamespaceError(f"Namespace {namespace_str} does not exists")
 
         stmt = select(IcebergNamespaceProperties).where(
@@ -681,7 +681,7 @@ class SqlCatalog(MetastoreCatalog):
             ValueError: If removals and updates have overlapping keys.
         """
         namespace_str = Catalog.namespace_to_string(namespace)
-        if not self._namespace_exists(namespace):
+        if not self.namespace_exists(namespace):
             raise NoSuchNamespaceError(f"Namespace {namespace_str} does not exists")
 
         current_properties = self.load_namespace_properties(namespace=namespace)

@@ -532,6 +532,17 @@ class RestCatalog(Catalog):
             raise NoSuchNamespaceError(f"Empty namespace identifier: {identifier}")
         return identifier_tuple
 
+    def _encode_namespace_path(self, namespace: Identifier) -> str:
+        """Encode the namespace identifier into a path string.
+
+        Args:
+            namespace: Namespace identifier.
+
+        Returns:
+            The encoded namespace path string.
+        """
+        return NAMESPACE_SEPARATOR.join(namespace)
+
     def url(self, endpoint: str, prefixed: bool = True, **kwargs: Any) -> str:
         """Construct the endpoint.
 

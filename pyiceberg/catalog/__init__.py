@@ -471,6 +471,17 @@ class Catalog(ABC):
         """
 
     @abstractmethod
+    def namespace_exists(self, namespace: str | Identifier) -> bool:
+        """Check if a namespace exists.
+
+        Args:
+            namespace (str | Identifier): Namespace identifier.
+
+        Returns:
+            bool: True if the namespace exists, False otherwise.
+        """
+
+    @abstractmethod
     def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
         """Register a new table using existing metadata.
 
@@ -843,6 +854,21 @@ class MetastoreCatalog(Catalog, ABC):
             self.load_table(identifier)
             return True
         except NoSuchTableError:
+            return False
+
+    def namespace_exists(self, namespace: str | Identifier) -> bool:
+        """Check if a namespace exists.
+
+        Args:
+            namespace (str | Identifier): Namespace identifier.
+
+        Returns:
+            bool: True if the namespace exists, False otherwise.
+        """
+        try:
+            self.load_namespace_properties(namespace)
+            return True
+        except NoSuchNamespaceError:
             return False
 
     def purge_table(self, identifier: str | Identifier) -> None:
