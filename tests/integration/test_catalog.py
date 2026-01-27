@@ -729,7 +729,8 @@ def test_namespace_with_dot(test_catalog: Catalog) -> None:
     test_catalog.create_namespace(namespace)
     assert test_catalog.namespace_exists(namespace)
 
-    # list_namespaces returns a list of tuples
+    # REST Catalog fixture treats this as a hierarchical namespace.
+    # Calling list namespaces will get `new`, not `new.db`.
     if isinstance(test_catalog, RestCatalog):
         namespaces = test_catalog.list_namespaces()
         assert ("new",) in namespaces or ("new.db",) in namespaces
