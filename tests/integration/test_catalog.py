@@ -42,7 +42,6 @@ from pyiceberg.schema import INITIAL_SCHEMA_ID, Schema
 from pyiceberg.table.metadata import INITIAL_SPEC_ID
 from pyiceberg.table.sorting import INITIAL_SORT_ORDER_ID, SortField, SortOrder
 from pyiceberg.transforms import BucketTransform, DayTransform, IdentityTransform
-from pyiceberg.typedef import Identifier
 from pyiceberg.types import IntegerType, LongType, NestedField, TimestampType, UUIDType
 from tests.conftest import clean_up
 
@@ -641,6 +640,7 @@ def test_rest_custom_namespace_separator(rest_catalog: RestCatalog, table_schema
     loaded_table = rest_catalog.load_table(identifier=full_table_identifier_tuple)
     assert loaded_table.name() == full_table_identifier_tuple
 
+
 @pytest.mark.integration
 @pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_incompatible_partitioned_schema_evolution(
@@ -670,6 +670,7 @@ def test_incompatible_partitioned_schema_evolution(
 
     assert table.spec() == PartitionSpec(PartitionField(2, 1001, DayTransform(), "tpep_pickup_day"), spec_id=1)
     assert table.schema() == Schema(NestedField(2, "tpep_pickup_datetime", TimestampType(), False))
+
 
 @pytest.mark.integration
 @pytest.mark.parametrize("test_catalog", CATALOGS)
@@ -714,6 +715,7 @@ def test_incompatible_sorted_schema_evolution(
     assert table.schema() == Schema(
         NestedField(1, "VendorID", IntegerType(), False), NestedField(2, "tpep_pickup_datetime", TimestampType(), False)
     )
+
 
 def test_namespace_with_dot(test_catalog: Catalog) -> None:
     if isinstance(test_catalog, (HiveCatalog, SqlCatalog)):
