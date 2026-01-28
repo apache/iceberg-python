@@ -717,6 +717,8 @@ def test_incompatible_sorted_schema_evolution(
     )
 
 
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_namespace_with_dot(test_catalog: Catalog) -> None:
     if isinstance(test_catalog, (HiveCatalog, SqlCatalog)):
         pytest.skip(f"{type(test_catalog).__name__} does not support dot in namespace")
