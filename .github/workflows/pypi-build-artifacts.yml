@@ -72,9 +72,6 @@ jobs:
           CIBW_PROJECT_REQUIRES_PYTHON: ">=3.10,<3.14"
           CIBW_BEFORE_TEST: "uv sync --directory {project} --only-group dev --no-install-project"
           CIBW_TEST_COMMAND: "uv run --directory {project} pytest tests/avro/test_decoder.py"
-          # Ignore tests for pypy since not all dependencies are compiled for it
-          # and would require a local rust build chain
-          CIBW_TEST_SKIP: "pp*"
           # Skip free-threaded (PEP 703) builds until we evaluate decoder_fast support
           CIBW_SKIP: "cp3*t-*"
 
