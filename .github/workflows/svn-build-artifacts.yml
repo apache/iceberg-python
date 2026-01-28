@@ -32,7 +32,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-latest, windows-latest, macos-15-intel, macos-latest ]
+        os: [ ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-15-intel, macos-latest ]
 
     steps:
       - uses: actions/checkout@v6
@@ -54,7 +54,7 @@ jobs:
       # the repository, otherwise the tests will fail
       - name: Compile source distribution
         run: uv build --sdist
-        if: startsWith(matrix.os, 'ubuntu')
+        if: matrix.os == 'ubuntu-latest'
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.3.1
@@ -71,7 +71,7 @@ jobs:
           CIBW_SKIP: "cp3*t-*"
 
       - name: Add source distribution
-        if: startsWith(matrix.os, 'ubuntu')
+        if: matrix.os == 'ubuntu-latest'
         run: ls -lah dist/* && cp dist/* wheelhouse/
 
       - uses: actions/upload-artifact@v4
