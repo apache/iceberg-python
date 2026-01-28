@@ -96,6 +96,7 @@ hf = ["huggingface-hub>=0.24.0"]
 pyiceberg-core = ["pyiceberg-core>=0.5.1,<0.9.0"]
 datafusion = ["datafusion>=51,<52"]
 gcp-auth = ["google-auth>=2.4.0"]
+entra-auth = ["azure-identity>=1.25.1"]
 
 [dependency-groups]
 dev = [
