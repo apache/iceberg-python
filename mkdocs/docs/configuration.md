@@ -81,7 +81,7 @@ Iceberg tables support table properties to configure table behavior.
 <!-- prettier-ignore-start -->
 
 !!! note "Fast append"
-    Unlike Java implementation, PyIceberg default to the [fast append](api.md#write-support) and thus `commit.manifest-merge.enabled` is set to `False` by default.
+    Unlike Java implementation, PyIceberg default to the [fast append](api.md#write-to-a-table) and thus `commit.manifest-merge.enabled` is set to `False` by default.
 
 <!-- prettier-ignore-end -->
 
