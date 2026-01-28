@@ -610,8 +610,8 @@ catalog:
 
 <!-- prettier-ignore-start -->
 
-!!! Note "OneLake Authentication Models"
-    For Authentication: You can use the `entra` auth type which leverages `DefaultAzureCredential` from the `azure.identity` package. This supports multiple authentication methods including environment variables, managed identity, Azure CLI, and interactive browser login. Install with `pip install pyiceberg[entra-auth]`. Refer to [DefaultAzureCredential overview](https://learn.microsoft.com/en-us/azure/developer/python/sdk/authentication/credential-chains?tabs=dac#defaultazurecredential-overview) for detailed documentation.
+!!! Note "OneLake Authentication"
+    Use the `entra` auth type for Entra ID (Azure AD) authentication via [DefaultAzureCredential](https://learn.microsoft.com/en-us/azure/developer/python/sdk/authentication/credential-chains?tabs=dac#defaultazurecredential-overview), which supports environment variables, managed identity, Azure CLI, and more. Install with `pip install pyiceberg[entra-auth]`.
 <!-- prettier-ignore-end -->
 
 ### SQL Catalog
