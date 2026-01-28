@@ -1890,8 +1890,8 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
         self._downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
         self._use_large_types = use_large_types
         self._projected_missing_fields = projected_missing_fields
-        # Allow reading timestamp with/without timezone interchangeably (aligns with Spark behavior)
-        # This is intentionally disabled on the write path to enforce the Iceberg spec distinction
+        # When True, allows projecting timestamptz (UTC) to timestamp (no tz).
+        # Allowed for reading (aligns with Spark); disallowed for writing to enforce Iceberg spec's strict typing.
         self._allow_timestamp_tz_mismatch = allow_timestamp_tz_mismatch
 
         if use_large_types is not None:
