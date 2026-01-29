@@ -22,6 +22,7 @@ from typing import Any
 
 import pytest
 from pydantic import BaseModel, ValidationError
+from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.exceptions import CommitFailedException
@@ -262,8 +263,8 @@ def test_history(table_v2: Table) -> None:
 @pytest.mark.parametrize(
     "table_fixture",
     [
-        pytest.param(pytest.lazy_fixture("table_v2"), id="parquet"),
-        pytest.param(pytest.lazy_fixture("table_v2_orc"), id="orc"),
+        pytest.param(lf("table_v2"), id="parquet"),
+        pytest.param(lf("table_v2_orc"), id="orc"),
     ],
 )
 def test_table_scan_select(table_fixture: Table) -> None:

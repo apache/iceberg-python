@@ -26,7 +26,7 @@ from typing import Any
 import pyarrow as pa
 import pytest
 from pydantic_core import ValidationError
-from pytest_lazyfixture import lazy_fixture
+from pytest_lazy_fixtures import lf
 from sqlalchemy.exc import IntegrityError
 
 from pyiceberg.catalog import Catalog
@@ -323,10 +323,10 @@ def test_write_pyarrow_schema(catalog: Catalog, test_table_identifier: Identifie
 @pytest.mark.parametrize(
     "schema,expected",
     [
-        (lazy_fixture("pyarrow_schema_simple_without_ids"), lazy_fixture("iceberg_schema_simple_no_ids")),
-        (lazy_fixture("table_schema_simple"), lazy_fixture("table_schema_simple")),
-        (lazy_fixture("table_schema_nested"), lazy_fixture("table_schema_nested")),
-        (lazy_fixture("pyarrow_schema_nested_without_ids"), lazy_fixture("iceberg_schema_nested_no_ids")),
+        (lf("pyarrow_schema_simple_without_ids"), lf("iceberg_schema_simple_no_ids")),
+        (lf("table_schema_simple"), lf("table_schema_simple")),
+        (lf("table_schema_nested"), lf("table_schema_nested")),
+        (lf("pyarrow_schema_nested_without_ids"), lf("iceberg_schema_nested_no_ids")),
     ],
 )
 def test_convert_schema_if_needed(

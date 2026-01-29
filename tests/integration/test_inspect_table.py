@@ -24,6 +24,7 @@ import pyarrow as pa
 import pytest
 import pytz
 from pyspark.sql import DataFrame, SparkSession
+from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
@@ -672,7 +673,7 @@ def test_inspect_partitions_partitioned_with_filter(spark: SparkSession, session
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [lf("session_catalog")])
 def test_inspect_partitions_partitioned_transform_with_filter(spark: SparkSession, catalog: Catalog) -> None:
     for table_name, predicate, partition_predicate in [
         ("test_partitioned_by_identity", "ts >= '2023-03-05T00:00:00+00:00'", "ts >= '2023-03-05T00:00:00+00:00'"),
