@@ -602,6 +602,7 @@ def test_adls_account_name_sas_token_extraction() -> None:
             client_id=None,
             client_secret=None,
             account_host="testaccount.dfs.core.windows.net",
+            anon=None,
         )
 
 
