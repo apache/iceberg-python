@@ -894,7 +894,7 @@ class ManifestFile(Record):
 # Global cache for ManifestFile objects, keyed by manifest_path.
 # This deduplicates ManifestFile objects across manifest lists, which commonly
 # share manifests after append operations.
-_manifest_cache: LRUCache[str, ManifestFile] = LRUCache(maxsize=512)
+_manifest_cache: LRUCache[str, ManifestFile] = LRUCache(maxsize=128)
 
 # Lock for thread-safe cache access
 _manifest_cache_lock = threading.RLock()
