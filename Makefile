@@ -77,7 +77,7 @@ install: install-uv ## Install uv, dependencies, and pre-commit hooks
 	@if [ -d .git ]; then \
 		uv run $(PYTHON_ARG) prek install; \
 	fi
-
+	
 # ===============
 # Code Validation
 # ===============
