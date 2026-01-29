@@ -98,6 +98,9 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         self.location = location
         self.project_id = project_id
 
+    def supports_nested_namespaces(self) -> bool:
+        return False
+
     def create_table(
         self,
         identifier: str | Identifier,

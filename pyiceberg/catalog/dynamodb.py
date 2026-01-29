@@ -117,6 +117,9 @@ class DynamoDbCatalog(MetastoreCatalog):
         self.dynamodb_table_name = self.properties.get(DYNAMODB_TABLE_NAME, DYNAMODB_TABLE_NAME_DEFAULT)
         self._ensure_catalog_table_exists_or_create()
 
+    def supports_nested_namespaces(self) -> bool:
+        return False
+
     def _ensure_catalog_table_exists_or_create(self) -> None:
         if self._dynamodb_table_exists():
             return None

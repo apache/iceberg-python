@@ -85,6 +85,27 @@ class NoopCatalog(Catalog):
     def drop_table(self, identifier: str | Identifier) -> None:
         raise NotImplementedError
 
+    def supports_server_side_planning(self) -> bool:
+        raise NotImplementedError
+
+    def supports_purge_table(self) -> bool:
+        raise NotImplementedError
+
+    def supports_atomic_concurrent_updates(self) -> bool:
+        raise NotImplementedError
+
+    def supports_nested_namespaces(self) -> bool:
+        raise NotImplementedError
+
+    def supports_schema_evolution(self) -> bool:
+        raise NotImplementedError
+
+    def supports_slash_in_identifier(self) -> bool:
+        raise NotImplementedError
+
+    def supports_dot_in_identifier(self) -> bool:
+        raise NotImplementedError
+
     def purge_table(self, identifier: str | Identifier) -> None:
         raise NotImplementedError
 
