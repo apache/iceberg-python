@@ -230,3 +230,22 @@ def test_entra_auth_manager_import_error() -> None:
     with patch.dict("sys.modules", {"azure.identity": None}):
         with pytest.raises(ImportError, match="Azure Identity library not found"):
             EntraAuthManager()
+
+
+@patch("azure.identity.DefaultAzureCredential")
+def test_entra_auth_manager_token_failure(mock_default_cred: MagicMock, rest_mock: Mocker) -> None:
+    """Test EntraAuthManager raises exception when token acquisition fails."""
+    mock_credential_instance = MagicMock()
+    mock_credential_instance.get_token.side_effect = Exception("Failed to acquire token")
+    mock_default_cred.return_value = mock_credential_instance
+
+    auth_manager = EntraAuthManager()
+    session = requests.Session()
+    session.auth = AuthManagerAdapter(auth_manager)
+
+    with pytest.raises(Exception, match="Failed to acquire token"):
+        session.get(TEST_URI)
+
+    # Verify no requests were made with a blank/missing auth header
+    history = rest_mock.request_history
+    assert len(history) == 0
