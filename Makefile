@@ -66,11 +66,15 @@ install-uv: ## Ensure uv is installed
 		echo "uv is already installed."; \
 	fi
 
-setup-venv: ## Create virtual environment
-	uv venv $(PYTHON_ARG)
+setup-venv: ## Create virtual environment (if not exists)
+	@if [ ! -d ".venv" ]; then \
+		uv venv $(PYTHON_ARG); \
+	else \
+		echo "Virtual environment already exists at .venv"; \
+	fi
 
 install-dependencies: setup-venv ## Install all dependencies including extras
-	uv sync $(PYTHON_ARG) --all-extras --reinstall
+	uv sync $(PYTHON_ARG) --all-extras
 
 install-hooks: ## Install pre-commit hooks
 	uv run $(PYTHON_ARG) prek install
