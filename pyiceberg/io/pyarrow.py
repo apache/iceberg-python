@@ -1656,6 +1656,7 @@ def _task_to_record_batches(
                 current_batch,
                 downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
                 projected_missing_fields=projected_missing_fields,
+                allow_timestamp_tz_mismatch=True,
             )
 
 
@@ -1849,13 +1850,18 @@ def _to_requested_schema(
     downcast_ns_timestamp_to_us: bool = False,
     include_field_ids: bool = False,
     projected_missing_fields: dict[int, Any] = EMPTY_DICT,
+    allow_timestamp_tz_mismatch: bool = False,
 ) -> pa.RecordBatch:
     # We could reuse some of these visitors
     struct_array = visit_with_partner(
         requested_schema,
         batch,
         ArrowProjectionVisitor(
-            file_schema, downcast_ns_timestamp_to_us, include_field_ids, projected_missing_fields=projected_missing_fields
+            file_schema,
+            downcast_ns_timestamp_to_us,
+            include_field_ids,
+            projected_missing_fields=projected_missing_fields,
+            allow_timestamp_tz_mismatch=allow_timestamp_tz_mismatch,
         ),
         ArrowAccessor(file_schema),
     )
@@ -1868,6 +1874,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
     _downcast_ns_timestamp_to_us: bool
     _use_large_types: bool | None
     _projected_missing_fields: dict[int, Any]
+    _allow_timestamp_tz_mismatch: bool
 
     def __init__(
         self,
@@ -1876,12 +1883,16 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
         include_field_ids: bool = False,
         use_large_types: bool | None = None,
         projected_missing_fields: dict[int, Any] = EMPTY_DICT,
+        allow_timestamp_tz_mismatch: bool = False,
     ) -> None:
         self._file_schema = file_schema
         self._include_field_ids = include_field_ids
         self._downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
         self._use_large_types = use_large_types
         self._projected_missing_fields = projected_missing_fields
+        # When True, allows projecting timestamptz (UTC) to timestamp (no tz).
+        # Allowed for reading (aligns with Spark); disallowed for writing to enforce Iceberg spec's strict typing.
+        self._allow_timestamp_tz_mismatch = allow_timestamp_tz_mismatch
 
         if use_large_types is not None:
             deprecation_message(
@@ -1896,16 +1907,19 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
         if field.field_type.is_primitive:
             if (target_type := schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)) != values.type:
                 if field.field_type == TimestampType():
-                    # Downcasting of nanoseconds to microseconds
+                    source_tz_compatible = values.type.tz is None or (
+                        self._allow_timestamp_tz_mismatch and values.type.tz in UTC_ALIASES
+                    )
                     if (
                         pa.types.is_timestamp(target_type)
                         and not target_type.tz
                         and pa.types.is_timestamp(values.type)
-                        and not values.type.tz
+                        and source_tz_compatible
                     ):
+                        # Downcasting of nanoseconds to microseconds
                         if target_type.unit == "us" and values.type.unit == "ns" and self._downcast_ns_timestamp_to_us:
                             return values.cast(target_type, safe=False)
-                        elif target_type.unit == "us" and values.type.unit in {"s", "ms"}:
+                        elif target_type.unit == "us" and values.type.unit in {"s", "ms", "us"}:
                             return values.cast(target_type)
                     raise ValueError(f"Unsupported schema projection from {values.type} to {target_type}")
                 elif field.field_type == TimestamptzType():
@@ -1915,6 +1929,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
                         and pa.types.is_timestamp(values.type)
                         and (values.type.tz in UTC_ALIASES or values.type.tz is None)
                     ):
+                        # Downcasting of nanoseconds to microseconds
                         if target_type.unit == "us" and values.type.unit == "ns" and self._downcast_ns_timestamp_to_us:
                             return values.cast(target_type, safe=False)
                         elif target_type.unit == "us" and values.type.unit in {"s", "ms", "us"}:
