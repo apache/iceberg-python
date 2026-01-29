@@ -45,7 +45,7 @@ import boto3
 import pytest
 from moto import mock_aws
 from pydantic_core import to_json
-from pytest_lazyfixture import lazy_fixture
+from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.memory import InMemoryCatalog
@@ -3080,11 +3080,10 @@ def fixed_test_table_namespace() -> Identifier:
 
 
 @pytest.fixture(
-    scope="session",
     params=[
-        lazy_fixture("fixed_test_table_identifier"),
-        lazy_fixture("random_table_identifier"),
-        lazy_fixture("random_hierarchical_identifier"),
+        lf("fixed_test_table_identifier"),
+        lf("random_table_identifier"),
+        lf("random_hierarchical_identifier"),
     ],
 )
 def test_table_identifier(request: pytest.FixtureRequest) -> Identifier:
@@ -3092,11 +3091,10 @@ def test_table_identifier(request: pytest.FixtureRequest) -> Identifier:
 
 
 @pytest.fixture(
-    scope="session",
     params=[
-        lazy_fixture("another_fixed_test_table_identifier"),
-        lazy_fixture("another_random_table_identifier"),
-        lazy_fixture("another_random_hierarchical_identifier"),
+        lf("another_fixed_test_table_identifier"),
+        lf("another_random_table_identifier"),
+        lf("another_random_hierarchical_identifier"),
     ],
 )
 def another_table_identifier(request: pytest.FixtureRequest) -> Identifier:
@@ -3105,9 +3103,9 @@ def another_table_identifier(request: pytest.FixtureRequest) -> Identifier:
 
 @pytest.fixture(
     params=[
-        lazy_fixture("database_name"),
-        lazy_fixture("hierarchical_namespace_name"),
-        lazy_fixture("fixed_test_table_namespace"),
+        lf("database_name"),
+        lf("hierarchical_namespace_name"),
+        lf("fixed_test_table_namespace"),
     ],
 )
 def test_namespace(request: pytest.FixtureRequest) -> Identifier:
