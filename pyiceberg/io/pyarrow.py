@@ -100,7 +100,6 @@ from pyiceberg.io import (
     HDFS_KERB_TICKET,
     HDFS_PORT,
     HDFS_USER,
-    PYARROW_USE_LARGE_TYPES_ON_READ,
     S3_ACCESS_KEY_ID,
     S3_ANONYMOUS,
     S3_CONNECT_TIMEOUT,
@@ -1755,14 +1754,6 @@ class ArrowScan:
         result = pa.concat_tables(
             (pa.Table.from_batches([batch]) for batch in itertools.chain([first_batch], batches)), promote_options="permissive"
         )
-
-        if property_as_bool(self._io.properties, PYARROW_USE_LARGE_TYPES_ON_READ, False):
-            deprecation_message(
-                deprecated_in="0.10.0",
-                removed_in="0.11.0",
-                help_message=f"Property `{PYARROW_USE_LARGE_TYPES_ON_READ}` will be removed.",
-            )
-            result = result.cast(arrow_schema)
 
         return result
 
