@@ -395,6 +395,7 @@ The RESTCatalog supports pluggable authentication via the `auth` configuration b
 - `oauth2`: OAuth2 client credentials flow.
 - `custom`: Custom authentication manager (requires `auth.impl`).
 - `google`: Google Authentication support
+- `entra`: Microsoft Entra ID (Azure AD) authentication support
 
 ###### Configuration Properties
 
@@ -422,6 +423,7 @@ catalog:
 | `auth.oauth2`    | If type is `oauth2` | Block containing OAuth2 configuration (see below).                                 |
 | `auth.custom`    | If type is `custom` | Block containing configuration for the custom AuthManager.                          |
 | `auth.google`    | If type is `google` | Block containing `credentials_path` to a service account file (if using). Will default to using Application Default Credentials. |
+| `auth.entra`     | If type is `entra` | Block containing Entra ID configuration. Will default to using DefaultAzureCredential. |
 
 ###### Examples
 
@@ -578,22 +580,38 @@ catalog:
 
 See [OneLake table APIs for Iceberg](https://aka.ms/onelakeircdocs) for detailed documentation.
 
+Using Entra ID authentication (recommended):
+
+```yaml
+catalog:
+  onelake_catalog:
+    type: rest
+    uri: https://onelake.table.fabric.microsoft.com/iceberg
+    warehouse: <fabric_workspace_id>/<fabric_data_item_id>
+    auth:
+      type: entra
+    adls.account-name: onelake
+    adls.account-host: onelake.blob.fabric.microsoft.com
+```
+
+Using static token:
+
 ```yaml
 catalog:
   onelake_catalog:
     type: rest
     uri: https://onelake.table.fabric.microsoft.com/iceberg
     warehouse: <fabric_workspace_id>/<fabric_data_item_id> # Example : DB0CE1EE-B014-47D3-8F0C-9D64C39C0FC2/F470A1D2-6D6D-4C9D-8796-46286C80B7C0
-    token: <token>,
-    adls.account-name: onelake,
-    adls.account-host: onelake.blob.fabric.microsoft.com,
+    token: <token>
+    adls.account-name: onelake
+    adls.account-host: onelake.blob.fabric.microsoft.com
     adls.credential: <credential>
 ```
 
 <!-- prettier-ignore-start -->
 
-!!! Note "OneLake Authentication Models"
-    For Authentication: You can use DefautlAzureCredential from `azure.identity` package or refer to other [authentication flows](https://learn.microsoft.com/en-us/entra/identity-platform/authentication-flows-app-scenarios) for detailed documentation.
+!!! Note "OneLake Authentication"
+    Use the `entra` auth type for Entra ID (Azure AD) authentication via [DefaultAzureCredential](https://learn.microsoft.com/en-us/azure/developer/python/sdk/authentication/credential-chains?tabs=dac#defaultazurecredential-overview), which supports environment variables, managed identity, Azure CLI, and more. Install with `pip install pyiceberg[entra-auth]`.
 <!-- prettier-ignore-end -->
 
 ### SQL Catalog

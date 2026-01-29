@@ -4361,6 +4361,9 @@ duckdb = [
 dynamodb = [
     { name = "boto3" },
 ]
+entra-auth = [
+    { name = "azure-identity" },
+]
 gcp-auth = [
     { name = "google-auth" },
 ]
@@ -4459,6 +4462,7 @@ notebook = [
 [package.metadata]
 requires-dist = [
     { name = "adlfs", marker = "extra == 'adlfs'", specifier = ">=2024.7.0" },
+    { name = "azure-identity", marker = "extra == 'entra-auth'", specifier = ">=1.25.1" },
     { name = "bodo", marker = "extra == 'bodo'", specifier = ">=2025.7.4" },
     { name = "boto3", marker = "extra == 'dynamodb'", specifier = ">=1.24.59" },
     { name = "boto3", marker = "extra == 'glue'", specifier = ">=1.24.59" },
@@ -4502,7 +4506,7 @@ requires-dist = [
     { name = "thrift-sasl", marker = "extra == 'hive-kerberos'", specifier = ">=0.4.3" },
     { name = "zstandard", specifier = ">=0.13.0,<1.0.0" },
 ]
-provides-extras = ["pyarrow", "pandas", "duckdb", "ray", "bodo", "daft", "polars", "snappy", "hive", "hive-kerberos", "s3fs", "glue", "adlfs", "dynamodb", "bigquery", "sql-postgres", "sql-sqlite", "gcsfs", "rest-sigv4", "hf", "pyiceberg-core", "datafusion", "gcp-auth"]
+provides-extras = ["pyarrow", "pandas", "duckdb", "ray", "bodo", "daft", "polars", "snappy", "hive", "hive-kerberos", "s3fs", "glue", "adlfs", "dynamodb", "bigquery", "sql-postgres", "sql-sqlite", "gcsfs", "rest-sigv4", "hf", "pyiceberg-core", "datafusion", "gcp-auth", "entra-auth"]
 
 [package.metadata.requires-dev]
 dev = [
