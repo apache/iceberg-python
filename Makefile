@@ -101,7 +101,7 @@ test: ## Run all unit tests (excluding integration)
 
 test-integration: test-integration-setup test-integration-exec test-integration-cleanup ## Run integration tests
 
-test-integration-setup: install ## Start Docker services for integration tests
+test-integration-setup: ## Start Docker services for integration tests
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml up -d --build --wait
@@ -149,14 +149,11 @@ coverage-report: ## Combine and report coverage
 
 ##@ Documentation
 
-docs-install: ## Install docs dependencies (included in default groups)
-	uv sync $(PYTHON_ARG) --group docs
-
 docs-serve: ## Serve local docs preview (hot reload)
-	uv run $(PYTHON_ARG) mkdocs serve -f mkdocs/mkdocs.yml --livereload
+	uv run $(PYTHON_ARG) --group docs mkdocs serve -f mkdocs/mkdocs.yml --livereload
 
 docs-build: ## Build the static documentation site
-	uv run $(PYTHON_ARG) mkdocs build -f mkdocs/mkdocs.yml --strict
+	uv run $(PYTHON_ARG) --group docs mkdocs build -f mkdocs/mkdocs.yml --strict
 
 # ========================
 # Experimentation
@@ -164,14 +161,11 @@ docs-build: ## Build the static documentation site
 
 ##@ Experimentation
 
-notebook-install: ## Install notebook dependencies
-	uv sync $(PYTHON_ARG) --all-extras --group notebook
+notebook: ## Launch notebook for experimentation
+	uv run $(PYTHON_ARG) --all-extras --group notebook jupyter lab --notebook-dir=notebooks
 
-notebook: notebook-install ## Launch notebook for experimentation
-	uv run jupyter lab --notebook-dir=notebooks
-
-notebook-infra: notebook-install test-integration-setup ## Launch notebook with integration test infra (Spark, Iceberg Rest Catalog, object storage, etc.)
-	uv run jupyter lab --notebook-dir=notebooks
+notebook-infra: test-integration-setup ## Launch notebook with integration test infra (Spark, Iceberg Rest Catalog, object storage, etc.)
+	uv run $(PYTHON_ARG) --all-extras --group notebook jupyter lab --notebook-dir=notebooks
 
 # ===================
 # Project Maintenance
