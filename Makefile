@@ -68,6 +68,11 @@ install-uv: ## Ensure uv is installed
 
 install: install-uv ## Install uv, dependencies, and pre-commit hooks
 	uv sync $(PYTHON_ARG) --all-extras
+	@# Reinstall pyiceberg if Cython extensions (.so) are missing after `make clean` (see #2869)
+	@if ! find pyiceberg -name "*.so" 2>/dev/null | grep -q .; then \
+		echo "Cython extensions not found, reinstalling pyiceberg..."; \
+		uv sync $(PYTHON_ARG) --all-extras --reinstall-package pyiceberg; \
+	fi
 	uv run $(PYTHON_ARG) prek install
 
 # ===============
