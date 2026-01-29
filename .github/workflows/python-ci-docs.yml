@@ -41,8 +41,6 @@ jobs:
           python-version: 3.12
       - name: Install UV
         uses: astral-sh/setup-uv@v7
-      - name: Install
-        run: make docs-install
       - name: Build docs
         run: make docs-build
       - name: Run linters
