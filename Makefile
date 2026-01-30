@@ -72,8 +72,8 @@ setup-venv: ## Create virtual environment
 install-dependencies: setup-venv ## Install all dependencies including extras
 	uv sync $(PYTHON_ARG) --all-extras --reinstall
 
-install-hooks: ## Install pre-commit hooks
-	uv run $(PYTHON_ARG) prek install
+install-hooks: ## Install pre-commit hooks (skipped outside git repo, e.g. release tarballs)
+	@if [ -d .git ]; then uv run $(PYTHON_ARG) prek install; fi
 
 install: install-uv install-dependencies install-hooks ## Install uv, dependencies, and pre-commit hooks
 
