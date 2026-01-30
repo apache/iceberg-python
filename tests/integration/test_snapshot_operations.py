@@ -19,6 +19,7 @@ from collections.abc import Generator
 
 import pyarrow as pa
 import pytest
+from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.table import Table
@@ -53,7 +54,7 @@ def table_with_snapshots(session_catalog: Catalog) -> Generator[Table, None, Non
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_create_tag(catalog: Catalog) -> None:
     identifier = "default.test_table_snapshot_operations"
     tbl = catalog.load_table(identifier)
@@ -64,7 +65,7 @@ def test_create_tag(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_create_branch(catalog: Catalog) -> None:
     identifier = "default.test_table_snapshot_operations"
     tbl = catalog.load_table(identifier)
@@ -75,7 +76,7 @@ def test_create_branch(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_remove_tag(catalog: Catalog) -> None:
     identifier = "default.test_table_snapshot_operations"
     tbl = catalog.load_table(identifier)
@@ -91,7 +92,7 @@ def test_remove_tag(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_remove_branch(catalog: Catalog) -> None:
     identifier = "default.test_table_snapshot_operations"
     tbl = catalog.load_table(identifier)
@@ -107,7 +108,7 @@ def test_remove_branch(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_set_current_snapshot(catalog: Catalog) -> None:
     identifier = "default.test_table_snapshot_operations"
     tbl = catalog.load_table(identifier)
@@ -132,7 +133,7 @@ def test_set_current_snapshot(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_set_current_snapshot_by_ref(catalog: Catalog) -> None:
     identifier = "default.test_table_snapshot_operations"
     tbl = catalog.load_table(identifier)
@@ -163,7 +164,7 @@ def test_set_current_snapshot_by_ref(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_set_current_snapshot_chained_with_create_tag(catalog: Catalog) -> None:
     identifier = "default.test_table_snapshot_operations"
     tbl = catalog.load_table(identifier)
