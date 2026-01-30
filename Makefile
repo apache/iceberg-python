@@ -66,16 +66,17 @@ install-uv: ## Ensure uv is installed
 		echo "uv is already installed."; \
 	fi
 
-setup-venv: ## Create virtual environment
-	uv venv $(PYTHON_ARG)
-
-install-dependencies: setup-venv ## Install all dependencies including extras
-	uv sync $(PYTHON_ARG) --all-extras --reinstall
-
-install-hooks: ## Install pre-commit hooks (skipped outside git repo, e.g. release tarballs)
-	@if [ -d .git ]; then uv run $(PYTHON_ARG) prek install; fi
-
-install: install-uv install-dependencies install-hooks ## Install uv, dependencies, and pre-commit hooks
+install: install-uv ## Install uv, dependencies, and pre-commit hooks
+	uv sync $(PYTHON_ARG) --all-extras
+	@# Reinstall pyiceberg if Cython extensions (.so) are missing after `make clean` (see #2869)
+	@if ! find pyiceberg -name "*.so" 2>/dev/null | grep -q .; then \
+		echo "Cython extensions not found, reinstalling pyiceberg..."; \
+		uv sync $(PYTHON_ARG) --all-extras --reinstall-package pyiceberg; \
+	fi
+	@# Install pre-commit hooks (skipped outside git repo, e.g. release tarballs)
+	@if [ -d .git ]; then \
+		uv run $(PYTHON_ARG) prek install; \
+	fi
 
 # ===============
 # Code Validation
