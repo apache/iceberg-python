@@ -29,7 +29,6 @@ from pyiceberg.io import FileIO
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, _manifests
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.utils.deprecated import deprecation_message
 
 if TYPE_CHECKING:
     from pyiceberg.table.metadata import TableMetadata
@@ -344,53 +343,9 @@ class SnapshotSummaryCollector:
         return ",".join([f"{prop}={val}" for prop, val in update_metrics.to_dict().items()])
 
 
-def _truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str]) -> Summary:
-    for prop in {
-        TOTAL_DATA_FILES,
-        TOTAL_DELETE_FILES,
-        TOTAL_RECORDS,
-        TOTAL_FILE_SIZE,
-        TOTAL_POSITION_DELETES,
-        TOTAL_EQUALITY_DELETES,
-    }:
-        summary[prop] = "0"
-
-    def get_prop(prop: str) -> int:
-        value = previous_summary.get(prop) or "0"
-        try:
-            return int(value)
-        except ValueError as e:
-            raise ValueError(f"Could not parse summary property {prop} to an int: {value}") from e
-
-    if value := get_prop(TOTAL_DATA_FILES):
-        summary[DELETED_DATA_FILES] = str(value)
-    if value := get_prop(TOTAL_DELETE_FILES):
-        summary[REMOVED_DELETE_FILES] = str(value)
-    if value := get_prop(TOTAL_RECORDS):
-        summary[DELETED_RECORDS] = str(value)
-    if value := get_prop(TOTAL_FILE_SIZE):
-        summary[REMOVED_FILE_SIZE] = str(value)
-    if value := get_prop(TOTAL_POSITION_DELETES):
-        summary[REMOVED_POSITION_DELETES] = str(value)
-    if value := get_prop(TOTAL_EQUALITY_DELETES):
-        summary[REMOVED_EQUALITY_DELETES] = str(value)
-
-    return summary
-
-
-def update_snapshot_summaries(
-    summary: Summary, previous_summary: Mapping[str, str] | None = None, truncate_full_table: bool = False
-) -> Summary:
+def update_snapshot_summaries(summary: Summary, previous_summary: Mapping[str, str] | None = None) -> Summary:
     if summary.operation not in {Operation.APPEND, Operation.OVERWRITE, Operation.DELETE}:
         raise ValueError(f"Operation not implemented: {summary.operation}")
-
-    if truncate_full_table and summary.operation == Operation.OVERWRITE and previous_summary is not None:
-        deprecation_message(
-            deprecated_in="0.10.0",
-            removed_in="0.11.0",
-            help_message="The truncate-full-table shouldn't be used.",
-        )
-        summary = _truncate_table_summary(summary, previous_summary)
 
     if not previous_summary:
         previous_summary = {
