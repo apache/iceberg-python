@@ -100,7 +100,6 @@ from pyiceberg.io import (
     HDFS_KERB_TICKET,
     HDFS_PORT,
     HDFS_USER,
-    PYARROW_USE_LARGE_TYPES_ON_READ,
     S3_ACCESS_KEY_ID,
     S3_ANONYMOUS,
     S3_CONNECT_TIMEOUT,
@@ -179,7 +178,6 @@ from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
 from pyiceberg.utils.decimal import unscaled_to_decimal
-from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
@@ -1656,6 +1654,7 @@ def _task_to_record_batches(
                 current_batch,
                 downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
                 projected_missing_fields=projected_missing_fields,
+                allow_timestamp_tz_mismatch=True,
             )
 
 
@@ -1755,14 +1754,6 @@ class ArrowScan:
             (pa.Table.from_batches([batch]) for batch in itertools.chain([first_batch], batches)), promote_options="permissive"
         )
 
-        if property_as_bool(self._io.properties, PYARROW_USE_LARGE_TYPES_ON_READ, False):
-            deprecation_message(
-                deprecated_in="0.10.0",
-                removed_in="0.11.0",
-                help_message=f"Property `{PYARROW_USE_LARGE_TYPES_ON_READ}` will be removed.",
-            )
-            result = result.cast(arrow_schema)
-
         return result
 
     def to_record_batches(self, tasks: Iterable[FileScanTask]) -> Iterator[pa.RecordBatch]:
@@ -1849,13 +1840,18 @@ def _to_requested_schema(
     downcast_ns_timestamp_to_us: bool = False,
     include_field_ids: bool = False,
     projected_missing_fields: dict[int, Any] = EMPTY_DICT,
+    allow_timestamp_tz_mismatch: bool = False,
 ) -> pa.RecordBatch:
     # We could reuse some of these visitors
     struct_array = visit_with_partner(
         requested_schema,
         batch,
         ArrowProjectionVisitor(
-            file_schema, downcast_ns_timestamp_to_us, include_field_ids, projected_missing_fields=projected_missing_fields
+            file_schema,
+            downcast_ns_timestamp_to_us,
+            include_field_ids,
+            projected_missing_fields=projected_missing_fields,
+            allow_timestamp_tz_mismatch=allow_timestamp_tz_mismatch,
         ),
         ArrowAccessor(file_schema),
     )
@@ -1866,29 +1862,24 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
     _file_schema: Schema
     _include_field_ids: bool
     _downcast_ns_timestamp_to_us: bool
-    _use_large_types: bool | None
     _projected_missing_fields: dict[int, Any]
+    _allow_timestamp_tz_mismatch: bool
 
     def __init__(
         self,
         file_schema: Schema,
         downcast_ns_timestamp_to_us: bool = False,
         include_field_ids: bool = False,
-        use_large_types: bool | None = None,
         projected_missing_fields: dict[int, Any] = EMPTY_DICT,
+        allow_timestamp_tz_mismatch: bool = False,
     ) -> None:
         self._file_schema = file_schema
         self._include_field_ids = include_field_ids
         self._downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
-        self._use_large_types = use_large_types
         self._projected_missing_fields = projected_missing_fields
-
-        if use_large_types is not None:
-            deprecation_message(
-                deprecated_in="0.10.0",
-                removed_in="0.11.0",
-                help_message="Argument `use_large_types` will be removed from ArrowProjectionVisitor",
-            )
+        # When True, allows projecting timestamptz (UTC) to timestamp (no tz).
+        # Allowed for reading (aligns with Spark); disallowed for writing to enforce Iceberg spec's strict typing.
+        self._allow_timestamp_tz_mismatch = allow_timestamp_tz_mismatch
 
     def _cast_if_needed(self, field: NestedField, values: pa.Array) -> pa.Array:
         file_field = self._file_schema.find_field(field.field_id)
@@ -1896,16 +1887,19 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
         if field.field_type.is_primitive:
             if (target_type := schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)) != values.type:
                 if field.field_type == TimestampType():
-                    # Downcasting of nanoseconds to microseconds
+                    source_tz_compatible = values.type.tz is None or (
+                        self._allow_timestamp_tz_mismatch and values.type.tz in UTC_ALIASES
+                    )
                     if (
                         pa.types.is_timestamp(target_type)
                         and not target_type.tz
                         and pa.types.is_timestamp(values.type)
-                        and not values.type.tz
+                        and source_tz_compatible
                     ):
+                        # Downcasting of nanoseconds to microseconds
                         if target_type.unit == "us" and values.type.unit == "ns" and self._downcast_ns_timestamp_to_us:
                             return values.cast(target_type, safe=False)
-                        elif target_type.unit == "us" and values.type.unit in {"s", "ms"}:
+                        elif target_type.unit == "us" and values.type.unit in {"s", "ms", "us"}:
                             return values.cast(target_type)
                     raise ValueError(f"Unsupported schema projection from {values.type} to {target_type}")
                 elif field.field_type == TimestamptzType():
@@ -1915,6 +1909,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
                         and pa.types.is_timestamp(values.type)
                         and (values.type.tz in UTC_ALIASES or values.type.tz is None)
                     ):
+                        # Downcasting of nanoseconds to microseconds
                         if target_type.unit == "us" and values.type.unit == "ns" and self._downcast_ns_timestamp_to_us:
                             return values.cast(target_type, safe=False)
                         elif target_type.unit == "us" and values.type.unit in {"s", "ms", "us"}:
@@ -1934,8 +1929,6 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
                 target_schema = schema_to_pyarrow(
                     promote(file_field.field_type, field.field_type), include_field_ids=self._include_field_ids
                 )
-                if self._use_large_types is False:
-                    target_schema = _pyarrow_schema_ensure_small_types(target_schema)
                 return values.cast(target_schema)
 
         return values

@@ -73,7 +73,8 @@ install: install-uv ## Install uv, dependencies, and pre-commit hooks
 		echo "Cython extensions not found, reinstalling pyiceberg..."; \
 		uv sync $(PYTHON_ARG) --all-extras --reinstall-package pyiceberg; \
 	fi
-	uv run $(PYTHON_ARG) prek install
+	@# Install pre-commit hooks (skipped outside git repo, e.g. release tarballs)
+	@if [ -d .git ]; then uv run $(PYTHON_ARG) prek install; fi
 
 # ===============
 # Code Validation
