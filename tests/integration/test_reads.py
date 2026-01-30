@@ -46,7 +46,6 @@ from pyiceberg.expressions import (
     NotNaN,
     NotNull,
 )
-from pyiceberg.io import PYARROW_USE_LARGE_TYPES_ON_READ
 from pyiceberg.io.pyarrow import (
     pyarrow_to_schema,
 )
@@ -1123,49 +1122,6 @@ def test_table_scan_keep_types(catalog: Catalog) -> None:
         update_schema.update_column("string-to-binary", BinaryType())
 
     result_table = tbl.scan().to_arrow()
-    assert result_table.schema.equals(expected_schema)
-
-
-@pytest.mark.integration
-@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
-def test_table_scan_override_with_small_types(catalog: Catalog) -> None:
-    identifier = "default.test_table_scan_override_with_small_types"
-    arrow_table = pa.Table.from_arrays(
-        [
-            pa.array(["a", "b", "c"]),
-            pa.array(["a", "b", "c"]),
-            pa.array([b"a", b"b", b"c"]),
-            pa.array([["a", "b"], ["c", "d"], ["e", "f"]]),
-        ],
-        names=["string", "string-to-binary", "binary", "list"],
-    )
-
-    try:
-        catalog.drop_table(identifier)
-    except NoSuchTableError:
-        pass
-
-    tbl = catalog.create_table(
-        identifier,
-        schema=arrow_table.schema,
-    )
-
-    tbl.append(arrow_table)
-
-    with tbl.update_schema() as update_schema:
-        update_schema.update_column("string-to-binary", BinaryType())
-
-    tbl.io.properties[PYARROW_USE_LARGE_TYPES_ON_READ] = "False"
-    result_table = tbl.scan().to_arrow()
-
-    expected_schema = pa.schema(
-        [
-            pa.field("string", pa.string()),
-            pa.field("string-to-binary", pa.large_binary()),
-            pa.field("binary", pa.binary()),
-            pa.field("list", pa.list_(pa.string())),
-        ]
-    )
     assert result_table.schema.equals(expected_schema)
 
 
