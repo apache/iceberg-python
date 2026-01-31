@@ -823,3 +823,40 @@ def test_drop_nonexistent_namespace(test_catalog: Catalog) -> None:
     namespace = ("non_existent_namespace",)
     with pytest.raises(NoSuchNamespaceError):
         test_catalog.drop_namespace(namespace)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_rename_table_missing_source_table(test_catalog: Catalog, table_name: str, database_name: str) -> None:
+    test_catalog.create_namespace_if_not_exists(database_name)
+    identifier = (database_name, table_name)
+    new_identifier = (database_name, f"rename-{table_name}")
+
+    with pytest.raises(NoSuchTableError):
+        test_catalog.rename_table(identifier, new_identifier)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_rename_table_destination_namespace_missing(
+    test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str
+) -> None:
+    test_catalog.create_namespace_if_not_exists(database_name)
+    identifier = (database_name, table_name)
+    test_catalog.create_table(identifier, table_schema_nested)
+
+    new_database_name = "non_existent_namespace"
+    new_identifier = (new_database_name, table_name)
+
+    with pytest.raises(NoSuchNamespaceError):
+        test_catalog.rename_table(identifier, new_identifier)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_load_missing_table(test_catalog: Catalog, database_name: str, table_name: str) -> None:
+    test_catalog.create_namespace_if_not_exists(database_name)
+    identifier = (database_name, table_name)
+
+    with pytest.raises(NoSuchTableError):
+        test_catalog.load_table(identifier)
