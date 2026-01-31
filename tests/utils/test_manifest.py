@@ -16,10 +16,12 @@
 # under the License.
 # pylint: disable=redefined-outer-name,arguments-renamed,fixme
 from tempfile import TemporaryDirectory
+from unittest import mock
 
 import fastavro
 import pytest
 
+import pyiceberg.manifest as manifest_module
 from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.io import load_file_io
 from pyiceberg.io.pyarrow import PyArrowFileIO
@@ -32,8 +34,9 @@ from pyiceberg.manifest import (
     ManifestEntryStatus,
     ManifestFile,
     PartitionFieldSummary,
-    _manifest_cache,
+    _get_manifest_cache,
     _manifests,
+    clear_manifest_cache,
     read_manifest_list,
     write_manifest,
     write_manifest_list,
@@ -46,9 +49,10 @@ from pyiceberg.types import IntegerType, NestedField
 
 
 @pytest.fixture(autouse=True)
-def clear_global_manifests_cache() -> None:
-    # Clear the global cache before each test
-    _manifest_cache.clear()
+def reset_global_manifests_cache() -> None:
+    # Reset cache state before each test so config is re-read
+    manifest_module._manifest_cache_manager._cache = None
+    manifest_module._manifest_cache_manager._initialized = False
 
 
 def _verify_metadata_with_fastavro(avro_file: str, expected_metadata: dict[str, str]) -> None:
@@ -804,9 +808,9 @@ def test_manifest_cache_deduplicates_manifest_files() -> None:
 
         # Verify cache size - should only have 3 unique ManifestFile objects
         # instead of 1 + 2 + 3 = 6 objects as with the old approach
-        assert len(_manifest_cache) == 3, (
-            f"Cache should contain exactly 3 unique ManifestFile objects, but has {len(_manifest_cache)}"
-        )
+        cache = _get_manifest_cache()
+        assert cache is not None, "Manifest cache should be enabled for this test"
+        assert len(cache) == 3, f"Cache should contain exactly 3 unique ManifestFile objects, but has {len(cache)}"
 
 
 def test_manifest_cache_efficiency_with_many_overlapping_lists() -> None:
@@ -879,9 +883,11 @@ def test_manifest_cache_efficiency_with_many_overlapping_lists() -> None:
         # With the new approach, we should have exactly N objects
 
         # Verify cache has exactly N unique entries
-        assert len(_manifest_cache) == num_manifests, (
+        cache = _get_manifest_cache()
+        assert cache is not None, "Manifest cache should be enabled for this test"
+        assert len(cache) == num_manifests, (
             f"Cache should contain exactly {num_manifests} ManifestFile objects, "
-            f"but has {len(_manifest_cache)}. "
+            f"but has {len(cache)}. "
             f"Old approach would have {num_manifests * (num_manifests + 1) // 2} objects."
         )
 
@@ -932,3 +938,117 @@ def test_manifest_writer_tell(format_version: TableVersion) -> None:
             after_entry_bytes = writer.tell()
 
             assert after_entry_bytes > initial_bytes, "Bytes should increase after adding entry"
+
+
+def test_clear_manifest_cache() -> None:
+    """Test that clear_manifest_cache() clears cache entries while keeping cache enabled."""
+    io = PyArrowFileIO()
+
+    with TemporaryDirectory() as tmp_dir:
+        schema = Schema(NestedField(field_id=1, name="id", field_type=IntegerType(), required=True))
+        spec = UNPARTITIONED_PARTITION_SPEC
+
+        # Create a manifest file
+        manifest_path = f"{tmp_dir}/manifest.avro"
+        with write_manifest(
+            format_version=2,
+            spec=spec,
+            schema=schema,
+            output_file=io.new_output(manifest_path),
+            snapshot_id=1,
+            avro_compression="zstandard",
+        ) as writer:
+            data_file = DataFile.from_args(
+                content=DataFileContent.DATA,
+                file_path=f"{tmp_dir}/data.parquet",
+                file_format=FileFormat.PARQUET,
+                partition=Record(),
+                record_count=100,
+                file_size_in_bytes=1000,
+            )
+            writer.add_entry(
+                ManifestEntry.from_args(
+                    status=ManifestEntryStatus.ADDED,
+                    snapshot_id=1,
+                    data_file=data_file,
+                )
+            )
+        manifest_file = writer.to_manifest_file()
+
+        # Create a manifest list
+        list_path = f"{tmp_dir}/manifest-list.avro"
+        with write_manifest_list(
+            format_version=2,
+            output_file=io.new_output(list_path),
+            snapshot_id=1,
+            parent_snapshot_id=None,
+            sequence_number=1,
+            avro_compression="zstandard",
+        ) as list_writer:
+            list_writer.add_manifests([manifest_file])
+
+        # Populate the cache
+        _manifests(io, list_path)
+
+        # Verify cache has entries
+        cache = _get_manifest_cache()
+        assert cache is not None, "Cache should be enabled"
+        assert len(cache) > 0, "Cache should have entries after reading manifests"
+
+        # Clear the cache
+        clear_manifest_cache()
+
+        # Verify cache is empty but still enabled
+        cache_after = _get_manifest_cache()
+        assert cache_after is not None, "Cache should still be enabled after clear"
+        assert len(cache_after) == 0, "Cache should be empty after clear"
+
+
+@pytest.mark.parametrize(
+    "env_vars,expected_enabled,expected_size",
+    [
+        ({}, True, 128),  # defaults
+        ({"PYICEBERG_MANIFEST__CACHE__ENABLED": "true"}, True, 128),
+        ({"PYICEBERG_MANIFEST__CACHE__ENABLED": "false"}, False, 128),
+        ({"PYICEBERG_MANIFEST__CACHE__SIZE": "64"}, True, 64),
+        ({"PYICEBERG_MANIFEST__CACHE__SIZE": "256"}, True, 256),
+        ({"PYICEBERG_MANIFEST__CACHE__ENABLED": "false", "PYICEBERG_MANIFEST__CACHE__SIZE": "64"}, False, 64),
+    ],
+)
+def test_manifest_cache_config_valid_values(env_vars: dict[str, str], expected_enabled: bool, expected_size: int) -> None:
+    """Test that valid config values are applied correctly."""
+    import os
+
+    with mock.patch.dict(os.environ, env_vars, clear=False):
+        # Reset cache state so config is re-read
+        manifest_module._manifest_cache_manager._cache = None
+        manifest_module._manifest_cache_manager._initialized = False
+        cache = _get_manifest_cache()
+
+        if expected_enabled:
+            assert cache is not None, "Cache should be enabled"
+            assert cache.maxsize == expected_size, f"Cache size should be {expected_size}"
+        else:
+            assert cache is None, "Cache should be disabled"
+
+
+@pytest.mark.parametrize(
+    "env_vars,expected_error_substring",
+    [
+        ({"PYICEBERG_MANIFEST__CACHE__ENABLED": "maybe"}, "manifest.cache.enabled should be a boolean"),
+        ({"PYICEBERG_MANIFEST__CACHE__ENABLED": "invalid"}, "manifest.cache.enabled should be a boolean"),
+        ({"PYICEBERG_MANIFEST__CACHE__SIZE": "abc"}, "manifest.cache.size should be a positive integer"),
+        ({"PYICEBERG_MANIFEST__CACHE__SIZE": "0"}, "manifest.cache.size must be >= 1"),
+        ({"PYICEBERG_MANIFEST__CACHE__SIZE": "-5"}, "manifest.cache.size must be >= 1"),
+    ],
+)
+def test_manifest_cache_config_invalid_values(env_vars: dict[str, str], expected_error_substring: str) -> None:
+    """Test that invalid config values raise ValueError with appropriate message."""
+    import os
+
+    with mock.patch.dict(os.environ, env_vars, clear=False):
+        # Reset cache state so config is re-read
+        manifest_module._manifest_cache_manager._cache = None
+        manifest_module._manifest_cache_manager._initialized = False
+        with pytest.raises(ValueError, match=expected_error_substring):
+            _get_manifest_cache()
