@@ -69,6 +69,7 @@ from pyiceberg.io import (
     HF_ENDPOINT,
     HF_TOKEN,
     S3_ACCESS_KEY_ID,
+    S3_ACCESS_POINT_PREFIX,
     S3_ANONYMOUS,
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
@@ -419,6 +420,29 @@ class FsspecFileIO(FileIO):
         self._thread_locals = threading.local()
         super().__init__(properties=properties)
 
+    def _resolve_s3_access_point(self, scheme: str, bucket: str) -> str | None:
+        """Resolve S3 access point alias for a bucket if configured.
+
+        For cross-account access, S3 paths need to use access point aliases instead of bucket names.
+        Access point aliases work like bucket names and are in the format: <name>-<account-id>-s3alias
+        Config format: s3.access-point.<bucket-name> = <access-point-alias>
+
+        Args:
+            scheme: The URI scheme (s3, s3a, s3n)
+            bucket: The bucket name from the original URI
+
+        Returns:
+            The access point alias if configured, None otherwise
+        """
+        if scheme not in {"s3", "s3a", "s3n"}:
+            return None
+
+        access_point_key = f"{S3_ACCESS_POINT_PREFIX}{bucket}"
+        if access_point_alias := self.properties.get(access_point_key):
+            logger.debug("Resolving bucket '%s' to access point alias: %s", bucket, access_point_alias)
+            return access_point_alias
+        return None
+
     def new_input(self, location: str) -> FsspecInputFile:
         """Get an FsspecInputFile instance to read bytes from the file at the given location.
 
@@ -430,7 +454,13 @@ class FsspecFileIO(FileIO):
         """
         uri = urlparse(location)
         fs = self.get_fs(uri.scheme)
-        return FsspecInputFile(location=location, fs=fs)
+
+        # Resolve S3 access point if configured
+        resolved_location = location
+        if access_point_alias := self._resolve_s3_access_point(uri.scheme, uri.netloc):
+            resolved_location = f"{uri.scheme}://{access_point_alias}{uri.path}"
+
+        return FsspecInputFile(location=resolved_location, fs=fs)
 
     def new_output(self, location: str) -> FsspecOutputFile:
         """Get an FsspecOutputFile instance to write bytes to the file at the given location.
@@ -443,7 +473,13 @@ class FsspecFileIO(FileIO):
         """
         uri = urlparse(location)
         fs = self.get_fs(uri.scheme)
-        return FsspecOutputFile(location=location, fs=fs)
+
+        # Resolve S3 access point if configured
+        resolved_location = location
+        if access_point_alias := self._resolve_s3_access_point(uri.scheme, uri.netloc):
+            resolved_location = f"{uri.scheme}://{access_point_alias}{uri.path}"
+
+        return FsspecOutputFile(location=resolved_location, fs=fs)
 
     def delete(self, location: str | InputFile | OutputFile) -> None:
         """Delete the file at the given location.
@@ -460,7 +496,13 @@ class FsspecFileIO(FileIO):
 
         uri = urlparse(str_location)
         fs = self.get_fs(uri.scheme)
-        fs.rm(str_location)
+
+        # Resolve S3 access point if configured
+        resolved_location = str_location
+        if access_point_alias := self._resolve_s3_access_point(uri.scheme, uri.netloc):
+            resolved_location = f"{uri.scheme}://{access_point_alias}{uri.path}"
+
+        fs.rm(resolved_location)
 
     def get_fs(self, scheme: str) -> AbstractFileSystem:
         """Get a filesystem for a specific scheme, cached per thread."""
