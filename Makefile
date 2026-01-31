@@ -133,8 +133,9 @@ test-gcs: ## Run tests marked with @pytest.mark.gcs
 	sh ./dev/run-gcs-server.sh
 	$(TEST_RUNNER) pytest tests/ -m gcs $(PYTEST_ARGS)
 
-test-coverage: COVERAGE=1
-test-coverage: test test-integration test-s3 test-adls test-gcs coverage-report ## Run all tests with coverage and report
+test-coverage: ## Run all tests with coverage and report
+	$(MAKE) COVERAGE=1 test test-integration test-s3 test-adls test-gcs
+	$(MAKE) coverage-report
 
 coverage-report: ## Combine and report coverage
 	uv run $(PYTHON_ARG) coverage combine
