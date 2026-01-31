@@ -403,6 +403,30 @@ class RestCatalog(Catalog):
             self.properties, REST_SCAN_PLANNING_ENABLED, REST_SCAN_PLANNING_ENABLED_DEFAULT
         )
 
+    def supports_purge_table(self) -> bool:
+        """Check if the catalog supports purging tables."""
+        return property_as_bool(self.properties, "supports_purge_table", True)
+
+    def supports_atomic_concurrent_updates(self) -> bool:
+        """Check if the catalog supports atomic concurrent updates."""
+        return property_as_bool(self.properties, "supports_atomic_concurrent_updates", True)
+
+    def supports_nested_namespaces(self) -> bool:
+        """Check if the catalog supports nested namespaces."""
+        return property_as_bool(self.properties, "supports_nested_namespaces", True)
+
+    def supports_schema_evolution(self) -> bool:
+        """Check if the catalog supports schema evolution."""
+        return property_as_bool(self.properties, "supports_schema_evolution", True)
+
+    def supports_slash_in_identifier(self) -> bool:
+        """Check if the catalog supports slash in identifier."""
+        return property_as_bool(self.properties, "supports_slash_in_identifier", True)
+
+    def supports_dot_in_identifier(self) -> bool:
+        """Check if the catalog supports dot in identifier."""
+        return property_as_bool(self.properties, "supports_dot_in_identifier", True)
+
     @retry(**_RETRY_ARGS)
     def _plan_table_scan(self, identifier: str | Identifier, request: PlanTableScanRequest) -> PlanningResponse:
         """Submit a scan plan request to the REST server.
