@@ -50,7 +50,9 @@ from pyiceberg.types import (
     PrimitiveType,
     StringType,
     StructType,
+    strtobool,
 )
+from pyiceberg.utils.config import Config
 
 UNASSIGNED_SEQ = -1
 DEFAULT_BLOCK_SIZE = 67108864  # 64 * 1024 * 1024
@@ -891,13 +893,79 @@ class ManifestFile(Record):
         return hash(self.manifest_path)
 
 
-# Global cache for ManifestFile objects, keyed by manifest_path.
-# This deduplicates ManifestFile objects across manifest lists, which commonly
-# share manifests after append operations.
-_manifest_cache: LRUCache[str, ManifestFile] = LRUCache(maxsize=128)
+class _ManifestCacheManager:
+    """Manages the manifest cache with lazy initialization from config."""
 
-# Lock for thread-safe cache access
-_manifest_cache_lock = threading.RLock()
+    _DEFAULT_SIZE = 128
+
+    def __init__(self) -> None:
+        self._cache: LRUCache[str, ManifestFile] | None = None
+        self._initialized = False
+        self._lock = threading.RLock()
+
+    def get_cache(self) -> LRUCache[str, ManifestFile] | None:
+        """Return the cache if enabled, else None. Initializes from config on first call."""
+        with self._lock:
+            if self._initialized:
+                return self._cache
+
+            config = Config().config
+
+            # Extract nested config
+            manifest_val = config.get("manifest")
+            manifest_config: dict[str, Any] = manifest_val if isinstance(manifest_val, dict) else {}
+            cache_val = manifest_config.get("cache")
+            cache_config: dict[str, Any] = cache_val if isinstance(cache_val, dict) else {}
+
+            # Parse and validate enabled flag
+            enabled_raw = cache_config.get("enabled")
+            enabled = True
+            if enabled_raw is not None:
+                try:
+                    enabled = bool(strtobool(str(enabled_raw)))
+                except (ValueError, AttributeError) as err:
+                    raise ValueError(
+                        f"manifest.cache.enabled should be a boolean or left unset. Current value: {enabled_raw}"
+                    ) from err
+
+            # Parse and validate cache size
+            size_raw = cache_config.get("size")
+            size = self._DEFAULT_SIZE
+            if size_raw is not None:
+                try:
+                    size = int(str(size_raw))
+                except (ValueError, TypeError) as err:
+                    raise ValueError(
+                        f"manifest.cache.size should be a positive integer or left unset. Current value: {size_raw}"
+                    ) from err
+                if size < 1:
+                    raise ValueError(f"manifest.cache.size must be >= 1. Current value: {size}")
+
+            if enabled:
+                self._cache = LRUCache(maxsize=size)
+            self._initialized = True
+            return self._cache
+
+    def clear(self) -> None:
+        """Clear the cache contents. No-op if cache is disabled."""
+        cache = self.get_cache()
+        if cache is not None:
+            with self._lock:
+                cache.clear()
+
+
+# Module-level cache manager instance
+_manifest_cache_manager = _ManifestCacheManager()
+
+
+def _get_manifest_cache() -> LRUCache[str, ManifestFile] | None:
+    """Return the manifest cache if enabled, else None. Initializes from config on first call."""
+    return _manifest_cache_manager.get_cache()
+
+
+def clear_manifest_cache() -> None:
+    """Clear the manifest cache. No-op if cache is disabled."""
+    _manifest_cache_manager.clear()
 
 
 def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
@@ -927,14 +995,18 @@ def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
     file = io.new_input(manifest_list)
     manifest_files = list(read_manifest_list(file))
 
+    cache = _get_manifest_cache()
+    if cache is None:
+        return tuple(manifest_files)
+
     result = []
-    with _manifest_cache_lock:
+    with _manifest_cache_manager._lock:
         for manifest_file in manifest_files:
             manifest_path = manifest_file.manifest_path
-            if manifest_path in _manifest_cache:
-                result.append(_manifest_cache[manifest_path])
+            if manifest_path in cache:
+                result.append(cache[manifest_path])
             else:
-                _manifest_cache[manifest_path] = manifest_file
+                cache[manifest_path] = manifest_file
                 result.append(manifest_file)
 
     return tuple(result)
