@@ -14,6 +14,13 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+.PHONY: help install install-uv check-license lint \
+        test test-integration test-integration-setup test-integration-exec test-integration-cleanup test-integration-rebuild \
+        test-s3 test-adls test-gcs test-coverage coverage-report \
+        docs-serve docs-build notebook notebook-infra \
+        clean uv-lock uv-lock-check
+
+.DEFAULT_GOAL := help
 # ========================
 # Configuration Variables
 # ========================
@@ -183,6 +190,8 @@ clean: ## Remove build artifacts and caches
 	@find . -name "*.pyo" -exec echo Deleting {} \; -delete
 	@echo "Cleaning up Jupyter notebook checkpoints..."
 	@find . -name ".ipynb_checkpoints" -exec echo Deleting {} \; -exec rm -rf {} +
+	@echo "Cleaning up coverage files..."
+	@rm -rf .coverage .coverage.* htmlcov/ coverage.xml
 	@echo "Cleanup complete."
 
 uv-lock: ## Regenerate uv.lock file from pyproject.toml
