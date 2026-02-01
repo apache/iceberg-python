@@ -458,7 +458,8 @@ def test_s3_access_point_resolution_with_config() -> None:
     fileio = PyArrowFileIO(properties=properties)
 
     # Test _resolve_s3_access_point directly
-    resolved_netloc, resolved_path = fileio._resolve_s3_access_point("s3", bucket_name, "/path/to/file.parquet")
+    original_path = f"{bucket_name}/path/to/file.parquet"
+    resolved_netloc, resolved_path = fileio._resolve_s3_access_point("s3", bucket_name, "/path/to/file.parquet", original_path)
 
     assert resolved_netloc == access_point_alias
     assert resolved_path == f"{access_point_alias}/path/to/file.parquet"
@@ -469,7 +470,8 @@ def test_s3_access_point_resolution_without_config() -> None:
     bucket_name = "my-bucket"
     fileio = PyArrowFileIO(properties={})
 
-    resolved_netloc, resolved_path = fileio._resolve_s3_access_point("s3", bucket_name, "/path/to/file.parquet")
+    original_path = f"{bucket_name}/path/to/file.parquet"
+    resolved_netloc, resolved_path = fileio._resolve_s3_access_point("s3", bucket_name, "/path/to/file.parquet", original_path)
 
     assert resolved_netloc == bucket_name
     assert resolved_path == f"{bucket_name}/path/to/file.parquet"
@@ -486,10 +488,11 @@ def test_s3_access_point_resolution_non_s3_scheme() -> None:
     fileio = PyArrowFileIO(properties=properties)
 
     # Test with non-S3 scheme (should not resolve)
-    resolved_netloc, resolved_path = fileio._resolve_s3_access_point("gs", bucket_name, "/path/to/file.parquet")
+    original_path = f"{bucket_name}/path/to/file.parquet"
+    resolved_netloc, resolved_path = fileio._resolve_s3_access_point("gs", bucket_name, "/path/to/file.parquet", original_path)
 
     assert resolved_netloc == bucket_name
-    assert resolved_path == f"{bucket_name}/path/to/file.parquet"
+    assert resolved_path == original_path
 
 
 def test_s3_access_point_resolution_s3a_scheme() -> None:
@@ -502,7 +505,8 @@ def test_s3_access_point_resolution_s3a_scheme() -> None:
 
     fileio = PyArrowFileIO(properties=properties)
 
-    resolved_netloc, resolved_path = fileio._resolve_s3_access_point("s3a", bucket_name, "/path/to/file.parquet")
+    original_path = f"{bucket_name}/path/to/file.parquet"
+    resolved_netloc, resolved_path = fileio._resolve_s3_access_point("s3a", bucket_name, "/path/to/file.parquet", original_path)
 
     assert resolved_netloc == access_point_alias
     assert resolved_path == f"{access_point_alias}/path/to/file.parquet"

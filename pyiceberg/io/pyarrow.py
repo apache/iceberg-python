@@ -589,7 +589,7 @@ class PyArrowFileIO(FileIO):
     def _initialize_local_fs(self) -> FileSystem:
         return PyArrowLocalFileSystem()
 
-    def _resolve_s3_access_point(self, scheme: str, netloc: str, path_suffix: str) -> tuple[str, str]:
+    def _resolve_s3_access_point(self, scheme: str, netloc: str, path_suffix: str, original_path: str) -> tuple[str, str]:
         """Resolve S3 access point alias for a bucket if configured.
 
         For cross-account access, S3 paths need to use access point aliases instead of bucket names.
@@ -600,12 +600,13 @@ class PyArrowFileIO(FileIO):
             scheme: The URI scheme (s3, s3a, s3n)
             netloc: The bucket name from the original URI
             path_suffix: The path within the bucket (without bucket name)
+            original_path: The original path from parse_location (fallback for non-S3)
 
         Returns:
             Tuple of (resolved_netloc, resolved_path) where netloc may be replaced with access point alias
         """
         if scheme not in {"s3", "s3a", "s3n"}:
-            return netloc, f"{netloc}{path_suffix}"
+            return netloc, original_path
 
         # Check for access point alias configuration for this bucket
         access_point_key = f"{S3_ACCESS_POINT_PREFIX}{netloc}"
@@ -614,7 +615,7 @@ class PyArrowFileIO(FileIO):
             # Replace bucket with access point alias in the path
             return access_point_alias, f"{access_point_alias}{path_suffix}"
 
-        return netloc, f"{netloc}{path_suffix}"
+        return netloc, original_path
 
     def new_input(self, location: str) -> PyArrowFile:
         """Get a PyArrowFile instance to read bytes from the file at the given location.
@@ -625,10 +626,10 @@ class PyArrowFileIO(FileIO):
         Returns:
             PyArrowFile: A PyArrowFile instance for the given location.
         """
-        scheme, netloc, _ = self.parse_location(location, self.properties)
-        # For S3, resolve access point ARN if configured
+        scheme, netloc, path = self.parse_location(location, self.properties)
+        # For S3, resolve access point if configured
         uri = urlparse(location)
-        resolved_netloc, resolved_path = self._resolve_s3_access_point(scheme, netloc, uri.path)
+        resolved_netloc, resolved_path = self._resolve_s3_access_point(scheme, netloc, uri.path, path)
         return PyArrowFile(
             fs=self.fs_by_scheme(scheme, resolved_netloc),
             location=location,
@@ -645,10 +646,10 @@ class PyArrowFileIO(FileIO):
         Returns:
             PyArrowFile: A PyArrowFile instance for the given location.
         """
-        scheme, netloc, _ = self.parse_location(location, self.properties)
-        # For S3, resolve access point ARN if configured
+        scheme, netloc, path = self.parse_location(location, self.properties)
+        # For S3, resolve access point if configured
         uri = urlparse(location)
-        resolved_netloc, resolved_path = self._resolve_s3_access_point(scheme, netloc, uri.path)
+        resolved_netloc, resolved_path = self._resolve_s3_access_point(scheme, netloc, uri.path, path)
         return PyArrowFile(
             fs=self.fs_by_scheme(scheme, resolved_netloc),
             location=location,
@@ -670,10 +671,10 @@ class PyArrowFileIO(FileIO):
                 an AWS error code 15.
         """
         str_location = location.location if isinstance(location, (InputFile, OutputFile)) else location
-        scheme, netloc, _ = self.parse_location(str_location, self.properties)
-        # For S3, resolve access point ARN if configured
+        scheme, netloc, path = self.parse_location(str_location, self.properties)
+        # For S3, resolve access point if configured
         uri = urlparse(str_location)
-        resolved_netloc, resolved_path = self._resolve_s3_access_point(scheme, netloc, uri.path)
+        resolved_netloc, resolved_path = self._resolve_s3_access_point(scheme, netloc, uri.path, path)
         fs = self.fs_by_scheme(scheme, resolved_netloc)
 
         try:
