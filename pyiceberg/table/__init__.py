@@ -936,6 +936,40 @@ class Transaction:
             for data_file in data_files:
                 append_files.append_data_file(data_file)
 
+    def delete_files(
+        self,
+        file_paths: list[str],
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
+        branch: str | None = MAIN_BRANCH,
+    ) -> None:
+        """
+        Shorthand API for removing data files from the table transaction by their paths.
+
+        Args:
+            file_paths: The list of full file paths to be removed from the table
+            snapshot_properties: Custom properties to be added to the snapshot summary
+            branch: Branch to delete files from
+
+        Raises:
+            ValueError: If file_paths contains duplicates
+            ValueError: If any file paths are not found in the table
+        """
+        if len(file_paths) != len(set(file_paths)):
+            raise ValueError("File paths must be unique")
+
+        file_paths_set = set(file_paths)
+        data_files = _get_data_files_from_snapshot(
+            table_metadata=self.table_metadata, file_paths=file_paths_set, io=self._table.io, branch=branch
+        )
+
+        missing_files = file_paths_set - set(data_files.keys())
+        if missing_files:
+            raise ValueError(f"Cannot delete files that are not referenced by table, files: {', '.join(sorted(missing_files))}")
+
+        with self.update_snapshot(snapshot_properties=snapshot_properties, branch=branch).overwrite() as overwrite_snapshot:
+            for data_file in data_files.values():
+                overwrite_snapshot.delete_data_file(data_file)
+
     def update_spec(self) -> UpdateSpec:
         """Create a new UpdateSpec to update the partitioning of the table.
 
@@ -1503,6 +1537,31 @@ class Table:
                 file_paths=file_paths,
                 snapshot_properties=snapshot_properties,
                 check_duplicate_files=check_duplicate_files,
+                branch=branch,
+            )
+
+    def delete_files(
+        self,
+        file_paths: list[str],
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
+        branch: str | None = MAIN_BRANCH,
+    ) -> None:
+        """
+        Shorthand API for removing data files from the table by their paths.
+
+        Args:
+            file_paths: The list of full file paths to be removed from the table
+            snapshot_properties: Custom properties to be added to the snapshot summary
+            branch: Branch to delete files from
+
+        Raises:
+            ValueError: If file_paths contains duplicates
+            ValueError: If any file paths are not found in the table
+        """
+        with self.transaction() as tx:
+            tx.delete_files(
+                file_paths=file_paths,
+                snapshot_properties=snapshot_properties,
                 branch=branch,
             )
 
@@ -2175,3 +2234,21 @@ def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: list
     futures = [executor.submit(parquet_file_to_data_file, io, table_metadata, file_path) for file_path in file_paths]
 
     return [f.result() for f in futures if f.result()]
+
+
+def _get_data_files_from_snapshot(
+    table_metadata: TableMetadata, file_paths: set[str], io: FileIO, branch: str | None = MAIN_BRANCH
+) -> dict[str, DataFile]:
+    snapshot = table_metadata.snapshot_by_name(branch) if branch else table_metadata.current_snapshot()
+    if snapshot is None:
+        return {}
+
+    result: dict[str, DataFile] = {}
+    for manifest in snapshot.manifests(io):
+        if manifest.content == ManifestContent.DATA:
+            for entry in manifest.fetch_manifest_entry(io, discard_deleted=True):
+                if entry.data_file.file_path in file_paths:
+                    result[entry.data_file.file_path] = entry.data_file
+                    if len(result) == len(file_paths):
+                        return result
+    return result
