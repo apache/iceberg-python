@@ -603,3 +603,15 @@ def test_json_single_serialization(primitive_type: PrimitiveType, value: Any, ex
 )
 def test_json_serialize_roundtrip(primitive_type: PrimitiveType, value: Any) -> None:
     assert value == conversions.from_json(primitive_type, conversions.to_json(primitive_type, value))
+
+
+def test_string_type_to_bytes_with_str() -> None:
+    """Test that to_bytes works with str values for StringType."""
+    result = conversions.to_bytes(StringType(), "hello")
+    assert result == b"hello"
+
+
+def test_string_type_to_bytes_with_unicode() -> None:
+    """Test that to_bytes works with unicode str values for StringType."""
+    result = conversions.to_bytes(StringType(), "héllo wörld")
+    assert result == "héllo wörld".encode()

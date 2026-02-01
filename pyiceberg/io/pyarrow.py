@@ -2183,6 +2183,11 @@ class StatsAggregator:
         if self.current_min is None:
             return None
 
+        # The Parquet format stores column statistics as binary (see Statistics struct
+        # in parquet.thrift). PyArrow may return these as bytes instead of str.
+        if self.primitive_type == StringType() and isinstance(self.current_min, bytes):
+            self.current_min = self.current_min.decode("utf-8")
+
         return self.serialize(
             self.current_min
             if self.trunc_length is None
@@ -2194,10 +2199,14 @@ class StatsAggregator:
             return None
 
         if self.primitive_type == StringType():
-            if not isinstance(self.current_max, str):
-                raise ValueError("Expected the current_max to be a string")
-            s_result = truncate_upper_bound_text_string(self.current_max, self.trunc_length)
-            return self.serialize(s_result) if s_result is not None else None
+            # The Parquet format stores column statistics as binary (see Statistics struct
+            # in parquet.thrift). PyArrow may return these as bytes instead of str.
+            if isinstance(self.current_max, bytes):
+                self.current_max = self.current_max.decode("utf-8")
+            if isinstance(self.current_max, str):
+                s_result = truncate_upper_bound_text_string(self.current_max, self.trunc_length)
+                return self.serialize(s_result) if s_result is not None else None
+            raise ValueError(f"Expected the current_max to be a str, got {type(self.current_max)}")
         elif self.primitive_type == BinaryType():
             if not isinstance(self.current_max, bytes):
                 raise ValueError("Expected the current_max to be bytes")

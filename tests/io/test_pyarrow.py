@@ -2232,6 +2232,115 @@ def test_stats_aggregator_physical_type_does_not_match_expected_raise_error(
         StatsAggregator(iceberg_type, physical_type_string)
 
 
+def test_stats_aggregator_string_type_with_bytes_value() -> None:
+    """Test that StatsAggregator handles bytes values for StringType.
+
+    The Parquet format stores column statistics as binary data (see Statistics
+    struct in parquet.thrift). When PyArrow reads these statistics, it may
+    return them as Python bytes objects. This test ensures we handle bytes
+    values correctly, as produced by writers like DuckDB.
+    """
+    stats = StatsAggregator(StringType(), "BYTE_ARRAY")
+
+    # Simulate bytes values as returned by PyArrow from Parquet statistics
+    # These represent realistic min/max values for a "source" column
+    stats.update_min(b"/docs/readme.md")
+    stats.update_max(b"/docs/tutorial.md")
+
+    assert stats.current_min == b"/docs/readme.md"
+    assert stats.current_max == b"/docs/tutorial.md"
+
+    # Verify serialization decodes bytes to str and encodes back to bytes
+    min_bytes = stats.min_as_bytes()
+    max_bytes = stats.max_as_bytes()
+
+    assert min_bytes == b"/docs/readme.md"
+    assert max_bytes == b"/docs/tutorial.md"
+
+
+def test_stats_aggregator_string_type_with_str_value() -> None:
+    """Test that StatsAggregator handles str values for StringType."""
+    stats = StatsAggregator(StringType(), "BYTE_ARRAY")
+
+    # Standard str values (the common case when PyArrow decodes statistics)
+    stats.update_min("2024-01-01")
+    stats.update_max("2024-12-31")
+
+    assert stats.current_min == "2024-01-01"
+    assert stats.current_max == "2024-12-31"
+
+    # Verify serialization encodes str to bytes
+    min_bytes = stats.min_as_bytes()
+    max_bytes = stats.max_as_bytes()
+
+    assert min_bytes == b"2024-01-01"
+    assert max_bytes == b"2024-12-31"
+
+
+def test_stats_aggregator_integer_type() -> None:
+    """Test that StatsAggregator handles IntegerType min/max statistics."""
+    stats = StatsAggregator(IntegerType(), "INT32")
+
+    stats.update_min(1)
+    stats.update_max(1000)
+
+    assert stats.current_min == 1
+    assert stats.current_max == 1000
+
+    min_bytes = stats.min_as_bytes()
+    max_bytes = stats.max_as_bytes()
+
+    # INT32 is stored as 4 bytes little-endian
+    assert min_bytes == (1).to_bytes(4, byteorder="little", signed=True)
+    assert max_bytes == (1000).to_bytes(4, byteorder="little", signed=True)
+
+
+def test_stats_aggregator_long_type() -> None:
+    """Test that StatsAggregator handles LongType min/max statistics."""
+    stats = StatsAggregator(LongType(), "INT64")
+
+    stats.update_min(-9223372036854775808)  # Long min
+    stats.update_max(9223372036854775807)  # Long max
+
+    min_bytes = stats.min_as_bytes()
+    max_bytes = stats.max_as_bytes()
+
+    # INT64 is stored as 8 bytes little-endian
+    assert min_bytes == (-9223372036854775808).to_bytes(8, byteorder="little", signed=True)
+    assert max_bytes == (9223372036854775807).to_bytes(8, byteorder="little", signed=True)
+
+
+def test_stats_aggregator_double_type() -> None:
+    """Test that StatsAggregator handles DoubleType min/max statistics."""
+    import struct
+
+    stats = StatsAggregator(DoubleType(), "DOUBLE")
+
+    stats.update_min(-273.15)  # Absolute zero in Celsius
+    stats.update_max(1000000.0)
+
+    min_bytes = stats.min_as_bytes()
+    max_bytes = stats.max_as_bytes()
+
+    # DOUBLE is stored as 8 bytes IEEE 754
+    assert min_bytes == struct.pack("<d", -273.15)
+    assert max_bytes == struct.pack("<d", 1000000.0)
+
+
+def test_stats_aggregator_binary_type() -> None:
+    """Test that StatsAggregator handles BinaryType min/max statistics."""
+    stats = StatsAggregator(BinaryType(), "BYTE_ARRAY")
+
+    stats.update_min(b"\x00\x01\x02")
+    stats.update_max(b"\xff\xfe\xfd")
+
+    min_bytes = stats.min_as_bytes()
+    max_bytes = stats.max_as_bytes()
+
+    assert min_bytes == b"\x00\x01\x02"
+    assert max_bytes == b"\xff\xfe\xfd"
+
+
 def test_bin_pack_arrow_table(arrow_table_with_null: pa.Table) -> None:
     # default packs to 1 bin since the table is small
     bin_packed = bin_pack_arrow_table(
