@@ -119,6 +119,7 @@ dev = [
     "mypy-boto3-dynamodb>=1.28.18",
     "pyarrow-stubs>=20.0.0.20251107", # Remove when pyarrow >= 23.0.0 https://github.com/apache/arrow/pull/47609
     "sqlalchemy>=2.0.18,<3",
+    "trino[sqlalchemy]>=0.336.0",
 ]
 # for mkdocs
 docs = [
@@ -157,6 +158,7 @@ markers = [
   "s3: marks a test as requiring access to s3 compliant storage (use with --aws-access-key-id, --aws-secret-access-key, and --endpoint args)",
   "adls: marks a test as requiring access to adls compliant storage (use with --adls.account-name, --adls.account-key, and --adls.endpoint args)",
   "integration: marks integration tests against Apache Spark",
+  "trino: marks integration tests against Trino",
   "gcs: marks a test as requiring access to gcs compliant storage (use with --gs.token, --gs.project, and --gs.endpoint)",
   "benchmark: collection of tests to validate read/write performance before and after a change",
 ]
