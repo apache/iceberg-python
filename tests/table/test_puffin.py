@@ -19,7 +19,7 @@ from os import path
 import pytest
 from pyroaring import BitMap
 
-from pyiceberg.table.puffin import _deserialize_bitmap
+from pyiceberg.table.puffin import PROPERTY_REFERENCED_DATA_FILE, PuffinFile, PuffinWriter, _deserialize_bitmap
 
 
 def _open_file(file: str) -> bytes:
@@ -71,3 +71,66 @@ def test_map_high_vals() -> None:
 
     with pytest.raises(ValueError, match="Key 4022190063 is too large, max 2147483647 to maintain compatibility with Java impl"):
         _ = _deserialize_bitmap(puffin)
+
+
+def test_puffin_round_trip() -> None:
+    # Define some deletion positions for a file
+    deletions = [5, (1 << 32) + 1, 5]  # Test with a high-bit position and duplicate
+
+    file_path = "path/to/data.parquet"
+
+    # Write the Puffin file
+    writer = PuffinWriter(created_by="my-test-app")
+    writer.set_blob(positions=deletions, referenced_data_file=file_path)
+    puffin_bytes = writer.finish()
+
+    # Read the Puffin file back
+    reader = PuffinFile(puffin_bytes)
+
+    # Assert footer metadata
+    assert reader.footer.properties["created-by"] == "my-test-app"
+    assert len(reader.footer.blobs) == 1
+
+    blob_meta = reader.footer.blobs[0]
+    assert blob_meta.properties[PROPERTY_REFERENCED_DATA_FILE] == file_path
+    assert blob_meta.properties["cardinality"] == str(len(set(deletions)))
+
+    # Assert the content of deletion vectors
+    read_vectors = reader.to_vector()
+
+    assert file_path in read_vectors
+    assert read_vectors[file_path].to_pylist() == sorted(set(deletions))
+
+
+def test_write_and_read_puffin_file() -> None:
+    writer = PuffinWriter()
+    writer.set_blob(positions=[1, 2, 3], referenced_data_file="file1.parquet")
+    writer.set_blob(positions=[4, 5, 6], referenced_data_file="file2.parquet")
+    puffin_bytes = writer.finish()
+
+    reader = PuffinFile(puffin_bytes)
+
+    assert len(reader.footer.blobs) == 1
+    blob = reader.footer.blobs[0]
+
+    assert blob.properties["referenced-data-file"] == "file2.parquet"
+    assert blob.properties["cardinality"] == "3"
+    assert blob.type == "deletion-vector-v1"
+    assert blob.snapshot_id == -1
+    assert blob.sequence_number == -1
+    assert blob.compression_codec is None
+
+    vectors = reader.to_vector()
+    assert len(vectors) == 1
+    assert "file1.parquet" not in vectors
+    assert vectors["file2.parquet"].to_pylist() == [4, 5, 6]
+
+
+def test_puffin_file_with_no_blobs() -> None:
+    writer = PuffinWriter()
+    puffin_bytes = writer.finish()
+
+    reader = PuffinFile(puffin_bytes)
+    assert len(reader.footer.blobs) == 0
+    assert len(reader.to_vector()) == 0
+    assert "created-by" not in reader.footer.properties
