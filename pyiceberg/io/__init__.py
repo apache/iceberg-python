@@ -31,10 +31,7 @@ import warnings
 from abc import ABC, abstractmethod
 from io import SEEK_SET
 from types import TracebackType
-from typing import (
-    Protocol,
-    runtime_checkable,
-)
+from typing import Protocol, runtime_checkable
 from urllib.parse import urlparse
 
 from pyiceberg.typedef import EMPTY_DICT, Properties
@@ -67,6 +64,8 @@ S3_ROLE_ARN = "s3.role-arn"
 S3_ROLE_SESSION_NAME = "s3.role-session-name"
 S3_FORCE_VIRTUAL_ADDRESSING = "s3.force-virtual-addressing"
 S3_RETRY_STRATEGY_IMPL = "s3.retry-strategy-impl"
+# Prefix for per-bucket access point config: s3.access-point.<bucket> = <access-point-alias>
+S3_ACCESS_POINT_PREFIX = "s3.access-point."
 HDFS_HOST = "hdfs.host"
 HDFS_PORT = "hdfs.port"
 HDFS_USER = "hdfs.user"
