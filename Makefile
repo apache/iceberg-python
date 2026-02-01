@@ -77,7 +77,7 @@ install: install-uv ## Install uv, dependencies, and pre-commit hooks
 	@if [ -d .git ]; then \
 		uv run $(PYTHON_ARG) prek install; \
 	fi
-	
+
 # ===============
 # Code Validation
 # ===============
@@ -105,7 +105,7 @@ test-integration-setup: ## Start Docker services for integration tests
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml up -d --build --wait
-	uv run $(PYTHON_ARG) python dev/provision.py
+	uv run $(PYTHON_ARG) --all-extras python dev/provision.py
 
 test-integration-exec: ## Run integration tests (excluding provision)
 	$(TEST_RUNNER) pytest tests/ -m integration $(PYTEST_ARGS)
