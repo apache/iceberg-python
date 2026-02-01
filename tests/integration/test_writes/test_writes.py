@@ -2148,6 +2148,7 @@ def test_uuid_partitioning(session_catalog: Catalog, spark: SparkSession, transf
     assert lhs == rhs
 
 
+@pytest.mark.integration
 def test_avro_compression_codecs(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.test_avro_compression_codecs"
     tbl = _create_table(session_catalog, identifier, schema=arrow_table_with_null.schema, data=[arrow_table_with_null])

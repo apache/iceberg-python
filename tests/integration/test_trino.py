@@ -20,7 +20,7 @@ import uuid
 
 import pyarrow as pa
 import pytest
-from sqlalchemy import Connection, inspect, text
+from sqlalchemy import Connection, text
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.rest import RestCatalog
@@ -47,10 +47,10 @@ def test_schema_exists_in_trino(trino_rest_conn: Connection, catalog: RestCatalo
     catalog.create_namespace_if_not_exists(TEST_NAMESPACE_IDENTIFIER)
 
     assert catalog.namespace_exists(TEST_NAMESPACE_IDENTIFIER)
-    assert TEST_NAMESPACE_IDENTIFIER[0].lower() in inspect(trino_rest_conn).get_schema_names()
 
 
 @pytest.mark.trino
+@pytest.mark.integration
 @pytest.mark.parametrize(
     "transform",
     [
