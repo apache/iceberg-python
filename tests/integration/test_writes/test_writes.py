@@ -52,7 +52,7 @@ from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
 from pyiceberg.table.refs import MAIN_BRANCH
 from pyiceberg.table.sorting import SortDirection, SortField, SortOrder
-from pyiceberg.transforms import DayTransform, HourTransform, IdentityTransform, Transform
+from pyiceberg.transforms import BucketTransform, DayTransform, HourTransform, IdentityTransform, Transform
 from pyiceberg.types import (
     DateType,
     DecimalType,
@@ -2094,9 +2094,15 @@ def test_read_write_decimals(session_catalog: Catalog) -> None:
     "transform",
     [
         IdentityTransform(),
-        # Bucket is disabled because of an issue in Iceberg Java:
-        # https://github.com/apache/iceberg/pull/13324
-        # BucketTransform(32)
+        pytest.param(
+            BucketTransform(32),
+            marks=pytest.mark.skip(
+                reason="""
+                        Bucket is disabled because of an issue in Iceberg Java:
+                        https://github.com/apache/iceberg/pull/13324
+                        """
+            ),
+        ),
     ],
 )
 def test_uuid_partitioning(session_catalog: Catalog, spark: SparkSession, transform: Transform) -> None:  # type: ignore
