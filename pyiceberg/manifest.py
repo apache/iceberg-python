@@ -1059,6 +1059,9 @@ class ManifestWriter(ABC):
         self.closed = True
         self._writer.__exit__(exc_type, exc_value, traceback)
 
+    def tell(self) -> int:
+        return self._writer.tell()
+
     @abstractmethod
     def content(self) -> ManifestContent: ...
 
