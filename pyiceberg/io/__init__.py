@@ -141,6 +141,9 @@ class OutputStream(Protocol):  # pragma: no cover
     def write(self, b: bytes) -> int: ...
 
     @abstractmethod
+    def tell(self) -> int: ...
+
+    @abstractmethod
     def close(self) -> None: ...
 
     @abstractmethod
