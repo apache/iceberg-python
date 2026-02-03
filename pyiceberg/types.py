@@ -67,9 +67,9 @@ DEFAULT_GEOGRAPHY_CRS = "OGC:CRS84"
 DEFAULT_GEOGRAPHY_ALGORITHM = "spherical"
 
 # Regex patterns for parsing geometry and geography type strings
-# Matches: geometry, geometry('CRS'), geometry("CRS")
+# Matches: geometry, geometry('CRS'), geometry('crs'), geometry("CRS")
 GEOMETRY_REGEX = re.compile(r"geometry(?:\(\s*['\"]([^'\"]+)['\"]\s*\))?$")
-# Matches: geography, geography('CRS'), geography('CRS', 'algo')
+# Matches: geography, geography('CRS'), geography('crs', 'algo')
 GEOGRAPHY_REGEX = re.compile(r"geography(?:\(\s*['\"]([^'\"]+)['\"](?:\s*,\s*['\"]([^'\"]+)['\"])?\s*\))?$")
 
 
@@ -182,8 +182,10 @@ class IcebergType(IcebergBaseModel):
         # Pydantic works mostly around dicts, and there seems to be something
         # by not serializing into a RootModel, might revisit this.
         if isinstance(v, str):
-            # When constructing GeometryType/GeographyType directly with CRS/algorithm values,
-            # skip the type string parsing to avoid infinite recursion
+            # GeometryType/GeographyType inherit this validator, but their root values are
+            # a CRS string (or CRS, algorithm tuple). If we try to parse those as type
+            # strings here, we'd re-enter this validator (or raise) instead of letting
+            # pydantic validate the raw root values.
             if cls.__name__ == "GeometryType" and not v.startswith("geometry"):
                 return handler(v)
             if cls.__name__ == "GeographyType" and not v.startswith("geography"):
