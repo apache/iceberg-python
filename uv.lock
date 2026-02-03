@@ -592,11 +592,11 @@ virtualenv = [
 
 [[package]]
 name = "cachetools"
-version = "6.2.5"
+version = "7.0.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/86/e7/18ea2907d2ca91e9c0697596b8e60cd485b091152eb4109fad1e468e457d/cachetools-6.2.5.tar.gz", hash = "sha256:6d8bfbba1ba94412fb9d9196c4da7a87e9d4928fffc5e93542965dca4740c77f", size = 32168, upload-time = "2026-01-25T14:57:40.349Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/98/af/df70e9b65bc77a1cbe0768c0aa4617147f30f8306ded98c1744bcdc0ae1e/cachetools-7.0.0.tar.gz", hash = "sha256:a9abf18ff3b86c7d05b27ead412e235e16ae045925e531fae38d5fada5ed5b08", size = 35796, upload-time = "2026-02-01T18:59:47.411Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e3/a6/24169d70ec5264b65ba54ba49b3d10f46d6b1ad97e185c94556539b3dfc8/cachetools-6.2.5-py3-none-any.whl", hash = "sha256:db3ae5465e90befb7c74720dd9308d77a09b7cf13433570e07caa0845c30d5fe", size = 11553, upload-time = "2026-01-25T14:57:39.112Z" },
+    { url = "https://files.pythonhosted.org/packages/28/df/2dd32cce20cbcf6f2ec456b58d44368161ad28320729f64e5e1d5d7bd0ae/cachetools-7.0.0-py3-none-any.whl", hash = "sha256:d52fef60e6e964a1969cfb61ccf6242a801b432790fe520d78720d757c81cbd2", size = 13487, upload-time = "2026-02-01T18:59:45.981Z" },
 ]
 
 [[package]]
@@ -4467,7 +4467,7 @@ requires-dist = [
     { name = "boto3", marker = "extra == 'dynamodb'", specifier = ">=1.24.59" },
     { name = "boto3", marker = "extra == 'glue'", specifier = ">=1.24.59" },
     { name = "boto3", marker = "extra == 'rest-sigv4'", specifier = ">=1.24.59" },
-    { name = "cachetools", specifier = ">=5.5,<7.0" },
+    { name = "cachetools", specifier = ">=5.5,<8.0" },
     { name = "click", specifier = ">=7.1.1,<9.0.0" },
     { name = "daft", marker = "extra == 'daft'", specifier = ">=0.5.0" },
     { name = "datafusion", marker = "extra == 'datafusion'", specifier = ">=51,<52" },
