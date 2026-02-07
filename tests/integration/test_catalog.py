@@ -21,6 +21,7 @@ from collections.abc import Generator
 from pathlib import Path, PosixPath
 
 import pytest
+from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog import Catalog, MetastoreCatalog, load_catalog
 from pyiceberg.catalog.hive import HiveCatalog
@@ -109,12 +110,12 @@ def hive_catalog() -> Generator[Catalog, None, None]:
 
 
 CATALOGS = [
-    pytest.lazy_fixture("memory_catalog"),
-    pytest.lazy_fixture("sqlite_catalog_memory"),
-    pytest.lazy_fixture("sqlite_catalog_file"),
-    pytest.lazy_fixture("rest_catalog"),
-    pytest.lazy_fixture("hive_catalog"),
-    pytest.lazy_fixture("rest_test_catalog"),
+    lf("memory_catalog"),
+    lf("sqlite_catalog_memory"),
+    lf("sqlite_catalog_file"),
+    lf("rest_catalog"),
+    lf("hive_catalog"),
+    lf("rest_test_catalog"),
 ]
 
 
