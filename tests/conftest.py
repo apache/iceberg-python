@@ -40,6 +40,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
 )
+from unittest import mock
 
 import boto3
 import pytest
@@ -110,6 +111,20 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:
         if not any(item.iter_markers()):
             item.add_marker("unmarked")
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _isolate_pyiceberg_config() -> None:
+    """Make test runs ignore your local PyIceberg config.
+
+    Without this, tests will attempt to resolve a local ~/.pyiceberg.yaml while running pytest.
+    This replaces the global catalog config once at session start with an env-only config.
+    """
+    import pyiceberg.catalog as _catalog_module
+    from pyiceberg.utils.config import Config
+
+    with mock.patch.object(Config, "_from_configuration_files", return_value=None):
+        _catalog_module._ENV_CONFIG = Config()
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
