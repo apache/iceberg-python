@@ -954,15 +954,16 @@ class Transaction:
             ValueError: If file_paths contains duplicates
             ValueError: If any file paths are not found in the table
         """
-        if len(file_paths) != len(set(file_paths)):
+        unique_file_paths = set(file_paths)
+
+        if len(file_paths) != len(unique_file_paths):
             raise ValueError("File paths must be unique")
 
-        file_paths_set = set(file_paths)
         data_files = _get_data_files_from_snapshot(
-            table_metadata=self.table_metadata, file_paths=file_paths_set, io=self._table.io, branch=branch
+            table_metadata=self.table_metadata, file_paths=unique_file_paths, io=self._table.io, branch=branch
         )
 
-        missing_files = file_paths_set - set(data_files.keys())
+        missing_files = unique_file_paths - set(data_files.keys())
         if missing_files:
             raise ValueError(f"Cannot delete files that are not referenced by table, files: {', '.join(sorted(missing_files))}")
 
