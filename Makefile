@@ -133,6 +133,9 @@ test-gcs: ## Run tests marked with @pytest.mark.gcs
 	sh ./dev/run-gcs-server.sh
 	$(TEST_RUNNER) pytest tests/ -m gcs $(PYTEST_ARGS)
 
+test-benchmark: ## Run benchmarks marked with @pytest.mark.benchmark
+	$(TEST_RUNNER) pytest tests/ -m benchmark $(PYTEST_ARGS)
+
 test-coverage: ## Run all tests with coverage and report
 	$(MAKE) COVERAGE=1 test test-integration test-s3 test-adls test-gcs
 	$(MAKE) coverage-report
