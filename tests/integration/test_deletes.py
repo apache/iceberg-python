@@ -36,7 +36,6 @@ from pyiceberg.table.snapshots import Operation, Summary
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import BooleanType, DateType, FloatType, IntegerType, LongType, NestedField, StringType, TimestampType
 
-
 # Schema and data used by delete_files tests (moved from test_add_files)
 TABLE_SCHEMA_DELETE_FILES = Schema(
     NestedField(field_id=1, name="foo", field_type=BooleanType(), required=False),
@@ -1044,9 +1043,7 @@ def test_manifest_entry_after_deletes(session_catalog: RestCatalog) -> None:
 
 
 @pytest.mark.integration
-def test_delete_files_from_unpartitioned_table(
-    spark: SparkSession, session_catalog: Catalog, format_version: int
-) -> None:
+def test_delete_files_from_unpartitioned_table(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
     identifier = f"default.delete_files_unpartitioned_v{format_version}"
     tbl = _create_table_for_delete_files(session_catalog, identifier, format_version)
 
@@ -1104,9 +1101,7 @@ def test_delete_files_raises_on_duplicate_paths(session_catalog: Catalog, format
 
 
 @pytest.mark.integration
-def test_delete_files_from_branch(
-    spark: SparkSession, session_catalog: Catalog, format_version: int
-) -> None:
+def test_delete_files_from_branch(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
     identifier = f"default.delete_files_branch_v{format_version}"
     branch = "branch1"
 
