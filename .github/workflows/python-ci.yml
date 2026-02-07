@@ -194,7 +194,7 @@ jobs:
     - name: Install
       run: make install
     - name: Run benchmarks
-      run: make benchmark
+      run: make test-benchmark
     - name: Upload benchmark results
       uses: actions/upload-artifact@v4
       with:
