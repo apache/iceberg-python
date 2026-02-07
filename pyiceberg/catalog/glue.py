@@ -350,6 +350,9 @@ class GlueCatalog(MetastoreCatalog):
             if glue_catalog_id := properties.get(GLUE_ID):
                 _register_glue_catalog_id_with_glue_client(self.glue, glue_catalog_id)
 
+    def supports_nested_namespaces(self) -> bool:
+        return False
+
     def _convert_glue_to_iceberg(self, glue_table: "TableTypeDef") -> Table:
         if (database_name := glue_table.get("DatabaseName")) is None:
             raise ValueError("Glue table is missing DatabaseName property")
