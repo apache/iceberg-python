@@ -88,6 +88,7 @@ class HttpMethod(str, Enum):
     HEAD = "HEAD"
     POST = "POST"
     DELETE = "DELETE"
+    PUT = "PUT"
 
 
 class Endpoint(IcebergBaseModel):
