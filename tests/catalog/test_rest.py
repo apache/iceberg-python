@@ -47,7 +47,7 @@ from pyiceberg.exceptions import (
     NoSuchViewError,
     OAuthError,
     ServerError,
-    TableAlreadyExistsError,
+    TableAlreadyExistsError, ValidationError,
 )
 from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -1639,6 +1639,29 @@ def test_update_namespace_properties_invalid_namespace(rest_mock: Mocker) -> Non
         # Missing namespace
         RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).update_namespace_properties(())
     assert "Empty namespace identifier" in str(e.value)
+
+
+def test_with_disabled_ssl_ca_bundle(rest_mock: Mocker) -> None:
+    from pydantic import ValidationError
+    def ssl_check_callback(req, _):
+        if req.verify:
+            raise AssertionError("SSL verification is  still enabled")
+    # Given
+    rest_mock.get(
+        f"{TEST_URI}v1/config",
+        json=ssl_check_callback,
+        status_code=200,
+    )
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "token": TEST_TOKEN,
+        "ssl": {
+            "cabundle": False,
+        }
+    }
+    with pytest.raises(ValidationError) as _:
+        RestCatalog("rest", **catalog_properties)
 
 
 def test_request_session_with_ssl_ca_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
