@@ -23,7 +23,6 @@ repos:
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
-      - id: debug-statements
       - id: check-yaml
       - id: check-ast
   - repo: https://github.com/astral-sh/ruff-pre-commit
@@ -32,6 +31,11 @@ repos:
       - id: ruff
         args: [ --fix, --exit-non-zero-on-fix ]
       - id: ruff-format
+  - repo: https://github.com/nbQA-dev/nbQA
+    rev: 1.9.1
+    hooks:
+      - id: nbqa-ruff
+        args: [ --fix, --exit-non-zero-on-fix ]
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.18.2
     hooks:
@@ -58,15 +62,15 @@ repos:
           ]
         additional_dependencies:
           - tomli==2.0.1
-  - repo: https://github.com/ikamensh/flynt
-    rev: 1.0.6
-    hooks:
-      - id: flynt
-        args:
-          # --line-length is set to a high value to deal with very long lines
-          - --line-length
-          - '99999'
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.1
     hooks:
       - id: codespell
+  - repo: local
+    hooks:
+      - id: uv-lock-check
+        name: uv lock file check
+        entry: make uv-lock-check
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|uv\.lock)$

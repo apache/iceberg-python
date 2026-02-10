@@ -81,6 +81,7 @@ from pyiceberg.io.pyarrow import (
     expression_to_pyarrow,
     parquet_path_to_id_mapping,
     schema_to_pyarrow,
+    write_file,
 )
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -1299,7 +1300,8 @@ def test_projection_concat_files(schema_int: Schema, file_int: str) -> None:
 
 
 def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCatalog) -> None:
-    # Test by adding a non-partitioned data file to a partitioned table, verifying partition value projection from manifest metadata.
+    # Test by adding a non-partitioned data file to a partitioned table, verifying partition value
+    # projection from manifest metadata.
     # TODO: Update to use a data file created by writing data to an unpartitioned table once add_files supports field IDs.
     # (context: https://github.com/apache/iceberg-python/pull/1443#discussion_r1901374875)
 
@@ -1368,7 +1370,8 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
 
 
 def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryCatalog) -> None:
-    # Test by adding a non-partitioned data file to a multi-partitioned table, verifying partition value projection from manifest metadata.
+    # Test by adding a non-partitioned data file to a multi-partitioned table, verifying partition value
+    # projection from manifest metadata.
     # TODO: Update to use a data file created by writing data to an unpartitioned table once add_files supports field IDs.
     # (context: https://github.com/apache/iceberg-python/pull/1443#discussion_r1901374875)
     schema = Schema(
@@ -1646,16 +1649,19 @@ def test_projection_maps_of_structs(schema_map_of_structs: Schema, file_map_of_s
         strict=True,
     ):
         assert actual.as_py() == expected
-    assert (
-        repr(result_table.schema)
-        == """locations: map<string, struct<latitude: double not null, longitude: double not null, altitude: double>>
-  child 0, entries: struct<key: string not null, value: struct<latitude: double not null, longitude: double not null, al (... 25 chars omitted) not null
-      child 0, key: string not null
-      child 1, value: struct<latitude: double not null, longitude: double not null, altitude: double> not null
-          child 0, latitude: double not null
-          child 1, longitude: double not null
-          child 2, altitude: double"""
+    expected_schema_repr = (
+        "locations: map<string, struct<latitude: double not null, "
+        "longitude: double not null, altitude: double>>\n"
+        "  child 0, entries: struct<key: string not null, value: struct<latitude: double not null, "
+        "longitude: double not null, al (... 25 chars omitted) not null\n"
+        "      child 0, key: string not null\n"
+        "      child 1, value: struct<latitude: double not null, longitude: double not null, "
+        "altitude: double> not null\n"
+        "          child 0, latitude: double not null\n"
+        "          child 1, longitude: double not null\n"
+        "          child 2, altitude: double"
     )
+    assert repr(result_table.schema) == expected_schema_repr
 
 
 def test_projection_nested_struct_different_parent_id(file_struct: str) -> None:
@@ -2698,6 +2704,36 @@ def test_inspect_partition_for_nested_field(catalog: InMemoryCatalog) -> None:
     assert {part["part"] for part in partitions} == {"data-a", "data-b"}
 
 
+def test_inspect_partitions_respects_partition_evolution(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="dt", field_type=DateType(), required=False),
+        NestedField(id=2, name="category", field_type=StringType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="dt"))
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test_inspect_partitions_respects_partition_evolution", schema=schema, partition_spec=spec
+    )
+
+    old_spec_id = table.spec().spec_id
+    old_data = [{"dt": date(2025, 1, 1), "category": "old"}]
+    table.append(pa.Table.from_pylist(old_data, schema=table.schema().as_arrow()))
+
+    table.update_spec().add_identity("category").commit()
+    new_spec_id = table.spec().spec_id
+    assert new_spec_id != old_spec_id
+
+    partitions_table = table.inspect.partitions()
+    partitions = partitions_table["partition"].to_pylist()
+    assert all("category" not in partition for partition in partitions)
+
+    new_data = [{"dt": date(2025, 1, 2), "category": "new"}]
+    table.append(pa.Table.from_pylist(new_data, schema=table.schema().as_arrow()))
+
+    partitions_table = table.inspect.partitions()
+    assert set(partitions_table["spec_id"].to_pylist()) == {old_spec_id, new_spec_id}
+
+
 def test_identity_partition_on_multi_columns() -> None:
     test_pa_schema = pa.schema([("born_year", pa.int64()), ("n_legs", pa.int64()), ("animal", pa.string())])
     test_schema = Schema(
@@ -2794,6 +2830,106 @@ def test__to_requested_schema_timestamp_to_timestamptz_projection() -> None:
     assert expected.equals(actual_result)
 
 
+def test__to_requested_schema_timestamptz_to_timestamp_projection() -> None:
+    # file is written with timestamp with timezone
+    file_schema = Schema(NestedField(1, "ts_field", TimestamptzType(), required=False))
+    batch = pa.record_batch(
+        [
+            pa.array(
+                [
+                    datetime(2025, 8, 14, 12, 0, 0, tzinfo=timezone.utc),
+                    datetime(2025, 8, 14, 13, 0, 0, tzinfo=timezone.utc),
+                ],
+                type=pa.timestamp("us", tz="UTC"),
+            )
+        ],
+        names=["ts_field"],
+    )
+
+    # table schema expects timestamp without timezone
+    table_schema = Schema(NestedField(1, "ts_field", TimestampType(), required=False))
+
+    # allow_timestamp_tz_mismatch=True enables reading timestamptz as timestamp
+    actual_result = _to_requested_schema(
+        table_schema, file_schema, batch, downcast_ns_timestamp_to_us=True, allow_timestamp_tz_mismatch=True
+    )
+    expected = pa.record_batch(
+        [
+            pa.array(
+                [
+                    datetime(2025, 8, 14, 12, 0, 0),
+                    datetime(2025, 8, 14, 13, 0, 0),
+                ],
+                type=pa.timestamp("us"),
+            )
+        ],
+        names=["ts_field"],
+    )
+
+    # expect actual_result to have no timezone
+    assert expected.equals(actual_result)
+
+
+def test__to_requested_schema_timestamptz_to_timestamp_write_rejects() -> None:
+    """Test that the write path (default) rejects timestamptz to timestamp casting.
+
+    This ensures we enforce the Iceberg spec distinction between timestamp and timestamptz on writes,
+    while the read path can be more permissive (like Spark) via allow_timestamp_tz_mismatch=True.
+    """
+    # file is written with timestamp with timezone
+    file_schema = Schema(NestedField(1, "ts_field", TimestamptzType(), required=False))
+    batch = pa.record_batch(
+        [
+            pa.array(
+                [
+                    datetime(2025, 8, 14, 12, 0, 0, tzinfo=timezone.utc),
+                    datetime(2025, 8, 14, 13, 0, 0, tzinfo=timezone.utc),
+                ],
+                type=pa.timestamp("us", tz="UTC"),
+            )
+        ],
+        names=["ts_field"],
+    )
+
+    # table schema expects timestamp without timezone
+    table_schema = Schema(NestedField(1, "ts_field", TimestampType(), required=False))
+
+    # allow_timestamp_tz_mismatch=False (default, used in write path) should raise
+    with pytest.raises(ValueError, match="Unsupported schema projection"):
+        _to_requested_schema(
+            table_schema, file_schema, batch, downcast_ns_timestamp_to_us=True, allow_timestamp_tz_mismatch=False
+        )
+
+
+def test_write_file_rejects_timestamptz_to_timestamp(tmp_path: Path) -> None:
+    """Test that write_file rejects writing timestamptz data to a timestamp column."""
+    from pyiceberg.table import WriteTask
+
+    # Table expects timestamp (no tz), but data has timestamptz
+    table_schema = Schema(NestedField(1, "ts_field", TimestampType(), required=False))
+    task_schema = Schema(NestedField(1, "ts_field", TimestamptzType(), required=False))
+
+    arrow_data = pa.table({"ts_field": [datetime(2025, 8, 14, 12, 0, 0, tzinfo=timezone.utc)]})
+
+    table_metadata = TableMetadataV2(
+        location=f"file://{tmp_path}",
+        last_column_id=1,
+        format_version=2,
+        schemas=[table_schema],
+        partition_specs=[PartitionSpec()],
+    )
+
+    task = WriteTask(
+        write_uuid=uuid.uuid4(),
+        task_id=0,
+        record_batches=arrow_data.to_batches(),
+        schema=task_schema,
+    )
+
+    with pytest.raises(ValueError, match="Unsupported schema projection"):
+        list(write_file(io=PyArrowFileIO(), table_metadata=table_metadata, tasks=iter([task])))
+
+
 def test__to_requested_schema_timestamps(
     arrow_table_schema_with_all_timestamp_precisions: pa.Schema,
     arrow_table_with_all_timestamp_precisions: pa.Table,
@@ -2826,8 +2962,41 @@ def test__to_requested_schema_timestamps_without_downcast_raises_exception(
     assert "Unsupported schema projection from timestamp[ns] to timestamp[us]" in str(exc_info.value)
 
 
+@pytest.mark.parametrize(
+    "arrow_type,iceberg_type,expected_arrow_type",
+    [
+        (pa.uint8(), IntegerType(), pa.int32()),
+        (pa.int8(), IntegerType(), pa.int32()),
+        (pa.int16(), IntegerType(), pa.int32()),
+        (pa.uint16(), IntegerType(), pa.int32()),
+        (pa.uint32(), LongType(), pa.int64()),
+        (pa.int32(), LongType(), pa.int64()),
+    ],
+)
+def test__to_requested_schema_integer_promotion(
+    arrow_type: pa.DataType,
+    iceberg_type: PrimitiveType,
+    expected_arrow_type: pa.DataType,
+) -> None:
+    """Test that smaller integer types are cast to target Iceberg type during write."""
+    requested_schema = Schema(NestedField(1, "col", iceberg_type, required=False))
+    file_schema = requested_schema
+
+    arrow_schema = pa.schema([pa.field("col", arrow_type)])
+    data = pa.array([1, 2, 3, None], type=arrow_type)
+    batch = pa.RecordBatch.from_arrays([data], schema=arrow_schema)
+
+    result = _to_requested_schema(
+        requested_schema, file_schema, batch, downcast_ns_timestamp_to_us=False, include_field_ids=False
+    )
+
+    assert result.schema[0].type == expected_arrow_type
+    assert result.column(0).to_pylist() == [1, 2, 3, None]
+
+
 def test_pyarrow_file_io_fs_by_scheme_cache() -> None:
-    # It's better to set up multi-region minio servers for an integration test once `endpoint_url` argument becomes available for `resolve_s3_region`
+    # It's better to set up multi-region minio servers for an integration test once `endpoint_url` argument
+    # becomes available for `resolve_s3_region`
     # Refer to: https://github.com/apache/arrow/issues/43713
 
     pyarrow_file_io = PyArrowFileIO()
@@ -2861,7 +3030,8 @@ def test_pyarrow_file_io_fs_by_scheme_cache() -> None:
 
 
 def test_pyarrow_io_new_input_multi_region(caplog: Any) -> None:
-    # It's better to set up multi-region minio servers for an integration test once `endpoint_url` argument becomes available for `resolve_s3_region`
+    # It's better to set up multi-region minio servers for an integration test once `endpoint_url` argument
+    # becomes available for `resolve_s3_region`
     # Refer to: https://github.com/apache/arrow/issues/43713
     user_provided_region = "ap-southeast-1"
     bucket_regions = [
@@ -3072,7 +3242,8 @@ def test_iceberg_read_orc(tmp_path: Path) -> None:
         partition_specs=[PartitionSpec()],
         properties={
             "write.format.default": "parquet",  # This doesn't matter for reading
-            "schema.name-mapping.default": '[{"field-id": 1, "names": ["id"]}, {"field-id": 2, "names": ["name"]}]',  # Add name mapping for ORC files without field IDs
+            # Add name mapping for ORC files without field IDs
+            "schema.name-mapping.default": ('[{"field-id": 1, "names": ["id"]}, {"field-id": 2, "names": ["name"]}]'),
         },
     )
     io = PyArrowFileIO()
@@ -3172,7 +3343,10 @@ def test_orc_row_filtering_predicate_pushdown(tmp_path: Path) -> None:
         schemas=[schema],
         partition_specs=[PartitionSpec()],
         properties={
-            "schema.name-mapping.default": '[{"field-id": 1, "names": ["id"]}, {"field-id": 2, "names": ["name"]}, {"field-id": 3, "names": ["age"]}, {"field-id": 4, "names": ["active"]}]',
+            "schema.name-mapping.default": (
+                '[{"field-id": 1, "names": ["id"]}, {"field-id": 2, "names": ["name"]}, '
+                '{"field-id": 3, "names": ["age"]}, {"field-id": 4, "names": ["active"]}]'
+            ),
         },
     )
     io = PyArrowFileIO()
@@ -4452,7 +4626,8 @@ def test_orc_stripe_size_batch_size_compression_interaction(tmp_path: Path) -> N
         # Assert batching behavior
         assert len(batches) > 0, f"Should have at least one batch for {description}"
         assert len(batches) == actual_stripes, (
-            f"Number of batches should match number of stripes for {description}: {len(batches)} batches vs {actual_stripes} stripes"
+            f"Number of batches should match number of stripes for {description}: "
+            f"{len(batches)} batches vs {actual_stripes} stripes"
         )
 
         # Assert data integrity
@@ -4522,7 +4697,10 @@ def test_orc_near_perfect_stripe_size_mapping(tmp_path: Path) -> None:
         {
             "id": pa.array(
                 [
-                    f"very_long_string_value_{i:06d}_with_lots_of_padding_to_make_it_harder_to_compress_{i * 7919 % 100000:05d}_more_padding_{i * 7919 % 100000:05d}"
+                    (
+                        f"very_long_string_value_{i:06d}_with_lots_of_padding_to_make_it_harder_to_compress_"
+                        f"{i * 7919 % 100000:05d}_more_padding_{i * 7919 % 100000:05d}"
+                    )
                     for i in range(1, 50001)
                 ]
             )  # 50K rows
@@ -4597,7 +4775,8 @@ def test_orc_near_perfect_stripe_size_mapping(tmp_path: Path) -> None:
         # Assert batching behavior
         assert len(batches) > 0, f"Should have at least one batch for stripe_size={stripe_size}"
         assert len(batches) == actual_stripes, (
-            f"Number of batches should match number of stripes for stripe_size={stripe_size}: {len(batches)} batches vs {actual_stripes} stripes"
+            f"Number of batches should match number of stripes for stripe_size={stripe_size}: "
+            f"{len(batches)} batches vs {actual_stripes} stripes"
         )
 
         # Assert data integrity

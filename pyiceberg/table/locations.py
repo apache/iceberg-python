@@ -172,14 +172,18 @@ def _import_location_provider(
             from pyiceberg.table import TableProperties
 
             raise ValueError(
-                f"{TableProperties.WRITE_PY_LOCATION_PROVIDER_IMPL} should be full path (module.CustomLocationProvider), got: {location_provider_impl}"
+                f"{TableProperties.WRITE_PY_LOCATION_PROVIDER_IMPL} should be full path "
+                f"(module.CustomLocationProvider), got: {location_provider_impl}"
             )
         module_name, class_name = ".".join(path_parts[:-1]), path_parts[-1]
         module = importlib.import_module(module_name)
         class_ = getattr(module, class_name)
         return class_(table_location, table_properties)
-    except ModuleNotFoundError as exc:
-        logger.warning(f"Could not initialize LocationProvider: {location_provider_impl}", exc_info=exc)
+    except ModuleNotFoundError:
+        logger.warning(
+            f"Could not initialize LocationProvider: {location_provider_impl}",
+            exc_info=logger.isEnabledFor(logging.DEBUG),
+        )
         return None
 
 

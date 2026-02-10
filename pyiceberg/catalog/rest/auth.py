@@ -31,6 +31,8 @@ from requests.auth import AuthBase
 from pyiceberg.catalog.rest.response import TokenResponse, _handle_non_200_response
 from pyiceberg.exceptions import OAuthError
 
+AUTH_MANAGER = "auth.manager"
+
 COLON = ":"
 logger = logging.getLogger(__name__)
 
@@ -179,7 +181,8 @@ class OAuth2TokenProvider:
         expires_in = result.get("expires_in", self.expires_in)
         if expires_in is None:
             raise ValueError(
-                "The expiration time of the Token must be provided by the Server in the Access Token Response in `expires_in` field, or by the PyIceberg Client."
+                "The expiration time of the Token must be provided by the Server in the Access Token Response "
+                "in `expires_in` field, or by the PyIceberg Client."
             )
         self._expires_at = time.monotonic() + expires_in - self.refresh_margin
 
@@ -246,9 +249,72 @@ class GoogleAuthManager(AuthManager):
         return f"Bearer {self.credentials.token}"
 
 
-class AuthManagerAdapter(AuthBase):
-    """A `requests.auth.AuthBase` adapter that integrates an `AuthManager` into a `requests.Session` to automatically attach the appropriate Authorization header to every request.
+class EntraAuthManager(AuthManager):
+    """Auth Manager implementation that supports Microsoft Entra ID (Azure AD) authentication.
 
+    This manager uses the Azure Identity library's DefaultAzureCredential which automatically
+    tries multiple authentication methods including environment variables, managed identity,
+    and Azure CLI.
+
+    See https://learn.microsoft.com/en-us/azure/developer/python/sdk/authentication/credential-chains
+    for more details on DefaultAzureCredential.
+    """
+
+    DEFAULT_SCOPE = "https://storage.azure.com/.default"
+
+    def __init__(
+        self,
+        scopes: list[str] | None = None,
+        **credential_kwargs: Any,
+    ):
+        """
+        Initialize EntraAuthManager.
+
+        Args:
+            scopes: List of OAuth2 scopes. Defaults to ["https://storage.azure.com/.default"].
+            **credential_kwargs: Arguments passed to DefaultAzureCredential.
+                Supported authentication methods:
+                - Environment Variables: Set AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET
+                - Managed Identity: Works automatically on Azure; for user-assigned, pass managed_identity_client_id
+                - Azure CLI: Works automatically if logged in via `az login`
+                - Workload Identity: Works automatically in AKS with workload identity configured  # codespell:ignore aks
+        """
+        try:
+            from azure.identity import DefaultAzureCredential
+        except ImportError as e:
+            raise ImportError("Azure Identity library not found. Please install with: pip install pyiceberg[entra-auth]") from e
+
+        self._scopes = scopes or [self.DEFAULT_SCOPE]
+        self._lock = threading.Lock()
+        self._token: str | None = None
+        self._expires_at: float = 0
+        self._credential = DefaultAzureCredential(**credential_kwargs)
+
+    def _refresh_token(self) -> None:
+        """Refresh the access token from Azure."""
+        token = self._credential.get_token(*self._scopes)
+        self._token = token.token
+        # expires_on is a Unix timestamp; add a 60-second margin for safety
+        self._expires_at = token.expires_on - 60
+
+    def _get_token(self) -> str:
+        """Get a valid access token, refreshing if necessary."""
+        with self._lock:
+            if not self._token or time.time() >= self._expires_at:
+                self._refresh_token()
+            if self._token is None:
+                raise ValueError("Failed to obtain Entra access token")
+            return self._token
+
+    def auth_header(self) -> str:
+        """Return the Authorization header value with a valid Bearer token."""
+        return f"Bearer {self._get_token()}"
+
+
+class AuthManagerAdapter(AuthBase):
+    """A `requests.auth.AuthBase` adapter for integrating an `AuthManager` into a `requests.Session`.
+
+    This adapter automatically attaches the appropriate Authorization header to every request.
     This adapter is useful when working with `requests.Session.auth`
     and allows reuse of authentication strategies defined by `AuthManager`.
     This AuthManagerAdapter is only intended to be used against the REST Catalog
@@ -326,3 +392,4 @@ AuthManagerFactory.register("basic", BasicAuthManager)
 AuthManagerFactory.register("legacyoauth2", LegacyOAuth2AuthManager)
 AuthManagerFactory.register("oauth2", OAuth2AuthManager)
 AuthManagerFactory.register("google", GoogleAuthManager)
+AuthManagerFactory.register("entra", EntraAuthManager)

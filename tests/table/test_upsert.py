@@ -27,11 +27,11 @@ from pyiceberg.expressions import AlwaysTrue, And, EqualTo, Reference
 from pyiceberg.expressions.literals import LongLiteral
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema
-from pyiceberg.table import UpsertResult
+from pyiceberg.table import Table, UpsertResult
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.upsert_util import create_match_filter
 from pyiceberg.types import IntegerType, NestedField, StringType, StructType
-from tests.catalog.test_base import InMemoryCatalog, Table
+from tests.catalog.test_base import InMemoryCatalog
 
 
 @pytest.fixture
@@ -120,7 +120,10 @@ def assert_upsert_result(res: UpsertResult, expected_updated: int, expected_inse
 
 
 @pytest.mark.parametrize(
-    "join_cols, src_start_row, src_end_row, target_start_row, target_end_row, when_matched_update_all, when_not_matched_insert_all, expected_updated, expected_inserted",
+    (
+        "join_cols, src_start_row, src_end_row, target_start_row, target_end_row, "
+        "when_matched_update_all, when_not_matched_insert_all, expected_updated, expected_inserted"
+    ),
     [
         (["order_id"], 1, 2, 2, 3, True, True, 1, 1),  # single row
         (["order_id"], 5001, 15000, 1, 10000, True, True, 5000, 5000),  # 10k rows
@@ -834,3 +837,54 @@ def test_stage_only_upsert(catalog: Catalog) -> None:
     assert operations == ["append", "append", "append"]
     # both subsequent parent id should be the first snapshot id
     assert parent_snapshot_id == [None, current_snapshot, current_snapshot]
+
+
+def test_upsert_snapshot_properties(catalog: Catalog) -> None:
+    """Test that snapshot_properties are applied to snapshots created by upsert."""
+    identifier = "default.test_upsert_snapshot_properties"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "city", StringType(), required=True),
+        NestedField(2, "population", IntegerType(), required=True),
+        identifier_field_ids=[1],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+    arrow_schema = pa.schema(
+        [
+            pa.field("city", pa.string(), nullable=False),
+            pa.field("population", pa.int32(), nullable=False),
+        ]
+    )
+
+    # Initial data
+    df = pa.Table.from_pylist(
+        [{"city": "Amsterdam", "population": 921402}],
+        schema=arrow_schema,
+    )
+    tbl.append(df)
+    initial_snapshot_count = len(list(tbl.snapshots()))
+
+    # Upsert with snapshot_properties (both update and insert)
+    df = pa.Table.from_pylist(
+        [
+            {"city": "Amsterdam", "population": 950000},  # Update
+            {"city": "Berlin", "population": 3432000},  # Insert
+        ],
+        schema=arrow_schema,
+    )
+    result = tbl.upsert(df, snapshot_properties={"test_prop": "test_value"})
+
+    assert result.rows_updated == 1
+    assert result.rows_inserted == 1
+
+    # Verify properties are on the snapshots created by upsert
+    snapshots = list(tbl.snapshots())
+    # Upsert should have created additional snapshots (overwrite + append)
+    assert len(snapshots) > initial_snapshot_count
+
+    # Check that all new snapshots have the snapshot_properties
+    for snapshot in snapshots[initial_snapshot_count:]:
+        assert snapshot.summary is not None
+        assert snapshot.summary.additional_properties.get("test_prop") == "test_value"

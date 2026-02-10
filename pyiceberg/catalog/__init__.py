@@ -285,8 +285,8 @@ def delete_files(io: FileIO, files_to_delete: set[str], file_type: str) -> None:
     for file in files_to_delete:
         try:
             io.delete(file)
-        except OSError as exc:
-            logger.warning(msg=f"Failed to delete {file_type} file {file}", exc_info=exc)
+        except OSError:
+            logger.warning(f"Failed to delete {file_type} file {file}", exc_info=logger.isEnabledFor(logging.DEBUG))
 
 
 def delete_data_files(io: FileIO, manifests_to_delete: list[ManifestFile]) -> None:
@@ -305,8 +305,8 @@ def delete_data_files(io: FileIO, manifests_to_delete: list[ManifestFile]) -> No
             if not deleted_files.get(path, False):
                 try:
                     io.delete(path)
-                except OSError as exc:
-                    logger.warning(msg=f"Failed to delete data file {path}", exc_info=exc)
+                except OSError:
+                    logger.warning(f"Failed to delete data file {path}", exc_info=logger.isEnabledFor(logging.DEBUG))
                 deleted_files[path] = True
 
 
@@ -319,8 +319,8 @@ def _import_catalog(name: str, catalog_impl: str, properties: Properties) -> Cat
         module = importlib.import_module(module_name)
         class_ = getattr(module, class_name)
         return class_(name, **properties)
-    except ModuleNotFoundError as exc:
-        logger.warning(f"Could not initialize Catalog: {catalog_impl}", exc_info=exc)
+    except ModuleNotFoundError:
+        logger.warning(f"Could not initialize Catalog: {catalog_impl}", exc_info=logger.isEnabledFor(logging.DEBUG))
         return None
 
 
@@ -468,6 +468,17 @@ class Catalog(ABC):
 
         Returns:
             bool: True if the view exists, False otherwise.
+        """
+
+    @abstractmethod
+    def namespace_exists(self, namespace: str | Identifier) -> bool:
+        """Check if a namespace exists.
+
+        Args:
+            namespace (str | Identifier): Namespace identifier.
+
+        Returns:
+            bool: True if the namespace exists, False otherwise.
         """
 
     @abstractmethod
@@ -722,6 +733,10 @@ class Catalog(ABC):
 
         return ".".join(segment.strip() for segment in tuple_identifier)
 
+    def supports_server_side_planning(self) -> bool:
+        """Check if the catalog supports server-side scan planning."""
+        return False
+
     @staticmethod
     def identifier_to_database(
         identifier: str | Identifier, err: type[ValueError] | type[NoSuchNamespaceError] = ValueError
@@ -839,6 +854,21 @@ class MetastoreCatalog(Catalog, ABC):
             self.load_table(identifier)
             return True
         except NoSuchTableError:
+            return False
+
+    def namespace_exists(self, namespace: str | Identifier) -> bool:
+        """Check if a namespace exists.
+
+        Args:
+            namespace (str | Identifier): Namespace identifier.
+
+        Returns:
+            bool: True if the namespace exists, False otherwise.
+        """
+        try:
+            self.load_namespace_properties(namespace)
+            return True
+        except NoSuchNamespaceError:
             return False
 
     def purge_table(self, identifier: str | Identifier) -> None:

@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=broad-except,redefined-builtin,redefined-outer-name
+import logging
 from collections.abc import Callable
 from functools import wraps
 from typing import (
@@ -55,6 +56,13 @@ def catch_exception() -> Callable:  # type: ignore
 @click.option("--catalog")
 @click.option("--verbose", type=click.BOOL)
 @click.option("--output", type=click.Choice(["text", "json"]), default="text")
+@click.option(
+    "--log-level",
+    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], case_sensitive=False),
+    default="WARNING",
+    envvar="PYICEBERG_LOG_LEVEL",
+    help="Set the logging level",
+)
 @click.option("--ugi")
 @click.option("--uri")
 @click.option("--credential")
@@ -64,10 +72,16 @@ def run(
     catalog: str | None,
     verbose: bool,
     output: str,
+    log_level: str,
     ugi: str | None,
     uri: str | None,
     credential: str | None,
 ) -> None:
+    logging.basicConfig(
+        level=getattr(logging, log_level.upper()),
+        format="%(asctime)s:%(levelname)s:%(name)s:%(message)s",
+    )
+
     properties = {}
     if ugi:
         properties["ugi"] = ugi

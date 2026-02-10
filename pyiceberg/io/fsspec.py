@@ -37,11 +37,13 @@ from fsspec.implementations.local import LocalFileSystem
 from requests import HTTPError
 
 from pyiceberg.catalog import TOKEN, URI
+from pyiceberg.catalog.rest.auth import AUTH_MANAGER
 from pyiceberg.exceptions import SignError
 from pyiceberg.io import (
     ADLS_ACCOUNT_HOST,
     ADLS_ACCOUNT_KEY,
     ADLS_ACCOUNT_NAME,
+    ADLS_ANON,
     ADLS_CLIENT_ID,
     ADLS_CLIENT_SECRET,
     ADLS_CONNECTION_STRING,
@@ -50,6 +52,7 @@ from pyiceberg.io import (
     ADLS_TENANT_ID,
     ADLS_TOKEN,
     AWS_ACCESS_KEY_ID,
+    AWS_PROFILE_NAME,
     AWS_REGION,
     AWS_SECRET_ACCESS_KEY,
     AWS_SESSION_TOKEN,
@@ -70,6 +73,7 @@ from pyiceberg.io import (
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
     S3_FORCE_VIRTUAL_ADDRESSING,
+    S3_PROFILE_NAME,
     S3_PROXY_URI,
     S3_REGION,
     S3_REQUEST_TIMEOUT,
@@ -121,9 +125,17 @@ class S3V4RestSigner(S3RequestSigner):
         signer_url = self.properties.get(S3_SIGNER_URI, self.properties[URI]).rstrip("/")  # type: ignore
         signer_endpoint = self.properties.get(S3_SIGNER_ENDPOINT, S3_SIGNER_ENDPOINT_DEFAULT)
 
-        signer_headers = {}
-        if token := self.properties.get(TOKEN):
-            signer_headers = {"Authorization": f"Bearer {token}"}
+        signer_headers: dict[str, str] = {}
+
+        auth_header: str | None = None
+        if auth_manager := self.properties.get(AUTH_MANAGER):
+            auth_header = auth_manager.auth_header()
+        elif token := self.properties.get(TOKEN):
+            auth_header = f"Bearer {token}"
+
+        if auth_header:
+            signer_headers["Authorization"] = auth_header
+
         signer_headers.update(get_header_properties(self.properties))
 
         signer_body = {
@@ -196,7 +208,16 @@ def _s3(properties: Properties) -> AbstractFileSystem:
     else:
         anon = False
 
-    fs = S3FileSystem(anon=anon, client_kwargs=client_kwargs, config_kwargs=config_kwargs)
+    s3_fs_kwargs = {
+        "anon": anon,
+        "client_kwargs": client_kwargs,
+        "config_kwargs": config_kwargs,
+    }
+
+    if profile_name := get_first_property_value(properties, S3_PROFILE_NAME, AWS_PROFILE_NAME):
+        s3_fs_kwargs["profile"] = profile_name
+
+    fs = S3FileSystem(**s3_fs_kwargs)
 
     for event_name, event_function in register_events.items():
         fs.s3.meta.events.unregister(event_name, unique_id=1925)
@@ -266,6 +287,7 @@ def _adls(properties: Properties) -> AbstractFileSystem:
         client_id=properties.get(ADLS_CLIENT_ID),
         client_secret=properties.get(ADLS_CLIENT_SECRET),
         account_host=properties.get(ADLS_ACCOUNT_HOST),
+        anon=properties.get(ADLS_ANON),
     )
 
 

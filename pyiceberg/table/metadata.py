@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import datetime
 import uuid
+from collections.abc import Iterable
 from copy import copy
 from typing import Annotated, Any, Literal
 
@@ -262,18 +263,23 @@ class TableMetadataCommonFields(IcebergBaseModel):
         """Return a dict the partition specs this table."""
         return {spec.spec_id: spec for spec in self.partition_specs}
 
-    def specs_struct(self) -> StructType:
-        """Produce a struct of all the combined PartitionSpecs.
+    def specs_struct(self, spec_ids: Iterable[int] | None = None) -> StructType:
+        """Produce a struct of the combined PartitionSpecs.
 
         The partition fields should be optional: Partition fields may be added later,
         in which case not all files would have the result field, and it may be null.
 
-        :return: A StructType that represents all the combined PartitionSpecs of the table
+        Args:
+            spec_ids: Optional iterable of spec IDs to include. When not provided,
+                all table specs are used.
+
+        :return: A StructType that represents the combined PartitionSpecs of the table
         """
         specs = self.specs()
+        selected_specs = specs.values() if spec_ids is None else [specs[spec_id] for spec_id in spec_ids if spec_id in specs]
 
         # Collect all the fields
-        struct_fields = {field.field_id: field for spec in specs.values() for field in spec.fields}
+        struct_fields = {field.field_id: field for spec in selected_specs for field in spec.fields}
 
         schema = self.schema()
 
@@ -311,6 +317,10 @@ class TableMetadataCommonFields(IcebergBaseModel):
 
     def next_sequence_number(self) -> int:
         return self.last_sequence_number + 1 if self.format_version > 1 else INITIAL_SEQUENCE_NUMBER
+
+    def sort_order(self) -> SortOrder:
+        """Get the current sort order for this table, or UNSORTED_SORT_ORDER if there is no sort order."""
+        return self.sort_order_by_id(self.default_sort_order_id) or UNSORTED_SORT_ORDER
 
     def sort_order_by_id(self, sort_order_id: int) -> SortOrder | None:
         """Get the sort order by sort_order_id."""
@@ -673,7 +683,8 @@ class TableMetadataUtil:
     def _construct_without_validation(table_metadata: TableMetadata) -> TableMetadata:
         """Construct table metadata from an existing table without performing validation.
 
-        This method is useful during a sequence of table updates when the model needs to be re-constructed but is not yet ready for validation.
+        This method is useful during a sequence of table updates when the model needs to be
+        re-constructed but is not yet ready for validation.
         """
         if table_metadata.format_version is None:
             raise ValidationError(f"Missing format-version in TableMetadata: {table_metadata}")

@@ -16,18 +16,14 @@
 # under the License.
 from __future__ import annotations
 
-import concurrent.futures
 import itertools
 import uuid
 from abc import abstractmethod
 from collections import defaultdict
 from collections.abc import Callable
-from concurrent.futures import Future
 from datetime import datetime
 from functools import cached_property
 from typing import TYPE_CHECKING, Generic
-
-from sortedcontainers import SortedList
 
 from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.expressions import (
@@ -64,6 +60,8 @@ from pyiceberg.table.snapshots import (
     Snapshot,
     SnapshotSummaryCollector,
     Summary,
+    ancestors_of,
+    latest_ancestor_before_timestamp,
     update_snapshot_summaries,
 )
 from pyiceberg.table.update import (
@@ -435,7 +433,8 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         def _copy_with_new_status(entry: ManifestEntry, status: ManifestEntryStatus) -> ManifestEntry:
             return ManifestEntry.from_args(
                 status=status,
-                # When a file is replaced or deleted from the dataset, its manifest entry fields store the snapshot ID in which the file was deleted and status 2 (deleted).
+                # When a file is replaced or deleted from the dataset, its manifest entry fields store the
+                # snapshot ID in which the file was deleted and status 2 (deleted).
                 snapshot_id=self.snapshot_id if status == ManifestEntryStatus.DELETED else entry.snapshot_id,
                 sequence_number=entry.sequence_number,
                 file_sequence_number=entry.file_sequence_number,
@@ -790,14 +789,7 @@ class _ManifestMergeManager(Generic[U]):
 
         executor = ExecutorFactory.get_or_create()
         futures = [executor.submit(merge_bin, b) for b in bins]
-
-        # for consistent ordering, we need to maintain future order
-        futures_index = {f: i for i, f in enumerate(futures)}
-        completed_futures: SortedList[Future[list[ManifestFile]]] = SortedList(iterable=[], key=lambda f: futures_index[f])
-        for future in concurrent.futures.as_completed(futures):
-            completed_futures.add(future)
-
-        bin_results: list[list[ManifestFile]] = [f.result() for f in completed_futures if f.result()]
+        bin_results: list[list[ManifestFile]] = [r for f in futures if (r := f.result())]
 
         return [manifest for bin_result in bin_results for manifest in bin_result]
 
@@ -843,6 +835,13 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         """Apply the pending changes and commit."""
         return self._updates, self._requirements
 
+    def _commit_if_ref_updates_exist(self) -> None:
+        """Stage any pending ref updates to the transaction state."""
+        if self._updates:
+            self._transaction._stage(*self._commit())
+            self._updates = ()
+            self._requirements = ()
+
     def _remove_ref_snapshot(self, ref_name: str) -> ManageSnapshots:
         """Remove a snapshot ref.
 
@@ -880,7 +879,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         update, requirement = self._transaction._set_ref_snapshot(
             snapshot_id=snapshot_id,
             ref_name=tag_name,
-            type="tag",
+            type=SnapshotRefType.TAG,
             max_ref_age_ms=max_ref_age_ms,
         )
         self._updates += update
@@ -921,7 +920,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         update, requirement = self._transaction._set_ref_snapshot(
             snapshot_id=snapshot_id,
             ref_name=branch_name,
-            type="branch",
+            type=SnapshotRefType.BRANCH,
             max_ref_age_ms=max_ref_age_ms,
             max_snapshot_age_ms=max_snapshot_age_ms,
             min_snapshots_to_keep=min_snapshots_to_keep,
@@ -940,6 +939,97 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             This for method chaining
         """
         return self._remove_ref_snapshot(ref_name=branch_name)
+
+    def set_current_snapshot(self, snapshot_id: int | None = None, ref_name: str | None = None) -> ManageSnapshots:
+        """Set the current snapshot to a specific snapshot ID or ref.
+
+        Args:
+            snapshot_id: The ID of the snapshot to set as current.
+            ref_name: The snapshot reference (branch or tag) to set as current.
+
+        Returns:
+            This for method chaining.
+
+        Raises:
+            ValueError: If neither or both arguments are provided, or if the snapshot/ref does not exist.
+        """
+        self._commit_if_ref_updates_exist()
+
+        if (snapshot_id is None) == (ref_name is None):
+            raise ValueError("Either snapshot_id or ref_name must be provided, not both")
+
+        target_snapshot_id: int
+        if snapshot_id is not None:
+            target_snapshot_id = snapshot_id
+        else:
+            if ref_name not in self._transaction.table_metadata.refs:
+                raise ValueError(f"Cannot find matching snapshot ID for ref: {ref_name}")
+            target_snapshot_id = self._transaction.table_metadata.refs[ref_name].snapshot_id
+
+        if self._transaction.table_metadata.snapshot_by_id(target_snapshot_id) is None:
+            raise ValueError(f"Cannot set current snapshot to unknown snapshot id: {target_snapshot_id}")
+
+        update, requirement = self._transaction._set_ref_snapshot(
+            snapshot_id=target_snapshot_id,
+            ref_name=MAIN_BRANCH,
+            type=SnapshotRefType.BRANCH,
+        )
+        self._transaction._stage(update, requirement)
+        return self
+
+    def rollback_to_snapshot(self, snapshot_id: int) -> ManageSnapshots:
+        """Rollback the table to the given snapshot id.
+
+        The snapshot needs to be an ancestor of the current table state.
+
+        Args:
+            snapshot_id (int): rollback to this snapshot_id that used to be current.
+
+        Returns:
+            This for method chaining
+
+        Raises:
+            ValueError: If the snapshot does not exist or is not an ancestor of the current table state.
+        """
+        if not self._transaction.table_metadata.snapshot_by_id(snapshot_id):
+            raise ValueError(f"Cannot roll back to unknown snapshot id: {snapshot_id}")
+
+        if not self._is_current_ancestor(snapshot_id):
+            raise ValueError(f"Cannot roll back to snapshot, not an ancestor of the current state: {snapshot_id}")
+
+        return self.set_current_snapshot(snapshot_id=snapshot_id)
+
+    def rollback_to_timestamp(self, timestamp_ms: int) -> ManageSnapshots:
+        """Rollback the table to the latest snapshot before the given timestamp.
+
+        Finds the latest ancestor snapshot whose timestamp is before the given timestamp and rolls back to it.
+
+        Args:
+            timestamp_ms: Rollback to the latest snapshot before this timestamp in milliseconds.
+
+        Returns:
+            This for method chaining
+
+        Raises:
+            ValueError: If no valid snapshot exists older than the given timestamp.
+        """
+        snapshot = latest_ancestor_before_timestamp(self._transaction.table_metadata, timestamp_ms)
+        if snapshot is None:
+            raise ValueError(f"Cannot roll back, no valid snapshot older than: {timestamp_ms}")
+
+        return self.set_current_snapshot(snapshot_id=snapshot.snapshot_id)
+
+    def _is_current_ancestor(self, snapshot_id: int) -> bool:
+        return snapshot_id in self._current_ancestors()
+
+    def _current_ancestors(self) -> set[int]:
+        return {
+            a.snapshot_id
+            for a in ancestors_of(
+                self._transaction.table_metadata.current_snapshot(),
+                self._transaction.table_metadata,
+            )
+        }
 
 
 class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):

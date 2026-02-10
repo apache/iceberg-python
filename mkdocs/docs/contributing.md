@@ -90,6 +90,23 @@ For full control over your environment, you can use uv commands directly. See th
 - Running commands with `uv run`
 - Lock file management with `uv.lock`
 
+### Lock File Management
+
+`uv.lock` is a cross-platform lockfile that contains exact information about the project's dependencies.
+See the [uv.lock documentation](https://docs.astral.sh/uv/guides/projects/#uvlock) for more details.
+
+When modifying dependencies in `pyproject.toml`, regenerate the lock file:
+
+```bash
+make uv-lock
+```
+
+Separately, to verify that the lock file is up to date without modifying it:
+
+```bash
+make uv-lock-check
+```
+
 ## Installation from source
 
 Clone the repository for local development:
@@ -118,7 +135,7 @@ make lint
 
 In addition to manually running `make lint`, you can install the pre-commit hooks in your local repo with `prek install`. By doing this, linting is run automatically every time you make a commit.
 
-You can bump the integrations to the latest version using `prek auto-update`. This will check if there is a newer version of `{black,mypy,isort,...}` and update the yaml.
+You can bump the integrations to the latest version using `prek auto-update`. This will check if there is a newer version of `{ruff,mypy,...}` and update the yaml.
 
 ## Cleaning
 
@@ -211,6 +228,41 @@ export PYICEBERG_CATALOG__TEST_CATALOG__ACCESS_KEY_ID=username
 export PYICEBERG_CATALOG__TEST_CATALOG__SECRET_ACCESS_KEY=password
 ```
 
+## Notebooks for Experimentation
+
+PyIceberg provides Jupyter notebooks for quick experimentation and learning. Two Make commands are available depending on your needs:
+
+### PyIceberg Examples (`make notebook`)
+
+For basic PyIceberg experimentation without additional infrastructure:
+
+```bash
+make notebook
+```
+
+This will install notebook dependencies and launch Jupyter Lab in the `notebooks/` directory.
+
+**PyIceberg Example Notebook** (`notebooks/pyiceberg_example.ipynb`) is based on the [Getting Started with PyIceberg](https://py.iceberg.apache.org/#getting-started-with-pyiceberg) page. It demonstrates basic PyIceberg operations like creating catalogs, schemas, and querying tables without requiring any external services.
+
+### Spark Integration Examples (`make notebook-infra`)
+
+For working with PyIceberg alongside Spark, use the infrastructure-enabled notebook environment:
+
+```bash
+make notebook-infra
+```
+
+This command spins up the full integration test infrastructure via Docker Compose, including:
+
+- **Spark** (with Spark Connect)
+- **Iceberg REST Catalog** (using the [`apache/iceberg-rest-fixture`](https://hub.docker.com/r/apache/iceberg-rest-fixture) image)
+- **Hive Metastore**
+- **S3-compatible object storage** (Minio)
+
+**Spark Example Notebook** (`notebooks/spark_integration_example.ipynb`) is based on the [Spark Getting Started](https://iceberg.apache.org/docs/nightly/spark-getting-started/) guide. This notebook demonstrates how to work with PyIceberg alongside Spark, leveraging the Docker-based testing setup for a complete local development environment.
+
+After running `make notebook-infra`, open `spark_integration_example.ipynb` in the Jupyter Lab interface to explore Spark integration capabilities.
+
 ## Code standards
 
 Below are the formalized conventions that we adhere to in the PyIceberg project. The goal of this is to have a common agreement on how to evolve the codebase, but also using it as guidelines for newcomers to the project.
@@ -257,6 +309,27 @@ Which will warn:
 ```text
 Deprecated in 0.1.0, will be removed in 0.2.0. The old_property is deprecated. Please use the something_else property instead.
 ```
+
+### Logging
+
+PyIceberg uses Python's standard logging module. You can control the logging level using either:
+
+**CLI option:**
+
+```bash
+pyiceberg --log-level DEBUG describe my_table
+```
+
+**Environment variable:**
+
+```bash
+export PYICEBERG_LOG_LEVEL=DEBUG
+pyiceberg describe my_table
+```
+
+Valid log levels are: `DEBUG`, `INFO`, `WARNING` (default), `ERROR`, `CRITICAL`.
+
+Debug logging is particularly useful for troubleshooting issues with FileIO implementations, catalog connections, and other integration points.
 
 ### Type annotations
 

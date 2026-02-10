@@ -81,7 +81,7 @@ Iceberg tables support table properties to configure table behavior.
 <!-- prettier-ignore-start -->
 
 !!! note "Fast append"
-    Unlike Java implementation, PyIceberg default to the [fast append](api.md#write-support) and thus `commit.manifest-merge.enabled` is set to `False` by default.
+    Unlike Java implementation, PyIceberg default to the [fast append](api.md#write-to-a-table) and thus `commit.manifest-merge.enabled` is set to `False` by default.
 
 <!-- prettier-ignore-end -->
 
@@ -115,6 +115,7 @@ For the FileIO there are several configuration options available:
 | s3.access-key-id            | admin                      | Configure the static access key id used to access the FileIO.                                                                                                                                                                                               |
 | s3.secret-access-key        | password                   | Configure the static secret access key used to access the FileIO.                                                                                                                                                                                           |
 | s3.session-token            | AQoDYXdzEJr...             | Configure the static session token used to access the FileIO.                                                                                                                                                                                               |
+| s3.profile-name             | default                    | Configure the AWS profile used to access the S3 FileIO.                                                                                                                                                                                                    |
 | s3.role-session-name        | session                    | An optional identifier for the assumed role session.                                                                                                                                                                                                        |
 | s3.role-arn                 | arn:aws:...                | AWS Role ARN. If provided instead of access_key and secret_key, temporary credentials will be fetched by assuming this role.                                                                                                                                |
 | s3.signer                   | bearer                     | Configure the signature version of the FileIO.                                                                                                                                                                                                              |
@@ -394,6 +395,7 @@ The RESTCatalog supports pluggable authentication via the `auth` configuration b
 - `oauth2`: OAuth2 client credentials flow.
 - `custom`: Custom authentication manager (requires `auth.impl`).
 - `google`: Google Authentication support
+- `entra`: Microsoft Entra ID (Azure AD) authentication support
 
 ###### Configuration Properties
 
@@ -421,6 +423,7 @@ catalog:
 | `auth.oauth2`    | If type is `oauth2` | Block containing OAuth2 configuration (see below).                                 |
 | `auth.custom`    | If type is `custom` | Block containing configuration for the custom AuthManager.                          |
 | `auth.google`    | If type is `google` | Block containing `credentials_path` to a service account file (if using). Will default to using Application Default Credentials. |
+| `auth.entra`     | If type is `entra` | Block containing Entra ID configuration. Will default to using DefaultAzureCredential. |
 
 ###### Examples
 
@@ -577,22 +580,38 @@ catalog:
 
 See [OneLake table APIs for Iceberg](https://aka.ms/onelakeircdocs) for detailed documentation.
 
+Using Entra ID authentication (recommended):
+
+```yaml
+catalog:
+  onelake_catalog:
+    type: rest
+    uri: https://onelake.table.fabric.microsoft.com/iceberg
+    warehouse: <fabric_workspace_id>/<fabric_data_item_id>
+    auth:
+      type: entra
+    adls.account-name: onelake
+    adls.account-host: onelake.blob.fabric.microsoft.com
+```
+
+Using static token:
+
 ```yaml
 catalog:
   onelake_catalog:
     type: rest
     uri: https://onelake.table.fabric.microsoft.com/iceberg
     warehouse: <fabric_workspace_id>/<fabric_data_item_id> # Example : DB0CE1EE-B014-47D3-8F0C-9D64C39C0FC2/F470A1D2-6D6D-4C9D-8796-46286C80B7C0
-    token: <token>,
-    adls.account-name: onelake,
-    adls.account-host: onelake.blob.fabric.microsoft.com,
+    token: <token>
+    adls.account-name: onelake
+    adls.account-host: onelake.blob.fabric.microsoft.com
     adls.credential: <credential>
 ```
 
 <!-- prettier-ignore-start -->
 
-!!! Note "OneLake Authentication Models"
-    For Authentication: You can use DefautlAzureCredential from `azure.identity` package or refer to other [authentication flows](https://learn.microsoft.com/en-us/entra/identity-platform/authentication-flows-app-scenarios) for detailed documentation.
+!!! Note "OneLake Authentication"
+    Use the `entra` auth type for Entra ID (Azure AD) authentication via [DefaultAzureCredential](https://learn.microsoft.com/en-us/azure/developer/python/sdk/authentication/credential-chains?tabs=dac#defaultazurecredential-overview), which supports environment variables, managed identity, Azure CLI, and more. Install with `pip install pyiceberg[entra-auth]`.
 <!-- prettier-ignore-end -->
 
 ### SQL Catalog
@@ -720,7 +739,7 @@ catalog:
 | glue.id                | 111111111111                           | Configure the 12-digit ID of the Glue Catalog                                   |
 | glue.skip-archive      | true                                   | Configure whether to skip the archival of older table versions. Default to true |
 | glue.endpoint          | <https://glue.us-east-1.amazonaws.com> | Configure an alternative endpoint of the Glue service for GlueCatalog to access |
-| glue.profile-name      | default                                | Configure the static profile used to access the Glue Catalog                    |
+| glue.profile-name      | default                                | Configure the AWS profile used to access the Glue Catalog                       |
 | glue.region            | us-east-1                              | Set the region of the Glue Catalog                                              |
 | glue.access-key-id     | admin                                  | Configure the static access key id used to access the Glue Catalog              |
 | glue.secret-access-key | password                               | Configure the static secret access key used to access the Glue Catalog          |
@@ -826,6 +845,7 @@ configures the AWS credentials for both Glue Catalog and S3 FileIO.
 | client.access-key-id     | admin          | Configure the static access key id used to access both the Glue/DynamoDB Catalog and the S3 FileIO     |
 | client.secret-access-key | password       | Configure the static secret access key used to access both the Glue/DynamoDB Catalog and the S3 FileIO |
 | client.session-token     | AQoDYXdzEJr... | Configure the static session token used to access both the Glue/DynamoDB Catalog and the S3 FileIO     |
+| client.profile-name      | default        | Configure the AWS profile used to access both the Glue/DynamoDB Catalog and the S3 FileIO           |
 | client.role-session-name      | session                    | An optional identifier for the assumed role session.                                                                                                                                                                                                      |
 | client.role-arn          | arn:aws:...                | AWS Role ARN. If provided instead of access_key and secret_key, temporary credentials will be fetched by assuming this role.                                                                                                                              |
 

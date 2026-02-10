@@ -21,8 +21,8 @@ from copy import copy
 from typing import Any
 
 import pytest
-from pydantic import ValidationError
-from sortedcontainers import SortedList
+from pydantic import BaseModel, ValidationError
+from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.exceptions import CommitFailedException
@@ -33,13 +33,6 @@ from pyiceberg.expressions import (
     In,
 )
 from pyiceberg.io import PY_IO_IMPL, load_file_io
-from pyiceberg.manifest import (
-    DataFile,
-    DataFileContent,
-    FileFormat,
-    ManifestEntry,
-    ManifestEntryStatus,
-)
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
@@ -47,9 +40,8 @@ from pyiceberg.table import (
     StaticTable,
     Table,
     TableIdentifier,
-    _match_deletes_to_data_file,
 )
-from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
+from pyiceberg.table.metadata import TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     MetadataLogEntry,
@@ -271,8 +263,8 @@ def test_history(table_v2: Table) -> None:
 @pytest.mark.parametrize(
     "table_fixture",
     [
-        pytest.param(pytest.lazy_fixture("table_v2"), id="parquet"),
-        pytest.param(pytest.lazy_fixture("table_v2_orc"), id="orc"),
+        pytest.param(lf("table_v2"), id="parquet"),
+        pytest.param(lf("table_v2_orc"), id="orc"),
     ],
 )
 def test_table_scan_select(table_fixture: Table) -> None:
@@ -375,115 +367,6 @@ def test_static_table_version_hint_same_as_table(
 def test_static_table_io_does_not_exist(metadata_location: str) -> None:
     with pytest.raises(ValueError):
         StaticTable.from_metadata(metadata_location, {PY_IO_IMPL: "pyiceberg.does.not.exist.FileIO"})
-
-
-def test_match_deletes_to_datafile() -> None:
-    data_entry = ManifestEntry.from_args(
-        status=ManifestEntryStatus.ADDED,
-        sequence_number=1,
-        data_file=DataFile.from_args(
-            content=DataFileContent.DATA,
-            file_path="s3://bucket/0000.parquet",
-            file_format=FileFormat.PARQUET,
-            partition={},
-            record_count=3,
-            file_size_in_bytes=3,
-        ),
-    )
-    delete_entry_1 = ManifestEntry.from_args(
-        status=ManifestEntryStatus.ADDED,
-        sequence_number=0,  # Older than the data
-        data_file=DataFile.from_args(
-            content=DataFileContent.POSITION_DELETES,
-            file_path="s3://bucket/0001-delete.parquet",
-            file_format=FileFormat.PARQUET,
-            partition={},
-            record_count=3,
-            file_size_in_bytes=3,
-        ),
-    )
-    delete_entry_2 = ManifestEntry.from_args(
-        status=ManifestEntryStatus.ADDED,
-        sequence_number=3,
-        data_file=DataFile.from_args(
-            content=DataFileContent.POSITION_DELETES,
-            file_path="s3://bucket/0002-delete.parquet",
-            file_format=FileFormat.PARQUET,
-            partition={},
-            record_count=3,
-            file_size_in_bytes=3,
-            # We don't really care about the tests here
-            value_counts={},
-            null_value_counts={},
-            nan_value_counts={},
-            lower_bounds={},
-            upper_bounds={},
-        ),
-    )
-    assert _match_deletes_to_data_file(
-        data_entry,
-        SortedList(iterable=[delete_entry_1, delete_entry_2], key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER),
-    ) == {
-        delete_entry_2.data_file,
-    }
-
-
-def test_match_deletes_to_datafile_duplicate_number() -> None:
-    data_entry = ManifestEntry.from_args(
-        status=ManifestEntryStatus.ADDED,
-        sequence_number=1,
-        data_file=DataFile.from_args(
-            content=DataFileContent.DATA,
-            file_path="s3://bucket/0000.parquet",
-            file_format=FileFormat.PARQUET,
-            partition={},
-            record_count=3,
-            file_size_in_bytes=3,
-        ),
-    )
-    delete_entry_1 = ManifestEntry.from_args(
-        status=ManifestEntryStatus.ADDED,
-        sequence_number=3,
-        data_file=DataFile.from_args(
-            content=DataFileContent.POSITION_DELETES,
-            file_path="s3://bucket/0001-delete.parquet",
-            file_format=FileFormat.PARQUET,
-            partition={},
-            record_count=3,
-            file_size_in_bytes=3,
-            # We don't really care about the tests here
-            value_counts={},
-            null_value_counts={},
-            nan_value_counts={},
-            lower_bounds={},
-            upper_bounds={},
-        ),
-    )
-    delete_entry_2 = ManifestEntry.from_args(
-        status=ManifestEntryStatus.ADDED,
-        sequence_number=3,
-        data_file=DataFile.from_args(
-            content=DataFileContent.POSITION_DELETES,
-            file_path="s3://bucket/0002-delete.parquet",
-            file_format=FileFormat.PARQUET,
-            partition={},
-            record_count=3,
-            file_size_in_bytes=3,
-            # We don't really care about the tests here
-            value_counts={},
-            null_value_counts={},
-            nan_value_counts={},
-            lower_bounds={},
-            upper_bounds={},
-        ),
-    )
-    assert _match_deletes_to_data_file(
-        data_entry,
-        SortedList(iterable=[delete_entry_1, delete_entry_2], key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER),
-    ) == {
-        delete_entry_1.data_file,
-        delete_entry_2.data_file,
-    }
 
 
 def test_serialize_set_properties_updates() -> None:
@@ -625,6 +508,215 @@ def test_add_nested_list_type_column(table_v2: Table) -> None:
         element_required=False,
     )
     assert new_schema.highest_field_id == 7
+
+
+def test_update_list_element_required(table_v2: Table) -> None:
+    """Test that update_column can change list element's required property."""
+    # Add a list column with optional elements
+    update = UpdateSchema(transaction=table_v2.transaction())
+    update.add_column(path="tags", field_type=ListType(element_id=1, element_type=StringType(), element_required=False))
+    schema_with_list = update._apply()
+
+    # Verify initial state
+    field = schema_with_list.find_field("tags")
+    assert isinstance(field.field_type, ListType)
+    assert field.field_type.element_required is False
+
+    # Update element to required
+    update2 = UpdateSchema(transaction=table_v2.transaction(), allow_incompatible_changes=True, schema=schema_with_list)
+    new_schema = update2.update_column(("tags", "element"), required=True)._apply()
+
+    # Verify the update
+    field = new_schema.find_field("tags")
+    assert isinstance(field.field_type, ListType)
+    assert field.field_type.element_required is True
+
+
+def test_update_map_value_required(table_v2: Table) -> None:
+    """Test that update_column can change map value's required property."""
+    # Add a map column with optional values
+    update = UpdateSchema(transaction=table_v2.transaction())
+    update.add_column(
+        path="metadata",
+        field_type=MapType(key_id=1, key_type=StringType(), value_id=2, value_type=IntegerType(), value_required=False),
+    )
+    schema_with_map = update._apply()
+
+    # Verify initial state
+    field = schema_with_map.find_field("metadata")
+    assert isinstance(field.field_type, MapType)
+    assert field.field_type.value_required is False
+
+    # Update value to required
+    update2 = UpdateSchema(transaction=table_v2.transaction(), allow_incompatible_changes=True, schema=schema_with_map)
+    new_schema = update2.update_column(("metadata", "value"), required=True)._apply()
+
+    # Verify the update
+    field = new_schema.find_field("metadata")
+    assert isinstance(field.field_type, MapType)
+    assert field.field_type.value_required is True
+
+
+def test_update_list_element_required_to_optional(table_v2: Table) -> None:
+    """Test that update_column can change list element from required to optional (safe direction)."""
+    # Add a list column with required elements
+    update = UpdateSchema(transaction=table_v2.transaction())
+    update.add_column(path="tags", field_type=ListType(element_id=1, element_type=StringType(), element_required=True))
+    schema_with_list = update._apply()
+
+    # Verify initial state
+    field = schema_with_list.find_field("tags")
+    assert isinstance(field.field_type, ListType)
+    assert field.field_type.element_required is True
+
+    # Update element to optional - should work without allow_incompatible_changes
+    update2 = UpdateSchema(transaction=table_v2.transaction(), schema=schema_with_list)
+    new_schema = update2.update_column(("tags", "element"), required=False)._apply()
+
+    # Verify the update
+    field = new_schema.find_field("tags")
+    assert isinstance(field.field_type, ListType)
+    assert field.field_type.element_required is False
+
+
+def test_update_list_element_required_fails_without_allow_incompatible(table_v2: Table) -> None:
+    """Test that optional -> required fails without allow_incompatible_changes."""
+    # Add a list column with optional elements
+    update = UpdateSchema(transaction=table_v2.transaction())
+    update.add_column(path="tags", field_type=ListType(element_id=1, element_type=StringType(), element_required=False))
+    schema_with_list = update._apply()
+
+    # Try to update element to required without allow_incompatible_changes - should fail
+    update2 = UpdateSchema(transaction=table_v2.transaction(), schema=schema_with_list)
+    with pytest.raises(ValueError, match="Cannot change column nullability"):
+        update2.update_column(("tags", "element"), required=True)._apply()
+
+
+def test_update_map_value_required_fails_without_allow_incompatible(table_v2: Table) -> None:
+    """Test that optional -> required for map value fails without allow_incompatible_changes."""
+    # Add a map column with optional values
+    update = UpdateSchema(transaction=table_v2.transaction())
+    update.add_column(
+        path="metadata",
+        field_type=MapType(key_id=1, key_type=StringType(), value_id=2, value_type=IntegerType(), value_required=False),
+    )
+    schema_with_map = update._apply()
+
+    # Try to update value to required without allow_incompatible_changes - should fail
+    update2 = UpdateSchema(transaction=table_v2.transaction(), schema=schema_with_map)
+    with pytest.raises(ValueError, match="Cannot change column nullability"):
+        update2.update_column(("metadata", "value"), required=True)._apply()
+
+
+def test_update_map_key_fails(table_v2: Table) -> None:
+    """Test that updating map keys is not allowed."""
+    # Add a map column
+    update = UpdateSchema(transaction=table_v2.transaction())
+    update.add_column(
+        path="metadata",
+        field_type=MapType(key_id=1, key_type=StringType(), value_id=2, value_type=IntegerType(), value_required=False),
+    )
+    schema_with_map = update._apply()
+
+    # Try to update the key - should fail even with allow_incompatible_changes
+    update2 = UpdateSchema(transaction=table_v2.transaction(), allow_incompatible_changes=True, schema=schema_with_map)
+    with pytest.raises(ValueError, match="Cannot update map keys"):
+        update2.update_column(("metadata", "key"), required=False)._apply()
+
+
+def test_update_map_value_required_to_optional(table_v2: Table) -> None:
+    """Test that update_column can change map value from required to optional (safe direction)."""
+    # Add a map column with required values
+    update = UpdateSchema(transaction=table_v2.transaction())
+    update.add_column(
+        path="metadata",
+        field_type=MapType(key_id=1, key_type=StringType(), value_id=2, value_type=IntegerType(), value_required=True),
+    )
+    schema_with_map = update._apply()
+
+    # Verify initial state
+    field = schema_with_map.find_field("metadata")
+    assert isinstance(field.field_type, MapType)
+    assert field.field_type.value_required is True
+
+    # Update value to optional - should work without allow_incompatible_changes
+    update2 = UpdateSchema(transaction=table_v2.transaction(), schema=schema_with_map)
+    new_schema = update2.update_column(("metadata", "value"), required=False)._apply()
+
+    # Verify the update
+    field = new_schema.find_field("metadata")
+    assert isinstance(field.field_type, MapType)
+    assert field.field_type.value_required is False
+
+
+def test_update_list_and_map_in_single_schema_change(table_v2: Table) -> None:
+    """Test updating both list element and map value required properties in a single schema change."""
+    # Add both a list and a map column with optional elements/values
+    update = UpdateSchema(transaction=table_v2.transaction())
+    update.add_column(path="tags", field_type=ListType(element_id=1, element_type=StringType(), element_required=False))
+    update.add_column(
+        path="metadata",
+        field_type=MapType(key_id=1, key_type=StringType(), value_id=2, value_type=IntegerType(), value_required=False),
+    )
+    schema_with_both = update._apply()
+
+    # Verify initial state
+    list_field = schema_with_both.find_field("tags")
+    assert isinstance(list_field.field_type, ListType)
+    assert list_field.field_type.element_required is False
+
+    map_field = schema_with_both.find_field("metadata")
+    assert isinstance(map_field.field_type, MapType)
+    assert map_field.field_type.value_required is False
+
+    # Update both in a single schema change
+    update2 = UpdateSchema(transaction=table_v2.transaction(), allow_incompatible_changes=True, schema=schema_with_both)
+    update2.update_column(("tags", "element"), required=True)
+    update2.update_column(("metadata", "value"), required=True)
+    new_schema = update2._apply()
+
+    # Verify both updates
+    list_field = new_schema.find_field("tags")
+    assert isinstance(list_field.field_type, ListType)
+    assert list_field.field_type.element_required is True
+
+    map_field = new_schema.find_field("metadata")
+    assert isinstance(map_field.field_type, MapType)
+    assert map_field.field_type.value_required is True
+
+
+def test_update_nested_list_in_struct_required(table_v2: Table) -> None:
+    """Test updating nested list element required property inside a struct."""
+
+    # Add a struct column containing a list
+    update = UpdateSchema(transaction=table_v2.transaction())
+    struct_type = StructType(
+        NestedField(
+            field_id=1,
+            name="coordinates",
+            field_type=ListType(element_id=2, element_type=DoubleType(), element_required=False),
+            required=False,
+        )
+    )
+    update.add_column(path="location", field_type=struct_type)
+    schema_with_nested = update._apply()
+
+    # Verify initial state
+    field = schema_with_nested.find_field("location")
+    assert isinstance(field.field_type, StructType)
+    nested_list = field.field_type.fields[0].field_type
+    assert isinstance(nested_list, ListType)
+    assert nested_list.element_required is False
+
+    # Update nested list element to required
+    update2 = UpdateSchema(transaction=table_v2.transaction(), allow_incompatible_changes=True, schema=schema_with_nested)
+    new_schema = update2.update_column(("location", "coordinates", "element"), required=True)._apply()
+
+    # Verify the update
+    field = new_schema.find_field("location")
+    nested_list = field.field_type.fields[0].field_type
+    assert isinstance(nested_list, ListType)
+    assert nested_list.element_required is True
 
 
 def test_apply_set_properties_update(table_v2: Table) -> None:
@@ -1391,6 +1483,8 @@ def test_set_statistics_update(table_v2_with_statistics: Table) -> None:
         statistics=statistics_file,
     )
 
+    assert model_roundtrips(update)
+
     new_metadata = update_table_metadata(
         table_v2_with_statistics.metadata,
         (update,),
@@ -1423,6 +1517,57 @@ def test_set_statistics_update(table_v2_with_statistics: Table) -> None:
 
     assert len(updated_statistics) == 1
     assert json.loads(updated_statistics[0].model_dump_json()) == json.loads(expected)
+
+
+def test_set_statistics_update_handles_deprecated_snapshot_id(table_v2_with_statistics: Table) -> None:
+    snapshot_id = table_v2_with_statistics.metadata.current_snapshot_id
+
+    blob_metadata = BlobMetadata(
+        type="apache-datasketches-theta-v1",
+        snapshot_id=snapshot_id,
+        sequence_number=2,
+        fields=[1],
+        properties={"prop-key": "prop-value"},
+    )
+
+    statistics_file = StatisticsFile(
+        snapshot_id=snapshot_id,
+        statistics_path="s3://bucket/warehouse/stats.puffin",
+        file_size_in_bytes=124,
+        file_footer_size_in_bytes=27,
+        blob_metadata=[blob_metadata],
+    )
+    update_with_model = SetStatisticsUpdate(statistics=statistics_file)
+    assert model_roundtrips(update_with_model)
+    assert update_with_model.snapshot_id == snapshot_id
+
+    update_with_dict = SetStatisticsUpdate.model_validate({"statistics": statistics_file.model_dump()})
+    assert model_roundtrips(update_with_dict)
+    assert update_with_dict.snapshot_id == snapshot_id
+
+    update_json = """
+        {
+            "statistics":
+                 {
+                     "snapshot-id": 3055729675574597004,
+                     "statistics-path": "s3://a/b/stats.puffin",
+                     "file-size-in-bytes": 413,
+                     "file-footer-size-in-bytes": 42,
+                     "blob-metadata": [
+                         {
+                             "type": "apache-datasketches-theta-v1",
+                             "snapshot-id": 3055729675574597004,
+                             "sequence-number": 1,
+                             "fields": [1]
+                         }
+                     ]
+                 }
+        }
+    """
+
+    update_with_json = SetStatisticsUpdate.model_validate_json(update_json)
+    assert model_roundtrips(update_with_json)
+    assert update_with_json.snapshot_id == snapshot_id
 
 
 def test_remove_statistics_update(table_v2_with_statistics: Table) -> None:
@@ -1575,3 +1720,32 @@ def test_add_snapshot_update_updates_next_row_id(table_v3: Table) -> None:
 
     new_metadata = update_table_metadata(table_v3.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
     assert new_metadata.next_row_id == 11
+
+
+def model_roundtrips(model: BaseModel) -> bool:
+    """Helper assertion that tests if a pydantic model roundtrips
+    successfully.
+    """
+    __tracebackhide__ = True
+    model_data = model.model_dump()
+    if model != type(model).model_validate(model_data):
+        pytest.fail(f"model {type(model)} did not roundtrip successfully")
+    return True
+
+
+def test_check_uuid_raises_when_mismatch(table_v2: Table, example_table_metadata_v2: dict[str, Any]) -> None:
+    different_uuid = "550e8400-e29b-41d4-a716-446655440000"
+    metadata_with_different_uuid = {**example_table_metadata_v2, "table-uuid": different_uuid}
+    new_metadata = TableMetadataV2(**metadata_with_different_uuid)
+
+    with pytest.raises(ValueError) as exc_info:
+        Table._check_uuid(table_v2.metadata, new_metadata)
+
+    assert "Table UUID does not match" in str(exc_info.value)
+    assert different_uuid in str(exc_info.value)
+
+
+def test_check_uuid_passes_when_match(table_v2: Table, example_table_metadata_v2: dict[str, Any]) -> None:
+    new_metadata = TableMetadataV2(**example_table_metadata_v2)
+    # Should not raise with same uuid
+    Table._check_uuid(table_v2.metadata, new_metadata)

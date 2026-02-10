@@ -18,11 +18,13 @@
 
 import math
 from datetime import date, datetime
+from typing import Any
 
 import pyarrow as pa
 import pytest
 import pytz
 from pyspark.sql import DataFrame, SparkSession
+from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
@@ -208,9 +210,18 @@ def _inspect_files_asserts(df: pa.Table, spark_df: DataFrame) -> None:
 def _check_pyiceberg_df_equals_spark_df(df: pa.Table, spark_df: DataFrame) -> None:
     lhs = df.to_pandas().sort_values("last_updated_at")
     rhs = spark_df.toPandas().sort_values("last_updated_at")
+
+    def _normalize_partition(d: dict[str, Any]) -> dict[str, Any]:
+        return {k: v for k, v in d.items() if v is not None}
+
     for column in df.column_names:
         for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
-            assert left == right, f"Difference in column {column}: {left} != {right}"
+            if column == "partition":
+                assert _normalize_partition(left) == _normalize_partition(right), (
+                    f"Difference in column {column}: {left} != {right}"
+                )
+            else:
+                assert left == right, f"Difference in column {column}: {left} != {right}"
 
 
 @pytest.mark.integration
@@ -662,7 +673,7 @@ def test_inspect_partitions_partitioned_with_filter(spark: SparkSession, session
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [lf("session_catalog")])
 def test_inspect_partitions_partitioned_transform_with_filter(spark: SparkSession, catalog: Catalog) -> None:
     for table_name, predicate, partition_predicate in [
         ("test_partitioned_by_identity", "ts >= '2023-03-05T00:00:00+00:00'", "ts >= '2023-03-05T00:00:00+00:00'"),
@@ -1086,10 +1097,21 @@ def test_inspect_files_format_version_3(spark: SparkSession, session_catalog: Ca
         },
     )
 
+    row1 = (
+        "(false, 'a', 'aaaaaaaaaaaaaaaaaaaaaa', 1, 1, 0.0, 0.0, "
+        "TIMESTAMP('2023-01-01 19:25:00'), TIMESTAMP('2023-01-01 19:25:00+00:00'), "
+        "DATE('2023-01-01'), X'01', X'00000000000000000000000000000000')"
+    )
+    row2 = "(NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL)"
+    row3 = (
+        "(true, 'z', 'zzzzzzzzzzzzzzzzzzzzzz', 9, 9, 0.9, 0.9, "
+        "TIMESTAMP('2023-03-01 19:25:00'), TIMESTAMP('2023-03-01 19:25:00+00:00'), "
+        "DATE('2023-03-01'), X'12', X'11111111111111111111111111111111')"
+    )
     insert_data_sql = f"""INSERT INTO {identifier} VALUES
-        (false, 'a', 'aaaaaaaaaaaaaaaaaaaaaa', 1, 1, 0.0, 0.0, TIMESTAMP('2023-01-01 19:25:00'), TIMESTAMP('2023-01-01 19:25:00+00:00'), DATE('2023-01-01'), X'01', X'00000000000000000000000000000000'),
-        (NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-        (true, 'z', 'zzzzzzzzzzzzzzzzzzzzzz', 9, 9, 0.9, 0.9, TIMESTAMP('2023-03-01 19:25:00'), TIMESTAMP('2023-03-01 19:25:00+00:00'), DATE('2023-03-01'), X'12', X'11111111111111111111111111111111');
+        {row1},
+        {row2},
+        {row3};
     """
 
     spark.sql(insert_data_sql)

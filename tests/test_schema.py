@@ -95,7 +95,10 @@ def test_schema_str(table_schema_simple: Schema) -> None:
 def test_schema_repr_single_field() -> None:
     """Test schema representation"""
     actual = repr(Schema(NestedField(field_id=1, name="foo", field_type=StringType()), schema_id=1))
-    expected = "Schema(NestedField(field_id=1, name='foo', field_type=StringType(), required=False), schema_id=1, identifier_field_ids=[])"
+    expected = (
+        "Schema(NestedField(field_id=1, name='foo', field_type=StringType(), required=False), "
+        "schema_id=1, identifier_field_ids=[])"
+    )
     assert expected == actual
 
 
@@ -108,7 +111,11 @@ def test_schema_repr_two_fields() -> None:
             schema_id=1,
         )
     )
-    expected = "Schema(NestedField(field_id=1, name='foo', field_type=StringType(), required=False), NestedField(field_id=2, name='bar', field_type=IntegerType(), required=False), schema_id=1, identifier_field_ids=[])"
+    expected = (
+        "Schema(NestedField(field_id=1, name='foo', field_type=StringType(), required=False), "
+        "NestedField(field_id=2, name='bar', field_type=IntegerType(), required=False), "
+        "schema_id=1, identifier_field_ids=[])"
+    )
     assert expected == actual
 
 
@@ -428,13 +435,29 @@ def test_build_position_accessors_with_struct(table_schema_nested: Schema) -> No
 
 def test_serialize_schema(table_schema_with_full_nested_fields: Schema) -> None:
     actual = table_schema_with_full_nested_fields.model_dump_json()
-    expected = """{"type":"struct","fields":[{"id":1,"name":"foo","type":"string","required":false,"doc":"foo doc","initial-default":"foo initial","write-default":"foo write"},{"id":2,"name":"bar","type":"int","required":true,"doc":"bar doc","initial-default":42,"write-default":43},{"id":3,"name":"baz","type":"boolean","required":false,"doc":"baz doc","initial-default":true,"write-default":false}],"schema-id":1,"identifier-field-ids":[2]}"""
+    expected = (
+        '{"type":"struct","fields":['
+        '{"id":1,"name":"foo","type":"string","required":false,"doc":"foo doc",'
+        '"initial-default":"foo initial","write-default":"foo write"},'
+        '{"id":2,"name":"bar","type":"int","required":true,"doc":"bar doc",'
+        '"initial-default":42,"write-default":43},'
+        '{"id":3,"name":"baz","type":"boolean","required":false,"doc":"baz doc",'
+        '"initial-default":true,"write-default":false}],'
+        '"schema-id":1,"identifier-field-ids":[2]}'
+    )
     assert actual == expected
 
 
 def test_deserialize_schema(table_schema_with_full_nested_fields: Schema) -> None:
     actual = Schema.model_validate_json(
-        """{"type": "struct", "fields": [{"id": 1, "name": "foo", "type": "string", "required": false, "doc": "foo doc", "initial-default": "foo initial", "write-default": "foo write"}, {"id": 2, "name": "bar", "type": "int", "required": true, "doc": "bar doc", "initial-default": 42, "write-default": 43}, {"id": 3, "name": "baz", "type": "boolean", "required": false, "doc": "baz doc", "initial-default": true, "write-default": false}], "schema-id": 1, "identifier-field-ids": [2]}"""
+        '{"type": "struct", "fields": ['
+        '{"id": 1, "name": "foo", "type": "string", "required": false, "doc": "foo doc", '
+        '"initial-default": "foo initial", "write-default": "foo write"}, '
+        '{"id": 2, "name": "bar", "type": "int", "required": true, "doc": "bar doc", '
+        '"initial-default": 42, "write-default": 43}, '
+        '{"id": 3, "name": "baz", "type": "boolean", "required": false, "doc": "baz doc", '
+        '"initial-default": true, "write-default": false}], '
+        '"schema-id": 1, "identifier-field-ids": [2]}'
     )
     expected = table_schema_with_full_nested_fields
     assert actual == expected
@@ -885,22 +908,22 @@ def test_identifier_fields_fails(table_schema_nested_with_struct_key_map: Schema
     with pytest.raises(ValueError) as exc_info:
         Schema(*table_schema_nested_with_struct_key_map.fields, schema_id=1, identifier_field_ids=[23])
     assert (
-        f"Cannot add field zip as an identifier field: must not be nested in {table_schema_nested_with_struct_key_map.find_field('location')}"
-        in str(exc_info.value)
+        f"Cannot add field zip as an identifier field: must not be nested in "
+        f"{table_schema_nested_with_struct_key_map.find_field('location')}" in str(exc_info.value)
     )
 
     with pytest.raises(ValueError) as exc_info:
         Schema(*table_schema_nested_with_struct_key_map.fields, schema_id=1, identifier_field_ids=[26])
     assert (
-        f"Cannot add field x as an identifier field: must not be nested in {table_schema_nested_with_struct_key_map.find_field('points')}"
-        in str(exc_info.value)
+        f"Cannot add field x as an identifier field: must not be nested in "
+        f"{table_schema_nested_with_struct_key_map.find_field('points')}" in str(exc_info.value)
     )
 
     with pytest.raises(ValueError) as exc_info:
         Schema(*table_schema_nested_with_struct_key_map.fields, schema_id=1, identifier_field_ids=[17])
     assert (
-        f"Cannot add field age as an identifier field: must not be nested in an optional field {table_schema_nested_with_struct_key_map.find_field('person')}"
-        in str(exc_info.value)
+        f"Cannot add field age as an identifier field: must not be nested in an optional field "
+        f"{table_schema_nested_with_struct_key_map.find_field('person')}" in str(exc_info.value)
     )
 
 

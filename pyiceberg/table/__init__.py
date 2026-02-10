@@ -33,7 +33,6 @@ from typing import (
 )
 
 from pydantic import Field
-from sortedcontainers import SortedList
 
 import pyiceberg.expressions.parser as parser
 from pyiceberg.expressions import (
@@ -56,7 +55,6 @@ from pyiceberg.expressions.visitors import (
 )
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import (
-    POSITIONAL_DELETE_SCHEMA,
     DataFile,
     DataFileContent,
     ManifestContent,
@@ -70,6 +68,7 @@ from pyiceberg.partitioning import (
     PartitionSpec,
 )
 from pyiceberg.schema import Schema
+from pyiceberg.table.delete_file_index import DeleteFileIndex
 from pyiceberg.table.inspect import InspectTable
 from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.table.maintenance import MaintenanceTable
@@ -145,6 +144,11 @@ if TYPE_CHECKING:
     from pyiceberg_core.datafusion import IcebergDataFusionTable
 
     from pyiceberg.catalog import Catalog
+    from pyiceberg.catalog.rest.scan_planning import (
+        RESTContentFile,
+        RESTDeleteFile,
+        RESTFileScanTask,
+    )
 
 ALWAYS_TRUE = AlwaysTrue()
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
@@ -275,8 +279,20 @@ class Transaction:
         if exctype is None and excinst is None and exctb is None:
             self.commit_transaction()
 
-    def _apply(self, updates: tuple[TableUpdate, ...], requirements: tuple[TableRequirement, ...] = ()) -> Transaction:
-        """Check if the requirements are met, and applies the updates to the metadata."""
+    def _stage(
+        self,
+        updates: tuple[TableUpdate, ...],
+        requirements: tuple[TableRequirement, ...] = (),
+    ) -> Transaction:
+        """Stage updates to the transaction state without committing to the catalog.
+
+        Args:
+            updates: The updates to stage.
+            requirements: The requirements that must be met.
+
+        Returns:
+            This transaction for method chaining.
+        """
         for requirement in requirements:
             requirement.validate(self.table_metadata)
 
@@ -288,6 +304,16 @@ class Transaction:
         for new_requirement in requirements:
             if type(new_requirement) not in existing_requirements:
                 self._requirements = self._requirements + (new_requirement,)
+
+        return self
+
+    def _apply(
+        self,
+        updates: tuple[TableUpdate, ...],
+        requirements: tuple[TableRequirement, ...] = (),
+    ) -> Transaction:
+        """Check if the requirements are met, and applies the updates to the metadata."""
+        self._stage(updates, requirements)
 
         if self._autocommit:
             self.commit_transaction()
@@ -533,7 +559,8 @@ class Transaction:
         for field in self.table_metadata.spec().fields:
             if not isinstance(field.transform, IdentityTransform):
                 raise ValueError(
-                    f"For now dynamic overwrite does not support a table with non-identity-transform field in the latest partition spec: {field}"
+                    f"For now dynamic overwrite does not support a table with non-identity-transform field "
+                    f"in the latest partition spec: {field}"
                 )
 
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
@@ -734,6 +761,7 @@ class Transaction:
         when_not_matched_insert_all: bool = True,
         case_sensitive: bool = True,
         branch: str | None = MAIN_BRANCH,
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
     ) -> UpsertResult:
         """Shorthand API for performing an upsert to an iceberg table.
 
@@ -741,10 +769,13 @@ class Transaction:
 
             df: The input dataframe to upsert with the table's data.
             join_cols: Columns to join on, if not provided, it will use the identifier-field-ids.
-            when_matched_update_all: Bool indicating to update rows that are matched but require an update due to a value in a non-key column changing
-            when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any existing rows in the table
+            when_matched_update_all: Bool indicating to update rows that are matched but require an update
+                due to a value in a non-key column changing
+            when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any
+                existing rows in the table
             case_sensitive: Bool indicating if the match should be case-sensitive
             branch: Branch Reference to run the upsert operation
+            snapshot_properties: Custom properties to be added to the snapshot summary
 
             To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
 
@@ -831,8 +862,9 @@ class Transaction:
             rows = pa.Table.from_batches([batch])
 
             if when_matched_update_all:
-                # function get_rows_to_update is doing a check on non-key columns to see if any of the values have actually changed
-                # we don't want to do just a blanket overwrite for matched rows if the actual non-key column data hasn't changed
+                # function get_rows_to_update is doing a check on non-key columns to see if any of the
+                # values have actually changed. We don't want to do just a blanket overwrite for matched
+                # rows if the actual non-key column data hasn't changed.
                 # this extra step avoids unnecessary IO and writes
                 rows_to_update = upsert_util.get_rows_to_update(df, rows, join_cols)
 
@@ -861,12 +893,13 @@ class Transaction:
                 rows_to_update,
                 overwrite_filter=Or(*overwrite_predicates) if len(overwrite_predicates) > 1 else overwrite_predicates[0],
                 branch=branch,
+                snapshot_properties=snapshot_properties,
             )
 
         if when_not_matched_insert_all:
             insert_row_cnt = len(rows_to_insert)
             if rows_to_insert:
-                self.append(rows_to_insert, branch=branch)
+                self.append(rows_to_insert, branch=branch, snapshot_properties=snapshot_properties)
 
         return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 
@@ -1108,6 +1141,7 @@ class Table:
             An updated instance of the same Iceberg table
         """
         fresh = self.catalog.load_table(self._identifier)
+        self._check_uuid(self.metadata, fresh.metadata)
         self.metadata = fresh.metadata
         self.io = fresh.io
         self.metadata_location = fresh.metadata_location
@@ -1168,6 +1202,8 @@ class Table:
             snapshot_id=snapshot_id,
             options=options,
             limit=limit,
+            catalog=self.catalog,
+            table_identifier=self._identifier,
         )
 
     @property
@@ -1327,6 +1363,7 @@ class Table:
         when_not_matched_insert_all: bool = True,
         case_sensitive: bool = True,
         branch: str | None = MAIN_BRANCH,
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
     ) -> UpsertResult:
         """Shorthand API for performing an upsert to an iceberg table.
 
@@ -1334,10 +1371,13 @@ class Table:
 
             df: The input dataframe to upsert with the table's data.
             join_cols: Columns to join on, if not provided, it will use the identifier-field-ids.
-            when_matched_update_all: Bool indicating to update rows that are matched but require an update due to a value in a non-key column changing
-            when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any existing rows in the table
+            when_matched_update_all: Bool indicating to update rows that are matched but require an update
+                due to a value in a non-key column changing
+            when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any
+                existing rows in the table
             case_sensitive: Bool indicating if the match should be case-sensitive
             branch: Branch Reference to run the upsert operation
+            snapshot_properties: Custom properties to be added to the snapshot summary
 
             To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
 
@@ -1371,6 +1411,7 @@ class Table:
                 when_not_matched_insert_all=when_not_matched_insert_all,
                 case_sensitive=case_sensitive,
                 branch=branch,
+                snapshot_properties=snapshot_properties,
             )
 
     def append(self, df: pa.Table, snapshot_properties: dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH) -> None:
@@ -1485,8 +1526,20 @@ class Table:
         """Return the snapshot references in the table."""
         return self.metadata.refs
 
+    @staticmethod
+    def _check_uuid(current_metadata: TableMetadata, new_metadata: TableMetadata) -> None:
+        """Validate that the table UUID matches after refresh."""
+        current = current_metadata.table_uuid
+        refreshed = new_metadata.table_uuid
+
+        if current != refreshed:
+            raise ValueError(f"Table UUID does not match: current={current} != refreshed={refreshed}")
+
     def _do_commit(self, updates: tuple[TableUpdate, ...], requirements: tuple[TableRequirement, ...]) -> None:
         response = self.catalog.commit_table(self, requirements, updates)
+
+        # Ensure table uuid has not changed
+        self._check_uuid(self.metadata, response.metadata)
 
         # https://github.com/apache/iceberg/blob/f6faa58/core/src/main/java/org/apache/iceberg/CatalogUtil.java#L527
         # delete old metadata if METADATA_DELETE_AFTER_COMMIT_ENABLED is set to true and uses
@@ -1553,7 +1606,7 @@ class Table:
 
         To support DataFusion features such as push down filtering, this function will return a PyCapsule
         interface that conforms to the FFI Table Provider required by DataFusion. From an end user perspective
-        you should not need to call this function directly. Instead you can use ``register_table_provider`` in
+        you should not need to call this function directly. Instead you can use ``register_table`` in
         the DataFusion SessionContext.
 
         Returns:
@@ -1570,7 +1623,7 @@ class Table:
             iceberg_table = catalog.create_table("default.test", schema=data.schema)
             iceberg_table.append(data)
             ctx = SessionContext()
-            ctx.register_table_provider("test", iceberg_table)
+            ctx.register_table("test", iceberg_table)
             ctx.table("test").show()
             ```
             Results in
@@ -1684,6 +1737,8 @@ class TableScan(ABC):
     snapshot_id: int | None
     options: Properties
     limit: int | None
+    catalog: Catalog | None
+    table_identifier: Identifier | None
 
     def __init__(
         self,
@@ -1695,6 +1750,8 @@ class TableScan(ABC):
         snapshot_id: int | None = None,
         options: Properties = EMPTY_DICT,
         limit: int | None = None,
+        catalog: Catalog | None = None,
+        table_identifier: Identifier | None = None,
     ):
         self.table_metadata = table_metadata
         self.io = io
@@ -1704,6 +1761,8 @@ class TableScan(ABC):
         self.snapshot_id = snapshot_id
         self.options = options
         self.limit = limit
+        self.catalog = catalog
+        self.table_identifier = table_identifier
 
     def snapshot(self) -> Snapshot | None:
         if self.snapshot_id:
@@ -1798,6 +1857,74 @@ class FileScanTask(ScanTask):
         self.delete_files = delete_files or set()
         self.residual = residual
 
+    @staticmethod
+    def from_rest_response(
+        rest_task: RESTFileScanTask,
+        delete_files: list[RESTDeleteFile],
+    ) -> FileScanTask:
+        """Convert a RESTFileScanTask to a FileScanTask.
+
+        Args:
+            rest_task: The REST file scan task.
+            delete_files: The list of delete files from the ScanTasks response.
+
+        Returns:
+            A FileScanTask with the converted data and delete files.
+
+        Raises:
+            NotImplementedError: If equality delete files are encountered.
+        """
+        from pyiceberg.catalog.rest.scan_planning import RESTEqualityDeleteFile
+
+        data_file = _rest_file_to_data_file(rest_task.data_file)
+
+        resolved_deletes: set[DataFile] = set()
+        if rest_task.delete_file_references:
+            for idx in rest_task.delete_file_references:
+                delete_file = delete_files[idx]
+                if isinstance(delete_file, RESTEqualityDeleteFile):
+                    raise NotImplementedError(f"PyIceberg does not yet support equality deletes: {delete_file.file_path}")
+                resolved_deletes.add(_rest_file_to_data_file(delete_file))
+
+        return FileScanTask(
+            data_file=data_file,
+            delete_files=resolved_deletes,
+            residual=rest_task.residual_filter if rest_task.residual_filter else ALWAYS_TRUE,
+        )
+
+
+def _rest_file_to_data_file(rest_file: RESTContentFile) -> DataFile:
+    """Convert a REST content file to a manifest DataFile."""
+    from pyiceberg.catalog.rest.scan_planning import RESTDataFile
+
+    if isinstance(rest_file, RESTDataFile):
+        column_sizes = rest_file.column_sizes.to_dict() if rest_file.column_sizes else None
+        value_counts = rest_file.value_counts.to_dict() if rest_file.value_counts else None
+        null_value_counts = rest_file.null_value_counts.to_dict() if rest_file.null_value_counts else None
+        nan_value_counts = rest_file.nan_value_counts.to_dict() if rest_file.nan_value_counts else None
+    else:
+        column_sizes = None
+        value_counts = None
+        null_value_counts = None
+        nan_value_counts = None
+
+    data_file = DataFile.from_args(
+        content=DataFileContent.from_rest_type(rest_file.content),
+        file_path=rest_file.file_path,
+        file_format=rest_file.file_format,
+        partition=Record(*rest_file.partition) if rest_file.partition else Record(),
+        record_count=rest_file.record_count,
+        file_size_in_bytes=rest_file.file_size_in_bytes,
+        column_sizes=column_sizes,
+        value_counts=value_counts,
+        null_value_counts=null_value_counts,
+        nan_value_counts=nan_value_counts,
+        split_offsets=rest_file.split_offsets,
+        sort_order_id=rest_file.sort_order_id,
+    )
+    data_file.spec_id = rest_file.spec_id
+    return data_file
+
 
 def _open_manifest(
     io: FileIO,
@@ -1827,31 +1954,6 @@ def _min_sequence_number(manifests: list[ManifestFile]) -> int:
     except ValueError:
         # In case of an empty iterator
         return INITIAL_SEQUENCE_NUMBER
-
-
-def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_entries: SortedList[ManifestEntry]) -> set[DataFile]:
-    """Check if the delete file is relevant for the data file.
-
-    Using the column metrics to see if the filename is in the lower and upper bound.
-
-    Args:
-        data_entry (ManifestEntry): The manifest entry path of the datafile.
-        positional_delete_entries (List[ManifestEntry]): All the candidate positional deletes manifest entries.
-
-    Returns:
-        A set of files that are relevant for the data file.
-    """
-    relevant_entries = positional_delete_entries[positional_delete_entries.bisect_right(data_entry) :]
-
-    if len(relevant_entries) > 0:
-        evaluator = _InclusiveMetricsEvaluator(POSITIONAL_DELETE_SCHEMA, EqualTo("file_path", data_entry.data_file.file_path))
-        return {
-            positional_delete_entry.data_file
-            for positional_delete_entry in relevant_entries
-            if evaluator.eval(positional_delete_entry.data_file)
-        }
-    else:
-        return set()
 
 
 class DataScan(TableScan):
@@ -1970,14 +2072,35 @@ class DataScan(TableScan):
             ],
         )
 
-    def plan_files(self) -> Iterable[FileScanTask]:
-        """Plans the relevant files by filtering on the PartitionSpecs.
+    def _should_use_server_side_planning(self) -> bool:
+        """Check if server-side scan planning should be used for this scan."""
+        if not self.catalog:
+            return False
+        return self.catalog.supports_server_side_planning()
 
-        Returns:
-            List of FileScanTasks that contain both data and delete files.
-        """
+    def _plan_files_server_side(self) -> Iterable[FileScanTask]:
+        """Plan files using REST server-side scan planning."""
+        from pyiceberg.catalog.rest import RestCatalog
+        from pyiceberg.catalog.rest.scan_planning import PlanTableScanRequest
+
+        if not isinstance(self.catalog, RestCatalog):
+            raise TypeError("REST scan planning requires a RestCatalog")
+        if self.table_identifier is None:
+            raise ValueError("REST scan planning requires a table identifier")
+
+        request = PlanTableScanRequest(
+            snapshot_id=self.snapshot_id,
+            select=list(self.selected_fields) if self.selected_fields != ("*",) else None,
+            filter=self.row_filter if self.row_filter != ALWAYS_TRUE else None,
+            case_sensitive=self.case_sensitive,
+        )
+
+        return self.catalog.plan_scan(self.table_identifier, request)
+
+    def _plan_files_local(self) -> Iterable[FileScanTask]:
+        """Plan files locally by reading manifests."""
         data_entries: list[ManifestEntry] = []
-        positional_delete_entries = SortedList(key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER)
+        delete_index = DeleteFileIndex()
 
         residual_evaluators: dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
 
@@ -1986,18 +2109,18 @@ class DataScan(TableScan):
             if data_file.content == DataFileContent.DATA:
                 data_entries.append(manifest_entry)
             elif data_file.content == DataFileContent.POSITION_DELETES:
-                positional_delete_entries.add(manifest_entry)
+                delete_index.add_delete_file(manifest_entry, partition_key=data_file.partition)
             elif data_file.content == DataFileContent.EQUALITY_DELETES:
                 raise ValueError("PyIceberg does not yet support equality deletes: https://github.com/apache/iceberg/issues/6568")
             else:
                 raise ValueError(f"Unknown DataFileContent ({data_file.content}): {manifest_entry}")
-
         return [
             FileScanTask(
                 data_entry.data_file,
-                delete_files=_match_deletes_to_data_file(
-                    data_entry,
-                    positional_delete_entries,
+                delete_files=delete_index.for_data_file(
+                    data_entry.sequence_number or INITIAL_SEQUENCE_NUMBER,
+                    data_entry.data_file,
+                    partition_key=data_entry.data_file.partition,
                 ),
                 residual=residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(
                     data_entry.data_file.partition
@@ -2005,6 +2128,20 @@ class DataScan(TableScan):
             )
             for data_entry in data_entries
         ]
+
+    def plan_files(self) -> Iterable[FileScanTask]:
+        """Plans the relevant files by filtering on the PartitionSpecs.
+
+        If the table comes from a REST catalog with scan planning enabled,
+        this will use server-side scan planning. Otherwise, it falls back
+        to local planning.
+
+        Returns:
+            List of FileScanTasks that contain both data and delete files.
+        """
+        if self._should_use_server_side_planning():
+            return self._plan_files_server_side()
+        return self._plan_files_local()
 
     def to_arrow(self) -> pa.Table:
         """Read an Arrow table eagerly from this DataScan.

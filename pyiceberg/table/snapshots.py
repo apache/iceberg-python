@@ -29,7 +29,6 @@ from pyiceberg.io import FileIO
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, _manifests
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.utils.deprecated import deprecation_message
 
 if TYPE_CHECKING:
     from pyiceberg.table.metadata import TableMetadata
@@ -70,9 +69,11 @@ class Operation(Enum):
 
     Possible operation values are:
         - append: Only data files were added and no files were removed.
-        - replace: Data and delete files were added and removed without changing table data; i.e., compaction, changing the data file format, or relocating data files.
+        - replace: Data and delete files were added and removed without changing table data;
+            i.e., compaction, changing the data file format, or relocating data files.
         - overwrite: Data and delete files were added and removed in a logical overwrite operation.
-        - delete: Data files were removed and their contents logically deleted and/or delete files were added to delete rows.
+        - delete: Data files were removed and their contents logically deleted and/or delete files
+            were added to delete rows.
     """
 
     APPEND = "append"
@@ -342,53 +343,9 @@ class SnapshotSummaryCollector:
         return ",".join([f"{prop}={val}" for prop, val in update_metrics.to_dict().items()])
 
 
-def _truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str]) -> Summary:
-    for prop in {
-        TOTAL_DATA_FILES,
-        TOTAL_DELETE_FILES,
-        TOTAL_RECORDS,
-        TOTAL_FILE_SIZE,
-        TOTAL_POSITION_DELETES,
-        TOTAL_EQUALITY_DELETES,
-    }:
-        summary[prop] = "0"
-
-    def get_prop(prop: str) -> int:
-        value = previous_summary.get(prop) or "0"
-        try:
-            return int(value)
-        except ValueError as e:
-            raise ValueError(f"Could not parse summary property {prop} to an int: {value}") from e
-
-    if value := get_prop(TOTAL_DATA_FILES):
-        summary[DELETED_DATA_FILES] = str(value)
-    if value := get_prop(TOTAL_DELETE_FILES):
-        summary[REMOVED_DELETE_FILES] = str(value)
-    if value := get_prop(TOTAL_RECORDS):
-        summary[DELETED_RECORDS] = str(value)
-    if value := get_prop(TOTAL_FILE_SIZE):
-        summary[REMOVED_FILE_SIZE] = str(value)
-    if value := get_prop(TOTAL_POSITION_DELETES):
-        summary[REMOVED_POSITION_DELETES] = str(value)
-    if value := get_prop(TOTAL_EQUALITY_DELETES):
-        summary[REMOVED_EQUALITY_DELETES] = str(value)
-
-    return summary
-
-
-def update_snapshot_summaries(
-    summary: Summary, previous_summary: Mapping[str, str] | None = None, truncate_full_table: bool = False
-) -> Summary:
+def update_snapshot_summaries(summary: Summary, previous_summary: Mapping[str, str] | None = None) -> Summary:
     if summary.operation not in {Operation.APPEND, Operation.OVERWRITE, Operation.DELETE}:
         raise ValueError(f"Operation not implemented: {summary.operation}")
-
-    if truncate_full_table and summary.operation == Operation.OVERWRITE and previous_summary is not None:
-        deprecation_message(
-            deprecated_in="0.10.0",
-            removed_in="0.11.0",
-            help_message="The truncate-full-table shouldn't be used.",
-        )
-        summary = _truncate_table_summary(summary, previous_summary)
 
     if not previous_summary:
         previous_summary = {
@@ -472,3 +429,24 @@ def ancestors_between(from_snapshot: Snapshot | None, to_snapshot: Snapshot, tab
                 break
     else:
         yield from ancestors_of(to_snapshot, table_metadata)
+
+
+def latest_ancestor_before_timestamp(table_metadata: TableMetadata, timestamp_ms: int) -> Snapshot | None:
+    """Find the latest ancestor snapshot whose timestamp is before the provided timestamp.
+
+    Args:
+        table_metadata: The table metadata for a table
+        timestamp_ms: lookup snapshots strictly before this timestamp
+
+    Returns:
+        The latest ancestor snapshot older than the timestamp, or None if not found.
+    """
+    result: Snapshot | None = None
+    result_timestamp: int = 0
+
+    for ancestor in ancestors_of(table_metadata.current_snapshot(), table_metadata):
+        if timestamp_ms > ancestor.timestamp_ms > result_timestamp:
+            result = ancestor
+            result_timestamp = ancestor.timestamp_ms
+
+    return result

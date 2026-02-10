@@ -40,14 +40,18 @@ from typing import (
     TYPE_CHECKING,
     Any,
 )
+from unittest import mock
 
 import boto3
 import pytest
 from moto import mock_aws
 from pydantic_core import to_json
+from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog import Catalog, load_catalog
+from pyiceberg.catalog.memory import InMemoryCatalog
 from pyiceberg.catalog.noop import NoopCatalog
+from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.expressions import BoundReference
 from pyiceberg.io import (
     ADLS_ACCOUNT_KEY,
@@ -70,7 +74,9 @@ from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
 from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2, TableMetadataV3
+from pyiceberg.table.sorting import NullOrder, SortField, SortOrder
 from pyiceberg.transforms import DayTransform, IdentityTransform
+from pyiceberg.typedef import Identifier
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -105,6 +111,20 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:
         if not any(item.iter_markers()):
             item.add_marker("unmarked")
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _isolate_pyiceberg_config() -> None:
+    """Make test runs ignore your local PyIceberg config.
+
+    Without this, tests will attempt to resolve a local ~/.pyiceberg.yaml while running pytest.
+    This replaces the global catalog config once at session start with an env-only config.
+    """
+    import pyiceberg.catalog as _catalog_module
+    from pyiceberg.utils.config import Config
+
+    with mock.patch.object(Config, "_from_configuration_files", return_value=None):
+        _catalog_module._ENV_CONFIG = Config()
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -431,17 +451,6 @@ def iceberg_schema_simple_no_ids() -> Schema:
         NestedField(field_id=-1, name="foo", field_type=StringType(), required=False),
         NestedField(field_id=-1, name="bar", field_type=IntegerType(), required=True),
         NestedField(field_id=-1, name="baz", field_type=BooleanType(), required=False),
-    )
-
-
-@pytest.fixture(scope="session")
-def iceberg_table_schema_simple() -> Schema:
-    return Schema(
-        NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
-        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
-        schema_id=0,
-        identifier_field_ids=[],
     )
 
 
@@ -1195,7 +1204,10 @@ manifest_entry_records = [
         "status": 1,
         "snapshot_id": 8744736658442914487,
         "data_file": {
-            "file_path": "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet",
+            "file_path": (
+                "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/"
+                "00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet"
+            ),
             "file_format": "PARQUET",
             "partition": {"VendorID": 1, "tpep_pickup_day": 1925},
             "record_count": 19513,
@@ -1315,7 +1327,10 @@ manifest_entry_records = [
         "status": 1,
         "snapshot_id": 8744736658442914487,
         "data_file": {
-            "file_path": "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=1/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00002.parquet",
+            "file_path": (
+                "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=1/"
+                "00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00002.parquet"
+            ),
             "file_format": "PARQUET",
             "partition": {"VendorID": 1, "tpep_pickup_datetime": None},
             "record_count": 95050,
@@ -1887,11 +1902,16 @@ def test_schema() -> Schema:
 
 
 @pytest.fixture(scope="session")
-def test_partition_spec() -> Schema:
+def test_partition_spec() -> PartitionSpec:
     return PartitionSpec(
         PartitionField(1, 1000, IdentityTransform(), "VendorID"),
         PartitionField(2, 1001, DayTransform(), "tpep_pickup_day"),
     )
+
+
+@pytest.fixture(scope="session")
+def test_sort_order() -> SortOrder:
+    return SortOrder(SortField(source_id=1, transform=IdentityTransform(), null_order=NullOrder.NULLS_FIRST))
 
 
 @pytest.fixture(scope="session")
@@ -2153,7 +2173,10 @@ def adls_fsspec_fileio(request: pytest.FixtureRequest) -> Generator[FsspecFileIO
     azurite_url = request.config.getoption("--adls.endpoint")
     azurite_account_name = request.config.getoption("--adls.account-name")
     azurite_account_key = request.config.getoption("--adls.account-key")
-    azurite_connection_string = f"DefaultEndpointsProtocol=http;AccountName={azurite_account_name};AccountKey={azurite_account_key};BlobEndpoint={azurite_url}/{azurite_account_name};"
+    azurite_connection_string = (
+        f"DefaultEndpointsProtocol=http;AccountName={azurite_account_name};"
+        f"AccountKey={azurite_account_key};BlobEndpoint={azurite_url}/{azurite_account_name};"
+    )
     properties = {
         "adls.connection-string": azurite_connection_string,
         "adls.account-name": azurite_account_name,
@@ -2190,7 +2213,10 @@ def pyarrow_fileio_adls(request: pytest.FixtureRequest) -> Generator[Any, None, 
 
     azurite_account_name = request.config.getoption("--adls.account-name")
     azurite_account_key = request.config.getoption("--adls.account-key")
-    azurite_connection_string = f"DefaultEndpointsProtocol=http;AccountName={azurite_account_name};AccountKey={azurite_account_key};BlobEndpoint={azurite_url}/{azurite_account_name};"
+    azurite_connection_string = (
+        f"DefaultEndpointsProtocol=http;AccountName={azurite_account_name};"
+        f"AccountKey={azurite_account_key};BlobEndpoint={azurite_url}/{azurite_account_name};"
+    )
     properties = {
         ADLS_ACCOUNT_NAME: azurite_account_name,
         ADLS_ACCOUNT_KEY: azurite_account_key,
@@ -2630,7 +2656,8 @@ TEST_DATA_WITH_NULL = {
     # Not supported by Spark
     # 'time': [time(1, 22, 0), None, time(19, 25, 0)],
     # Not natively supported by Arrow
-    # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None, uuid.UUID('11111111-1111-1111-1111-111111111111').bytes],
+    # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None,
+    #          uuid.UUID('11111111-1111-1111-1111-111111111111').bytes],
     "binary": [b"\01", None, b"\22"],
     "fixed": [
         uuid.UUID("00000000-0000-0000-0000-000000000000").bytes,
@@ -2683,7 +2710,8 @@ def arrow_table_with_null(pa_schema: "pa.Schema") -> "pa.Table":
             "long": [1, None, 9],
             "float": [0.0, None, 0.9],
             "double": [0.0, None, 0.9],
-            # 'time': [1_000_000, None, 3_000_000],  # Example times: 1s, none, and 3s past midnight #Spark does not support time fields
+            # 'time': [1_000_000, None, 3_000_000],  # Example times: 1s, none, and 3s past midnight
+            # Spark does not support time fields
             "timestamp": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
             "timestamptz": [
                 datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
@@ -2694,7 +2722,8 @@ def arrow_table_with_null(pa_schema: "pa.Schema") -> "pa.Table":
             # Not supported by Spark
             # 'time': [time(1, 22, 0), None, time(19, 25, 0)],
             # Not natively supported by Arrow
-            # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None, uuid.UUID('11111111-1111-1111-1111-111111111111').bytes],
+            # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None,
+            #          uuid.UUID('11111111-1111-1111-1111-111111111111').bytes],
             "binary": [b"\01", None, b"\22"],
             "fixed": [
                 uuid.UUID("00000000-0000-0000-0000-000000000000").bytes,
@@ -2947,3 +2976,170 @@ def pyarrow_table_with_promoted_types(pyarrow_schema_with_promoted_types: "pa.Sc
         },
         schema=pyarrow_schema_with_promoted_types,
     )
+
+
+@pytest.fixture(scope="session")
+def ray_session() -> Generator[Any, None, None]:
+    """Fixture to manage Ray initialization and shutdown for tests."""
+    import ray
+
+    ray.init(
+        ignore_reinit_error=True,
+        runtime_env={"working_dir": None},  # Prevent Ray from serializing the working directory to workers
+    )
+    yield ray
+    ray.shutdown()
+
+
+# Catalog fixtures
+
+
+def _create_memory_catalog(name: str, warehouse: Path) -> InMemoryCatalog:
+    return InMemoryCatalog(name, warehouse=f"file://{warehouse}")
+
+
+def _create_sql_catalog(name: str, warehouse: Path) -> SqlCatalog:
+    catalog = SqlCatalog(
+        name,
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{warehouse}",
+    )
+    catalog.create_tables()
+    return catalog
+
+
+def _create_sql_without_rowcount_catalog(name: str, warehouse: Path) -> SqlCatalog:
+    props = {
+        "uri": f"sqlite:////{warehouse}/sql-catalog",
+        "warehouse": f"file://{warehouse}",
+    }
+    catalog = SqlCatalog(name, **props)
+    catalog.engine.dialect.supports_sane_rowcount = False
+    catalog.create_tables()
+    return catalog
+
+
+_CATALOG_FACTORIES = {
+    "memory": _create_memory_catalog,
+    "sql": _create_sql_catalog,
+    "sql_without_rowcount": _create_sql_without_rowcount_catalog,
+}
+
+
+@pytest.fixture(params=list(_CATALOG_FACTORIES.keys()))
+def catalog(request: pytest.FixtureRequest, tmp_path: Path) -> Generator[Catalog, None, None]:
+    """Parameterized fixture that yields catalogs listed in _CATALOG_FACTORIES."""
+    catalog_type = request.param
+    factory = _CATALOG_FACTORIES[catalog_type]
+    cat = factory("test_catalog", tmp_path)
+    yield cat
+    if hasattr(cat, "destroy_tables"):
+        cat.destroy_tables()
+
+
+@pytest.fixture(params=list(_CATALOG_FACTORIES.keys()))
+def catalog_with_warehouse(
+    request: pytest.FixtureRequest,
+    warehouse: Path,
+) -> Generator[Catalog, None, None]:
+    factory = _CATALOG_FACTORIES[request.param]
+    cat = factory("test_catalog", warehouse)
+    yield cat
+    if hasattr(cat, "destroy_tables"):
+        cat.destroy_tables()
+
+
+@pytest.fixture(name="random_table_identifier")
+def fixture_random_table_identifier(warehouse: Path, database_name: str, table_name: str) -> Identifier:
+    os.makedirs(f"{warehouse}/{database_name}/{table_name}/metadata/", exist_ok=True)
+    return database_name, table_name
+
+
+@pytest.fixture(name="another_random_table_identifier")
+def fixture_another_random_table_identifier(warehouse: Path, database_name: str, table_name: str) -> Identifier:
+    database_name = database_name + "_new"
+    table_name = table_name + "_new"
+    os.makedirs(f"{warehouse}/{database_name}/{table_name}/metadata/", exist_ok=True)
+    return database_name, table_name
+
+
+@pytest.fixture(name="random_hierarchical_identifier")
+def fixture_random_hierarchical_identifier(warehouse: Path, hierarchical_namespace_name: str, table_name: str) -> Identifier:
+    os.makedirs(f"{warehouse}/{hierarchical_namespace_name}/{table_name}/metadata/", exist_ok=True)
+    return Catalog.identifier_to_tuple(".".join((hierarchical_namespace_name, table_name)))
+
+
+@pytest.fixture(name="another_random_hierarchical_identifier")
+def fixture_another_random_hierarchical_identifier(
+    warehouse: Path, hierarchical_namespace_name: str, table_name: str
+) -> Identifier:
+    hierarchical_namespace_name = hierarchical_namespace_name + "_new"
+    table_name = table_name + "_new"
+    os.makedirs(f"{warehouse}/{hierarchical_namespace_name}/{table_name}/metadata/", exist_ok=True)
+    return Catalog.identifier_to_tuple(".".join((hierarchical_namespace_name, table_name)))
+
+
+@pytest.fixture(scope="session")
+def fixed_test_table_identifier() -> Identifier:
+    return "com", "organization", "department", "my_table"
+
+
+@pytest.fixture(scope="session")
+def another_fixed_test_table_identifier() -> Identifier:
+    return "com", "organization", "department_alt", "my_another_table"
+
+
+@pytest.fixture(scope="session")
+def fixed_test_table_namespace() -> Identifier:
+    return "com", "organization", "department"
+
+
+@pytest.fixture(
+    params=[
+        lf("fixed_test_table_identifier"),
+        lf("random_table_identifier"),
+        lf("random_hierarchical_identifier"),
+    ],
+)
+def test_table_identifier(request: pytest.FixtureRequest) -> Identifier:
+    return request.param
+
+
+@pytest.fixture(
+    params=[
+        lf("another_fixed_test_table_identifier"),
+        lf("another_random_table_identifier"),
+        lf("another_random_hierarchical_identifier"),
+    ],
+)
+def another_table_identifier(request: pytest.FixtureRequest) -> Identifier:
+    return request.param
+
+
+@pytest.fixture(
+    params=[
+        lf("database_name"),
+        lf("hierarchical_namespace_name"),
+        lf("fixed_test_table_namespace"),
+    ],
+)
+def test_namespace(request: pytest.FixtureRequest) -> Identifier:
+    ns = request.param
+    if isinstance(ns, tuple):
+        return ns
+    if "." in ns:
+        return tuple(ns.split("."))
+    return (ns,)
+
+
+@pytest.fixture(scope="session")
+def test_namespace_properties() -> dict[str, str]:
+    return {"key1": "value1", "key2": "value2"}
+
+
+@pytest.fixture(scope="session")
+def test_table_properties() -> dict[str, str]:
+    return {
+        "key1": "value1",
+        "key2": "value2",
+    }
