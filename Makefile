@@ -143,6 +143,13 @@ coverage-report: ## Combine and report coverage
 	uv run $(PYTHON_ARG) coverage html
 	uv run $(PYTHON_ARG) coverage xml
 
+docker-clean: ## Stop and remove all Docker containers and volumes
+	docker compose -f dev/docker-compose-integration.yml down -v --remove-orphans
+	docker compose -f dev/docker-compose.yml down -v --remove-orphans
+	docker compose -f dev/docker-compose-azurite.yml down -v --remove-orphans
+	docker compose -f dev/docker-compose-gcs-server.yml down -v --remove-orphans
+
+
 # ================
 # Documentation
 # ================
