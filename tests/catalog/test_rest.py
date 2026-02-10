@@ -26,6 +26,8 @@ from requests import Request
 from requests.adapters import HTTPAdapter
 from requests.exceptions import HTTPError
 from requests_mock import Mocker
+from requests_mock.request import _RequestObjectProxy
+from requests_mock.response import _Context
 
 import pyiceberg
 from pyiceberg.catalog import PropertiesUpdateSummary, load_catalog
@@ -47,7 +49,7 @@ from pyiceberg.exceptions import (
     NoSuchViewError,
     OAuthError,
     ServerError,
-    TableAlreadyExistsError, ValidationError,
+    TableAlreadyExistsError,
 )
 from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -1643,9 +1645,11 @@ def test_update_namespace_properties_invalid_namespace(rest_mock: Mocker) -> Non
 
 def test_with_disabled_ssl_ca_bundle(rest_mock: Mocker) -> None:
     from pydantic import ValidationError
-    def ssl_check_callback(req, _):
+
+    def ssl_check_callback(req: _RequestObjectProxy, _: _Context) -> None:
         if req.verify:
             raise AssertionError("SSL verification is  still enabled")
+
     # Given
     rest_mock.get(
         f"{TEST_URI}v1/config",
@@ -1658,10 +1662,10 @@ def test_with_disabled_ssl_ca_bundle(rest_mock: Mocker) -> None:
         "token": TEST_TOKEN,
         "ssl": {
             "cabundle": False,
-        }
+        },
     }
     with pytest.raises(ValidationError) as _:
-        RestCatalog("rest", **catalog_properties)
+        RestCatalog("rest", **catalog_properties)  # type: ignore
 
 
 def test_request_session_with_ssl_ca_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
