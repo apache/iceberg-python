@@ -14,6 +14,13 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+.PHONY: help install install-uv check-license lint \
+        test test-integration test-integration-setup test-integration-exec test-integration-cleanup test-integration-rebuild \
+        test-s3 test-adls test-gcs test-coverage coverage-report \
+        docs-serve docs-build notebook notebook-infra \
+        clean uv-lock uv-lock-check
+
+.DEFAULT_GOAL := help
 # ========================
 # Configuration Variables
 # ========================
@@ -149,14 +156,11 @@ coverage-report: ## Combine and report coverage
 
 ##@ Documentation
 
-docs-install: ## Install docs dependencies (included in default groups)
-	uv sync $(PYTHON_ARG) --group docs
-
 docs-serve: ## Serve local docs preview (hot reload)
-	uv run $(PYTHON_ARG) mkdocs serve -f mkdocs/mkdocs.yml --livereload
+	uv run $(PYTHON_ARG) --group docs mkdocs serve -f mkdocs/mkdocs.yml --livereload
 
 docs-build: ## Build the static documentation site
-	uv run $(PYTHON_ARG) mkdocs build -f mkdocs/mkdocs.yml --strict
+	uv run $(PYTHON_ARG) --group docs mkdocs build -f mkdocs/mkdocs.yml --strict
 
 # ========================
 # Experimentation
@@ -164,14 +168,11 @@ docs-build: ## Build the static documentation site
 
 ##@ Experimentation
 
-notebook-install: ## Install notebook dependencies
-	uv sync $(PYTHON_ARG) --all-extras --group notebook
+notebook: ## Launch notebook for experimentation
+	uv run $(PYTHON_ARG) --all-extras --group notebook jupyter lab --notebook-dir=notebooks
 
-notebook: notebook-install ## Launch notebook for experimentation
-	uv run jupyter lab --notebook-dir=notebooks
-
-notebook-infra: notebook-install test-integration-setup ## Launch notebook with integration test infra (Spark, Iceberg Rest Catalog, object storage, etc.)
-	uv run jupyter lab --notebook-dir=notebooks
+notebook-infra: test-integration-setup ## Launch notebook with integration test infra (Spark, Iceberg Rest Catalog, object storage, etc.)
+	uv run $(PYTHON_ARG) --all-extras --group notebook jupyter lab --notebook-dir=notebooks
 
 # ===================
 # Project Maintenance
@@ -189,6 +190,8 @@ clean: ## Remove build artifacts and caches
 	@find . -name "*.pyo" -exec echo Deleting {} \; -delete
 	@echo "Cleaning up Jupyter notebook checkpoints..."
 	@find . -name ".ipynb_checkpoints" -exec echo Deleting {} \; -exec rm -rf {} +
+	@echo "Cleaning up coverage files..."
+	@rm -rf .coverage .coverage.* htmlcov/ coverage.xml
 	@echo "Cleanup complete."
 
 uv-lock: ## Regenerate uv.lock file from pyproject.toml
