@@ -1581,6 +1581,7 @@ def _task_to_record_batches(
     partition_spec: PartitionSpec | None = None,
     format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
     downcast_ns_timestamp_to_us: bool | None = None,
+    batch_size: int | None = None,
 ) -> Iterator[pa.RecordBatch]:
     arrow_format = _get_file_format(task.file.file_format, pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
     with io.new_input(task.file.file_path).open() as fin:
@@ -1612,14 +1613,17 @@ def _task_to_record_batches(
 
         file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
 
-        fragment_scanner = ds.Scanner.from_fragment(
-            fragment=fragment,
-            schema=physical_schema,
+        scanner_kwargs: dict[str, Any] = {
+            "fragment": fragment,
+            "schema": physical_schema,
             # This will push down the query to Arrow.
             # But in case there are positional deletes, we have to apply them first
-            filter=pyarrow_filter if not positional_deletes else None,
-            columns=[col.name for col in file_project_schema.columns],
-        )
+            "filter": pyarrow_filter if not positional_deletes else None,
+            "columns": [col.name for col in file_project_schema.columns],
+        }
+        if batch_size is not None:
+            scanner_kwargs["batch_size"] = batch_size
+        fragment_scanner = ds.Scanner.from_fragment(**scanner_kwargs)
 
         next_index = 0
         batches = fragment_scanner.to_batches()
@@ -1802,8 +1806,32 @@ class ArrowScan:
                 # This break will also cancel all running tasks in the executor
                 break
 
+    def to_record_batch_stream(
+        self, tasks: Iterable[FileScanTask], batch_size: int | None = None
+    ) -> Iterator[pa.RecordBatch]:
+        """Scan the Iceberg table and return an Iterator[pa.RecordBatch] in a streaming fashion.
+
+        Files are read sequentially and batches are yielded one at a time
+        without materializing all batches in memory. Use this when memory
+        efficiency is more important than throughput.
+
+        Args:
+            tasks: FileScanTasks representing the data files and delete files to read from.
+            batch_size: Maximum number of rows per RecordBatch. If None,
+                uses PyArrow's default (131,072 rows).
+
+        Yields:
+            pa.RecordBatch: Record batches from the scan, one at a time.
+        """
+        tasks = list(tasks) if not isinstance(tasks, list) else tasks
+        deletes_per_file = _read_all_delete_files(self._io, tasks)
+        yield from self._record_batches_from_scan_tasks_and_deletes(tasks, deletes_per_file, batch_size)
+
     def _record_batches_from_scan_tasks_and_deletes(
-        self, tasks: Iterable[FileScanTask], deletes_per_file: dict[str, list[ChunkedArray]]
+        self,
+        tasks: Iterable[FileScanTask],
+        deletes_per_file: dict[str, list[ChunkedArray]],
+        batch_size: int | None = None,
     ) -> Iterator[pa.RecordBatch]:
         total_row_count = 0
         for task in tasks:
@@ -1822,6 +1850,7 @@ class ArrowScan:
                 self._table_metadata.specs().get(task.file.spec_id),
                 self._table_metadata.format_version,
                 self._downcast_ns_timestamp_to_us,
+                batch_size,
             )
             for batch in batches:
                 if self._limit is not None:

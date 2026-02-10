@@ -1272,3 +1272,53 @@ def test_scan_source_field_missing_in_spec(catalog: Catalog, spark: SparkSession
 
     table = catalog.load_table(identifier)
     assert len(list(table.scan().plan_files())) == 3
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_datascan_to_record_batches(catalog: Catalog) -> None:
+    table = create_table(catalog)
+
+    arrow_table = pa.Table.from_pydict(
+        {
+            "str": ["a", "b", "c"],
+            "int": [1, 2, 3],
+        },
+        schema=pa.schema([pa.field("str", pa.large_string()), pa.field("int", pa.int32())]),
+    )
+    table.append(arrow_table)
+
+    scan = table.scan()
+    streaming_batches = list(scan.to_record_batches())
+    streaming_result = pa.concat_tables(
+        [pa.Table.from_batches([b]) for b in streaming_batches], promote_options="permissive"
+    )
+
+    eager_result = scan.to_arrow()
+
+    assert streaming_result.num_rows == eager_result.num_rows
+    assert streaming_result.column_names == eager_result.column_names
+    assert streaming_result.sort_by("int").equals(eager_result.sort_by("int"))
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_datascan_to_record_batches_with_batch_size(catalog: Catalog) -> None:
+    table = create_table(catalog)
+
+    arrow_table = pa.Table.from_pydict(
+        {
+            "str": [f"val_{i}" for i in range(100)],
+            "int": list(range(100)),
+        },
+        schema=pa.schema([pa.field("str", pa.large_string()), pa.field("int", pa.int32())]),
+    )
+    table.append(arrow_table)
+
+    scan = table.scan()
+    batches = list(scan.to_record_batches(batch_size=10))
+
+    total_rows = sum(len(b) for b in batches)
+    assert total_rows == 100
+    for batch in batches:
+        assert len(batch) <= 10

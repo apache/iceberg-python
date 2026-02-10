@@ -2182,6 +2182,26 @@ class DataScan(TableScan):
             batches,
         ).cast(target_schema)
 
+    def to_record_batches(self, batch_size: int | None = None) -> Iterator["pa.RecordBatch"]:
+        """Read record batches in a streaming fashion from this DataScan.
+
+        Files are read sequentially and batches are yielded one at a time
+        without materializing all batches in memory. Use this when memory
+        efficiency is more important than throughput.
+
+        Args:
+            batch_size: Maximum number of rows per RecordBatch. If None,
+                uses PyArrow's default (131,072 rows).
+
+        Yields:
+            pa.RecordBatch: Record batches from the scan, one at a time.
+        """
+        from pyiceberg.io.pyarrow import ArrowScan
+
+        yield from ArrowScan(
+            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
+        ).to_record_batch_stream(self.plan_files(), batch_size)
+
     def to_pandas(self, **kwargs: Any) -> pd.DataFrame:
         """Read a Pandas DataFrame eagerly from this Iceberg table.
 

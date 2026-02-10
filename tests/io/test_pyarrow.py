@@ -4884,3 +4884,212 @@ def test_partition_column_projection_with_schema_evolution(catalog: InMemoryCata
     result_sorted = result.sort_by("name")
     assert result_sorted["name"].to_pylist() == ["Alice", "Bob", "Charlie", "David"]
     assert result_sorted["new_column"].to_pylist() == [None, None, "new1", "new2"]
+
+
+def test_task_to_record_batches_with_batch_size(tmpdir: str) -> None:
+    schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    pyarrow_schema = schema_to_pyarrow(schema, metadata={ICEBERG_SCHEMA: bytes(schema.model_dump_json(), UTF8)})
+
+    # Create a parquet file with 1000 rows
+    table = pa.Table.from_arrays([pa.array(list(range(1000)))], schema=pyarrow_schema)
+    data_file = _write_table_to_data_file(f"{tmpdir}/batch_size_test.parquet", pyarrow_schema, table)
+    data_file.spec_id = 0
+
+    task = FileScanTask(data_file=data_file)
+
+    batches = list(
+        _task_to_record_batches(
+            PyArrowFileIO(),
+            task,
+            bound_row_filter=AlwaysTrue(),
+            projected_schema=schema,
+            table_schema=schema,
+            projected_field_ids={1},
+            positional_deletes=None,
+            case_sensitive=True,
+            batch_size=100,
+        )
+    )
+
+    total_rows = sum(len(b) for b in batches)
+    assert total_rows == 1000
+    for batch in batches:
+        assert len(batch) <= 100
+
+
+def test_to_record_batches_streaming_basic(tmpdir: str) -> None:
+    schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    pyarrow_schema = schema_to_pyarrow(schema, metadata={ICEBERG_SCHEMA: bytes(schema.model_dump_json(), UTF8)})
+
+    table = pa.Table.from_arrays([pa.array(list(range(100)))], schema=pyarrow_schema)
+    data_file = _write_table_to_data_file(f"{tmpdir}/streaming_basic.parquet", pyarrow_schema, table)
+    data_file.spec_id = 0
+
+    task = FileScanTask(data_file=data_file)
+
+    scan = ArrowScan(
+        table_metadata=TableMetadataV2(
+            location="file://a/b/",
+            last_column_id=1,
+            format_version=2,
+            schemas=[schema],
+            partition_specs=[PartitionSpec()],
+        ),
+        io=PyArrowFileIO(),
+        projected_schema=schema,
+        row_filter=AlwaysTrue(),
+        case_sensitive=True,
+    )
+
+    result = scan.to_record_batches_streaming([task])
+    # Should be a generator/iterator, not a list
+    import types
+
+    assert isinstance(result, types.GeneratorType)
+
+    batches = list(result)
+    total_rows = sum(len(b) for b in batches)
+    assert total_rows == 100
+
+
+def test_to_record_batches_streaming_with_batch_size(tmpdir: str) -> None:
+    schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    pyarrow_schema = schema_to_pyarrow(schema, metadata={ICEBERG_SCHEMA: bytes(schema.model_dump_json(), UTF8)})
+
+    table = pa.Table.from_arrays([pa.array(list(range(500)))], schema=pyarrow_schema)
+    data_file = _write_table_to_data_file(f"{tmpdir}/streaming_batch_size.parquet", pyarrow_schema, table)
+    data_file.spec_id = 0
+
+    task = FileScanTask(data_file=data_file)
+
+    scan = ArrowScan(
+        table_metadata=TableMetadataV2(
+            location="file://a/b/",
+            last_column_id=1,
+            format_version=2,
+            schemas=[schema],
+            partition_specs=[PartitionSpec()],
+        ),
+        io=PyArrowFileIO(),
+        projected_schema=schema,
+        row_filter=AlwaysTrue(),
+        case_sensitive=True,
+    )
+
+    batches = list(scan.to_record_batches_streaming([task], batch_size=50))
+
+    total_rows = sum(len(b) for b in batches)
+    assert total_rows == 500
+    for batch in batches:
+        assert len(batch) <= 50
+
+
+def test_to_record_batches_streaming_with_limit(tmpdir: str) -> None:
+    schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    pyarrow_schema = schema_to_pyarrow(schema, metadata={ICEBERG_SCHEMA: bytes(schema.model_dump_json(), UTF8)})
+
+    table = pa.Table.from_arrays([pa.array(list(range(500)))], schema=pyarrow_schema)
+    data_file = _write_table_to_data_file(f"{tmpdir}/streaming_limit.parquet", pyarrow_schema, table)
+    data_file.spec_id = 0
+
+    task = FileScanTask(data_file=data_file)
+
+    scan = ArrowScan(
+        table_metadata=TableMetadataV2(
+            location="file://a/b/",
+            last_column_id=1,
+            format_version=2,
+            schemas=[schema],
+            partition_specs=[PartitionSpec()],
+        ),
+        io=PyArrowFileIO(),
+        projected_schema=schema,
+        row_filter=AlwaysTrue(),
+        case_sensitive=True,
+        limit=100,
+    )
+
+    batches = list(scan.to_record_batches_streaming([task]))
+
+    total_rows = sum(len(b) for b in batches)
+    assert total_rows == 100
+
+
+def test_to_record_batches_streaming_with_deletes(
+    deletes_file: str, request: pytest.FixtureRequest, table_schema_simple: Schema
+) -> None:
+    file_format = FileFormat.PARQUET if deletes_file.endswith(".parquet") else FileFormat.ORC
+
+    if file_format == FileFormat.PARQUET:
+        example_task = request.getfixturevalue("example_task")
+    else:
+        example_task = request.getfixturevalue("example_task_orc")
+
+    example_task_with_delete = FileScanTask(
+        data_file=example_task.file,
+        delete_files={
+            DataFile.from_args(
+                content=DataFileContent.POSITION_DELETES,
+                file_path=deletes_file,
+                file_format=file_format,
+            )
+        },
+    )
+
+    metadata_location = "file://a/b/c.json"
+    scan = ArrowScan(
+        table_metadata=TableMetadataV2(
+            location=metadata_location,
+            last_column_id=1,
+            format_version=2,
+            current_schema_id=1,
+            schemas=[table_schema_simple],
+            partition_specs=[PartitionSpec()],
+        ),
+        io=load_file_io(),
+        projected_schema=table_schema_simple,
+        row_filter=AlwaysTrue(),
+    )
+
+    # Compare streaming path to table path
+    streaming_batches = list(scan.to_record_batches_streaming([example_task_with_delete]))
+    streaming_table = pa.concat_tables(
+        [pa.Table.from_batches([b]) for b in streaming_batches], promote_options="permissive"
+    )
+    eager_table = scan.to_table(tasks=[example_task_with_delete])
+
+    assert streaming_table.num_rows == eager_table.num_rows
+    assert streaming_table.column_names == eager_table.column_names
+
+
+def test_to_record_batches_streaming_multiple_files(tmpdir: str) -> None:
+    schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    pyarrow_schema = schema_to_pyarrow(schema, metadata={ICEBERG_SCHEMA: bytes(schema.model_dump_json(), UTF8)})
+
+    tasks = []
+    total_expected = 0
+    for i in range(3):
+        num_rows = (i + 1) * 100  # 100, 200, 300
+        total_expected += num_rows
+        table = pa.Table.from_arrays([pa.array(list(range(num_rows)))], schema=pyarrow_schema)
+        data_file = _write_table_to_data_file(f"{tmpdir}/multi_{i}.parquet", pyarrow_schema, table)
+        data_file.spec_id = 0
+        tasks.append(FileScanTask(data_file=data_file))
+
+    scan = ArrowScan(
+        table_metadata=TableMetadataV2(
+            location="file://a/b/",
+            last_column_id=1,
+            format_version=2,
+            schemas=[schema],
+            partition_specs=[PartitionSpec()],
+        ),
+        io=PyArrowFileIO(),
+        projected_schema=schema,
+        row_filter=AlwaysTrue(),
+        case_sensitive=True,
+    )
+
+    batches = list(scan.to_record_batches_streaming(tasks))
+    total_rows = sum(len(b) for b in batches)
+    assert total_rows == total_expected  # 600 rows total
