@@ -11,19 +11,18 @@ resolution-markers = [
 
 [[package]]
 name = "adlfs"
-version = "2025.8.0"
+version = "2026.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "aiohttp" },
     { name = "azure-core" },
     { name = "azure-datalake-store" },
     { name = "azure-identity" },
-    { name = "azure-storage-blob" },
+    { name = "azure-storage-blob", extra = ["aio"] },
     { name = "fsspec" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6b/af/4d74c92254fdeabc19e54df4c9146855c2c1027bd4052477e3a27b05de54/adlfs-2025.8.0.tar.gz", hash = "sha256:6fe5857866c18990f632598273e6a8b15edc6baf8614272ede25624057b83e64", size = 52007, upload-time = "2025-08-30T12:07:40.936Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d9/39/5d7bde68327d9f6b9d73353664f4b247e194130b0ebcd4ca2d0e101fbd57/adlfs-2026.2.0.tar.gz", hash = "sha256:7661330ef67d99e55d15750cadef5a604a82e1513787039be830efc5b53ba533", size = 54018, upload-time = "2026-02-09T18:46:49.876Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/59/e0/e98227759d88184406f757d149843fa8f3d8bab71f5a2ebd3f6f3b3970b1/adlfs-2025.8.0-py3-none-any.whl", hash = "sha256:c12a9203a31485cad19599bf2ad30d8efcf4cf0fd2446c60fcdc18604fae07b1", size = 44076, upload-time = "2025-08-30T12:07:39.694Z" },
+    { url = "https://files.pythonhosted.org/packages/0d/95/123783625038056187f5bc9036d5249e52751e5dcc685e3f201a0a5d40ba/adlfs-2026.2.0-py3-none-any.whl", hash = "sha256:995fc9acc2ff8d794af15b36c604ab8dc02fe2301a973ce2df0f5b246d13e439", size = 45681, upload-time = "2026-02-09T18:46:48.362Z" },
 ]
 
 [[package]]
@@ -387,6 +386,11 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/fc/d8/b8fcba9464f02b121f39de2db2bf57f0b216fe11d014513d666e8634380d/azure_core-1.38.0-py3-none-any.whl", hash = "sha256:ab0c9b2cd71fecb1842d52c965c95285d3cfb38902f6766e4a471f1cd8905335", size = 217825, upload-time = "2026-01-12T17:03:07.291Z" },
 ]
 
+[package.optional-dependencies]
+aio = [
+    { name = "aiohttp" },
+]
+
 [[package]]
 name = "azure-datalake-store"
 version = "0.0.53"
@@ -430,6 +434,11 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/36/7c/2fd872e11a88163f208b9c92de273bf64bb22d0eef9048cc6284d128a77a/azure_storage_blob-12.27.1.tar.gz", hash = "sha256:a1596cc4daf5dac9be115fcb5db67245eae894cf40e4248243754261f7b674a6", size = 597579, upload-time = "2025-10-29T12:27:16.185Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3d/9e/1c90a122ea6180e8c72eb7294adc92531b0e08eb3d2324c2ba70d37f4802/azure_storage_blob-12.27.1-py3-none-any.whl", hash = "sha256:65d1e25a4628b7b6acd20ff7902d8da5b4fde8e46e19c8f6d213a3abc3ece272", size = 428954, upload-time = "2025-10-29T12:27:18.072Z" },
+]
+
+[package.optional-dependencies]
+aio = [
+    { name = "azure-core", extra = ["aio"] },
 ]
 
 [[package]]
