@@ -40,6 +40,7 @@ from pyiceberg.catalog.rest.scan_planning import (
     PlanSubmitted,
     PlanTableScanRequest,
     ScanTasks,
+    StorageCredential,
 )
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
@@ -256,6 +257,7 @@ class TableResponse(IcebergBaseModel):
     metadata_location: str | None = Field(alias="metadata-location", default=None)
     metadata: TableMetadata
     config: Properties = Field(default_factory=dict)
+    storage_credentials: list[StorageCredential] | None = Field(alias="storage-credentials", default=None)
 
 
 class CreateTableRequest(IcebergBaseModel):
@@ -728,13 +730,40 @@ class RestCatalog(Catalog):
 
         session.mount(self.uri, SigV4Adapter(**self.properties))
 
+    @staticmethod
+    def _get_credentials(
+        storage_credentials: list[StorageCredential] | None,
+        config: Properties,
+        metadata_location: str | None,
+        table_location: str | None,
+    ) -> Properties:
+        if not storage_credentials:
+            return config
+        target = metadata_location or table_location
+        if not target:
+            return config
+        matching = [sc for sc in storage_credentials if target.startswith(sc.prefix)]
+        if not matching:
+            return config
+        selected = max(matching, key=lambda sc: len(sc.prefix))
+        return selected.config
+
     def _response_to_table(self, identifier_tuple: tuple[str, ...], table_response: TableResponse) -> Table:
         return Table(
             identifier=identifier_tuple,
             metadata_location=table_response.metadata_location,  # type: ignore
             metadata=table_response.metadata,
             io=self._load_file_io(
-                {**table_response.metadata.properties, **table_response.config}, table_response.metadata_location
+                {
+                    **table_response.metadata.properties,
+                    **self._get_credentials(
+                        table_response.storage_credentials,
+                        table_response.config,
+                        table_response.metadata_location,
+                        getattr(table_response.metadata, "location", None),
+                    ),
+                },
+                table_response.metadata_location,
             ),
             catalog=self,
             config=table_response.config,
@@ -746,7 +775,16 @@ class RestCatalog(Catalog):
             metadata_location=table_response.metadata_location,  # type: ignore
             metadata=table_response.metadata,
             io=self._load_file_io(
-                {**table_response.metadata.properties, **table_response.config}, table_response.metadata_location
+                {
+                    **table_response.metadata.properties,
+                    **self._get_credentials(
+                        table_response.storage_credentials,
+                        table_response.config,
+                        table_response.metadata_location,
+                        getattr(table_response.metadata, "location", None),
+                    ),
+                },
+                table_response.metadata_location,
             ),
             catalog=self,
         )
