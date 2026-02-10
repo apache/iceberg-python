@@ -1501,7 +1501,7 @@ def test_table_write_schema_with_valid_upcast(
                 pa.field("list", pa.list_(pa.int64()), nullable=False),
                 pa.field("map", pa.map_(pa.string(), pa.int64()), nullable=False),
                 pa.field("double", pa.float64(), nullable=True),  # can support upcasting float to double
-                pa.field("uuid", pa.uuid(), nullable=True),
+                pa.field("uuid", pa.binary(16), nullable=True),
             )
         )
     )
@@ -2139,7 +2139,7 @@ def test_uuid_partitioning(session_catalog: Catalog, spark: SparkSession, transf
     tbl.append(arr_table)
 
     lhs = [r[0] for r in spark.table(identifier).collect()]
-    rhs = [str(u.as_py()) for u in tbl.scan().to_arrow()["uuid"].combine_chunks()]
+    rhs = [str(uuid.UUID(bytes=u.as_py())) for u in tbl.scan().to_arrow()["uuid"].combine_chunks()]
     assert lhs == rhs
 
 
@@ -2531,3 +2531,62 @@ def test_v3_write_and_read_row_lineage(spark: SparkSession, session_catalog: Cat
     assert tbl.metadata.next_row_id == initial_next_row_id + len(test_data), (
         "Expected next_row_id to be incremented by the number of added rows"
     )
+
+
+@pytest.mark.integration
+def test_write_uuid_in_pyiceberg_and_scan(session_catalog: Catalog, spark: SparkSession) -> None:
+    """Test UUID compatibility between PyIceberg and Spark.
+
+    UUIDs must be written as binary(16) for Spark compatibility since Java Arrow
+    metadata differs from Python Arrow metadata for UUID types.
+    """
+    identifier = "default.test_write_uuid_in_pyiceberg_and_scan"
+
+    session_catalog.create_namespace("ns")
+
+    schema = Schema(NestedField(field_id=1, name="uuid_col", field_type=UUIDType(), required=False))
+
+    test_data_with_null = {
+        "uuid_col": [
+            uuid.UUID("00000000-0000-0000-0000-000000000000").bytes,
+            None,
+            uuid.UUID("11111111-1111-1111-1111-111111111111").bytes,
+        ]
+    }
+
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    table = _create_table(session_catalog, identifier, {"format-version": "2"}, schema=schema)
+
+    arrow_table = pa.table(test_data_with_null, schema=schema.as_arrow())
+
+    # Write with pyarrow
+    table.append(arrow_table)
+
+    # Write with pyspark
+    spark.sql(
+        f"""
+        INSERT INTO {identifier} VALUES ("22222222-2222-2222-2222-222222222222")
+        """
+    )
+    df = spark.table(identifier)
+
+    table.refresh()
+
+    assert df.count() == 4
+    assert len(table.scan().to_arrow()) == 4
+
+    result = df.where("uuid_col = '00000000-0000-0000-0000-000000000000'")
+    assert result.count() == 1
+
+    result = df.where("uuid_col = '22222222-2222-2222-2222-222222222222'")
+    assert result.count() == 1
+
+    result = table.scan(row_filter=EqualTo("uuid_col", uuid.UUID("00000000-0000-0000-0000-000000000000").bytes)).to_arrow()
+    assert len(result) == 1
+
+    result = table.scan(row_filter=EqualTo("uuid_col", uuid.UUID("22222222-2222-2222-2222-222222222222").bytes)).to_arrow()
+    assert len(result) == 1
