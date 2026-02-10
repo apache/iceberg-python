@@ -471,14 +471,7 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
 
                                 # Rewrite the manifest
                                 if len(existing_entries) > 0:
-                                    with write_manifest(
-                                        format_version=self._transaction.table_metadata.format_version,
-                                        spec=self._transaction.table_metadata.specs()[manifest_file.partition_spec_id],
-                                        schema=self.schema(),
-                                        output_file=self.new_manifest_output(),
-                                        snapshot_id=self._snapshot_id,
-                                        avro_compression=self._compression,
-                                    ) as writer:
+                                    with self.new_manifest_writer(spec=self.spec(manifest_file.partition_spec_id)) as writer:
                                         for existing_entry in existing_entries:
                                             writer.add_entry(existing_entry)
                                     existing_manifests.append(writer.to_manifest_file())
