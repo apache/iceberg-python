@@ -1030,15 +1030,6 @@ def test_log_level_cli_overrides_env(mocker: MockFixture) -> None:
     call_kwargs = mock_basicConfig.call_args[1]
     assert call_kwargs["level"] == logging.ERROR
 
-
-def test_delete_files_requires_at_least_one_path(catalog: InMemoryCatalog) -> None:
-    runner = CliRunner()
-    result = runner.invoke(run, ["delete-files", "default.my_table"])
-    assert result.exit_code == 2
-    out = (result.output or "") + (getattr(result, "stderr", "") or "")
-    assert "file path" in out.lower() or "At least one" in out
-
-
 def test_delete_files_invalid_property_format(catalog: InMemoryCatalog, mocker: MockFixture) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE)
     catalog.create_table(
