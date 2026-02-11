@@ -15,9 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from __future__ import annotations
+
 from typing import (
     TYPE_CHECKING,
-    Union,
 )
 
 from sqlalchemy import (
@@ -174,7 +175,7 @@ class SqlCatalog(MetastoreCatalog):
     def create_table(
         self,
         identifier: str | Identifier,
-        schema: Union[Schema, "pa.Schema"],
+        schema: Schema | pa.Schema,
         location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -726,10 +727,10 @@ class SqlCatalog(MetastoreCatalog):
 
     def create_view(
         self,
-        identifier: Union[str, Identifier],
-        schema: Union[Schema, "pa.Schema"],
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
         view_version: ViewVersion,
-        location: Optional[str] = None,
+        location: str | None = None,
         properties: Properties = EMPTY_DICT,
     ) -> View:
         raise NotImplementedError
