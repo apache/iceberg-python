@@ -31,7 +31,7 @@ from pyiceberg.catalog import URI, Catalog, load_catalog
 from pyiceberg.cli.output import ConsoleOutput, JsonOutput, Output
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchPropertyException, NoSuchTableError
 from pyiceberg.table import TableProperties
-from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
+from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.utils.properties import property_as_int
 
 
@@ -177,6 +177,102 @@ def files(ctx: Context, identifier: str, history: bool) -> None:
 
     catalog_table = catalog.load_table(identifier)
     output.files(catalog_table, history)
+
+
+@run.command("add-files")
+@click.argument("identifier")
+@click.argument("file_paths", nargs=-1)
+@click.option("--branch", default=None, help="Branch to add files to (default: main).")
+@click.option(
+    "--no-check-duplicates",
+    is_flag=True,
+    help="Skip check for files already referenced by the table.",
+)
+@click.option(
+    "--property",
+    "-p",
+    "properties",
+    multiple=True,
+    help="Snapshot property key=value (repeatable).",
+)
+@click.pass_context
+@catch_exception()
+def add_files(
+    ctx: Context,
+    identifier: str,
+    file_paths: tuple[str, ...],
+    branch: str | None,
+    no_check_duplicates: bool,
+    properties: tuple[str, ...],
+) -> None:
+    """Add one or more data files to the table by path."""
+    if not file_paths:
+        raise click.UsageError("At least one file path is required.")
+
+    catalog, output = _catalog_and_output(ctx)
+
+    snapshot_properties: dict[str, str] = {}
+    for prop in properties:
+        if "=" not in prop:
+            raise click.UsageError(f"Property must be in key=value form, got: {prop!r}")
+        key, _, value = prop.partition("=")
+        snapshot_properties[key] = value
+
+    file_paths_list = []
+    for item in file_paths:
+        file_paths_list.append(item)
+
+    table = catalog.load_table(identifier)
+    table.add_files(
+        file_paths=file_paths_list,
+        branch=branch or MAIN_BRANCH,
+        snapshot_properties=snapshot_properties,
+        check_duplicate_files=not no_check_duplicates,
+    )
+    output.text(f"Added {len(file_paths)} file(s) to {identifier}")
+
+
+@run.command("delete-files")
+@click.argument("identifier")
+@click.argument("file_paths", nargs=-1)
+@click.option("--branch", default=None, help="Branch to delete files from (default: main).")
+@click.option(
+    "--property",
+    "-p",
+    "properties",
+    multiple=True,
+    help="Snapshot property key=value (repeatable).",
+)
+@click.pass_context
+@catch_exception()
+def delete_files(
+    ctx: Context,
+    identifier: str,
+    file_paths: tuple[str, ...],
+    branch: str | None,
+    properties: tuple[str, ...],
+) -> None:
+    """Remove one or more data files from the table by path."""
+    if not file_paths:
+        raise click.UsageError("At least one file path is required.")
+
+    catalog, output = _catalog_and_output(ctx)
+
+    snapshot_properties: dict[str, str] = {}
+    for prop in properties:
+        if "=" not in prop:
+            raise click.UsageError(f"Property must be in key=value form, got: {prop!r}")
+        key, _, value = prop.partition("=")
+        snapshot_properties[key] = value
+
+    table = catalog.load_table(identifier)
+
+    file_paths_list = []
+    for item in file_paths:
+        file_paths_list.append(item)
+
+    table.delete_files(file_paths=file_paths_list, branch=branch or MAIN_BRANCH, snapshot_properties=snapshot_properties)
+    output.text(f"Deleted {len(file_paths)} file(s) from {identifier}")
 
 
 @run.command()
@@ -470,3 +566,7 @@ def _retention_properties(ref: SnapshotRef, table_properties: dict[str, str]) ->
     retention_properties["max_ref_age_ms"] = str(ref.max_ref_age_ms) if ref.max_ref_age_ms else "forever"
 
     return retention_properties
+
+
+if __name__ == "__main__":
+    run()

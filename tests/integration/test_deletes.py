@@ -15,23 +15,82 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
-from collections.abc import Generator
-from datetime import datetime
+from collections.abc import Generator, Iterator
+from datetime import date, datetime
 
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 from pyspark.sql import SparkSession
 
+from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.expressions import AlwaysTrue, EqualTo, LessThanOrEqual
+from pyiceberg.io import FileIO
 from pyiceberg.manifest import ManifestEntryStatus
-from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.table.snapshots import Operation, Summary
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.types import FloatType, IntegerType, LongType, NestedField, StringType, TimestampType
+from pyiceberg.types import BooleanType, DateType, FloatType, IntegerType, LongType, NestedField, StringType, TimestampType
+
+# Schema and data used by delete_files tests (moved from test_add_files)
+TABLE_SCHEMA_DELETE_FILES = Schema(
+    NestedField(field_id=1, name="foo", field_type=BooleanType(), required=False),
+    NestedField(field_id=2, name="bar", field_type=StringType(), required=False),
+    NestedField(field_id=4, name="baz", field_type=IntegerType(), required=False),
+    NestedField(field_id=10, name="qux", field_type=DateType(), required=False),
+)
+
+ARROW_SCHEMA_DELETE_FILES = pa.schema(
+    [
+        ("foo", pa.bool_()),
+        ("bar", pa.string()),
+        ("baz", pa.int32()),
+        ("qux", pa.date32()),
+    ]
+)
+
+ARROW_TABLE_DELETE_FILES = pa.Table.from_pylist(
+    [
+        {
+            "foo": True,
+            "bar": "bar_string",
+            "baz": 123,
+            "qux": date(2024, 3, 7),
+        }
+    ],
+    schema=ARROW_SCHEMA_DELETE_FILES,
+)
+
+
+def _write_parquet(io: FileIO, file_path: str, arrow_schema: pa.Schema, arrow_table: pa.Table) -> None:
+    fo = io.new_output(file_path)
+    with fo.create(overwrite=True) as fos:
+        with pq.ParquetWriter(fos, schema=arrow_schema) as writer:
+            writer.write_table(arrow_table)
+
+
+def _create_table_for_delete_files(
+    session_catalog: Catalog,
+    identifier: str,
+    format_version: int,
+    partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+    schema: Schema = TABLE_SCHEMA_DELETE_FILES,
+) -> Table:
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    return session_catalog.create_table(
+        identifier=identifier,
+        schema=schema,
+        properties={"format-version": str(format_version)},
+        partition_spec=partition_spec,
+    )
 
 
 def run_spark_commands(spark: SparkSession, sqls: list[str]) -> None:
@@ -55,6 +114,12 @@ def test_table(session_catalog: RestCatalog) -> Generator[Table, None, None]:
     yield test_table
 
     session_catalog.drop_table(identifier)
+
+
+@pytest.fixture(name="format_version", params=[pytest.param(1, id="format_version=1"), pytest.param(2, id="format_version=2")])
+def format_version_fixture(request: "pytest.FixtureRequest") -> Iterator[int]:
+    """Fixture to run tests with different table format versions (for delete_files tests)."""
+    yield request.param
 
 
 @pytest.mark.integration
@@ -975,3 +1040,89 @@ def test_manifest_entry_after_deletes(session_catalog: RestCatalog) -> None:
     assert after_delete_snapshot is not None
 
     assert_manifest_entry(ManifestEntryStatus.DELETED, after_delete_snapshot.snapshot_id)
+
+
+@pytest.mark.integration
+def test_delete_files_from_unpartitioned_table(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    identifier = f"default.delete_files_unpartitioned_v{format_version}"
+    tbl = _create_table_for_delete_files(session_catalog, identifier, format_version)
+
+    file_paths = [f"s3://warehouse/default/delete_unpartitioned/v{format_version}/test-{i}.parquet" for i in range(5)]
+    for file_path in file_paths:
+        _write_parquet(tbl.io, file_path, ARROW_SCHEMA_DELETE_FILES, ARROW_TABLE_DELETE_FILES)
+
+    tbl.add_files(file_paths=file_paths)
+    assert len(tbl.scan().to_arrow()) == 5
+
+    tbl.delete_files(file_paths=file_paths[:2])
+
+    rows = spark.sql(
+        f"""
+        SELECT added_data_files_count, existing_data_files_count, deleted_data_files_count
+        FROM {identifier}.all_manifests
+    """
+    ).collect()
+
+    assert sum(row.deleted_data_files_count for row in rows) == 2
+
+    df = spark.table(identifier)
+    assert df.count() == 3
+
+    assert len(tbl.scan().to_arrow()) == 3
+
+
+@pytest.mark.integration
+def test_delete_files_raises_on_nonexistent_file(session_catalog: Catalog, format_version: int) -> None:
+    identifier = f"default.delete_files_nonexistent_v{format_version}"
+    tbl = _create_table_for_delete_files(session_catalog, identifier, format_version)
+
+    file_paths = [f"s3://warehouse/default/delete_nonexistent/v{format_version}/test-{i}.parquet" for i in range(3)]
+    for file_path in file_paths:
+        _write_parquet(tbl.io, file_path, ARROW_SCHEMA_DELETE_FILES, ARROW_TABLE_DELETE_FILES)
+
+    tbl.add_files(file_paths=file_paths)
+
+    with pytest.raises(ValueError, match="Cannot delete files that are not referenced by table"):
+        tbl.delete_files(file_paths=["s3://warehouse/default/does-not-exist.parquet"])
+
+
+@pytest.mark.integration
+def test_delete_files_raises_on_duplicate_paths(session_catalog: Catalog, format_version: int) -> None:
+    identifier = f"default.delete_files_duplicate_v{format_version}"
+    tbl = _create_table_for_delete_files(session_catalog, identifier, format_version)
+
+    file_path = f"s3://warehouse/default/delete_duplicate/v{format_version}/test.parquet"
+    _write_parquet(tbl.io, file_path, ARROW_SCHEMA_DELETE_FILES, ARROW_TABLE_DELETE_FILES)
+
+    tbl.add_files(file_paths=[file_path])
+
+    with pytest.raises(ValueError, match="File paths must be unique"):
+        tbl.delete_files(file_paths=[file_path, file_path])
+
+
+@pytest.mark.integration
+def test_delete_files_from_branch(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    identifier = f"default.delete_files_branch_v{format_version}"
+    branch = "branch1"
+
+    tbl = _create_table_for_delete_files(session_catalog, identifier, format_version)
+
+    file_paths = [f"s3://warehouse/default/delete_branch/v{format_version}/test-{i}.parquet" for i in range(5)]
+    for file_path in file_paths:
+        _write_parquet(tbl.io, file_path, ARROW_SCHEMA_DELETE_FILES, ARROW_TABLE_DELETE_FILES)
+
+    tbl.append(ARROW_TABLE_DELETE_FILES)
+    assert tbl.metadata.current_snapshot_id is not None
+    tbl.manage_snapshots().create_branch(snapshot_id=tbl.metadata.current_snapshot_id, branch_name=branch).commit()
+
+    tbl.add_files(file_paths=file_paths, branch=branch)
+    branch_df = spark.table(f"{identifier}.branch_{branch}")
+    assert branch_df.count() == 6
+
+    tbl.delete_files(file_paths=file_paths[:3], branch=branch)
+
+    branch_df = spark.table(f"{identifier}.branch_{branch}")
+    assert branch_df.count() == 3
+
+    main_df = spark.table(identifier)
+    assert main_df.count() == 1
