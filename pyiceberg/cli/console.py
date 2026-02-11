@@ -218,7 +218,7 @@ def delete_files(
     for item in file_paths:
         file_paths_list.append(item)
 
-    table.delete_files(file_paths=list(file_paths), branch=branch or MAIN_BRANCH, snapshot_properties=snapshot_properties)
+    table.delete_files(file_paths=file_paths_list, branch=branch or MAIN_BRANCH, snapshot_properties=snapshot_properties)
     output.text(f"Deleted {len(file_paths)} file(s) from {identifier}")
 
 
