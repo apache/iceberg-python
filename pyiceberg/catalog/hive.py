@@ -439,7 +439,7 @@ class HiveCatalog(MetastoreCatalog):
     def create_view(
         self,
         identifier: str | Identifier,
-        schema: Schema | pa.Schema,
+        schema: Union[Schema, "pa.Schema"],
         view_version: ViewVersion,
         location: str | None = None,
         properties: Properties = EMPTY_DICT,
