@@ -14,12 +14,13 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+from __future__ import annotations
+
 from collections import deque
 from enum import Enum
 from typing import (
     TYPE_CHECKING,
     Any,
-    Union,
 )
 from urllib.parse import quote, unquote
 
@@ -117,7 +118,7 @@ class Endpoint(IcebergBaseModel):
         return f"{self.http_method.value} {self.path}"
 
     @classmethod
-    def from_string(cls, endpoint: str) -> "Endpoint":
+    def from_string(cls, endpoint: str) -> Endpoint:
         elements = endpoint.strip().split(None, 1)
         if len(elements) != 2:
             raise ValueError(f"Invalid endpoint (must consist of two elements separated by a single space): {endpoint}")
@@ -268,7 +269,7 @@ class TableResponse(IcebergBaseModel):
 
 
 class ViewResponse(IcebergBaseModel):
-    metadata_location: Optional[str] = Field(alias="metadata-location", default=None)
+    metadata_location: str | None = Field(alias="metadata-location", default=None)
     metadata: ViewMetadata
     config: Properties = Field(default_factory=dict)
 
@@ -290,13 +291,13 @@ class CreateTableRequest(IcebergBaseModel):
 
 class CreateViewRequest(IcebergBaseModel):
     name: str = Field()
-    location: Optional[str] = Field()
+    location: str | None = Field()
     view_schema: Schema = Field(alias="schema")
     view_version: ViewVersion = Field(alias="view-version")
     properties: Properties = Field(default_factory=dict)
 
     @field_validator("properties", mode="before")
-    def transform_properties_dict_value_to_str(cls, properties: Properties) -> Dict[str, str]:
+    def transform_properties_dict_value_to_str(cls, properties: Properties) -> dict[str, str]:
         return transform_dict_value_to_str(properties)
 
 
@@ -778,7 +779,7 @@ class RestCatalog(Catalog):
             catalog=self,
         )
 
-    def _response_to_view(self, identifier_tuple: Tuple[str, ...], view_response: ViewResponse) -> View:
+    def _response_to_view(self, identifier_tuple: tuple[str, ...], view_response: ViewResponse) -> View:
         return View(
             identifier=identifier_tuple,
             metadata=view_response.metadata,
@@ -803,7 +804,7 @@ class RestCatalog(Catalog):
     def _create_table(
         self,
         identifier: str | Identifier,
-        schema: Union[Schema, "pa.Schema"],
+        schema: Schema | pa.Schema,
         location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -846,7 +847,7 @@ class RestCatalog(Catalog):
     def create_table(
         self,
         identifier: str | Identifier,
-        schema: Union[Schema, "pa.Schema"],
+        schema: Schema | pa.Schema,
         location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -867,7 +868,7 @@ class RestCatalog(Catalog):
     def create_table_transaction(
         self,
         identifier: str | Identifier,
-        schema: Union[Schema, "pa.Schema"],
+        schema: Schema | pa.Schema,
         location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -888,10 +889,10 @@ class RestCatalog(Catalog):
     @retry(**_RETRY_ARGS)
     def create_view(
         self,
-        identifier: Union[str, Identifier],
-        schema: Union[Schema, "pa.Schema"],
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
         view_version: ViewVersion,
-        location: Optional[str] = None,
+        location: str | None = None,
         properties: Properties = EMPTY_DICT,
     ) -> View:
         iceberg_schema = self._convert_schema_if_needed(schema)

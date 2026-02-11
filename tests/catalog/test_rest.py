@@ -15,6 +15,8 @@
 #  specific language governing permissions and limitations
 #  under the License.
 # pylint: disable=redefined-outer-name,unused-argument
+from __future__ import annotations
+
 import base64
 import os
 from collections.abc import Callable
@@ -142,7 +144,7 @@ def example_table_metadata_no_snapshot_v1_rest_json(example_table_metadata_no_sn
 
 
 @pytest.fixture
-def example_view_metadata_rest_json(example_view_metadata_v1: Dict[str, Any]) -> Dict[str, Any]:
+def example_view_metadata_rest_json(example_view_metadata_v1: dict[str, Any]) -> dict[str, Any]:
     return {
         "metadata-location": "s3://warehouse/database/table/metadata/00001-5f2f8166-244c-4eae-ac36-384ecdec81fc.gz.metadata.json",
         "metadata": example_view_metadata_v1,
@@ -1282,7 +1284,7 @@ def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> Non
     assert "Table already exists" in str(e.value)
 
 
-def test_create_view_200(rest_mock: Mocker, table_schema_simple: Schema, example_view_metadata_rest_json: Dict[str, Any]) -> None:
+def test_create_view_200(rest_mock: Mocker, table_schema_simple: Schema, example_view_metadata_rest_json: dict[str, Any]) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/fokko/views",
         json=example_view_metadata_rest_json,

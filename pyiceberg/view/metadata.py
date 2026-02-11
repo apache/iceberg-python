@@ -16,7 +16,7 @@
 # under the License.
 from __future__ import annotations
 
-from typing import Dict, List, Literal, Optional
+from typing import Literal
 
 from pydantic import Field, RootModel, field_validator
 
@@ -50,11 +50,11 @@ class ViewVersion(IcebergBaseModel):
     """ID of the schema for the view version"""
     timestamp_ms: int = Field(alias="timestamp-ms")
     """Timestamp when the version was created (ms from epoch)"""
-    summary: Dict[str, str] = Field()
+    summary: dict[str, str] = Field()
     """A string to string map of summary metadata about the version"""
-    representations: List[ViewRepresentation] = Field()
+    representations: list[ViewRepresentation] = Field()
     """A list of representations for the view definition"""
-    default_catalog: Optional[str] = Field(alias="default-catalog", default=None)
+    default_catalog: str | None = Field(alias="default-catalog", default=None)
     """Catalog name to use when a reference in the SELECT does not contain a catalog"""
     default_namespace: Identifier = Field(alias="default-namespace")
     """Namespace to use when a reference in the SELECT is a single identifier"""
@@ -78,17 +78,17 @@ class ViewMetadata(IcebergBaseModel):
     """An integer version number for the view format; must be 1"""
     location: str = Field()
     """The view's base location; used to create metadata file locations"""
-    schemas: List[Schema] = Field()
+    schemas: list[Schema] = Field()
     """A list of known schemas"""
     current_version_id: int = Field(alias="current-version-id")
     """ID of the current version of the view (version-id)"""
-    versions: List[ViewVersion] = Field()
+    versions: list[ViewVersion] = Field()
     """A list of known versions of the view"""
-    version_log: List[ViewHistoryEntry] = Field(alias="version-log")
+    version_log: list[ViewHistoryEntry] = Field(alias="version-log")
     """A list of version log entries"""
     properties: Properties = Field(default_factory=dict)
     """A string to string map of view properties"""
 
     @field_validator("properties", mode="before")
-    def transform_properties_dict_value_to_str(cls, properties: Properties) -> Dict[str, str]:
+    def transform_properties_dict_value_to_str(cls, properties: Properties) -> dict[str, str]:
         return transform_dict_value_to_str(properties)

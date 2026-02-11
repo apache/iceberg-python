@@ -1136,7 +1136,7 @@ def table_metadata_v2_with_statistics() -> dict[str, Any]:
 
 
 @pytest.fixture
-def example_view_metadata_v1() -> Dict[str, Any]:
+def example_view_metadata_v1() -> dict[str, Any]:
     return {
         "view-uuid": "a20125c8-7284-442c-9aea-15fee620737c",
         "format-version": 1,
@@ -1175,7 +1175,7 @@ def example_view_metadata_v1() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def example_table_metadata_v3() -> Dict[str, Any]:
+def example_table_metadata_v3() -> dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_V3
 
 

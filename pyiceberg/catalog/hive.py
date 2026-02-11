@@ -438,10 +438,10 @@ class HiveCatalog(MetastoreCatalog):
 
     def create_view(
         self,
-        identifier: Union[str, Identifier],
-        schema: Union[Schema, "pa.Schema"],
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
         view_version: ViewVersion,
-        location: Optional[str] = None,
+        location: str | None = None,
         properties: Properties = EMPTY_DICT,
     ) -> View:
         raise NotImplementedError
