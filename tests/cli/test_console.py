@@ -1029,3 +1029,36 @@ def test_log_level_cli_overrides_env(mocker: MockFixture) -> None:
     mock_basicConfig.assert_called_once()
     call_kwargs = mock_basicConfig.call_args[1]
     assert call_kwargs["level"] == logging.ERROR
+
+def test_delete_files_requires_at_least_one_path(catalog: InMemoryCatalog) -> None:
+    runner = CliRunner()
+    result = runner.invoke(run, ["delete-files", "default.my_table"])
+    assert result.exit_code == 2
+    out = (result.output or "") + (getattr(result, "stderr", "") or "")
+    assert "file path" in out.lower() or "At least one" in out
+
+
+def test_delete_files_invalid_property_format(catalog: InMemoryCatalog, mocker: MockFixture) -> None:
+    catalog.create_namespace(TEST_TABLE_NAMESPACE)
+    catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=TEST_TABLE_SCHEMA,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        run,
+        ["delete-files", "default.my_table", "s3://bucket/file.parquet", "--property", "invalid_no_equals"],
+    )
+    assert result.exit_code == 2
+    out = (result.output or "") + (getattr(result, "stderr", "") or "")
+    assert "key=value" in out or "invalid_no_equals" in out
+
+
+def test_delete_files_table_does_not_exist(catalog: InMemoryCatalog) -> None:
+    catalog.create_namespace(TEST_TABLE_NAMESPACE)
+    runner = CliRunner()
+    result = runner.invoke(run, ["delete-files", "default.doesnotexist", "s3://bucket/file.parquet"])
+    assert result.exit_code == 1
+    out = (result.output or "") + (getattr(result, "stderr", "") or "")
+    assert "default.doesnotexist" in out and ("Table does not exist" in out or "does not exist" in out)
