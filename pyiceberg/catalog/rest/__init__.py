@@ -261,7 +261,10 @@ class TableResponse(IcebergBaseModel):
     metadata_location: str | None = Field(alias="metadata-location", default=None)
     metadata: TableMetadata
     config: Properties = Field(default_factory=dict)
-    storage_credentials: Optional[List[StorageCredential]] = Field(alias="storage-credentials", default=None)
+    storage_credentials: List[StorageCredential] = Field(
+        default_factory=list,
+        alias="storage-credentials"
+    )
 
 
 class CreateTableRequest(IcebergBaseModel):
