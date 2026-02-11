@@ -650,24 +650,6 @@ class HiveCatalog(MetastoreCatalog):
             # When the namespace doesn't exist, it throws the same error
             raise NoSuchTableError(f"Table does not exists: {table_name}") from e
 
-    def supports_purge_table(self) -> bool:
-        return False
-
-    def supports_atomic_concurrent_updates(self) -> bool:
-        return False
-
-    def supports_nested_namespaces(self) -> bool:
-        return False
-
-    def supports_schema_evolution(self) -> bool:
-        return False
-
-    def supports_slash_in_identifier(self) -> bool:
-        return False
-
-    def supports_dot_in_identifier(self) -> bool:
-        return False
-
     def purge_table(self, identifier: str | Identifier) -> None:
         # This requires to traverse the reachability set, and drop all the data files.
         raise NotImplementedError("Not yet implemented")

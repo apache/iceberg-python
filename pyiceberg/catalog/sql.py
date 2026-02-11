@@ -149,12 +149,6 @@ class SqlCatalog(MetastoreCatalog):
     def destroy_tables(self) -> None:
         SqlCatalogBaseTable.metadata.drop_all(self.engine)
 
-    def supports_slash_in_identifier(self) -> bool:
-        return False
-
-    def supports_dot_in_identifier(self) -> bool:
-        return False
-
     def _convert_orm_to_iceberg(self, orm_table: IcebergTables) -> Table:
         # Check for expected properties.
         if not (metadata_location := orm_table.metadata_location):

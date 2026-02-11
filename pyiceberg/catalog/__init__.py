@@ -737,30 +737,6 @@ class Catalog(ABC):
     def supports_server_side_planning(self) -> bool:
         """Check if the catalog supports server-side scan planning."""
 
-    @abstractmethod
-    def supports_purge_table(self) -> bool:
-        """Check if the catalog supports purging tables."""
-
-    @abstractmethod
-    def supports_atomic_concurrent_updates(self) -> bool:
-        """Check if the catalog supports atomic concurrent updates."""
-
-    @abstractmethod
-    def supports_nested_namespaces(self) -> bool:
-        """Check if the catalog supports nested namespaces."""
-
-    @abstractmethod
-    def supports_schema_evolution(self) -> bool:
-        """Check if the catalog supports schema evolution."""
-
-    @abstractmethod
-    def supports_slash_in_identifier(self) -> bool:
-        """Check if the catalog supports slash in identifier."""
-
-    @abstractmethod
-    def supports_dot_in_identifier(self) -> bool:
-        """Check if the catalog supports dot in identifier."""
-
     @staticmethod
     def identifier_to_database(
         identifier: str | Identifier, err: type[ValueError] | type[NoSuchNamespaceError] = ValueError
@@ -862,24 +838,6 @@ class MetastoreCatalog(Catalog, ABC):
 
     def supports_server_side_planning(self) -> bool:
         return False
-
-    def supports_purge_table(self) -> bool:
-        return True
-
-    def supports_atomic_concurrent_updates(self) -> bool:
-        return True
-
-    def supports_nested_namespaces(self) -> bool:
-        return True
-
-    def supports_schema_evolution(self) -> bool:
-        return True
-
-    def supports_slash_in_identifier(self) -> bool:
-        return True
-
-    def supports_dot_in_identifier(self) -> bool:
-        return True
 
     def create_table_transaction(
         self,
