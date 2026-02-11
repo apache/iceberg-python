@@ -1030,6 +1030,7 @@ def test_log_level_cli_overrides_env(mocker: MockFixture) -> None:
     call_kwargs = mock_basicConfig.call_args[1]
     assert call_kwargs["level"] == logging.ERROR
 
+
 def test_delete_files_invalid_property_format(catalog: InMemoryCatalog, mocker: MockFixture) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE)
     catalog.create_table(
