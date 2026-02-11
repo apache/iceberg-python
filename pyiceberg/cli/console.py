@@ -199,12 +199,6 @@ def delete_files(
     branch: str | None,
     properties: tuple[str, ...],
 ) -> None:
-
-
-    """
-        Remove one or more data files from the table by path
-    """
-
     """Remove one or more data files from the table by path."""
     if not file_paths:
         raise click.UsageError("At least one file path is required.")
@@ -224,11 +218,7 @@ def delete_files(
     for item in file_paths:
         file_paths_list.append(item)
 
-    table.delete_files(
-            file_paths=list(file_paths),
-            branch=branch or MAIN_BRANCH,
-            snapshot_properties=snapshot_properties
-    )
+    table.delete_files(file_paths=list(file_paths), branch=branch or MAIN_BRANCH, snapshot_properties=snapshot_properties)
     output.text(f"Deleted {len(file_paths)} file(s) from {identifier}")
 
 

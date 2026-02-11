@@ -1030,6 +1030,7 @@ def test_log_level_cli_overrides_env(mocker: MockFixture) -> None:
     call_kwargs = mock_basicConfig.call_args[1]
     assert call_kwargs["level"] == logging.ERROR
 
+
 def test_delete_files_requires_at_least_one_path(catalog: InMemoryCatalog) -> None:
     runner = CliRunner()
     result = runner.invoke(run, ["delete-files", "default.my_table"])
