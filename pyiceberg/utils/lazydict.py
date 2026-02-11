@@ -15,14 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from collections.abc import Iterator, Mapping, Sequence
 from typing import (
-    Dict,
-    Iterator,
-    Mapping,
-    Optional,
-    Sequence,
     TypeVar,
-    Union,
     cast,
 )
 
@@ -41,14 +36,14 @@ class LazyDict(Mapping[K, V]):
     #
     # Rather than spending the runtime cost of checking the type of each item, we presume
     # that the developer has correctly used the class and that the contents are valid.
-    def __init__(self, contents: Sequence[Sequence[Union[K, V]]]):
+    def __init__(self, contents: Sequence[Sequence[K | V]]):
         self._contents = contents
-        self._dict: Optional[Dict[K, V]] = None
+        self._dict: dict[K, V] | None = None
 
-    def _build_dict(self) -> Dict[K, V]:
+    def _build_dict(self) -> dict[K, V]:
         self._dict = {}
         for item in self._contents:
-            self._dict.update(dict(zip(cast(Sequence[K], item[::2]), cast(Sequence[V], item[1::2]))))
+            self._dict.update(dict(zip(cast(Sequence[K], item[::2]), cast(Sequence[V], item[1::2]), strict=True)))
 
         return self._dict
 
@@ -67,6 +62,6 @@ class LazyDict(Mapping[K, V]):
         source = self._dict or self._build_dict()
         return len(source)
 
-    def __dict__(self) -> Dict[K, V]:  # type: ignore
+    def __dict__(self) -> dict[K, V]:  # type: ignore
         """Convert the lazy dict in a dict."""
         return self._dict or self._build_dict()

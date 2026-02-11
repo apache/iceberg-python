@@ -22,7 +22,6 @@ import threading
 import uuid
 from collections.abc import Generator
 from copy import deepcopy
-from typing import Optional
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -230,7 +229,7 @@ class SaslServer(threading.Thread):
                 pass
 
     @property
-    def port(self) -> Optional[int]:
+    def port(self) -> int | None:
         self._port_bound.wait()
         return self._port
 
@@ -971,7 +970,10 @@ def test_rename_table_to_namespace_does_not_exists() -> None:
 
     catalog._client = MagicMock()
     catalog._client.__enter__().alter_table_with_environment_context.side_effect = InvalidOperationException(
-        message="Unable to change partition or table. Database default does not exist Check metastore logs for detailed stack.does_not_exists"
+        message=(
+            "Unable to change partition or table. Database default does not exist "
+            "Check metastore logs for detailed stack.does_not_exists"
+        )
     )
 
     with pytest.raises(NoSuchNamespaceError) as exc_info:

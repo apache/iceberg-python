@@ -22,15 +22,12 @@ import json
 import logging
 import os
 import threading
+from collections.abc import Callable
 from copy import copy
 from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
-    Dict,
-    Type,
-    Union,
 )
 from urllib.parse import urlparse
 
@@ -40,11 +37,13 @@ from fsspec.implementations.local import LocalFileSystem
 from requests import HTTPError
 
 from pyiceberg.catalog import TOKEN, URI
+from pyiceberg.catalog.rest.auth import AUTH_MANAGER
 from pyiceberg.exceptions import SignError
 from pyiceberg.io import (
     ADLS_ACCOUNT_HOST,
     ADLS_ACCOUNT_KEY,
     ADLS_ACCOUNT_NAME,
+    ADLS_ANON,
     ADLS_CLIENT_ID,
     ADLS_CLIENT_SECRET,
     ADLS_CONNECTION_STRING,
@@ -53,6 +52,7 @@ from pyiceberg.io import (
     ADLS_TENANT_ID,
     ADLS_TOKEN,
     AWS_ACCESS_KEY_ID,
+    AWS_PROFILE_NAME,
     AWS_REGION,
     AWS_SECRET_ACCESS_KEY,
     AWS_SESSION_TOKEN,
@@ -73,6 +73,7 @@ from pyiceberg.io import (
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
     S3_FORCE_VIRTUAL_ADDRESSING,
+    S3_PROFILE_NAME,
     S3_PROXY_URI,
     S3_REGION,
     S3_REQUEST_TIMEOUT,
@@ -124,9 +125,17 @@ class S3V4RestSigner(S3RequestSigner):
         signer_url = self.properties.get(S3_SIGNER_URI, self.properties[URI]).rstrip("/")  # type: ignore
         signer_endpoint = self.properties.get(S3_SIGNER_ENDPOINT, S3_SIGNER_ENDPOINT_DEFAULT)
 
-        signer_headers = {}
-        if token := self.properties.get(TOKEN):
-            signer_headers = {"Authorization": f"Bearer {token}"}
+        signer_headers: dict[str, str] = {}
+
+        auth_header: str | None = None
+        if auth_manager := self.properties.get(AUTH_MANAGER):
+            auth_header = auth_manager.auth_header()
+        elif token := self.properties.get(TOKEN):
+            auth_header = f"Bearer {token}"
+
+        if auth_header:
+            signer_headers["Authorization"] = auth_header
+
         signer_headers.update(get_header_properties(self.properties))
 
         signer_body = {
@@ -149,7 +158,7 @@ class S3V4RestSigner(S3RequestSigner):
         request.url = response_json["uri"]
 
 
-SIGNERS: Dict[str, Type[S3RequestSigner]] = {"S3V4RestSigner": S3V4RestSigner}
+SIGNERS: dict[str, type[S3RequestSigner]] = {"S3V4RestSigner": S3V4RestSigner}
 
 
 def _file(_: Properties) -> LocalFileSystem:
@@ -167,7 +176,7 @@ def _s3(properties: Properties) -> AbstractFileSystem:
         "region_name": get_first_property_value(properties, S3_REGION, AWS_REGION),
     }
     config_kwargs = {}
-    register_events: Dict[str, Callable[[AWSRequest], None]] = {}
+    register_events: dict[str, Callable[[AWSRequest], None]] = {}
 
     if signer := properties.get(S3_SIGNER):
         logger.info("Loading signer %s", signer)
@@ -199,7 +208,16 @@ def _s3(properties: Properties) -> AbstractFileSystem:
     else:
         anon = False
 
-    fs = S3FileSystem(anon=anon, client_kwargs=client_kwargs, config_kwargs=config_kwargs)
+    s3_fs_kwargs = {
+        "anon": anon,
+        "client_kwargs": client_kwargs,
+        "config_kwargs": config_kwargs,
+    }
+
+    if profile_name := get_first_property_value(properties, S3_PROFILE_NAME, AWS_PROFILE_NAME):
+        s3_fs_kwargs["profile"] = profile_name
+
+    fs = S3FileSystem(**s3_fs_kwargs)
 
     for event_name, event_function in register_events.items():
         fs.s3.meta.events.unregister(event_name, unique_id=1925)
@@ -269,6 +287,7 @@ def _adls(properties: Properties) -> AbstractFileSystem:
         client_id=properties.get(ADLS_CLIENT_ID),
         client_secret=properties.get(ADLS_CLIENT_SECRET),
         account_host=properties.get(ADLS_ACCOUNT_HOST),
+        anon=properties.get(ADLS_ANON),
     )
 
 
@@ -426,7 +445,7 @@ class FsspecFileIO(FileIO):
         fs = self.get_fs(uri.scheme)
         return FsspecOutputFile(location=location, fs=fs)
 
-    def delete(self, location: Union[str, InputFile, OutputFile]) -> None:
+    def delete(self, location: str | InputFile | OutputFile) -> None:
         """Delete the file at the given location.
 
         Args:
@@ -456,13 +475,13 @@ class FsspecFileIO(FileIO):
             raise ValueError(f"No registered filesystem for scheme: {scheme}")
         return self._scheme_to_fs[scheme](self.properties)
 
-    def __getstate__(self) -> Dict[str, Any]:
+    def __getstate__(self) -> dict[str, Any]:
         """Create a dictionary of the FsSpecFileIO fields used when pickling."""
         fileio_copy = copy(self.__dict__)
         del fileio_copy["_thread_locals"]
         return fileio_copy
 
-    def __setstate__(self, state: Dict[str, Any]) -> None:
+    def __setstate__(self, state: dict[str, Any]) -> None:
         """Deserialize the state into a FsSpecFileIO instance."""
         self.__dict__ = state
         self._thread_locals = threading.local()

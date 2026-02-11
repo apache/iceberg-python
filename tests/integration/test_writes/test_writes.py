@@ -24,7 +24,7 @@ import uuid
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 from urllib.parse import urlparse
 
 import fastavro
@@ -38,6 +38,7 @@ import pytz
 from pyarrow.fs import S3FileSystem
 from pydantic_core import ValidationError
 from pyspark.sql import SparkSession
+from pytest_lazy_fixtures import lf
 from pytest_mock.plugin import MockerFixture
 
 from pyiceberg.catalog import Catalog, load_catalog
@@ -64,7 +65,7 @@ from pyiceberg.types import (
     StringType,
     UUIDType,
 )
-from utils import _create_table
+from utils import TABLE_SCHEMA, _create_table
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -639,7 +640,7 @@ def test_write_parquet_compression_properties(
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
     format_version: int,
-    properties: Dict[str, Any],
+    properties: dict[str, Any],
     expected_compression_name: str,
 ) -> None:
     identifier = "default.write_parquet_compression_properties"
@@ -674,8 +675,8 @@ def test_write_parquet_other_properties(
     spark: SparkSession,
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
-    properties: Dict[str, Any],
-    expected_kwargs: Dict[str, Any],
+    properties: dict[str, Any],
+    expected_kwargs: dict[str, Any],
 ) -> None:
     identifier = "default.test_write_parquet_other_properties"
 
@@ -701,7 +702,7 @@ def test_write_parquet_unsupported_properties(
     spark: SparkSession,
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
-    properties: Dict[str, str],
+    properties: dict[str, str],
 ) -> None:
     identifier = "default.write_parquet_unsupported_properties"
 
@@ -759,7 +760,9 @@ def test_spark_writes_orc_pyiceberg_reads(spark: SparkSession, session_catalog: 
     ]
 
     # Verify PyIceberg results contain the expected data (appears twice due to create + append)
-    pyiceberg_data = list(zip(pyiceberg_df["id"], pyiceberg_df["name"], pyiceberg_df["age"], pyiceberg_df["is_active"]))
+    pyiceberg_data = list(
+        zip(pyiceberg_df["id"], pyiceberg_df["name"], pyiceberg_df["age"], pyiceberg_df["is_active"], strict=True)
+    )
     assert pyiceberg_data == expected_data + expected_data  # Data should appear twice
 
     # Verify PyIceberg data types are correct
@@ -964,7 +967,7 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
 
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_create_table_transaction(catalog: Catalog, format_version: int) -> None:
     identifier = f"default.arrow_create_table_transaction_{catalog.name}_{format_version}"
 
@@ -1016,7 +1019,7 @@ def test_create_table_transaction(catalog: Catalog, format_version: int) -> None
 
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_create_table_with_non_default_values(catalog: Catalog, table_schema_with_all_types: Schema, format_version: int) -> None:
     identifier = f"default.arrow_create_table_transaction_with_non_default_values_{catalog.name}_{format_version}"
     identifier_ref = f"default.arrow_create_table_transaction_with_non_default_values_ref_{catalog.name}_{format_version}"
@@ -1170,7 +1173,7 @@ def test_inspect_snapshots(
     lhs = spark.table(f"{identifier}.snapshots").toPandas()
     rhs = df.to_pandas()
     for column in df.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if column == "summary":
                 # Arrow returns a list of tuples, instead of a dict
                 right = dict(right)
@@ -1254,7 +1257,7 @@ def test_hive_catalog_storage_descriptor_has_changed(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_sanitize_character_partitioned(catalog: Catalog) -> None:
     table_name = "default.test_table_partitioned_sanitized_character"
     try:
@@ -1276,7 +1279,7 @@ def test_sanitize_character_partitioned(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [lf("session_catalog")])
 def test_sanitize_character_partitioned_avro_bug(catalog: Catalog) -> None:
     table_name = "default.test_table_partitioned_sanitized_character_avro"
     try:
@@ -1466,7 +1469,7 @@ def test_table_write_schema_with_valid_nullability_diff(
     rhs = written_arrow_table.to_pandas()
 
     for column in written_arrow_table.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             assert left == right
 
 
@@ -1506,7 +1509,7 @@ def test_table_write_schema_with_valid_upcast(
     rhs = written_arrow_table.to_pandas()
 
     for column in written_arrow_table.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if column == "map":
                 # Arrow returns a list of tuples, instead of a dict
                 right = dict(right)
@@ -1552,7 +1555,7 @@ def test_write_all_timestamp_precision(
     rhs = written_arrow_table.to_pandas()
 
     for column in written_arrow_table.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if pd.isnull(left):
                 assert pd.isnull(right)
             else:
@@ -1648,18 +1651,18 @@ def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with
     for i in range(3):
         tbl_a_data_file = tbl_a_entries["data_file"][i]
         assert tbl_a_data_file["column_sizes"] == [
-            (1, 49),
-            (2, 78),
-            (3, 128),
-            (4, 94),
-            (5, 118),
-            (6, 94),
-            (7, 118),
-            (8, 118),
-            (9, 118),
-            (10, 94),
-            (11, 78),
-            (12, 109),
+            (1, 51),
+            (2, 80),
+            (3, 130),
+            (4, 96),
+            (5, 120),
+            (6, 96),
+            (7, 120),
+            (8, 120),
+            (9, 120),
+            (10, 96),
+            (11, 80),
+            (12, 111),
         ]
         assert tbl_a_data_file["content"] == 0
         assert tbl_a_data_file["equality_ids"] is None
@@ -2490,3 +2493,41 @@ def test_stage_only_overwrite_files(
     assert operations == ["append", "append", "delete", "append", "append"]
 
     assert parent_snapshot_id == [None, first_snapshot, second_snapshot, second_snapshot, second_snapshot]
+
+
+@pytest.mark.skip("V3 writer support is not enabled.")
+@pytest.mark.integration
+def test_v3_write_and_read_row_lineage(spark: SparkSession, session_catalog: Catalog) -> None:
+    """Test writing to a v3 table and reading with Spark."""
+    identifier = "default.test_v3_write_and_read"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "3"})
+    assert tbl.format_version == 3, f"Expected v3, got: v{tbl.format_version}"
+    initial_next_row_id = tbl.metadata.next_row_id or 0
+
+    test_data = pa.Table.from_pydict(
+        {
+            "bool": [True, False, True],
+            "string": ["a", "b", "c"],
+            "string_long": ["a_long", "b_long", "c_long"],
+            "int": [1, 2, 3],
+            "long": [11, 22, 33],
+            "float": [1.1, 2.2, 3.3],
+            "double": [1.11, 2.22, 3.33],
+            "timestamp": [datetime(2023, 1, 1, 1, 1, 1), datetime(2023, 2, 2, 2, 2, 2), datetime(2023, 3, 3, 3, 3, 3)],
+            "timestamptz": [
+                datetime(2023, 1, 1, 1, 1, 1, tzinfo=pytz.utc),
+                datetime(2023, 2, 2, 2, 2, 2, tzinfo=pytz.utc),
+                datetime(2023, 3, 3, 3, 3, 3, tzinfo=pytz.utc),
+            ],
+            "date": [date(2023, 1, 1), date(2023, 2, 2), date(2023, 3, 3)],
+            "binary": [b"\x01", b"\x02", b"\x03"],
+            "fixed": [b"1234567890123456", b"1234567890123456", b"1234567890123456"],
+        },
+        schema=TABLE_SCHEMA.as_arrow(),
+    )
+
+    tbl.append(test_data)
+
+    assert tbl.metadata.next_row_id == initial_next_row_id + len(test_data), (
+        "Expected next_row_id to be incremented by the number of added rows"
+    )

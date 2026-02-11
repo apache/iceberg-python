@@ -15,8 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=keyword-arg-before-vararg
+from collections.abc import Callable
 from enum import Enum
-from typing import Annotated, Any, Callable, Dict, List, Optional, Union
+from typing import Annotated, Any
 
 from pydantic import (
     BeforeValidator,
@@ -26,6 +27,7 @@ from pydantic import (
     model_validator,
 )
 
+from pyiceberg.exceptions import ValidationError
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import IdentityTransform, Transform, parse_transform
 from pyiceberg.typedef import IcebergBaseModel
@@ -66,15 +68,16 @@ class SortField(IcebergBaseModel):
       transform (str): Transform that is used to produce values to be sorted on from the source column.
                        This is the same transform as described in partition transforms.
       direction (SortDirection): Sort direction, that can only be either asc or desc.
-      null_order (NullOrder): Null order that describes the order of null values when sorted. Can only be either nulls-first or nulls-last.
+      null_order (NullOrder): Null order that describes the order of null values when sorted.
+                              Can only be either nulls-first or nulls-last.
     """
 
     def __init__(
         self,
-        source_id: Optional[int] = None,
-        transform: Optional[Union[Transform[Any, Any], Callable[[IcebergType], Transform[Any, Any]]]] = None,
-        direction: Optional[SortDirection] = None,
-        null_order: Optional[NullOrder] = None,
+        source_id: int | None = None,
+        transform: Transform[Any, Any] | Callable[[IcebergType], Transform[Any, Any]] | None = None,
+        direction: SortDirection | None = None,
+        null_order: NullOrder | None = None,
         **data: Any,
     ):
         if source_id is not None:
@@ -88,7 +91,7 @@ class SortField(IcebergBaseModel):
         super().__init__(**data)
 
     @model_validator(mode="before")
-    def set_null_order(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+    def set_null_order(cls, values: dict[str, Any]) -> dict[str, Any]:
         values["direction"] = values["direction"] if values.get("direction") else SortDirection.ASC
         if not values.get("null-order"):
             values["null-order"] = NullOrder.NULLS_FIRST if values["direction"] == SortDirection.ASC else NullOrder.NULLS_LAST
@@ -144,7 +147,7 @@ class SortOrder(IcebergBaseModel):
     """
 
     order_id: int = Field(alias="order-id", default=INITIAL_SORT_ORDER_ID)
-    fields: List[SortField] = Field(default_factory=list)
+    fields: list[SortField] = Field(default_factory=list)
 
     def __init__(self, *fields: SortField, **data: Any):
         if fields:
@@ -167,6 +170,19 @@ class SortOrder(IcebergBaseModel):
         """Return the string representation of the SortOrder class."""
         fields = f"{', '.join(repr(column) for column in self.fields)}, " if self.fields else ""
         return f"SortOrder({fields}order_id={self.order_id})"
+
+    def check_compatible(self, schema: Schema) -> None:
+        for field in self.fields:
+            source_field = schema._lazy_id_to_field.get(field.source_id)
+            if source_field is None:
+                raise ValidationError(f"Cannot find source column for sort field: {field}")
+            if not source_field.field_type.is_primitive:
+                raise ValidationError(f"Cannot sort by non-primitive source field: {source_field}")
+            if not field.transform.can_transform(source_field.field_type):
+                raise ValidationError(
+                    f"Invalid source field {source_field.name} with type {source_field.field_type} "
+                    + f"for transform: {field.transform}"
+                )
 
 
 UNSORTED_SORT_ORDER_ID = 0

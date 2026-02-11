@@ -18,7 +18,6 @@ import importlib
 import logging
 import uuid
 from abc import ABC, abstractmethod
-from typing import Optional
 
 import mmh3
 
@@ -60,7 +59,7 @@ class LocationProvider(ABC):
             self.metadata_path = f"{self.table_location.rstrip('/')}/metadata"
 
     @abstractmethod
-    def new_data_location(self, data_file_name: str, partition_key: Optional[PartitionKey] = None) -> str:
+    def new_data_location(self, data_file_name: str, partition_key: PartitionKey | None = None) -> str:
         """Return a fully-qualified data file location for the given filename.
 
         Args:
@@ -105,7 +104,7 @@ class SimpleLocationProvider(LocationProvider):
     def __init__(self, table_location: str, table_properties: Properties):
         super().__init__(table_location, table_properties)
 
-    def new_data_location(self, data_file_name: str, partition_key: Optional[PartitionKey] = None) -> str:
+    def new_data_location(self, data_file_name: str, partition_key: PartitionKey | None = None) -> str:
         return (
             f"{self.data_path}/{partition_key.to_path()}/{data_file_name}"
             if partition_key
@@ -130,7 +129,7 @@ class ObjectStoreLocationProvider(LocationProvider):
             TableProperties.WRITE_OBJECT_STORE_PARTITIONED_PATHS_DEFAULT,
         )
 
-    def new_data_location(self, data_file_name: str, partition_key: Optional[PartitionKey] = None) -> str:
+    def new_data_location(self, data_file_name: str, partition_key: PartitionKey | None = None) -> str:
         if self._include_partition_paths and partition_key:
             return self.new_data_location(f"{partition_key.to_path()}/{data_file_name}")
 
@@ -166,21 +165,25 @@ class ObjectStoreLocationProvider(LocationProvider):
 
 def _import_location_provider(
     location_provider_impl: str, table_location: str, table_properties: Properties
-) -> Optional[LocationProvider]:
+) -> LocationProvider | None:
     try:
         path_parts = location_provider_impl.split(".")
         if len(path_parts) < 2:
             from pyiceberg.table import TableProperties
 
             raise ValueError(
-                f"{TableProperties.WRITE_PY_LOCATION_PROVIDER_IMPL} should be full path (module.CustomLocationProvider), got: {location_provider_impl}"
+                f"{TableProperties.WRITE_PY_LOCATION_PROVIDER_IMPL} should be full path "
+                f"(module.CustomLocationProvider), got: {location_provider_impl}"
             )
         module_name, class_name = ".".join(path_parts[:-1]), path_parts[-1]
         module = importlib.import_module(module_name)
         class_ = getattr(module, class_name)
         return class_(table_location, table_properties)
-    except ModuleNotFoundError as exc:
-        logger.warning(f"Could not initialize LocationProvider: {location_provider_impl}", exc_info=exc)
+    except ModuleNotFoundError:
+        logger.warning(
+            f"Could not initialize LocationProvider: {location_provider_impl}",
+            exc_info=logger.isEnabledFor(logging.DEBUG),
+        )
         return None
 
 

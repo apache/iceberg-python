@@ -61,6 +61,11 @@ You can mix and match optional dependencies depending on your needs:
 | snappy        | Support for snappy Avro compression                                       |
 | gcsfs         | GCSFS as a FileIO implementation to interact with the object store        |
 | rest-sigv4    | Support for generating AWS SIGv4 authentication headers for REST Catalogs |
+| pyiceberg-core | Installs iceberg-rust powered core                                       |
+| datafusion    | Installs both PyArrow and Apache DataFusion                               |
+| hf            | Support for Hugging Face Hub                                              |
+| gcp-auth      | Support for Google Cloud authentication                                   |
+| entra-auth    | Support for Azure Entra authentication                                    |
 
 You either need to install `s3fs`, `adlfs`, `gcsfs`, or `pyarrow` to be able to fetch files from an object store.
 
@@ -195,6 +200,10 @@ Since the catalog was configured to use the local filesystem, we can explore how
 ```shell
 find /tmp/warehouse/
 ```
+
+## Try it yourself with Jupyter Notebooks
+
+PyIceberg provides Jupyter notebooks for hands-on experimentation with the examples above and more. Check out the [Notebooks for Experimentation](contributing.md#notebooks-for-experimentation) guide.
 
 ## More details
 

@@ -14,7 +14,6 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
-from typing import List
 from unittest import mock
 
 import boto3
@@ -439,7 +438,7 @@ def test_list_tables(
     moto_endpoint_url: str,
     table_schema_nested: Schema,
     database_name: str,
-    table_list: List[str],
+    table_list: list[str],
 ) -> None:
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
     test_catalog.create_namespace(namespace=database_name)
@@ -475,7 +474,7 @@ def test_list_tables(
 
 
 @mock_aws
-def test_list_namespaces(_bucket_initialize: None, moto_endpoint_url: str, database_list: List[str]) -> None:
+def test_list_namespaces(_bucket_initialize: None, moto_endpoint_url: str, database_list: list[str]) -> None:
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
     for database_name in database_list:
         test_catalog.create_namespace(namespace=database_name)

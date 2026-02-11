@@ -19,7 +19,6 @@
 import pickle
 import uuid
 from decimal import Decimal
-from typing import Any
 
 import pytest
 from typing_extensions import assert_type
@@ -50,13 +49,16 @@ from pyiceberg.expressions import (
     IsNull,
     LessThan,
     LessThanOrEqual,
+    LiteralPredicate,
     Not,
     NotEqualTo,
     NotIn,
     NotNaN,
     NotNull,
+    NotStartsWith,
     Or,
     Reference,
+    StartsWith,
     UnboundPredicate,
 )
 from pyiceberg.expressions.literals import Literal, literal
@@ -74,29 +76,6 @@ from pyiceberg.types import (
     StringType,
     StructType,
 )
-from pyiceberg.utils.singleton import Singleton
-
-
-class ExpressionA(BooleanExpression, Singleton):
-    def __invert__(self) -> BooleanExpression:
-        return ExpressionB()
-
-    def __repr__(self) -> str:
-        return "ExpressionA()"
-
-    def __str__(self) -> str:
-        return "testexpra"
-
-
-class ExpressionB(BooleanExpression, Singleton):
-    def __invert__(self) -> BooleanExpression:
-        return ExpressionA()
-
-    def __repr__(self) -> str:
-        return "ExpressionB()"
-
-    def __str__(self) -> str:
-        return "testexprb"
 
 
 def test_isnull_inverse() -> None:
@@ -246,6 +225,58 @@ def test_ref_binding_case_insensitive_failure(table_schema_simple: Schema) -> No
     ref = Reference("Foot")
     with pytest.raises(ValueError):
         ref.bind(table_schema_simple, case_sensitive=False)
+
+
+def test_ref_binding_nested_struct_field() -> None:
+    """Test binding references to nested struct fields (issue #953)."""
+    schema = Schema(
+        NestedField(field_id=1, name="age", field_type=IntegerType(), required=True),
+        NestedField(
+            field_id=2,
+            name="employment",
+            field_type=StructType(
+                NestedField(field_id=3, name="status", field_type=StringType(), required=False),
+                NestedField(field_id=4, name="company", field_type=StringType(), required=False),
+            ),
+            required=False,
+        ),
+        NestedField(
+            field_id=5,
+            name="contact",
+            field_type=StructType(
+                NestedField(field_id=6, name="email", field_type=StringType(), required=False),
+            ),
+            required=False,
+        ),
+        schema_id=1,
+    )
+
+    # Test that nested field names are in the index
+    assert "employment.status" in schema._name_to_id
+    assert "employment.company" in schema._name_to_id
+    assert "contact.email" in schema._name_to_id
+
+    # Test binding a reference to nested fields
+    ref = Reference("employment.status")
+    bound = ref.bind(schema, case_sensitive=True)
+    assert bound.field.field_id == 3
+    assert bound.field.name == "status"
+
+    # Test with different nested field
+    ref2 = Reference("contact.email")
+    bound2 = ref2.bind(schema, case_sensitive=True)
+    assert bound2.field.field_id == 6
+    assert bound2.field.name == "email"
+
+    # Test case-insensitive binding
+    ref3 = Reference("EMPLOYMENT.STATUS")
+    bound3 = ref3.bind(schema, case_sensitive=False)
+    assert bound3.field.field_id == 3
+
+    # Test that binding fails for non-existent nested field
+    ref4 = Reference("employment.department")
+    with pytest.raises(ValueError):
+        ref4.bind(schema, case_sensitive=True)
 
 
 def test_in_to_eq() -> None:
@@ -427,51 +458,33 @@ def test_bound_less_than_or_equal_invert(table_schema_simple: Schema) -> None:
 
 def test_not_equal_to_invert() -> None:
     bound = NotEqualTo(
-        term=BoundReference(  # type: ignore
-            field=NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-            accessor=Accessor(position=0, inner=None),
-        ),
+        term=Reference("foo"),
         literal="hello",
     )
     assert ~bound == EqualTo(
-        term=BoundReference(  # type: ignore
-            field=NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-            accessor=Accessor(position=0, inner=None),
-        ),
+        term=Reference("foo"),
         literal="hello",
     )
 
 
 def test_greater_than_or_equal_invert() -> None:
     bound = GreaterThanOrEqual(
-        term=BoundReference(  # type: ignore
-            field=NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-            accessor=Accessor(position=0, inner=None),
-        ),
+        term=Reference("foo"),
         literal="hello",
     )
     assert ~bound == LessThan(
-        term=BoundReference(  # type: ignore
-            field=NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-            accessor=Accessor(position=0, inner=None),
-        ),
+        term=Reference("foo"),
         literal="hello",
     )
 
 
 def test_less_than_or_equal_invert() -> None:
     bound = LessThanOrEqual(
-        term=BoundReference(  # type: ignore
-            field=NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-            accessor=Accessor(position=0, inner=None),
-        ),
+        term=Reference("foo"),
         literal="hello",
     )
     assert ~bound == GreaterThan(
-        term=BoundReference(  # type: ignore
-            field=NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-            accessor=Accessor(position=0, inner=None),
-        ),
+        term=Reference("foo"),
         literal="hello",
     )
 
@@ -488,8 +501,8 @@ def test_less_than_or_equal_invert() -> None:
         LessThanOrEqual(Reference("foo"), "hello"),
     ],
 )
-def test_bind(pred: UnboundPredicate[Any], table_schema_simple: Schema) -> None:
-    assert pred.bind(table_schema_simple, case_sensitive=True).term.field == table_schema_simple.find_field(  # type: ignore
+def test_bind(pred: UnboundPredicate, table_schema_simple: Schema) -> None:
+    assert pred.bind(table_schema_simple, case_sensitive=True).term.field == table_schema_simple.find_field(
         pred.term.name,  # type: ignore
         case_sensitive=True,
     )
@@ -508,8 +521,8 @@ def test_bind(pred: UnboundPredicate[Any], table_schema_simple: Schema) -> None:
         LessThanOrEqual(Reference("Bar"), 5),
     ],
 )
-def test_bind_case_insensitive(pred: UnboundPredicate[Any], table_schema_simple: Schema) -> None:
-    assert pred.bind(table_schema_simple, case_sensitive=False).term.field == table_schema_simple.find_field(  # type: ignore
+def test_bind_case_insensitive(pred: UnboundPredicate, table_schema_simple: Schema) -> None:
+    assert pred.bind(table_schema_simple, case_sensitive=False).term.field == table_schema_simple.find_field(
         pred.term.name,  # type: ignore
         case_sensitive=False,
     )
@@ -519,18 +532,18 @@ def test_bind_case_insensitive(pred: UnboundPredicate[Any], table_schema_simple:
     "exp, testexpra, testexprb",
     [
         (
-            And(ExpressionA(), ExpressionB()),
-            And(ExpressionA(), ExpressionB()),
-            Or(ExpressionA(), ExpressionB()),
+            And(IsNull("a"), IsNull("b")),
+            And(IsNull("a"), IsNull("b")),
+            Or(IsNull("a"), IsNull("b")),
         ),
         (
-            Or(ExpressionA(), ExpressionB()),
-            Or(ExpressionA(), ExpressionB()),
-            And(ExpressionA(), ExpressionB()),
+            Or(IsNull("a"), IsNull("b")),
+            Or(IsNull("a"), IsNull("b")),
+            And(IsNull("a"), IsNull("b")),
         ),
-        (Not(ExpressionA()), Not(ExpressionA()), ExpressionB()),
-        (ExpressionA(), ExpressionA(), ExpressionB()),
-        (ExpressionB(), ExpressionB(), ExpressionA()),
+        (Not(IsNull("a")), Not(IsNull("a")), IsNull("b")),
+        (IsNull("a"), IsNull("a"), IsNull("b")),
+        (IsNull("b"), IsNull("b"), IsNull("a")),
         (
             In(Reference("foo"), ("hello", "world")),
             In(Reference("foo"), ("hello", "world")),
@@ -551,16 +564,16 @@ def test_eq(exp: BooleanExpression, testexpra: BooleanExpression, testexprb: Boo
     "lhs, rhs",
     [
         (
-            And(ExpressionA(), ExpressionB()),
-            Or(ExpressionB(), ExpressionA()),
+            And(IsNull("a"), IsNull("b")),
+            Or(NotNull("a"), NotNull("b")),
         ),
         (
-            Or(ExpressionA(), ExpressionB()),
-            And(ExpressionB(), ExpressionA()),
+            Or(IsNull("a"), IsNull("b")),
+            And(NotNull("a"), NotNull("b")),
         ),
         (
-            Not(ExpressionA()),
-            ExpressionA(),
+            Not(IsNull("a")),
+            IsNull("a"),
         ),
         (
             In(Reference("foo"), ("hello", "world")),
@@ -574,8 +587,8 @@ def test_eq(exp: BooleanExpression, testexpra: BooleanExpression, testexprb: Boo
         (LessThan(Reference("foo"), 5), GreaterThanOrEqual(Reference("foo"), 5)),
         (EqualTo(Reference("foo"), 5), NotEqualTo(Reference("foo"), 5)),
         (
-            ExpressionA(),
-            ExpressionB(),
+            IsNull("a"),
+            NotNull("a"),
         ),
     ],
 )
@@ -587,14 +600,14 @@ def test_negate(lhs: BooleanExpression, rhs: BooleanExpression) -> None:
     "lhs, rhs",
     [
         (
-            And(ExpressionA(), ExpressionB(), ExpressionA()),
-            And(ExpressionA(), And(ExpressionB(), ExpressionA())),
+            And(IsNull("a"), IsNull("b"), IsNull("a")),
+            And(IsNull("a"), And(IsNull("b"), IsNull("a"))),
         ),
         (
-            Or(ExpressionA(), ExpressionB(), ExpressionA()),
-            Or(ExpressionA(), Or(ExpressionB(), ExpressionA())),
+            Or(IsNull("a"), IsNull("b"), IsNull("a")),
+            Or(IsNull("a"), Or(IsNull("b"), IsNull("a"))),
         ),
-        (Not(Not(ExpressionA())), ExpressionA()),
+        (Not(Not(IsNull("a"))), IsNull("a")),
     ],
 )
 def test_reduce(lhs: BooleanExpression, rhs: BooleanExpression) -> None:
@@ -604,13 +617,13 @@ def test_reduce(lhs: BooleanExpression, rhs: BooleanExpression) -> None:
 @pytest.mark.parametrize(
     "lhs, rhs",
     [
-        (And(AlwaysTrue(), ExpressionB()), ExpressionB()),
-        (And(AlwaysFalse(), ExpressionB()), AlwaysFalse()),
-        (And(ExpressionB(), AlwaysTrue()), ExpressionB()),
-        (Or(AlwaysTrue(), ExpressionB()), AlwaysTrue()),
-        (Or(AlwaysFalse(), ExpressionB()), ExpressionB()),
-        (Or(ExpressionA(), AlwaysFalse()), ExpressionA()),
-        (Not(Not(ExpressionA())), ExpressionA()),
+        (And(AlwaysTrue(), IsNull("b")), IsNull("b")),
+        (And(AlwaysFalse(), IsNull("b")), AlwaysFalse()),
+        (And(IsNull("b"), AlwaysTrue()), IsNull("b")),
+        (Or(AlwaysTrue(), IsNull("b")), AlwaysTrue()),
+        (Or(AlwaysFalse(), IsNull("b")), IsNull("b")),
+        (Or(IsNull("a"), AlwaysFalse()), IsNull("a")),
+        (Not(Not(IsNull("a"))), IsNull("a")),
         (Not(AlwaysTrue()), AlwaysFalse()),
         (Not(AlwaysFalse()), AlwaysTrue()),
     ],
@@ -669,7 +682,7 @@ def accessor() -> Accessor:
 
 
 @pytest.fixture
-def term(field: NestedField, accessor: Accessor) -> BoundReference[Any]:
+def term(field: NestedField, accessor: Accessor) -> BoundReference:
     return BoundReference(
         field=field,
         accessor=accessor,
@@ -709,7 +722,15 @@ def test_and() -> None:
     assert and_ == pickle.loads(pickle.dumps(and_))
 
     with pytest.raises(ValueError, match="Expected BooleanExpression, got: abc"):
-        null & "abc"  # type: ignore
+        null & "abc"
+
+
+def test_and_serialization() -> None:
+    expr = And(EqualTo("x", 1), GreaterThan("y", 2))
+    json_repr = '{"type":"and","left":{"term":"x","type":"eq","value":1},"right":{"term":"y","type":"gt","value":2}}'
+
+    assert expr.model_dump_json() == json_repr
+    assert BooleanExpression.model_validate_json(json_repr) == expr
 
 
 def test_or() -> None:
@@ -726,7 +747,17 @@ def test_or() -> None:
     assert or_ == pickle.loads(pickle.dumps(or_))
 
     with pytest.raises(ValueError, match="Expected BooleanExpression, got: abc"):
-        null | "abc"  # type: ignore
+        null | "abc"
+
+
+def test_or_serialization() -> None:
+    left = EqualTo("a", 10)
+    right = EqualTo("b", 20)
+    or_ = Or(left, right)
+    json_repr = '{"type":"or","left":{"term":"a","type":"eq","value":10},"right":{"term":"b","type":"eq","value":20}}'
+
+    assert or_.model_dump_json() == json_repr
+    assert BooleanExpression.model_validate_json(json_repr) == or_
 
 
 def test_not() -> None:
@@ -738,9 +769,16 @@ def test_not() -> None:
     assert not_ == pickle.loads(pickle.dumps(not_))
 
 
+def test_not_json_serialization_and_deserialization() -> None:
+    not_expr = Not(GreaterThan("a", 22))
+    json_str = not_expr.model_dump_json()
+    assert json_str == """{"type":"not","child":{"term":"a","type":"gt","value":22}}"""
+
+
 def test_always_true() -> None:
     always_true = AlwaysTrue()
-    assert always_true.model_dump_json() == '"true"'
+    assert always_true.model_dump_json() == "true"
+    assert BooleanExpression.model_validate_json("true") == always_true
     assert str(always_true) == "AlwaysTrue()"
     assert repr(always_true) == "AlwaysTrue()"
     assert always_true == eval(repr(always_true))
@@ -749,7 +787,8 @@ def test_always_true() -> None:
 
 def test_always_false() -> None:
     always_false = AlwaysFalse()
-    assert always_false.model_dump_json() == '"false"'
+    assert always_false.model_dump_json() == "false"
+    assert BooleanExpression.model_validate_json("false") == always_false
     assert str(always_false) == "AlwaysFalse()"
     assert repr(always_false) == "AlwaysFalse()"
     assert always_false == eval(repr(always_false))
@@ -763,14 +802,14 @@ def test_bound_reference_field_property() -> None:
     assert bound_ref.field == NestedField(field_id=1, name="foo", field_type=StringType(), required=False)
 
 
-def test_bound_is_null(term: BoundReference[Any]) -> None:
+def test_bound_is_null(term: BoundReference) -> None:
     bound_is_null = BoundIsNull(term)
     assert str(bound_is_null) == f"BoundIsNull(term={str(term)})"
     assert repr(bound_is_null) == f"BoundIsNull(term={repr(term)})"
     assert bound_is_null == eval(repr(bound_is_null))
 
 
-def test_bound_is_not_null(term: BoundReference[Any]) -> None:
+def test_bound_is_not_null(term: BoundReference) -> None:
     bound_not_null = BoundNotNull(term)
     assert str(bound_not_null) == f"BoundNotNull(term={str(term)})"
     assert repr(bound_not_null) == f"BoundNotNull(term={repr(term)})"
@@ -784,6 +823,10 @@ def test_is_null() -> None:
     assert repr(is_null) == f"IsNull(term={repr(ref)})"
     assert is_null == eval(repr(is_null))
     assert is_null == pickle.loads(pickle.dumps(is_null))
+    pred = IsNull(term="foo")
+    json_repr = '{"term":"foo","type":"is-null"}'
+    assert pred.model_dump_json() == json_repr
+    assert BooleanExpression.model_validate_json(json_repr) == pred
 
 
 def test_not_null() -> None:
@@ -793,11 +836,15 @@ def test_not_null() -> None:
     assert repr(non_null) == f"NotNull(term={repr(ref)})"
     assert non_null == eval(repr(non_null))
     assert non_null == pickle.loads(pickle.dumps(non_null))
+    pred = NotNull(term="foo")
+    json_repr = '{"term":"foo","type":"not-null"}'
+    assert pred.model_dump_json() == json_repr
+    assert BooleanExpression.model_validate_json(json_repr) == pred
 
 
 def test_bound_is_nan(accessor: Accessor) -> None:
     # We need a FloatType here
-    term = BoundReference[float](
+    term = BoundReference(
         field=NestedField(field_id=1, name="foo", field_type=FloatType(), required=False),
         accessor=accessor,
     )
@@ -810,7 +857,7 @@ def test_bound_is_nan(accessor: Accessor) -> None:
 
 def test_bound_is_not_nan(accessor: Accessor) -> None:
     # We need a FloatType here
-    term = BoundReference[float](
+    term = BoundReference(
         field=NestedField(field_id=1, name="foo", field_type=FloatType(), required=False),
         accessor=accessor,
     )
@@ -828,6 +875,9 @@ def test_is_nan() -> None:
     assert repr(is_nan) == f"IsNaN(term={repr(ref)})"
     assert is_nan == eval(repr(is_nan))
     assert is_nan == pickle.loads(pickle.dumps(is_nan))
+    json_repr = '{"term":"a","type":"is-nan"}'
+    assert is_nan.model_dump_json() == json_repr
+    assert BooleanExpression.model_validate_json(json_repr) == is_nan
 
 
 def test_not_nan() -> None:
@@ -837,9 +887,12 @@ def test_not_nan() -> None:
     assert repr(not_nan) == f"NotNaN(term={repr(ref)})"
     assert not_nan == eval(repr(not_nan))
     assert not_nan == pickle.loads(pickle.dumps(not_nan))
+    json_repr = '{"term":"a","type":"not-nan"}'
+    assert not_nan.model_dump_json() == json_repr
+    assert BooleanExpression.model_validate_json(json_repr) == not_nan
 
 
-def test_bound_in(term: BoundReference[Any]) -> None:
+def test_bound_in(term: BoundReference) -> None:
     bound_in = BoundIn(term, {literal("a"), literal("b"), literal("c")})
     assert str(bound_in) == f"BoundIn({str(term)}, {{a, b, c}})"
     assert repr(bound_in) == f"BoundIn({repr(term)}, {{literal('a'), literal('b'), literal('c')}})"
@@ -847,7 +900,7 @@ def test_bound_in(term: BoundReference[Any]) -> None:
     assert bound_in == pickle.loads(pickle.dumps(bound_in))
 
 
-def test_bound_not_in(term: BoundReference[Any]) -> None:
+def test_bound_not_in(term: BoundReference) -> None:
     bound_not_in = BoundNotIn(term, {literal("a"), literal("b"), literal("c")})
     assert str(bound_not_in) == f"BoundNotIn({str(term)}, {{a, b, c}})"
     assert repr(bound_not_in) == f"BoundNotIn({repr(term)}, {{literal('a'), literal('b'), literal('c')}})"
@@ -857,7 +910,10 @@ def test_bound_not_in(term: BoundReference[Any]) -> None:
 
 def test_in() -> None:
     ref = Reference("a")
-    unbound_in = In(ref, {"a", "b", "c"})
+    unbound_in = In(ref, ["a", "b", "c"])
+    json_repr = unbound_in.model_dump_json()
+    assert json_repr.startswith('{"term":"a","type":"in","values":[')
+    assert BooleanExpression.model_validate_json(json_repr) == unbound_in
     assert str(unbound_in) == f"In({str(ref)}, {{a, b, c}})"
     assert repr(unbound_in) == f"In({repr(ref)}, {{literal('a'), literal('b'), literal('c')}})"
     assert unbound_in == eval(repr(unbound_in))
@@ -866,24 +922,17 @@ def test_in() -> None:
 
 def test_not_in() -> None:
     ref = Reference("a")
-    not_in = NotIn(ref, {"a", "b", "c"})
+    not_in = NotIn(ref, ["a", "b", "c"])
+    json_repr = not_in.model_dump_json()
+    assert not_in.model_dump_json().startswith('{"term":"a","type":"not-in","values":')
+    assert BooleanExpression.model_validate_json(json_repr) == not_in
     assert str(not_in) == f"NotIn({str(ref)}, {{a, b, c}})"
     assert repr(not_in) == f"NotIn({repr(ref)}, {{literal('a'), literal('b'), literal('c')}})"
     assert not_in == eval(repr(not_in))
     assert not_in == pickle.loads(pickle.dumps(not_in))
 
 
-def test_serialize_in() -> None:
-    pred = In(term="foo", literals=[1, 2, 3])
-    assert pred.model_dump_json() == '{"term":"foo","type":"in","items":[1,2,3]}'
-
-
-def test_serialize_not_in() -> None:
-    pred = NotIn(term="foo", literals=[1, 2, 3])
-    assert pred.model_dump_json() == '{"term":"foo","type":"not-in","items":[1,2,3]}'
-
-
-def test_bound_equal_to(term: BoundReference[Any]) -> None:
+def test_bound_equal_to(term: BoundReference) -> None:
     bound_equal_to = BoundEqualTo(term, literal("a"))
     assert str(bound_equal_to) == f"BoundEqualTo(term={str(term)}, literal=literal('a'))"
     assert repr(bound_equal_to) == f"BoundEqualTo(term={repr(term)}, literal=literal('a'))"
@@ -891,7 +940,7 @@ def test_bound_equal_to(term: BoundReference[Any]) -> None:
     assert bound_equal_to == pickle.loads(pickle.dumps(bound_equal_to))
 
 
-def test_bound_not_equal_to(term: BoundReference[Any]) -> None:
+def test_bound_not_equal_to(term: BoundReference) -> None:
     bound_not_equal_to = BoundNotEqualTo(term, literal("a"))
     assert str(bound_not_equal_to) == f"BoundNotEqualTo(term={str(term)}, literal=literal('a'))"
     assert repr(bound_not_equal_to) == f"BoundNotEqualTo(term={repr(term)}, literal=literal('a'))"
@@ -899,7 +948,7 @@ def test_bound_not_equal_to(term: BoundReference[Any]) -> None:
     assert bound_not_equal_to == pickle.loads(pickle.dumps(bound_not_equal_to))
 
 
-def test_bound_greater_than_or_equal_to(term: BoundReference[Any]) -> None:
+def test_bound_greater_than_or_equal_to(term: BoundReference) -> None:
     bound_greater_than_or_equal_to = BoundGreaterThanOrEqual(term, literal("a"))
     assert str(bound_greater_than_or_equal_to) == f"BoundGreaterThanOrEqual(term={str(term)}, literal=literal('a'))"
     assert repr(bound_greater_than_or_equal_to) == f"BoundGreaterThanOrEqual(term={repr(term)}, literal=literal('a'))"
@@ -907,7 +956,7 @@ def test_bound_greater_than_or_equal_to(term: BoundReference[Any]) -> None:
     assert bound_greater_than_or_equal_to == pickle.loads(pickle.dumps(bound_greater_than_or_equal_to))
 
 
-def test_bound_greater_than(term: BoundReference[Any]) -> None:
+def test_bound_greater_than(term: BoundReference) -> None:
     bound_greater_than = BoundGreaterThan(term, literal("a"))
     assert str(bound_greater_than) == f"BoundGreaterThan(term={str(term)}, literal=literal('a'))"
     assert repr(bound_greater_than) == f"BoundGreaterThan(term={repr(term)}, literal=literal('a'))"
@@ -915,7 +964,7 @@ def test_bound_greater_than(term: BoundReference[Any]) -> None:
     assert bound_greater_than == pickle.loads(pickle.dumps(bound_greater_than))
 
 
-def test_bound_less_than(term: BoundReference[Any]) -> None:
+def test_bound_less_than(term: BoundReference) -> None:
     bound_less_than = BoundLessThan(term, literal("a"))
     assert str(bound_less_than) == f"BoundLessThan(term={str(term)}, literal=literal('a'))"
     assert repr(bound_less_than) == f"BoundLessThan(term={repr(term)}, literal=literal('a'))"
@@ -923,7 +972,7 @@ def test_bound_less_than(term: BoundReference[Any]) -> None:
     assert bound_less_than == pickle.loads(pickle.dumps(bound_less_than))
 
 
-def test_bound_less_than_or_equal(term: BoundReference[Any]) -> None:
+def test_bound_less_than_or_equal(term: BoundReference) -> None:
     bound_less_than_or_equal = BoundLessThanOrEqual(term, literal("a"))
     assert str(bound_less_than_or_equal) == f"BoundLessThanOrEqual(term={str(term)}, literal=literal('a'))"
     assert repr(bound_less_than_or_equal) == f"BoundLessThanOrEqual(term={repr(term)}, literal=literal('a'))"
@@ -933,6 +982,9 @@ def test_bound_less_than_or_equal(term: BoundReference[Any]) -> None:
 
 def test_equal_to() -> None:
     equal_to = EqualTo(Reference("a"), literal("a"))
+    json_repr = '{"term":"a","type":"eq","value":"a"}'
+    assert equal_to.model_dump_json() == json_repr
+    assert BooleanExpression.model_validate_json(json_repr) == equal_to
     assert str(equal_to) == "EqualTo(term=Reference(name='a'), literal=literal('a'))"
     assert repr(equal_to) == "EqualTo(term=Reference(name='a'), literal=literal('a'))"
     assert equal_to == eval(repr(equal_to))
@@ -941,6 +993,9 @@ def test_equal_to() -> None:
 
 def test_not_equal_to() -> None:
     not_equal_to = NotEqualTo(Reference("a"), literal("a"))
+    json_repr = '{"term":"a","type":"not-eq","value":"a"}'
+    assert not_equal_to.model_dump_json() == json_repr
+    assert BooleanExpression.model_validate_json(json_repr) == not_equal_to
     assert str(not_equal_to) == "NotEqualTo(term=Reference(name='a'), literal=literal('a'))"
     assert repr(not_equal_to) == "NotEqualTo(term=Reference(name='a'), literal=literal('a'))"
     assert not_equal_to == eval(repr(not_equal_to))
@@ -949,6 +1004,9 @@ def test_not_equal_to() -> None:
 
 def test_greater_than_or_equal_to() -> None:
     greater_than_or_equal_to = GreaterThanOrEqual(Reference("a"), literal("a"))
+    json_repr = '{"term":"a","type":"gt-eq","value":"a"}'
+    assert greater_than_or_equal_to.model_dump_json() == json_repr
+    assert BooleanExpression.model_validate_json(json_repr) == greater_than_or_equal_to
     assert str(greater_than_or_equal_to) == "GreaterThanOrEqual(term=Reference(name='a'), literal=literal('a'))"
     assert repr(greater_than_or_equal_to) == "GreaterThanOrEqual(term=Reference(name='a'), literal=literal('a'))"
     assert greater_than_or_equal_to == eval(repr(greater_than_or_equal_to))
@@ -957,6 +1015,9 @@ def test_greater_than_or_equal_to() -> None:
 
 def test_greater_than() -> None:
     greater_than = GreaterThan(Reference("a"), literal("a"))
+    json_repr = '{"term":"a","type":"gt","value":"a"}'
+    assert greater_than.model_dump_json() == json_repr
+    assert BooleanExpression.model_validate_json(json_repr) == greater_than
     assert str(greater_than) == "GreaterThan(term=Reference(name='a'), literal=literal('a'))"
     assert repr(greater_than) == "GreaterThan(term=Reference(name='a'), literal=literal('a'))"
     assert greater_than == eval(repr(greater_than))
@@ -965,6 +1026,9 @@ def test_greater_than() -> None:
 
 def test_less_than() -> None:
     less_than = LessThan(Reference("a"), literal("a"))
+    json_repr = '{"term":"a","type":"lt","value":"a"}'
+    assert less_than.model_dump_json() == json_repr
+    assert BooleanExpression.model_validate_json(json_repr) == less_than
     assert str(less_than) == "LessThan(term=Reference(name='a'), literal=literal('a'))"
     assert repr(less_than) == "LessThan(term=Reference(name='a'), literal=literal('a'))"
     assert less_than == eval(repr(less_than))
@@ -973,10 +1037,27 @@ def test_less_than() -> None:
 
 def test_less_than_or_equal() -> None:
     less_than_or_equal = LessThanOrEqual(Reference("a"), literal("a"))
+    json_repr = '{"term":"a","type":"lt-eq","value":"a"}'
+    assert less_than_or_equal.model_dump_json() == json_repr
+    assert BooleanExpression.model_validate_json(json_repr) == less_than_or_equal
     assert str(less_than_or_equal) == "LessThanOrEqual(term=Reference(name='a'), literal=literal('a'))"
     assert repr(less_than_or_equal) == "LessThanOrEqual(term=Reference(name='a'), literal=literal('a'))"
     assert less_than_or_equal == eval(repr(less_than_or_equal))
     assert less_than_or_equal == pickle.loads(pickle.dumps(less_than_or_equal))
+
+
+def test_starts_with() -> None:
+    starts_with = StartsWith(Reference("a"), literal("a"))
+    json_repr = '{"term":"a","type":"starts-with","value":"a"}'
+    assert starts_with.model_dump_json() == json_repr
+    assert BooleanExpression.model_validate_json(json_repr) == starts_with
+
+
+def test_not_starts_with() -> None:
+    not_starts_with = NotStartsWith(Reference("a"), literal("a"))
+    json_repr = '{"term":"a","type":"not-starts-with","value":"a"}'
+    assert not_starts_with.model_dump_json() == json_repr
+    assert BooleanExpression.model_validate_json(json_repr) == not_starts_with
 
 
 def test_bound_reference_eval(table_schema_simple: Schema) -> None:
@@ -1035,37 +1116,37 @@ def below_int_min() -> Literal[int]:
 
 
 def test_above_int_bounds_equal_to(int_schema: Schema, above_int_max: Literal[int], below_int_min: Literal[int]) -> None:
-    assert EqualTo[int]("a", above_int_max).bind(int_schema) is AlwaysFalse()
-    assert EqualTo[int]("a", below_int_min).bind(int_schema) is AlwaysFalse()
+    assert EqualTo("a", above_int_max).bind(int_schema) is AlwaysFalse()
+    assert EqualTo("a", below_int_min).bind(int_schema) is AlwaysFalse()
 
 
 def test_above_int_bounds_not_equal_to(int_schema: Schema, above_int_max: Literal[int], below_int_min: Literal[int]) -> None:
-    assert NotEqualTo[int]("a", above_int_max).bind(int_schema) is AlwaysTrue()
-    assert NotEqualTo[int]("a", below_int_min).bind(int_schema) is AlwaysTrue()
+    assert NotEqualTo("a", above_int_max).bind(int_schema) is AlwaysTrue()
+    assert NotEqualTo("a", below_int_min).bind(int_schema) is AlwaysTrue()
 
 
 def test_above_int_bounds_less_than(int_schema: Schema, above_int_max: Literal[int], below_int_min: Literal[int]) -> None:
-    assert LessThan[int]("a", above_int_max).bind(int_schema) is AlwaysTrue()
-    assert LessThan[int]("a", below_int_min).bind(int_schema) is AlwaysFalse()
+    assert LessThan("a", above_int_max).bind(int_schema) is AlwaysTrue()
+    assert LessThan("a", below_int_min).bind(int_schema) is AlwaysFalse()
 
 
 def test_above_int_bounds_less_than_or_equal(
     int_schema: Schema, above_int_max: Literal[int], below_int_min: Literal[int]
 ) -> None:
-    assert LessThanOrEqual[int]("a", above_int_max).bind(int_schema) is AlwaysTrue()
-    assert LessThanOrEqual[int]("a", below_int_min).bind(int_schema) is AlwaysFalse()
+    assert LessThanOrEqual("a", above_int_max).bind(int_schema) is AlwaysTrue()
+    assert LessThanOrEqual("a", below_int_min).bind(int_schema) is AlwaysFalse()
 
 
 def test_above_int_bounds_greater_than(int_schema: Schema, above_int_max: Literal[int], below_int_min: Literal[int]) -> None:
-    assert GreaterThan[int]("a", above_int_max).bind(int_schema) is AlwaysFalse()
-    assert GreaterThan[int]("a", below_int_min).bind(int_schema) is AlwaysTrue()
+    assert GreaterThan("a", above_int_max).bind(int_schema) is AlwaysFalse()
+    assert GreaterThan("a", below_int_min).bind(int_schema) is AlwaysTrue()
 
 
 def test_above_int_bounds_greater_than_or_equal(
     int_schema: Schema, above_int_max: Literal[int], below_int_min: Literal[int]
 ) -> None:
-    assert GreaterThanOrEqual[int]("a", above_int_max).bind(int_schema) is AlwaysFalse()
-    assert GreaterThanOrEqual[int]("a", below_int_min).bind(int_schema) is AlwaysTrue()
+    assert GreaterThanOrEqual("a", above_int_max).bind(int_schema) is AlwaysFalse()
+    assert GreaterThanOrEqual("a", below_int_min).bind(int_schema) is AlwaysTrue()
 
 
 @pytest.fixture
@@ -1086,43 +1167,43 @@ def below_float_min() -> Literal[float]:
 def test_above_float_bounds_equal_to(
     float_schema: Schema, above_float_max: Literal[float], below_float_min: Literal[float]
 ) -> None:
-    assert EqualTo[float]("a", above_float_max).bind(float_schema) is AlwaysFalse()
-    assert EqualTo[float]("a", below_float_min).bind(float_schema) is AlwaysFalse()
+    assert EqualTo("a", above_float_max).bind(float_schema) is AlwaysFalse()
+    assert EqualTo("a", below_float_min).bind(float_schema) is AlwaysFalse()
 
 
 def test_above_float_bounds_not_equal_to(
     float_schema: Schema, above_float_max: Literal[float], below_float_min: Literal[float]
 ) -> None:
-    assert NotEqualTo[float]("a", above_float_max).bind(float_schema) is AlwaysTrue()
-    assert NotEqualTo[float]("a", below_float_min).bind(float_schema) is AlwaysTrue()
+    assert NotEqualTo("a", above_float_max).bind(float_schema) is AlwaysTrue()
+    assert NotEqualTo("a", below_float_min).bind(float_schema) is AlwaysTrue()
 
 
 def test_above_float_bounds_less_than(
     float_schema: Schema, above_float_max: Literal[float], below_float_min: Literal[float]
 ) -> None:
-    assert LessThan[float]("a", above_float_max).bind(float_schema) is AlwaysTrue()
-    assert LessThan[float]("a", below_float_min).bind(float_schema) is AlwaysFalse()
+    assert LessThan("a", above_float_max).bind(float_schema) is AlwaysTrue()
+    assert LessThan("a", below_float_min).bind(float_schema) is AlwaysFalse()
 
 
 def test_above_float_bounds_less_than_or_equal(
     float_schema: Schema, above_float_max: Literal[float], below_float_min: Literal[float]
 ) -> None:
-    assert LessThanOrEqual[float]("a", above_float_max).bind(float_schema) is AlwaysTrue()
-    assert LessThanOrEqual[float]("a", below_float_min).bind(float_schema) is AlwaysFalse()
+    assert LessThanOrEqual("a", above_float_max).bind(float_schema) is AlwaysTrue()
+    assert LessThanOrEqual("a", below_float_min).bind(float_schema) is AlwaysFalse()
 
 
 def test_above_float_bounds_greater_than(
     float_schema: Schema, above_float_max: Literal[float], below_float_min: Literal[float]
 ) -> None:
-    assert GreaterThan[float]("a", above_float_max).bind(float_schema) is AlwaysFalse()
-    assert GreaterThan[float]("a", below_float_min).bind(float_schema) is AlwaysTrue()
+    assert GreaterThan("a", above_float_max).bind(float_schema) is AlwaysFalse()
+    assert GreaterThan("a", below_float_min).bind(float_schema) is AlwaysTrue()
 
 
 def test_above_float_bounds_greater_than_or_equal(
     float_schema: Schema, above_float_max: Literal[float], below_float_min: Literal[float]
 ) -> None:
-    assert GreaterThanOrEqual[float]("a", above_float_max).bind(float_schema) is AlwaysFalse()
-    assert GreaterThanOrEqual[float]("a", below_float_min).bind(float_schema) is AlwaysTrue()
+    assert GreaterThanOrEqual("a", above_float_max).bind(float_schema) is AlwaysFalse()
+    assert GreaterThanOrEqual("a", below_float_min).bind(float_schema) is AlwaysTrue()
 
 
 @pytest.fixture
@@ -1141,40 +1222,40 @@ def below_long_min() -> Literal[float]:
 
 
 def test_above_long_bounds_equal_to(long_schema: Schema, above_long_max: Literal[int], below_long_min: Literal[int]) -> None:
-    assert EqualTo[int]("a", above_long_max).bind(long_schema) is AlwaysFalse()
-    assert EqualTo[int]("a", below_long_min).bind(long_schema) is AlwaysFalse()
+    assert EqualTo("a", above_long_max).bind(long_schema) is AlwaysFalse()
+    assert EqualTo("a", below_long_min).bind(long_schema) is AlwaysFalse()
 
 
 def test_above_long_bounds_not_equal_to(long_schema: Schema, above_long_max: Literal[int], below_long_min: Literal[int]) -> None:
-    assert NotEqualTo[int]("a", above_long_max).bind(long_schema) is AlwaysTrue()
-    assert NotEqualTo[int]("a", below_long_min).bind(long_schema) is AlwaysTrue()
+    assert NotEqualTo("a", above_long_max).bind(long_schema) is AlwaysTrue()
+    assert NotEqualTo("a", below_long_min).bind(long_schema) is AlwaysTrue()
 
 
 def test_above_long_bounds_less_than(long_schema: Schema, above_long_max: Literal[int], below_long_min: Literal[int]) -> None:
-    assert LessThan[int]("a", above_long_max).bind(long_schema) is AlwaysTrue()
-    assert LessThan[int]("a", below_long_min).bind(long_schema) is AlwaysFalse()
+    assert LessThan("a", above_long_max).bind(long_schema) is AlwaysTrue()
+    assert LessThan("a", below_long_min).bind(long_schema) is AlwaysFalse()
 
 
 def test_above_long_bounds_less_than_or_equal(
     long_schema: Schema, above_long_max: Literal[int], below_long_min: Literal[int]
 ) -> None:
-    assert LessThanOrEqual[int]("a", above_long_max).bind(long_schema) is AlwaysTrue()
-    assert LessThanOrEqual[int]("a", below_long_min).bind(long_schema) is AlwaysFalse()
+    assert LessThanOrEqual("a", above_long_max).bind(long_schema) is AlwaysTrue()
+    assert LessThanOrEqual("a", below_long_min).bind(long_schema) is AlwaysFalse()
 
 
 def test_above_long_bounds_greater_than(long_schema: Schema, above_long_max: Literal[int], below_long_min: Literal[int]) -> None:
-    assert GreaterThan[int]("a", above_long_max).bind(long_schema) is AlwaysFalse()
-    assert GreaterThan[int]("a", below_long_min).bind(long_schema) is AlwaysTrue()
+    assert GreaterThan("a", above_long_max).bind(long_schema) is AlwaysFalse()
+    assert GreaterThan("a", below_long_min).bind(long_schema) is AlwaysTrue()
 
 
 def test_above_long_bounds_greater_than_or_equal(
     long_schema: Schema, above_long_max: Literal[int], below_long_min: Literal[int]
 ) -> None:
-    assert GreaterThanOrEqual[int]("a", above_long_max).bind(long_schema) is AlwaysFalse()
-    assert GreaterThanOrEqual[int]("a", below_long_min).bind(long_schema) is AlwaysTrue()
+    assert GreaterThanOrEqual("a", above_long_max).bind(long_schema) is AlwaysFalse()
+    assert GreaterThanOrEqual("a", below_long_min).bind(long_schema) is AlwaysTrue()
 
 
-def test_eq_bound_expression(bound_reference_str: BoundReference[str]) -> None:
+def test_eq_bound_expression(bound_reference_str: BoundReference) -> None:
     assert BoundEqualTo(term=bound_reference_str, literal=literal("a")) != BoundGreaterThanOrEqual(
         term=bound_reference_str, literal=literal("a")
     )
@@ -1217,7 +1298,15 @@ def test_bind_ambiguous_name() -> None:
 #  |_|  |_|\_, |_|  \_, |
 #          |__/     |__/
 
-assert_type(EqualTo("a", "b"), EqualTo[str])
-assert_type(In("a", ("a", "b", "c")), In[str])
-assert_type(In("a", (1, 2, 3)), In[int])
-assert_type(NotIn("a", ("a", "b", "c")), NotIn[str])
+
+def _assert_literal_predicate_type(expr: LiteralPredicate) -> None:
+    assert_type(expr, LiteralPredicate)
+
+
+_assert_literal_predicate_type(EqualTo("a", "b"))
+_assert_literal_predicate_type(In("a", ("a", "b", "c")))
+_assert_literal_predicate_type(In("a", (1, 2, 3)))
+_assert_literal_predicate_type(NotIn("a", ("a", "b", "c")))
+assert_type(In("a", ("a", "b", "c")), In)
+assert_type(In("a", (1, 2, 3)), In)
+assert_type(NotIn("a", ("a", "b", "c")), NotIn)

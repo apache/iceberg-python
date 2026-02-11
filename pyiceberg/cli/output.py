@@ -18,10 +18,6 @@ import json
 from abc import ABC, abstractmethod
 from typing import (
     Any,
-    Dict,
-    List,
-    Optional,
-    Tuple,
 )
 from uuid import UUID
 
@@ -44,7 +40,7 @@ class Output(ABC):
     def exception(self, ex: Exception) -> None: ...
 
     @abstractmethod
-    def identifiers(self, identifiers: List[Identifier]) -> None: ...
+    def identifiers(self, identifiers: list[Identifier]) -> None: ...
 
     @abstractmethod
     def describe_table(self, table: Table) -> None: ...
@@ -65,13 +61,13 @@ class Output(ABC):
     def spec(self, spec: PartitionSpec) -> None: ...
 
     @abstractmethod
-    def uuid(self, uuid: Optional[UUID]) -> None: ...
+    def uuid(self, uuid: UUID | None) -> None: ...
 
     @abstractmethod
     def version(self, version: str) -> None: ...
 
     @abstractmethod
-    def describe_refs(self, refs: List[Tuple[str, SnapshotRefType, Dict[str, str]]]) -> None: ...
+    def describe_refs(self, refs: list[tuple[str, SnapshotRefType, dict[str, str]]]) -> None: ...
 
 
 class ConsoleOutput(Output):
@@ -92,7 +88,7 @@ class ConsoleOutput(Output):
         else:
             Console(stderr=True).print(ex)
 
-    def identifiers(self, identifiers: List[Identifier]) -> None:
+    def identifiers(self, identifiers: list[Identifier]) -> None:
         table = self._table
         for identifier in identifiers:
             table.add_row(".".join(identifier))
@@ -169,13 +165,13 @@ class ConsoleOutput(Output):
     def spec(self, spec: PartitionSpec) -> None:
         Console().print(str(spec))
 
-    def uuid(self, uuid: Optional[UUID]) -> None:
+    def uuid(self, uuid: UUID | None) -> None:
         Console().print(str(uuid) if uuid else "missing")
 
     def version(self, version: str) -> None:
         Console().print(version)
 
-    def describe_refs(self, ref_details: List[Tuple[str, SnapshotRefType, Dict[str, str]]]) -> None:
+    def describe_refs(self, ref_details: list[tuple[str, SnapshotRefType, dict[str, str]]]) -> None:
         refs_table = RichTable(title="Snapshot Refs")
         refs_table.add_column("Ref")
         refs_table.add_column("Type")
@@ -203,7 +199,7 @@ class JsonOutput(Output):
     def exception(self, ex: Exception) -> None:
         self._out({"type": ex.__class__.__name__, "message": str(ex)})
 
-    def identifiers(self, identifiers: List[Identifier]) -> None:
+    def identifiers(self, identifiers: list[Identifier]) -> None:
         self._out([".".join(identifier) for identifier in identifiers])
 
     def describe_table(self, table: Table) -> None:
@@ -235,13 +231,13 @@ class JsonOutput(Output):
     def spec(self, spec: PartitionSpec) -> None:
         print(spec.model_dump_json())
 
-    def uuid(self, uuid: Optional[UUID]) -> None:
+    def uuid(self, uuid: UUID | None) -> None:
         self._out({"uuid": str(uuid) if uuid else "missing"})
 
     def version(self, version: str) -> None:
         self._out({"version": version})
 
-    def describe_refs(self, refs: List[Tuple[str, SnapshotRefType, Dict[str, str]]]) -> None:
+    def describe_refs(self, refs: list[tuple[str, SnapshotRefType, dict[str, str]]]) -> None:
         self._out(
             [
                 {"name": name, "type": type, detail_key: detail_val}

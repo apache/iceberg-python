@@ -27,7 +27,7 @@ from datetime import date, datetime, time
 from decimal import ROUND_HALF_UP, Decimal
 from functools import singledispatchmethod
 from math import isnan
-from typing import Any, Generic, Type
+from typing import Any, Generic
 from uuid import UUID
 
 from pydantic import Field, model_serializer
@@ -73,7 +73,7 @@ class Literal(IcebergRootModel[L], Generic[L], ABC):  # type: ignore
 
     root: L = Field()
 
-    def __init__(self, value: L, value_type: Type[L], /, **data):  # type: ignore
+    def __init__(self, value: L, value_type: type[L], /, **data):  # type: ignore
         if value is None:
             raise TypeError("Invalid literal value: None")
 

@@ -19,8 +19,9 @@ from __future__ import annotations
 import time
 import warnings
 from collections import defaultdict
+from collections.abc import Iterable, Mapping
 from enum import Enum
-from typing import TYPE_CHECKING, Any, DefaultDict, Dict, Iterable, List, Mapping, Optional
+from typing import TYPE_CHECKING, Any
 
 from pydantic import Field, PrivateAttr, model_serializer
 
@@ -28,7 +29,6 @@ from pyiceberg.io import FileIO
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, _manifests
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.utils.deprecated import deprecation_message
 
 if TYPE_CHECKING:
     from pyiceberg.table.metadata import TableMetadata
@@ -69,9 +69,11 @@ class Operation(Enum):
 
     Possible operation values are:
         - append: Only data files were added and no files were removed.
-        - replace: Data and delete files were added and removed without changing table data; i.e., compaction, changing the data file format, or relocating data files.
+        - replace: Data and delete files were added and removed without changing table data;
+            i.e., compaction, changing the data file format, or relocating data files.
         - overwrite: Data and delete files were added and removed in a logical overwrite operation.
-        - delete: Data files were removed and their contents logically deleted and/or delete files were added to delete rows.
+        - delete: Data files were removed and their contents logically deleted and/or delete files
+            were added to delete rows.
     """
 
     APPEND = "append"
@@ -154,8 +156,8 @@ class UpdateMetrics:
         else:
             raise ValueError(f"Unknown data file content: {data_file.content}")
 
-    def to_dict(self) -> Dict[str, str]:
-        properties: Dict[str, str] = {}
+    def to_dict(self) -> dict[str, str]:
+        properties: dict[str, str] = {}
         set_when_positive(properties, self.added_file_size, ADDED_FILE_SIZE)
         set_when_positive(properties, self.removed_file_size, REMOVED_FILE_SIZE)
         set_when_positive(properties, self.added_data_files, ADDED_DATA_FILES)
@@ -183,16 +185,16 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
     """
 
     operation: Operation = Field()
-    _additional_properties: Dict[str, str] = PrivateAttr()
+    _additional_properties: dict[str, str] = PrivateAttr()
 
-    def __init__(self, operation: Optional[Operation] = None, **data: Any) -> None:
+    def __init__(self, operation: Operation | None = None, **data: Any) -> None:
         if operation is None:
-            warnings.warn("Encountered invalid snapshot summary: operation is missing, defaulting to overwrite")
+            warnings.warn("Encountered invalid snapshot summary: operation is missing, defaulting to overwrite", stacklevel=2)
             operation = Operation.OVERWRITE
         super().__init__(operation=operation, **data)
         self._additional_properties = data
 
-    def __getitem__(self, __key: str) -> Optional[Any]:  # type: ignore
+    def __getitem__(self, __key: str) -> Any | None:  # type: ignore
         """Return a key as it is a map."""
         if __key.lower() == "operation":
             return self.operation
@@ -212,14 +214,14 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
         return 1 + len(self._additional_properties)
 
     @model_serializer
-    def ser_model(self) -> Dict[str, str]:
+    def ser_model(self) -> dict[str, str]:
         return {
             "operation": str(self.operation.value),
             **self._additional_properties,
         }
 
     @property
-    def additional_properties(self) -> Dict[str, str]:
+    def additional_properties(self) -> dict[str, str]:
         return self._additional_properties
 
     def __repr__(self) -> str:
@@ -238,12 +240,18 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
 
 class Snapshot(IcebergBaseModel):
     snapshot_id: int = Field(alias="snapshot-id")
-    parent_snapshot_id: Optional[int] = Field(alias="parent-snapshot-id", default=None)
-    sequence_number: Optional[int] = Field(alias="sequence-number", default=INITIAL_SEQUENCE_NUMBER)
+    parent_snapshot_id: int | None = Field(alias="parent-snapshot-id", default=None)
+    sequence_number: int | None = Field(alias="sequence-number", default=INITIAL_SEQUENCE_NUMBER)
     timestamp_ms: int = Field(alias="timestamp-ms", default_factory=lambda: int(time.time() * 1000))
     manifest_list: str = Field(alias="manifest-list", description="Location of the snapshot's manifest list file")
-    summary: Optional[Summary] = Field(default=None)
-    schema_id: Optional[int] = Field(alias="schema-id", default=None)
+    summary: Summary | None = Field(default=None)
+    schema_id: int | None = Field(alias="schema-id", default=None)
+    first_row_id: int | None = Field(
+        alias="first-row-id", default=None, description="assigned to the first row in the first data file in the first manifest"
+    )
+    added_rows: int | None = Field(
+        alias="added-rows", default=None, description="The upper bound of the number of rows with assigned row IDs"
+    )
 
     def __str__(self) -> str:
         """Return the string representation of the Snapshot class."""
@@ -253,7 +261,23 @@ class Snapshot(IcebergBaseModel):
         result_str = f"{operation}id={self.snapshot_id}{parent_id}{schema_id}"
         return result_str
 
-    def manifests(self, io: FileIO) -> List[ManifestFile]:
+    def __repr__(self) -> str:
+        """Return the string representation of the Snapshot class."""
+        fields = [
+            f"snapshot_id={self.snapshot_id}",
+            f"parent_snapshot_id={self.parent_snapshot_id}",
+            f"sequence_number={self.sequence_number}",
+            f"timestamp_ms={self.timestamp_ms}",
+            f"manifest_list='{self.manifest_list}'",
+            f"summary={repr(self.summary)}" if self.summary else None,
+            f"schema_id={self.schema_id}" if self.schema_id is not None else None,
+            f"first_row_id={self.first_row_id}" if self.first_row_id is not None else None,
+            f"added_rows={self.added_rows}" if self.added_rows is not None else None,
+        ]
+        filtered_fields = [field for field in fields if field is not None]
+        return f"Snapshot({', '.join(filtered_fields)})"
+
+    def manifests(self, io: FileIO) -> list[ManifestFile]:
         """Return the manifests for the given snapshot."""
         return list(_manifests(io, self.manifest_list))
 
@@ -270,7 +294,7 @@ class SnapshotLogEntry(IcebergBaseModel):
 
 class SnapshotSummaryCollector:
     metrics: UpdateMetrics
-    partition_metrics: DefaultDict[str, UpdateMetrics]
+    partition_metrics: defaultdict[str, UpdateMetrics]
     max_changed_partitions_for_summaries: int
 
     def __init__(self, partition_summary_limit: int = 0) -> None:
@@ -302,7 +326,7 @@ class SnapshotSummaryCollector:
         else:
             partition_metrics.remove_file(file)
 
-    def build(self) -> Dict[str, str]:
+    def build(self) -> dict[str, str]:
         properties = self.metrics.to_dict()
         changed_partitions_size = len(self.partition_metrics)
         set_when_positive(properties, changed_partitions_size, CHANGED_PARTITION_COUNT_PROP)
@@ -319,53 +343,9 @@ class SnapshotSummaryCollector:
         return ",".join([f"{prop}={val}" for prop, val in update_metrics.to_dict().items()])
 
 
-def _truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str]) -> Summary:
-    for prop in {
-        TOTAL_DATA_FILES,
-        TOTAL_DELETE_FILES,
-        TOTAL_RECORDS,
-        TOTAL_FILE_SIZE,
-        TOTAL_POSITION_DELETES,
-        TOTAL_EQUALITY_DELETES,
-    }:
-        summary[prop] = "0"
-
-    def get_prop(prop: str) -> int:
-        value = previous_summary.get(prop) or "0"
-        try:
-            return int(value)
-        except ValueError as e:
-            raise ValueError(f"Could not parse summary property {prop} to an int: {value}") from e
-
-    if value := get_prop(TOTAL_DATA_FILES):
-        summary[DELETED_DATA_FILES] = str(value)
-    if value := get_prop(TOTAL_DELETE_FILES):
-        summary[REMOVED_DELETE_FILES] = str(value)
-    if value := get_prop(TOTAL_RECORDS):
-        summary[DELETED_RECORDS] = str(value)
-    if value := get_prop(TOTAL_FILE_SIZE):
-        summary[REMOVED_FILE_SIZE] = str(value)
-    if value := get_prop(TOTAL_POSITION_DELETES):
-        summary[REMOVED_POSITION_DELETES] = str(value)
-    if value := get_prop(TOTAL_EQUALITY_DELETES):
-        summary[REMOVED_EQUALITY_DELETES] = str(value)
-
-    return summary
-
-
-def update_snapshot_summaries(
-    summary: Summary, previous_summary: Optional[Mapping[str, str]] = None, truncate_full_table: bool = False
-) -> Summary:
+def update_snapshot_summaries(summary: Summary, previous_summary: Mapping[str, str] | None = None) -> Summary:
     if summary.operation not in {Operation.APPEND, Operation.OVERWRITE, Operation.DELETE}:
         raise ValueError(f"Operation not implemented: {summary.operation}")
-
-    if truncate_full_table and summary.operation == Operation.OVERWRITE and previous_summary is not None:
-        deprecation_message(
-            deprecated_in="0.10.0",
-            removed_in="0.11.0",
-            help_message="The truncate-full-table shouldn't be used.",
-        )
-        summary = _truncate_table_summary(summary, previous_summary)
 
     if not previous_summary:
         previous_summary = {
@@ -425,12 +405,12 @@ def update_snapshot_summaries(
     return summary
 
 
-def set_when_positive(properties: Dict[str, str], num: int, property_name: str) -> None:
+def set_when_positive(properties: dict[str, str], num: int, property_name: str) -> None:
     if num > 0:
         properties[property_name] = str(num)
 
 
-def ancestors_of(current_snapshot: Optional[Snapshot], table_metadata: TableMetadata) -> Iterable[Snapshot]:
+def ancestors_of(current_snapshot: Snapshot | None, table_metadata: TableMetadata) -> Iterable[Snapshot]:
     """Get the ancestors of and including the given snapshot."""
     snapshot = current_snapshot
     while snapshot is not None:
@@ -440,9 +420,7 @@ def ancestors_of(current_snapshot: Optional[Snapshot], table_metadata: TableMeta
         snapshot = table_metadata.snapshot_by_id(snapshot.parent_snapshot_id)
 
 
-def ancestors_between(
-    from_snapshot: Optional[Snapshot], to_snapshot: Snapshot, table_metadata: TableMetadata
-) -> Iterable[Snapshot]:
+def ancestors_between(from_snapshot: Snapshot | None, to_snapshot: Snapshot, table_metadata: TableMetadata) -> Iterable[Snapshot]:
     """Get the ancestors of and including the given snapshot between the to and from snapshots."""
     if from_snapshot is not None:
         for snapshot in ancestors_of(to_snapshot, table_metadata):
@@ -451,3 +429,24 @@ def ancestors_between(
                 break
     else:
         yield from ancestors_of(to_snapshot, table_metadata)
+
+
+def latest_ancestor_before_timestamp(table_metadata: TableMetadata, timestamp_ms: int) -> Snapshot | None:
+    """Find the latest ancestor snapshot whose timestamp is before the provided timestamp.
+
+    Args:
+        table_metadata: The table metadata for a table
+        timestamp_ms: lookup snapshots strictly before this timestamp
+
+    Returns:
+        The latest ancestor snapshot older than the timestamp, or None if not found.
+    """
+    result: Snapshot | None = None
+    result_timestamp: int = 0
+
+    for ancestor in ancestors_of(table_metadata.current_snapshot(), table_metadata):
+        if timestamp_ms > ancestor.timestamp_ms > result_timestamp:
+            result = ancestor
+            result_timestamp = ancestor.timestamp_ms
+
+    return result

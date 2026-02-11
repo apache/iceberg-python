@@ -52,6 +52,10 @@ class NoSuchNamespaceError(Exception):
     """Raised when a referenced name-space is not found."""
 
 
+class NoSuchPlanTaskError(Exception):
+    """Raised when a scan plan task is not found."""
+
+
 class RESTError(Exception):
     """Raises when there is an unknown response from the REST Catalog."""
 

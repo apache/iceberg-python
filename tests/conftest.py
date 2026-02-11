@@ -31,6 +31,7 @@ import socket
 import string
 import time
 import uuid
+from collections.abc import Generator
 from datetime import date, datetime, timezone
 from pathlib import Path
 from random import choice, randint
@@ -38,19 +39,19 @@ from tempfile import TemporaryDirectory
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
-    Generator,
-    List,
-    Optional,
 )
+from unittest import mock
 
 import boto3
 import pytest
 from moto import mock_aws
 from pydantic_core import to_json
+from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog import Catalog, load_catalog
+from pyiceberg.catalog.memory import InMemoryCatalog
 from pyiceberg.catalog.noop import NoopCatalog
+from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.expressions import BoundReference
 from pyiceberg.io import (
     ADLS_ACCOUNT_KEY,
@@ -72,8 +73,10 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
-from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2
+from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2, TableMetadataV3
+from pyiceberg.table.sorting import NullOrder, SortField, SortOrder
 from pyiceberg.transforms import DayTransform, IdentityTransform
+from pyiceberg.typedef import Identifier
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -98,16 +101,30 @@ from pyiceberg.utils.datetime import datetime_to_millis
 
 if TYPE_CHECKING:
     import pyarrow as pa
-    from moto.server import ThreadedMotoServer  # type: ignore
+    from moto.server import ThreadedMotoServer
     from pyspark.sql import SparkSession
 
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
 
-def pytest_collection_modifyitems(items: List[pytest.Item]) -> None:
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:
         if not any(item.iter_markers()):
             item.add_marker("unmarked")
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _isolate_pyiceberg_config() -> None:
+    """Make test runs ignore your local PyIceberg config.
+
+    Without this, tests will attempt to resolve a local ~/.pyiceberg.yaml while running pytest.
+    This replaces the global catalog config once at session start with an env-only config.
+    """
+    import pyiceberg.catalog as _catalog_module
+    from pyiceberg.utils.config import Config
+
+    with mock.patch.object(Config, "_from_configuration_files", return_value=None):
+        _catalog_module._ENV_CONFIG = Config()
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -438,17 +455,6 @@ def iceberg_schema_simple_no_ids() -> Schema:
 
 
 @pytest.fixture(scope="session")
-def iceberg_table_schema_simple() -> Schema:
-    return Schema(
-        NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
-        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
-        schema_id=0,
-        identifier_field_ids=[],
-    )
-
-
-@pytest.fixture(scope="session")
 def iceberg_schema_nested() -> Schema:
     return Schema(
         NestedField(field_id=1, name="foo", field_type=StringType(), required=True),
@@ -547,7 +553,7 @@ def iceberg_schema_nested_no_ids() -> Schema:
 
 
 @pytest.fixture(scope="session")
-def all_avro_types() -> Dict[str, Any]:
+def all_avro_types() -> dict[str, Any]:
     return {
         "type": "record",
         "name": "all_avro_types",
@@ -651,7 +657,7 @@ EXAMPLE_TABLE_METADATA_V1 = {
 
 
 @pytest.fixture(scope="session")
-def example_table_metadata_v1() -> Dict[str, Any]:
+def example_table_metadata_v1() -> dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_V1
 
 
@@ -725,7 +731,7 @@ EXAMPLE_TABLE_METADATA_WITH_SNAPSHOT_V1 = {
 
 
 @pytest.fixture
-def example_table_metadata_with_snapshot_v1() -> Dict[str, Any]:
+def example_table_metadata_with_snapshot_v1() -> dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_WITH_SNAPSHOT_V1
 
 
@@ -778,18 +784,18 @@ EXAMPLE_TABLE_METADATA_NO_SNAPSHOT_V1 = {
 
 
 @pytest.fixture
-def example_table_metadata_no_snapshot_v1() -> Dict[str, Any]:
+def example_table_metadata_no_snapshot_v1() -> dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_NO_SNAPSHOT_V1
 
 
 @pytest.fixture
-def example_table_metadata_v2_with_extensive_snapshots() -> Dict[str, Any]:
+def example_table_metadata_v2_with_extensive_snapshots() -> dict[str, Any]:
     def generate_snapshot(
         snapshot_id: int,
-        parent_snapshot_id: Optional[int] = None,
-        timestamp_ms: Optional[int] = None,
+        parent_snapshot_id: int | None = None,
+        timestamp_ms: int | None = None,
         sequence_number: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return {
             "snapshot-id": snapshot_id,
             "parent-snapshot-id": parent_snapshot_id,
@@ -920,6 +926,7 @@ EXAMPLE_TABLE_METADATA_V3 = {
     "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
     "location": "s3://bucket/test/location",
     "last-sequence-number": 34,
+    "next-row-id": 1,
     "last-updated-ms": 1602638573590,
     "last-column-id": 3,
     "current-schema-id": 1,
@@ -1116,39 +1123,60 @@ TABLE_METADATA_V2_WITH_STATISTICS = {
 
 
 @pytest.fixture
-def example_table_metadata_v2() -> Dict[str, Any]:
+def example_table_metadata_v2() -> dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_V2
 
 
 @pytest.fixture
-def table_metadata_v2_with_fixed_and_decimal_types() -> Dict[str, Any]:
+def table_metadata_v2_with_fixed_and_decimal_types() -> dict[str, Any]:
     return TABLE_METADATA_V2_WITH_FIXED_AND_DECIMAL_TYPES
 
 
 @pytest.fixture
-def table_metadata_v2_with_statistics() -> Dict[str, Any]:
+def table_metadata_v2_with_statistics() -> dict[str, Any]:
     return TABLE_METADATA_V2_WITH_STATISTICS
 
 
 @pytest.fixture
-def example_table_metadata_v3() -> Dict[str, Any]:
+def example_table_metadata_v3() -> dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_V3
 
 
-@pytest.fixture(scope="session")
-def table_location(tmp_path_factory: pytest.TempPathFactory) -> str:
+def generate_table_location_with_version_hint(
+    tmp_path_factory: pytest.TempPathFactory, content_in_version_hint: str, metadata_filename: str
+) -> str:
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
-    metadata_filename = f"{uuid.uuid4()}.metadata.json"
     metadata_location = str(tmp_path_factory.getbasetemp() / "metadata" / metadata_filename)
     version_hint_location = str(tmp_path_factory.getbasetemp() / "metadata" / "version-hint.text")
     metadata = TableMetadataV2(**EXAMPLE_TABLE_METADATA_V2)
     ToOutputFile.table_metadata(metadata, PyArrowFileIO().new_output(location=metadata_location), overwrite=True)
 
     with PyArrowFileIO().new_output(location=version_hint_location).create(overwrite=True) as s:
-        s.write(metadata_filename.encode("utf-8"))
+        s.write(content_in_version_hint.encode("utf-8"))
 
     return str(tmp_path_factory.getbasetemp())
+
+
+@pytest.fixture(scope="session")
+def table_location_with_version_hint_full(tmp_path_factory: pytest.TempPathFactory) -> str:
+    content_in_version_hint = str(uuid.uuid4())
+    metadata_filename = f"{content_in_version_hint}.metadata.json"
+    return generate_table_location_with_version_hint(tmp_path_factory, content_in_version_hint, metadata_filename)
+
+
+@pytest.fixture(scope="session")
+def table_location_with_version_hint_numeric(tmp_path_factory: pytest.TempPathFactory) -> str:
+    content_in_version_hint = "1234567890"
+    metadata_filename = f"v{content_in_version_hint}.metadata.json"
+    return generate_table_location_with_version_hint(tmp_path_factory, content_in_version_hint, metadata_filename)
+
+
+@pytest.fixture(scope="session")
+def table_location_with_version_hint_non_numeric(tmp_path_factory: pytest.TempPathFactory) -> str:
+    content_in_version_hint = "non_numberic"
+    metadata_filename = f"{content_in_version_hint}.metadata.json"
+    return generate_table_location_with_version_hint(tmp_path_factory, content_in_version_hint, metadata_filename)
 
 
 @pytest.fixture(scope="session")
@@ -1176,7 +1204,10 @@ manifest_entry_records = [
         "status": 1,
         "snapshot_id": 8744736658442914487,
         "data_file": {
-            "file_path": "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet",
+            "file_path": (
+                "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/"
+                "00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet"
+            ),
             "file_format": "PARQUET",
             "partition": {"VendorID": 1, "tpep_pickup_day": 1925},
             "record_count": 19513,
@@ -1296,7 +1327,10 @@ manifest_entry_records = [
         "status": 1,
         "snapshot_id": 8744736658442914487,
         "data_file": {
-            "file_path": "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=1/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00002.parquet",
+            "file_path": (
+                "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=1/"
+                "00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00002.parquet"
+            ),
             "file_format": "PARQUET",
             "partition": {"VendorID": 1, "tpep_pickup_datetime": None},
             "record_count": 95050,
@@ -1466,7 +1500,7 @@ manifest_file_records_v2 = [
 
 
 @pytest.fixture(scope="session")
-def avro_schema_manifest_file_v1() -> Dict[str, Any]:
+def avro_schema_manifest_file_v1() -> dict[str, Any]:
     return {
         "type": "record",
         "name": "manifest_file",
@@ -1568,7 +1602,7 @@ def avro_schema_manifest_file_v1() -> Dict[str, Any]:
 
 
 @pytest.fixture(scope="session")
-def avro_schema_manifest_file_v2() -> Dict[str, Any]:
+def avro_schema_manifest_file_v2() -> dict[str, Any]:
     return {
         "type": "record",
         "name": "manifest_file",
@@ -1647,7 +1681,7 @@ def avro_schema_manifest_file_v2() -> Dict[str, Any]:
 
 
 @pytest.fixture(scope="session")
-def avro_schema_manifest_entry() -> Dict[str, Any]:
+def avro_schema_manifest_entry() -> dict[str, Any]:
     return {
         "type": "record",
         "name": "manifest_entry",
@@ -1868,7 +1902,7 @@ def test_schema() -> Schema:
 
 
 @pytest.fixture(scope="session")
-def test_partition_spec() -> Schema:
+def test_partition_spec() -> PartitionSpec:
     return PartitionSpec(
         PartitionField(1, 1000, IdentityTransform(), "VendorID"),
         PartitionField(2, 1001, DayTransform(), "tpep_pickup_day"),
@@ -1876,8 +1910,13 @@ def test_partition_spec() -> Schema:
 
 
 @pytest.fixture(scope="session")
+def test_sort_order() -> SortOrder:
+    return SortOrder(SortField(source_id=1, transform=IdentityTransform(), null_order=NullOrder.NULLS_FIRST))
+
+
+@pytest.fixture(scope="session")
 def generated_manifest_entry_file(
-    avro_schema_manifest_entry: Dict[str, Any], test_schema: Schema, test_partition_spec: PartitionSpec
+    avro_schema_manifest_entry: dict[str, Any], test_schema: Schema, test_partition_spec: PartitionSpec
 ) -> Generator[str, None, None]:
     from fastavro import parse_schema, writer
 
@@ -1900,7 +1939,7 @@ def generated_manifest_entry_file(
 
 @pytest.fixture(scope="session")
 def generated_manifest_file_file_v1(
-    avro_schema_manifest_file_v1: Dict[str, Any], generated_manifest_entry_file: str
+    avro_schema_manifest_file_v1: dict[str, Any], generated_manifest_entry_file: str
 ) -> Generator[str, None, None]:
     from fastavro import parse_schema, writer
 
@@ -1918,7 +1957,7 @@ def generated_manifest_file_file_v1(
 
 @pytest.fixture(scope="session")
 def generated_manifest_file_file_v2(
-    avro_schema_manifest_file_v2: Dict[str, Any], generated_manifest_entry_file: str
+    avro_schema_manifest_file_v2: dict[str, Any], generated_manifest_entry_file: str
 ) -> Generator[str, None, None]:
     from fastavro import parse_schema, writer
 
@@ -2134,7 +2173,10 @@ def adls_fsspec_fileio(request: pytest.FixtureRequest) -> Generator[FsspecFileIO
     azurite_url = request.config.getoption("--adls.endpoint")
     azurite_account_name = request.config.getoption("--adls.account-name")
     azurite_account_key = request.config.getoption("--adls.account-key")
-    azurite_connection_string = f"DefaultEndpointsProtocol=http;AccountName={azurite_account_name};AccountKey={azurite_account_key};BlobEndpoint={azurite_url}/{azurite_account_name};"
+    azurite_connection_string = (
+        f"DefaultEndpointsProtocol=http;AccountName={azurite_account_name};"
+        f"AccountKey={azurite_account_key};BlobEndpoint={azurite_url}/{azurite_account_name};"
+    )
     properties = {
         "adls.connection-string": azurite_connection_string,
         "adls.account-name": azurite_account_name,
@@ -2171,7 +2213,10 @@ def pyarrow_fileio_adls(request: pytest.FixtureRequest) -> Generator[Any, None, 
 
     azurite_account_name = request.config.getoption("--adls.account-name")
     azurite_account_key = request.config.getoption("--adls.account-key")
-    azurite_connection_string = f"DefaultEndpointsProtocol=http;AccountName={azurite_account_name};AccountKey={azurite_account_key};BlobEndpoint={azurite_url}/{azurite_account_name};"
+    azurite_connection_string = (
+        f"DefaultEndpointsProtocol=http;AccountName={azurite_account_name};"
+        f"AccountKey={azurite_account_key};BlobEndpoint={azurite_url}/{azurite_account_name};"
+    )
     properties = {
         ADLS_ACCOUNT_NAME: azurite_account_name,
         ADLS_ACCOUNT_KEY: azurite_account_key,
@@ -2267,7 +2312,7 @@ def table_name() -> str:
 
 
 @pytest.fixture()
-def table_list(table_name: str) -> List[str]:
+def table_list(table_name: str) -> list[str]:
     return [f"{table_name}_{idx}" for idx in range(NUM_TABLES)]
 
 
@@ -2286,7 +2331,7 @@ def gcp_dataset_name() -> str:
 
 
 @pytest.fixture()
-def database_list(database_name: str) -> List[str]:
+def database_list(database_name: str) -> list[str]:
     return [f"{database_name}_{idx}" for idx in range(NUM_TABLES)]
 
 
@@ -2299,7 +2344,7 @@ def hierarchical_namespace_name() -> str:
 
 
 @pytest.fixture()
-def hierarchical_namespace_list(hierarchical_namespace_name: str) -> List[str]:
+def hierarchical_namespace_list(hierarchical_namespace_name: str) -> list[str]:
     return [f"{hierarchical_namespace_name}_{idx}" for idx in range(NUM_TABLES)]
 
 
@@ -2346,12 +2391,12 @@ def get_gcs_bucket_name() -> str:
     return bucket_name
 
 
-def get_glue_endpoint() -> Optional[str]:
+def get_glue_endpoint() -> str | None:
     """Set the optional environment variable AWS_TEST_GLUE_ENDPOINT for a glue endpoint to test."""
     return os.getenv("AWS_TEST_GLUE_ENDPOINT")
 
 
-def get_s3_path(bucket_name: str, database_name: Optional[str] = None, table_name: Optional[str] = None) -> str:
+def get_s3_path(bucket_name: str, database_name: str | None = None, table_name: str | None = None) -> str:
     result_path = f"s3://{bucket_name}"
     if database_name is not None:
         result_path += f"/{database_name}.db"
@@ -2361,7 +2406,7 @@ def get_s3_path(bucket_name: str, database_name: Optional[str] = None, table_nam
     return result_path
 
 
-def get_gcs_path(bucket_name: str, database_name: Optional[str] = None, table_name: Optional[str] = None) -> str:
+def get_gcs_path(bucket_name: str, database_name: str | None = None, table_name: str | None = None) -> str:
     result_path = f"gcs://{bucket_name}"
     if database_name is not None:
         result_path += f"/{database_name}.db"
@@ -2445,7 +2490,7 @@ def warehouse(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture
-def table_v1(example_table_metadata_v1: Dict[str, Any]) -> Table:
+def table_v1(example_table_metadata_v1: dict[str, Any]) -> Table:
     table_metadata = TableMetadataV1(**example_table_metadata_v1)
     return Table(
         identifier=("database", "table"),
@@ -2457,7 +2502,7 @@ def table_v1(example_table_metadata_v1: Dict[str, Any]) -> Table:
 
 
 @pytest.fixture
-def table_v2(example_table_metadata_v2: Dict[str, Any]) -> Table:
+def table_v2(example_table_metadata_v2: dict[str, Any]) -> Table:
     table_metadata = TableMetadataV2(**example_table_metadata_v2)
     return Table(
         identifier=("database", "table"),
@@ -2469,7 +2514,19 @@ def table_v2(example_table_metadata_v2: Dict[str, Any]) -> Table:
 
 
 @pytest.fixture
-def table_v2_orc(example_table_metadata_v2: Dict[str, Any]) -> Table:
+def table_v3(example_table_metadata_v3: dict[str, Any]) -> Table:
+    table_metadata = TableMetadataV3(**example_table_metadata_v3)
+    return Table(
+        identifier=("database", "table"),
+        metadata=table_metadata,
+        metadata_location=f"{table_metadata.location}/uuid.metadata.json",
+        io=load_file_io(),
+        catalog=NoopCatalog("NoopCatalog"),
+    )
+
+
+@pytest.fixture
+def table_v2_orc(example_table_metadata_v2: dict[str, Any]) -> Table:
     import copy
 
     metadata_dict = copy.deepcopy(example_table_metadata_v2)
@@ -2488,7 +2545,7 @@ def table_v2_orc(example_table_metadata_v2: Dict[str, Any]) -> Table:
 
 @pytest.fixture
 def table_v2_with_fixed_and_decimal_types(
-    table_metadata_v2_with_fixed_and_decimal_types: Dict[str, Any],
+    table_metadata_v2_with_fixed_and_decimal_types: dict[str, Any],
 ) -> Table:
     table_metadata = TableMetadataV2(
         **table_metadata_v2_with_fixed_and_decimal_types,
@@ -2503,7 +2560,7 @@ def table_v2_with_fixed_and_decimal_types(
 
 
 @pytest.fixture
-def table_v2_with_extensive_snapshots(example_table_metadata_v2_with_extensive_snapshots: Dict[str, Any]) -> Table:
+def table_v2_with_extensive_snapshots(example_table_metadata_v2_with_extensive_snapshots: dict[str, Any]) -> Table:
     table_metadata = TableMetadataV2(**example_table_metadata_v2_with_extensive_snapshots)
     return Table(
         identifier=("database", "table"),
@@ -2515,7 +2572,7 @@ def table_v2_with_extensive_snapshots(example_table_metadata_v2_with_extensive_s
 
 
 @pytest.fixture
-def table_v2_with_statistics(table_metadata_v2_with_statistics: Dict[str, Any]) -> Table:
+def table_v2_with_statistics(table_metadata_v2_with_statistics: dict[str, Any]) -> Table:
     table_metadata = TableMetadataV2(**table_metadata_v2_with_statistics)
     return Table(
         identifier=("database", "table"),
@@ -2527,17 +2584,17 @@ def table_v2_with_statistics(table_metadata_v2_with_statistics: Dict[str, Any]) 
 
 
 @pytest.fixture
-def bound_reference_str() -> BoundReference[str]:
+def bound_reference_str() -> BoundReference:
     return BoundReference(field=NestedField(1, "field", StringType(), required=False), accessor=Accessor(position=0, inner=None))
 
 
 @pytest.fixture
-def bound_reference_binary() -> BoundReference[str]:
+def bound_reference_binary() -> BoundReference:
     return BoundReference(field=NestedField(1, "field", BinaryType(), required=False), accessor=Accessor(position=0, inner=None))
 
 
 @pytest.fixture
-def bound_reference_uuid() -> BoundReference[str]:
+def bound_reference_uuid() -> BoundReference:
     return BoundReference(field=NestedField(1, "field", UUIDType(), required=False), accessor=Accessor(position=0, inner=None))
 
 
@@ -2599,7 +2656,8 @@ TEST_DATA_WITH_NULL = {
     # Not supported by Spark
     # 'time': [time(1, 22, 0), None, time(19, 25, 0)],
     # Not natively supported by Arrow
-    # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None, uuid.UUID('11111111-1111-1111-1111-111111111111').bytes],
+    # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None,
+    #          uuid.UUID('11111111-1111-1111-1111-111111111111').bytes],
     "binary": [b"\01", None, b"\22"],
     "fixed": [
         uuid.UUID("00000000-0000-0000-0000-000000000000").bytes,
@@ -2652,7 +2710,8 @@ def arrow_table_with_null(pa_schema: "pa.Schema") -> "pa.Table":
             "long": [1, None, 9],
             "float": [0.0, None, 0.9],
             "double": [0.0, None, 0.9],
-            # 'time': [1_000_000, None, 3_000_000],  # Example times: 1s, none, and 3s past midnight #Spark does not support time fields
+            # 'time': [1_000_000, None, 3_000_000],  # Example times: 1s, none, and 3s past midnight
+            # Spark does not support time fields
             "timestamp": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
             "timestamptz": [
                 datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
@@ -2663,7 +2722,8 @@ def arrow_table_with_null(pa_schema: "pa.Schema") -> "pa.Table":
             # Not supported by Spark
             # 'time': [time(1, 22, 0), None, time(19, 25, 0)],
             # Not natively supported by Arrow
-            # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None, uuid.UUID('11111111-1111-1111-1111-111111111111').bytes],
+            # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None,
+            #          uuid.UUID('11111111-1111-1111-1111-111111111111').bytes],
             "binary": [b"\01", None, b"\22"],
             "fixed": [
                 uuid.UUID("00000000-0000-0000-0000-000000000000").bytes,
@@ -2916,3 +2976,170 @@ def pyarrow_table_with_promoted_types(pyarrow_schema_with_promoted_types: "pa.Sc
         },
         schema=pyarrow_schema_with_promoted_types,
     )
+
+
+@pytest.fixture(scope="session")
+def ray_session() -> Generator[Any, None, None]:
+    """Fixture to manage Ray initialization and shutdown for tests."""
+    import ray
+
+    ray.init(
+        ignore_reinit_error=True,
+        runtime_env={"working_dir": None},  # Prevent Ray from serializing the working directory to workers
+    )
+    yield ray
+    ray.shutdown()
+
+
+# Catalog fixtures
+
+
+def _create_memory_catalog(name: str, warehouse: Path) -> InMemoryCatalog:
+    return InMemoryCatalog(name, warehouse=f"file://{warehouse}")
+
+
+def _create_sql_catalog(name: str, warehouse: Path) -> SqlCatalog:
+    catalog = SqlCatalog(
+        name,
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{warehouse}",
+    )
+    catalog.create_tables()
+    return catalog
+
+
+def _create_sql_without_rowcount_catalog(name: str, warehouse: Path) -> SqlCatalog:
+    props = {
+        "uri": f"sqlite:////{warehouse}/sql-catalog",
+        "warehouse": f"file://{warehouse}",
+    }
+    catalog = SqlCatalog(name, **props)
+    catalog.engine.dialect.supports_sane_rowcount = False
+    catalog.create_tables()
+    return catalog
+
+
+_CATALOG_FACTORIES = {
+    "memory": _create_memory_catalog,
+    "sql": _create_sql_catalog,
+    "sql_without_rowcount": _create_sql_without_rowcount_catalog,
+}
+
+
+@pytest.fixture(params=list(_CATALOG_FACTORIES.keys()))
+def catalog(request: pytest.FixtureRequest, tmp_path: Path) -> Generator[Catalog, None, None]:
+    """Parameterized fixture that yields catalogs listed in _CATALOG_FACTORIES."""
+    catalog_type = request.param
+    factory = _CATALOG_FACTORIES[catalog_type]
+    cat = factory("test_catalog", tmp_path)
+    yield cat
+    if hasattr(cat, "destroy_tables"):
+        cat.destroy_tables()
+
+
+@pytest.fixture(params=list(_CATALOG_FACTORIES.keys()))
+def catalog_with_warehouse(
+    request: pytest.FixtureRequest,
+    warehouse: Path,
+) -> Generator[Catalog, None, None]:
+    factory = _CATALOG_FACTORIES[request.param]
+    cat = factory("test_catalog", warehouse)
+    yield cat
+    if hasattr(cat, "destroy_tables"):
+        cat.destroy_tables()
+
+
+@pytest.fixture(name="random_table_identifier")
+def fixture_random_table_identifier(warehouse: Path, database_name: str, table_name: str) -> Identifier:
+    os.makedirs(f"{warehouse}/{database_name}/{table_name}/metadata/", exist_ok=True)
+    return database_name, table_name
+
+
+@pytest.fixture(name="another_random_table_identifier")
+def fixture_another_random_table_identifier(warehouse: Path, database_name: str, table_name: str) -> Identifier:
+    database_name = database_name + "_new"
+    table_name = table_name + "_new"
+    os.makedirs(f"{warehouse}/{database_name}/{table_name}/metadata/", exist_ok=True)
+    return database_name, table_name
+
+
+@pytest.fixture(name="random_hierarchical_identifier")
+def fixture_random_hierarchical_identifier(warehouse: Path, hierarchical_namespace_name: str, table_name: str) -> Identifier:
+    os.makedirs(f"{warehouse}/{hierarchical_namespace_name}/{table_name}/metadata/", exist_ok=True)
+    return Catalog.identifier_to_tuple(".".join((hierarchical_namespace_name, table_name)))
+
+
+@pytest.fixture(name="another_random_hierarchical_identifier")
+def fixture_another_random_hierarchical_identifier(
+    warehouse: Path, hierarchical_namespace_name: str, table_name: str
+) -> Identifier:
+    hierarchical_namespace_name = hierarchical_namespace_name + "_new"
+    table_name = table_name + "_new"
+    os.makedirs(f"{warehouse}/{hierarchical_namespace_name}/{table_name}/metadata/", exist_ok=True)
+    return Catalog.identifier_to_tuple(".".join((hierarchical_namespace_name, table_name)))
+
+
+@pytest.fixture(scope="session")
+def fixed_test_table_identifier() -> Identifier:
+    return "com", "organization", "department", "my_table"
+
+
+@pytest.fixture(scope="session")
+def another_fixed_test_table_identifier() -> Identifier:
+    return "com", "organization", "department_alt", "my_another_table"
+
+
+@pytest.fixture(scope="session")
+def fixed_test_table_namespace() -> Identifier:
+    return "com", "organization", "department"
+
+
+@pytest.fixture(
+    params=[
+        lf("fixed_test_table_identifier"),
+        lf("random_table_identifier"),
+        lf("random_hierarchical_identifier"),
+    ],
+)
+def test_table_identifier(request: pytest.FixtureRequest) -> Identifier:
+    return request.param
+
+
+@pytest.fixture(
+    params=[
+        lf("another_fixed_test_table_identifier"),
+        lf("another_random_table_identifier"),
+        lf("another_random_hierarchical_identifier"),
+    ],
+)
+def another_table_identifier(request: pytest.FixtureRequest) -> Identifier:
+    return request.param
+
+
+@pytest.fixture(
+    params=[
+        lf("database_name"),
+        lf("hierarchical_namespace_name"),
+        lf("fixed_test_table_namespace"),
+    ],
+)
+def test_namespace(request: pytest.FixtureRequest) -> Identifier:
+    ns = request.param
+    if isinstance(ns, tuple):
+        return ns
+    if "." in ns:
+        return tuple(ns.split("."))
+    return (ns,)
+
+
+@pytest.fixture(scope="session")
+def test_namespace_properties() -> dict[str, str]:
+    return {"key1": "value1", "key2": "value2"}
+
+
+@pytest.fixture(scope="session")
+def test_table_properties() -> dict[str, str]:
+    return {
+        "key1": "value1",
+        "key2": "value2",
+    }

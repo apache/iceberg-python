@@ -16,18 +16,13 @@
 # under the License.
 import math
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from functools import singledispatch
 from typing import (
     Any,
-    Callable,
-    Dict,
     Generic,
-    List,
-    Set,
     SupportsFloat,
-    Tuple,
     TypeVar,
-    Union,
 )
 
 from pyiceberg.conversions import from_bytes
@@ -59,11 +54,10 @@ from pyiceberg.expressions import (
     Or,
     UnboundPredicate,
 )
-from pyiceberg.expressions.literals import Literal
 from pyiceberg.manifest import DataFile, ManifestFile, PartitionFieldSummary
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.typedef import EMPTY_DICT, L, Record, StructProtocol
+from pyiceberg.typedef import EMPTY_DICT, L, LiteralValue, Record, StructProtocol
 from pyiceberg.types import (
     DoubleType,
     FloatType,
@@ -121,19 +115,19 @@ class BooleanExpressionVisitor(Generic[T], ABC):
         """
 
     @abstractmethod
-    def visit_unbound_predicate(self, predicate: UnboundPredicate[L]) -> T:
+    def visit_unbound_predicate(self, predicate: UnboundPredicate) -> T:
         """Visit method for an unbound predicate in an expression tree.
 
         Args:
-            predicate (UnboundPredicate[L): An instance of an UnboundPredicate.
+            predicate (UnboundPredicate): An instance of an UnboundPredicate.
         """
 
     @abstractmethod
-    def visit_bound_predicate(self, predicate: BoundPredicate[L]) -> T:
+    def visit_bound_predicate(self, predicate: BoundPredicate) -> T:
         """Visit method for a bound predicate in an expression tree.
 
         Args:
-            predicate (BoundPredicate[L]): An instance of a BoundPredicate.
+            predicate (BoundPredicate): An instance of a BoundPredicate.
         """
 
 
@@ -145,7 +139,8 @@ def visit(obj: BooleanExpression, visitor: BooleanExpressionVisitor[T]) -> T:
 
     Args:
         obj (BooleanExpression): An instance of a BooleanExpression.
-        visitor (BooleanExpressionVisitor[T]): An instance of an implementation of the generic BooleanExpressionVisitor base class.
+        visitor (BooleanExpressionVisitor[T]): An instance of an implementation of the generic
+            BooleanExpressionVisitor base class.
 
     Raises:
         NotImplementedError: If attempting to visit an unsupported expression.
@@ -181,13 +176,13 @@ def _(obj: And, visitor: BooleanExpressionVisitor[T]) -> T:
 
 
 @visit.register(UnboundPredicate)
-def _(obj: UnboundPredicate[L], visitor: BooleanExpressionVisitor[T]) -> T:
+def _(obj: UnboundPredicate, visitor: BooleanExpressionVisitor[T]) -> T:
     """Visit an unbound boolean expression with a concrete BooleanExpressionVisitor."""
     return visitor.visit_unbound_predicate(predicate=obj)
 
 
 @visit.register(BoundPredicate)
-def _(obj: BoundPredicate[L], visitor: BooleanExpressionVisitor[T]) -> T:
+def _(obj: BoundPredicate, visitor: BooleanExpressionVisitor[T]) -> T:
     """Visit a bound boolean expression with a concrete BooleanExpressionVisitor."""
     return visitor.visit_bound_predicate(predicate=obj)
 
@@ -247,60 +242,60 @@ class BindVisitor(BooleanExpressionVisitor[BooleanExpression]):
     def visit_or(self, left_result: BooleanExpression, right_result: BooleanExpression) -> BooleanExpression:
         return Or(left=left_result, right=right_result)
 
-    def visit_unbound_predicate(self, predicate: UnboundPredicate[L]) -> BooleanExpression:
+    def visit_unbound_predicate(self, predicate: UnboundPredicate) -> BooleanExpression:
         return predicate.bind(self.schema, case_sensitive=self.case_sensitive)
 
-    def visit_bound_predicate(self, predicate: BoundPredicate[L]) -> BooleanExpression:
+    def visit_bound_predicate(self, predicate: BoundPredicate) -> BooleanExpression:
         raise TypeError(f"Found already bound predicate: {predicate}")
 
 
 class BoundBooleanExpressionVisitor(BooleanExpressionVisitor[T], ABC):
     @abstractmethod
-    def visit_in(self, term: BoundTerm[L], literals: Set[L]) -> T:
+    def visit_in(self, term: BoundTerm, literals: set[L]) -> T:
         """Visit a bound In predicate."""
 
     @abstractmethod
-    def visit_not_in(self, term: BoundTerm[L], literals: Set[L]) -> T:
+    def visit_not_in(self, term: BoundTerm, literals: set[L]) -> T:
         """Visit a bound NotIn predicate."""
 
     @abstractmethod
-    def visit_is_nan(self, term: BoundTerm[L]) -> T:
+    def visit_is_nan(self, term: BoundTerm) -> T:
         """Visit a bound IsNan predicate."""
 
     @abstractmethod
-    def visit_not_nan(self, term: BoundTerm[L]) -> T:
+    def visit_not_nan(self, term: BoundTerm) -> T:
         """Visit a bound NotNan predicate."""
 
     @abstractmethod
-    def visit_is_null(self, term: BoundTerm[L]) -> T:
+    def visit_is_null(self, term: BoundTerm) -> T:
         """Visit a bound IsNull predicate."""
 
     @abstractmethod
-    def visit_not_null(self, term: BoundTerm[L]) -> T:
+    def visit_not_null(self, term: BoundTerm) -> T:
         """Visit a bound NotNull predicate."""
 
     @abstractmethod
-    def visit_equal(self, term: BoundTerm[L], literal: Literal[L]) -> T:
+    def visit_equal(self, term: BoundTerm, literal: LiteralValue) -> T:
         """Visit a bound Equal predicate."""
 
     @abstractmethod
-    def visit_not_equal(self, term: BoundTerm[L], literal: Literal[L]) -> T:
+    def visit_not_equal(self, term: BoundTerm, literal: LiteralValue) -> T:
         """Visit a bound NotEqual predicate."""
 
     @abstractmethod
-    def visit_greater_than_or_equal(self, term: BoundTerm[L], literal: Literal[L]) -> T:
+    def visit_greater_than_or_equal(self, term: BoundTerm, literal: LiteralValue) -> T:
         """Visit a bound GreaterThanOrEqual predicate."""
 
     @abstractmethod
-    def visit_greater_than(self, term: BoundTerm[L], literal: Literal[L]) -> T:
+    def visit_greater_than(self, term: BoundTerm, literal: LiteralValue) -> T:
         """Visit a bound GreaterThan predicate."""
 
     @abstractmethod
-    def visit_less_than(self, term: BoundTerm[L], literal: Literal[L]) -> T:
+    def visit_less_than(self, term: BoundTerm, literal: LiteralValue) -> T:
         """Visit a bound LessThan predicate."""
 
     @abstractmethod
-    def visit_less_than_or_equal(self, term: BoundTerm[L], literal: Literal[L]) -> T:
+    def visit_less_than_or_equal(self, term: BoundTerm, literal: LiteralValue) -> T:
         """Visit a bound LessThanOrEqual predicate."""
 
     @abstractmethod
@@ -324,105 +319,105 @@ class BoundBooleanExpressionVisitor(BooleanExpressionVisitor[T], ABC):
         """Visit a bound Or predicate."""
 
     @abstractmethod
-    def visit_starts_with(self, term: BoundTerm[L], literal: Literal[L]) -> T:
+    def visit_starts_with(self, term: BoundTerm, literal: LiteralValue) -> T:
         """Visit bound StartsWith predicate."""
 
     @abstractmethod
-    def visit_not_starts_with(self, term: BoundTerm[L], literal: Literal[L]) -> T:
+    def visit_not_starts_with(self, term: BoundTerm, literal: LiteralValue) -> T:
         """Visit bound NotStartsWith predicate."""
 
-    def visit_unbound_predicate(self, predicate: UnboundPredicate[L]) -> T:
+    def visit_unbound_predicate(self, predicate: UnboundPredicate) -> T:
         """Visit an unbound predicate.
 
         Args:
-            predicate (UnboundPredicate[L]): An unbound predicate.
+            predicate (UnboundPredicate): An unbound predicate.
         Raises:
             TypeError: This always raises since an unbound predicate is not expected in a bound boolean expression.
         """
         raise TypeError(f"Not a bound predicate: {predicate}")
 
-    def visit_bound_predicate(self, predicate: BoundPredicate[L]) -> T:
+    def visit_bound_predicate(self, predicate: BoundPredicate) -> T:
         """Visit a bound predicate.
 
         Args:
-            predicate (BoundPredicate[L]): A bound predicate.
+            predicate (BoundPredicate): A bound predicate.
         """
         return visit_bound_predicate(predicate, self)
 
 
 @singledispatch
-def visit_bound_predicate(expr: BoundPredicate[L], _: BooleanExpressionVisitor[T]) -> T:
+def visit_bound_predicate(expr: BoundPredicate, _: BooleanExpressionVisitor[T]) -> T:
     raise TypeError(f"Unknown predicate: {expr}")
 
 
 @visit_bound_predicate.register(BoundIn)
-def _(expr: BoundIn[L], visitor: BoundBooleanExpressionVisitor[T]) -> T:
+def _(expr: BoundIn, visitor: BoundBooleanExpressionVisitor[T]) -> T:
     return visitor.visit_in(term=expr.term, literals=expr.value_set)
 
 
 @visit_bound_predicate.register(BoundNotIn)
-def _(expr: BoundNotIn[L], visitor: BoundBooleanExpressionVisitor[T]) -> T:
+def _(expr: BoundNotIn, visitor: BoundBooleanExpressionVisitor[T]) -> T:
     return visitor.visit_not_in(term=expr.term, literals=expr.value_set)
 
 
 @visit_bound_predicate.register(BoundIsNaN)
-def _(expr: BoundIsNaN[L], visitor: BoundBooleanExpressionVisitor[T]) -> T:
+def _(expr: BoundIsNaN, visitor: BoundBooleanExpressionVisitor[T]) -> T:
     return visitor.visit_is_nan(term=expr.term)
 
 
 @visit_bound_predicate.register(BoundNotNaN)
-def _(expr: BoundNotNaN[L], visitor: BoundBooleanExpressionVisitor[T]) -> T:
+def _(expr: BoundNotNaN, visitor: BoundBooleanExpressionVisitor[T]) -> T:
     return visitor.visit_not_nan(term=expr.term)
 
 
 @visit_bound_predicate.register(BoundIsNull)
-def _(expr: BoundIsNull[L], visitor: BoundBooleanExpressionVisitor[T]) -> T:
+def _(expr: BoundIsNull, visitor: BoundBooleanExpressionVisitor[T]) -> T:
     return visitor.visit_is_null(term=expr.term)
 
 
 @visit_bound_predicate.register(BoundNotNull)
-def _(expr: BoundNotNull[L], visitor: BoundBooleanExpressionVisitor[T]) -> T:
+def _(expr: BoundNotNull, visitor: BoundBooleanExpressionVisitor[T]) -> T:
     return visitor.visit_not_null(term=expr.term)
 
 
 @visit_bound_predicate.register(BoundEqualTo)
-def _(expr: BoundEqualTo[L], visitor: BoundBooleanExpressionVisitor[T]) -> T:
+def _(expr: BoundEqualTo, visitor: BoundBooleanExpressionVisitor[T]) -> T:
     return visitor.visit_equal(term=expr.term, literal=expr.literal)
 
 
 @visit_bound_predicate.register(BoundNotEqualTo)
-def _(expr: BoundNotEqualTo[L], visitor: BoundBooleanExpressionVisitor[T]) -> T:
+def _(expr: BoundNotEqualTo, visitor: BoundBooleanExpressionVisitor[T]) -> T:
     return visitor.visit_not_equal(term=expr.term, literal=expr.literal)
 
 
 @visit_bound_predicate.register(BoundGreaterThanOrEqual)
-def _(expr: BoundGreaterThanOrEqual[L], visitor: BoundBooleanExpressionVisitor[T]) -> T:
+def _(expr: BoundGreaterThanOrEqual, visitor: BoundBooleanExpressionVisitor[T]) -> T:
     """Visit a bound GreaterThanOrEqual predicate."""
     return visitor.visit_greater_than_or_equal(term=expr.term, literal=expr.literal)
 
 
 @visit_bound_predicate.register(BoundGreaterThan)
-def _(expr: BoundGreaterThan[L], visitor: BoundBooleanExpressionVisitor[T]) -> T:
+def _(expr: BoundGreaterThan, visitor: BoundBooleanExpressionVisitor[T]) -> T:
     return visitor.visit_greater_than(term=expr.term, literal=expr.literal)
 
 
 @visit_bound_predicate.register(BoundLessThan)
-def _(expr: BoundLessThan[L], visitor: BoundBooleanExpressionVisitor[T]) -> T:
+def _(expr: BoundLessThan, visitor: BoundBooleanExpressionVisitor[T]) -> T:
     return visitor.visit_less_than(term=expr.term, literal=expr.literal)
 
 
 @visit_bound_predicate.register(BoundLessThanOrEqual)
-def _(expr: BoundLessThanOrEqual[L], visitor: BoundBooleanExpressionVisitor[T]) -> T:
+def _(expr: BoundLessThanOrEqual, visitor: BoundBooleanExpressionVisitor[T]) -> T:
     return visitor.visit_less_than_or_equal(term=expr.term, literal=expr.literal)
 
 
 @visit_bound_predicate.register(BoundStartsWith)
-def _(expr: BoundStartsWith[L], visitor: BoundBooleanExpressionVisitor[T]) -> T:
+def _(expr: BoundStartsWith, visitor: BoundBooleanExpressionVisitor[T]) -> T:
     return visitor.visit_starts_with(term=expr.term, literal=expr.literal)
 
 
 @visit_bound_predicate.register(BoundNotStartsWith)
-def _(expr: BoundNotStartsWith[L], visitor: BoundBooleanExpressionVisitor[T]) -> T:
+def _(expr: BoundNotStartsWith, visitor: BoundBooleanExpressionVisitor[T]) -> T:
     return visitor.visit_not_starts_with(term=expr.term, literal=expr.literal)
 
 
@@ -448,10 +443,10 @@ class _RewriteNotVisitor(BooleanExpressionVisitor[BooleanExpression]):
     def visit_or(self, left_result: BooleanExpression, right_result: BooleanExpression) -> BooleanExpression:
         return Or(left=left_result, right=right_result)
 
-    def visit_unbound_predicate(self, predicate: UnboundPredicate[L]) -> BooleanExpression:
+    def visit_unbound_predicate(self, predicate: UnboundPredicate) -> BooleanExpression:
         return predicate
 
-    def visit_bound_predicate(self, predicate: BoundPredicate[L]) -> BooleanExpression:
+    def visit_bound_predicate(self, predicate: BoundPredicate) -> BooleanExpression:
         return predicate
 
 
@@ -470,53 +465,53 @@ class _ExpressionEvaluator(BoundBooleanExpressionVisitor[bool]):
         self.struct = struct
         return visit(self.bound, self)
 
-    def visit_in(self, term: BoundTerm[L], literals: Set[L]) -> bool:
+    def visit_in(self, term: BoundTerm, literals: set[L]) -> bool:
         return term.eval(self.struct) in literals
 
-    def visit_not_in(self, term: BoundTerm[L], literals: Set[L]) -> bool:
+    def visit_not_in(self, term: BoundTerm, literals: set[L]) -> bool:
         return term.eval(self.struct) not in literals
 
-    def visit_is_nan(self, term: BoundTerm[L]) -> bool:
+    def visit_is_nan(self, term: BoundTerm) -> bool:
         val = term.eval(self.struct)
         return val != val
 
-    def visit_not_nan(self, term: BoundTerm[L]) -> bool:
+    def visit_not_nan(self, term: BoundTerm) -> bool:
         val = term.eval(self.struct)
         return val == val
 
-    def visit_is_null(self, term: BoundTerm[L]) -> bool:
+    def visit_is_null(self, term: BoundTerm) -> bool:
         return term.eval(self.struct) is None
 
-    def visit_not_null(self, term: BoundTerm[L]) -> bool:
+    def visit_not_null(self, term: BoundTerm) -> bool:
         return term.eval(self.struct) is not None
 
-    def visit_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_equal(self, term: BoundTerm, literal: LiteralValue) -> bool:
         return term.eval(self.struct) == literal.value
 
-    def visit_not_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_not_equal(self, term: BoundTerm, literal: LiteralValue) -> bool:
         return term.eval(self.struct) != literal.value
 
-    def visit_greater_than_or_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_greater_than_or_equal(self, term: BoundTerm, literal: LiteralValue) -> bool:
         value = term.eval(self.struct)
         return value is not None and value >= literal.value
 
-    def visit_greater_than(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_greater_than(self, term: BoundTerm, literal: LiteralValue) -> bool:
         value = term.eval(self.struct)
         return value is not None and value > literal.value
 
-    def visit_less_than(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_less_than(self, term: BoundTerm, literal: LiteralValue) -> bool:
         value = term.eval(self.struct)
         return value is not None and value < literal.value
 
-    def visit_less_than_or_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_less_than_or_equal(self, term: BoundTerm, literal: LiteralValue) -> bool:
         value = term.eval(self.struct)
         return value is not None and value <= literal.value
 
-    def visit_starts_with(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_starts_with(self, term: BoundTerm, literal: LiteralValue) -> bool:
         eval_res = term.eval(self.struct)
         return eval_res is not None and str(eval_res).startswith(str(literal.value))
 
-    def visit_not_starts_with(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_not_starts_with(self, term: BoundTerm, literal: LiteralValue) -> bool:
         return not self.visit_starts_with(term, literal)
 
     def visit_true(self) -> bool:
@@ -549,7 +544,7 @@ def _from_byte_buffer(field_type: IcebergType, val: bytes) -> Any:
 
 
 class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
-    partition_fields: List[PartitionFieldSummary]
+    partition_fields: list[PartitionFieldSummary]
     partition_filter: BooleanExpression
 
     def __init__(self, partition_struct_schema: Schema, partition_filter: BooleanExpression, case_sensitive: bool) -> None:
@@ -563,7 +558,7 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
         # No partition information
         return ROWS_MIGHT_MATCH
 
-    def visit_in(self, term: BoundTerm[L], literals: Set[L]) -> bool:
+    def visit_in(self, term: BoundTerm, literals: set[L]) -> bool:
         pos = term.ref().accessor.position
         field = self.partition_fields[pos]
 
@@ -585,12 +580,12 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
 
         return ROWS_MIGHT_MATCH
 
-    def visit_not_in(self, term: BoundTerm[L], literals: Set[L]) -> bool:
+    def visit_not_in(self, term: BoundTerm, literals: set[L]) -> bool:
         # because the bounds are not necessarily a min or max value, this cannot be answered using
         # them. notIn(col, {X, ...}) with (X, Y) doesn't guarantee that X is a value in col.
         return ROWS_MIGHT_MATCH
 
-    def visit_is_nan(self, term: BoundTerm[L]) -> bool:
+    def visit_is_nan(self, term: BoundTerm) -> bool:
         pos = term.ref().accessor.position
         field = self.partition_fields[pos]
 
@@ -599,7 +594,7 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
 
         return ROWS_MIGHT_MATCH
 
-    def visit_not_nan(self, term: BoundTerm[L]) -> bool:
+    def visit_not_nan(self, term: BoundTerm) -> bool:
         pos = term.ref().accessor.position
         field = self.partition_fields[pos]
 
@@ -608,7 +603,7 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
 
         return ROWS_MIGHT_MATCH
 
-    def visit_is_null(self, term: BoundTerm[L]) -> bool:
+    def visit_is_null(self, term: BoundTerm) -> bool:
         pos = term.ref().accessor.position
 
         if self.partition_fields[pos].contains_null is False:
@@ -616,7 +611,7 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
 
         return ROWS_MIGHT_MATCH
 
-    def visit_not_null(self, term: BoundTerm[L]) -> bool:
+    def visit_not_null(self, term: BoundTerm) -> bool:
         pos = term.ref().accessor.position
 
         # contains_null encodes whether at least one partition value is null,
@@ -633,7 +628,7 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
 
         return ROWS_MIGHT_MATCH
 
-    def visit_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_equal(self, term: BoundTerm, literal: LiteralValue) -> bool:
         pos = term.ref().accessor.position
         field = self.partition_fields[pos]
 
@@ -653,12 +648,12 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
 
         return ROWS_MIGHT_MATCH
 
-    def visit_not_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_not_equal(self, term: BoundTerm, literal: LiteralValue) -> bool:
         # because the bounds are not necessarily a min or max value, this cannot be answered using
         # them. notEq(col, X) with (X, Y) doesn't guarantee that X is a value in col.
         return ROWS_MIGHT_MATCH
 
-    def visit_greater_than_or_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_greater_than_or_equal(self, term: BoundTerm, literal: LiteralValue) -> bool:
         pos = term.ref().accessor.position
         field = self.partition_fields[pos]
 
@@ -672,7 +667,7 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
 
         return ROWS_MIGHT_MATCH
 
-    def visit_greater_than(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_greater_than(self, term: BoundTerm, literal: LiteralValue) -> bool:
         pos = term.ref().accessor.position
         field = self.partition_fields[pos]
 
@@ -686,7 +681,7 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
 
         return ROWS_MIGHT_MATCH
 
-    def visit_less_than(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_less_than(self, term: BoundTerm, literal: LiteralValue) -> bool:
         pos = term.ref().accessor.position
         field = self.partition_fields[pos]
 
@@ -700,7 +695,7 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
 
         return ROWS_MIGHT_MATCH
 
-    def visit_less_than_or_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_less_than_or_equal(self, term: BoundTerm, literal: LiteralValue) -> bool:
         pos = term.ref().accessor.position
         field = self.partition_fields[pos]
 
@@ -714,7 +709,7 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
 
         return ROWS_MIGHT_MATCH
 
-    def visit_starts_with(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_starts_with(self, term: BoundTerm, literal: LiteralValue) -> bool:
         pos = term.ref().accessor.position
         field = self.partition_fields[pos]
         prefix = str(literal.value)
@@ -738,7 +733,7 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
 
         return ROWS_MIGHT_MATCH
 
-    def visit_not_starts_with(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_not_starts_with(self, term: BoundTerm, literal: LiteralValue) -> bool:
         pos = term.ref().accessor.position
         field = self.partition_fields[pos]
         prefix = str(literal.value)
@@ -825,12 +820,12 @@ class ProjectionEvaluator(BooleanExpressionVisitor[BooleanExpression], ABC):
     def visit_or(self, left_result: BooleanExpression, right_result: BooleanExpression) -> BooleanExpression:
         return Or(left_result, right_result)
 
-    def visit_unbound_predicate(self, predicate: UnboundPredicate[L]) -> BooleanExpression:
+    def visit_unbound_predicate(self, predicate: UnboundPredicate) -> BooleanExpression:
         raise ValueError(f"Cannot project unbound predicate: {predicate}")
 
 
 class InclusiveProjection(ProjectionEvaluator):
-    def visit_bound_predicate(self, predicate: BoundPredicate[Any]) -> BooleanExpression:
+    def visit_bound_predicate(self, predicate: BoundPredicate) -> BooleanExpression:
         parts = self.spec.fields_by_source_id(predicate.term.ref().field.field_id)
 
         result: BooleanExpression = AlwaysTrue()
@@ -870,9 +865,9 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
 
     file_schema: Schema
     case_sensitive: bool
-    projected_field_values: Dict[int, Any]
+    projected_field_values: dict[int, Any]
 
-    def __init__(self, file_schema: Schema, case_sensitive: bool, projected_field_values: Dict[int, Any] = EMPTY_DICT) -> None:
+    def __init__(self, file_schema: Schema, case_sensitive: bool, projected_field_values: dict[int, Any] = EMPTY_DICT) -> None:
         self.file_schema = file_schema
         self.case_sensitive = case_sensitive
         self.projected_field_values = projected_field_values
@@ -892,10 +887,10 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
     def visit_or(self, left_result: BooleanExpression, right_result: BooleanExpression) -> BooleanExpression:
         return Or(left=left_result, right=right_result)
 
-    def visit_unbound_predicate(self, predicate: UnboundPredicate[L]) -> BooleanExpression:
+    def visit_unbound_predicate(self, predicate: UnboundPredicate) -> BooleanExpression:
         raise TypeError(f"Expected Bound Predicate, got: {predicate.term}")
 
-    def visit_bound_predicate(self, predicate: BoundPredicate[L]) -> BooleanExpression:
+    def visit_bound_predicate(self, predicate: BoundPredicate) -> BooleanExpression:
         field = predicate.term.ref().field
         field_id = field.field_id
         file_column_name = self.file_schema.find_column_name(field_id)
@@ -936,53 +931,53 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
 
 
 def translate_column_names(
-    expr: BooleanExpression, file_schema: Schema, case_sensitive: bool = True, projected_field_values: Dict[int, Any] = EMPTY_DICT
+    expr: BooleanExpression, file_schema: Schema, case_sensitive: bool = True, projected_field_values: dict[int, Any] = EMPTY_DICT
 ) -> BooleanExpression:
     return visit(expr, _ColumnNameTranslator(file_schema, case_sensitive, projected_field_values))
 
 
-class _ExpressionFieldIDs(BooleanExpressionVisitor[Set[int]]):
+class _ExpressionFieldIDs(BooleanExpressionVisitor[set[int]]):
     """Extracts the field IDs used in the BooleanExpression."""
 
-    def visit_true(self) -> Set[int]:
+    def visit_true(self) -> set[int]:
         return set()
 
-    def visit_false(self) -> Set[int]:
+    def visit_false(self) -> set[int]:
         return set()
 
-    def visit_not(self, child_result: Set[int]) -> Set[int]:
+    def visit_not(self, child_result: set[int]) -> set[int]:
         return child_result
 
-    def visit_and(self, left_result: Set[int], right_result: Set[int]) -> Set[int]:
+    def visit_and(self, left_result: set[int], right_result: set[int]) -> set[int]:
         return left_result.union(right_result)
 
-    def visit_or(self, left_result: Set[int], right_result: Set[int]) -> Set[int]:
+    def visit_or(self, left_result: set[int], right_result: set[int]) -> set[int]:
         return left_result.union(right_result)
 
-    def visit_unbound_predicate(self, predicate: UnboundPredicate[L]) -> Set[int]:
+    def visit_unbound_predicate(self, predicate: UnboundPredicate) -> set[int]:
         raise ValueError("Only works on bound records")
 
-    def visit_bound_predicate(self, predicate: BoundPredicate[L]) -> Set[int]:
+    def visit_bound_predicate(self, predicate: BoundPredicate) -> set[int]:
         return {predicate.term.ref().field.field_id}
 
 
-def extract_field_ids(expr: BooleanExpression) -> Set[int]:
+def extract_field_ids(expr: BooleanExpression) -> set[int]:
     return visit(expr, _ExpressionFieldIDs())
 
 
-class _RewriteToDNF(BooleanExpressionVisitor[Tuple[BooleanExpression, ...]]):
-    def visit_true(self) -> Tuple[BooleanExpression, ...]:
+class _RewriteToDNF(BooleanExpressionVisitor[tuple[BooleanExpression, ...]]):
+    def visit_true(self) -> tuple[BooleanExpression, ...]:
         return (AlwaysTrue(),)
 
-    def visit_false(self) -> Tuple[BooleanExpression, ...]:
+    def visit_false(self) -> tuple[BooleanExpression, ...]:
         return (AlwaysFalse(),)
 
-    def visit_not(self, child_result: Tuple[BooleanExpression, ...]) -> Tuple[BooleanExpression, ...]:
+    def visit_not(self, child_result: tuple[BooleanExpression, ...]) -> tuple[BooleanExpression, ...]:
         raise ValueError(f"Not expressions are not allowed: {child_result}")
 
     def visit_and(
-        self, left_result: Tuple[BooleanExpression, ...], right_result: Tuple[BooleanExpression, ...]
-    ) -> Tuple[BooleanExpression, ...]:
+        self, left_result: tuple[BooleanExpression, ...], right_result: tuple[BooleanExpression, ...]
+    ) -> tuple[BooleanExpression, ...]:
         # Distributive law:
         # ((P OR Q) AND (R OR S)) AND (((P AND R) OR (P AND S)) OR ((Q AND R) OR ((Q AND S)))
         # A AND (B OR C) = (A AND B) OR (A AND C)
@@ -990,31 +985,31 @@ class _RewriteToDNF(BooleanExpressionVisitor[Tuple[BooleanExpression, ...]]):
         return tuple(And(le, re) for le in left_result for re in right_result)
 
     def visit_or(
-        self, left_result: Tuple[BooleanExpression, ...], right_result: Tuple[BooleanExpression, ...]
-    ) -> Tuple[BooleanExpression, ...]:
+        self, left_result: tuple[BooleanExpression, ...], right_result: tuple[BooleanExpression, ...]
+    ) -> tuple[BooleanExpression, ...]:
         return left_result + right_result
 
-    def visit_unbound_predicate(self, predicate: UnboundPredicate[L]) -> Tuple[BooleanExpression, ...]:
+    def visit_unbound_predicate(self, predicate: UnboundPredicate) -> tuple[BooleanExpression, ...]:
         return (predicate,)
 
-    def visit_bound_predicate(self, predicate: BoundPredicate[L]) -> Tuple[BooleanExpression, ...]:
+    def visit_bound_predicate(self, predicate: BoundPredicate) -> tuple[BooleanExpression, ...]:
         return (predicate,)
 
 
-def rewrite_to_dnf(expr: BooleanExpression) -> Tuple[BooleanExpression, ...]:
+def rewrite_to_dnf(expr: BooleanExpression) -> tuple[BooleanExpression, ...]:
     # Rewrites an arbitrary boolean expression to disjunctive normal form (DNF):
     # (A AND NOT(B) AND C) OR (NOT(D) AND E AND F) OR (G)
     expr_without_not = rewrite_not(expr)
     return visit(expr_without_not, _RewriteToDNF())
 
 
-class ExpressionToPlainFormat(BoundBooleanExpressionVisitor[List[Tuple[str, str, Any]]]):
+class ExpressionToPlainFormat(BoundBooleanExpressionVisitor[list[tuple[str, str, Any]]]):
     cast_int_to_date: bool
 
     def __init__(self, cast_int_to_date: bool = False) -> None:
         self.cast_int_to_date = cast_int_to_date
 
-    def _cast_if_necessary(self, iceberg_type: IcebergType, literal: Union[L, Set[L]]) -> Union[L, Set[L]]:
+    def _cast_if_necessary(self, iceberg_type: IcebergType, literal: L | set[L]) -> L | set[L]:
         if self.cast_int_to_date:
             iceberg_type_class = type(iceberg_type)
             conversions = {TimestampType: micros_to_timestamp, TimestamptzType: micros_to_timestamptz}
@@ -1026,73 +1021,73 @@ class ExpressionToPlainFormat(BoundBooleanExpressionVisitor[List[Tuple[str, str,
                     return conversion_function(literal)  # type: ignore
         return literal
 
-    def visit_in(self, term: BoundTerm[L], literals: Set[L]) -> List[Tuple[str, str, Any]]:
+    def visit_in(self, term: BoundTerm, literals: set[L]) -> list[tuple[str, str, Any]]:
         field = term.ref().field
         return [(term.ref().field.name, "in", self._cast_if_necessary(field.field_type, literals))]
 
-    def visit_not_in(self, term: BoundTerm[L], literals: Set[L]) -> List[Tuple[str, str, Any]]:
+    def visit_not_in(self, term: BoundTerm, literals: set[L]) -> list[tuple[str, str, Any]]:
         field = term.ref().field
         return [(field.name, "not in", self._cast_if_necessary(field.field_type, literals))]
 
-    def visit_is_nan(self, term: BoundTerm[L]) -> List[Tuple[str, str, Any]]:
+    def visit_is_nan(self, term: BoundTerm) -> list[tuple[str, str, Any]]:
         return [(term.ref().field.name, "==", float("nan"))]
 
-    def visit_not_nan(self, term: BoundTerm[L]) -> List[Tuple[str, str, Any]]:
+    def visit_not_nan(self, term: BoundTerm) -> list[tuple[str, str, Any]]:
         return [(term.ref().field.name, "!=", float("nan"))]
 
-    def visit_is_null(self, term: BoundTerm[L]) -> List[Tuple[str, str, Any]]:
+    def visit_is_null(self, term: BoundTerm) -> list[tuple[str, str, Any]]:
         return [(term.ref().field.name, "==", None)]
 
-    def visit_not_null(self, term: BoundTerm[L]) -> List[Tuple[str, str, Any]]:
+    def visit_not_null(self, term: BoundTerm) -> list[tuple[str, str, Any]]:
         return [(term.ref().field.name, "!=", None)]
 
-    def visit_equal(self, term: BoundTerm[L], literal: Literal[L]) -> List[Tuple[str, str, Any]]:
+    def visit_equal(self, term: BoundTerm, literal: LiteralValue) -> list[tuple[str, str, Any]]:
         return [(term.ref().field.name, "==", self._cast_if_necessary(term.ref().field.field_type, literal.value))]
 
-    def visit_not_equal(self, term: BoundTerm[L], literal: Literal[L]) -> List[Tuple[str, str, Any]]:
+    def visit_not_equal(self, term: BoundTerm, literal: LiteralValue) -> list[tuple[str, str, Any]]:
         return [(term.ref().field.name, "!=", self._cast_if_necessary(term.ref().field.field_type, literal.value))]
 
-    def visit_greater_than_or_equal(self, term: BoundTerm[L], literal: Literal[L]) -> List[Tuple[str, str, Any]]:
+    def visit_greater_than_or_equal(self, term: BoundTerm, literal: LiteralValue) -> list[tuple[str, str, Any]]:
         return [(term.ref().field.name, ">=", self._cast_if_necessary(term.ref().field.field_type, literal.value))]
 
-    def visit_greater_than(self, term: BoundTerm[L], literal: Literal[L]) -> List[Tuple[str, str, Any]]:
+    def visit_greater_than(self, term: BoundTerm, literal: LiteralValue) -> list[tuple[str, str, Any]]:
         return [(term.ref().field.name, ">", self._cast_if_necessary(term.ref().field.field_type, literal.value))]
 
-    def visit_less_than(self, term: BoundTerm[L], literal: Literal[L]) -> List[Tuple[str, str, Any]]:
+    def visit_less_than(self, term: BoundTerm, literal: LiteralValue) -> list[tuple[str, str, Any]]:
         return [(term.ref().field.name, "<", self._cast_if_necessary(term.ref().field.field_type, literal.value))]
 
-    def visit_less_than_or_equal(self, term: BoundTerm[L], literal: Literal[L]) -> List[Tuple[str, str, Any]]:
+    def visit_less_than_or_equal(self, term: BoundTerm, literal: LiteralValue) -> list[tuple[str, str, Any]]:
         return [(term.ref().field.name, "<=", self._cast_if_necessary(term.ref().field.field_type, literal.value))]
 
-    def visit_starts_with(self, term: BoundTerm[L], literal: Literal[L]) -> List[Tuple[str, str, Any]]:
+    def visit_starts_with(self, term: BoundTerm, literal: LiteralValue) -> list[tuple[str, str, Any]]:
         return []
 
-    def visit_not_starts_with(self, term: BoundTerm[L], literal: Literal[L]) -> List[Tuple[str, str, Any]]:
+    def visit_not_starts_with(self, term: BoundTerm, literal: LiteralValue) -> list[tuple[str, str, Any]]:
         return []
 
-    def visit_true(self) -> List[Tuple[str, str, Any]]:
+    def visit_true(self) -> list[tuple[str, str, Any]]:
         return []  # Not supported
 
-    def visit_false(self) -> List[Tuple[str, str, Any]]:
+    def visit_false(self) -> list[tuple[str, str, Any]]:
         raise ValueError("Not supported: AlwaysFalse")
 
-    def visit_not(self, child_result: List[Tuple[str, str, Any]]) -> List[Tuple[str, str, Any]]:
+    def visit_not(self, child_result: list[tuple[str, str, Any]]) -> list[tuple[str, str, Any]]:
         raise ValueError(f"Not allowed: {child_result}")
 
     def visit_and(
-        self, left_result: List[Tuple[str, str, Any]], right_result: List[Tuple[str, str, Any]]
-    ) -> List[Tuple[str, str, Any]]:
+        self, left_result: list[tuple[str, str, Any]], right_result: list[tuple[str, str, Any]]
+    ) -> list[tuple[str, str, Any]]:
         return left_result + right_result
 
     def visit_or(
-        self, left_result: List[Tuple[str, str, Any]], right_result: List[Tuple[str, str, Any]]
-    ) -> List[Tuple[str, str, Any]]:
+        self, left_result: list[tuple[str, str, Any]], right_result: list[tuple[str, str, Any]]
+    ) -> list[tuple[str, str, Any]]:
         raise ValueError(f"Not allowed: {left_result} || {right_result}")
 
 
 def expression_to_plain_format(
-    expressions: Tuple[BooleanExpression, ...], cast_int_to_datetime: bool = False
-) -> List[List[Tuple[str, str, Any]]]:
+    expressions: tuple[BooleanExpression, ...], cast_int_to_datetime: bool = False
+) -> list[list[tuple[str, str, Any]]]:
     """Format a Disjunctive Normal Form expression.
 
     These are the formats that the expression can be fed into:
@@ -1118,11 +1113,11 @@ def expression_to_plain_format(
 
 
 class _MetricsEvaluator(BoundBooleanExpressionVisitor[bool], ABC):
-    value_counts: Dict[int, int]
-    null_counts: Dict[int, int]
-    nan_counts: Dict[int, int]
-    lower_bounds: Dict[int, bytes]
-    upper_bounds: Dict[int, bytes]
+    value_counts: dict[int, int]
+    null_counts: dict[int, int]
+    nan_counts: dict[int, int]
+    lower_bounds: dict[int, bytes]
+    upper_bounds: dict[int, bytes]
 
     def visit_true(self) -> bool:
         # all rows match
@@ -1197,7 +1192,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
             return nan_count == value_count
         return False
 
-    def visit_is_null(self, term: BoundTerm[L]) -> bool:
+    def visit_is_null(self, term: BoundTerm) -> bool:
         field_id = term.ref().field.field_id
 
         if self.null_counts.get(field_id) == 0:
@@ -1205,7 +1200,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
 
         return ROWS_MIGHT_MATCH
 
-    def visit_not_null(self, term: BoundTerm[L]) -> bool:
+    def visit_not_null(self, term: BoundTerm) -> bool:
         # no need to check whether the field is required because binding evaluates that case
         # if the column has no non-null values, the expression cannot match
         field_id = term.ref().field.field_id
@@ -1215,7 +1210,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
 
         return ROWS_MIGHT_MATCH
 
-    def visit_is_nan(self, term: BoundTerm[L]) -> bool:
+    def visit_is_nan(self, term: BoundTerm) -> bool:
         field_id = term.ref().field.field_id
 
         if self.nan_counts.get(field_id) == 0:
@@ -1228,7 +1223,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
 
         return ROWS_MIGHT_MATCH
 
-    def visit_not_nan(self, term: BoundTerm[L]) -> bool:
+    def visit_not_nan(self, term: BoundTerm) -> bool:
         field_id = term.ref().field.field_id
 
         if self._contains_nans_only(field_id):
@@ -1236,7 +1231,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
 
         return ROWS_MIGHT_MATCH
 
-    def visit_less_than(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_less_than(self, term: BoundTerm, literal: LiteralValue) -> bool:
         field = term.ref().field
         field_id = field.field_id
 
@@ -1253,12 +1248,12 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
                 # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
                 return ROWS_MIGHT_MATCH
 
-            if lower_bound >= literal.value:  # type: ignore[operator]
+            if lower_bound >= literal.value:
                 return ROWS_CANNOT_MATCH
 
         return ROWS_MIGHT_MATCH
 
-    def visit_less_than_or_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_less_than_or_equal(self, term: BoundTerm, literal: LiteralValue) -> bool:
         field = term.ref().field
         field_id = field.field_id
 
@@ -1274,12 +1269,12 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
                 # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
                 return ROWS_MIGHT_MATCH
 
-            if lower_bound > literal.value:  # type: ignore[operator]
+            if lower_bound > literal.value:
                 return ROWS_CANNOT_MATCH
 
         return ROWS_MIGHT_MATCH
 
-    def visit_greater_than(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_greater_than(self, term: BoundTerm, literal: LiteralValue) -> bool:
         field = term.ref().field
         field_id = field.field_id
 
@@ -1291,7 +1286,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
 
         if upper_bound_bytes := self.upper_bounds.get(field_id):
             upper_bound = from_bytes(field.field_type, upper_bound_bytes)
-            if upper_bound <= literal.value:  # type: ignore[operator]
+            if upper_bound <= literal.value:
                 if self._is_nan(upper_bound):
                     # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
                     return ROWS_MIGHT_MATCH
@@ -1300,7 +1295,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
 
         return ROWS_MIGHT_MATCH
 
-    def visit_greater_than_or_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_greater_than_or_equal(self, term: BoundTerm, literal: LiteralValue) -> bool:
         field = term.ref().field
         field_id = field.field_id
 
@@ -1312,7 +1307,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
 
         if upper_bound_bytes := self.upper_bounds.get(field_id):
             upper_bound = from_bytes(field.field_type, upper_bound_bytes)
-            if upper_bound < literal.value:  # type: ignore[operator]
+            if upper_bound < literal.value:
                 if self._is_nan(upper_bound):
                     # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
                     return ROWS_MIGHT_MATCH
@@ -1321,7 +1316,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
 
         return ROWS_MIGHT_MATCH
 
-    def visit_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_equal(self, term: BoundTerm, literal: LiteralValue) -> bool:
         field = term.ref().field
         field_id = field.field_id
 
@@ -1337,7 +1332,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
                 # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
                 return ROWS_MIGHT_MATCH
 
-            if lower_bound > literal.value:  # type: ignore[operator]
+            if lower_bound > literal.value:
                 return ROWS_CANNOT_MATCH
 
         if upper_bound_bytes := self.upper_bounds.get(field_id):
@@ -1346,15 +1341,15 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
                 # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
                 return ROWS_MIGHT_MATCH
 
-            if upper_bound < literal.value:  # type: ignore[operator]
+            if upper_bound < literal.value:
                 return ROWS_CANNOT_MATCH
 
         return ROWS_MIGHT_MATCH
 
-    def visit_not_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_not_equal(self, term: BoundTerm, literal: LiteralValue) -> bool:
         return ROWS_MIGHT_MATCH
 
-    def visit_in(self, term: BoundTerm[L], literals: Set[L]) -> bool:
+    def visit_in(self, term: BoundTerm, literals: set[L]) -> bool:
         field = term.ref().field
         field_id = field.field_id
 
@@ -1390,12 +1385,12 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
 
         return ROWS_MIGHT_MATCH
 
-    def visit_not_in(self, term: BoundTerm[L], literals: Set[L]) -> bool:
+    def visit_not_in(self, term: BoundTerm, literals: set[L]) -> bool:
         # because the bounds are not necessarily a min or max value, this cannot be answered using
         # them. notIn(col, {X, ...}) with (X, Y) doesn't guarantee that X is a value in col.
         return ROWS_MIGHT_MATCH
 
-    def visit_starts_with(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_starts_with(self, term: BoundTerm, literal: LiteralValue) -> bool:
         field = term.ref().field
         field_id: int = field.field_id
 
@@ -1424,7 +1419,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
 
         return ROWS_MIGHT_MATCH
 
-    def visit_not_starts_with(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_not_starts_with(self, term: BoundTerm, literal: LiteralValue) -> bool:
         field = term.ref().field
         field_id: int = field.field_id
 
@@ -1465,7 +1460,7 @@ def strict_projection(
 
 
 class StrictProjection(ProjectionEvaluator):
-    def visit_bound_predicate(self, predicate: BoundPredicate[Any]) -> BooleanExpression:
+    def visit_bound_predicate(self, predicate: BoundPredicate) -> BooleanExpression:
         parts = self.spec.fields_by_source_id(predicate.term.ref().field.field_id)
 
         result: BooleanExpression = AlwaysFalse()
@@ -1516,7 +1511,7 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
 
         return visit(self.expr, self)
 
-    def visit_is_null(self, term: BoundTerm[L]) -> bool:
+    def visit_is_null(self, term: BoundTerm) -> bool:
         # no need to check whether the field is required because binding evaluates that case
         # if the column has any non-null values, the expression does not match
         field_id = term.ref().field.field_id
@@ -1526,7 +1521,7 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
         else:
             return ROWS_MIGHT_NOT_MATCH
 
-    def visit_not_null(self, term: BoundTerm[L]) -> bool:
+    def visit_not_null(self, term: BoundTerm) -> bool:
         # no need to check whether the field is required because binding evaluates that case
         # if the column has any non-null values, the expression does not match
         field_id = term.ref().field.field_id
@@ -1536,7 +1531,7 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
         else:
             return ROWS_MIGHT_NOT_MATCH
 
-    def visit_is_nan(self, term: BoundTerm[L]) -> bool:
+    def visit_is_nan(self, term: BoundTerm) -> bool:
         field_id = term.ref().field.field_id
 
         if self._contains_nans_only(field_id):
@@ -1544,7 +1539,7 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
         else:
             return ROWS_MIGHT_NOT_MATCH
 
-    def visit_not_nan(self, term: BoundTerm[L]) -> bool:
+    def visit_not_nan(self, term: BoundTerm) -> bool:
         field_id = term.ref().field.field_id
 
         if (nan_count := self.nan_counts.get(field_id)) is not None and nan_count == 0:
@@ -1555,7 +1550,7 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
 
         return ROWS_MIGHT_NOT_MATCH
 
-    def visit_less_than(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_less_than(self, term: BoundTerm, literal: LiteralValue) -> bool:
         # Rows must match when: <----------Min----Max---X------->
 
         field_id = term.ref().field.field_id
@@ -1572,7 +1567,7 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
 
         return ROWS_MIGHT_NOT_MATCH
 
-    def visit_less_than_or_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_less_than_or_equal(self, term: BoundTerm, literal: LiteralValue) -> bool:
         # Rows must match when: <----------Min----Max---X------->
 
         field_id = term.ref().field.field_id
@@ -1589,7 +1584,7 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
 
         return ROWS_MIGHT_NOT_MATCH
 
-    def visit_greater_than(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_greater_than(self, term: BoundTerm, literal: LiteralValue) -> bool:
         # Rows must match when: <-------X---Min----Max---------->
 
         field_id = term.ref().field.field_id
@@ -1611,7 +1606,7 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
 
         return ROWS_MIGHT_NOT_MATCH
 
-    def visit_greater_than_or_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_greater_than_or_equal(self, term: BoundTerm, literal: LiteralValue) -> bool:
         # Rows must match when: <-------X---Min----Max---------->
         field_id = term.ref().field.field_id
 
@@ -1632,7 +1627,7 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
 
         return ROWS_MIGHT_NOT_MATCH
 
-    def visit_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_equal(self, term: BoundTerm, literal: LiteralValue) -> bool:
         # Rows must match when Min == X == Max
         field_id = term.ref().field.field_id
 
@@ -1651,7 +1646,7 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
 
         return ROWS_MIGHT_NOT_MATCH
 
-    def visit_not_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_not_equal(self, term: BoundTerm, literal: LiteralValue) -> bool:
         # Rows must match when X < Min or Max < X because it is not in the range
         field_id = term.ref().field.field_id
 
@@ -1679,7 +1674,7 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
 
         return ROWS_MIGHT_NOT_MATCH
 
-    def visit_in(self, term: BoundTerm[L], literals: Set[L]) -> bool:
+    def visit_in(self, term: BoundTerm, literals: set[L]) -> bool:
         field_id = term.ref().field.field_id
 
         if self._can_contain_nulls(field_id) or self._can_contain_nans(field_id):
@@ -1708,7 +1703,7 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
 
         return ROWS_MIGHT_NOT_MATCH
 
-    def visit_not_in(self, term: BoundTerm[L], literals: Set[L]) -> bool:
+    def visit_not_in(self, term: BoundTerm, literals: set[L]) -> bool:
         field_id = term.ref().field.field_id
 
         if self._can_contain_nulls(field_id) or self._can_contain_nans(field_id):
@@ -1738,10 +1733,10 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
 
         return ROWS_MIGHT_NOT_MATCH
 
-    def visit_starts_with(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_starts_with(self, term: BoundTerm, literal: LiteralValue) -> bool:
         return ROWS_MIGHT_NOT_MATCH
 
-    def visit_not_starts_with(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_not_starts_with(self, term: BoundTerm, literal: LiteralValue) -> bool:
         return ROWS_MIGHT_NOT_MATCH
 
     def _get_field(self, field_id: int) -> NestedField:
@@ -1804,94 +1799,94 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
     def visit_or(self, left_result: BooleanExpression, right_result: BooleanExpression) -> BooleanExpression:
         return Or(left_result, right_result)
 
-    def visit_is_null(self, term: BoundTerm[L]) -> BooleanExpression:
+    def visit_is_null(self, term: BoundTerm) -> BooleanExpression:
         if term.eval(self.struct) is None:
             return AlwaysTrue()
         else:
             return AlwaysFalse()
 
-    def visit_not_null(self, term: BoundTerm[L]) -> BooleanExpression:
+    def visit_not_null(self, term: BoundTerm) -> BooleanExpression:
         if term.eval(self.struct) is not None:
             return AlwaysTrue()
         else:
             return AlwaysFalse()
 
-    def visit_is_nan(self, term: BoundTerm[L]) -> BooleanExpression:
+    def visit_is_nan(self, term: BoundTerm) -> BooleanExpression:
         val = term.eval(self.struct)
         if isinstance(val, SupportsFloat) and math.isnan(val):
             return self.visit_true()
         else:
             return self.visit_false()
 
-    def visit_not_nan(self, term: BoundTerm[L]) -> BooleanExpression:
+    def visit_not_nan(self, term: BoundTerm) -> BooleanExpression:
         val = term.eval(self.struct)
         if isinstance(val, SupportsFloat) and not math.isnan(val):
             return self.visit_true()
         else:
             return self.visit_false()
 
-    def visit_less_than(self, term: BoundTerm[L], literal: Literal[L]) -> BooleanExpression:
+    def visit_less_than(self, term: BoundTerm, literal: LiteralValue) -> BooleanExpression:
         if term.eval(self.struct) < literal.value:
             return self.visit_true()
         else:
             return self.visit_false()
 
-    def visit_less_than_or_equal(self, term: BoundTerm[L], literal: Literal[L]) -> BooleanExpression:
+    def visit_less_than_or_equal(self, term: BoundTerm, literal: LiteralValue) -> BooleanExpression:
         if term.eval(self.struct) <= literal.value:
             return self.visit_true()
         else:
             return self.visit_false()
 
-    def visit_greater_than(self, term: BoundTerm[L], literal: Literal[L]) -> BooleanExpression:
+    def visit_greater_than(self, term: BoundTerm, literal: LiteralValue) -> BooleanExpression:
         if term.eval(self.struct) > literal.value:
             return self.visit_true()
         else:
             return self.visit_false()
 
-    def visit_greater_than_or_equal(self, term: BoundTerm[L], literal: Literal[L]) -> BooleanExpression:
+    def visit_greater_than_or_equal(self, term: BoundTerm, literal: LiteralValue) -> BooleanExpression:
         if term.eval(self.struct) >= literal.value:
             return self.visit_true()
         else:
             return self.visit_false()
 
-    def visit_equal(self, term: BoundTerm[L], literal: Literal[L]) -> BooleanExpression:
+    def visit_equal(self, term: BoundTerm, literal: LiteralValue) -> BooleanExpression:
         if term.eval(self.struct) == literal.value:
             return self.visit_true()
         else:
             return self.visit_false()
 
-    def visit_not_equal(self, term: BoundTerm[L], literal: Literal[L]) -> BooleanExpression:
+    def visit_not_equal(self, term: BoundTerm, literal: LiteralValue) -> BooleanExpression:
         if term.eval(self.struct) != literal.value:
             return self.visit_true()
         else:
             return self.visit_false()
 
-    def visit_in(self, term: BoundTerm[L], literals: Set[L]) -> BooleanExpression:
+    def visit_in(self, term: BoundTerm, literals: set[L]) -> BooleanExpression:
         if term.eval(self.struct) in literals:
             return self.visit_true()
         else:
             return self.visit_false()
 
-    def visit_not_in(self, term: BoundTerm[L], literals: Set[L]) -> BooleanExpression:
+    def visit_not_in(self, term: BoundTerm, literals: set[L]) -> BooleanExpression:
         if term.eval(self.struct) not in literals:
             return self.visit_true()
         else:
             return self.visit_false()
 
-    def visit_starts_with(self, term: BoundTerm[L], literal: Literal[L]) -> BooleanExpression:
+    def visit_starts_with(self, term: BoundTerm, literal: LiteralValue) -> BooleanExpression:
         eval_res = term.eval(self.struct)
         if eval_res is not None and str(eval_res).startswith(str(literal.value)):
             return AlwaysTrue()
         else:
             return AlwaysFalse()
 
-    def visit_not_starts_with(self, term: BoundTerm[L], literal: Literal[L]) -> BooleanExpression:
+    def visit_not_starts_with(self, term: BoundTerm, literal: LiteralValue) -> BooleanExpression:
         if not self.visit_starts_with(term, literal):
             return AlwaysTrue()
         else:
             return AlwaysFalse()
 
-    def visit_bound_predicate(self, predicate: BoundPredicate[Any]) -> BooleanExpression:
+    def visit_bound_predicate(self, predicate: BoundPredicate) -> BooleanExpression:
         """
         If there is no strict projection or if it evaluates to false, then return the predicate.
 
@@ -1945,7 +1940,7 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
 
         return predicate
 
-    def visit_unbound_predicate(self, predicate: UnboundPredicate[L]) -> BooleanExpression:
+    def visit_unbound_predicate(self, predicate: UnboundPredicate) -> BooleanExpression:
         bound = predicate.bind(self.schema, case_sensitive=self.case_sensitive)
 
         if isinstance(bound, BoundPredicate):

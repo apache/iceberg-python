@@ -32,52 +32,52 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-latest, windows-latest, macos-latest ]
+        os: [ ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-15-intel, macos-latest ]
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
       - uses: actions/setup-python@v6
         with:
           python-version: |
-            3.9
             3.10
             3.11
             3.12
+            3.13
 
-      - name: Install poetry
-        run: make install-poetry
+      - name: Install UV
+        uses: astral-sh/setup-uv@v7
 
       - name: Set version with RC
         env:
           VERSION: ${{ inputs.VERSION }}
-        run: python -m poetry version "${{ env.VERSION }}"
+        run: uv version "${{ env.VERSION }}"
 
       # Publish the source distribution with the version that's in
       # the repository, otherwise the tests will fail
       - name: Compile source distribution
-        run: python3 -m poetry build --format=sdist
-        if: startsWith(matrix.os, 'ubuntu')
+        run: uv build --sdist
+        if: matrix.os == 'ubuntu-latest'
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.2.0
+        uses: pypa/cibuildwheel@v3.3.1
         with:
           output-dir: wheelhouse
           config-file: "pyproject.toml"
         env:
           # Ignore 32 bit architectures
           CIBW_ARCHS: "auto64"
-          CIBW_PROJECT_REQUIRES_PYTHON: ">=3.9,<3.13"
-          CIBW_TEST_REQUIRES: "pytest==7.4.2 moto==5.0.1"
-          CIBW_TEST_COMMAND: "pytest {project}/tests/avro/test_decoder.py"
-          # Ignore tests for pypy since not all dependencies are compiled for it
-          # and would require a local rust build chain
-          CIBW_TEST_SKIP: "pp*"
+          CIBW_PROJECT_REQUIRES_PYTHON: ">=3.10,<3.14"
+          CIBW_BEFORE_TEST: "uv sync --directory {project} --only-group dev --no-install-project"
+          CIBW_TEST_COMMAND: "uv run --directory {project} pytest tests/avro/test_decoder.py"
+          # Skip free-threaded (PEP 703) builds until we evaluate decoder_fast support
+          CIBW_SKIP: "cp3*t-*"
+
 
       - name: Add source distribution
-        if: startsWith(matrix.os, 'ubuntu')
+        if: matrix.os == 'ubuntu-latest'
         run: ls -lah dist/* && cp dist/* wheelhouse/
 
       - uses: actions/upload-artifact@v4

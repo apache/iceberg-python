@@ -18,14 +18,23 @@
 
 import math
 from datetime import date, datetime
+from typing import Any
 
 import pyarrow as pa
 import pytest
 import pytz
 from pyspark.sql import DataFrame, SparkSession
+from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.expressions import (
+    And,
+    BooleanExpression,
+    EqualTo,
+    GreaterThanOrEqual,
+    LessThan,
+)
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.typedef import Properties
@@ -145,7 +154,7 @@ def _inspect_files_asserts(df: pa.Table, spark_df: DataFrame) -> None:
         if column == "partition":
             # Spark leaves out the partition if the table is unpartitioned
             continue
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if isinstance(left, float) and math.isnan(left) and isinstance(right, float) and math.isnan(right):
                 # NaN != NaN in Python
                 continue
@@ -194,6 +203,23 @@ def _inspect_files_asserts(df: pa.Table, spark_df: DataFrame) -> None:
 
                     assert rm_lhs["lower_bound"] == rm_rhs["lower_bound"]
                     assert rm_lhs["upper_bound"] == rm_rhs["upper_bound"]
+            else:
+                assert left == right, f"Difference in column {column}: {left} != {right}"
+
+
+def _check_pyiceberg_df_equals_spark_df(df: pa.Table, spark_df: DataFrame) -> None:
+    lhs = df.to_pandas().sort_values("last_updated_at")
+    rhs = spark_df.toPandas().sort_values("last_updated_at")
+
+    def _normalize_partition(d: dict[str, Any]) -> dict[str, Any]:
+        return {k: v for k, v in d.items() if v is not None}
+
+    for column in df.column_names:
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
+            if column == "partition":
+                assert _normalize_partition(left) == _normalize_partition(right), (
+                    f"Difference in column {column}: {left} != {right}"
+                )
             else:
                 assert left == right, f"Difference in column {column}: {left} != {right}"
 
@@ -269,7 +295,7 @@ def test_inspect_snapshots(
     lhs = spark.table(f"{identifier}.snapshots").toPandas()
     rhs = df.to_pandas()
     for column in df.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if column == "summary":
                 # Arrow returns a list of tuples, instead of a dict
                 right = dict(right)
@@ -317,7 +343,7 @@ def test_inspect_entries(
         assert len(lhs) == len(rhs)
 
         for column in df.column_names:
-            for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+            for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
                 if column == "data_file":
                     for df_column in left.keys():
                         if df_column == "partition":
@@ -470,7 +496,7 @@ def test_inspect_refs(
     lhs = spark.table(f"{identifier}.refs").toPandas()
     rhs = df.to_pandas()
     for column in df.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if isinstance(left, float) and math.isnan(left) and isinstance(right, float) and math.isnan(right):
                 # NaN != NaN in Python
                 continue
@@ -520,7 +546,7 @@ def test_inspect_partitions_unpartitioned(
     lhs = df.to_pandas()
     rhs = spark.table(f"{identifier}.partitions").toPandas()
     for column in df.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             assert left == right, f"Difference in column {column}: {left} != {right}"
 
 
@@ -581,18 +607,84 @@ def test_inspect_partitions_partitioned(spark: SparkSession, session_catalog: Ca
     """
     )
 
-    def check_pyiceberg_df_equals_spark_df(df: pa.Table, spark_df: DataFrame) -> None:
-        lhs = df.to_pandas().sort_values("spec_id")
-        rhs = spark_df.toPandas().sort_values("spec_id")
-        for column in df.column_names:
-            for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
-                assert left == right, f"Difference in column {column}: {left} != {right}"
-
     tbl = session_catalog.load_table(identifier)
     for snapshot in tbl.metadata.snapshots:
         df = tbl.inspect.partitions(snapshot_id=snapshot.snapshot_id)
         spark_df = spark.sql(f"SELECT * FROM {identifier}.partitions VERSION AS OF {snapshot.snapshot_id}")
-        check_pyiceberg_df_equals_spark_df(df, spark_df)
+        _check_pyiceberg_df_equals_spark_df(df, spark_df)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_inspect_partitions_partitioned_with_filter(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    identifier = "default.table_metadata_partitions_with_filter"
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    spark.sql(
+        f"""
+        CREATE TABLE {identifier} (
+            name string,
+            dt date
+        )
+        PARTITIONED BY (dt)
+    """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {identifier} VALUES ('John', CAST('2021-01-01' AS date))
+    """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {identifier} VALUES ('Doe', CAST('2021-01-05' AS date))
+    """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {identifier} VALUES ('Jenny', CAST('2021-02-01' AS date))
+    """
+    )
+
+    tbl = session_catalog.load_table(identifier)
+    for snapshot in tbl.metadata.snapshots:
+        test_cases: list[tuple[str | BooleanExpression, str]] = [
+            ("dt >= '2021-01-01'", "partition.dt >= '2021-01-01'"),
+            (GreaterThanOrEqual("dt", "2021-01-01"), "partition.dt >= '2021-01-01'"),
+            ("dt >= '2021-01-01' and dt < '2021-03-01'", "partition.dt >= '2021-01-01' AND partition.dt < '2021-03-01'"),
+            (
+                And(GreaterThanOrEqual("dt", "2021-01-01"), LessThan("dt", "2021-03-01")),
+                "partition.dt >= '2021-01-01' AND partition.dt < '2021-03-01'",
+            ),
+            ("dt == '2021-02-01'", "partition.dt = '2021-02-01'"),
+            (EqualTo("dt", "2021-02-01"), "partition.dt = '2021-02-01'"),
+        ]
+        for filter_predicate_lt, filter_predicate_rt in test_cases:
+            df = tbl.inspect.partitions(snapshot_id=snapshot.snapshot_id, row_filter=filter_predicate_lt)
+            spark_df = spark.sql(
+                f"SELECT * FROM {identifier}.partitions VERSION AS OF {snapshot.snapshot_id} WHERE {filter_predicate_rt}"
+            )
+            _check_pyiceberg_df_equals_spark_df(df, spark_df)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog")])
+def test_inspect_partitions_partitioned_transform_with_filter(spark: SparkSession, catalog: Catalog) -> None:
+    for table_name, predicate, partition_predicate in [
+        ("test_partitioned_by_identity", "ts >= '2023-03-05T00:00:00+00:00'", "ts >= '2023-03-05T00:00:00+00:00'"),
+        ("test_partitioned_by_years", "dt >= '2023-03-05'", "dt_year >= 53"),
+        ("test_partitioned_by_months", "dt >= '2023-03-05'", "dt_month >= 638"),
+        ("test_partitioned_by_days", "ts >= '2023-03-05T00:00:00+00:00'", "ts_day >= '2023-03-05'"),
+    ]:
+        table = catalog.load_table(f"default.{table_name}")
+        df = table.inspect.partitions(row_filter=predicate)
+        expected_df = spark.sql(f"select * from default.{table_name}.partitions where partition.{partition_predicate}")
+        assert len(df.to_pandas()) == len(expected_df.toPandas())
 
 
 @pytest.mark.integration
@@ -674,7 +766,7 @@ def test_inspect_manifests(spark: SparkSession, session_catalog: Catalog, format
     lhs = spark.table(f"{identifier}.manifests").toPandas()
     rhs = df.to_pandas()
     for column in df.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             assert left == right, f"Difference in column {column}: {left} != {right}"
 
 
@@ -712,7 +804,7 @@ def test_inspect_metadata_log_entries(
     assert_frame_equal(left_before_last, right_before_last, check_dtype=False)
     # compare the last row, except for the timestamp
     for column in df.column_names:
-        for left, right in zip(left_last[column], right_last[column]):
+        for left, right in zip(left_last[column], right_last[column], strict=True):
             if column == "timestamp":
                 continue
             assert left == right, f"Difference in column {column}: {left} != {right}"
@@ -780,7 +872,7 @@ def test_inspect_history(spark: SparkSession, session_catalog: Catalog, format_v
     lhs = spark.table(f"{identifier}.history").toPandas()
     rhs = df.to_pandas()
     for column in df.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if isinstance(left, float) and math.isnan(left) and isinstance(right, float) and math.isnan(right):
                 # NaN != NaN in Python
                 continue
@@ -1005,10 +1097,21 @@ def test_inspect_files_format_version_3(spark: SparkSession, session_catalog: Ca
         },
     )
 
+    row1 = (
+        "(false, 'a', 'aaaaaaaaaaaaaaaaaaaaaa', 1, 1, 0.0, 0.0, "
+        "TIMESTAMP('2023-01-01 19:25:00'), TIMESTAMP('2023-01-01 19:25:00+00:00'), "
+        "DATE('2023-01-01'), X'01', X'00000000000000000000000000000000')"
+    )
+    row2 = "(NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL)"
+    row3 = (
+        "(true, 'z', 'zzzzzzzzzzzzzzzzzzzzzz', 9, 9, 0.9, 0.9, "
+        "TIMESTAMP('2023-03-01 19:25:00'), TIMESTAMP('2023-03-01 19:25:00+00:00'), "
+        "DATE('2023-03-01'), X'12', X'11111111111111111111111111111111')"
+    )
     insert_data_sql = f"""INSERT INTO {identifier} VALUES
-        (false, 'a', 'aaaaaaaaaaaaaaaaaaaaaa', 1, 1, 0.0, 0.0, TIMESTAMP('2023-01-01 19:25:00'), TIMESTAMP('2023-01-01 19:25:00+00:00'), DATE('2023-01-01'), X'01', X'00000000000000000000000000000000'),
-        (NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-        (true, 'z', 'zzzzzzzzzzzzzzzzzzzzzz', 9, 9, 0.9, 0.9, TIMESTAMP('2023-03-01 19:25:00'), TIMESTAMP('2023-03-01 19:25:00+00:00'), DATE('2023-03-01'), X'12', X'11111111111111111111111111111111');
+        {row1},
+        {row2},
+        {row3};
     """
 
     spark.sql(insert_data_sql)
