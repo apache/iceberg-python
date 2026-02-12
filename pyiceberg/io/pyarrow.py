@@ -1613,15 +1613,17 @@ def _task_to_record_batches(
 
         file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
 
-        fragment_scanner = ds.Scanner.from_fragment(
-            fragment=fragment,
-            schema=physical_schema,
+        scanner_kwargs: dict[str, Any] = {
+            "fragment": fragment,
+            "schema": physical_schema,
             # This will push down the query to Arrow.
             # But in case there are positional deletes, we have to apply them first
-            filter=pyarrow_filter if not positional_deletes else None,
-            columns=[col.name for col in file_project_schema.columns],
-            batch_size=batch_size,
-        )
+            "filter": pyarrow_filter if not positional_deletes else None,
+            "columns": [col.name for col in file_project_schema.columns],
+        }
+        if batch_size is not None:
+            scanner_kwargs["batch_size"] = batch_size
+        fragment_scanner = ds.Scanner.from_fragment(**scanner_kwargs)
 
         next_index = 0
         batches = fragment_scanner.to_batches()
