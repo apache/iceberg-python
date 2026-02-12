@@ -51,6 +51,7 @@ from pyiceberg.catalog.hive import (
     LOCK_CHECK_MAX_WAIT_TIME,
     LOCK_CHECK_MIN_WAIT_TIME,
     LOCK_CHECK_RETRIES,
+    LOCK_ENABLED,
     HiveCatalog,
     _construct_hive_storage_descriptor,
     _HiveClient,
@@ -1407,3 +1408,69 @@ def test_create_hive_client_with_kerberos_using_context_manager(
         # closing and re-opening work as expected.
         with client as open_client:
             assert open_client._iprot.trans.isOpen()
+
+
+def test_lock_enabled_defaults_to_true() -> None:
+    """Verify that lock-enabled defaults to True for backward compatibility."""
+    prop = {"uri": HIVE_METASTORE_FAKE_URL}
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, **prop)
+    assert catalog._lock_enabled is True
+
+
+def test_lock_enabled_can_be_disabled() -> None:
+    """Verify that lock-enabled can be set to false."""
+    prop = {"uri": HIVE_METASTORE_FAKE_URL, LOCK_ENABLED: "false"}
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, **prop)
+    assert catalog._lock_enabled is False
+
+
+def test_commit_table_skips_locking_when_lock_disabled() -> None:
+    """When lock-enabled is false, commit_table must not call lock, check_lock, or unlock."""
+    prop = {"uri": HIVE_METASTORE_FAKE_URL, LOCK_ENABLED: "false"}
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, **prop)
+    catalog._client = MagicMock()
+
+    mock_table = MagicMock()
+    mock_table.name.return_value = ("default", "my_table")
+
+    mock_do_commit = MagicMock()
+    mock_do_commit.return_value = MagicMock()
+
+    with patch.object(catalog, "_do_commit", mock_do_commit):
+        catalog.commit_table(mock_table, requirements=(), updates=())
+
+    # The core commit logic should still be called
+    mock_do_commit.assert_called_once()
+
+    # But no locking operations should have been performed
+    catalog._client.__enter__().lock.assert_not_called()
+    catalog._client.__enter__().check_lock.assert_not_called()
+    catalog._client.__enter__().unlock.assert_not_called()
+
+
+def test_commit_table_uses_locking_when_lock_enabled() -> None:
+    """When lock-enabled is true (default), commit_table must call lock and unlock."""
+    lockid = 99999
+    prop = {"uri": HIVE_METASTORE_FAKE_URL}
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, **prop)
+
+    mock_client = MagicMock()
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+    mock_client.lock.return_value = LockResponse(lockid=lockid, state=LockState.ACQUIRED)
+    catalog._client = mock_client
+
+    mock_table = MagicMock()
+    mock_table.name.return_value = ("default", "my_table")
+
+    mock_do_commit = MagicMock()
+    mock_do_commit.return_value = MagicMock()
+
+    with patch.object(catalog, "_do_commit", mock_do_commit):
+        catalog.commit_table(mock_table, requirements=(), updates=())
+
+    # Locking operations should have been performed
+    mock_client.lock.assert_called_once()
+    mock_client.unlock.assert_called_once()
+    # The core commit logic should still be called
+    mock_do_commit.assert_called_once()
