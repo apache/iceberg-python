@@ -98,6 +98,11 @@ def _handle_non_200_response(exc: HTTPError, error_handler: dict[int, type[Excep
             if uri := error.error_uri:
                 response += f" ({uri})"
         else:
+            # Handle empty response bodies (Specifically HEAD requests via exist requests)
+            if not exc.response.text:
+                response = f"{exception.__name__}: {exc.response.reason}"
+                raise exception(response) from exc
+
             error = ErrorResponse.model_validate_json(exc.response.text).error
             response = f"{error.type}: {error.message}"
     except JSONDecodeError:
