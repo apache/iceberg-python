@@ -1290,9 +1290,7 @@ def test_datascan_to_record_batches(catalog: Catalog) -> None:
 
     scan = table.scan()
     streaming_batches = list(scan.to_record_batches())
-    streaming_result = pa.concat_tables(
-        [pa.Table.from_batches([b]) for b in streaming_batches], promote_options="permissive"
-    )
+    streaming_result = pa.concat_tables([pa.Table.from_batches([b]) for b in streaming_batches], promote_options="permissive")
 
     eager_result = scan.to_arrow()
 

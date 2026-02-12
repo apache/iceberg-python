@@ -1804,9 +1804,7 @@ class ArrowScan:
                 # This break will also cancel all running tasks in the executor
                 break
 
-    def to_record_batch_stream(
-        self, tasks: Iterable[FileScanTask], batch_size: int | None = None
-    ) -> Iterator[pa.RecordBatch]:
+    def to_record_batch_stream(self, tasks: Iterable[FileScanTask], batch_size: int | None = None) -> Iterator[pa.RecordBatch]:
         """Scan the Iceberg table and return an Iterator[pa.RecordBatch] in a streaming fashion.
 
         Files are read sequentially and batches are yielded one at a time

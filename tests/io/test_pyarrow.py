@@ -4917,7 +4917,7 @@ def test_task_to_record_batches_with_batch_size(tmpdir: str) -> None:
         assert len(batch) <= 100
 
 
-def test_to_record_batches_streaming_basic(tmpdir: str) -> None:
+def test_to_record_batch_stream_basic(tmpdir: str) -> None:
     schema = Schema(NestedField(1, "id", IntegerType(), required=False))
     pyarrow_schema = schema_to_pyarrow(schema, metadata={ICEBERG_SCHEMA: bytes(schema.model_dump_json(), UTF8)})
 
@@ -4941,7 +4941,7 @@ def test_to_record_batches_streaming_basic(tmpdir: str) -> None:
         case_sensitive=True,
     )
 
-    result = scan.to_record_batches_streaming([task])
+    result = scan.to_record_batch_stream([task])
     # Should be a generator/iterator, not a list
     import types
 
@@ -4952,7 +4952,7 @@ def test_to_record_batches_streaming_basic(tmpdir: str) -> None:
     assert total_rows == 100
 
 
-def test_to_record_batches_streaming_with_batch_size(tmpdir: str) -> None:
+def test_to_record_batch_stream_with_batch_size(tmpdir: str) -> None:
     schema = Schema(NestedField(1, "id", IntegerType(), required=False))
     pyarrow_schema = schema_to_pyarrow(schema, metadata={ICEBERG_SCHEMA: bytes(schema.model_dump_json(), UTF8)})
 
@@ -4976,7 +4976,7 @@ def test_to_record_batches_streaming_with_batch_size(tmpdir: str) -> None:
         case_sensitive=True,
     )
 
-    batches = list(scan.to_record_batches_streaming([task], batch_size=50))
+    batches = list(scan.to_record_batch_stream([task], batch_size=50))
 
     total_rows = sum(len(b) for b in batches)
     assert total_rows == 500
@@ -4984,7 +4984,7 @@ def test_to_record_batches_streaming_with_batch_size(tmpdir: str) -> None:
         assert len(batch) <= 50
 
 
-def test_to_record_batches_streaming_with_limit(tmpdir: str) -> None:
+def test_to_record_batch_stream_with_limit(tmpdir: str) -> None:
     schema = Schema(NestedField(1, "id", IntegerType(), required=False))
     pyarrow_schema = schema_to_pyarrow(schema, metadata={ICEBERG_SCHEMA: bytes(schema.model_dump_json(), UTF8)})
 
@@ -5009,13 +5009,13 @@ def test_to_record_batches_streaming_with_limit(tmpdir: str) -> None:
         limit=100,
     )
 
-    batches = list(scan.to_record_batches_streaming([task]))
+    batches = list(scan.to_record_batch_stream([task]))
 
     total_rows = sum(len(b) for b in batches)
     assert total_rows == 100
 
 
-def test_to_record_batches_streaming_with_deletes(
+def test_to_record_batch_stream_with_deletes(
     deletes_file: str, request: pytest.FixtureRequest, table_schema_simple: Schema
 ) -> None:
     file_format = FileFormat.PARQUET if deletes_file.endswith(".parquet") else FileFormat.ORC
@@ -5052,17 +5052,15 @@ def test_to_record_batches_streaming_with_deletes(
     )
 
     # Compare streaming path to table path
-    streaming_batches = list(scan.to_record_batches_streaming([example_task_with_delete]))
-    streaming_table = pa.concat_tables(
-        [pa.Table.from_batches([b]) for b in streaming_batches], promote_options="permissive"
-    )
+    streaming_batches = list(scan.to_record_batch_stream([example_task_with_delete]))
+    streaming_table = pa.concat_tables([pa.Table.from_batches([b]) for b in streaming_batches], promote_options="permissive")
     eager_table = scan.to_table(tasks=[example_task_with_delete])
 
     assert streaming_table.num_rows == eager_table.num_rows
     assert streaming_table.column_names == eager_table.column_names
 
 
-def test_to_record_batches_streaming_multiple_files(tmpdir: str) -> None:
+def test_to_record_batch_stream_multiple_files(tmpdir: str) -> None:
     schema = Schema(NestedField(1, "id", IntegerType(), required=False))
     pyarrow_schema = schema_to_pyarrow(schema, metadata={ICEBERG_SCHEMA: bytes(schema.model_dump_json(), UTF8)})
 
@@ -5090,6 +5088,6 @@ def test_to_record_batches_streaming_multiple_files(tmpdir: str) -> None:
         case_sensitive=True,
     )
 
-    batches = list(scan.to_record_batches_streaming(tasks))
+    batches = list(scan.to_record_batch_stream(tasks))
     total_rows = sum(len(b) for b in batches)
     assert total_rows == total_expected  # 600 rows total

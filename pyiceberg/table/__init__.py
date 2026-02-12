@@ -2182,7 +2182,7 @@ class DataScan(TableScan):
             batches,
         ).cast(target_schema)
 
-    def to_record_batches(self, batch_size: int | None = None) -> Iterator["pa.RecordBatch"]:
+    def to_record_batches(self, batch_size: int | None = None) -> Iterator[pa.RecordBatch]:
         """Read record batches in a streaming fashion from this DataScan.
 
         Files are read sequentially and batches are yielded one at a time
