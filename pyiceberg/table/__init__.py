@@ -2157,7 +2157,7 @@ class DataScan(TableScan):
             self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
         ).to_table(self.plan_files())
 
-    def to_arrow_batch_reader(self, batch_size: int | None = None) -> pa.RecordBatchReader:
+    def to_arrow_batch_reader(self, batch_size: int | None = None, streaming: bool = False) -> pa.RecordBatchReader:
         """Return an Arrow RecordBatchReader from this DataScan.
 
         For large results, using a RecordBatchReader requires less memory than
@@ -2166,6 +2166,8 @@ class DataScan(TableScan):
 
         Args:
             batch_size: The number of rows per batch. If None, PyArrow's default is used.
+            streaming: If True, yield batches as they are produced without materializing
+                entire files into memory. Files are still processed sequentially.
 
         Returns:
             pa.RecordBatchReader: Arrow RecordBatchReader from the Iceberg table's DataScan
@@ -2178,7 +2180,7 @@ class DataScan(TableScan):
         target_schema = schema_to_pyarrow(self.projection())
         batches = ArrowScan(
             self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
-        ).to_record_batches(self.plan_files(), batch_size=batch_size)
+        ).to_record_batches(self.plan_files(), batch_size=batch_size, streaming=streaming)
 
         return pa.RecordBatchReader.from_batches(
             target_schema,

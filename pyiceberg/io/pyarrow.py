@@ -1761,7 +1761,9 @@ class ArrowScan:
 
         return result
 
-    def to_record_batches(self, tasks: Iterable[FileScanTask], batch_size: int | None = None) -> Iterator[pa.RecordBatch]:
+    def to_record_batches(
+        self, tasks: Iterable[FileScanTask], batch_size: int | None = None, streaming: bool = False
+    ) -> Iterator[pa.RecordBatch]:
         """Scan the Iceberg table and return an Iterator[pa.RecordBatch].
 
         Returns an Iterator of pa.RecordBatch with data from the Iceberg table
@@ -1770,6 +1772,9 @@ class ArrowScan:
 
         Args:
             tasks: FileScanTasks representing the data files and delete files to read from.
+            batch_size: The number of rows per batch. If None, PyArrow's default is used.
+            streaming: If True, yield batches as they are produced without materializing
+                entire files into memory. Files are still processed sequentially.
 
         Returns:
             An Iterator of PyArrow RecordBatches.
@@ -1781,31 +1786,38 @@ class ArrowScan:
         """
         deletes_per_file = _read_all_delete_files(self._io, tasks)
 
-        total_row_count = 0
-        executor = ExecutorFactory.get_or_create()
+        if streaming:
+            # Streaming path: process all tasks sequentially, yielding batches as produced.
+            # _record_batches_from_scan_tasks_and_deletes handles the limit internally
+            # when called with all tasks, so no outer limit check is needed.
+            yield from self._record_batches_from_scan_tasks_and_deletes(tasks, deletes_per_file, batch_size)
+        else:
+            # Non-streaming path: existing behavior with executor.map + list()
+            total_row_count = 0
+            executor = ExecutorFactory.get_or_create()
 
-        def batches_for_task(task: FileScanTask) -> list[pa.RecordBatch]:
-            # Materialize the iterator here to ensure execution happens within the executor.
-            # Otherwise, the iterator would be lazily consumed later (in the main thread),
-            # defeating the purpose of using executor.map.
-            return list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file, batch_size))
+            def batches_for_task(task: FileScanTask) -> list[pa.RecordBatch]:
+                # Materialize the iterator here to ensure execution happens within the executor.
+                # Otherwise, the iterator would be lazily consumed later (in the main thread),
+                # defeating the purpose of using executor.map.
+                return list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file, batch_size))
 
-        limit_reached = False
-        for batches in executor.map(batches_for_task, tasks):
-            for batch in batches:
-                current_batch_size = len(batch)
-                if self._limit is not None and total_row_count + current_batch_size >= self._limit:
-                    yield batch.slice(0, self._limit - total_row_count)
+            limit_reached = False
+            for batches in executor.map(batches_for_task, tasks):
+                for batch in batches:
+                    current_batch_size = len(batch)
+                    if self._limit is not None and total_row_count + current_batch_size >= self._limit:
+                        yield batch.slice(0, self._limit - total_row_count)
 
-                    limit_reached = True
+                        limit_reached = True
+                        break
+                    else:
+                        yield batch
+                        total_row_count += current_batch_size
+
+                if limit_reached:
+                    # This break will also cancel all running tasks in the executor
                     break
-                else:
-                    yield batch
-                    total_row_count += current_batch_size
-
-            if limit_reached:
-                # This break will also cancel all running tasks in the executor
-                break
 
     def _record_batches_from_scan_tasks_and_deletes(
         self, tasks: Iterable[FileScanTask], deletes_per_file: dict[str, list[ChunkedArray]], batch_size: int | None = None

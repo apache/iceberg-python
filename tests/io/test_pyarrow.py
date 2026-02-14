@@ -3106,6 +3106,86 @@ def test_task_to_record_batches_default_batch_size(tmpdir: str) -> None:
     assert len(batches[0]) == num_rows
 
 
+def _create_scan_and_tasks(
+    tmpdir: str, num_files: int = 1, rows_per_file: int = 100, limit: int | None = None
+) -> tuple[ArrowScan, list[FileScanTask]]:
+    """Helper to create an ArrowScan and FileScanTasks for testing."""
+    table_schema = Schema(NestedField(1, "col", LongType(), required=True))
+    pa_schema = pa.schema([pa.field("col", pa.int64(), nullable=False, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"})])
+    tasks = []
+    for i in range(num_files):
+        start = i * rows_per_file
+        arrow_table = pa.table({"col": pa.array(range(start, start + rows_per_file))}, schema=pa_schema)
+        data_file = _write_table_to_data_file(f"{tmpdir}/file_{i}.parquet", pa_schema, arrow_table)
+        data_file.spec_id = 0
+        tasks.append(FileScanTask(data_file))
+
+    scan = ArrowScan(
+        table_metadata=TableMetadataV2(
+            location="file://a/b/",
+            last_column_id=1,
+            format_version=2,
+            schemas=[table_schema],
+            partition_specs=[PartitionSpec()],
+        ),
+        io=PyArrowFileIO(),
+        projected_schema=table_schema,
+        row_filter=AlwaysTrue(),
+        case_sensitive=True,
+        limit=limit,
+    )
+    return scan, tasks
+
+
+def test_streaming_false_produces_same_results(tmpdir: str) -> None:
+    """Test that streaming=False produces the same results as the default behavior."""
+    scan, tasks = _create_scan_and_tasks(tmpdir, num_files=3, rows_per_file=100)
+
+    batches_default = list(scan.to_record_batches(tasks, streaming=False))
+    # Re-create tasks since iterators are consumed
+    _, tasks2 = _create_scan_and_tasks(tmpdir, num_files=3, rows_per_file=100)
+    batches_streaming = list(scan.to_record_batches(tasks2, streaming=False))
+
+    total_default = sum(len(b) for b in batches_default)
+    total_streaming = sum(len(b) for b in batches_streaming)
+    assert total_default == 300
+    assert total_streaming == 300
+
+
+def test_streaming_true_yields_all_batches(tmpdir: str) -> None:
+    """Test that streaming=True yields all batches correctly."""
+    scan, tasks = _create_scan_and_tasks(tmpdir, num_files=3, rows_per_file=100)
+
+    batches = list(scan.to_record_batches(tasks, streaming=True))
+
+    total_rows = sum(len(b) for b in batches)
+    assert total_rows == 300
+    # Verify all values are present
+    all_values = sorted([v for b in batches for v in b.column("col").to_pylist()])
+    assert all_values == list(range(300))
+
+
+def test_streaming_true_with_limit(tmpdir: str) -> None:
+    """Test that streaming=True respects the row limit."""
+    scan, tasks = _create_scan_and_tasks(tmpdir, num_files=3, rows_per_file=100, limit=150)
+
+    batches = list(scan.to_record_batches(tasks, streaming=True))
+
+    total_rows = sum(len(b) for b in batches)
+    assert total_rows == 150
+
+
+def test_streaming_file_ordering_preserved(tmpdir: str) -> None:
+    """Test that file ordering is preserved in both streaming modes."""
+    scan, tasks = _create_scan_and_tasks(tmpdir, num_files=3, rows_per_file=100)
+
+    batches = list(scan.to_record_batches(tasks, streaming=True))
+    all_values = [v for b in batches for v in b.column("col").to_pylist()]
+
+    # Values should be in file order: 0-99 from file 0, 100-199 from file 1, 200-299 from file 2
+    assert all_values == list(range(300))
+
+
 def test_parse_location_defaults() -> None:
     """Test that parse_location uses defaults."""
 
