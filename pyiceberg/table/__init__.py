@@ -247,6 +247,9 @@ class TableProperties:
     MIN_SNAPSHOTS_TO_KEEP = "history.expire.min-snapshots-to-keep"
     MIN_SNAPSHOTS_TO_KEEP_DEFAULT = 1
 
+    SCAN_MAX_BUFFERED_BATCHES = "scan.max-buffered-batches"
+    SCAN_MAX_BUFFERED_BATCHES_DEFAULT = 16
+
 
 class Transaction:
     _table: Table
@@ -2157,17 +2160,28 @@ class DataScan(TableScan):
             self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
         ).to_table(self.plan_files())
 
-    def to_arrow_batch_reader(self, batch_size: int | None = None, streaming: bool = False) -> pa.RecordBatchReader:
+    def to_arrow_batch_reader(
+        self, batch_size: int | None = None, streaming: bool = False, concurrent_files: int = 1
+    ) -> pa.RecordBatchReader:
         """Return an Arrow RecordBatchReader from this DataScan.
 
         For large results, using a RecordBatchReader requires less memory than
         loading an Arrow Table for the same DataScan, because a RecordBatch
         is read one at a time.
 
+        Ordering semantics:
+            - Default (streaming=False): Batches are grouped by file in task submission order.
+            - streaming=True, concurrent_files=1: Batches are grouped by file, processed sequentially.
+            - streaming=True, concurrent_files>1: Batches may be interleaved across files.
+            In all modes, within-file batch ordering follows row order.
+
         Args:
             batch_size: The number of rows per batch. If None, PyArrow's default is used.
             streaming: If True, yield batches as they are produced without materializing
-                entire files into memory. Files are still processed sequentially.
+                entire files into memory. Files are still processed sequentially when
+                concurrent_files=1.
+            concurrent_files: Number of files to read concurrently when streaming=True.
+                When > 1, batches may arrive interleaved across files.
 
         Returns:
             pa.RecordBatchReader: Arrow RecordBatchReader from the Iceberg table's DataScan
@@ -2180,7 +2194,7 @@ class DataScan(TableScan):
         target_schema = schema_to_pyarrow(self.projection())
         batches = ArrowScan(
             self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
-        ).to_record_batches(self.plan_files(), batch_size=batch_size, streaming=streaming)
+        ).to_record_batches(self.plan_files(), batch_size=batch_size, streaming=streaming, concurrent_files=concurrent_files)
 
         return pa.RecordBatchReader.from_batches(
             target_schema,

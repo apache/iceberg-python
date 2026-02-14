@@ -369,6 +369,25 @@ for buf in tbl.scan().to_arrow_batch_reader(streaming=True, batch_size=1000):
     print(f"Buffer contains {len(buf)} rows")
 ```
 
+For maximum throughput, use `concurrent_files` to read multiple files in parallel while streaming. Batches are yielded as they arrive from any file — ordering across files is not guaranteed:
+
+```python
+for buf in tbl.scan().to_arrow_batch_reader(streaming=True, concurrent_files=4, batch_size=1000):
+    print(f"Buffer contains {len(buf)} rows")
+```
+
+The maximum number of buffered batches can be tuned via the `scan.max-buffered-batches` table property (default 16).
+
+**Ordering semantics:**
+
+| Configuration | File ordering | Within-file ordering |
+|---|---|---|
+| Default (`streaming=False`) | Batches grouped by file, in task submission order | Row order |
+| `streaming=True` | Batches grouped by file, sequential | Row order |
+| `streaming=True, concurrent_files>1` | Interleaved across files (no grouping guarantee) | Row order within each file |
+
+In all modes, within-file batch ordering follows row order. The `limit` parameter is enforced correctly regardless of configuration.
+
 To avoid any type inconsistencies during writing, you can convert the Iceberg table schema to Arrow:
 
 ```python
@@ -1650,6 +1669,17 @@ table.scan(
     selected_fields=("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime"),
 ).to_arrow_batch_reader(streaming=True)
 ```
+
+For concurrent file reads with streaming, use `concurrent_files`. Note that batch ordering across files is not guaranteed:
+
+```python
+table.scan(
+    row_filter=GreaterThanOrEqual("trip_distance", 10.0),
+    selected_fields=("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime"),
+).to_arrow_batch_reader(streaming=True, concurrent_files=4)
+```
+
+When using `concurrent_files > 1`, batches from different files may be interleaved. Within each file, batches are always in row order. See the ordering semantics table in the [Arrow Batch Reader section](#arrow-batch-reader) above for details.
 
 ### Pandas
 
