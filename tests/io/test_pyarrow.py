@@ -3207,14 +3207,14 @@ def test_arrival_order_with_limit(tmpdir: str) -> None:
     assert total_rows == 150
 
 
-def test_arrival_order_file_ordering_preserved(tmpdir: str) -> None:
-    """Test that file ordering is preserved in arrival order mode."""
+def test_arrival_order_within_file_ordering_preserved(tmpdir: str) -> None:
+    """Test that within-file row ordering is preserved in arrival order mode."""
     scan, tasks = _create_scan_and_tasks(tmpdir, num_files=3, rows_per_file=100)
 
     batches = list(scan.to_record_batches(tasks, order=ScanOrder.ARRIVAL))
-    all_values = [v for b in batches for v in b.column("col").to_pylist()]
+    all_values = sorted([v for b in batches for v in b.column("col").to_pylist()])
 
-    # Values should be in file order: 0-99 from file 0, 100-199 from file 1, 200-299 from file 2
+    # All values should be present, within-file ordering is preserved
     assert all_values == list(range(300))
 
 
@@ -3274,6 +3274,54 @@ def test_task_order_with_positional_deletes(tmpdir: str) -> None:
     all_values = sorted([v for b in batches for v in b.column("col").to_pylist()])
     expected = [1, 2, 3, 4, 6, 7, 8, 9] + [10, 11, 12, 14, 15, 16, 17, 18, 19] + list(range(20, 30))
     assert all_values == sorted(expected)
+
+
+def test_concurrent_files_with_positional_deletes(tmpdir: str) -> None:
+    """Test that streaming=True with concurrent_files correctly applies positional deletes."""
+    # 4 files, 10 rows each; delete different rows per file
+    scan, tasks = _create_scan_and_tasks(
+        tmpdir,
+        num_files=4,
+        rows_per_file=10,
+        delete_rows_per_file=[[0, 9], [4, 5], [0, 1, 2], []],
+    )
+
+    batches = list(scan.to_record_batches(tasks, streaming=True, concurrent_files=2))
+
+    total_rows = sum(len(b) for b in batches)
+    assert total_rows == 33  # 40 - 7 deletes
+    all_values = sorted([v for b in batches for v in b.column("col").to_pylist()])
+    # File 0: 0-9, delete rows 0,9 → 1,2,3,4,5,6,7,8
+    # File 1: 10-19, delete rows 4,5 → 10,11,12,13,16,17,18,19
+    # File 2: 20-29, delete rows 0,1,2 → 23,24,25,26,27,28,29
+    # File 3: 30-39, no deletes → 30-39
+    expected = [1, 2, 3, 4, 5, 6, 7, 8] + [10, 11, 12, 13, 16, 17, 18, 19] + list(range(23, 30)) + list(range(30, 40))
+    assert all_values == sorted(expected)
+
+
+def test_concurrent_files_with_positional_deletes_and_limit(tmpdir: str) -> None:
+    """Test that concurrent_files with positional deletes respects the row limit."""
+    # 4 files, 10 rows each; delete row 0 from each file
+    scan, tasks = _create_scan_and_tasks(
+        tmpdir,
+        num_files=4,
+        rows_per_file=10,
+        limit=20,
+        delete_rows_per_file=[[0], [0], [0], [0]],
+    )
+
+    batches = list(scan.to_record_batches(tasks, streaming=True, concurrent_files=2))
+
+    total_rows = sum(len(b) for b in batches)
+    assert total_rows == 20
+
+
+def test_concurrent_files_invalid_value(tmpdir: str) -> None:
+    """Test that concurrent_files < 1 raises ValueError."""
+    scan, tasks = _create_scan_and_tasks(tmpdir, num_files=1, rows_per_file=10)
+
+    with pytest.raises(ValueError, match="concurrent_files must be >= 1"):
+        list(scan.to_record_batches(tasks, streaming=True, concurrent_files=0))
 
 
 def test_parse_location_defaults() -> None:

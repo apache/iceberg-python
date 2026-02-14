@@ -2170,19 +2170,28 @@ class DataScan(TableScan):
             self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
         ).to_table(self.plan_files())
 
-    def to_arrow_batch_reader(self, batch_size: int | None = None, order: ScanOrder = ScanOrder.TASK) -> pa.RecordBatchReader:
+    def to_arrow_batch_reader(
+        self, batch_size: int | None = None, order: ScanOrder = ScanOrder.TASK, concurrent_files: int = 1
+    ) -> pa.RecordBatchReader:
         """Return an Arrow RecordBatchReader from this DataScan.
 
         For large results, using a RecordBatchReader requires less memory than
         loading an Arrow Table for the same DataScan, because a RecordBatch
         is read one at a time.
 
+        Ordering semantics:
+            - ScanOrder.TASK (default): Batches are grouped by file in task submission order.
+            - ScanOrder.ARRIVAL: Batches may be interleaved across files. Within each file,
+              batch ordering follows row order.
+
         Args:
             batch_size: The number of rows per batch. If None, PyArrow's default is used.
             order: Controls the order in which record batches are returned.
                 ScanOrder.TASK (default) returns batches in task order with parallel
-                file reads. ScanOrder.ARRIVAL yields batches as they are produced,
-                processing tasks sequentially.
+                file reads. ScanOrder.ARRIVAL yields batches as they are produced
+                without materializing entire files into memory.
+            concurrent_files: Number of files to read concurrently when order=ScanOrder.ARRIVAL.
+                When > 1, batches may arrive interleaved across files.
 
         Returns:
             pa.RecordBatchReader: Arrow RecordBatchReader from the Iceberg table's DataScan
@@ -2195,7 +2204,7 @@ class DataScan(TableScan):
         target_schema = schema_to_pyarrow(self.projection())
         batches = ArrowScan(
             self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
-        ).to_record_batches(self.plan_files(), batch_size=batch_size, order=order)
+        ).to_record_batches(self.plan_files(), batch_size=batch_size, order=order, concurrent_files=concurrent_files)
 
         return pa.RecordBatchReader.from_batches(
             target_schema,
