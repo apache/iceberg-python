@@ -1761,7 +1761,9 @@ class ArrowScan:
 
         return result
 
-    def to_record_batches(self, tasks: Iterable[FileScanTask], batch_size: int | None = None) -> Iterator[pa.RecordBatch]:
+    def to_record_batches(
+        self, tasks: Iterable[FileScanTask], batch_size: int | None = None, streaming: bool = False
+    ) -> Iterator[pa.RecordBatch]:
         """Scan the Iceberg table and return an Iterator[pa.RecordBatch].
 
         Returns an Iterator of pa.RecordBatch with data from the Iceberg table
@@ -1770,6 +1772,9 @@ class ArrowScan:
 
         Args:
             tasks: FileScanTasks representing the data files and delete files to read from.
+            batch_size: The number of rows per batch. If None, PyArrow's default is used.
+            streaming: If True, yield batches as they are produced without materializing
+                entire files into memory. Files are still processed sequentially.
 
         Returns:
             An Iterator of PyArrow RecordBatches.
@@ -1781,6 +1786,14 @@ class ArrowScan:
         """
         deletes_per_file = _read_all_delete_files(self._io, tasks)
 
+        if streaming:
+            # Streaming path: process all tasks sequentially, yielding batches as produced.
+            # _record_batches_from_scan_tasks_and_deletes handles the limit internally
+            # when called with all tasks, so no outer limit check is needed.
+            yield from self._record_batches_from_scan_tasks_and_deletes(tasks, deletes_per_file, batch_size)
+            return
+
+        # Non-streaming path: existing behavior with executor.map + list()
         total_row_count = 0
         executor = ExecutorFactory.get_or_create()
 
