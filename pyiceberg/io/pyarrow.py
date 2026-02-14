@@ -141,7 +141,7 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
-from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties
+from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, ScanOrder, TableProperties
 from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
@@ -1761,7 +1761,12 @@ class ArrowScan:
 
         return result
 
-    def to_record_batches(self, tasks: Iterable[FileScanTask], batch_size: int | None = None) -> Iterator[pa.RecordBatch]:
+    def to_record_batches(
+        self,
+        tasks: Iterable[FileScanTask],
+        batch_size: int | None = None,
+        order: ScanOrder = ScanOrder.TASK,
+    ) -> Iterator[pa.RecordBatch]:
         """Scan the Iceberg table and return an Iterator[pa.RecordBatch].
 
         Returns an Iterator of pa.RecordBatch with data from the Iceberg table
@@ -1770,6 +1775,13 @@ class ArrowScan:
 
         Args:
             tasks: FileScanTasks representing the data files and delete files to read from.
+            batch_size: The number of rows per batch. If None, PyArrow's default is used.
+            order: Controls the order in which record batches are returned.
+                ScanOrder.TASK (default) returns batches in task order, with each task
+                fully materialized before proceeding to the next. Allows parallel file
+                reads via executor. ScanOrder.ARRIVAL yields batches as they are
+                produced, processing tasks sequentially without materializing entire
+                files into memory.
 
         Returns:
             An Iterator of PyArrow RecordBatches.
@@ -1777,10 +1789,22 @@ class ArrowScan:
 
         Raises:
             ResolveError: When a required field cannot be found in the file
-            ValueError: When a field type in the file cannot be projected to the schema type
+            ValueError: When a field type in the file cannot be projected to the schema type,
+                or when an invalid order value is provided.
         """
+        if not isinstance(order, ScanOrder):
+            raise ValueError(f"Invalid order: {order!r}. Must be a ScanOrder enum value (ScanOrder.TASK or ScanOrder.ARRIVAL).")
+
         deletes_per_file = _read_all_delete_files(self._io, tasks)
 
+        if order == ScanOrder.ARRIVAL:
+            # Arrival order: process all tasks sequentially, yielding batches as produced.
+            # _record_batches_from_scan_tasks_and_deletes handles the limit internally
+            # when called with all tasks, so no outer limit check is needed.
+            yield from self._record_batches_from_scan_tasks_and_deletes(tasks, deletes_per_file, batch_size)
+            return
+
+        # Task order: existing behavior with executor.map + list()
         total_row_count = 0
         executor = ExecutorFactory.get_or_create()
 

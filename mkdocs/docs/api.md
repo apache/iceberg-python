@@ -362,6 +362,15 @@ for buf in tbl.scan().to_arrow_batch_reader(batch_size=1000):
     print(f"Buffer contains {len(buf)} rows")
 ```
 
+By default, each file's batches are materialized in memory before being yielded (`order=ScanOrder.TASK`). For large files that may exceed available memory, use `order=ScanOrder.ARRIVAL` to yield batches as they are produced without materializing entire files:
+
+```python
+from pyiceberg.table import ScanOrder
+
+for buf in tbl.scan().to_arrow_batch_reader(order=ScanOrder.ARRIVAL, batch_size=1000):
+    print(f"Buffer contains {len(buf)} rows")
+```
+
 To avoid any type inconsistencies during writing, you can convert the Iceberg table schema to Arrow:
 
 ```python
@@ -1633,6 +1642,17 @@ table.scan(
     row_filter=GreaterThanOrEqual("trip_distance", 10.0),
     selected_fields=("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime"),
 ).to_arrow_batch_reader(batch_size=1000)
+```
+
+Use `order=ScanOrder.ARRIVAL` to avoid materializing entire files in memory. This yields batches as they are produced by PyArrow, one file at a time:
+
+```python
+from pyiceberg.table import ScanOrder
+
+table.scan(
+    row_filter=GreaterThanOrEqual("trip_distance", 10.0),
+    selected_fields=("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime"),
+).to_arrow_batch_reader(order=ScanOrder.ARRIVAL)
 ```
 
 ### Pandas

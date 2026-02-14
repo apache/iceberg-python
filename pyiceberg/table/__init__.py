@@ -23,6 +23,7 @@ import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
+from enum import Enum
 from functools import cached_property
 from itertools import chain
 from types import TracebackType
@@ -152,6 +153,20 @@ if TYPE_CHECKING:
 
 ALWAYS_TRUE = AlwaysTrue()
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
+
+
+class ScanOrder(str, Enum):
+    """Order in which record batches are returned from a scan.
+
+    Attributes:
+        TASK: Batches are returned in task order, with each task fully materialized
+            before proceeding to the next. Allows parallel file reads via executor.
+        ARRIVAL: Batches are yielded as they are produced, processing tasks
+            sequentially without materializing entire files into memory.
+    """
+
+    TASK = "task"
+    ARRIVAL = "arrival"
 
 
 @dataclass()
@@ -2155,7 +2170,7 @@ class DataScan(TableScan):
             self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
         ).to_table(self.plan_files())
 
-    def to_arrow_batch_reader(self, batch_size: int | None = None) -> pa.RecordBatchReader:
+    def to_arrow_batch_reader(self, batch_size: int | None = None, order: ScanOrder = ScanOrder.TASK) -> pa.RecordBatchReader:
         """Return an Arrow RecordBatchReader from this DataScan.
 
         For large results, using a RecordBatchReader requires less memory than
@@ -2164,6 +2179,10 @@ class DataScan(TableScan):
 
         Args:
             batch_size: The number of rows per batch. If None, PyArrow's default is used.
+            order: Controls the order in which record batches are returned.
+                ScanOrder.TASK (default) returns batches in task order with parallel
+                file reads. ScanOrder.ARRIVAL yields batches as they are produced,
+                processing tasks sequentially.
 
         Returns:
             pa.RecordBatchReader: Arrow RecordBatchReader from the Iceberg table's DataScan
@@ -2176,7 +2195,7 @@ class DataScan(TableScan):
         target_schema = schema_to_pyarrow(self.projection())
         batches = ArrowScan(
             self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
-        ).to_record_batches(self.plan_files(), batch_size=batch_size)
+        ).to_record_batches(self.plan_files(), batch_size=batch_size, order=order)
 
         return pa.RecordBatchReader.from_batches(
             target_schema,

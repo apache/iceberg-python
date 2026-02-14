@@ -86,7 +86,7 @@ from pyiceberg.io.pyarrow import (
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema, make_compatible_name, visit
-from pyiceberg.table import FileScanTask, TableProperties
+from pyiceberg.table import FileScanTask, ScanOrder, TableProperties
 from pyiceberg.table.metadata import TableMetadataV2
 from pyiceberg.table.name_mapping import create_mapping_from_schema
 from pyiceberg.transforms import HourTransform, IdentityTransform
@@ -3104,6 +3104,176 @@ def test_task_to_record_batches_default_batch_size(tmpdir: str) -> None:
     # With default batch_size, a small file should produce a single batch
     assert len(batches) == 1
     assert len(batches[0]) == num_rows
+
+
+def _create_scan_and_tasks(
+    tmpdir: str,
+    num_files: int = 1,
+    rows_per_file: int = 100,
+    limit: int | None = None,
+    delete_rows_per_file: list[list[int]] | None = None,
+) -> tuple[ArrowScan, list[FileScanTask]]:
+    """Helper to create an ArrowScan and FileScanTasks for testing.
+
+    Args:
+        delete_rows_per_file: If provided, a list of lists of row positions to delete
+            per file. Length must match num_files. Each inner list contains 0-based
+            row positions within that file to mark as positionally deleted.
+    """
+    table_schema = Schema(NestedField(1, "col", LongType(), required=True))
+    pa_schema = pa.schema([pa.field("col", pa.int64(), nullable=False, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"})])
+    tasks = []
+    for i in range(num_files):
+        start = i * rows_per_file
+        arrow_table = pa.table({"col": pa.array(range(start, start + rows_per_file))}, schema=pa_schema)
+        data_file = _write_table_to_data_file(f"{tmpdir}/file_{i}.parquet", pa_schema, arrow_table)
+        data_file.spec_id = 0
+
+        delete_files = set()
+        if delete_rows_per_file and delete_rows_per_file[i]:
+            delete_table = pa.table(
+                {
+                    "file_path": [data_file.file_path] * len(delete_rows_per_file[i]),
+                    "pos": delete_rows_per_file[i],
+                }
+            )
+            delete_path = f"{tmpdir}/deletes_{i}.parquet"
+            pq.write_table(delete_table, delete_path)
+            delete_files.add(
+                DataFile.from_args(
+                    content=DataFileContent.POSITION_DELETES,
+                    file_path=delete_path,
+                    file_format=FileFormat.PARQUET,
+                    partition={},
+                    record_count=len(delete_rows_per_file[i]),
+                    file_size_in_bytes=22,
+                )
+            )
+
+        tasks.append(FileScanTask(data_file=data_file, delete_files=delete_files))
+
+    scan = ArrowScan(
+        table_metadata=TableMetadataV2(
+            location="file://a/b/",
+            last_column_id=1,
+            format_version=2,
+            schemas=[table_schema],
+            partition_specs=[PartitionSpec()],
+        ),
+        io=PyArrowFileIO(),
+        projected_schema=table_schema,
+        row_filter=AlwaysTrue(),
+        case_sensitive=True,
+        limit=limit,
+    )
+    return scan, tasks
+
+
+def test_task_order_produces_same_results(tmpdir: str) -> None:
+    """Test that order=ScanOrder.TASK produces the same results as the default behavior."""
+    scan, tasks = _create_scan_and_tasks(tmpdir, num_files=3, rows_per_file=100)
+
+    batches_default = list(scan.to_record_batches(tasks, order=ScanOrder.TASK))
+    # Re-create tasks since iterators are consumed
+    _, tasks2 = _create_scan_and_tasks(tmpdir, num_files=3, rows_per_file=100)
+    batches_task_order = list(scan.to_record_batches(tasks2, order=ScanOrder.TASK))
+
+    total_default = sum(len(b) for b in batches_default)
+    total_task_order = sum(len(b) for b in batches_task_order)
+    assert total_default == 300
+    assert total_task_order == 300
+
+
+def test_arrival_order_yields_all_batches(tmpdir: str) -> None:
+    """Test that order=ScanOrder.ARRIVAL yields all batches correctly."""
+    scan, tasks = _create_scan_and_tasks(tmpdir, num_files=3, rows_per_file=100)
+
+    batches = list(scan.to_record_batches(tasks, order=ScanOrder.ARRIVAL))
+
+    total_rows = sum(len(b) for b in batches)
+    assert total_rows == 300
+    # Verify all values are present
+    all_values = sorted([v for b in batches for v in b.column("col").to_pylist()])
+    assert all_values == list(range(300))
+
+
+def test_arrival_order_with_limit(tmpdir: str) -> None:
+    """Test that order=ScanOrder.ARRIVAL respects the row limit."""
+    scan, tasks = _create_scan_and_tasks(tmpdir, num_files=3, rows_per_file=100, limit=150)
+
+    batches = list(scan.to_record_batches(tasks, order=ScanOrder.ARRIVAL))
+
+    total_rows = sum(len(b) for b in batches)
+    assert total_rows == 150
+
+
+def test_arrival_order_file_ordering_preserved(tmpdir: str) -> None:
+    """Test that file ordering is preserved in arrival order mode."""
+    scan, tasks = _create_scan_and_tasks(tmpdir, num_files=3, rows_per_file=100)
+
+    batches = list(scan.to_record_batches(tasks, order=ScanOrder.ARRIVAL))
+    all_values = [v for b in batches for v in b.column("col").to_pylist()]
+
+    # Values should be in file order: 0-99 from file 0, 100-199 from file 1, 200-299 from file 2
+    assert all_values == list(range(300))
+
+
+def test_arrival_order_with_positional_deletes(tmpdir: str) -> None:
+    """Test that order=ScanOrder.ARRIVAL correctly applies positional deletes."""
+    # 3 files, 10 rows each; delete rows 0,5 from file 0, row 3 from file 1, nothing from file 2
+    scan, tasks = _create_scan_and_tasks(
+        tmpdir,
+        num_files=3,
+        rows_per_file=10,
+        delete_rows_per_file=[[0, 5], [3], []],
+    )
+
+    batches = list(scan.to_record_batches(tasks, order=ScanOrder.ARRIVAL))
+
+    total_rows = sum(len(b) for b in batches)
+    assert total_rows == 27  # 30 - 3 deletes
+    all_values = sorted([v for b in batches for v in b.column("col").to_pylist()])
+    # File 0: 0-9, delete rows 0,5 → values 1,2,3,4,6,7,8,9
+    # File 1: 10-19, delete row 3 → values 10,11,12,14,15,16,17,18,19
+    # File 2: 20-29, no deletes → values 20-29
+    expected = [1, 2, 3, 4, 6, 7, 8, 9] + [10, 11, 12, 14, 15, 16, 17, 18, 19] + list(range(20, 30))
+    assert all_values == sorted(expected)
+
+
+def test_arrival_order_with_positional_deletes_and_limit(tmpdir: str) -> None:
+    """Test that order=ScanOrder.ARRIVAL with positional deletes respects the row limit."""
+    # 3 files, 10 rows each; delete row 0 from each file
+    scan, tasks = _create_scan_and_tasks(
+        tmpdir,
+        num_files=3,
+        rows_per_file=10,
+        limit=15,
+        delete_rows_per_file=[[0], [0], [0]],
+    )
+
+    batches = list(scan.to_record_batches(tasks, order=ScanOrder.ARRIVAL))
+
+    total_rows = sum(len(b) for b in batches)
+    assert total_rows == 15
+
+
+def test_task_order_with_positional_deletes(tmpdir: str) -> None:
+    """Test that the default task order mode correctly applies positional deletes."""
+    # 3 files, 10 rows each; delete rows from each file
+    scan, tasks = _create_scan_and_tasks(
+        tmpdir,
+        num_files=3,
+        rows_per_file=10,
+        delete_rows_per_file=[[0, 5], [3], []],
+    )
+
+    batches = list(scan.to_record_batches(tasks, order=ScanOrder.TASK))
+
+    total_rows = sum(len(b) for b in batches)
+    assert total_rows == 27  # 30 - 3 deletes
+    all_values = sorted([v for b in batches for v in b.column("col").to_pylist()])
+    expected = [1, 2, 3, 4, 6, 7, 8, 9] + [10, 11, 12, 14, 15, 16, 17, 18, 19] + list(range(20, 30))
+    assert all_values == sorted(expected)
 
 
 def test_parse_location_defaults() -> None:
