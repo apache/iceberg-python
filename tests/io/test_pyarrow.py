@@ -3048,6 +3048,64 @@ def test_task_to_record_batches_nanos(format_version: TableVersion, tmpdir: str)
     assert _expected_batch("ns" if format_version > 2 else "us").equals(actual_result)
 
 
+def test_task_to_record_batches_with_batch_size(tmpdir: str) -> None:
+    """Test that batch_size controls the number of rows per batch."""
+    num_rows = 1000
+    arrow_table = pa.table(
+        {"col": pa.array(range(num_rows))},
+        schema=pa.schema([pa.field("col", pa.int64(), nullable=False, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"})]),
+    )
+    data_file = _write_table_to_data_file(f"{tmpdir}/test_batch_size.parquet", arrow_table.schema, arrow_table)
+    table_schema = Schema(NestedField(1, "col", LongType(), required=True))
+
+    batches = list(
+        _task_to_record_batches(
+            PyArrowFileIO(),
+            FileScanTask(data_file),
+            bound_row_filter=AlwaysTrue(),
+            projected_schema=table_schema,
+            table_schema=table_schema,
+            projected_field_ids={1},
+            positional_deletes=None,
+            case_sensitive=True,
+            batch_size=100,
+        )
+    )
+
+    assert len(batches) > 1
+    for batch in batches:
+        assert len(batch) <= 100
+    assert sum(len(b) for b in batches) == num_rows
+
+
+def test_task_to_record_batches_default_batch_size(tmpdir: str) -> None:
+    """Test that batch_size=None uses PyArrow default (single batch for small files)."""
+    num_rows = 100
+    arrow_table = pa.table(
+        {"col": pa.array(range(num_rows))},
+        schema=pa.schema([pa.field("col", pa.int64(), nullable=False, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"})]),
+    )
+    data_file = _write_table_to_data_file(f"{tmpdir}/test_default_batch_size.parquet", arrow_table.schema, arrow_table)
+    table_schema = Schema(NestedField(1, "col", LongType(), required=True))
+
+    batches = list(
+        _task_to_record_batches(
+            PyArrowFileIO(),
+            FileScanTask(data_file),
+            bound_row_filter=AlwaysTrue(),
+            projected_schema=table_schema,
+            table_schema=table_schema,
+            projected_field_ids={1},
+            positional_deletes=None,
+            case_sensitive=True,
+        )
+    )
+
+    # With default batch_size, a small file should produce a single batch
+    assert len(batches) == 1
+    assert len(batches[0]) == num_rows
+
+
 def test_parse_location_defaults() -> None:
     """Test that parse_location uses defaults."""
 

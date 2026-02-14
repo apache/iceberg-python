@@ -355,6 +355,13 @@ for buf in tbl.scan().to_arrow_batch_reader():
     print(f"Buffer contains {len(buf)} rows")
 ```
 
+You can control the number of rows per batch using the `batch_size` parameter:
+
+```python
+for buf in tbl.scan().to_arrow_batch_reader(batch_size=1000):
+    print(f"Buffer contains {len(buf)} rows")
+```
+
 To avoid any type inconsistencies during writing, you can convert the Iceberg table schema to Arrow:
 
 ```python
@@ -1617,6 +1624,15 @@ table.scan(
     row_filter=GreaterThanOrEqual("trip_distance", 10.0),
     selected_fields=("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime"),
 ).to_arrow_batch_reader()
+```
+
+The `batch_size` parameter controls the maximum number of rows per RecordBatch (default is PyArrow's 131,072 rows):
+
+```python
+table.scan(
+    row_filter=GreaterThanOrEqual("trip_distance", 10.0),
+    selected_fields=("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime"),
+).to_arrow_batch_reader(batch_size=1000)
 ```
 
 ### Pandas
