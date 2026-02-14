@@ -369,6 +369,22 @@ for buf in tbl.scan().to_arrow_batch_reader(streaming=True, batch_size=1000):
     print(f"Buffer contains {len(buf)} rows")
 ```
 
+For maximum throughput, use `concurrent_files` to read multiple files in parallel while streaming. Batches are yielded as they arrive from any file — ordering across files is not guaranteed:
+
+```python
+for buf in tbl.scan().to_arrow_batch_reader(streaming=True, concurrent_files=4, batch_size=1000):
+    print(f"Buffer contains {len(buf)} rows")
+```
+
+**Ordering semantics:**
+
+| Configuration | File ordering | Within-file ordering |
+|---|---|---|
+| Default (`streaming=False`) | Batches grouped by file, in task submission order | Row order |
+| `streaming=True` | Interleaved across files (no grouping guarantee) | Row order within each file |
+
+Within each file, batch ordering always follows row order. The `limit` parameter is enforced correctly regardless of configuration.
+
 To avoid any type inconsistencies during writing, you can convert the Iceberg table schema to Arrow:
 
 ```python
@@ -1650,6 +1666,17 @@ table.scan(
     selected_fields=("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime"),
 ).to_arrow_batch_reader(streaming=True)
 ```
+
+For concurrent file reads with streaming, use `concurrent_files`. Note that batch ordering across files is not guaranteed:
+
+```python
+table.scan(
+    row_filter=GreaterThanOrEqual("trip_distance", 10.0),
+    selected_fields=("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime"),
+).to_arrow_batch_reader(streaming=True, concurrent_files=4)
+```
+
+When using `concurrent_files > 1`, batches from different files may be interleaved. Within each file, batches are always in row order. See the ordering semantics table in the [Apache Arrow section](#apache-arrow) above for details.
 
 ### Pandas
 

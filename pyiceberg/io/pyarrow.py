@@ -33,11 +33,13 @@ import itertools
 import logging
 import operator
 import os
+import queue
 import re
+import threading
 import uuid
 import warnings
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Generator, Iterable, Iterator
 from copy import copy
 from dataclasses import dataclass
 from enum import Enum
@@ -1682,6 +1684,87 @@ def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> dict[st
     return deletes_per_file
 
 
+_QUEUE_SENTINEL = object()
+
+
+def _bounded_concurrent_batches(
+    tasks: list[FileScanTask],
+    batch_fn: Callable[[FileScanTask], Iterator[pa.RecordBatch]],
+    concurrent_files: int,
+    max_buffered_batches: int = 16,
+) -> Generator[pa.RecordBatch, None, None]:
+    """Read batches from multiple files concurrently with bounded memory.
+
+    Workers read from files in parallel (up to concurrent_files at a time) and push
+    batches into a shared queue. The consumer yields batches from the queue.
+    A sentinel value signals completion, avoiding timeout-based polling.
+
+    Args:
+        tasks: The file scan tasks to process.
+        batch_fn: A callable that takes a FileScanTask and returns an iterator of RecordBatches.
+        concurrent_files: Maximum number of files to read concurrently.
+        max_buffered_batches: Maximum number of batches to buffer in the queue.
+    """
+    if not tasks:
+        return
+
+    batch_queue: queue.Queue[pa.RecordBatch | BaseException | object] = queue.Queue(maxsize=max_buffered_batches)
+    cancel_event = threading.Event()
+    pending_count = len(tasks)
+    pending_lock = threading.Lock()
+    file_semaphore = threading.Semaphore(concurrent_files)
+
+    def worker(task: FileScanTask) -> None:
+        nonlocal pending_count
+        try:
+            # Blocking acquire — on cancellation, extra permits are released to unblock.
+            file_semaphore.acquire()
+            if cancel_event.is_set():
+                return
+
+            for batch in batch_fn(task):
+                if cancel_event.is_set():
+                    return
+                batch_queue.put(batch)
+        except BaseException as e:
+            if not cancel_event.is_set():
+                batch_queue.put(e)
+        finally:
+            file_semaphore.release()
+            with pending_lock:
+                pending_count -= 1
+                if pending_count == 0:
+                    batch_queue.put(_QUEUE_SENTINEL)
+
+    executor = ExecutorFactory.get_or_create()
+    futures = [executor.submit(worker, task) for task in tasks]
+
+    try:
+        while True:
+            item = batch_queue.get()
+
+            if item is _QUEUE_SENTINEL:
+                break
+
+            if isinstance(item, BaseException):
+                raise item
+
+            yield item
+    finally:
+        cancel_event.set()
+        # Release semaphore permits to unblock any workers waiting on acquire()
+        for _ in range(len(tasks)):
+            file_semaphore.release()
+        # Drain the queue to unblock any workers stuck on put()
+        while not batch_queue.empty():
+            try:
+                batch_queue.get_nowait()
+            except queue.Empty:
+                break
+        for future in futures:
+            future.cancel()
+
+
 class ArrowScan:
     _table_metadata: TableMetadata
     _io: FileIO
@@ -1762,7 +1845,11 @@ class ArrowScan:
         return result
 
     def to_record_batches(
-        self, tasks: Iterable[FileScanTask], batch_size: int | None = None, streaming: bool = False
+        self,
+        tasks: Iterable[FileScanTask],
+        batch_size: int | None = None,
+        streaming: bool = False,
+        concurrent_files: int = 1,
     ) -> Iterator[pa.RecordBatch]:
         """Scan the Iceberg table and return an Iterator[pa.RecordBatch].
 
@@ -1770,11 +1857,20 @@ class ArrowScan:
         by resolving the right columns that match the current table schema.
         Only data that matches the provided row_filter expression is returned.
 
+        Ordering semantics:
+            - Default (streaming=False): Batches are grouped by file in task submission order.
+            - streaming=True: Batches may be interleaved across files. Within each file,
+              batch ordering follows row order.
+
         Args:
             tasks: FileScanTasks representing the data files and delete files to read from.
             batch_size: The number of rows per batch. If None, PyArrow's default is used.
             streaming: If True, yield batches as they are produced without materializing
-                entire files into memory. Files are still processed sequentially.
+                entire files into memory. Files are still processed sequentially when
+                concurrent_files=1.
+            concurrent_files: Number of files to read concurrently when streaming=True.
+                Must be >= 1. When > 1, batches may arrive interleaved across files.
+                Ignored when streaming=False.
 
         Returns:
             An Iterator of PyArrow RecordBatches.
@@ -1783,14 +1879,29 @@ class ArrowScan:
         Raises:
             ResolveError: When a required field cannot be found in the file
             ValueError: When a field type in the file cannot be projected to the schema type
+                or when concurrent_files < 1
         """
+        if concurrent_files < 1:
+            raise ValueError(f"concurrent_files must be >= 1, got {concurrent_files}")
+
         deletes_per_file = _read_all_delete_files(self._io, tasks)
 
         if streaming:
-            # Streaming path: process all tasks sequentially, yielding batches as produced.
-            # _record_batches_from_scan_tasks_and_deletes handles the limit internally
-            # when called with all tasks, so no outer limit check is needed.
-            yield from self._record_batches_from_scan_tasks_and_deletes(tasks, deletes_per_file, batch_size)
+            # Streaming path: read files with bounded concurrency, yielding batches as produced.
+            # When concurrent_files=1, this is sequential. When >1, batches may interleave across files.
+            task_list = list(tasks)
+
+            def batch_fn(task: FileScanTask) -> Iterator[pa.RecordBatch]:
+                return self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file, batch_size)
+
+            total_row_count = 0
+            for batch in _bounded_concurrent_batches(task_list, batch_fn, concurrent_files):
+                current_batch_size = len(batch)
+                if self._limit is not None and total_row_count + current_batch_size >= self._limit:
+                    yield batch.slice(0, self._limit - total_row_count)
+                    return
+                yield batch
+                total_row_count += current_batch_size
             return
 
         # Non-streaming path: existing behavior with executor.map + list()
