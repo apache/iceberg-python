@@ -87,6 +87,8 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IcebergType,
     IntegerType,
     ListType,
@@ -203,6 +205,14 @@ class ConstructWriter(SchemaVisitorPerPrimitiveType[Writer]):
 
     def visit_unknown(self, unknown_type: UnknownType) -> Writer:
         return UnknownWriter()
+
+    def visit_geometry(self, geometry_type: "GeometryType") -> Writer:
+        """Geometry is written as WKB bytes in Avro."""
+        return BinaryWriter()
+
+    def visit_geography(self, geography_type: "GeographyType") -> Writer:
+        """Geography is written as WKB bytes in Avro."""
+        return BinaryWriter()
 
 
 CONSTRUCT_WRITER_VISITOR = ConstructWriter()
@@ -359,6 +369,14 @@ class WriteSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Writer]):
     def visit_unknown(self, unknown_type: UnknownType, partner: IcebergType | None) -> Writer:
         return UnknownWriter()
 
+    def visit_geometry(self, geometry_type: "GeometryType", partner: IcebergType | None) -> Writer:
+        """Geometry is written as WKB bytes in Avro."""
+        return BinaryWriter()
+
+    def visit_geography(self, geography_type: "GeographyType", partner: IcebergType | None) -> Writer:
+        """Geography is written as WKB bytes in Avro."""
+        return BinaryWriter()
+
 
 class ReadSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
     __slots__ = ("read_types", "read_enums", "context")
@@ -497,6 +515,14 @@ class ReadSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
 
     def visit_unknown(self, unknown_type: UnknownType, partner: IcebergType | None) -> Reader:
         return UnknownReader()
+
+    def visit_geometry(self, geometry_type: "GeometryType", partner: IcebergType | None) -> Reader:
+        """Geometry is read as WKB bytes from Avro."""
+        return BinaryReader()
+
+    def visit_geography(self, geography_type: "GeographyType", partner: IcebergType | None) -> Reader:
+        """Geography is read as WKB bytes from Avro."""
+        return BinaryReader()
 
 
 class SchemaPartnerAccessor(PartnerAccessor[IcebergType]):
