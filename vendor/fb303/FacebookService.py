@@ -50,18 +50,21 @@ class Iface:
         Returns a descriptive name of the service
 
         """
+        pass
 
     def getVersion(self):
         """
         Returns the version of the service
 
         """
+        pass
 
     def getStatus(self):
         """
         Gets the status of this service
 
         """
+        pass
 
     def getStatusDetails(self):
         """
@@ -69,12 +72,14 @@ class Iface:
         the dead or warning state, or what is being started or stopped.
 
         """
+        pass
 
     def getCounters(self):
         """
         Gets the counters for this service
 
         """
+        pass
 
     def getCounter(self, key):
         """
@@ -84,6 +89,7 @@ class Iface:
          - key
 
         """
+        pass
 
     def setOption(self, key, value):
         """
@@ -94,6 +100,7 @@ class Iface:
          - value
 
         """
+        pass
 
     def getOption(self, key):
         """
@@ -103,12 +110,14 @@ class Iface:
          - key
 
         """
+        pass
 
     def getOptions(self):
         """
         Gets all options
 
         """
+        pass
 
     def getCpuProfile(self, profileDurationInSec):
         """
@@ -119,24 +128,28 @@ class Iface:
          - profileDurationInSec
 
         """
+        pass
 
     def aliveSince(self):
         """
         Returns the unix time that the server has been running since
 
         """
+        pass
 
     def reinitialize(self):
         """
         Tell the server to reload its configuration, reopen log files, etc
 
         """
+        pass
 
     def shutdown(self):
         """
         Suggest a shutdown to the server
 
         """
+        pass
 
 
 class Client(Iface):
@@ -877,7 +890,7 @@ class getName_args:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -945,7 +958,7 @@ class getName_result:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -998,7 +1011,7 @@ class getVersion_args:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -1066,7 +1079,7 @@ class getVersion_result:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -1119,7 +1132,7 @@ class getStatus_args:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -1185,7 +1198,7 @@ class getStatus_result:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -1238,7 +1251,7 @@ class getStatusDetails_args:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -1306,7 +1319,7 @@ class getStatusDetails_result:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -1359,7 +1372,7 @@ class getCounters_args:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -1439,7 +1452,7 @@ class getCounters_result:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -1515,7 +1528,7 @@ class getCounter_args:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -1590,7 +1603,7 @@ class getCounter_result:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -1680,7 +1693,7 @@ class setOption_args:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -1741,7 +1754,7 @@ class setOption_result:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -1809,7 +1822,7 @@ class getOption_args:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -1886,7 +1899,7 @@ class getOption_result:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -1939,7 +1952,7 @@ class getOptions_args:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -2023,7 +2036,7 @@ class getOptions_result:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -2097,7 +2110,7 @@ class getCpuProfile_args:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -2174,7 +2187,7 @@ class getCpuProfile_result:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -2227,7 +2240,7 @@ class aliveSince_args:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -2293,7 +2306,7 @@ class aliveSince_result:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -2346,7 +2359,7 @@ class reinitialize_args:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
@@ -2391,7 +2404,7 @@ class shutdown_args:
         return
 
     def __repr__(self):
-        L = [f"{key}={value!r}" for key, value in self.__dict__.items()]
+        L = ["{}={!r}".format(key, value) for key, value in self.__dict__.items()]
         return "{}({})".format(self.__class__.__name__, ", ".join(L))
 
     def __eq__(self, other):
