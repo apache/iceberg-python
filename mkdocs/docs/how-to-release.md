@@ -309,6 +309,9 @@ Kind regards,
 <!-- prettier-ignore-end -->
 
 ```bash
+: "${VERSION_WITH_RC:?ERROR: VERSION_WITH_RC is not set or is empty}"
+: "${VERSION:?ERROR: VERSION is not set or is empty}"
+
 export SVN_DEV_DIR_VERSIONED="https://dist.apache.org/repos/dist/dev/iceberg/pyiceberg-${VERSION_WITH_RC}"
 export SVN_RELEASE_DIR_VERSIONED="https://dist.apache.org/repos/dist/release/iceberg/pyiceberg-${VERSION}"
 
@@ -337,8 +340,10 @@ The latest version can be pushed to PyPi. Check out the Apache SVN and make sure
 <!-- prettier-ignore-end -->
 
 ```bash
-svn checkout https://dist.apache.org/repos/dist/release/iceberg /tmp/iceberg-dist-release/
+svn checkout https://dist.apache.org/repos/dist/release/iceberg/pyiceberg-${VERSION} /tmp/iceberg-dist-release/pyiceberg-${VERSION}
+
 cd /tmp/iceberg-dist-release/pyiceberg-${VERSION}
+
 twine upload pyiceberg-*.whl pyiceberg-*.tar.gz
 ```
 
