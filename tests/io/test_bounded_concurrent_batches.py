@@ -206,7 +206,7 @@ def test_empty_tasks() -> None:
 def test_concurrent_with_limit_via_arrowscan(tmpdir: str) -> None:
     """Test concurrent_files with limit through ArrowScan integration."""
     from pyiceberg.expressions import AlwaysTrue
-    from pyiceberg.io.pyarrow import ArrowScan, PyArrowFileIO, schema_to_pyarrow, write_file
+    from pyiceberg.io.pyarrow import ArrowScan, PyArrowFileIO
     from pyiceberg.manifest import DataFileContent, FileFormat
     from pyiceberg.partitioning import PartitionSpec
     from pyiceberg.schema import Schema
