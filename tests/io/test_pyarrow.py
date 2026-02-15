@@ -3131,10 +3131,12 @@ def _create_scan_and_tasks(
 
         delete_files = set()
         if delete_rows_per_file and delete_rows_per_file[i]:
-            delete_table = pa.table({
-                "file_path": [data_file.file_path] * len(delete_rows_per_file[i]),
-                "pos": delete_rows_per_file[i],
-            })
+            delete_table = pa.table(
+                {
+                    "file_path": [data_file.file_path] * len(delete_rows_per_file[i]),
+                    "pos": delete_rows_per_file[i],
+                }
+            )
             delete_path = f"{tmpdir}/deletes_{i}.parquet"
             pq.write_table(delete_table, delete_path)
             delete_files.add(
