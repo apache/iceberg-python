@@ -43,6 +43,8 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IcebergType,
     IntegerType,
     ListType,
@@ -555,6 +557,10 @@ class PrimitiveWithPartnerVisitor(SchemaWithPartnerVisitor[P, T]):
             return self.visit_binary(primitive, primitive_partner)
         elif isinstance(primitive, UnknownType):
             return self.visit_unknown(primitive, primitive_partner)
+        elif isinstance(primitive, GeometryType):
+            return self.visit_geometry(primitive, primitive_partner)
+        elif isinstance(primitive, GeographyType):
+            return self.visit_geography(primitive, primitive_partner)
         else:
             raise ValueError(f"Type not recognized: {primitive}")
 
@@ -625,6 +631,14 @@ class PrimitiveWithPartnerVisitor(SchemaWithPartnerVisitor[P, T]):
     @abstractmethod
     def visit_unknown(self, unknown_type: UnknownType, partner: P | None) -> T:
         """Visit a UnknownType."""
+
+    @abstractmethod
+    def visit_geometry(self, geometry_type: GeometryType, partner: P | None) -> T:
+        """Visit a GeometryType."""
+
+    @abstractmethod
+    def visit_geography(self, geography_type: GeographyType, partner: P | None) -> T:
+        """Visit a GeographyType."""
 
 
 class PartnerAccessor(Generic[P], ABC):
@@ -749,6 +763,10 @@ class SchemaVisitorPerPrimitiveType(SchemaVisitor[T], ABC):
             return self.visit_binary(primitive)
         elif isinstance(primitive, UnknownType):
             return self.visit_unknown(primitive)
+        elif isinstance(primitive, GeometryType):
+            return self.visit_geometry(primitive)
+        elif isinstance(primitive, GeographyType):
+            return self.visit_geography(primitive)
         else:
             raise ValueError(f"Type not recognized: {primitive}")
 
@@ -819,6 +837,14 @@ class SchemaVisitorPerPrimitiveType(SchemaVisitor[T], ABC):
     @abstractmethod
     def visit_unknown(self, unknown_type: UnknownType) -> T:
         """Visit a UnknownType."""
+
+    @abstractmethod
+    def visit_geometry(self, geometry_type: GeometryType) -> T:
+        """Visit a GeometryType."""
+
+    @abstractmethod
+    def visit_geography(self, geography_type: GeographyType) -> T:
+        """Visit a GeographyType."""
 
 
 @dataclass(init=True, eq=True, frozen=True)

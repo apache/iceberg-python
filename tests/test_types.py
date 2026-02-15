@@ -22,6 +22,9 @@ import pytest
 
 from pyiceberg.exceptions import ValidationError
 from pyiceberg.types import (
+    DEFAULT_GEOGRAPHY_ALGORITHM,
+    DEFAULT_GEOGRAPHY_CRS,
+    DEFAULT_GEOMETRY_CRS,
     BinaryType,
     BooleanType,
     DateType,
@@ -29,6 +32,8 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IcebergType,
     IntegerType,
     ListType,
@@ -728,3 +733,190 @@ def test_transform_dict_value_to_str() -> None:
     input_dict["key6"] = None
     with pytest.raises(ValueError, match="None type is not a supported value in properties: key6"):
         transform_dict_value_to_str(input_dict)
+
+
+# Geometry Type Tests
+
+
+def test_geometry_type_default() -> None:
+    """Test GeometryType with default CRS."""
+    type_var = GeometryType()
+    assert type_var.crs == DEFAULT_GEOMETRY_CRS
+    assert str(type_var) == "geometry"
+    assert repr(type_var) == "GeometryType()"
+    assert type_var.minimum_format_version() == 3
+    assert type_var.is_primitive
+
+
+def test_geometry_type_custom_crs() -> None:
+    """Test GeometryType with custom CRS."""
+    type_var = GeometryType("EPSG:4326")
+    assert type_var.crs == "EPSG:4326"
+    assert str(type_var) == "geometry('EPSG:4326')"
+    assert repr(type_var) == "GeometryType(crs='EPSG:4326')"
+
+
+def test_geometry_type_equality() -> None:
+    """Test GeometryType equality and hashing."""
+    assert GeometryType() == GeometryType()
+    assert GeometryType("EPSG:4326") == GeometryType("EPSG:4326")
+    assert GeometryType() != GeometryType("EPSG:4326")
+    assert hash(GeometryType()) == hash(GeometryType())
+    assert hash(GeometryType("EPSG:4326")) == hash(GeometryType("EPSG:4326"))
+
+
+def test_geometry_type_pickle() -> None:
+    """Test GeometryType pickle round-trip."""
+    assert GeometryType() == pickle.loads(pickle.dumps(GeometryType()))
+    assert GeometryType("EPSG:4326") == pickle.loads(pickle.dumps(GeometryType("EPSG:4326")))
+
+
+def test_geometry_type_serialization() -> None:
+    """Test GeometryType JSON serialization."""
+    assert GeometryType().model_dump_json() == '"geometry"'
+    assert GeometryType("EPSG:4326").model_dump_json() == "\"geometry('EPSG:4326')\""
+
+
+def test_geometry_type_deserialization() -> None:
+    """Test GeometryType JSON deserialization."""
+    assert GeometryType.model_validate_json('"geometry"') == GeometryType()
+    assert GeometryType.model_validate_json("\"geometry('EPSG:4326')\"") == GeometryType("EPSG:4326")
+
+
+def test_geometry_type_deserialization_failure() -> None:
+    """Test GeometryType deserialization with invalid input."""
+    with pytest.raises(ValidationError) as exc_info:
+        GeometryType.model_validate_json('"geometry(invalid)"')
+    assert "Could not parse geometry(invalid) into a GeometryType" in str(exc_info.value)
+
+
+def test_geometry_type_singleton() -> None:
+    """Test that GeometryType uses singleton pattern for same CRS."""
+    assert id(GeometryType()) == id(GeometryType())
+    assert id(GeometryType("EPSG:4326")) == id(GeometryType("EPSG:4326"))
+    assert id(GeometryType()) != id(GeometryType("EPSG:4326"))
+
+
+# Geography Type Tests
+
+
+def test_geography_type_default() -> None:
+    """Test GeographyType with default CRS and algorithm."""
+    type_var = GeographyType()
+    assert type_var.crs == DEFAULT_GEOGRAPHY_CRS
+    assert type_var.algorithm == DEFAULT_GEOGRAPHY_ALGORITHM
+    assert str(type_var) == "geography"
+    assert repr(type_var) == "GeographyType()"
+    assert type_var.minimum_format_version() == 3
+    assert type_var.is_primitive
+
+
+def test_geography_type_custom_crs() -> None:
+    """Test GeographyType with custom CRS."""
+    type_var = GeographyType("EPSG:4326")
+    assert type_var.crs == "EPSG:4326"
+    assert type_var.algorithm == DEFAULT_GEOGRAPHY_ALGORITHM
+    assert str(type_var) == "geography('EPSG:4326')"
+    assert repr(type_var) == "GeographyType(crs='EPSG:4326')"
+
+
+def test_geography_type_custom_crs_and_algorithm() -> None:
+    """Test GeographyType with custom CRS and algorithm."""
+    type_var = GeographyType("EPSG:4326", "planar")
+    assert type_var.crs == "EPSG:4326"
+    assert type_var.algorithm == "planar"
+    assert str(type_var) == "geography('EPSG:4326', 'planar')"
+    assert repr(type_var) == "GeographyType(crs='EPSG:4326', algorithm='planar')"
+
+
+def test_geography_type_equality() -> None:
+    """Test GeographyType equality and hashing."""
+    assert GeographyType() == GeographyType()
+    assert GeographyType("EPSG:4326") == GeographyType("EPSG:4326")
+    assert GeographyType("EPSG:4326", "planar") == GeographyType("EPSG:4326", "planar")
+    assert GeographyType() != GeographyType("EPSG:4326")
+    assert GeographyType("EPSG:4326") != GeographyType("EPSG:4326", "planar")
+    assert hash(GeographyType()) == hash(GeographyType())
+
+
+def test_geography_type_pickle() -> None:
+    """Test GeographyType pickle round-trip."""
+    assert GeographyType() == pickle.loads(pickle.dumps(GeographyType()))
+    assert GeographyType("EPSG:4326", "planar") == pickle.loads(pickle.dumps(GeographyType("EPSG:4326", "planar")))
+
+
+def test_geography_type_serialization() -> None:
+    """Test GeographyType JSON serialization."""
+    assert GeographyType().model_dump_json() == '"geography"'
+    assert GeographyType("EPSG:4326").model_dump_json() == "\"geography('EPSG:4326')\""
+    assert GeographyType("EPSG:4326", "planar").model_dump_json() == "\"geography('EPSG:4326', 'planar')\""
+
+
+def test_geography_type_deserialization() -> None:
+    """Test GeographyType JSON deserialization."""
+    assert GeographyType.model_validate_json('"geography"') == GeographyType()
+    assert GeographyType.model_validate_json("\"geography('EPSG:4326')\"") == GeographyType("EPSG:4326")
+    assert GeographyType.model_validate_json("\"geography('EPSG:4326', 'planar')\"") == GeographyType("EPSG:4326", "planar")
+
+
+def test_geography_type_deserialization_failure() -> None:
+    """Test GeographyType deserialization with invalid input."""
+    with pytest.raises(ValidationError) as exc_info:
+        GeographyType.model_validate_json('"geography(invalid)"')
+    assert "Could not parse geography(invalid) into a GeographyType" in str(exc_info.value)
+
+
+def test_geography_type_singleton() -> None:
+    """Test that GeographyType uses singleton pattern for same parameters."""
+    assert id(GeographyType()) == id(GeographyType())
+    assert id(GeographyType("EPSG:4326")) == id(GeographyType("EPSG:4326"))
+    assert id(GeographyType("EPSG:4326", "planar")) == id(GeographyType("EPSG:4326", "planar"))
+    assert id(GeographyType()) != id(GeographyType("EPSG:4326"))
+
+
+# NestedField with geometry/geography types
+
+
+def test_nested_field_with_geometry() -> None:
+    """Test NestedField with GeometryType."""
+    field = NestedField(1, "location", GeometryType(), required=True)
+    assert isinstance(field.field_type, GeometryType)
+    assert field.field_type.crs == DEFAULT_GEOMETRY_CRS
+
+
+def test_nested_field_with_geography() -> None:
+    """Test NestedField with GeographyType."""
+    field = NestedField(1, "location", GeographyType("EPSG:4326", "planar"), required=True)
+    assert isinstance(field.field_type, GeographyType)
+    assert field.field_type.crs == "EPSG:4326"
+    assert field.field_type.algorithm == "planar"
+
+
+def test_nested_field_geometry_as_string() -> None:
+    """Test NestedField with geometry type specified as string."""
+    field = NestedField(1, "location", "geometry", required=True)
+    assert isinstance(field.field_type, GeometryType)
+    assert field.field_type.crs == DEFAULT_GEOMETRY_CRS
+
+
+def test_nested_field_geography_as_string() -> None:
+    """Test NestedField with geography type specified as string."""
+    field = NestedField(1, "location", "geography", required=True)
+    assert isinstance(field.field_type, GeographyType)
+    assert field.field_type.crs == DEFAULT_GEOGRAPHY_CRS
+    assert field.field_type.algorithm == DEFAULT_GEOGRAPHY_ALGORITHM
+
+
+def test_nested_field_geometry_with_params_as_string() -> None:
+    """Test NestedField with parameterized geometry type as string."""
+    field = NestedField(1, "location", "geometry('EPSG:4326')", required=True)
+    assert isinstance(field.field_type, GeometryType)
+    assert field.field_type.crs == "EPSG:4326"
+
+
+def test_nested_field_geography_with_params_as_string() -> None:
+    """Test NestedField with parameterized geography type as string."""
+    field = NestedField(1, "location", "geography('EPSG:4326', 'planar')", required=True)
+    assert isinstance(field.field_type, GeographyType)
+    assert field.field_type.crs == "EPSG:4326"
+    assert field.field_type.algorithm == "planar"

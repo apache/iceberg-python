@@ -99,6 +99,8 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IntegerType,
     ListType,
     LongType,
@@ -595,6 +597,108 @@ def test_string_type_to_pyarrow() -> None:
 def test_binary_type_to_pyarrow() -> None:
     iceberg_type = BinaryType()
     assert visit(iceberg_type, _ConvertToArrowSchema()) == pa.large_binary()
+
+
+def test_geometry_type_to_pyarrow_without_geoarrow() -> None:
+    """Test geometry type falls back to large_binary when geoarrow is not available."""
+    import sys
+
+    iceberg_type = GeometryType()
+
+    # Remove geoarrow from sys.modules if present and block re-import
+    saved_modules = {}
+    for mod_name in list(sys.modules.keys()):
+        if mod_name.startswith("geoarrow"):
+            saved_modules[mod_name] = sys.modules.pop(mod_name)
+
+    import builtins
+
+    original_import = builtins.__import__
+
+    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name.startswith("geoarrow"):
+            raise ImportError(f"No module named '{name}'")
+        return original_import(name, *args, **kwargs)
+
+    try:
+        builtins.__import__ = mock_import
+        result = visit(iceberg_type, _ConvertToArrowSchema())
+        assert result == pa.large_binary()
+    finally:
+        builtins.__import__ = original_import
+        sys.modules.update(saved_modules)
+
+
+def test_geography_type_to_pyarrow_without_geoarrow() -> None:
+    """Test geography type falls back to large_binary when geoarrow is not available."""
+    import sys
+
+    iceberg_type = GeographyType()
+
+    # Remove geoarrow from sys.modules if present and block re-import
+    saved_modules = {}
+    for mod_name in list(sys.modules.keys()):
+        if mod_name.startswith("geoarrow"):
+            saved_modules[mod_name] = sys.modules.pop(mod_name)
+
+    import builtins
+
+    original_import = builtins.__import__
+
+    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name.startswith("geoarrow"):
+            raise ImportError(f"No module named '{name}'")
+        return original_import(name, *args, **kwargs)
+
+    try:
+        builtins.__import__ = mock_import
+        result = visit(iceberg_type, _ConvertToArrowSchema())
+        assert result == pa.large_binary()
+    finally:
+        builtins.__import__ = original_import
+        sys.modules.update(saved_modules)
+
+
+def test_geometry_type_to_pyarrow_with_geoarrow() -> None:
+    """Test geometry type uses geoarrow WKB extension type when available."""
+    pytest.importorskip("geoarrow.pyarrow")
+    import geoarrow.pyarrow as ga
+
+    # Test default CRS
+    iceberg_type = GeometryType()
+    result = visit(iceberg_type, _ConvertToArrowSchema())
+    expected = ga.wkb().with_crs("OGC:CRS84")
+    assert result == expected
+
+    # Test custom CRS
+    iceberg_type_custom = GeometryType("EPSG:4326")
+    result_custom = visit(iceberg_type_custom, _ConvertToArrowSchema())
+    expected_custom = ga.wkb().with_crs("EPSG:4326")
+    assert result_custom == expected_custom
+
+
+def test_geography_type_to_pyarrow_with_geoarrow() -> None:
+    """Test geography type uses geoarrow WKB extension type with edge type when available."""
+    pytest.importorskip("geoarrow.pyarrow")
+    import geoarrow.pyarrow as ga
+
+    # Test default (spherical algorithm)
+    iceberg_type = GeographyType()
+    result = visit(iceberg_type, _ConvertToArrowSchema())
+    expected = ga.wkb().with_crs("OGC:CRS84").with_edge_type(ga.EdgeType.SPHERICAL)
+    assert result == expected
+
+    # Test custom CRS with spherical
+    iceberg_type_custom = GeographyType("EPSG:4326", "spherical")
+    result_custom = visit(iceberg_type_custom, _ConvertToArrowSchema())
+    expected_custom = ga.wkb().with_crs("EPSG:4326").with_edge_type(ga.EdgeType.SPHERICAL)
+    assert result_custom == expected_custom
+
+    # Test planar algorithm (no edge type set, uses default)
+    iceberg_type_planar = GeographyType("OGC:CRS84", "planar")
+    result_planar = visit(iceberg_type_planar, _ConvertToArrowSchema())
+    expected_planar = ga.wkb().with_crs("OGC:CRS84")
+    assert result_planar == expected_planar
 
 
 def test_struct_type_to_pyarrow(table_schema_simple: Schema) -> None:

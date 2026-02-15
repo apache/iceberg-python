@@ -49,6 +49,8 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IntegerType,
     LongType,
     PrimitiveType,
@@ -182,6 +184,18 @@ def _(type_: UnknownType, _: str) -> None:
     return None
 
 
+@partition_to_py.register(GeometryType)
+@partition_to_py.register(GeographyType)
+@handle_none
+def _(_: PrimitiveType, value_str: str) -> bytes:
+    """Convert a geometry/geography partition string to bytes.
+
+    Note: Partition values for geometry/geography types are expected to be
+    hex-encoded WKB (Well-Known Binary) strings.
+    """
+    return bytes.fromhex(value_str)
+
+
 @singledispatch
 def to_bytes(
     primitive_type: PrimitiveType, _: bool | bytes | Decimal | date | datetime | float | int | str | time | uuid.UUID
@@ -274,6 +288,8 @@ def _(_: UUIDType, value: uuid.UUID | bytes) -> bytes:
 
 @to_bytes.register(BinaryType)
 @to_bytes.register(FixedType)
+@to_bytes.register(GeometryType)
+@to_bytes.register(GeographyType)
 def _(_: PrimitiveType, value: bytes) -> bytes:
     return value
 
@@ -355,6 +371,8 @@ def _(_: StringType, b: bytes) -> str:
 @from_bytes.register(BinaryType)
 @from_bytes.register(FixedType)
 @from_bytes.register(UUIDType)
+@from_bytes.register(GeometryType)
+@from_bytes.register(GeographyType)
 def _(_: PrimitiveType, b: bytes) -> bytes:
     return b
 
@@ -473,6 +491,40 @@ def _(_: DecimalType, val: Decimal) -> str:
 def _(_: UUIDType, val: uuid.UUID) -> str:
     """Serialize into a JSON string."""
     return str(val)
+
+
+@to_json.register(GeometryType)
+def _(_: GeometryType, val: bytes) -> str:
+    """Serialize geometry to WKT string per Iceberg spec.
+
+    Note: This requires WKB to WKT conversion which is not yet implemented.
+    The Iceberg spec requires geometry values to be serialized as WKT strings
+    in JSON, but PyIceberg stores geometry as WKB bytes at runtime.
+
+    Raises:
+        NotImplementedError: WKB to WKT conversion is not yet supported.
+    """
+    raise NotImplementedError(
+        "Geometry JSON serialization requires WKB to WKT conversion, which is not yet implemented. "
+        "See https://iceberg.apache.org/spec/#json-single-value-serialization for spec details."
+    )
+
+
+@to_json.register(GeographyType)
+def _(_: GeographyType, val: bytes) -> str:
+    """Serialize geography to WKT string per Iceberg spec.
+
+    Note: This requires WKB to WKT conversion which is not yet implemented.
+    The Iceberg spec requires geography values to be serialized as WKT strings
+    in JSON, but PyIceberg stores geography as WKB bytes at runtime.
+
+    Raises:
+        NotImplementedError: WKB to WKT conversion is not yet supported.
+    """
+    raise NotImplementedError(
+        "Geography JSON serialization requires WKB to WKT conversion, which is not yet implemented. "
+        "See https://iceberg.apache.org/spec/#json-single-value-serialization for spec details."
+    )
 
 
 @singledispatch  # type: ignore
@@ -594,3 +646,43 @@ def _(_: UUIDType, val: str | bytes | uuid.UUID) -> uuid.UUID:
         return uuid.UUID(bytes=val)
     else:
         return val
+
+
+@from_json.register(GeometryType)
+def _(_: GeometryType, val: str | bytes) -> bytes:
+    """Convert JSON WKT string into WKB bytes per Iceberg spec.
+
+    Note: This requires WKT to WKB conversion which is not yet implemented.
+    The Iceberg spec requires geometry values to be represented as WKT strings
+    in JSON, but PyIceberg stores geometry as WKB bytes at runtime.
+
+    Raises:
+        NotImplementedError: WKT to WKB conversion is not yet supported.
+    """
+    if isinstance(val, bytes):
+        # Already WKB bytes, return as-is
+        return val
+    raise NotImplementedError(
+        "Geometry JSON deserialization requires WKT to WKB conversion, which is not yet implemented. "
+        "See https://iceberg.apache.org/spec/#json-single-value-serialization for spec details."
+    )
+
+
+@from_json.register(GeographyType)
+def _(_: GeographyType, val: str | bytes) -> bytes:
+    """Convert JSON WKT string into WKB bytes per Iceberg spec.
+
+    Note: This requires WKT to WKB conversion which is not yet implemented.
+    The Iceberg spec requires geography values to be represented as WKT strings
+    in JSON, but PyIceberg stores geography as WKB bytes at runtime.
+
+    Raises:
+        NotImplementedError: WKT to WKB conversion is not yet supported.
+    """
+    if isinstance(val, bytes):
+        # Already WKB bytes, return as-is
+        return val
+    raise NotImplementedError(
+        "Geography JSON deserialization requires WKT to WKB conversion, which is not yet implemented. "
+        "See https://iceberg.apache.org/spec/#json-single-value-serialization for spec details."
+    )
