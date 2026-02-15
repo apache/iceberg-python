@@ -86,15 +86,14 @@ def benchmark_table(tmp_path_factory: pytest.TempPathFactory) -> Table:
 
 @pytest.mark.benchmark
 @pytest.mark.parametrize(
-    "streaming,concurrent_files,batch_size,max_workers",
+    "streaming,concurrent_files,batch_size",
     [
-        pytest.param(False, 1, None, None, id="default"),
-        pytest.param(False, 1, None, 4, id="default-4threads"),
-        pytest.param(True, 1, None, None, id="streaming-cf1"),
-        pytest.param(True, 2, None, None, id="streaming-cf2"),
-        pytest.param(True, 4, None, None, id="streaming-cf4"),
-        pytest.param(True, 8, None, None, id="streaming-cf8"),
-        pytest.param(True, 16, None, None, id="streaming-cf16"),
+        pytest.param(False, 1, None, id="default"),
+        pytest.param(True, 1, None, id="streaming-cf1"),
+        pytest.param(True, 2, None, id="streaming-cf2"),
+        pytest.param(True, 4, None, id="streaming-cf4"),
+        pytest.param(True, 8, None, id="streaming-cf8"),
+        pytest.param(True, 16, None, id="streaming-cf16"),
     ],
 )
 def test_read_throughput(
@@ -102,17 +101,13 @@ def test_read_throughput(
     streaming: bool,
     concurrent_files: int,
     batch_size: int | None,
-    max_workers: int | None,
 ) -> None:
     """Measure records/sec, time to first record, and peak Arrow memory for a scan configuration."""
-    from pyiceberg.utils.concurrent import ExecutorFactory
-
     effective_batch_size = batch_size or 131_072  # PyArrow default
     if streaming:
         config_str = f"streaming=True, concurrent_files={concurrent_files}, batch_size={effective_batch_size}"
     else:
-        workers_str = f", max_workers={max_workers}" if max_workers else ""
-        config_str = f"streaming=False (executor.map, all files parallel), batch_size={effective_batch_size}{workers_str}"
+        config_str = f"streaming=False (executor.map, all files parallel), batch_size={effective_batch_size}"
     print("\n--- ArrowScan Read Throughput Benchmark ---")
     print(f"Config: {config_str}")
     print(f"  Files: {NUM_FILES}, Rows per file: {ROWS_PER_FILE}, Total rows: {TOTAL_ROWS}")
@@ -122,55 +117,43 @@ def test_read_throughput(
     peak_memories: list[int] = []
     ttfr_times: list[float] = []
 
-    # Override max_workers if specified
-    original_instance = None
-    if max_workers is not None:
-        from concurrent.futures import ThreadPoolExecutor
+    for run in range(NUM_RUNS):
+        # Measure throughput
+        gc.collect()
+        pa.default_memory_pool().release_unused()
+        baseline_mem = pa.total_allocated_bytes()
+        peak_mem = baseline_mem
 
-        original_instance = ExecutorFactory._instance
-        ExecutorFactory._instance = ThreadPoolExecutor(max_workers=max_workers)
+        start = timeit.default_timer()
+        total_rows = 0
+        first_batch_time = None
+        for batch in benchmark_table.scan().to_arrow_batch_reader(
+            batch_size=batch_size,
+            streaming=streaming,
+            concurrent_files=concurrent_files,
+        ):
+            if first_batch_time is None:
+                first_batch_time = timeit.default_timer() - start
+            total_rows += len(batch)
+            current_mem = pa.total_allocated_bytes()
+            if current_mem > peak_mem:
+                peak_mem = current_mem
+        elapsed = timeit.default_timer() - start
 
-    try:
-        for run in range(NUM_RUNS):
-            # Measure throughput
-            gc.collect()
-            pa.default_memory_pool().release_unused()
-            baseline_mem = pa.total_allocated_bytes()
-            peak_mem = baseline_mem
+        peak_above_baseline = peak_mem - baseline_mem
+        rows_per_sec = total_rows / elapsed if elapsed > 0 else 0
+        elapsed_times.append(elapsed)
+        throughputs.append(rows_per_sec)
+        peak_memories.append(peak_above_baseline)
+        ttfr_times.append(first_batch_time or 0.0)
 
-            start = timeit.default_timer()
-            total_rows = 0
-            first_batch_time = None
-            for batch in benchmark_table.scan().to_arrow_batch_reader(
-                batch_size=batch_size,
-                streaming=streaming,
-                concurrent_files=concurrent_files,
-            ):
-                if first_batch_time is None:
-                    first_batch_time = timeit.default_timer() - start
-                total_rows += len(batch)
-                current_mem = pa.total_allocated_bytes()
-                if current_mem > peak_mem:
-                    peak_mem = current_mem
-            elapsed = timeit.default_timer() - start
+        print(
+            f"  Run {run + 1}: {elapsed:.2f}s, {rows_per_sec:,.0f} rows/s, "
+            f"TTFR: {(first_batch_time or 0) * 1000:.1f}ms, "
+            f"peak arrow mem: {peak_above_baseline / (1024 * 1024):.1f} MB"
+        )
 
-            peak_above_baseline = peak_mem - baseline_mem
-            rows_per_sec = total_rows / elapsed if elapsed > 0 else 0
-            elapsed_times.append(elapsed)
-            throughputs.append(rows_per_sec)
-            peak_memories.append(peak_above_baseline)
-            ttfr_times.append(first_batch_time or 0.0)
-
-            print(
-                f"  Run {run + 1}: {elapsed:.2f}s, {rows_per_sec:,.0f} rows/s, "
-                f"TTFR: {(first_batch_time or 0) * 1000:.1f}ms, "
-                f"peak arrow mem: {peak_above_baseline / (1024 * 1024):.1f} MB"
-            )
-
-            assert total_rows == TOTAL_ROWS, f"Expected {TOTAL_ROWS} rows, got {total_rows}"
-    finally:
-        if original_instance is not None:
-            ExecutorFactory._instance = original_instance
+        assert total_rows == TOTAL_ROWS, f"Expected {TOTAL_ROWS} rows, got {total_rows}"
 
     mean_elapsed = statistics.mean(elapsed_times)
     stdev_elapsed = statistics.stdev(elapsed_times) if len(elapsed_times) > 1 else 0.0
