@@ -108,7 +108,7 @@ def test_read_throughput(
         config_str = f"streaming=True, concurrent_files={concurrent_files}, batch_size={effective_batch_size}"
     else:
         config_str = f"streaming=False (executor.map, all files parallel), batch_size={effective_batch_size}"
-    print(f"\n--- ArrowScan Read Throughput Benchmark ---")
+    print("\n--- ArrowScan Read Throughput Benchmark ---")
     print(f"Config: {config_str}")
     print(f"  Files: {NUM_FILES}, Rows per file: {ROWS_PER_FILE}, Total rows: {TOTAL_ROWS}")
 
