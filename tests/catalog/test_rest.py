@@ -2351,3 +2351,74 @@ def test_table_uuid_check_on_refresh(rest_mock: Mocker, example_table_metadata_v
     assert "Table UUID does not match" in str(exc_info.value)
     assert f"current={original_uuid}" in str(exc_info.value)
     assert f"refreshed={different_uuid}" in str(exc_info.value)
+
+
+def test_storage_credentials_over_config(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    response_with_storage_creds = {
+        **example_table_metadata_with_snapshot_v1_rest_json,
+        "storage-credentials": [
+            {
+                "prefix": "s3://warehouse/",
+                "config": {
+                    "s3.access-key-id": "storage-cred-key",
+                    "s3.secret-access-key": "storage-cred-secret",
+                },
+            }
+        ],
+    }
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json=response_with_storage_creds,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    table = catalog.load_table(("fokko", "table"))
+    assert table.io.properties["s3.access-key-id"] == "storage-cred-key"
+    assert table.io.properties["s3.secret-access-key"] == "storage-cred-secret"
+
+
+def test_config_when_no_storage_credentials(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    table = catalog.load_table(("fokko", "table"))
+    # config from the fixture should be used since there are no storage-credentials
+    assert table.io.properties["region"] == "us-west-2"
+
+
+def test_storage_credentials_no_prefix_match() -> None:
+    from pyiceberg.catalog.rest.scan_planning import StorageCredential
+
+    creds = [StorageCredential(prefix="s3://other-bucket/", config={"key": "val"})]
+    result = RestCatalog._get_credentials(
+        storage_credentials=creds,
+        config={"fallback-key": "fallback-val"},
+        metadata_location="s3://warehouse/database/table/metadata/file.json",
+        table_location="s3://warehouse/database/table",
+    )
+    assert result == {"fallback-key": "fallback-val"}
+
+
+def test_storage_credentials_longest_prefix_wins() -> None:
+    from pyiceberg.catalog.rest.scan_planning import StorageCredential
+
+    creds = [
+        StorageCredential(prefix="s3://warehouse/", config={"key": "short-prefix"}),
+        StorageCredential(prefix="s3://warehouse/database/table/", config={"key": "long-prefix"}),
+    ]
+    result = RestCatalog._get_credentials(
+        storage_credentials=creds,
+        config={"key": "fallback"},
+        metadata_location="s3://warehouse/database/table/metadata/file.json",
+        table_location="s3://warehouse/database/table",
+    )
+    assert result == {"key": "long-prefix"}
