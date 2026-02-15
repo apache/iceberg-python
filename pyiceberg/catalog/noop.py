@@ -85,6 +85,9 @@ class NoopCatalog(Catalog):
     def drop_table(self, identifier: str | Identifier) -> None:
         raise NotImplementedError
 
+    def supports_server_side_planning(self) -> bool:
+        raise NotImplementedError
+
     def purge_table(self, identifier: str | Identifier) -> None:
         raise NotImplementedError
 

@@ -729,7 +729,7 @@ class HiveCatalog(MetastoreCatalog):
                 open_client.drop_database(database_name, deleteData=False, cascade=False)
         except InvalidOperationException as e:
             raise NamespaceNotEmptyError(f"Database {database_name} is not empty") from e
-        except MetaException as e:
+        except (MetaException, NoSuchObjectException) as e:
             raise NoSuchNamespaceError(f"Database does not exists: {database_name}") from e
 
     def list_tables(self, namespace: str | Identifier) -> list[Identifier]:

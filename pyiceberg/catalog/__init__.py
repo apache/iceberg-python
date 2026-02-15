@@ -733,9 +733,9 @@ class Catalog(ABC):
 
         return ".".join(segment.strip() for segment in tuple_identifier)
 
+    @abstractmethod
     def supports_server_side_planning(self) -> bool:
         """Check if the catalog supports server-side scan planning."""
-        return False
 
     @staticmethod
     def identifier_to_database(
@@ -835,6 +835,9 @@ class Catalog(ABC):
 class MetastoreCatalog(Catalog, ABC):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
+
+    def supports_server_side_planning(self) -> bool:
+        return False
 
     def create_table_transaction(
         self,
