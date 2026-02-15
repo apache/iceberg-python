@@ -15,9 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from __future__ import annotations
+
 from typing import (
     TYPE_CHECKING,
-    Union,
 )
 
 from sqlalchemy import (
@@ -68,6 +69,8 @@ from pyiceberg.table.update import (
 )
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import strtobool
+from pyiceberg.view import View
+from pyiceberg.view.metadata import ViewVersion
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -172,7 +175,7 @@ class SqlCatalog(MetastoreCatalog):
     def create_table(
         self,
         identifier: str | Identifier,
-        schema: Union[Schema, "pa.Schema"],
+        schema: Schema | pa.Schema,
         location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -721,6 +724,16 @@ class SqlCatalog(MetastoreCatalog):
                 session.execute(insert_stmt)
             session.commit()
         return properties_update_summary
+
+    def create_view(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        view_version: ViewVersion,
+        location: str | None = None,
+        properties: Properties = EMPTY_DICT,
+    ) -> View:
+        raise NotImplementedError
 
     def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         raise NotImplementedError
