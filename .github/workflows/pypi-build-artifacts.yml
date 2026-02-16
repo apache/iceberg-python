@@ -88,8 +88,6 @@ jobs:
 
   pypi-merge-artifacts:
     runs-on: ubuntu-latest
-    strategy:
-      max-parallel: 15
     needs:
       - pypi-build-artifacts
     steps:

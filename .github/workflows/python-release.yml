@@ -39,8 +39,6 @@ on:
 jobs:
   validate-inputs:
     runs-on: ubuntu-latest
-    strategy:
-      max-parallel: 15
     outputs:
       VERSION: ${{ steps.validate-inputs.outputs.VERSION }} # e.g. 0.8.0
       RC: ${{ steps.validate-inputs.outputs.RC }} # e.g. 1
@@ -88,8 +86,6 @@ jobs:
 
   validate-library-version:
     runs-on: ubuntu-latest
-    strategy:
-      max-parallel: 15
     needs:
       - validate-inputs
     steps:

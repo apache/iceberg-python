@@ -23,8 +23,6 @@ on: pull_request
 jobs:
   rat:
     runs-on: ubuntu-latest
-    strategy:
-      max-parallel: 15
     steps:
     - uses: actions/checkout@v6
     - run: dev/check-license

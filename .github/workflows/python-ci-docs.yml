@@ -33,8 +33,6 @@ concurrency:
 jobs:
   docs:
     runs-on: ubuntu-latest
-    strategy:
-      max-parallel: 15
 
     steps:
       - uses: actions/checkout@v6

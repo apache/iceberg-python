@@ -82,8 +82,6 @@ jobs:
 
   svn-merge-artifacts:
     runs-on: ubuntu-latest
-    strategy:
-      max-parallel: 15
     needs:
       - svn-build-artifacts
     steps:
