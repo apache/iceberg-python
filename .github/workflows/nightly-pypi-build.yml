@@ -28,6 +28,8 @@ jobs:
   set-version:
     if: github.repository == 'apache/iceberg-python'  # Only run for apache repo
     runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 15
     outputs:
       VERSION: ${{ steps.set-version.outputs.VERSION }}
     steps:
@@ -62,6 +64,8 @@ jobs:
     needs:
       - nightly-build
     runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 15
     environment:
       name: testpypi
       url: https://test.pypi.org/p/pyiceberg

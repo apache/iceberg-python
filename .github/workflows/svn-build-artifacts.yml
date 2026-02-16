@@ -31,6 +31,7 @@ jobs:
     name: Build artifacts for SVN on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      max-parallel: 15
       matrix:
         os: [ ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-15-intel, macos-latest ]
 
@@ -81,6 +82,8 @@ jobs:
 
   svn-merge-artifacts:
     runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 15
     needs:
       - svn-build-artifacts
     steps:

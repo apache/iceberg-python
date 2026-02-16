@@ -46,6 +46,7 @@ jobs:
   lint-and-unit-test:
     runs-on: ubuntu-latest
     strategy:
+      max-parallel: 15
       fail-fast: true
       matrix:
         python: ['3.10', '3.11', '3.12', '3.13']
@@ -72,6 +73,8 @@ jobs:
 
   integration-test:
     runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 15
     steps:
     - uses: actions/checkout@v6
     - uses: actions/setup-python@v6
@@ -99,6 +102,8 @@ jobs:
 
   integration-test-s3:
     runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 15
     steps:
     - uses: actions/checkout@v6
     - uses: actions/setup-python@v6
@@ -126,6 +131,8 @@ jobs:
 
   integration-test-adls:
     runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 15
     steps:
     - uses: actions/checkout@v6
     - uses: actions/setup-python@v6
@@ -153,6 +160,8 @@ jobs:
 
   integration-test-gcs:
     runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 15
     steps:
     - uses: actions/checkout@v6
     - uses: actions/setup-python@v6
@@ -180,6 +189,8 @@ jobs:
 
   integration-coverage-report:
     runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 15
     needs: [integration-test, integration-test-s3, integration-test-adls, integration-test-gcs]
     steps:
     - uses: actions/checkout@v6
