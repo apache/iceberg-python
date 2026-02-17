@@ -16,7 +16,7 @@
 # under the License.
 """Read throughput micro-benchmark for ArrowScan configurations.
 
-Measures records/sec and peak Arrow memory across streaming, concurrent_files,
+Measures records/sec and peak Arrow memory across ScanOrder, concurrent_files,
 and batch_size configurations introduced for issue #3036.
 
 Memory is measured using pa.total_allocated_bytes() which tracks PyArrow's C++
@@ -35,7 +35,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from pyiceberg.catalog.sql import SqlCatalog
-from pyiceberg.table import Table
+from pyiceberg.table import ScanOrder, Table
 
 NUM_FILES = 32
 ROWS_PER_FILE = 500_000
@@ -85,28 +85,28 @@ def benchmark_table(tmp_path_factory: pytest.TempPathFactory) -> Table:
 
 
 @pytest.mark.parametrize(
-    "streaming,concurrent_files,batch_size",
+    "order,concurrent_files,batch_size",
     [
-        pytest.param(False, 1, None, id="default"),
-        pytest.param(True, 1, None, id="streaming-cf1"),
-        pytest.param(True, 2, None, id="streaming-cf2"),
-        pytest.param(True, 4, None, id="streaming-cf4"),
-        pytest.param(True, 8, None, id="streaming-cf8"),
-        pytest.param(True, 16, None, id="streaming-cf16"),
+        pytest.param(ScanOrder.TASK, 1, None, id="default"),
+        pytest.param(ScanOrder.ARRIVAL, 1, None, id="arrival-cf1"),
+        pytest.param(ScanOrder.ARRIVAL, 2, None, id="arrival-cf2"),
+        pytest.param(ScanOrder.ARRIVAL, 4, None, id="arrival-cf4"),
+        pytest.param(ScanOrder.ARRIVAL, 8, None, id="arrival-cf8"),
+        pytest.param(ScanOrder.ARRIVAL, 16, None, id="arrival-cf16"),
     ],
 )
 def test_read_throughput(
     benchmark_table: Table,
-    streaming: bool,
+    order: ScanOrder,
     concurrent_files: int,
     batch_size: int | None,
 ) -> None:
     """Measure records/sec, time to first record, and peak Arrow memory for a scan configuration."""
     effective_batch_size = batch_size or 131_072  # PyArrow default
-    if streaming:
-        config_str = f"streaming=True, concurrent_files={concurrent_files}, batch_size={effective_batch_size}"
+    if order == ScanOrder.ARRIVAL:
+        config_str = f"order=ARRIVAL, concurrent_files={concurrent_files}, batch_size={effective_batch_size}"
     else:
-        config_str = f"streaming=False (executor.map, all files parallel), batch_size={effective_batch_size}"
+        config_str = f"order=TASK (executor.map, all files parallel), batch_size={effective_batch_size}"
     print("\n--- ArrowScan Read Throughput Benchmark ---")
     print(f"Config: {config_str}")
     print(f"  Files: {NUM_FILES}, Rows per file: {ROWS_PER_FILE}, Total rows: {TOTAL_ROWS}")
@@ -128,7 +128,7 @@ def test_read_throughput(
         first_batch_time = None
         for batch in benchmark_table.scan().to_arrow_batch_reader(
             batch_size=batch_size,
-            streaming=streaming,
+            order=order,
             concurrent_files=concurrent_files,
         ):
             if first_batch_time is None:
