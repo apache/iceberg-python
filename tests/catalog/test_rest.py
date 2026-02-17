@@ -2369,7 +2369,7 @@ def test_table_uuid_check_on_refresh(rest_mock: Mocker, example_table_metadata_v
         ("PATCH /v1/resource", HttpMethod.PATCH, "/v1/resource"),
     ],
 )
-def test_endpoint_parsing_from_string_with_valid_http_method(raw_string: str, http_method: str, path: str) -> None:
+def test_endpoint_parsing_from_string_with_valid_http_method(raw_string: str, http_method: HttpMethod, path: str) -> None:
     endpoint = Endpoint.from_string(raw_string)
     assert endpoint.http_method == http_method
     assert endpoint.path == path
