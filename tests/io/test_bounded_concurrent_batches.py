@@ -25,7 +25,7 @@ import pyarrow as pa
 import pytest
 
 from pyiceberg.io.pyarrow import _bounded_concurrent_batches
-from pyiceberg.table import FileScanTask
+from pyiceberg.table import FileScanTask, ScanOrder
 
 
 def _make_task() -> FileScanTask:
@@ -72,7 +72,7 @@ def test_correctness_multiple_files() -> None:
     assert total_rows == batches_per_file * len(tasks) * 10  # 3 batches * 4 files * 10 rows
 
 
-def test_streaming_yields_incrementally() -> None:
+def test_arrival_order_yields_incrementally() -> None:
     """Test that batches are yielded incrementally, not all at once."""
     barrier = threading.Event()
     tasks = [_make_task(), _make_task()]
@@ -253,6 +253,6 @@ def test_concurrent_with_limit_via_arrowscan(tmpdir: str) -> None:
         limit=150,
     )
 
-    batches = list(scan.to_record_batches(tasks, streaming=True, concurrent_files=2))
+    batches = list(scan.to_record_batches(tasks, order=ScanOrder.ARRIVAL, concurrent_files=2))
     total_rows = sum(len(b) for b in batches)
     assert total_rows == 150

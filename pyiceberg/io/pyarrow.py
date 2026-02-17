@@ -40,6 +40,7 @@ import uuid
 import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from copy import copy
 from dataclasses import dataclass
 from enum import Enum
@@ -1695,9 +1696,9 @@ def _bounded_concurrent_batches(
 ) -> Generator[pa.RecordBatch, None, None]:
     """Read batches from multiple files concurrently with bounded memory.
 
-    Workers read from files in parallel (up to concurrent_files at a time) and push
-    batches into a shared queue. The consumer yields batches from the queue.
-    A sentinel value signals completion, avoiding timeout-based polling.
+    Uses a per-scan ThreadPoolExecutor(max_workers=concurrent_files) to naturally
+    bound concurrency. Workers push batches into a bounded queue which provides
+    backpressure when the consumer is slower than the producers.
 
     Args:
         tasks: The file scan tasks to process.
@@ -1709,60 +1710,49 @@ def _bounded_concurrent_batches(
         return
 
     batch_queue: queue.Queue[pa.RecordBatch | BaseException | object] = queue.Queue(maxsize=max_buffered_batches)
-    cancel_event = threading.Event()
-    pending_count = len(tasks)
-    pending_lock = threading.Lock()
-    file_semaphore = threading.Semaphore(concurrent_files)
+    cancel = threading.Event()
+    remaining = len(tasks)
+    remaining_lock = threading.Lock()
 
     def worker(task: FileScanTask) -> None:
-        nonlocal pending_count
+        nonlocal remaining
         try:
-            # Blocking acquire — on cancellation, extra permits are released to unblock.
-            file_semaphore.acquire()
-            if cancel_event.is_set():
-                return
-
             for batch in batch_fn(task):
-                if cancel_event.is_set():
+                if cancel.is_set():
                     return
                 batch_queue.put(batch)
         except BaseException as e:
-            if not cancel_event.is_set():
+            if not cancel.is_set():
                 batch_queue.put(e)
         finally:
-            file_semaphore.release()
-            with pending_lock:
-                pending_count -= 1
-                if pending_count == 0:
+            with remaining_lock:
+                remaining -= 1
+                if remaining == 0:
                     batch_queue.put(_QUEUE_SENTINEL)
 
-    executor = ExecutorFactory.get_or_create()
-    futures = [executor.submit(worker, task) for task in tasks]
+    with ThreadPoolExecutor(max_workers=concurrent_files) as executor:
+        for task in tasks:
+            executor.submit(worker, task)
 
-    try:
-        while True:
-            item = batch_queue.get()
+        try:
+            while True:
+                item = batch_queue.get()
 
-            if item is _QUEUE_SENTINEL:
-                break
+                if item is _QUEUE_SENTINEL:
+                    break
 
-            if isinstance(item, BaseException):
-                raise item
+                if isinstance(item, BaseException):
+                    raise item
 
-            yield item
-    finally:
-        cancel_event.set()
-        # Release semaphore permits to unblock any workers waiting on acquire()
-        for _ in range(len(tasks)):
-            file_semaphore.release()
-        # Drain the queue to unblock any workers stuck on put()
-        while not batch_queue.empty():
-            try:
-                batch_queue.get_nowait()
-            except queue.Empty:
-                break
-        for future in futures:
-            future.cancel()
+                yield item
+        finally:
+            cancel.set()
+            # Drain the queue to unblock any workers stuck on put()
+            while not batch_queue.empty():
+                try:
+                    batch_queue.get_nowait()
+                except queue.Empty:
+                    break
 
 
 class ArrowScan:
@@ -1889,52 +1879,66 @@ class ArrowScan:
         if concurrent_files < 1:
             raise ValueError(f"concurrent_files must be >= 1, got {concurrent_files}")
 
-        deletes_per_file = _read_all_delete_files(self._io, tasks)
+        task_list, deletes_per_file = self._prepare_tasks_and_deletes(tasks)
 
         if order == ScanOrder.ARRIVAL:
-            # Arrival order: read files with bounded concurrency, yielding batches as produced.
-            # When concurrent_files=1, this is sequential. When >1, batches may interleave across files.
-            task_list = list(tasks)
+            return self._apply_limit(self._iter_batches_arrival(task_list, deletes_per_file, batch_size, concurrent_files))
 
-            def batch_fn(task: FileScanTask) -> Iterator[pa.RecordBatch]:
-                return self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file, batch_size)
+        return self._apply_limit(self._iter_batches_materialized(task_list, deletes_per_file, batch_size))
 
-            total_row_count = 0
-            for batch in _bounded_concurrent_batches(task_list, batch_fn, concurrent_files):
-                current_batch_size = len(batch)
-                if self._limit is not None and total_row_count + current_batch_size >= self._limit:
-                    yield batch.slice(0, self._limit - total_row_count)
-                    return
-                yield batch
-                total_row_count += current_batch_size
-            return
+    def _prepare_tasks_and_deletes(
+        self, tasks: Iterable[FileScanTask]
+    ) -> tuple[list[FileScanTask], dict[str, list[ChunkedArray]]]:
+        """Resolve delete files and return tasks as a list."""
+        task_list = list(tasks)
+        deletes_per_file = _read_all_delete_files(self._io, task_list)
+        return task_list, deletes_per_file
 
-        # Task order: existing behavior with executor.map + list()
-        total_row_count = 0
+    def _iter_batches_arrival(
+        self,
+        task_list: list[FileScanTask],
+        deletes_per_file: dict[str, list[ChunkedArray]],
+        batch_size: int | None,
+        concurrent_files: int,
+    ) -> Iterator[pa.RecordBatch]:
+        """Yield batches using bounded concurrent streaming in arrival order."""
+
+        def batch_fn(task: FileScanTask) -> Iterator[pa.RecordBatch]:
+            return self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file, batch_size)
+
+        yield from _bounded_concurrent_batches(task_list, batch_fn, concurrent_files)
+
+    def _iter_batches_materialized(
+        self,
+        task_list: list[FileScanTask],
+        deletes_per_file: dict[str, list[ChunkedArray]],
+        batch_size: int | None,
+    ) -> Iterator[pa.RecordBatch]:
+        """Yield batches using executor.map with full file materialization."""
         executor = ExecutorFactory.get_or_create()
 
         def batches_for_task(task: FileScanTask) -> list[pa.RecordBatch]:
-            # Materialize the iterator here to ensure execution happens within the executor.
-            # Otherwise, the iterator would be lazily consumed later (in the main thread),
-            # defeating the purpose of using executor.map.
             return list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file, batch_size))
 
-        limit_reached = False
-        for batches in executor.map(batches_for_task, tasks):
-            for batch in batches:
-                current_batch_size = len(batch)
-                if self._limit is not None and total_row_count + current_batch_size >= self._limit:
-                    yield batch.slice(0, self._limit - total_row_count)
+        for batches in executor.map(batches_for_task, task_list):
+            yield from batches
 
-                    limit_reached = True
-                    break
-                else:
-                    yield batch
-                    total_row_count += current_batch_size
+    def _apply_limit(self, batches: Iterator[pa.RecordBatch]) -> Iterator[pa.RecordBatch]:
+        """Apply row limit across batches."""
+        if self._limit is None:
+            yield from batches
+            return
 
-            if limit_reached:
-                # This break will also cancel all running tasks in the executor
-                break
+        total_row_count = 0
+        for batch in batches:
+            remaining = self._limit - total_row_count
+            if remaining <= 0:
+                return
+            if len(batch) > remaining:
+                yield batch.slice(0, remaining)
+                return
+            yield batch
+            total_row_count += len(batch)
 
     def _record_batches_from_scan_tasks_and_deletes(
         self, tasks: Iterable[FileScanTask], deletes_per_file: dict[str, list[ChunkedArray]], batch_size: int | None = None
