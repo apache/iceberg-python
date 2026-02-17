@@ -2355,9 +2355,8 @@ def test_table_uuid_check_on_refresh(rest_mock: Mocker, example_table_metadata_v
     assert f"refreshed={different_uuid}" in str(exc_info.value)
 
 
-@pytest.mark.parametrize(
-    "raw_string, http_method, path",
-    [
+def test_endpoint_parsing_from_string_with_valid_http_method() -> None:
+    test_cases = [
         ("GET /v1/resource", HttpMethod.GET, "/v1/resource"),
         ("HEAD /v1/resource", HttpMethod.HEAD, "/v1/resource"),
         ("POST /v1/resource", HttpMethod.POST, "/v1/resource"),
@@ -2367,12 +2366,12 @@ def test_table_uuid_check_on_refresh(rest_mock: Mocker, example_table_metadata_v
         ("OPTIONS /v1/resource", HttpMethod.OPTIONS, "/v1/resource"),
         ("TRACE /v1/resource", HttpMethod.TRACE, "/v1/resource"),
         ("PATCH /v1/resource", HttpMethod.PATCH, "/v1/resource"),
-    ],
-)
-def test_endpoint_parsing_from_string_with_valid_http_method(raw_string: str, http_method: HttpMethod, path: str) -> None:
-    endpoint = Endpoint.from_string(raw_string)
-    assert endpoint.http_method == http_method
-    assert endpoint.path == path
+    ]
+
+    for raw_string, http_method, path in test_cases:
+        endpoint = Endpoint.from_string(raw_string)
+        assert endpoint.http_method == http_method
+        assert endpoint.path == path
 
 
 def test_endpoint_parsing_from_string_with_invalid_http_method() -> None:
