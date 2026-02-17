@@ -145,7 +145,7 @@ class DeleteFileIndex:
 
         return deletes
 
-    def referenced_data_files(self) -> list[DataFile]:
+    def referenced_delete_files(self) -> list[DataFile]:
         data_files: list[DataFile] = []
 
         for deletes in self._by_partition.values():

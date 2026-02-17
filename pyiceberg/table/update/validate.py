@@ -254,7 +254,7 @@ def _added_delete_files(
     dfi = DeleteFileIndex()
 
     for manifest in manifests:
-        for entry in manifest.fetch_manifest_entry(table.io, discard_deleted=False):
+        for entry in manifest.fetch_manifest_entry(table.io, discard_deleted=True):
             if _filter_manifest_entries(
                 entry, snapshot_ids, data_filter, partition_set, ManifestEntryStatus.ADDED, table.schema()
             ):
@@ -274,9 +274,8 @@ def _starting_sequence_number(table: Table, starting_snapshot: Snapshot | None) 
         Sequence number as int
     """
     if starting_snapshot is not None:
-        if snapshot := table.snapshot_by_id(starting_snapshot.snapshot_id):
-            if seq := snapshot.sequence_number:
-                return seq
+        if seq := starting_snapshot.sequence_number:
+            return seq
     return INITIAL_SEQUENCE_NUMBER
 
 
@@ -322,13 +321,13 @@ def _validate_no_new_delete_files(
     if deletes.is_empty():
         return
 
-    conflicting_delete_files = deletes.referenced_data_files()
+    conflicting_delete_paths = [file.file_path for file in deletes.referenced_delete_files()]
     raise ValidationException(
-        f"Found new conflicting delete files that can apply to records matching {data_filter}: {conflicting_delete_files}"
+        f"Found new conflicting delete files that can apply to records matching {data_filter}: {conflicting_delete_paths}"
     )
 
 
-def _validate_no_new_delete_files_for_data_files(
+def _validate_no_new_deletes_for_data_files(
     table: Table,
     starting_snapshot: Snapshot,
     data_filter: BooleanExpression | None,
@@ -353,6 +352,6 @@ def _validate_no_new_delete_files_for_data_files(
 
     # Fail to any delete file found that applies to files written in or before the starting snapshot
     for data_file in data_files:
-        delete_files = deletes.for_data_file(seq_num, data_file)
+        delete_files = deletes.for_data_file(seq_num, data_file, data_file.partition)
         if len(delete_files) > 0:
             raise ValidationException(f"Cannot commit, found new delete for replace data file {data_file}")

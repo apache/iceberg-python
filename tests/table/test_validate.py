@@ -32,7 +32,7 @@ from pyiceberg.table.update.validate import (
     _validate_added_data_files,
     _validate_deleted_data_files,
     _validate_no_new_delete_files,
-    _validate_no_new_delete_files_for_data_files,
+    _validate_no_new_deletes_for_data_files,
     _validation_history,
 )
 
@@ -356,7 +356,7 @@ def test_validate_added_data_files_raises_on_conflict(
 
 
 @pytest.mark.parametrize("operation", [Operation.APPEND, Operation.REPLACE])
-def test_validate_added_delete_files_non_conflicting_count(
+def test_added_delete_files_non_conflicting_count(
     table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]],
     operation: Operation,
 ) -> None:
@@ -403,11 +403,11 @@ def test_validate_added_delete_files_non_conflicting_count(
         )
 
         assert dfi.is_empty()
-        assert len(dfi.referenced_data_files()) == 0
+        assert len(dfi.referenced_delete_files()) == 0
 
 
 @pytest.mark.parametrize("operation", [Operation.DELETE, Operation.OVERWRITE])
-def test_validate_added_delete_files_conflicting_count(
+def test_added_delete_files_conflicting_count(
     table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]],
     operation: Operation,
 ) -> None:
@@ -442,20 +442,14 @@ def test_validate_added_delete_files_conflicting_count(
         return []
 
     def mock_fetch_manifest_entry(self: ManifestFile, io: FileIO, discard_deleted: bool = True) -> list[ManifestEntry]:
-        result = [
+        return [
             ManifestEntry.from_args(
-                status=ManifestEntryStatus.ADDED, snapshot_id=self.added_snapshot_id, sequence_number=self.min_sequence_number
+                status=ManifestEntryStatus.ADDED,
+                snapshot_id=self.added_snapshot_id,
+                sequence_number=self.min_sequence_number,
+                data_file=mock_delete_file,
             )
         ]
-
-        result[-1] = ManifestEntry.from_args(
-            status=ManifestEntryStatus.ADDED,
-            snapshot_id=self.added_snapshot_id,
-            sequence_number=10000,
-            data_file=mock_delete_file,
-        )
-
-        return result
 
     with (
         patch("pyiceberg.table.snapshots.Snapshot.manifests", new=mock_read_manifest_side_effect),
@@ -470,7 +464,7 @@ def test_validate_added_delete_files_conflicting_count(
         )
 
         assert not dfi.is_empty()
-        assert dfi.referenced_data_files()[0] == mock_delete_file
+        assert dfi.referenced_delete_files()[0] == mock_delete_file
 
 
 def test_validate_no_new_delete_files_raises_on_conflict(
@@ -502,7 +496,7 @@ def test_validate_no_new_delete_files_for_data_files_raises_on_conflict(
 
     with patch("pyiceberg.table.update.validate.DeleteFileIndex.for_data_file", return_value=[mocked_data_file]):
         with pytest.raises(ValidationException):
-            _validate_no_new_delete_files_for_data_files(
+            _validate_no_new_deletes_for_data_files(
                 table=table,
                 starting_snapshot=newest_snapshot,
                 data_filter=None,
