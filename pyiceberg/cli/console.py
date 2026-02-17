@@ -66,6 +66,7 @@ def catch_exception() -> Callable:  # type: ignore
 @click.option("--ugi")
 @click.option("--uri")
 @click.option("--credential")
+@click.option("--prefix")
 @click.pass_context
 def run(
     ctx: Context,
@@ -76,6 +77,7 @@ def run(
     ugi: str | None,
     uri: str | None,
     credential: str | None,
+    prefix: str | None,
 ) -> None:
     logging.basicConfig(
         level=getattr(logging, log_level.upper()),
@@ -89,6 +91,8 @@ def run(
         properties[URI] = uri
     if credential:
         properties["credential"] = credential
+    if prefix:
+        properties["prefix"] = prefix
 
     ctx.ensure_object(dict)
     if output == "text":
