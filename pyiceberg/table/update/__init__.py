@@ -57,6 +57,7 @@ if TYPE_CHECKING:
     from pyiceberg.table import Transaction
 
 U = TypeVar("U")
+ONE_MINUTE_MS = 60_000
 
 
 class UpdateTableMetadata(ABC, Generic[U]):
@@ -441,6 +442,19 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
         raise ValueError(
             f"Cannot add snapshot with sequence number {update.snapshot.sequence_number} "
             f"older than last sequence number {base_metadata.last_sequence_number}"
+        )
+    elif (
+        base_metadata.snapshot_log
+        and update.snapshot.timestamp_ms - base_metadata.snapshot_log[-1].timestamp_ms < -ONE_MINUTE_MS
+    ):
+        raise ValueError(
+            f"Invalid snapshot timestamp {update.snapshot.timestamp_ms}: "
+            f"before last snapshot timestamp {base_metadata.snapshot_log[-1].timestamp_ms}"
+        )
+    elif update.snapshot.timestamp_ms - base_metadata.last_updated_ms < -ONE_MINUTE_MS:
+        raise ValueError(
+            f"Invalid snapshot timestamp {update.snapshot.timestamp_ms}: "
+            f"before last updated timestamp {base_metadata.last_updated_ms}"
         )
     elif base_metadata.format_version >= 3 and update.snapshot.first_row_id is None:
         raise ValueError("Cannot add snapshot without first row id")
