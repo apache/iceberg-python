@@ -389,16 +389,16 @@ for buf in tbl.scan().to_arrow_batch_reader(order=ScanOrder.ARRIVAL, concurrent_
 
 Within each file, batch ordering always follows row order. The `limit` parameter is enforced correctly regardless of configuration.
 
-!!! tip "Which configuration should I use?"
+**Which configuration should I use?**
 
-    | Use case | Recommended config |
-    |---|---|
-    | Small tables, simple queries | Default — no extra args needed |
-    | Large tables, memory-constrained | `streaming=True` — one file at a time, minimal memory |
-    | Maximum throughput with bounded memory | `streaming=True, concurrent_files=N` — tune N to balance throughput vs memory |
-    | Fine-grained batch control | Add `batch_size=N` to any of the above |
+| Use case | Recommended config |
+|---|---|
+| Small tables, simple queries | Default — no extra args needed |
+| Large tables, memory-constrained | `streaming=True` — one file at a time, minimal memory |
+| Maximum throughput with bounded memory | `streaming=True, concurrent_files=N` — tune N to balance throughput vs memory |
+| Fine-grained batch control | Add `batch_size=N` to any of the above |
 
-    **Note:** `streaming=True` yields batches in arrival order (interleaved across files when `concurrent_files > 1`). For deterministic file ordering, use the default non-streaming mode. `batch_size` is usually an advanced tuning knob — the PyArrow default of 131,072 rows works well for most workloads.
+**Note:** `streaming=True` yields batches in arrival order (interleaved across files when `concurrent_files > 1`). For deterministic file ordering, use the default non-streaming mode. `batch_size` is usually an advanced tuning knob — the PyArrow default of 131,072 rows works well for most workloads.
 
 To avoid any type inconsistencies during writing, you can convert the Iceberg table schema to Arrow:
 

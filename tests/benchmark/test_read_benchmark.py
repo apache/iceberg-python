@@ -22,7 +22,7 @@ and batch_size configurations introduced for issue #3036.
 Memory is measured using pa.total_allocated_bytes() which tracks PyArrow's C++
 memory pool (Arrow buffers, Parquet decompression), not Python heap allocations.
 
-Run with: uv run pytest tests/benchmark/test_read_benchmark.py -v -s -m benchmark
+Run with: uv run pytest tests/benchmark/test_read_benchmark.py -v -s
 """
 
 import gc
@@ -84,7 +84,6 @@ def benchmark_table(tmp_path_factory: pytest.TempPathFactory) -> Table:
     return table
 
 
-@pytest.mark.benchmark
 @pytest.mark.parametrize(
     "streaming,concurrent_files,batch_size",
     [
