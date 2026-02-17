@@ -3277,7 +3277,7 @@ def test_task_order_with_positional_deletes(tmpdir: str) -> None:
 
 
 def test_concurrent_files_with_positional_deletes(tmpdir: str) -> None:
-    """Test that streaming=True with concurrent_files correctly applies positional deletes."""
+    """Test that order=ScanOrder.ARRIVAL with concurrent_files correctly applies positional deletes."""
     # 4 files, 10 rows each; delete different rows per file
     scan, tasks = _create_scan_and_tasks(
         tmpdir,
@@ -3286,7 +3286,7 @@ def test_concurrent_files_with_positional_deletes(tmpdir: str) -> None:
         delete_rows_per_file=[[0, 9], [4, 5], [0, 1, 2], []],
     )
 
-    batches = list(scan.to_record_batches(tasks, streaming=True, concurrent_files=2))
+    batches = list(scan.to_record_batches(tasks, order=ScanOrder.ARRIVAL, concurrent_files=2))
 
     total_rows = sum(len(b) for b in batches)
     assert total_rows == 33  # 40 - 7 deletes
@@ -3310,7 +3310,7 @@ def test_concurrent_files_with_positional_deletes_and_limit(tmpdir: str) -> None
         delete_rows_per_file=[[0], [0], [0], [0]],
     )
 
-    batches = list(scan.to_record_batches(tasks, streaming=True, concurrent_files=2))
+    batches = list(scan.to_record_batches(tasks, order=ScanOrder.ARRIVAL, concurrent_files=2))
 
     total_rows = sum(len(b) for b in batches)
     assert total_rows == 20
@@ -3321,7 +3321,7 @@ def test_concurrent_files_invalid_value(tmpdir: str) -> None:
     scan, tasks = _create_scan_and_tasks(tmpdir, num_files=1, rows_per_file=10)
 
     with pytest.raises(ValueError, match="concurrent_files must be >= 1"):
-        list(scan.to_record_batches(tasks, streaming=True, concurrent_files=0))
+        list(scan.to_record_batches(tasks, order=ScanOrder.ARRIVAL, concurrent_files=0))
 
 
 def test_parse_location_defaults() -> None:
