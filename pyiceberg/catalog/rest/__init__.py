@@ -363,7 +363,7 @@ class RestCatalog(Catalog):
 
         # Sets the client side and server side SSL cert verification, if provided as properties.
         if ssl_config := self.properties.get(SSL):
-            if ssl_ca_bundle := ssl_config.get(CA_BUNDLE):
+            if (ssl_ca_bundle := ssl_config.get(CA_BUNDLE)) is not None:
                 session.verify = ssl_ca_bundle
             if ssl_client := ssl_config.get(CLIENT):
                 if all(k in ssl_client for k in (CERT, KEY)):
