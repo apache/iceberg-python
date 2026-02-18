@@ -21,7 +21,7 @@ import pyarrow as pa
 import pytest
 from moto import mock_aws
 
-from pyiceberg.catalog.glue import GlueCatalog
+from pyiceberg.catalog.glue import GLUE_CONNECTION_S3_TABLES, GlueCatalog
 from pyiceberg.exceptions import (
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
@@ -1013,7 +1013,7 @@ def _create_s3tables_database(catalog: GlueCatalog, database_name: str) -> None:
             "Name": database_name,
             "FederatedDatabase": {
                 "Identifier": "arn:aws:s3tables:us-east-1:123456789012:bucket/my-bucket",
-                "ConnectionType": "aws:s3tables",
+                "ConnectionType": GLUE_CONNECTION_S3_TABLES,
             },
         }
     )

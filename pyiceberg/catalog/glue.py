@@ -130,6 +130,7 @@ GLUE_SECRET_ACCESS_KEY = "glue.secret-access-key"
 GLUE_SESSION_TOKEN = "glue.session-token"
 GLUE_MAX_RETRIES = "glue.max-retries"
 GLUE_RETRY_MODE = "glue.retry-mode"
+GLUE_CONNECTION_S3_TABLES = "aws:s3tables"
 
 MAX_RETRIES = 10
 STANDARD_RETRY_MODE = "standard"
@@ -438,13 +439,11 @@ class GlueCatalog(MetastoreCatalog):
             return False
         database = database_response["Database"]
         federated = database.get("FederatedDatabase", {})
-        return (federated.get("ConnectionType") or "").lower() == "aws:s3tables"
+        return (federated.get("ConnectionType") or "").lower() == GLUE_CONNECTION_S3_TABLES
 
     def _create_table_s3tables(
         self,
         identifier: str | Identifier,
-        database_name: str,
-        table_name: str,
         schema: Union[Schema, "pa.Schema"],
         location: str | None,
         partition_spec: PartitionSpec,
@@ -463,6 +462,8 @@ class GlueCatalog(MetastoreCatalog):
 
         On failure, the table created in step 1 is deleted.
         """
+        database_name, table_name = self.identifier_to_database_and_table(identifier)
+
         if location is not None:
             raise ValueError(
                 f"Cannot specify a location for S3 Tables table {database_name}.{table_name}. "
@@ -559,8 +560,6 @@ class GlueCatalog(MetastoreCatalog):
         if self._is_s3tables_database(database_name):
             return self._create_table_s3tables(
                 identifier=identifier,
-                database_name=database_name,
-                table_name=table_name,
                 schema=schema,
                 location=location,
                 partition_spec=partition_spec,
