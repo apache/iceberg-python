@@ -523,7 +523,13 @@ class GlueCatalog(MetastoreCatalog):
                 )
             raise
 
-        return self.load_table(identifier=identifier)
+        return Table(
+            identifier=self.identifier_to_tuple(identifier),
+            metadata=staged_table.metadata,
+            metadata_location=staged_table.metadata_location,
+            io=self._load_file_io(staged_table.metadata.properties, staged_table.metadata_location),
+            catalog=self,
+        )
 
     def create_table(
         self,
@@ -580,7 +586,13 @@ class GlueCatalog(MetastoreCatalog):
         table_input = _construct_table_input(table_name, staged_table.metadata_location, properties, staged_table.metadata)
         self._create_glue_table(database_name=database_name, table_name=table_name, table_input=table_input)
 
-        return self.load_table(identifier=identifier)
+        return Table(
+            identifier=self.identifier_to_tuple(identifier),
+            metadata=staged_table.metadata,
+            metadata_location=staged_table.metadata_location,
+            io=self._load_file_io(staged_table.metadata.properties, staged_table.metadata_location),
+            catalog=self,
+        )
 
     def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
         """Register a new table using existing metadata.
