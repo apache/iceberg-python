@@ -35,7 +35,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from pyiceberg.catalog.sql import SqlCatalog
-from pyiceberg.table import ScanOrder, Table
+from pyiceberg.table import ScanOrder, TaskOrder, ArrivalOrder, Table
 
 NUM_FILES = 32
 ROWS_PER_FILE = 500_000
@@ -85,26 +85,25 @@ def benchmark_table(tmp_path_factory: pytest.TempPathFactory) -> Table:
 
 
 @pytest.mark.parametrize(
-    "order,concurrent_files,batch_size",
+    "order,batch_size",
     [
-        pytest.param(ScanOrder.TASK, 1, None, id="default"),
-        pytest.param(ScanOrder.ARRIVAL, 1, None, id="arrival-cf1"),
-        pytest.param(ScanOrder.ARRIVAL, 2, None, id="arrival-cf2"),
-        pytest.param(ScanOrder.ARRIVAL, 4, None, id="arrival-cf4"),
-        pytest.param(ScanOrder.ARRIVAL, 8, None, id="arrival-cf8"),
-        pytest.param(ScanOrder.ARRIVAL, 16, None, id="arrival-cf16"),
+        pytest.param(TaskOrder(), None, id="default"),
+        pytest.param(ArrivalOrder(concurrent_streams=1), None, id="arrival-cf1"),
+        pytest.param(ArrivalOrder(concurrent_streams=2), None, id="arrival-cf2"),
+        pytest.param(ArrivalOrder(concurrent_streams=4), None, id="arrival-cf4"),
+        pytest.param(ArrivalOrder(concurrent_streams=8), None, id="arrival-cf8"),
+        pytest.param(ArrivalOrder(concurrent_streams=16), None, id="arrival-cf16"),
     ],
 )
 def test_read_throughput(
     benchmark_table: Table,
     order: ScanOrder,
-    concurrent_files: int,
     batch_size: int | None,
 ) -> None:
     """Measure records/sec, time to first record, and peak Arrow memory for a scan configuration."""
     effective_batch_size = batch_size or 131_072  # PyArrow default
-    if order == ScanOrder.ARRIVAL:
-        config_str = f"order=ARRIVAL, concurrent_files={concurrent_files}, batch_size={effective_batch_size}"
+    if isinstance(order, ArrivalOrder):
+        config_str = f"order=ARRIVAL, concurrent_streams={order.concurrent_streams}, batch_size={effective_batch_size}"
     else:
         config_str = f"order=TASK (executor.map, all files parallel), batch_size={effective_batch_size}"
     print("\n--- ArrowScan Read Throughput Benchmark ---")
@@ -129,7 +128,6 @@ def test_read_throughput(
         for batch in benchmark_table.scan().to_arrow_batch_reader(
             batch_size=batch_size,
             order=order,
-            concurrent_files=concurrent_files,
         ):
             if first_batch_time is None:
                 first_batch_time = timeit.default_timer() - start
