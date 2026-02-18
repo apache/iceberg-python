@@ -1643,6 +1643,19 @@ def test_update_namespace_properties_invalid_namespace(rest_mock: Mocker) -> Non
     assert "Empty namespace identifier" in str(e.value)
 
 
+def test_with_disabled_ssl_ca_bundle(rest_mock: Mocker) -> None:
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "token": TEST_TOKEN,
+        "ssl": {
+            "cabundle": False,
+        },
+    }
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert catalog._session.verify is False
+
+
 def test_request_session_with_ssl_ca_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
     # Given
     catalog_properties = {
