@@ -567,6 +567,29 @@ def test_sigv4_adapter_override_retry_config(rest_mock: Mocker) -> None:
     assert adapter.max_retries.total == 3
 
 
+def test_sigv4_uses_client_profile_name(rest_mock: Mocker) -> None:
+    with mock.patch("boto3.Session") as mock_session:
+        RestCatalog(
+            "rest",
+            **{
+                "uri": TEST_URI,
+                "token": TEST_TOKEN,
+                "rest.sigv4-enabled": "true",
+                "rest.signing-region": "us-west-2",
+                "client.profile-name": "rest-profile",
+            },
+        )
+
+    mock_session.assert_called_with(
+        profile_name="rest-profile",
+        region_name=None,
+        botocore_session=None,
+        aws_access_key_id=None,
+        aws_secret_access_key=None,
+        aws_session_token=None,
+    )
+
+
 def test_list_tables_404(rest_mock: Mocker) -> None:
     namespace = "examples"
     rest_mock.get(

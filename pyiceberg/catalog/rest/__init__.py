@@ -55,7 +55,15 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
     UnauthorizedError,
 )
-from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, FileIO, load_file_io
+from pyiceberg.io import (
+    AWS_ACCESS_KEY_ID,
+    AWS_PROFILE_NAME,
+    AWS_REGION,
+    AWS_SECRET_ACCESS_KEY,
+    AWS_SESSION_TOKEN,
+    FileIO,
+    load_file_io,
+)
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec, assign_fresh_partition_spec_ids
 from pyiceberg.schema import Schema, assign_fresh_schema_ids
 from pyiceberg.table import (
@@ -704,6 +712,7 @@ class RestCatalog(Catalog):
                     )
                 )
                 self._boto_session = boto3.Session(
+                    profile_name=get_first_property_value(self._properties, AWS_PROFILE_NAME),
                     region_name=get_first_property_value(self._properties, AWS_REGION),
                     botocore_session=self._properties.get(BOTOCORE_SESSION),
                     aws_access_key_id=get_first_property_value(self._properties, AWS_ACCESS_KEY_ID),
