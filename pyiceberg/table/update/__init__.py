@@ -444,8 +444,7 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
             f"older than last sequence number {base_metadata.last_sequence_number}"
         )
     elif (
-        base_metadata.snapshot_log
-        and update.snapshot.timestamp_ms - base_metadata.snapshot_log[-1].timestamp_ms < -ONE_MINUTE_MS
+        base_metadata.snapshot_log and update.snapshot.timestamp_ms - base_metadata.snapshot_log[-1].timestamp_ms < -ONE_MINUTE_MS
     ):
         raise ValueError(
             f"Invalid snapshot timestamp {update.snapshot.timestamp_ms}: "
