@@ -155,18 +155,31 @@ ALWAYS_TRUE = AlwaysTrue()
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
 
 
-class ScanOrder(str, Enum):
-    """Order in which record batches are returned from a scan.
+@dataclass
+class ScanOrder(ABC):
+    """Base class for scan ordering strategies."""
+    pass
 
-    Attributes:
-        TASK: Batches are returned in task order, with each task fully materialized
-            before proceeding to the next. Allows parallel file reads via executor.
-        ARRIVAL: Batches are yielded as they are produced, processing tasks
-            sequentially without materializing entire files into memory.
+
+@dataclass
+class TaskOrder(ScanOrder):
+    """Sequential task processing preserving existing behavior.
+
+    Batches are returned in task order, with each task fully materialized
+    before proceeding to the next. Allows parallel file reads via executor.
     """
+    pass
 
-    TASK = "task"
-    ARRIVAL = "arrival"
+
+@dataclass
+class ArrivalOrder(ScanOrder):
+    """Stream batches as they arrive from concurrent read streams.
+
+    Batches are yielded as they are produced without materializing entire
+    files into memory. Supports concurrent processing of multiple files.
+    """
+    concurrent_streams: int = 1
+    max_buffered_batches: int = 16
 
 
 @dataclass()
@@ -2171,7 +2184,7 @@ class DataScan(TableScan):
         ).to_table(self.plan_files())
 
     def to_arrow_batch_reader(
-        self, batch_size: int | None = None, order: ScanOrder = ScanOrder.TASK, concurrent_files: int = 1
+        self, batch_size: int | None = None, order: ScanOrder = TaskOrder()
     ) -> pa.RecordBatchReader:
         """Return an Arrow RecordBatchReader from this DataScan.
 
@@ -2180,18 +2193,17 @@ class DataScan(TableScan):
         is read one at a time.
 
         Ordering semantics:
-            - ScanOrder.TASK (default): Batches are grouped by file in task submission order.
-            - ScanOrder.ARRIVAL: Batches may be interleaved across files. Within each file,
-              batch ordering follows row order.
+            - TaskOrder() (default): Yields batches one file at a time in file scan task order.
+            - ArrivalOrder(): Batches may be interleaved across files as they arrive.
+              Within each file, batch ordering follows row order.
 
         Args:
             batch_size: The number of rows per batch. If None, PyArrow's default is used.
             order: Controls the order in which record batches are returned.
-                ScanOrder.TASK (default) returns batches in task order with parallel
-                file reads. ScanOrder.ARRIVAL yields batches as they are produced
-                without materializing entire files into memory.
-            concurrent_files: Number of files to read concurrently when order=ScanOrder.ARRIVAL.
-                When > 1, batches may arrive interleaved across files.
+                TaskOrder() (default) yields batches one file at a time in task order.
+                ArrivalOrder(concurrent_streams=N, max_buffered_batches=M) yields batches
+                as they are produced without materializing entire files into memory.
+                concurrent_streams controls parallelism, max_buffered_batches controls memory.
 
         Returns:
             pa.RecordBatchReader: Arrow RecordBatchReader from the Iceberg table's DataScan
@@ -2204,7 +2216,7 @@ class DataScan(TableScan):
         target_schema = schema_to_pyarrow(self.projection())
         batches = ArrowScan(
             self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
-        ).to_record_batches(self.plan_files(), batch_size=batch_size, order=order, concurrent_files=concurrent_files)
+        ).to_record_batches(self.plan_files(), batch_size=batch_size, order=order)
 
         return pa.RecordBatchReader.from_batches(
             target_schema,
