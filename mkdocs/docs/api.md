@@ -362,21 +362,21 @@ for buf in tbl.scan().to_arrow_batch_reader(batch_size=1000):
     print(f"Buffer contains {len(buf)} rows")
 ```
 
-By default, each file's batches are materialized in memory before being yielded (`order=ScanOrder.TASK`). For large files that may exceed available memory, use `order=ScanOrder.ARRIVAL` to yield batches as they are produced without materializing entire files:
+By default, each file's batches are materialized in memory before being yielded (`TaskOrder()`). For large files that may exceed available memory, use `ArrivalOrder()` to yield batches as they are produced without materializing entire files:
 
 ```python
-from pyiceberg.table import ScanOrder
+from pyiceberg.table import ArrivalOrder
 
-for buf in tbl.scan().to_arrow_batch_reader(order=ScanOrder.ARRIVAL, batch_size=1000):
+for buf in tbl.scan().to_arrow_batch_reader(order=ArrivalOrder(), batch_size=1000):
     print(f"Buffer contains {len(buf)} rows")
 ```
 
-For maximum throughput, use `concurrent_files` to read multiple files in parallel with arrival order. Batches are yielded as they arrive from any file — ordering across files is not guaranteed:
+For maximum throughput, use `concurrent_streams` to read multiple files in parallel with arrival order. Batches are yielded as they arrive from any file — ordering across files is not guaranteed:
 
 ```python
-from pyiceberg.table import ScanOrder
+from pyiceberg.table import ArrivalOrder
 
-for buf in tbl.scan().to_arrow_batch_reader(order=ScanOrder.ARRIVAL, concurrent_files=4, batch_size=1000):
+for buf in tbl.scan().to_arrow_batch_reader(order=ArrivalOrder(concurrent_streams=4), batch_size=1000):
     print(f"Buffer contains {len(buf)} rows")
 ```
 
@@ -384,8 +384,8 @@ for buf in tbl.scan().to_arrow_batch_reader(order=ScanOrder.ARRIVAL, concurrent_
 
 | Configuration | File ordering | Within-file ordering |
 |---|---|---|
-| `ScanOrder.TASK` (default) | Batches grouped by file, in task submission order | Row order |
-| `ScanOrder.ARRIVAL` | Interleaved across files (no grouping guarantee) | Row order within each file |
+| `TaskOrder()` (default) | Batches grouped by file, in task submission order | Row order |
+| `ArrivalOrder()` | Interleaved across files (no grouping guarantee) | Row order within each file |
 
 Within each file, batch ordering always follows row order. The `limit` parameter is enforced correctly regardless of configuration.
 
@@ -394,11 +394,12 @@ Within each file, batch ordering always follows row order. The `limit` parameter
 | Use case | Recommended config |
 |---|---|
 | Small tables, simple queries | Default — no extra args needed |
-| Large tables, memory-constrained | `order=ScanOrder.ARRIVAL` — one file at a time, minimal memory |
-| Maximum throughput with bounded memory | `order=ScanOrder.ARRIVAL, concurrent_files=N` — tune N to balance throughput vs memory |
+| Large tables, memory-constrained | `order=ArrivalOrder()` — one file at a time, minimal memory |
+| Maximum throughput with bounded memory | `order=ArrivalOrder(concurrent_streams=N)` — tune N to balance throughput vs memory |
+| Fine-grained memory control | `order=ArrivalOrder(concurrent_streams=N, max_buffered_batches=M)` — tune both parameters |
 | Fine-grained batch control | Add `batch_size=N` to any of the above |
 
-**Note:** `ScanOrder.ARRIVAL` yields batches in arrival order (interleaved across files when `concurrent_files > 1`). For deterministic file ordering, use the default `ScanOrder.TASK` mode. `batch_size` is usually an advanced tuning knob — the PyArrow default of 131,072 rows works well for most workloads.
+**Note:** `ArrivalOrder()` yields batches in arrival order (interleaved across files when `concurrent_streams > 1`). For deterministic file ordering, use the default `TaskOrder()` mode. `batch_size` is usually an advanced tuning knob — the PyArrow default of 131,072 rows works well for most workloads.
 
 To avoid any type inconsistencies during writing, you can convert the Iceberg table schema to Arrow:
 
