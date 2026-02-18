@@ -25,7 +25,7 @@ import pyarrow as pa
 import pytest
 
 from pyiceberg.io.pyarrow import _bounded_concurrent_batches
-from pyiceberg.table import FileScanTask, ScanOrder
+from pyiceberg.table import FileScanTask, ScanOrder, TaskOrder, ArrivalOrder
 
 
 def _make_task() -> FileScanTask:
@@ -253,6 +253,6 @@ def test_concurrent_with_limit_via_arrowscan(tmpdir: str) -> None:
         limit=150,
     )
 
-    batches = list(scan.to_record_batches(tasks, order=ScanOrder.ARRIVAL, concurrent_files=2))
+    batches = list(scan.to_record_batches(tasks, order=ArrivalOrder(concurrent_streams=2)))
     total_rows = sum(len(b) for b in batches)
     assert total_rows == 150

@@ -86,7 +86,7 @@ from pyiceberg.io.pyarrow import (
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema, make_compatible_name, visit
-from pyiceberg.table import FileScanTask, ScanOrder, TableProperties
+from pyiceberg.table import FileScanTask, ScanOrder, TaskOrder, ArrivalOrder, TableProperties
 from pyiceberg.table.metadata import TableMetadataV2
 from pyiceberg.table.name_mapping import create_mapping_from_schema
 from pyiceberg.transforms import HourTransform, IdentityTransform
@@ -3170,13 +3170,13 @@ def _create_scan_and_tasks(
 
 
 def test_task_order_produces_same_results(tmpdir: str) -> None:
-    """Test that order=ScanOrder.TASK produces the same results as the default behavior."""
+    """Test that order=TaskOrder() produces the same results as the default behavior."""
     scan, tasks = _create_scan_and_tasks(tmpdir, num_files=3, rows_per_file=100)
 
-    batches_default = list(scan.to_record_batches(tasks, order=ScanOrder.TASK))
+    batches_default = list(scan.to_record_batches(tasks, order=TaskOrder()))
     # Re-create tasks since iterators are consumed
     _, tasks2 = _create_scan_and_tasks(tmpdir, num_files=3, rows_per_file=100)
-    batches_task_order = list(scan.to_record_batches(tasks2, order=ScanOrder.TASK))
+    batches_task_order = list(scan.to_record_batches(tasks2, order=TaskOrder()))
 
     total_default = sum(len(b) for b in batches_default)
     total_task_order = sum(len(b) for b in batches_task_order)
@@ -3185,10 +3185,10 @@ def test_task_order_produces_same_results(tmpdir: str) -> None:
 
 
 def test_arrival_order_yields_all_batches(tmpdir: str) -> None:
-    """Test that order=ScanOrder.ARRIVAL yields all batches correctly."""
+    """Test that order=ArrivalOrder() yields all batches correctly."""
     scan, tasks = _create_scan_and_tasks(tmpdir, num_files=3, rows_per_file=100)
 
-    batches = list(scan.to_record_batches(tasks, order=ScanOrder.ARRIVAL))
+    batches = list(scan.to_record_batches(tasks, order=ArrivalOrder()))
 
     total_rows = sum(len(b) for b in batches)
     assert total_rows == 300
@@ -3198,10 +3198,10 @@ def test_arrival_order_yields_all_batches(tmpdir: str) -> None:
 
 
 def test_arrival_order_with_limit(tmpdir: str) -> None:
-    """Test that order=ScanOrder.ARRIVAL respects the row limit."""
+    """Test that order=ArrivalOrder() respects the row limit."""
     scan, tasks = _create_scan_and_tasks(tmpdir, num_files=3, rows_per_file=100, limit=150)
 
-    batches = list(scan.to_record_batches(tasks, order=ScanOrder.ARRIVAL))
+    batches = list(scan.to_record_batches(tasks, order=ArrivalOrder()))
 
     total_rows = sum(len(b) for b in batches)
     assert total_rows == 150
@@ -3211,7 +3211,7 @@ def test_arrival_order_within_file_ordering_preserved(tmpdir: str) -> None:
     """Test that within-file row ordering is preserved in arrival order mode."""
     scan, tasks = _create_scan_and_tasks(tmpdir, num_files=3, rows_per_file=100)
 
-    batches = list(scan.to_record_batches(tasks, order=ScanOrder.ARRIVAL))
+    batches = list(scan.to_record_batches(tasks, order=ArrivalOrder()))
     all_values = sorted([v for b in batches for v in b.column("col").to_pylist()])
 
     # All values should be present, within-file ordering is preserved
@@ -3219,7 +3219,7 @@ def test_arrival_order_within_file_ordering_preserved(tmpdir: str) -> None:
 
 
 def test_arrival_order_with_positional_deletes(tmpdir: str) -> None:
-    """Test that order=ScanOrder.ARRIVAL correctly applies positional deletes."""
+    """Test that order=ArrivalOrder() correctly applies positional deletes."""
     # 3 files, 10 rows each; delete rows 0,5 from file 0, row 3 from file 1, nothing from file 2
     scan, tasks = _create_scan_and_tasks(
         tmpdir,
@@ -3228,7 +3228,7 @@ def test_arrival_order_with_positional_deletes(tmpdir: str) -> None:
         delete_rows_per_file=[[0, 5], [3], []],
     )
 
-    batches = list(scan.to_record_batches(tasks, order=ScanOrder.ARRIVAL))
+    batches = list(scan.to_record_batches(tasks, order=ArrivalOrder()))
 
     total_rows = sum(len(b) for b in batches)
     assert total_rows == 27  # 30 - 3 deletes
@@ -3241,7 +3241,7 @@ def test_arrival_order_with_positional_deletes(tmpdir: str) -> None:
 
 
 def test_arrival_order_with_positional_deletes_and_limit(tmpdir: str) -> None:
-    """Test that order=ScanOrder.ARRIVAL with positional deletes respects the row limit."""
+    """Test that order=ArrivalOrder() with positional deletes respects the row limit."""
     # 3 files, 10 rows each; delete row 0 from each file
     scan, tasks = _create_scan_and_tasks(
         tmpdir,
@@ -3251,7 +3251,7 @@ def test_arrival_order_with_positional_deletes_and_limit(tmpdir: str) -> None:
         delete_rows_per_file=[[0], [0], [0]],
     )
 
-    batches = list(scan.to_record_batches(tasks, order=ScanOrder.ARRIVAL))
+    batches = list(scan.to_record_batches(tasks, order=ArrivalOrder()))
 
     total_rows = sum(len(b) for b in batches)
     assert total_rows == 15
@@ -3267,7 +3267,7 @@ def test_task_order_with_positional_deletes(tmpdir: str) -> None:
         delete_rows_per_file=[[0, 5], [3], []],
     )
 
-    batches = list(scan.to_record_batches(tasks, order=ScanOrder.TASK))
+    batches = list(scan.to_record_batches(tasks, order=TaskOrder()))
 
     total_rows = sum(len(b) for b in batches)
     assert total_rows == 27  # 30 - 3 deletes
@@ -3277,7 +3277,7 @@ def test_task_order_with_positional_deletes(tmpdir: str) -> None:
 
 
 def test_concurrent_files_with_positional_deletes(tmpdir: str) -> None:
-    """Test that order=ScanOrder.ARRIVAL with concurrent_files correctly applies positional deletes."""
+    """Test that order=ArrivalOrder() with concurrent_files correctly applies positional deletes."""
     # 4 files, 10 rows each; delete different rows per file
     scan, tasks = _create_scan_and_tasks(
         tmpdir,
@@ -3286,7 +3286,7 @@ def test_concurrent_files_with_positional_deletes(tmpdir: str) -> None:
         delete_rows_per_file=[[0, 9], [4, 5], [0, 1, 2], []],
     )
 
-    batches = list(scan.to_record_batches(tasks, order=ScanOrder.ARRIVAL, concurrent_files=2))
+    batches = list(scan.to_record_batches(tasks, order=ArrivalOrder(concurrent_streams=2)))
 
     total_rows = sum(len(b) for b in batches)
     assert total_rows == 33  # 40 - 7 deletes
@@ -3310,7 +3310,7 @@ def test_concurrent_files_with_positional_deletes_and_limit(tmpdir: str) -> None
         delete_rows_per_file=[[0], [0], [0], [0]],
     )
 
-    batches = list(scan.to_record_batches(tasks, order=ScanOrder.ARRIVAL, concurrent_files=2))
+    batches = list(scan.to_record_batches(tasks, order=ArrivalOrder(concurrent_streams=2)))
 
     total_rows = sum(len(b) for b in batches)
     assert total_rows == 20
@@ -3321,7 +3321,7 @@ def test_concurrent_files_invalid_value(tmpdir: str) -> None:
     scan, tasks = _create_scan_and_tasks(tmpdir, num_files=1, rows_per_file=10)
 
     with pytest.raises(ValueError, match="concurrent_files must be >= 1"):
-        list(scan.to_record_batches(tasks, order=ScanOrder.ARRIVAL, concurrent_files=0))
+        list(scan.to_record_batches(tasks, order=ArrivalOrder(concurrent_streams=0)))
 
 
 def test_parse_location_defaults() -> None:
