@@ -922,6 +922,30 @@ def test_load_namespace_properties_200(rest_mock: Mocker) -> None:
     assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).load_namespace_properties(namespace) == {"prop": "yes"}
 
 
+def test_load_namespace_properties_200_omitted(rest_mock: Mocker) -> None:
+    """The REST spec does not require 'properties' in GetNamespaceResponse. When omitted, default to empty dict."""
+    namespace = "leden"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}",
+        json={"namespace": ["fokko"]},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).load_namespace_properties(namespace) == {}
+
+
+def test_load_namespace_properties_200_null(rest_mock: Mocker) -> None:
+    """The REST spec marks 'properties' as nullable. When null, default to empty dict."""
+    namespace = "leden"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}",
+        json={"namespace": ["fokko"], "properties": None},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).load_namespace_properties(namespace) == {}
+
+
 def test_load_namespace_properties_404(rest_mock: Mocker) -> None:
     namespace = "leden"
     rest_mock.get(
