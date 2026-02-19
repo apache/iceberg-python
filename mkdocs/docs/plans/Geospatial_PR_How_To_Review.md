@@ -7,16 +7,12 @@ Recommended strategy: review in focused passes by concern, not file order.
 
 ## Recommended Review Order
 
-1. **Decisions and intended behavior**
-   - `mkdocs/docs/dev/geospatial-types-decisions-v1.md`
-   - Confirm the intended policy, especially Decision 9 (planar ambiguity boundary handling).
-
-2. **Core geospatial utility correctness**
+1. **Core geospatial utility correctness**
    - `pyiceberg/utils/geospatial.py`
    - `tests/utils/test_geospatial.py`
    - Focus on envelope extraction, antimeridian behavior, and bound encoding formats.
 
-3. **Metrics integration and write/import paths**
+1. **Metrics integration and write/import paths**
    - `pyiceberg/io/pyarrow.py`
    - `tests/io/test_pyarrow_stats.py`
    - Focus on:
@@ -24,7 +20,7 @@ Recommended strategy: review in focused passes by concern, not file order.
      - skipping Parquet binary min/max for geospatial columns
      - partition inference not using geospatial envelope bounds
 
-4. **GeoArrow compatibility and ambiguity boundary**
+1. **GeoArrow compatibility and ambiguity boundary**
    - `pyiceberg/schema.py`
    - `pyiceberg/io/pyarrow.py`
    - `tests/io/test_pyarrow.py`
@@ -33,7 +29,7 @@ Recommended strategy: review in focused passes by concern, not file order.
      - spherical mismatch still fails
      - fallback warning when GeoArrow dependency is absent
 
-5. **Spatial expression surface area**
+1. **Spatial expression surface area**
    - `pyiceberg/expressions/__init__.py`
    - `pyiceberg/expressions/visitors.py`
    - `tests/expressions/test_spatial_predicates.py`
@@ -42,7 +38,7 @@ Recommended strategy: review in focused passes by concern, not file order.
      - visitor plumbing is complete
      - conservative evaluator behavior is explicit and documented
 
-6. **User-facing docs**
+1. **User-facing docs**
    - `mkdocs/docs/geospatial.md`
    - Check limitations and behavior notes match implementation.
 
