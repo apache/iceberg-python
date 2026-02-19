@@ -26,6 +26,7 @@ from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
+from pyiceberg.table.metadata import SUPPORTED_TABLE_FORMAT_VERSION
 from pyiceberg.types import GeographyType, GeometryType, IntegerType, NestedField
 
 
@@ -76,7 +77,8 @@ def test_write_read_roundtrip_geospatial(catalog: Catalog) -> None:
     table = catalog.create_table(
         identifier=identifier,
         schema=schema,
-        properties={TableProperties.FORMAT_VERSION: "3"},
+        # Keep this aligned with writer capabilities until v3 manifest writing is supported.
+        properties={TableProperties.FORMAT_VERSION: str(SUPPORTED_TABLE_FORMAT_VERSION)},
     )
 
     geom = struct.pack("<BIIdddd", 1, 2, 2, 1.0, 2.0, 3.0, 4.0)
