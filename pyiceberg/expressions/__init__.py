@@ -17,10 +17,11 @@
 
 from __future__ import annotations
 
+import builtins
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Sequence
 from functools import cached_property
-from typing import Any, TypeAlias
+from typing import Any, TypeAlias, cast
 from typing import Literal as TypingLiteral
 
 from pydantic import ConfigDict, Field, SerializeAsAny, model_validator
@@ -1152,25 +1153,27 @@ class SpatialPredicate(UnboundPredicate, ABC):
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundSpatialPredicate:
         bound_term = self.term.bind(schema, case_sensitive)
         if not isinstance(bound_term.ref().field.field_type, (GeometryType, GeographyType)):
-            raise TypeError(
-                f"Spatial predicates can only be bound against geometry/geography fields: {bound_term.ref().field}"
-            )
-        return self.as_bound(bound_term, self.geometry)
+            raise TypeError(f"Spatial predicates can only be bound against geometry/geography fields: {bound_term.ref().field}")
+        bound_cls = cast(Any, self.as_bound)
+        return bound_cls(bound_term, self.geometry)
 
     def __eq__(self, other: Any) -> bool:
+        """Return whether two spatial predicates are equivalent."""
         if isinstance(other, self.__class__):
             return self.term == other.term and self.geometry == other.geometry
         return False
 
     def __str__(self) -> str:
+        """Return a human-readable representation."""
         return f"{str(self.__class__.__name__)}(term={repr(self.term)}, geometry={self.geometry!r})"
 
     def __repr__(self) -> str:
+        """Return the debug representation."""
         return f"{str(self.__class__.__name__)}(term={repr(self.term)}, geometry={self.geometry!r})"
 
     @property
     @abstractmethod
-    def as_bound(self) -> type[BoundSpatialPredicate]: ...
+    def as_bound(self) -> builtins.type[BoundSpatialPredicate]: ...
 
 
 class BoundSpatialPredicate(BoundPredicate, ABC):
@@ -1184,14 +1187,17 @@ class BoundSpatialPredicate(BoundPredicate, ABC):
         return self.value
 
     def __eq__(self, other: Any) -> bool:
+        """Return whether two bound spatial predicates are equivalent."""
         if isinstance(other, self.__class__):
             return self.term == other.term and self.geometry == other.geometry
         return False
 
     def __str__(self) -> str:
+        """Return a human-readable representation."""
         return f"{self.__class__.__name__}(term={str(self.term)}, geometry={self.geometry!r})"
 
     def __repr__(self) -> str:
+        """Return the debug representation."""
         return f"{str(self.__class__.__name__)}(term={repr(self.term)}, geometry={self.geometry!r})"
 
     @property
@@ -1201,6 +1207,7 @@ class BoundSpatialPredicate(BoundPredicate, ABC):
 
 class BoundSTContains(BoundSpatialPredicate):
     def __invert__(self) -> BooleanExpression:
+        """Return the negated expression."""
         return Not(child=self)
 
     @property
@@ -1210,6 +1217,7 @@ class BoundSTContains(BoundSpatialPredicate):
 
 class BoundSTIntersects(BoundSpatialPredicate):
     def __invert__(self) -> BooleanExpression:
+        """Return the negated expression."""
         return Not(child=self)
 
     @property
@@ -1219,6 +1227,7 @@ class BoundSTIntersects(BoundSpatialPredicate):
 
 class BoundSTWithin(BoundSpatialPredicate):
     def __invert__(self) -> BooleanExpression:
+        """Return the negated expression."""
         return Not(child=self)
 
     @property
@@ -1228,6 +1237,7 @@ class BoundSTWithin(BoundSpatialPredicate):
 
 class BoundSTOverlaps(BoundSpatialPredicate):
     def __invert__(self) -> BooleanExpression:
+        """Return the negated expression."""
         return Not(child=self)
 
     @property
@@ -1239,10 +1249,11 @@ class STContains(SpatialPredicate):
     type: TypingLiteral["st-contains"] = Field(default="st-contains", alias="type")
 
     def __invert__(self) -> BooleanExpression:
+        """Return the negated expression."""
         return Not(child=self)
 
     @property
-    def as_bound(self) -> type[BoundSTContains]:
+    def as_bound(self) -> builtins.type[BoundSTContains]:
         return BoundSTContains
 
 
@@ -1250,10 +1261,11 @@ class STIntersects(SpatialPredicate):
     type: TypingLiteral["st-intersects"] = Field(default="st-intersects", alias="type")
 
     def __invert__(self) -> BooleanExpression:
+        """Return the negated expression."""
         return Not(child=self)
 
     @property
-    def as_bound(self) -> type[BoundSTIntersects]:
+    def as_bound(self) -> builtins.type[BoundSTIntersects]:
         return BoundSTIntersects
 
 
@@ -1261,10 +1273,11 @@ class STWithin(SpatialPredicate):
     type: TypingLiteral["st-within"] = Field(default="st-within", alias="type")
 
     def __invert__(self) -> BooleanExpression:
+        """Return the negated expression."""
         return Not(child=self)
 
     @property
-    def as_bound(self) -> type[BoundSTWithin]:
+    def as_bound(self) -> builtins.type[BoundSTWithin]:
         return BoundSTWithin
 
 
@@ -1272,8 +1285,9 @@ class STOverlaps(SpatialPredicate):
     type: TypingLiteral["st-overlaps"] = Field(default="st-overlaps", alias="type")
 
     def __invert__(self) -> BooleanExpression:
+        """Return the negated expression."""
         return Not(child=self)
 
     @property
-    def as_bound(self) -> type[BoundSTOverlaps]:
+    def as_bound(self) -> builtins.type[BoundSTOverlaps]:
         return BoundSTOverlaps

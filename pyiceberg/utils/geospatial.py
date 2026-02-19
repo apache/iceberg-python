@@ -213,10 +213,10 @@ class _WKBReader:
         return value
 
     def read_uint32(self, little_endian: bool) -> int:
-        return self._read_fmt("<I" if little_endian else ">I")
+        return int(self._read_fmt("<I" if little_endian else ">I"))
 
     def read_double(self, little_endian: bool) -> float:
-        return self._read_fmt("<d" if little_endian else ">d")
+        return float(self._read_fmt("<d" if little_endian else ">d"))
 
     def _read_fmt(self, fmt: str) -> float | int:
         size = struct.calcsize(fmt)
@@ -387,9 +387,7 @@ def _minimal_longitude_interval(longitudes: list[float]) -> tuple[float, float]:
     return _from_circle(start), _from_circle(end)
 
 
-def _merge_longitude_intervals(
-    left_min: float, left_max: float, right_min: float, right_max: float
-) -> tuple[float, float]:
+def _merge_longitude_intervals(left_min: float, left_max: float, right_min: float, right_max: float) -> tuple[float, float]:
     segments = _interval_to_segments(left_min, left_max) + _interval_to_segments(right_min, right_max)
     merged = _merge_segments(segments)
     if not merged:

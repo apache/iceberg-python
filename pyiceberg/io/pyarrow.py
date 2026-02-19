@@ -182,6 +182,7 @@ from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
 from pyiceberg.utils.decimal import unscaled_to_decimal
 from pyiceberg.utils.geospatial import (
+    GeometryEnvelope,
     extract_envelope_from_wkb,
     merge_envelopes,
     serialize_geospatial_bound,
@@ -2322,7 +2323,7 @@ class GeospatialStatsAggregator:
         self.primitive_type = iceberg_type
         self.current_min = None
         self.current_max = None
-        self._envelope = None
+        self._envelope: GeometryEnvelope | None = None
 
     def update_from_wkb(self, val: bytes | bytearray | memoryview | None) -> None:
         if val is None:
@@ -2857,7 +2858,7 @@ def data_file_statistics_from_parquet_metadata(
         value_counts=value_counts,
         null_value_counts=null_value_counts,
         nan_value_counts=nan_value_counts,
-        column_aggregates=col_aggs,
+        column_aggregates=cast(dict[int, StatsAggregator | GeospatialStatsAggregator], col_aggs),
         split_offsets=split_offsets,
     )
 
@@ -2984,9 +2985,7 @@ def _check_pyarrow_schema_compatible(
             f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. "
             "Update the schema first (hint, use union_by_name)."
         ) from e
-    _check_schema_compatible(
-        requested_schema, provided_schema, allow_planar_geospatial_equivalence=True
-    )
+    _check_schema_compatible(requested_schema, provided_schema, allow_planar_geospatial_equivalence=True)
 
 
 def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_paths: Iterator[str]) -> Iterator[DataFile]:

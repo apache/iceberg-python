@@ -383,15 +383,23 @@ def test_geospatial_column_aggregates_from_parquet_file() -> None:
 
     assert set(aggregates.keys()) == {1, 2}
 
-    geom_min = deserialize_geospatial_bound(aggregates[1].min_as_bytes())
-    geom_max = deserialize_geospatial_bound(aggregates[1].max_as_bytes())
+    geom_min_bytes = aggregates[1].min_as_bytes()
+    geom_max_bytes = aggregates[1].max_as_bytes()
+    assert geom_min_bytes is not None
+    assert geom_max_bytes is not None
+    geom_min = deserialize_geospatial_bound(geom_min_bytes)
+    geom_max = deserialize_geospatial_bound(geom_max_bytes)
     assert geom_min.x == 1.0
     assert geom_min.y == 2.0
     assert geom_max.x == 3.0
     assert geom_max.y == 4.0
 
-    geog_min = deserialize_geospatial_bound(aggregates[2].min_as_bytes())
-    geog_max = deserialize_geospatial_bound(aggregates[2].max_as_bytes())
+    geog_min_bytes = aggregates[2].min_as_bytes()
+    geog_max_bytes = aggregates[2].max_as_bytes()
+    assert geog_min_bytes is not None
+    assert geog_max_bytes is not None
+    geog_min = deserialize_geospatial_bound(geog_min_bytes)
+    geog_max = deserialize_geospatial_bound(geog_max_bytes)
     assert geog_min.x > geog_max.x
     assert geog_min.x == 170.0
     assert geog_max.x == -170.0
