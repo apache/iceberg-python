@@ -144,7 +144,7 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
-from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, ScanOrder, TaskOrder, ArrivalOrder, TableProperties
+from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, ArrivalOrder, ScanOrder, TableProperties, TaskOrder
 from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
@@ -1838,7 +1838,7 @@ class ArrowScan:
         self,
         tasks: Iterable[FileScanTask],
         batch_size: int | None = None,
-        order: ScanOrder = TaskOrder(),
+        order: ScanOrder | None = None,
     ) -> Iterator[pa.RecordBatch]:
         """Scan the Iceberg table and return an Iterator[pa.RecordBatch].
 
@@ -1868,6 +1868,9 @@ class ArrowScan:
             ValueError: When a field type in the file cannot be projected to the schema type,
                 or when an invalid order value is provided, or when concurrent_streams < 1.
         """
+        if order is None:
+            order = TaskOrder()
+
         if not isinstance(order, ScanOrder):
             raise ValueError(f"Invalid order: {order!r}. Must be a ScanOrder instance (TaskOrder() or ArrivalOrder()).")
 
@@ -1876,7 +1879,11 @@ class ArrowScan:
         if isinstance(order, ArrivalOrder):
             if order.concurrent_streams < 1:
                 raise ValueError(f"concurrent_streams must be >= 1, got {order.concurrent_streams}")
-            return self._apply_limit(self._iter_batches_arrival(task_list, deletes_per_file, batch_size, order.concurrent_streams, order.max_buffered_batches))
+            return self._apply_limit(
+                self._iter_batches_arrival(
+                    task_list, deletes_per_file, batch_size, order.concurrent_streams, order.max_buffered_batches
+                )
+            )
 
         return self._apply_limit(self._iter_batches_materialized(task_list, deletes_per_file, batch_size))
 
