@@ -85,26 +85,27 @@ def benchmark_table(tmp_path_factory: pytest.TempPathFactory) -> Table:
 
 
 @pytest.mark.parametrize(
-    "order,batch_size",
+    "order",
     [
-        pytest.param(TaskOrder(), None, id="default"),
-        pytest.param(ArrivalOrder(concurrent_streams=1), None, id="arrival-cf1"),
-        pytest.param(ArrivalOrder(concurrent_streams=2), None, id="arrival-cf2"),
-        pytest.param(ArrivalOrder(concurrent_streams=4), None, id="arrival-cf4"),
-        pytest.param(ArrivalOrder(concurrent_streams=8), None, id="arrival-cf8"),
-        pytest.param(ArrivalOrder(concurrent_streams=16), None, id="arrival-cf16"),
+        pytest.param(TaskOrder(), id="default"),
+        pytest.param(ArrivalOrder(concurrent_streams=1), id="arrival-cf1"),
+        pytest.param(ArrivalOrder(concurrent_streams=2), id="arrival-cf2"),
+        pytest.param(ArrivalOrder(concurrent_streams=4), id="arrival-cf4"),
+        pytest.param(ArrivalOrder(concurrent_streams=8), id="arrival-cf8"),
+        pytest.param(ArrivalOrder(concurrent_streams=16), id="arrival-cf16"),
     ],
 )
 def test_read_throughput(
     benchmark_table: Table,
     order: ScanOrder,
-    batch_size: int | None,
 ) -> None:
     """Measure records/sec, time to first record, and peak Arrow memory for a scan configuration."""
-    effective_batch_size = batch_size or 131_072  # PyArrow default
+    # Determine effective batch_size for display and memory calculation
     if isinstance(order, ArrivalOrder):
+        effective_batch_size = order.batch_size or 131_072  # PyArrow default
         config_str = f"order=ARRIVAL, concurrent_streams={order.concurrent_streams}, batch_size={effective_batch_size}"
     else:
+        effective_batch_size = 131_072  # PyArrow default (TaskOrder doesn't control batch_size directly)
         config_str = f"order=TASK (executor.map, all files parallel), batch_size={effective_batch_size}"
     print("\n--- ArrowScan Read Throughput Benchmark ---")
     print(f"Config: {config_str}")
@@ -126,7 +127,6 @@ def test_read_throughput(
         total_rows = 0
         first_batch_time = None
         for batch in benchmark_table.scan().to_arrow_batch_reader(
-            batch_size=batch_size,
             order=order,
         ):
             if first_batch_time is None:

@@ -3320,7 +3320,7 @@ def test_concurrent_files_invalid_value(tmpdir: str) -> None:
     """Test that concurrent_files < 1 raises ValueError."""
     scan, tasks = _create_scan_and_tasks(tmpdir, num_files=1, rows_per_file=10)
 
-    with pytest.raises(ValueError, match="concurrent_files must be >= 1"):
+    with pytest.raises(ValueError, match="concurrent_streams must be >= 1"):
         list(scan.to_record_batches(tasks, order=ArrivalOrder(concurrent_streams=0)))
 
 
