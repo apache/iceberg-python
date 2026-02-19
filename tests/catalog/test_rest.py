@@ -51,7 +51,7 @@ from pyiceberg.exceptions import (
     ServerError,
     TableAlreadyExistsError,
 )
-from pyiceberg.io import load_file_io
+from pyiceberg.io import AWS_ACCESS_KEY_ID, load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
@@ -959,6 +959,57 @@ def test_load_table_200(rest_mock: Mocker, example_table_metadata_with_snapshot_
     assert actual.metadata.model_dump() == expected.metadata.model_dump()
     assert actual == expected
 
+
+def test_storage_credentials_over_config(rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]) -> None:
+    response = {
+        "metadata-location": example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
+        "metadata": example_table_metadata_with_snapshot_v1_rest_json["metadata"],
+        "config": {
+            AWS_ACCESS_KEY_ID: "from_config",
+        },
+        "storage-credentials": [
+            {
+                "prefix": "s3://warehouse/database/",
+                "config": {
+                    AWS_ACCESS_KEY_ID: "from_storage_credentials",
+                },
+            }
+        ],
+    }
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json=response,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    table = catalog.load_table(("fokko", "table"))
+
+    assert table.io.properties[AWS_ACCESS_KEY_ID] == "from_storage_credentials"
+
+
+def test_config_when_no_storage_credentials(rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]) -> None:
+    response = {
+        "metadata-location": example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
+        "metadata": example_table_metadata_with_snapshot_v1_rest_json["metadata"],
+        "config": {
+            AWS_ACCESS_KEY_ID: "from_config",
+        },
+    }
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json=response,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    table = catalog.load_table(("fokko", "table"))
+
+    assert table.io.properties[AWS_ACCESS_KEY_ID] == "from_config"
 
 def test_load_table_200_loading_mode(
     rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
