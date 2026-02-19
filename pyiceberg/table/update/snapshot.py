@@ -331,10 +331,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     def snapshot_id(self) -> int:
         return self._snapshot_id
 
-    def schema(self, schema_id: int | None = None) -> Schema:
-        if schema_id:
-            if schema := self._transaction.table_metadata.schema_by_id(schema_id):
-                return schema
+    def schema(self) -> Schema:
         return self._transaction.table_metadata.schema()
 
     def spec(self, spec_id: int) -> PartitionSpec:
@@ -381,10 +378,10 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             group = partition_to_overwrite.setdefault(data_file.spec_id, set())
             group.add(data_file.partition)
 
-        for spec_id, data_files in partition_to_overwrite.items():
+        for spec_id, partition_records in partition_to_overwrite.items():
             self.delete_by_predicate(
                 self._transaction._build_partition_predicate(
-                    partition_records=data_files, schema=self.schema(), spec=self.spec(spec_id)
+                    partition_records=partition_records, schema=self.schema(), spec=self.spec(spec_id)
                 )
             )
 

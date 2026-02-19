@@ -355,7 +355,7 @@ class Transaction:
         return updates, requirements
 
     def _build_partition_predicate(
-        self, partition_records: set[Record], spec: PartitionSpec | None = None, schema: Schema | None = None
+        self, partition_records: set[Record], spec: PartitionSpec, schema: Schema
     ) -> BooleanExpression:
         """Build a filter predicate matching any of the input partition records.
 
@@ -366,9 +366,7 @@ class Transaction:
         Returns:
             A predicate matching any of the input partition records.
         """
-        partition_spec = spec or self.table_metadata.spec()
-        schema = schema or self.table_metadata.schema()
-        partition_fields = [schema.find_field(field.source_id).name for field in partition_spec.fields]
+        partition_fields = [schema.find_field(field.source_id).name for field in spec.fields]
 
         expr: BooleanExpression = AlwaysFalse()
         for partition_record in partition_records:
@@ -545,7 +543,9 @@ class Transaction:
         )
 
         partitions_to_overwrite = {data_file.partition for data_file in data_files}
-        delete_filter = self._build_partition_predicate(partition_records=partitions_to_overwrite)
+        delete_filter = self._build_partition_predicate(
+            partition_records=partitions_to_overwrite, spec=self.table_metadata.spec(), schema=self.table_metadata.schema()
+        )
         self.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties, branch=branch)
 
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
