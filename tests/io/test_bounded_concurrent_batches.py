@@ -25,7 +25,7 @@ import pyarrow as pa
 import pytest
 
 from pyiceberg.io.pyarrow import _bounded_concurrent_batches
-from pyiceberg.table import FileScanTask, ScanOrder, TaskOrder, ArrivalOrder
+from pyiceberg.table import ArrivalOrder, FileScanTask
 
 
 def _make_task() -> FileScanTask:
@@ -50,7 +50,7 @@ def test_correctness_single_file() -> None:
     def batch_fn(t: FileScanTask) -> Iterator[pa.RecordBatch]:
         yield from expected_batches
 
-    result = list(_bounded_concurrent_batches([task], batch_fn, concurrent_files=1, max_buffered_batches=16))
+    result = list(_bounded_concurrent_batches([task], batch_fn, concurrent_streams=1, max_buffered_batches=16))
 
     assert len(result) == 3
     total_rows = sum(len(b) for b in result)
@@ -66,7 +66,7 @@ def test_correctness_multiple_files() -> None:
         idx = tasks.index(t)
         yield from _make_batches(batches_per_file, start=idx * 100)
 
-    result = list(_bounded_concurrent_batches(tasks, batch_fn, concurrent_files=2, max_buffered_batches=16))
+    result = list(_bounded_concurrent_batches(tasks, batch_fn, concurrent_streams=2, max_buffered_batches=16))
 
     total_rows = sum(len(b) for b in result)
     assert total_rows == batches_per_file * len(tasks) * 10  # 3 batches * 4 files * 10 rows
@@ -82,7 +82,7 @@ def test_arrival_order_yields_incrementally() -> None:
         barrier.wait(timeout=5.0)
         yield pa.record_batch({"col": [4, 5, 6]})
 
-    gen = _bounded_concurrent_batches(tasks, batch_fn, concurrent_files=2, max_buffered_batches=16)
+    gen = _bounded_concurrent_batches(tasks, batch_fn, concurrent_streams=2, max_buffered_batches=16)
 
     # Should get at least one batch before all are done
     first = next(gen)
@@ -110,7 +110,7 @@ def test_backpressure() -> None:
                 produced_count += 1
             yield pa.record_batch({"col": [i]})
 
-    gen = _bounded_concurrent_batches(tasks, batch_fn, concurrent_files=1, max_buffered_batches=max_buffered)
+    gen = _bounded_concurrent_batches(tasks, batch_fn, concurrent_streams=1, max_buffered_batches=max_buffered)
 
     # Consume slowly and check that not all batches are produced immediately
     first = next(gen)
@@ -131,7 +131,7 @@ def test_error_propagation() -> None:
         yield pa.record_batch({"col": [1]})
         raise ValueError("test error")
 
-    gen = _bounded_concurrent_batches(tasks, batch_fn, concurrent_files=1, max_buffered_batches=16)
+    gen = _bounded_concurrent_batches(tasks, batch_fn, concurrent_streams=1, max_buffered_batches=16)
 
     # Should get the first batch
     first = next(gen)
@@ -153,7 +153,7 @@ def test_early_termination() -> None:
             yield pa.record_batch({"col": [i]})
             time.sleep(0.01)
 
-    gen = _bounded_concurrent_batches(tasks, batch_fn, concurrent_files=3, max_buffered_batches=4)
+    gen = _bounded_concurrent_batches(tasks, batch_fn, concurrent_streams=3, max_buffered_batches=4)
 
     # Consume a few batches then stop
     worker_started.wait(timeout=5.0)
@@ -168,8 +168,8 @@ def test_early_termination() -> None:
 
 
 def test_concurrency_limit() -> None:
-    """Test that at most concurrent_files files are read concurrently."""
-    concurrent_files = 2
+    """Test that at most concurrent_streams files are read concurrently."""
+    concurrent_streams = 2
     tasks = [_make_task() for _ in range(6)]
     active_count = 0
     max_active = 0
@@ -187,10 +187,10 @@ def test_concurrency_limit() -> None:
             with active_lock:
                 active_count -= 1
 
-    result = list(_bounded_concurrent_batches(tasks, batch_fn, concurrent_files=concurrent_files, max_buffered_batches=16))
+    result = list(_bounded_concurrent_batches(tasks, batch_fn, concurrent_streams=concurrent_streams, max_buffered_batches=16))
 
     assert len(result) == 6
-    assert max_active <= concurrent_files
+    assert max_active <= concurrent_streams
 
 
 def test_empty_tasks() -> None:
@@ -199,12 +199,12 @@ def test_empty_tasks() -> None:
     def batch_fn(t: FileScanTask) -> Iterator[pa.RecordBatch]:
         yield from []
 
-    result = list(_bounded_concurrent_batches([], batch_fn, concurrent_files=2, max_buffered_batches=16))
+    result = list(_bounded_concurrent_batches([], batch_fn, concurrent_streams=2, max_buffered_batches=16))
     assert result == []
 
 
 def test_concurrent_with_limit_via_arrowscan(tmpdir: str) -> None:
-    """Test concurrent_files with limit through ArrowScan integration."""
+    """Test concurrent_streams with limit through ArrowScan integration."""
     from pyiceberg.expressions import AlwaysTrue
     from pyiceberg.io.pyarrow import ArrowScan, PyArrowFileIO
     from pyiceberg.manifest import DataFileContent, FileFormat
