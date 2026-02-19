@@ -144,7 +144,7 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
-from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, ArrivalOrder, ScanOrder, TableProperties, TaskOrder
+from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, ArrivalOrder, ScanOrder, TableProperties
 from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
@@ -1837,7 +1837,6 @@ class ArrowScan:
     def to_record_batches(
         self,
         tasks: Iterable[FileScanTask],
-        batch_size: int | None = None,
         order: ScanOrder | None = None,
     ) -> Iterator[pa.RecordBatch]:
         """Scan the Iceberg table and return an Iterator[pa.RecordBatch].
@@ -1853,11 +1852,15 @@ class ArrowScan:
 
         Args:
             tasks: FileScanTasks representing the data files and delete files to read from.
-            batch_size: The number of rows per batch. If None, PyArrow's default is used.
             order: Controls the order in which record batches are returned.
                 TaskOrder() (default) yields batches one file at a time in task order.
-                ArrivalOrder(concurrent_streams=N, max_buffered_batches=M) yields batches
-                as they are produced without materializing entire files into memory.
+                ArrivalOrder(concurrent_streams=N, batch_size=B, max_buffered_batches=M)
+                yields batches as they are produced without materializing entire files
+                into memory. Peak memory ≈ concurrent_streams × batch_size × max_buffered_batches
+                × (average row size in bytes). batch_size is the number of rows per batch.
+                For example (if average row size ≈ 32 bytes):
+                - ArrivalOrder(concurrent_streams=4, batch_size=32768, max_buffered_batches=8)
+                - Peak memory ≈ 4 × 32768 rows × 8 × 32 bytes ≈ ~32 MB (plus Arrow overhead)
 
         Returns:
             An Iterator of PyArrow RecordBatches.
@@ -1868,9 +1871,6 @@ class ArrowScan:
             ValueError: When a field type in the file cannot be projected to the schema type,
                 or when an invalid order value is provided, or when concurrent_streams < 1.
         """
-        if order is None:
-            order = TaskOrder()
-
         if not isinstance(order, ScanOrder):
             raise ValueError(f"Invalid order: {order!r}. Must be a ScanOrder instance (TaskOrder() or ArrivalOrder()).")
 
@@ -1881,11 +1881,11 @@ class ArrowScan:
                 raise ValueError(f"concurrent_streams must be >= 1, got {order.concurrent_streams}")
             return self._apply_limit(
                 self._iter_batches_arrival(
-                    task_list, deletes_per_file, batch_size, order.concurrent_streams, order.max_buffered_batches
+                    task_list, deletes_per_file, order.batch_size, order.concurrent_streams, order.max_buffered_batches
                 )
             )
 
-        return self._apply_limit(self._iter_batches_materialized(task_list, deletes_per_file, batch_size))
+        return self._apply_limit(self._iter_batches_materialized(task_list, deletes_per_file))
 
     def _prepare_tasks_and_deletes(
         self, tasks: Iterable[FileScanTask]
@@ -1914,13 +1914,12 @@ class ArrowScan:
         self,
         task_list: list[FileScanTask],
         deletes_per_file: dict[str, list[ChunkedArray]],
-        batch_size: int | None,
     ) -> Iterator[pa.RecordBatch]:
         """Yield batches using executor.map with full file materialization."""
         executor = ExecutorFactory.get_or_create()
 
         def batches_for_task(task: FileScanTask) -> list[pa.RecordBatch]:
-            return list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file, batch_size))
+            return list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file))
 
         for batches in executor.map(batches_for_task, task_list):
             yield from batches

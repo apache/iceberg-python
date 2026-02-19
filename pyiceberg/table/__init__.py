@@ -174,9 +174,23 @@ class ArrivalOrder(ScanOrder):
 
     Batches are yielded as they are produced without materializing entire
     files into memory. Supports concurrent processing of multiple files.
+
+    Memory Usage:
+        Peak memory ≈ concurrent_streams × batch_size × max_buffered_batches
+        × (average row size in bytes). batch_size is the number of rows per batch.
+
+        For example (if average row size ≈ 32 bytes):
+        - ArrivalOrder(concurrent_streams=4, batch_size=32768, max_buffered_batches=8)
+        - Peak memory ≈ 4 × 32768 rows × 8 × 32 bytes ≈ ~32 MB (plus Arrow overhead)
+
+    Args:
+        concurrent_streams: Number of files to read concurrently (default: 8)
+        batch_size: Number of rows per batch, controls memory per stream (default: None, uses PyArrow default ~131K)
+        max_buffered_batches: Maximum batches buffered per stream (default: 16)
     """
 
-    concurrent_streams: int = 1
+    concurrent_streams: int = 8
+    batch_size: int | None = None
     max_buffered_batches: int = 16
 
 
@@ -2181,7 +2195,7 @@ class DataScan(TableScan):
             self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
         ).to_table(self.plan_files())
 
-    def to_arrow_batch_reader(self, batch_size: int | None = None, order: ScanOrder | None = None) -> pa.RecordBatchReader:
+    def to_arrow_batch_reader(self, order: ScanOrder | None = None) -> pa.RecordBatchReader:
         """Return an Arrow RecordBatchReader from this DataScan.
 
         For large results, using a RecordBatchReader requires less memory than
@@ -2194,12 +2208,12 @@ class DataScan(TableScan):
               Within each file, batch ordering follows row order.
 
         Args:
-            batch_size: The number of rows per batch. If None, PyArrow's default is used.
             order: Controls the order in which record batches are returned.
-                TaskOrder() (default) yields batches one file at a time in task order.
-                ArrivalOrder(concurrent_streams=N, max_buffered_batches=M) yields batches
-                as they are produced without materializing entire files into memory.
-                concurrent_streams controls parallelism, max_buffered_batches controls memory.
+                TaskOrder() (default) yields batches one file at a time in task order using
+                PyArrow's default batch size.
+                ArrivalOrder(concurrent_streams=N, batch_size=B, max_buffered_batches=M)
+                yields batches as they are produced without materializing entire files
+                into memory. Memory usage ≈ concurrent_streams × batch_size × max_buffered_batches × (average row size in bytes).
 
         Returns:
             pa.RecordBatchReader: Arrow RecordBatchReader from the Iceberg table's DataScan
@@ -2215,7 +2229,7 @@ class DataScan(TableScan):
         target_schema = schema_to_pyarrow(self.projection())
         batches = ArrowScan(
             self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
-        ).to_record_batches(self.plan_files(), batch_size=batch_size, order=order)
+        ).to_record_batches(self.plan_files(), order=order)
 
         return pa.RecordBatchReader.from_batches(
             target_schema,
