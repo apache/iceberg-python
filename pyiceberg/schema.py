@@ -1723,7 +1723,9 @@ def _(file_type: UnknownType, read_type: IcebergType) -> IcebergType:
         raise ResolveError(f"Cannot promote {file_type} to {read_type}")
 
 
-def _check_schema_compatible(requested_schema: Schema, provided_schema: Schema) -> None:
+def _check_schema_compatible(
+    requested_schema: Schema, provided_schema: Schema, allow_planar_geospatial_equivalence: bool = False
+) -> None:
     """
     Check if the `provided_schema` is compatible with `requested_schema`.
 
@@ -1737,22 +1739,42 @@ def _check_schema_compatible(requested_schema: Schema, provided_schema: Schema) 
     Raises:
         ValueError: If the schemas are not compatible.
     """
-    pre_order_visit(requested_schema, _SchemaCompatibilityVisitor(provided_schema))
+    pre_order_visit(
+        requested_schema,
+        _SchemaCompatibilityVisitor(
+            provided_schema=provided_schema,
+            allow_planar_geospatial_equivalence=allow_planar_geospatial_equivalence,
+        ),
+    )
 
 
 class _SchemaCompatibilityVisitor(PreOrderSchemaVisitor[bool]):
     provided_schema: Schema
+    allow_planar_geospatial_equivalence: bool
 
-    def __init__(self, provided_schema: Schema):
+    def __init__(self, provided_schema: Schema, allow_planar_geospatial_equivalence: bool = False):
         from rich.console import Console
         from rich.table import Table as RichTable
 
         self.provided_schema = provided_schema
+        self.allow_planar_geospatial_equivalence = allow_planar_geospatial_equivalence
         self.rich_table = RichTable(show_header=True, header_style="bold")
         self.rich_table.add_column("")
         self.rich_table.add_column("Table field")
         self.rich_table.add_column("Dataframe field")
         self.console = Console(record=True)
+
+    def _is_planar_geospatial_equivalent(self, lhs: IcebergType, rhs: IcebergType) -> bool:
+        if not self.allow_planar_geospatial_equivalence:
+            return False
+
+        if isinstance(lhs, GeometryType) and isinstance(rhs, GeographyType):
+            return rhs.algorithm == "planar" and lhs.crs == rhs.crs
+
+        if isinstance(lhs, GeographyType) and isinstance(rhs, GeometryType):
+            return lhs.algorithm == "planar" and lhs.crs == rhs.crs
+
+        return False
 
     def _is_field_compatible(self, lhs: NestedField) -> bool:
         # Validate nullability first.
@@ -1774,6 +1796,9 @@ class _SchemaCompatibilityVisitor(PreOrderSchemaVisitor[bool]):
 
         # Check type compatibility
         if lhs.field_type == rhs.field_type:
+            self.rich_table.add_row("✅", str(lhs), str(rhs))
+            return True
+        elif self._is_planar_geospatial_equivalent(lhs.field_type, rhs.field_type):
             self.rich_table.add_row("✅", str(lhs), str(rhs))
             return True
         # We only check that the parent node is also of the same type.

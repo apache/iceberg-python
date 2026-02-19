@@ -84,11 +84,11 @@ point_wkb = bytes.fromhex("0101000000000000000000000000000000000000")
 
 1. **WKB/WKT Conversion**: Converting between WKB bytes and WKT strings requires external libraries (like Shapely). PyIceberg does not include this conversion to avoid heavy dependencies.
 
-2. **Spatial Predicates**: Spatial filtering (e.g., ST_Contains, ST_Intersects) is not yet supported for query pushdown.
+2. **Spatial Predicates Execution**: Spatial predicate APIs (`st-contains`, `st-intersects`, `st-within`, `st-overlaps`) are available in expression trees and binding. Row-level execution and metrics/pushdown evaluation are not implemented yet.
 
-3. **Bounds Metrics**: Geometry/geography columns do not currently contribute to data file bounds metrics.
+3. **Without geoarrow-pyarrow**: When the `geoarrow-pyarrow` package is not installed, geometry and geography columns are stored as binary without GeoArrow extension type metadata. The Iceberg schema preserves type information, but other tools reading the Parquet files directly may not recognize them as spatial types. Install with `pip install pyiceberg[geoarrow]` for full GeoArrow support.
 
-4. **Without geoarrow-pyarrow**: When the `geoarrow-pyarrow` package is not installed, geometry and geography columns are stored as binary without GeoArrow extension type metadata. The Iceberg schema preserves type information, but other tools reading the Parquet files directly may not recognize them as spatial types. Install with `pip install pyiceberg[geoarrow]` for full GeoArrow support.
+4. **GeoArrow planar ambiguity**: In GeoArrow metadata, `geometry` and `geography(..., 'planar')` can be encoded identically (no explicit edge metadata). PyIceberg resolves this ambiguity at the Arrow/Parquet schema-compatibility boundary by treating them as compatible when CRS matches, while keeping core schema compatibility strict elsewhere.
 
 ## Format Version
 
