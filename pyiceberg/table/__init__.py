@@ -23,7 +23,6 @@ import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
-from enum import Enum
 from functools import cached_property
 from itertools import chain
 from types import TracebackType
@@ -156,9 +155,8 @@ DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
 
 
 @dataclass
-class ScanOrder(ABC):
+class ScanOrder:
     """Base class for scan ordering strategies."""
-    pass
 
 
 @dataclass
@@ -168,7 +166,6 @@ class TaskOrder(ScanOrder):
     Batches are returned in task order, with each task fully materialized
     before proceeding to the next. Allows parallel file reads via executor.
     """
-    pass
 
 
 @dataclass
@@ -178,6 +175,7 @@ class ArrivalOrder(ScanOrder):
     Batches are yielded as they are produced without materializing entire
     files into memory. Supports concurrent processing of multiple files.
     """
+
     concurrent_streams: int = 1
     max_buffered_batches: int = 16
 
@@ -2183,9 +2181,7 @@ class DataScan(TableScan):
             self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
         ).to_table(self.plan_files())
 
-    def to_arrow_batch_reader(
-        self, batch_size: int | None = None, order: ScanOrder = TaskOrder()
-    ) -> pa.RecordBatchReader:
+    def to_arrow_batch_reader(self, batch_size: int | None = None, order: ScanOrder | None = None) -> pa.RecordBatchReader:
         """Return an Arrow RecordBatchReader from this DataScan.
 
         For large results, using a RecordBatchReader requires less memory than
@@ -2212,6 +2208,9 @@ class DataScan(TableScan):
         import pyarrow as pa
 
         from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
+
+        if order is None:
+            order = TaskOrder()
 
         target_schema = schema_to_pyarrow(self.projection())
         batches = ArrowScan(
