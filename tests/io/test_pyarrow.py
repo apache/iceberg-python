@@ -86,7 +86,7 @@ from pyiceberg.io.pyarrow import (
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema, make_compatible_name, visit
-from pyiceberg.table import FileScanTask, ScanOrder, TaskOrder, ArrivalOrder, TableProperties
+from pyiceberg.table import ArrivalOrder, FileScanTask, TableProperties, TaskOrder
 from pyiceberg.table.metadata import TableMetadataV2
 from pyiceberg.table.name_mapping import create_mapping_from_schema
 from pyiceberg.transforms import HourTransform, IdentityTransform

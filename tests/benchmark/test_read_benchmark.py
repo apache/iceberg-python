@@ -35,7 +35,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from pyiceberg.catalog.sql import SqlCatalog
-from pyiceberg.table import ScanOrder, TaskOrder, ArrivalOrder, Table
+from pyiceberg.table import ArrivalOrder, ScanOrder, Table, TaskOrder
 
 NUM_FILES = 32
 ROWS_PER_FILE = 500_000
