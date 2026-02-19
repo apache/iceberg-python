@@ -77,18 +77,22 @@ def test_write_read_roundtrip_geospatial(catalog: Catalog) -> None:
     table = catalog.create_table(
         identifier=identifier,
         schema=schema,
-        # Keep this aligned with writer capabilities until v3 manifest writing is supported.
-        properties={TableProperties.FORMAT_VERSION: str(SUPPORTED_TABLE_FORMAT_VERSION)},
+        properties={TableProperties.FORMAT_VERSION: "3"},
     )
 
     geom = struct.pack("<BIIdddd", 1, 2, 2, 1.0, 2.0, 3.0, 4.0)
     geog = struct.pack("<BIIdddd", 1, 2, 2, 170.0, 10.0, -170.0, 20.0)
-    table.append(
-        pa.Table.from_pydict(
-            {"id": [1], "geom": [geom], "geog": [geog]},
-            schema=schema_to_pyarrow(schema),
-        )
+    data = pa.Table.from_pydict(
+        {"id": [1], "geom": [geom], "geog": [geog]},
+        schema=schema_to_pyarrow(schema),
     )
+
+    if SUPPORTED_TABLE_FORMAT_VERSION < 3:
+        with pytest.raises((NotImplementedError, ValueError), match=r"(V3|v3|version: 3)"):
+            table.append(data)
+        return
+
+    table.append(data)
 
     scanned = table.scan().to_arrow()
     assert scanned["id"][0].as_py() == 1
