@@ -1755,6 +1755,9 @@ def _bounded_concurrent_batches(
                     break
 
 
+_DEFAULT_SCAN_ORDER: ScanOrder = TaskOrder()
+
+
 class ArrowScan:
     _table_metadata: TableMetadata
     _io: FileIO
@@ -1837,7 +1840,7 @@ class ArrowScan:
     def to_record_batches(
         self,
         tasks: Iterable[FileScanTask],
-        order: ScanOrder = TaskOrder(),
+        order: ScanOrder = _DEFAULT_SCAN_ORDER,
     ) -> Iterator[pa.RecordBatch]:
         """Scan the Iceberg table and return an Iterator[pa.RecordBatch].
 
