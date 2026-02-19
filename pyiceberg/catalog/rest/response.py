@@ -28,6 +28,7 @@ from pyiceberg.exceptions import (
     RESTError,
     ServerError,
     ServiceUnavailableError,
+    TooManyRequestsError,
     UnauthorizedError,
 )
 from pyiceberg.typedef import IcebergBaseModel
@@ -79,6 +80,8 @@ def _handle_non_200_response(exc: HTTPError, error_handler: dict[int, type[Excep
         exception = RESTError
     elif code == 419:
         exception = AuthorizationExpiredError
+    elif code == 429:
+        exception = TooManyRequestsError
     elif code == 501:
         exception = NotImplementedError
     elif code == 503:
