@@ -263,7 +263,7 @@ def _added_delete_files(
     return dfi
 
 
-def _starting_sequence_number(table: Table, starting_snapshot: Snapshot | None) -> int:
+def _starting_sequence_number(table: Table, starting_snapshot: Snapshot) -> int:
     """Find the starting sequence number from a snapshot.
 
     Args:
