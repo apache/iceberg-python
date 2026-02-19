@@ -1029,3 +1029,18 @@ def test_log_level_cli_overrides_env(mocker: MockFixture) -> None:
     mock_basicConfig.assert_called_once()
     call_kwargs = mock_basicConfig.call_args[1]
     assert call_kwargs["level"] == logging.ERROR
+
+
+def test_prefix_cli_option_forwarded_to_catalog(mocker: MockFixture) -> None:
+    mock_basicConfig = mocker.patch("logging.basicConfig")
+    mock_catalog = MagicMock(spec=InMemoryCatalog)
+    mock_catalog.list_tables.return_value = []
+    mock_catalog.list_namespaces.return_value = []
+    mock_load_catalog = mocker.patch("pyiceberg.cli.console.load_catalog", return_value=mock_catalog)
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["--catalog", "rest", "--uri", "https://example.invalid", "--prefix", "v1/ws", "list"])
+
+    assert result.exit_code == 0
+    mock_basicConfig.assert_called_once()
+    mock_load_catalog.assert_called_once_with("rest", uri="https://example.invalid", prefix="v1/ws")

@@ -35,6 +35,8 @@ from pyiceberg.catalog.rest import (
     OAUTH2_SERVER_URI,
     SNAPSHOT_LOADING_MODE,
     Capability,
+    Endpoint,
+    HttpMethod,
     RestCatalog,
 )
 from pyiceberg.exceptions import (
@@ -1641,6 +1643,19 @@ def test_update_namespace_properties_invalid_namespace(rest_mock: Mocker) -> Non
     assert "Empty namespace identifier" in str(e.value)
 
 
+def test_with_disabled_ssl_ca_bundle(rest_mock: Mocker) -> None:
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "token": TEST_TOKEN,
+        "ssl": {
+            "cabundle": False,
+        },
+    }
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert catalog._session.verify is False
+
+
 def test_request_session_with_ssl_ca_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
     # Given
     catalog_properties = {
@@ -2351,3 +2366,27 @@ def test_table_uuid_check_on_refresh(rest_mock: Mocker, example_table_metadata_v
     assert "Table UUID does not match" in str(exc_info.value)
     assert f"current={original_uuid}" in str(exc_info.value)
     assert f"refreshed={different_uuid}" in str(exc_info.value)
+
+
+def test_endpoint_parsing_from_string_with_valid_http_method() -> None:
+    test_cases = [
+        ("GET /v1/resource", HttpMethod.GET, "/v1/resource"),
+        ("HEAD /v1/resource", HttpMethod.HEAD, "/v1/resource"),
+        ("POST /v1/resource", HttpMethod.POST, "/v1/resource"),
+        ("DELETE /v1/resource", HttpMethod.DELETE, "/v1/resource"),
+        ("PUT /v1/resource", HttpMethod.PUT, "/v1/resource"),
+        ("CONNECT /v1/resource", HttpMethod.CONNECT, "/v1/resource"),
+        ("OPTIONS /v1/resource", HttpMethod.OPTIONS, "/v1/resource"),
+        ("TRACE /v1/resource", HttpMethod.TRACE, "/v1/resource"),
+        ("PATCH /v1/resource", HttpMethod.PATCH, "/v1/resource"),
+    ]
+
+    for raw_string, http_method, path in test_cases:
+        endpoint = Endpoint.from_string(raw_string)
+        assert endpoint.http_method == http_method
+        assert endpoint.path == path
+
+
+def test_endpoint_parsing_from_string_with_invalid_http_method() -> None:
+    with pytest.raises(ValueError, match="not a valid HttpMethod"):
+        Endpoint.from_string("INVALID /v1/resource")

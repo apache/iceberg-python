@@ -213,7 +213,7 @@ class RemoveSchemasUpdate(IcebergBaseModel):
 
 class SetPartitionStatisticsUpdate(IcebergBaseModel):
     action: Literal["set-partition-statistics"] = Field(default="set-partition-statistics")
-    partition_statistics: PartitionStatisticsFile
+    partition_statistics: PartitionStatisticsFile = Field(alias="partition-statistics")
 
 
 class RemovePartitionStatisticsUpdate(IcebergBaseModel):

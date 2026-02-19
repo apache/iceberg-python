@@ -1639,6 +1639,10 @@ def test_set_partition_statistics_update(table_v2_with_statistics: Table) -> Non
         partition_statistics=partition_statistics_file,
     )
 
+    # Verify that serialization uses 'partition-statistics' alias
+    dumped_with_alias = update.model_dump(by_alias=True)
+    assert "partition-statistics" in dumped_with_alias
+
     new_metadata = update_table_metadata(
         table_v2_with_statistics.metadata,
         (update,),
