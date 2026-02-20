@@ -441,7 +441,7 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
     elif base_metadata.snapshot_by_id(update.snapshot.snapshot_id) is not None:
         raise ValueError(f"Snapshot with id {update.snapshot.snapshot_id} already exists")
     elif (
-        base_metadata.format_version == 2
+        base_metadata.format_version >= 2
         and update.snapshot.sequence_number is not None
         and update.snapshot.sequence_number <= base_metadata.last_sequence_number
         and update.snapshot.parent_snapshot_id is not None
@@ -462,20 +462,25 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
             f"Cannot add a snapshot with first row id smaller than the table's next-row-id "
             f"{update.snapshot.first_row_id} < {base_metadata.next_row_id}"
         )
+    elif base_metadata.format_version >= 3 and update.snapshot.added_rows is None:
+        raise ValueError("Cannot add snapshot without added rows")
+    elif base_metadata.format_version >= 3 and base_metadata.next_row_id is None:
+        raise ValueError("Cannot add a snapshot when table next-row-id is null")
+
+    metadata_updates: dict[str, Any] = {
+        "last_updated_ms": update.snapshot.timestamp_ms,
+        "last_sequence_number": update.snapshot.sequence_number,
+        "snapshots": base_metadata.snapshots + [update.snapshot],
+    }
+    if base_metadata.format_version >= 3:
+        next_row_id = base_metadata.next_row_id
+        added_rows = update.snapshot.added_rows
+        if next_row_id is None or added_rows is None:
+            raise ValueError("Cannot compute next-row-id for v3 snapshot update")
+        metadata_updates["next_row_id"] = next_row_id + added_rows
 
     context.add_update(update)
-    return base_metadata.model_copy(
-        update={
-            "last_updated_ms": update.snapshot.timestamp_ms,
-            "last_sequence_number": update.snapshot.sequence_number,
-            "snapshots": base_metadata.snapshots + [update.snapshot],
-            "next_row_id": base_metadata.next_row_id + update.snapshot.added_rows
-            if base_metadata.format_version >= 3
-            and base_metadata.next_row_id is not None
-            and update.snapshot.added_rows is not None
-            else None,
-        }
-    )
+    return base_metadata.model_copy(update=metadata_updates)
 
 
 @_apply_table_update.register(SetSnapshotRefUpdate)
