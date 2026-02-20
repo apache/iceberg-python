@@ -28,7 +28,7 @@ from pydantic import Field, field_validator, model_serializer, model_validator
 from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table.metadata import SUPPORTED_TABLE_FORMAT_VERSION, TableMetadata, TableMetadataUtil
+from pyiceberg.table.metadata import SUPPORTED_TABLE_FORMAT_VERSION, TableMetadata, TableMetadataUtil, TableMetadataV3
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     MetadataLogEntry,
@@ -320,9 +320,17 @@ def _(
         return base_metadata
 
     updated_metadata = base_metadata.model_copy(update={"format_version": update.format_version})
+    updated_metadata = TableMetadataUtil._construct_without_validation(updated_metadata)
+
+    if (
+        isinstance(updated_metadata, TableMetadataV3)
+        and base_metadata.format_version < 3
+        and updated_metadata.next_row_id is None
+    ):
+        updated_metadata = updated_metadata.model_copy(update={"next_row_id": 0})
 
     context.add_update(update)
-    return TableMetadataUtil._construct_without_validation(updated_metadata)
+    return updated_metadata
 
 
 @_apply_table_update.register(SetPropertiesUpdate)

@@ -41,7 +41,7 @@ from pyiceberg.table import (
     Table,
     TableIdentifier,
 )
-from pyiceberg.table.metadata import TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
+from pyiceberg.table.metadata import TableMetadataUtil, TableMetadataV2, TableMetadataV3, _generate_snapshot_id
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     MetadataLogEntry,
@@ -81,6 +81,7 @@ from pyiceberg.table.update import (
     SetPropertiesUpdate,
     SetSnapshotRefUpdate,
     SetStatisticsUpdate,
+    UpgradeFormatVersionUpdate,
     _apply_table_update,
     _TableMetadataUpdateContext,
     update_table_metadata,
@@ -940,6 +941,14 @@ def test_update_metadata_update_sort_order_invalid(table_v2: Table) -> None:
     invalid_order_id = 10
     with pytest.raises(ValueError, match=f"Sort order with id {invalid_order_id} does not exist"):
         update_table_metadata(table_v2.metadata, (SetDefaultSortOrderUpdate(sort_order_id=invalid_order_id),))
+
+
+def test_upgrade_format_version_to_v3_initializes_next_row_id(table_v2: Table) -> None:
+    new_metadata = update_table_metadata(table_v2.metadata, (UpgradeFormatVersionUpdate(format_version=3),))
+
+    assert isinstance(new_metadata, TableMetadataV3)
+    assert new_metadata.format_version == 3
+    assert new_metadata.next_row_id == 0
 
 
 def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:

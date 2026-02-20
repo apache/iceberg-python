@@ -968,10 +968,10 @@ def test_upgrade_table_version(catalog: Catalog) -> None:
             transaction.upgrade_table_version(format_version=1)
     assert "Cannot downgrade v2 table to v1" in str(e.value)
 
-    with pytest.raises(ValueError) as e:
-        with table_test_table_version.transaction() as transaction:
-            transaction.upgrade_table_version(format_version=3)
-    assert "Unsupported table format version: 3" in str(e.value)
+    with table_test_table_version.transaction() as transaction:
+        transaction.upgrade_table_version(format_version=3)
+
+    assert table_test_table_version.format_version == 3
 
 
 @pytest.mark.integration

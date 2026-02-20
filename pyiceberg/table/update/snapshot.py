@@ -276,7 +276,8 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
 
     def _commit(self) -> UpdatesAndRequirements:
         new_manifests = self._manifests()
-        next_sequence_number = self._transaction.table_metadata.next_sequence_number()
+        table_metadata = self._transaction.table_metadata
+        next_sequence_number = table_metadata.next_sequence_number()
 
         summary = self._summary(self.snapshot_properties)
         file_name = _new_manifest_list_file_name(
@@ -287,20 +288,31 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         location_provider = self._transaction._table.location_provider()
         manifest_list_file_path = location_provider.new_metadata_location(file_name)
 
+        snapshot_first_row_id: int | None = None
+        if table_metadata.format_version >= 3:
+            snapshot_first_row_id = table_metadata.next_row_id
+            if snapshot_first_row_id is None:
+                raise ValueError("Cannot commit to a v3 table without next-row-id")
+
         with write_manifest_list(
-            format_version=self._transaction.table_metadata.format_version,
+            format_version=table_metadata.format_version,
             output_file=self._io.new_output(manifest_list_file_path),
             snapshot_id=self._snapshot_id,
             parent_snapshot_id=self._parent_snapshot_id,
             sequence_number=next_sequence_number,
             avro_compression=self._compression,
+            snapshot_first_row_id=snapshot_first_row_id,
         ) as writer:
             writer.add_manifests(new_manifests)
 
-        first_row_id: int | None = None
+        added_rows: int | None = None
+        if table_metadata.format_version >= 3:
+            writer_next_row_id = writer.next_row_id
+            if writer_next_row_id is None or snapshot_first_row_id is None:
+                raise ValueError("Cannot determine assigned rows for a v3 snapshot commit")
+            added_rows = writer_next_row_id - snapshot_first_row_id
 
-        if self._transaction.table_metadata.format_version >= 3:
-            first_row_id = self._transaction.table_metadata.next_row_id
+        first_row_id: int | None = snapshot_first_row_id
 
         snapshot = Snapshot(
             snapshot_id=self._snapshot_id,
@@ -308,8 +320,9 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             manifest_list=manifest_list_file_path,
             sequence_number=next_sequence_number,
             summary=summary,
-            schema_id=self._transaction.table_metadata.current_schema_id,
+            schema_id=table_metadata.current_schema_id,
             first_row_id=first_row_id,
+            added_rows=added_rows,
         )
 
         add_snapshot_update = AddSnapshotUpdate(snapshot=snapshot)
