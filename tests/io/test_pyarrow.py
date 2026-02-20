@@ -60,7 +60,7 @@ from pyiceberg.expressions import (
     Or,
 )
 from pyiceberg.expressions.literals import literal
-from pyiceberg.io import S3_RETRY_STRATEGY_IMPL, InputStream, OutputStream, load_file_io
+from pyiceberg.io import S3_ACCESS_POINT_PREFIX, S3_RETRY_STRATEGY_IMPL, InputStream, OutputStream, load_file_io
 from pyiceberg.io.pyarrow import (
     ICEBERG_SCHEMA,
     PYARROW_PARQUET_FIELD_ID_KEY,
@@ -447,6 +447,115 @@ def test_pyarrow_unified_session_properties() -> None:
             region="client.region",
             session_token="client.session-token",
         )
+
+
+def test_s3_access_point_resolution_with_config() -> None:
+    """Test that S3 bucket names are resolved to access point aliases when configured."""
+    bucket_name = "my-bucket"
+    access_point_alias = "my-access-point-abc123-s3alias"
+    properties = {
+        f"{S3_ACCESS_POINT_PREFIX}{bucket_name}": access_point_alias,
+    }
+
+    fileio = PyArrowFileIO(properties=properties)
+
+    # Test _resolve_s3_access_point directly
+    original_path = f"{bucket_name}/path/to/file.parquet"
+    resolved_netloc, resolved_path = fileio._resolve_s3_access_point("s3", bucket_name, "/path/to/file.parquet", original_path)
+
+    assert resolved_netloc == access_point_alias
+    assert resolved_path == f"{access_point_alias}/path/to/file.parquet"
+
+
+def test_s3_access_point_resolution_without_config() -> None:
+    """Test that S3 bucket names are unchanged when no access point is configured."""
+    bucket_name = "my-bucket"
+    fileio = PyArrowFileIO(properties={})
+
+    original_path = f"{bucket_name}/path/to/file.parquet"
+    resolved_netloc, resolved_path = fileio._resolve_s3_access_point("s3", bucket_name, "/path/to/file.parquet", original_path)
+
+    assert resolved_netloc == bucket_name
+    assert resolved_path == f"{bucket_name}/path/to/file.parquet"
+
+
+def test_s3_access_point_resolution_non_s3_scheme() -> None:
+    """Test that non-S3 schemes are not affected by access point configuration."""
+    bucket_name = "my-bucket"
+    access_point_alias = "my-access-point-abc123-s3alias"
+    properties = {
+        f"{S3_ACCESS_POINT_PREFIX}{bucket_name}": access_point_alias,
+    }
+
+    fileio = PyArrowFileIO(properties=properties)
+
+    # Test with non-S3 scheme (should not resolve)
+    original_path = f"{bucket_name}/path/to/file.parquet"
+    resolved_netloc, resolved_path = fileio._resolve_s3_access_point("gs", bucket_name, "/path/to/file.parquet", original_path)
+
+    assert resolved_netloc == bucket_name
+    assert resolved_path == original_path
+
+
+def test_s3_access_point_resolution_s3a_scheme() -> None:
+    """Test that s3a scheme also resolves access points."""
+    bucket_name = "my-bucket"
+    access_point_alias = "my-access-point-abc123-s3alias"
+    properties = {
+        f"{S3_ACCESS_POINT_PREFIX}{bucket_name}": access_point_alias,
+    }
+
+    fileio = PyArrowFileIO(properties=properties)
+
+    original_path = f"{bucket_name}/path/to/file.parquet"
+    resolved_netloc, resolved_path = fileio._resolve_s3_access_point("s3a", bucket_name, "/path/to/file.parquet", original_path)
+
+    assert resolved_netloc == access_point_alias
+    assert resolved_path == f"{access_point_alias}/path/to/file.parquet"
+
+
+def test_s3_access_point_new_input_uses_resolved_path() -> None:
+    """Test that new_input uses the resolved access point path."""
+    bucket_name = "my-bucket"
+    access_point_alias = "my-access-point-abc123-s3alias"
+    properties = {
+        f"{S3_ACCESS_POINT_PREFIX}{bucket_name}": access_point_alias,
+        "s3.region": "us-east-1",
+    }
+
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs:
+        mock_fs_instance = MagicMock()
+        mock_s3fs.return_value = mock_fs_instance
+
+        fileio = PyArrowFileIO(properties=properties)
+        input_file = fileio.new_input(f"s3://{bucket_name}/path/to/file.parquet")
+
+        # The path should be rewritten to use the access point alias
+        assert input_file._path == f"{access_point_alias}/path/to/file.parquet"
+        # The original location should be preserved
+        assert input_file.location == f"s3://{bucket_name}/path/to/file.parquet"
+
+
+def test_s3_access_point_new_output_uses_resolved_path() -> None:
+    """Test that new_output uses the resolved access point path."""
+    bucket_name = "my-bucket"
+    access_point_alias = "my-access-point-abc123-s3alias"
+    properties = {
+        f"{S3_ACCESS_POINT_PREFIX}{bucket_name}": access_point_alias,
+        "s3.region": "us-east-1",
+    }
+
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs:
+        mock_fs_instance = MagicMock()
+        mock_s3fs.return_value = mock_fs_instance
+
+        fileio = PyArrowFileIO(properties=properties)
+        output_file = fileio.new_output(f"s3://{bucket_name}/path/to/file.parquet")
+
+        # The path should be rewritten to use the access point alias
+        assert output_file._path == f"{access_point_alias}/path/to/file.parquet"
+        # The original location should be preserved
+        assert output_file.location == f"s3://{bucket_name}/path/to/file.parquet"
 
 
 def test_schema_to_pyarrow_schema_include_field_ids(table_schema_nested: Schema) -> None:

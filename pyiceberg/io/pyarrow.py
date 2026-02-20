@@ -42,13 +42,7 @@ from copy import copy
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, singledispatch
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Generic,
-    TypeVar,
-    cast,
-)
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 from urllib.parse import urlparse
 
 import pyarrow as pa
@@ -58,22 +52,13 @@ import pyarrow.lib
 import pyarrow.parquet as pq
 from pyarrow import ChunkedArray
 from pyarrow._s3fs import S3RetryStrategy
-from pyarrow.fs import (
-    FileInfo,
-    FileSystem,
-    FileType,
-)
+from pyarrow.fs import FileInfo, FileSystem, FileType
 
 from pyiceberg.conversions import to_bytes
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import AlwaysTrue, BooleanExpression, BoundIsNaN, BoundIsNull, BoundTerm, Not, Or
 from pyiceberg.expressions.literals import Literal
-from pyiceberg.expressions.visitors import (
-    BoundBooleanExpressionVisitor,
-    bind,
-    extract_field_ids,
-    translate_column_names,
-)
+from pyiceberg.expressions.visitors import BoundBooleanExpressionVisitor, bind, extract_field_ids, translate_column_names
 from pyiceberg.expressions.visitors import visit as boolean_expression_visit
 from pyiceberg.io import (
     ADLS_ACCOUNT_KEY,
@@ -101,6 +86,7 @@ from pyiceberg.io import (
     HDFS_PORT,
     HDFS_USER,
     S3_ACCESS_KEY_ID,
+    S3_ACCESS_POINT_PREFIX,
     S3_ANONYMOUS,
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
@@ -120,11 +106,7 @@ from pyiceberg.io import (
     OutputFile,
     OutputStream,
 )
-from pyiceberg.manifest import (
-    DataFile,
-    DataFileContent,
-    FileFormat,
-)
+from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.partitioning import PartitionField, PartitionFieldValue, PartitionKey, PartitionSpec, partition_record_value
 from pyiceberg.schema import (
     PartnerAccessor,
@@ -609,6 +591,34 @@ class PyArrowFileIO(FileIO):
     def _initialize_local_fs(self) -> FileSystem:
         return PyArrowLocalFileSystem()
 
+    def _resolve_s3_access_point(self, scheme: str, netloc: str, path_suffix: str, original_path: str) -> tuple[str, str]:
+        """Resolve S3 access point alias for a bucket if configured.
+
+        For cross-account access, S3 paths need to use access point aliases instead of bucket names.
+        Access point aliases work like bucket names and are in the format: <name>-<account-id>-s3alias
+        Config format: s3.access-point.<bucket-name> = <access-point-alias>
+
+        Args:
+            scheme: The URI scheme (s3, s3a, s3n)
+            netloc: The bucket name from the original URI
+            path_suffix: The path within the bucket (without bucket name)
+            original_path: The original path from parse_location (fallback for non-S3)
+
+        Returns:
+            Tuple of (resolved_netloc, resolved_path) where netloc may be replaced with access point alias
+        """
+        if scheme not in {"s3", "s3a", "s3n"}:
+            return netloc, original_path
+
+        # Check for access point alias configuration for this bucket
+        access_point_key = f"{S3_ACCESS_POINT_PREFIX}{netloc}"
+        if access_point_alias := self.properties.get(access_point_key):
+            logger.debug("Resolving bucket '%s' to access point alias: %s", netloc, access_point_alias)
+            # Replace bucket with access point alias in the path
+            return access_point_alias, f"{access_point_alias}{path_suffix}"
+
+        return netloc, original_path
+
     def new_input(self, location: str) -> PyArrowFile:
         """Get a PyArrowFile instance to read bytes from the file at the given location.
 
@@ -619,10 +629,13 @@ class PyArrowFileIO(FileIO):
             PyArrowFile: A PyArrowFile instance for the given location.
         """
         scheme, netloc, path = self.parse_location(location, self.properties)
+        # For S3, resolve access point if configured
+        uri = urlparse(location)
+        resolved_netloc, resolved_path = self._resolve_s3_access_point(scheme, netloc, uri.path, path)
         return PyArrowFile(
-            fs=self.fs_by_scheme(scheme, netloc),
+            fs=self.fs_by_scheme(scheme, resolved_netloc),
             location=location,
-            path=path,
+            path=resolved_path,
             buffer_size=int(self.properties.get(BUFFER_SIZE, ONE_MEGABYTE)),
         )
 
@@ -636,10 +649,13 @@ class PyArrowFileIO(FileIO):
             PyArrowFile: A PyArrowFile instance for the given location.
         """
         scheme, netloc, path = self.parse_location(location, self.properties)
+        # For S3, resolve access point if configured
+        uri = urlparse(location)
+        resolved_netloc, resolved_path = self._resolve_s3_access_point(scheme, netloc, uri.path, path)
         return PyArrowFile(
-            fs=self.fs_by_scheme(scheme, netloc),
+            fs=self.fs_by_scheme(scheme, resolved_netloc),
             location=location,
-            path=path,
+            path=resolved_path,
             buffer_size=int(self.properties.get(BUFFER_SIZE, ONE_MEGABYTE)),
         )
 
@@ -658,10 +674,13 @@ class PyArrowFileIO(FileIO):
         """
         str_location = location.location if isinstance(location, (InputFile, OutputFile)) else location
         scheme, netloc, path = self.parse_location(str_location, self.properties)
-        fs = self.fs_by_scheme(scheme, netloc)
+        # For S3, resolve access point if configured
+        uri = urlparse(str_location)
+        resolved_netloc, resolved_path = self._resolve_s3_access_point(scheme, netloc, uri.path, path)
+        fs = self.fs_by_scheme(scheme, resolved_netloc)
 
         try:
-            fs.delete_file(path)
+            fs.delete_file(resolved_path)
         except FileNotFoundError:
             raise
         except PermissionError:

@@ -391,6 +391,107 @@ def test_fsspec_unified_session_properties() -> None:
         )
 
 
+def test_fsspec_s3_access_point_resolution_with_config() -> None:
+    """Test that S3 bucket names are resolved to access point aliases when configured."""
+    from pyiceberg.io import S3_ACCESS_POINT_PREFIX
+
+    bucket_name = "my-bucket"
+    access_point_alias = "my-access-point-abc123-s3alias"
+    properties = {
+        f"{S3_ACCESS_POINT_PREFIX}{bucket_name}": access_point_alias,
+    }
+
+    fileio = FsspecFileIO(properties=properties)
+
+    # Test _resolve_s3_access_point directly
+    result = fileio._resolve_s3_access_point("s3", bucket_name)
+
+    assert result == access_point_alias
+
+
+def test_fsspec_s3_access_point_resolution_without_config() -> None:
+    """Test that S3 bucket names return None when no access point is configured."""
+    bucket_name = "my-bucket"
+    fileio = FsspecFileIO(properties={})
+
+    result = fileio._resolve_s3_access_point("s3", bucket_name)
+
+    assert result is None
+
+
+def test_fsspec_s3_access_point_resolution_non_s3_scheme() -> None:
+    """Test that non-S3 schemes are not affected by access point configuration."""
+    from pyiceberg.io import S3_ACCESS_POINT_PREFIX
+
+    bucket_name = "my-bucket"
+    access_point_alias = "my-access-point-abc123-s3alias"
+    properties = {
+        f"{S3_ACCESS_POINT_PREFIX}{bucket_name}": access_point_alias,
+    }
+
+    fileio = FsspecFileIO(properties=properties)
+
+    # Test with non-S3 scheme (should return None)
+    result = fileio._resolve_s3_access_point("gs", bucket_name)
+
+    assert result is None
+
+
+def test_fsspec_s3_access_point_resolution_s3a_scheme() -> None:
+    """Test that s3a scheme also resolves access points."""
+    from pyiceberg.io import S3_ACCESS_POINT_PREFIX
+
+    bucket_name = "my-bucket"
+    access_point_alias = "my-access-point-abc123-s3alias"
+    properties = {
+        f"{S3_ACCESS_POINT_PREFIX}{bucket_name}": access_point_alias,
+    }
+
+    fileio = FsspecFileIO(properties=properties)
+
+    result = fileio._resolve_s3_access_point("s3a", bucket_name)
+
+    assert result == access_point_alias
+
+
+def test_fsspec_s3_access_point_new_input_uses_resolved_location() -> None:
+    """Test that new_input uses the resolved access point location."""
+    from pyiceberg.io import S3_ACCESS_POINT_PREFIX
+
+    bucket_name = "my-bucket"
+    access_point_alias = "my-access-point-abc123-s3alias"
+    properties = {
+        f"{S3_ACCESS_POINT_PREFIX}{bucket_name}": access_point_alias,
+        "s3.region": "us-east-1",
+    }
+
+    with mock.patch("s3fs.S3FileSystem"):
+        fileio = FsspecFileIO(properties=properties)
+        input_file = fileio.new_input(f"s3://{bucket_name}/path/to/file.parquet")
+
+        # The location should be rewritten to use the access point alias
+        assert input_file.location == f"s3://{access_point_alias}/path/to/file.parquet"
+
+
+def test_fsspec_s3_access_point_new_output_uses_resolved_location() -> None:
+    """Test that new_output uses the resolved access point location."""
+    from pyiceberg.io import S3_ACCESS_POINT_PREFIX
+
+    bucket_name = "my-bucket"
+    access_point_alias = "my-access-point-abc123-s3alias"
+    properties = {
+        f"{S3_ACCESS_POINT_PREFIX}{bucket_name}": access_point_alias,
+        "s3.region": "us-east-1",
+    }
+
+    with mock.patch("s3fs.S3FileSystem"):
+        fileio = FsspecFileIO(properties=properties)
+        output_file = fileio.new_output(f"s3://{bucket_name}/path/to/file.parquet")
+
+        # The location should be rewritten to use the access point alias
+        assert output_file.location == f"s3://{access_point_alias}/path/to/file.parquet"
+
+
 @pytest.mark.adls
 def test_fsspec_new_input_file_adls(adls_fsspec_fileio: FsspecFileIO) -> None:
     """Test creating a new input file from an fsspec file-io"""
