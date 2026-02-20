@@ -142,6 +142,53 @@ def test_error_propagation() -> None:
         list(gen)
 
 
+def test_no_deadlock_on_early_termination_with_full_queue() -> None:
+    """Regression test for deadlock when concurrent_files > 1 and max_buffered_batches=1.
+
+    Scenario:
+      - max_buffered_batches=1, concurrent_files=3
+      - Queue is full (1 item), Workers A/B/C all blocked on put()
+      - Consumer closes the generator (GeneratorExit → finally → cancel.set())
+      - Buggy drain loop: get_nowait() removes the 1 item, empty() → True,
+        exits before A/B/C have a chance to put. Workers remain stuck on put()
+        and executor.shutdown(wait=True) hangs forever.
+    """
+    tasks = [_make_task() for _ in range(3)]
+
+    blocked_on_put = 0
+    blocked_lock = threading.Lock()
+    at_least_two_blocked = threading.Event()
+
+    def batch_fn(t: FileScanTask) -> Iterator[pa.RecordBatch]:
+        nonlocal blocked_on_put
+        for i in range(100):
+            with blocked_lock:
+                blocked_on_put += 1
+                if blocked_on_put >= 2:
+                    at_least_two_blocked.set()
+            yield pa.record_batch({"col": [i]})
+            with blocked_lock:
+                blocked_on_put -= 1
+
+    gen = _bounded_concurrent_batches(tasks, batch_fn, concurrent_streams=3, max_buffered_batches=1)
+    next(gen)  # consume 1 batch, workers immediately try to put the next
+
+    # Wait until at least 2 workers are inside batch_fn trying to put — confirming
+    # they will block on put() since the queue is full (maxsize=1)
+    assert at_least_two_blocked.wait(timeout=5.0), "Workers did not reach put() in time"
+
+    closed = threading.Event()
+
+    def close_gen() -> None:
+        gen.close()
+        closed.set()
+
+    t = threading.Thread(target=close_gen, daemon=True)
+    t.start()
+    assert closed.wait(timeout=10.0), "Deadlock: gen.close() did not complete — workers stuck on put()"
+    t.join(timeout=1.0)
+
+
 def test_early_termination() -> None:
     """Test that stopping consumption cancels workers."""
     tasks = [_make_task() for _ in range(5)]

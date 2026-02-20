@@ -1727,18 +1727,21 @@ def _bounded_concurrent_batches(
         finally:
             with remaining_lock:
                 remaining -= 1
-                if remaining == 0:
-                    batch_queue.put(_QUEUE_SENTINEL)
+                is_last = remaining == 0
+            if is_last:
+                batch_queue.put(_QUEUE_SENTINEL)
 
     with ThreadPoolExecutor(max_workers=concurrent_streams) as executor:
         for task in tasks:
             executor.submit(worker, task)
 
+        saw_sentinel = False
         try:
             while True:
                 item = batch_queue.get()
 
                 if item is _QUEUE_SENTINEL:
+                    saw_sentinel = True
                     break
 
                 if isinstance(item, BaseException):
@@ -1747,12 +1750,16 @@ def _bounded_concurrent_batches(
                 yield item
         finally:
             cancel.set()
-            # Drain the queue to unblock any workers stuck on put()
-            while not batch_queue.empty():
-                try:
-                    batch_queue.get_nowait()
-                except queue.Empty:
-                    break
+            if not saw_sentinel:
+                # Drain the queue to unblock workers stuck on put().
+                # Each get() wakes one waiting producer; that producer checks
+                # cancel and returns, eventually allowing the last worker to
+                # put the sentinel.  We stop only when we see the sentinel,
+                # which guarantees all workers have finished.
+                while True:
+                    item = batch_queue.get()
+                    if item is _QUEUE_SENTINEL:
+                        break
 
 
 _DEFAULT_SCAN_ORDER: ScanOrder = TaskOrder()
