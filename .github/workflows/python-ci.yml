@@ -43,9 +43,11 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  lint-and-test:
+  lint-and-unit-test:
     runs-on: ubuntu-latest
     strategy:
+      max-parallel: 15
+      fail-fast: true
       matrix:
         python: ['3.10', '3.11', '3.12', '3.13']
 
@@ -56,10 +58,12 @@ jobs:
         python-version: ${{ matrix.python }}
     - name: Install UV
       uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
     - name: Install
-      run: make install-dependencies
+      run: make install
     - name: Run linters
       run: make lint
     - name: Run unit tests with coverage
@@ -69,45 +73,130 @@ jobs:
 
   integration-test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python: ['3.10', '3.11', '3.12', '3.13']
-
     steps:
     - uses: actions/checkout@v6
     - uses: actions/setup-python@v6
       with:
-        python-version: ${{ matrix.python }}
+        python-version: '3.12'
     - name: Install UV
       uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
     - name: Install
       run: make install
-
     - name: Run integration tests with coverage
       run: COVERAGE=1 make test-integration
     - name: Show debug logs
       if: ${{ failure() }}
-      run: docker compose -f dev/docker-compose.yml logs
+      run: docker compose -f dev/docker-compose-integration.yml logs
+    - name: Upload coverage data
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-integration
+        path: .coverage*
+        include-hidden-files: true
 
+  integration-test-s3:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+    - name: Install UV
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+    - name: Install system dependencies
+      run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
+    - name: Install
+      run: make install
     - name: Run s3 integration tests with coverage
       run: COVERAGE=1 make test-s3
     - name: Show debug logs
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose.yml logs
+    - name: Upload coverage data
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-s3
+        path: .coverage*
+        include-hidden-files: true
 
+  integration-test-adls:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+    - name: Install UV
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+    - name: Install system dependencies
+      run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
+    - name: Install
+      run: make install
     - name: Run adls integration tests with coverage
       run: COVERAGE=1 make test-adls
     - name: Show debug logs
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose-azurite.yml logs
+    - name: Upload coverage data
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-adls
+        path: .coverage*
+        include-hidden-files: true
 
+  integration-test-gcs:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+    - name: Install UV
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+    - name: Install system dependencies
+      run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
+    - name: Install
+      run: make install
     - name: Run gcs integration tests with coverage
       run: COVERAGE=1 make test-gcs
     - name: Show debug logs
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose-gcs-server.yml logs
+    - name: Upload coverage data
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-gcs
+        path: .coverage*
+        include-hidden-files: true
 
+  integration-coverage-report:
+    runs-on: ubuntu-latest
+    needs: [integration-test, integration-test-s3, integration-test-adls, integration-test-gcs]
+    steps:
+    - uses: actions/checkout@v6
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+    - name: Install UV
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+    - name: Install dependencies
+      run: uv sync --group dev
+    - name: Download all coverage artifacts
+      uses: actions/download-artifact@v7
+      with:
+        pattern: coverage-*
+        merge-multiple: true
     - name: Generate coverage report (75%) # Coverage threshold should only increase over time — never decrease it!
       run: COVERAGE_FAIL_UNDER=75 make coverage-report

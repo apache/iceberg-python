@@ -16,7 +16,7 @@
 # under the License.
 [project]
 name = "pyiceberg"
-version = "0.10.0"
+version = "0.11.0"
 description = "Apache Iceberg is an open table format for huge analytic datasets"
 authors = [{ name = "Apache Software Foundation", email = "dev@iceberg.apache.org" }]
 requires-python = ">=3.10.0,<4.0.0"
@@ -37,12 +37,11 @@ dependencies = [
     "rich>=10.11.0,<15.0.0",
     "strictyaml>=1.7.0,<2.0.0", # CVE-2020-14343 was fixed in 5.4.
     "pydantic>=2.0,<3.0,!=2.4.0,!=2.4.1,!=2.12.0,!=2.12.1", # 2.4.0, 2.4.1, 2.12.0, 2.12.1 has a critical bug
-    "sortedcontainers==2.4.0",
     "fsspec>=2023.1.0",
     "pyparsing>=3.1.0,<4.0.0",
     "tenacity>=8.2.3,<10.0.0",
     "pyroaring>=1.0.0,<2.0.0",
-    "cachetools>=5.5,<7.0",
+    "cachetools>=5.5,<8.0",
     "zstandard>=0.13.0,<1.0.0"
 ]
 
@@ -56,10 +55,10 @@ pyiceberg = "pyiceberg.cli.console:run"
 [project.optional-dependencies]
 pyarrow = [
     "pyarrow>=17.0.0",
-    "pyiceberg-core>=0.5.1,<0.8.0",
+    "pyiceberg-core>=0.5.1,<0.9.0",
 ]
 pandas = [
-    "pandas>=1.0.0,<3.0.0",
+    "pandas>=1.0.0",
     "pyarrow>=17.0.0",
 ]
 duckdb = [
@@ -69,7 +68,7 @@ duckdb = [
 ray = [
     "ray>=2.10.0,<3.0.0",
     "pyarrow>=17.0.0",
-    "pandas>=1.0.0,<3.0.0",
+    "pandas>=1.0.0",
 ]
 bodo = ["bodo>=2025.7.4"]
 daft = ["daft>=0.5.0"]
@@ -94,16 +93,18 @@ sql-sqlite = ["sqlalchemy>=2.0.18,<3"]
 gcsfs = ["gcsfs>=2023.1.0"]
 rest-sigv4 = ["boto3>=1.24.59"]
 hf = ["huggingface-hub>=0.24.0"]
-pyiceberg-core = ["pyiceberg-core>=0.5.1,<0.8.0"]
-datafusion = ["datafusion>=45,<49"]
+pyiceberg-core = ["pyiceberg-core>=0.5.1,<0.9.0"]
+datafusion = ["datafusion>=51,<52"]
 gcp-auth = ["google-auth>=2.4.0"]
+entra-auth = ["azure-identity>=1.25.1"]
+geoarrow = ["geoarrow-pyarrow>=0.2.0"]
 
 [dependency-groups]
 dev = [
-    "pytest==7.4.4",
+    "pytest==9.0.2",
     "pytest-checkdocs==2.14.0",
-    "prek>=0.2.1,<0.3",
-    "pytest-lazy-fixture==0.6.3",
+    "prek>=0.2.1,<0.4",
+    "pytest-lazy-fixtures==1.4.0",
     "fastavro==1.12.1",
     "coverage[toml]>=7.4.2,<8",
     "requests-mock==1.12.1",
@@ -111,7 +112,7 @@ dev = [
     "typing-extensions==4.15.0",
     "pytest-mock==3.15.1",
     "pyspark[connect]==4.0.1",
-    "protobuf==6.33.4", # match Spark Connect's gencode
+    "protobuf==6.33.5", # match Spark Connect's gencode
     "cython>=3.0.0",
     "deptry>=0.14,<0.25",
     "docutils!=0.21.post1",
@@ -123,16 +124,20 @@ dev = [
 # for mkdocs
 docs = [
     "mkdocs==1.6.1",
-    "griffe==1.15.0",
+    "griffe==2.0.0",
     "jinja2==3.1.6",
-    "mkdocstrings==1.0.0",
-    "mkdocstrings-python==2.0.1",
+    "mkdocstrings==1.0.3",
+    "mkdocstrings-python==2.0.2",
     "mkdocs-literate-nav==0.6.2",
-    "mkdocs-autorefs==1.4.3",
+    "mkdocs-autorefs==1.4.4",
     "mkdocs-gen-files==0.6.0",
     "mkdocs-material==9.7.1",
     "mkdocs-material-extensions==1.3.1",
     "mkdocs-section-index==0.3.10",
+]
+# for experimentation
+notebook = [
+    "jupyterlab>=4.0.0",
 ]
 
 [tool.uv]

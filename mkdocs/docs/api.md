@@ -82,6 +82,24 @@ ns = catalog.list_namespaces()
 assert ns == [("docs_example",)]
 ```
 
+Next, update the namespace properties.
+
+```python
+
+# Load namespace properties
+properties = catalog.load_namespace_properties("docs_example")
+
+# Update namespace properties with additions and removals.
+catalog.update_namespace_properties("docs_example", removals={"remove-meee!"}, updates={"owner": "iceberg"})
+```
+
+Finally, drop the namespace (if you want!)
+
+```python
+# Drop a namespace
+catalog.drop_namespace("docs_example")
+```
+
 ## Create a table
 
 To create a table from a catalog:
@@ -167,6 +185,17 @@ with catalog.create_table_transaction(identifier="docs_example.bids", schema=sch
     txn.set_properties(test_a="test_aa", test_b="test_b", test_c="test_c")
 ```
 
+## Register a table
+
+To register a table using existing metadata:
+
+```python
+catalog.register_table(
+    identifier="docs_example.bids",
+    metadata_location="s3://warehouse/path/to/metadata.json"
+)
+```
+
 ## Load a table
 
 There are two ways of reading an Iceberg table; through a catalog, and by pointing at the Iceberg metadata directly. Reading through a catalog is preferred, and directly pointing at the metadata is read-only.
@@ -215,6 +244,31 @@ catalog.table_exists("docs_example.bids")
 ```
 
 Returns `True` if the table already exists.
+
+## Rename a table
+
+To rename a table:
+
+```python
+catalog.rename_table(
+    from_identifier="docs_example.bids",
+    to_identifier="docs_example.bids_backup"
+)
+```
+
+## Drop a table
+
+To drop a table:
+
+```python
+catalog.drop_table("docs_example.bids")
+```
+
+To drop a table and purge all data and metadata files:
+
+```python
+catalog.purge_table("docs_example.bids")
+```
 
 ## Write to a table
 
@@ -1941,7 +1995,7 @@ PyIceberg integrates with [Apache DataFusion](https://datafusion.apache.org/) th
 
     The integration has a few caveats:
 
-    - Only works with `datafusion >= 45, < 49`
+    - Only works with `datafusion == 51`, aligns with the version used in `pyiceberg-core`
     - Depends directly on `iceberg-rust` instead of PyIceberg's implementation
     - Has limited features compared to the full PyIceberg API
 
@@ -1967,7 +2021,7 @@ iceberg_table.append(data)
 
 # Register the table with DataFusion
 ctx = SessionContext()
-ctx.register_table_provider("test", iceberg_table)
+ctx.register_table("test", iceberg_table)
 
 # Query the table using DataFusion SQL
 ctx.table("test").show()

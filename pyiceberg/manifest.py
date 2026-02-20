@@ -28,8 +28,7 @@ from typing import (
     Literal,
 )
 
-from cachetools import LRUCache, cached
-from cachetools.keys import hashkey
+from cachetools import LRUCache
 from pydantic_core import to_json
 
 from pyiceberg.avro.codecs import AVRO_CODEC_KEY, AvroCompressionCodec
@@ -892,15 +891,53 @@ class ManifestFile(Record):
         return hash(self.manifest_path)
 
 
-# Global cache for manifest lists
-_manifest_cache: LRUCache[Any, tuple[ManifestFile, ...]] = LRUCache(maxsize=128)
+# Global cache for ManifestFile objects, keyed by manifest_path.
+# This deduplicates ManifestFile objects across manifest lists, which commonly
+# share manifests after append operations.
+_manifest_cache: LRUCache[str, ManifestFile] = LRUCache(maxsize=128)
+
+# Lock for thread-safe cache access
+_manifest_cache_lock = threading.RLock()
 
 
-@cached(cache=_manifest_cache, key=lambda io, manifest_list: hashkey(manifest_list), lock=threading.RLock())
 def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
-    """Read and cache manifests from the given manifest list, returning a tuple to prevent modification."""
+    """Read manifests from a manifest list, deduplicating ManifestFile objects via cache.
+
+    Caches individual ManifestFile objects by manifest_path. This is memory-efficient
+    because consecutive manifest lists typically share most of their manifests:
+
+        ManifestList1: [ManifestFile1]
+        ManifestList2: [ManifestFile1, ManifestFile2]
+        ManifestList3: [ManifestFile1, ManifestFile2, ManifestFile3]
+
+    With per-ManifestFile caching, each ManifestFile is stored once and reused.
+
+    Note: The manifest list file is re-read on each call. This is intentional to
+    keep the implementation simple and avoid O(N²) memory growth from caching
+    overlapping manifest list tuples. Re-reading is cheap since manifest lists
+    are small metadata files.
+
+    Args:
+        io: FileIO instance for reading the manifest list.
+        manifest_list: Path to the manifest list file.
+
+    Returns:
+        A tuple of ManifestFile objects.
+    """
     file = io.new_input(manifest_list)
-    return tuple(read_manifest_list(file))
+    manifest_files = list(read_manifest_list(file))
+
+    result = []
+    with _manifest_cache_lock:
+        for manifest_file in manifest_files:
+            manifest_path = manifest_file.manifest_path
+            if manifest_path in _manifest_cache:
+                result.append(_manifest_cache[manifest_path])
+            else:
+                _manifest_cache[manifest_path] = manifest_file
+                result.append(manifest_file)
+
+    return tuple(result)
 
 
 def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
@@ -1021,6 +1058,9 @@ class ManifestWriter(ABC):
 
         self.closed = True
         self._writer.__exit__(exc_type, exc_value, traceback)
+
+    def tell(self) -> int:
+        return self._writer.tell()
 
     @abstractmethod
     def content(self) -> ManifestContent: ...
@@ -1319,7 +1359,8 @@ class ManifestListWriterV2(ManifestListWriter):
             # To validate this, check that the snapshot id matches the current commit
             if self._commit_snapshot_id != wrapped_manifest_file.added_snapshot_id:
                 raise ValueError(
-                    f"Found unassigned sequence number for a manifest from snapshot: {self._commit_snapshot_id} != {wrapped_manifest_file.added_snapshot_id}"
+                    f"Found unassigned sequence number for a manifest from snapshot: "
+                    f"{self._commit_snapshot_id} != {wrapped_manifest_file.added_snapshot_id}"
                 )
             wrapped_manifest_file.sequence_number = self._sequence_number
 

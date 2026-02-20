@@ -35,6 +35,8 @@ from pyiceberg.catalog.rest import (
     OAUTH2_SERVER_URI,
     SNAPSHOT_LOADING_MODE,
     Capability,
+    Endpoint,
+    HttpMethod,
     RestCatalog,
 )
 from pyiceberg.exceptions import (
@@ -156,7 +158,8 @@ def test_no_uri_supplied() -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 def test_token_200(rest_mock: Mocker) -> None:
     rest_mock.post(
@@ -179,7 +182,8 @@ def test_token_200(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 def test_token_200_without_optional_fields(rest_mock: Mocker) -> None:
     rest_mock.post(
@@ -198,7 +202,8 @@ def test_token_200_without_optional_fields(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 def test_token_with_optional_oauth_params(rest_mock: Mocker) -> None:
     mock_request = rest_mock.post(
@@ -223,7 +228,8 @@ def test_token_with_optional_oauth_params(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 def test_token_with_optional_oauth_params_as_empty(rest_mock: Mocker) -> None:
     mock_request = rest_mock.post(
@@ -246,7 +252,8 @@ def test_token_with_optional_oauth_params_as_empty(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 def test_token_with_default_scope(rest_mock: Mocker) -> None:
     mock_request = rest_mock.post(
@@ -267,7 +274,8 @@ def test_token_with_default_scope(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 def test_token_with_custom_scope(rest_mock: Mocker) -> None:
     mock_request = rest_mock.post(
@@ -289,7 +297,8 @@ def test_token_with_custom_scope(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 def test_token_200_w_oauth2_server_uri(rest_mock: Mocker) -> None:
     rest_mock.post(
@@ -314,7 +323,8 @@ def test_token_200_w_oauth2_server_uri(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 def test_config_200(requests_mock: Mocker) -> None:
     requests_mock.get(
@@ -402,7 +412,8 @@ def test_config_sets_headers(requests_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 def test_token_400(rest_mock: Mocker) -> None:
     rest_mock.post(
@@ -418,7 +429,8 @@ def test_token_400(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 def test_token_401(rest_mock: Mocker) -> None:
     message = "invalid_client"
@@ -664,7 +676,8 @@ def test_list_namespace_with_parent_404(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 @pytest.mark.parametrize("status_code", [401, 419])
 def test_list_namespaces_token_expired_success_on_retries(rest_mock: Mocker, status_code: int) -> None:
@@ -1630,6 +1643,19 @@ def test_update_namespace_properties_invalid_namespace(rest_mock: Mocker) -> Non
     assert "Empty namespace identifier" in str(e.value)
 
 
+def test_with_disabled_ssl_ca_bundle(rest_mock: Mocker) -> None:
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "token": TEST_TOKEN,
+        "ssl": {
+            "cabundle": False,
+        },
+    }
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert catalog._session.verify is False
+
+
 def test_request_session_with_ssl_ca_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
     # Given
     catalog_properties = {
@@ -1991,8 +2017,34 @@ def test_rest_catalog_with_google_credentials_path(
     assert actual_headers["Authorization"] == expected_auth_header
 
 
+def test_custom_namespace_separator(rest_mock: Mocker) -> None:
+    custom_separator = "-"
+    namespace_part1 = "some"
+    namespace_part2 = "namespace"
+    # The expected URL path segment should use the literal custom_separator
+    expected_url_path_segment = f"{namespace_part1}{custom_separator}{namespace_part2}"
+
+    rest_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{expected_url_path_segment}",
+        json={"namespace": [namespace_part1, namespace_part2], "properties": {"prop": "yes"}},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{"namespace-separator": custom_separator})
+    catalog.load_namespace_properties((namespace_part1, namespace_part2))
+
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/{expected_url_path_segment}"
+
+
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 def test_auth_header(rest_mock: Mocker) -> None:
     mock_request = rest_mock.post(
@@ -2314,3 +2366,27 @@ def test_table_uuid_check_on_refresh(rest_mock: Mocker, example_table_metadata_v
     assert "Table UUID does not match" in str(exc_info.value)
     assert f"current={original_uuid}" in str(exc_info.value)
     assert f"refreshed={different_uuid}" in str(exc_info.value)
+
+
+def test_endpoint_parsing_from_string_with_valid_http_method() -> None:
+    test_cases = [
+        ("GET /v1/resource", HttpMethod.GET, "/v1/resource"),
+        ("HEAD /v1/resource", HttpMethod.HEAD, "/v1/resource"),
+        ("POST /v1/resource", HttpMethod.POST, "/v1/resource"),
+        ("DELETE /v1/resource", HttpMethod.DELETE, "/v1/resource"),
+        ("PUT /v1/resource", HttpMethod.PUT, "/v1/resource"),
+        ("CONNECT /v1/resource", HttpMethod.CONNECT, "/v1/resource"),
+        ("OPTIONS /v1/resource", HttpMethod.OPTIONS, "/v1/resource"),
+        ("TRACE /v1/resource", HttpMethod.TRACE, "/v1/resource"),
+        ("PATCH /v1/resource", HttpMethod.PATCH, "/v1/resource"),
+    ]
+
+    for raw_string, http_method, path in test_cases:
+        endpoint = Endpoint.from_string(raw_string)
+        assert endpoint.http_method == http_method
+        assert endpoint.path == path
+
+
+def test_endpoint_parsing_from_string_with_invalid_http_method() -> None:
+    with pytest.raises(ValueError, match="not a valid HttpMethod"):
+        Endpoint.from_string("INVALID /v1/resource")

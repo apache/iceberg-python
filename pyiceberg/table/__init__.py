@@ -26,26 +26,12 @@ from dataclasses import dataclass
 from functools import cached_property
 from itertools import chain
 from types import TracebackType
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    TypeVar,
-)
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from pydantic import Field
-from sortedcontainers import SortedList
 
 import pyiceberg.expressions.parser as parser
-from pyiceberg.expressions import (
-    AlwaysFalse,
-    AlwaysTrue,
-    And,
-    BooleanExpression,
-    EqualTo,
-    IsNull,
-    Or,
-    Reference,
-)
+from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo, IsNull, Or, Reference
 from pyiceberg.expressions.visitors import (
     ResidualEvaluator,
     _InclusiveMetricsEvaluator,
@@ -55,36 +41,17 @@ from pyiceberg.expressions.visitors import (
     manifest_evaluator,
 )
 from pyiceberg.io import FileIO, load_file_io
-from pyiceberg.manifest import (
-    POSITIONAL_DELETE_SCHEMA,
-    DataFile,
-    DataFileContent,
-    ManifestContent,
-    ManifestEntry,
-    ManifestFile,
-)
-from pyiceberg.partitioning import (
-    PARTITION_FIELD_ID_START,
-    UNPARTITIONED_PARTITION_SPEC,
-    PartitionKey,
-    PartitionSpec,
-)
+from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestEntry, ManifestFile
+from pyiceberg.partitioning import PARTITION_FIELD_ID_START, UNPARTITIONED_PARTITION_SPEC, PartitionKey, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table.delete_file_index import DeleteFileIndex
 from pyiceberg.table.inspect import InspectTable
 from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.table.maintenance import MaintenanceTable
-from pyiceberg.table.metadata import (
-    INITIAL_SEQUENCE_NUMBER,
-    TableMetadata,
-)
-from pyiceberg.table.name_mapping import (
-    NameMapping,
-)
+from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadata
+from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
-from pyiceberg.table.snapshots import (
-    Snapshot,
-    SnapshotLogEntry,
-)
+from pyiceberg.table.snapshots import Snapshot, SnapshotLogEntry
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import (
     AddPartitionSpecUpdate,
@@ -108,11 +75,7 @@ from pyiceberg.table.update import (
     update_table_metadata,
 )
 from pyiceberg.table.update.schema import UpdateSchema
-from pyiceberg.table.update.snapshot import (
-    ManageSnapshots,
-    UpdateSnapshot,
-    _FastAppendFiles,
-)
+from pyiceberg.table.update.snapshot import ManageSnapshots, UpdateSnapshot, _FastAppendFiles
 from pyiceberg.table.update.sorting import UpdateSortOrder
 from pyiceberg.table.update.spec import UpdateSpec
 from pyiceberg.table.update.statistics import UpdateStatistics
@@ -127,9 +90,7 @@ from pyiceberg.typedef import (
     Record,
     TableVersion,
 )
-from pyiceberg.types import (
-    strtobool,
-)
+from pyiceberg.types import strtobool
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.properties import property_as_bool
@@ -145,11 +106,7 @@ if TYPE_CHECKING:
     from pyiceberg_core.datafusion import IcebergDataFusionTable
 
     from pyiceberg.catalog import Catalog
-    from pyiceberg.catalog.rest.scan_planning import (
-        RESTContentFile,
-        RESTDeleteFile,
-        RESTFileScanTask,
-    )
+    from pyiceberg.catalog.rest.scan_planning import RESTContentFile, RESTDeleteFile, RESTFileScanTask
 
 ALWAYS_TRUE = AlwaysTrue()
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
@@ -397,17 +354,19 @@ class Transaction:
 
         return updates, requirements
 
-    def _build_partition_predicate(self, partition_records: set[Record]) -> BooleanExpression:
+    def _build_partition_predicate(
+        self, partition_records: set[Record], spec: PartitionSpec, schema: Schema
+    ) -> BooleanExpression:
         """Build a filter predicate matching any of the input partition records.
 
         Args:
             partition_records: A set of partition records to match
+            spec: An optional partition spec, if none then defaults to current
+            schema: An optional schema, if none then defaults to current
         Returns:
             A predicate matching any of the input partition records.
         """
-        partition_spec = self.table_metadata.spec()
-        schema = self.table_metadata.schema()
-        partition_fields = [schema.find_field(field.source_id).name for field in partition_spec.fields]
+        partition_fields = [schema.find_field(field.source_id).name for field in spec.fields]
 
         expr: BooleanExpression = AlwaysFalse()
         for partition_record in partition_records:
@@ -560,7 +519,8 @@ class Transaction:
         for field in self.table_metadata.spec().fields:
             if not isinstance(field.transform, IdentityTransform):
                 raise ValueError(
-                    f"For now dynamic overwrite does not support a table with non-identity-transform field in the latest partition spec: {field}"
+                    f"For now dynamic overwrite does not support a table with non-identity-transform field "
+                    f"in the latest partition spec: {field}"
                 )
 
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
@@ -583,7 +543,9 @@ class Transaction:
         )
 
         partitions_to_overwrite = {data_file.partition for data_file in data_files}
-        delete_filter = self._build_partition_predicate(partition_records=partitions_to_overwrite)
+        delete_filter = self._build_partition_predicate(
+            partition_records=partitions_to_overwrite, spec=self.table_metadata.spec(), schema=self.table_metadata.schema()
+        )
         self.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties, branch=branch)
 
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
@@ -673,11 +635,7 @@ class Transaction:
             case_sensitive: A bool determine if the provided `delete_filter` is case-sensitive
             branch: Branch Reference to run the delete operation
         """
-        from pyiceberg.io.pyarrow import (
-            ArrowScan,
-            _dataframe_to_data_files,
-            _expression_to_complementary_pyarrow,
-        )
+        from pyiceberg.io.pyarrow import ArrowScan, _dataframe_to_data_files, _expression_to_complementary_pyarrow
 
         if (
             self.table_metadata.properties.get(TableProperties.DELETE_MODE, TableProperties.DELETE_MODE_DEFAULT)
@@ -769,8 +727,10 @@ class Transaction:
 
             df: The input dataframe to upsert with the table's data.
             join_cols: Columns to join on, if not provided, it will use the identifier-field-ids.
-            when_matched_update_all: Bool indicating to update rows that are matched but require an update due to a value in a non-key column changing
-            when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any existing rows in the table
+            when_matched_update_all: Bool indicating to update rows that are matched but require an update
+                due to a value in a non-key column changing
+            when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any
+                existing rows in the table
             case_sensitive: Bool indicating if the match should be case-sensitive
             branch: Branch Reference to run the upsert operation
             snapshot_properties: Custom properties to be added to the snapshot summary
@@ -1382,8 +1342,10 @@ class Table:
 
             df: The input dataframe to upsert with the table's data.
             join_cols: Columns to join on, if not provided, it will use the identifier-field-ids.
-            when_matched_update_all: Bool indicating to update rows that are matched but require an update due to a value in a non-key column changing
-            when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any existing rows in the table
+            when_matched_update_all: Bool indicating to update rows that are matched but require an update
+                due to a value in a non-key column changing
+            when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any
+                existing rows in the table
             case_sensitive: Bool indicating if the match should be case-sensitive
             branch: Branch Reference to run the upsert operation
             snapshot_properties: Custom properties to be added to the snapshot summary
@@ -1615,7 +1577,7 @@ class Table:
 
         To support DataFusion features such as push down filtering, this function will return a PyCapsule
         interface that conforms to the FFI Table Provider required by DataFusion. From an end user perspective
-        you should not need to call this function directly. Instead you can use ``register_table_provider`` in
+        you should not need to call this function directly. Instead you can use ``register_table`` in
         the DataFusion SessionContext.
 
         Returns:
@@ -1632,7 +1594,7 @@ class Table:
             iceberg_table = catalog.create_table("default.test", schema=data.schema)
             iceberg_table.append(data)
             ctx = SessionContext()
-            ctx.register_table_provider("test", iceberg_table)
+            ctx.register_table("test", iceberg_table)
             ctx.table("test").show()
             ```
             Results in
@@ -1965,31 +1927,6 @@ def _min_sequence_number(manifests: list[ManifestFile]) -> int:
         return INITIAL_SEQUENCE_NUMBER
 
 
-def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_entries: SortedList[ManifestEntry]) -> set[DataFile]:
-    """Check if the delete file is relevant for the data file.
-
-    Using the column metrics to see if the filename is in the lower and upper bound.
-
-    Args:
-        data_entry (ManifestEntry): The manifest entry path of the datafile.
-        positional_delete_entries (List[ManifestEntry]): All the candidate positional deletes manifest entries.
-
-    Returns:
-        A set of files that are relevant for the data file.
-    """
-    relevant_entries = positional_delete_entries[positional_delete_entries.bisect_right(data_entry) :]
-
-    if len(relevant_entries) > 0:
-        evaluator = _InclusiveMetricsEvaluator(POSITIONAL_DELETE_SCHEMA, EqualTo("file_path", data_entry.data_file.file_path))
-        return {
-            positional_delete_entry.data_file
-            for positional_delete_entry in relevant_entries
-            if evaluator.eval(positional_delete_entry.data_file)
-        }
-    else:
-        return set()
-
-
 class DataScan(TableScan):
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
         project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id], self.case_sensitive)
@@ -2134,7 +2071,7 @@ class DataScan(TableScan):
     def _plan_files_local(self) -> Iterable[FileScanTask]:
         """Plan files locally by reading manifests."""
         data_entries: list[ManifestEntry] = []
-        positional_delete_entries = SortedList(key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER)
+        delete_index = DeleteFileIndex()
 
         residual_evaluators: dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
 
@@ -2143,18 +2080,18 @@ class DataScan(TableScan):
             if data_file.content == DataFileContent.DATA:
                 data_entries.append(manifest_entry)
             elif data_file.content == DataFileContent.POSITION_DELETES:
-                positional_delete_entries.add(manifest_entry)
+                delete_index.add_delete_file(manifest_entry, partition_key=data_file.partition)
             elif data_file.content == DataFileContent.EQUALITY_DELETES:
                 raise ValueError("PyIceberg does not yet support equality deletes: https://github.com/apache/iceberg/issues/6568")
             else:
                 raise ValueError(f"Unknown DataFileContent ({data_file.content}): {manifest_entry}")
-
         return [
             FileScanTask(
                 data_entry.data_file,
-                delete_files=_match_deletes_to_data_file(
-                    data_entry,
-                    positional_delete_entries,
+                delete_files=delete_index.for_data_file(
+                    data_entry.sequence_number or INITIAL_SEQUENCE_NUMBER,
+                    data_entry.data_file,
+                    partition_key=data_entry.data_file.partition,
                 ),
                 residual=residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(
                     data_entry.data_file.partition

@@ -85,6 +85,9 @@ class NoopCatalog(Catalog):
     def drop_table(self, identifier: str | Identifier) -> None:
         raise NotImplementedError
 
+    def supports_server_side_planning(self) -> bool:
+        raise NotImplementedError
+
     def purge_table(self, identifier: str | Identifier) -> None:
         raise NotImplementedError
 
@@ -120,6 +123,9 @@ class NoopCatalog(Catalog):
         raise NotImplementedError
 
     def view_exists(self, identifier: str | Identifier) -> bool:
+        raise NotImplementedError
+
+    def namespace_exists(self, namespace: str | Identifier) -> bool:
         raise NotImplementedError
 
     def drop_view(self, identifier: str | Identifier) -> None:

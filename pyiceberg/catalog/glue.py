@@ -48,7 +48,7 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
-from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
+from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_PROFILE_NAME, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.serializers import FromInputFile
@@ -329,7 +329,7 @@ class GlueCatalog(MetastoreCatalog):
             retry_mode_prop_value = get_first_property_value(properties, GLUE_RETRY_MODE)
 
             session = boto3.Session(
-                profile_name=properties.get(GLUE_PROFILE_NAME),
+                profile_name=get_first_property_value(properties, GLUE_PROFILE_NAME, AWS_PROFILE_NAME),
                 region_name=get_first_property_value(properties, GLUE_REGION, AWS_REGION),
                 botocore_session=properties.get(BOTOCORE_SESSION),
                 aws_access_key_id=get_first_property_value(properties, GLUE_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
@@ -406,7 +406,8 @@ class GlueCatalog(MetastoreCatalog):
             raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name} (Glue table version {version_id})") from e
         except self.glue.exceptions.ConcurrentModificationException as e:
             raise CommitFailedException(
-                f"Cannot commit {database_name}.{table_name} because Glue detected concurrent update to table version {version_id}"
+                f"Cannot commit {database_name}.{table_name} because Glue detected concurrent update "
+                f"to table version {version_id}"
             ) from e
 
     def _get_glue_table(self, database_name: str, table_name: str) -> "TableTypeDef":

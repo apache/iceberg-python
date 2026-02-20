@@ -471,6 +471,17 @@ class Catalog(ABC):
         """
 
     @abstractmethod
+    def namespace_exists(self, namespace: str | Identifier) -> bool:
+        """Check if a namespace exists.
+
+        Args:
+            namespace (str | Identifier): Namespace identifier.
+
+        Returns:
+            bool: True if the namespace exists, False otherwise.
+        """
+
+    @abstractmethod
     def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
         """Register a new table using existing metadata.
 
@@ -722,9 +733,9 @@ class Catalog(ABC):
 
         return ".".join(segment.strip() for segment in tuple_identifier)
 
+    @abstractmethod
     def supports_server_side_planning(self) -> bool:
         """Check if the catalog supports server-side scan planning."""
-        return False
 
     @staticmethod
     def identifier_to_database(
@@ -825,6 +836,9 @@ class MetastoreCatalog(Catalog, ABC):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
 
+    def supports_server_side_planning(self) -> bool:
+        return False
+
     def create_table_transaction(
         self,
         identifier: str | Identifier,
@@ -843,6 +857,21 @@ class MetastoreCatalog(Catalog, ABC):
             self.load_table(identifier)
             return True
         except NoSuchTableError:
+            return False
+
+    def namespace_exists(self, namespace: str | Identifier) -> bool:
+        """Check if a namespace exists.
+
+        Args:
+            namespace (str | Identifier): Namespace identifier.
+
+        Returns:
+            bool: True if the namespace exists, False otherwise.
+        """
+        try:
+            self.load_namespace_properties(namespace)
+            return True
+        except NoSuchNamespaceError:
             return False
 
     def purge_table(self, identifier: str | Identifier) -> None:

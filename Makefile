@@ -59,20 +59,24 @@ help: ## Display this help message
 ##@ Setup
 
 install-uv: ## Ensure uv is installed
-	@if ! command -v uv &> /dev/null; then \
+	@if ! command -v uv > /dev/null 2>&1; then \
 		echo "uv not found. Installing..."; \
 		curl -LsSf https://astral.sh/uv/install.sh | sh; \
 	else \
 		echo "uv is already installed."; \
 	fi
 
-setup-venv: ## Create virtual environment
-	uv venv $(PYTHON_ARG)
-
-install-dependencies: setup-venv ## Install all dependencies including extras
-	uv sync $(PYTHON_ARG) --all-extras --reinstall
-
-install: install-uv install-dependencies ## Install uv and dependencies
+install: install-uv ## Install uv, dependencies, and pre-commit hooks
+	uv sync $(PYTHON_ARG) --all-extras
+	@# Reinstall pyiceberg if Cython extensions (.so) are missing after `make clean` (see #2869)
+	@if ! find pyiceberg -name "*.so" 2>/dev/null | grep -q .; then \
+		echo "Cython extensions not found, reinstalling pyiceberg..."; \
+		uv sync $(PYTHON_ARG) --all-extras --reinstall-package pyiceberg; \
+	fi
+	@# Install pre-commit hooks (skipped outside git repo, e.g. release tarballs)
+	@if [ -d .git ]; then \
+		uv run $(PYTHON_ARG) prek install; \
+	fi
 
 # ===============
 # Code Validation
@@ -97,7 +101,7 @@ test: ## Run all unit tests (excluding integration)
 
 test-integration: test-integration-setup test-integration-exec test-integration-cleanup ## Run integration tests
 
-test-integration-setup: ## Start Docker services for integration tests
+test-integration-setup: install ## Start Docker services for integration tests
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml up -d --build --wait
@@ -129,8 +133,9 @@ test-gcs: ## Run tests marked with @pytest.mark.gcs
 	sh ./dev/run-gcs-server.sh
 	$(TEST_RUNNER) pytest tests/ -m gcs $(PYTEST_ARGS)
 
-test-coverage: COVERAGE=1
-test-coverage: test test-integration test-s3 test-adls test-gcs coverage-report ## Run all tests with coverage and report
+test-coverage: ## Run all tests with coverage and report
+	$(MAKE) COVERAGE=1 test test-integration test-s3 test-adls test-gcs
+	$(MAKE) coverage-report
 
 coverage-report: ## Combine and report coverage
 	uv run $(PYTHON_ARG) coverage combine
@@ -153,6 +158,21 @@ docs-serve: ## Serve local docs preview (hot reload)
 docs-build: ## Build the static documentation site
 	uv run $(PYTHON_ARG) mkdocs build -f mkdocs/mkdocs.yml --strict
 
+# ========================
+# Experimentation
+# ========================
+
+##@ Experimentation
+
+notebook-install: ## Install notebook dependencies
+	uv sync $(PYTHON_ARG) --all-extras --group notebook
+
+notebook: notebook-install ## Launch notebook for experimentation
+	uv run jupyter lab --notebook-dir=notebooks
+
+notebook-infra: notebook-install test-integration-setup ## Launch notebook with integration test infra (Spark, Iceberg Rest Catalog, object storage, etc.)
+	uv run jupyter lab --notebook-dir=notebooks
+
 # ===================
 # Project Maintenance
 # ===================
@@ -167,4 +187,14 @@ clean: ## Remove build artifacts and caches
 	@find . -name "__pycache__" -exec echo Deleting {} \; -exec rm -rf {} +
 	@find . -name "*.pyd" -exec echo Deleting {} \; -delete
 	@find . -name "*.pyo" -exec echo Deleting {} \; -delete
+	@echo "Cleaning up Jupyter notebook checkpoints..."
+	@find . -name ".ipynb_checkpoints" -exec echo Deleting {} \; -exec rm -rf {} +
 	@echo "Cleanup complete."
+
+uv-lock: ## Regenerate uv.lock file from pyproject.toml
+	uv lock $(PYTHON_ARG)
+
+uv-lock-check: ## Verify uv.lock is up to date
+	@command -v uv >/dev/null || \
+	  (echo "uv is required. Run 'make install' or 'make install-uv' first." && exit 1)
+	uv lock --check $(PYTHON_ARG)

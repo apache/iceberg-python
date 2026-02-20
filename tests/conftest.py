@@ -40,16 +40,22 @@ from typing import (
     TYPE_CHECKING,
     Any,
 )
+from unittest import mock
 
 import boto3
 import pytest
 from moto import mock_aws
 from pydantic_core import to_json
-from pytest_lazyfixture import lazy_fixture
+from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog import Catalog, load_catalog
+from pyiceberg.catalog.bigquery_metastore import BigQueryMetastoreCatalog
+from pyiceberg.catalog.dynamodb import DynamoDbCatalog
+from pyiceberg.catalog.glue import GlueCatalog
+from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.memory import InMemoryCatalog
 from pyiceberg.catalog.noop import NoopCatalog
+from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.expressions import BoundReference
 from pyiceberg.io import (
@@ -73,6 +79,7 @@ from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
 from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2, TableMetadataV3
+from pyiceberg.table.sorting import NullOrder, SortField, SortOrder
 from pyiceberg.transforms import DayTransform, IdentityTransform
 from pyiceberg.typedef import Identifier
 from pyiceberg.types import (
@@ -96,6 +103,7 @@ from pyiceberg.types import (
     UUIDType,
 )
 from pyiceberg.utils.datetime import datetime_to_millis
+from pyiceberg.utils.properties import property_as_bool
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -109,6 +117,20 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:
         if not any(item.iter_markers()):
             item.add_marker("unmarked")
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _isolate_pyiceberg_config() -> None:
+    """Make test runs ignore your local PyIceberg config.
+
+    Without this, tests will attempt to resolve a local ~/.pyiceberg.yaml while running pytest.
+    This replaces the global catalog config once at session start with an env-only config.
+    """
+    import pyiceberg.catalog as _catalog_module
+    from pyiceberg.utils.config import Config
+
+    with mock.patch.object(Config, "_from_configuration_files", return_value=None):
+        _catalog_module._ENV_CONFIG = Config()
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -1188,7 +1210,10 @@ manifest_entry_records = [
         "status": 1,
         "snapshot_id": 8744736658442914487,
         "data_file": {
-            "file_path": "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet",
+            "file_path": (
+                "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/"
+                "00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet"
+            ),
             "file_format": "PARQUET",
             "partition": {"VendorID": 1, "tpep_pickup_day": 1925},
             "record_count": 19513,
@@ -1308,7 +1333,10 @@ manifest_entry_records = [
         "status": 1,
         "snapshot_id": 8744736658442914487,
         "data_file": {
-            "file_path": "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=1/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00002.parquet",
+            "file_path": (
+                "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=1/"
+                "00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00002.parquet"
+            ),
             "file_format": "PARQUET",
             "partition": {"VendorID": 1, "tpep_pickup_datetime": None},
             "record_count": 95050,
@@ -1888,6 +1916,11 @@ def test_partition_spec() -> PartitionSpec:
 
 
 @pytest.fixture(scope="session")
+def test_sort_order() -> SortOrder:
+    return SortOrder(SortField(source_id=1, transform=IdentityTransform(), null_order=NullOrder.NULLS_FIRST))
+
+
+@pytest.fixture(scope="session")
 def generated_manifest_entry_file(
     avro_schema_manifest_entry: dict[str, Any], test_schema: Schema, test_partition_spec: PartitionSpec
 ) -> Generator[str, None, None]:
@@ -2146,7 +2179,10 @@ def adls_fsspec_fileio(request: pytest.FixtureRequest) -> Generator[FsspecFileIO
     azurite_url = request.config.getoption("--adls.endpoint")
     azurite_account_name = request.config.getoption("--adls.account-name")
     azurite_account_key = request.config.getoption("--adls.account-key")
-    azurite_connection_string = f"DefaultEndpointsProtocol=http;AccountName={azurite_account_name};AccountKey={azurite_account_key};BlobEndpoint={azurite_url}/{azurite_account_name};"
+    azurite_connection_string = (
+        f"DefaultEndpointsProtocol=http;AccountName={azurite_account_name};"
+        f"AccountKey={azurite_account_key};BlobEndpoint={azurite_url}/{azurite_account_name};"
+    )
     properties = {
         "adls.connection-string": azurite_connection_string,
         "adls.account-name": azurite_account_name,
@@ -2183,7 +2219,10 @@ def pyarrow_fileio_adls(request: pytest.FixtureRequest) -> Generator[Any, None, 
 
     azurite_account_name = request.config.getoption("--adls.account-name")
     azurite_account_key = request.config.getoption("--adls.account-key")
-    azurite_connection_string = f"DefaultEndpointsProtocol=http;AccountName={azurite_account_name};AccountKey={azurite_account_key};BlobEndpoint={azurite_url}/{azurite_account_name};"
+    azurite_connection_string = (
+        f"DefaultEndpointsProtocol=http;AccountName={azurite_account_name};"
+        f"AccountKey={azurite_account_key};BlobEndpoint={azurite_url}/{azurite_account_name};"
+    )
     properties = {
         ADLS_ACCOUNT_NAME: azurite_account_name,
         ADLS_ACCOUNT_KEY: azurite_account_key,
@@ -2623,7 +2662,8 @@ TEST_DATA_WITH_NULL = {
     # Not supported by Spark
     # 'time': [time(1, 22, 0), None, time(19, 25, 0)],
     # Not natively supported by Arrow
-    # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None, uuid.UUID('11111111-1111-1111-1111-111111111111').bytes],
+    # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None,
+    #          uuid.UUID('11111111-1111-1111-1111-111111111111').bytes],
     "binary": [b"\01", None, b"\22"],
     "fixed": [
         uuid.UUID("00000000-0000-0000-0000-000000000000").bytes,
@@ -2676,7 +2716,8 @@ def arrow_table_with_null(pa_schema: "pa.Schema") -> "pa.Table":
             "long": [1, None, 9],
             "float": [0.0, None, 0.9],
             "double": [0.0, None, 0.9],
-            # 'time': [1_000_000, None, 3_000_000],  # Example times: 1s, none, and 3s past midnight #Spark does not support time fields
+            # 'time': [1_000_000, None, 3_000_000],  # Example times: 1s, none, and 3s past midnight
+            # Spark does not support time fields
             "timestamp": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
             "timestamptz": [
                 datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
@@ -2687,7 +2728,8 @@ def arrow_table_with_null(pa_schema: "pa.Schema") -> "pa.Table":
             # Not supported by Spark
             # 'time': [time(1, 22, 0), None, time(19, 25, 0)],
             # Not natively supported by Arrow
-            # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None, uuid.UUID('11111111-1111-1111-1111-111111111111').bytes],
+            # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None,
+            #          uuid.UUID('11111111-1111-1111-1111-111111111111').bytes],
             "binary": [b"\01", None, b"\22"],
             "fixed": [
                 uuid.UUID("00000000-0000-0000-0000-000000000000").bytes,
@@ -3059,11 +3101,10 @@ def fixed_test_table_namespace() -> Identifier:
 
 
 @pytest.fixture(
-    scope="session",
     params=[
-        lazy_fixture("fixed_test_table_identifier"),
-        lazy_fixture("random_table_identifier"),
-        lazy_fixture("random_hierarchical_identifier"),
+        lf("fixed_test_table_identifier"),
+        lf("random_table_identifier"),
+        lf("random_hierarchical_identifier"),
     ],
 )
 def test_table_identifier(request: pytest.FixtureRequest) -> Identifier:
@@ -3071,11 +3112,10 @@ def test_table_identifier(request: pytest.FixtureRequest) -> Identifier:
 
 
 @pytest.fixture(
-    scope="session",
     params=[
-        lazy_fixture("another_fixed_test_table_identifier"),
-        lazy_fixture("another_random_table_identifier"),
-        lazy_fixture("another_random_hierarchical_identifier"),
+        lf("another_fixed_test_table_identifier"),
+        lf("another_random_table_identifier"),
+        lf("another_random_hierarchical_identifier"),
     ],
 )
 def another_table_identifier(request: pytest.FixtureRequest) -> Identifier:
@@ -3084,9 +3124,9 @@ def another_table_identifier(request: pytest.FixtureRequest) -> Identifier:
 
 @pytest.fixture(
     params=[
-        lazy_fixture("database_name"),
-        lazy_fixture("hierarchical_namespace_name"),
-        lazy_fixture("fixed_test_table_namespace"),
+        lf("database_name"),
+        lf("hierarchical_namespace_name"),
+        lf("fixed_test_table_namespace"),
     ],
 )
 def test_namespace(request: pytest.FixtureRequest) -> Identifier:
@@ -3109,3 +3149,51 @@ def test_table_properties() -> dict[str, str]:
         "key1": "value1",
         "key2": "value2",
     }
+
+
+def does_support_purge_table(catalog: Catalog) -> bool:
+    if isinstance(catalog, RestCatalog):
+        return property_as_bool(catalog.properties, "supports_purge_table", True)
+    if isinstance(catalog, (HiveCatalog, NoopCatalog)):
+        return False
+    return True
+
+
+def does_support_atomic_concurrent_updates(catalog: Catalog) -> bool:
+    if isinstance(catalog, RestCatalog):
+        return property_as_bool(catalog.properties, "supports_atomic_concurrent_updates", True)
+    if isinstance(catalog, (HiveCatalog, NoopCatalog)):
+        return False
+    return True
+
+
+def does_support_nested_namespaces(catalog: Catalog) -> bool:
+    if isinstance(catalog, RestCatalog):
+        return property_as_bool(catalog.properties, "supports_nested_namespaces", True)
+    if isinstance(catalog, (HiveCatalog, NoopCatalog, GlueCatalog, BigQueryMetastoreCatalog, DynamoDbCatalog)):
+        return False
+    return True
+
+
+def does_support_schema_evolution(catalog: Catalog) -> bool:
+    if isinstance(catalog, RestCatalog):
+        return property_as_bool(catalog.properties, "supports_schema_evolution", True)
+    if isinstance(catalog, (HiveCatalog, NoopCatalog)):
+        return False
+    return True
+
+
+def does_support_slash_in_identifier(catalog: Catalog) -> bool:
+    if isinstance(catalog, RestCatalog):
+        return property_as_bool(catalog.properties, "supports_slash_in_identifier", True)
+    if isinstance(catalog, (HiveCatalog, NoopCatalog, SqlCatalog)):
+        return False
+    return True
+
+
+def does_support_dot_in_identifier(catalog: Catalog) -> bool:
+    if isinstance(catalog, RestCatalog):
+        return property_as_bool(catalog.properties, "supports_dot_in_identifier", True)
+    if isinstance(catalog, (HiveCatalog, NoopCatalog, SqlCatalog)):
+        return False
+    return True

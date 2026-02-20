@@ -318,6 +318,10 @@ class TableMetadataCommonFields(IcebergBaseModel):
     def next_sequence_number(self) -> int:
         return self.last_sequence_number + 1 if self.format_version > 1 else INITIAL_SEQUENCE_NUMBER
 
+    def sort_order(self) -> SortOrder:
+        """Get the current sort order for this table, or UNSORTED_SORT_ORDER if there is no sort order."""
+        return self.sort_order_by_id(self.default_sort_order_id) or UNSORTED_SORT_ORDER
+
     def sort_order_by_id(self, sort_order_id: int) -> SortOrder | None:
         """Get the sort order by sort_order_id."""
         return next((sort_order for sort_order in self.sort_orders if sort_order.order_id == sort_order_id), None)
@@ -679,7 +683,8 @@ class TableMetadataUtil:
     def _construct_without_validation(table_metadata: TableMetadata) -> TableMetadata:
         """Construct table metadata from an existing table without performing validation.
 
-        This method is useful during a sequence of table updates when the model needs to be re-constructed but is not yet ready for validation.
+        This method is useful during a sequence of table updates when the model needs to be
+        re-constructed but is not yet ready for validation.
         """
         if table_metadata.format_version is None:
             raise ValidationError(f"Missing format-version in TableMetadata: {table_metadata}")

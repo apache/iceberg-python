@@ -100,7 +100,6 @@ from pyiceberg.io import (
     HDFS_KERB_TICKET,
     HDFS_PORT,
     HDFS_USER,
-    PYARROW_USE_LARGE_TYPES_ON_READ,
     S3_ACCESS_KEY_ID,
     S3_ANONYMOUS,
     S3_CONNECT_TIMEOUT,
@@ -157,6 +156,8 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IcebergType,
     IntegerType,
     ListType,
@@ -179,7 +180,6 @@ from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
 from pyiceberg.utils.decimal import unscaled_to_decimal
-from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
@@ -248,7 +248,9 @@ class PyArrowLocalFileSystem(pyarrow.fs.LocalFileSystem):
 
 
 class PyArrowFile(InputFile, OutputFile):
-    """A combined InputFile and OutputFile implementation that uses a pyarrow filesystem to generate pyarrow.lib.NativeFile instances.
+    """A combined InputFile and OutputFile implementation using pyarrow filesystem.
+
+    This class generates pyarrow.lib.NativeFile instances.
 
     Args:
         location (str): A URI or a path to a local file.
@@ -645,8 +647,9 @@ class PyArrowFileIO(FileIO):
         """Delete the file at the given location.
 
         Args:
-            location (Union[str, InputFile, OutputFile]): The URI to the file--if an InputFile instance or an OutputFile instance is provided,
-                the location attribute for that instance is used as the location to delete.
+            location (Union[str, InputFile, OutputFile]): The URI to the file--if an InputFile instance or
+                an OutputFile instance is provided, the location attribute for that instance is used as
+                the location to delete.
 
         Raises:
             FileNotFoundError: When the file at the provided location does not exist.
@@ -797,6 +800,37 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
 
     def visit_binary(self, _: BinaryType) -> pa.DataType:
         return pa.large_binary()
+
+    def visit_geometry(self, geometry_type: GeometryType) -> pa.DataType:
+        """Convert geometry type to PyArrow type.
+
+        When geoarrow-pyarrow is available, returns a GeoArrow WKB extension type
+        with CRS metadata. Otherwise, falls back to large_binary which stores WKB bytes.
+        """
+        try:
+            import geoarrow.pyarrow as ga
+
+            return ga.wkb().with_crs(geometry_type.crs)
+        except ImportError:
+            return pa.large_binary()
+
+    def visit_geography(self, geography_type: GeographyType) -> pa.DataType:
+        """Convert geography type to PyArrow type.
+
+        When geoarrow-pyarrow is available, returns a GeoArrow WKB extension type
+        with CRS and edge type metadata. Otherwise, falls back to large_binary which stores WKB bytes.
+        """
+        try:
+            import geoarrow.pyarrow as ga
+
+            wkb_type = ga.wkb().with_crs(geography_type.crs)
+            # Map Iceberg algorithm to GeoArrow edge type
+            if geography_type.algorithm == "spherical":
+                wkb_type = wkb_type.with_edge_type(ga.EdgeType.SPHERICAL)
+            # "planar" is the default edge type in GeoArrow, no need to set explicitly
+            return wkb_type
+        except ImportError:
+            return pa.large_binary()
 
 
 def _convert_scalar(value: Any, iceberg_type: IcebergType) -> pa.scalar:
@@ -1014,7 +1048,10 @@ class _NullNaNUnmentionedTermsCollector(BoundBooleanExpressionVisitor[None]):
         self,
         expr: BooleanExpression,
     ) -> None:
-        """Collect the bound references categorized by having at least one is_null or is_not_null in the expr and the remaining."""
+        """Collect bound references categorized by null predicates.
+
+        Categorizes by having at least one is_null or is_not_null in the expr and the remaining.
+        """
         boolean_expression_visit(expr, self)
 
 
@@ -1035,7 +1072,8 @@ def expression_to_pyarrow(expr: BooleanExpression, schema: Schema | None = None)
 def _expression_to_complementary_pyarrow(expr: BooleanExpression, schema: Schema | None = None) -> pc.Expression:
     """Complementary filter conversion function of expression_to_pyarrow.
 
-    Could not use expression_to_pyarrow(Not(expr)) to achieve this complementary effect because ~ in pyarrow.compute.Expression does not handle null.
+    Could not use expression_to_pyarrow(Not(expr)) to achieve this complementary effect because
+    ~ in pyarrow.compute.Expression does not handle null.
     """
     collector = _NullNaNUnmentionedTermsCollector()
     collector.collect(expr)
@@ -1417,7 +1455,9 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema]):
                         return TimestampNanoType()
                 else:
                     raise TypeError(
-                        "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write.",
+                        "Iceberg does not yet support 'ns' timestamp precision. "
+                        "Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically "
+                        "downcast 'ns' to 'us' on write.",
                     )
             else:
                 raise TypeError(f"Unsupported precision for timestamp type: {primitive.unit}")
@@ -1580,7 +1620,8 @@ def _task_to_record_batches(
         fragment = arrow_format.make_fragment(fin)
         physical_schema = fragment.physical_schema
 
-        # For V1 and V2, we only support Timestamp 'us' in Iceberg Schema, therefore it is reasonable to always cast 'ns' timestamp to 'us' on read.
+        # For V1 and V2, we only support Timestamp 'us' in Iceberg Schema,
+        # therefore it is reasonable to always cast 'ns' timestamp to 'us' on read.
         # For V3 this has to set explicitly to avoid nanosecond timestamp to be down-casted by default
         downcast_ns_timestamp_to_us = (
             downcast_ns_timestamp_to_us if downcast_ns_timestamp_to_us is not None else format_version <= 2
@@ -1646,6 +1687,7 @@ def _task_to_record_batches(
                 current_batch,
                 downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
                 projected_missing_fields=projected_missing_fields,
+                allow_timestamp_tz_mismatch=True,
             )
 
 
@@ -1745,14 +1787,6 @@ class ArrowScan:
             (pa.Table.from_batches([batch]) for batch in itertools.chain([first_batch], batches)), promote_options="permissive"
         )
 
-        if property_as_bool(self._io.properties, PYARROW_USE_LARGE_TYPES_ON_READ, False):
-            deprecation_message(
-                deprecated_in="0.10.0",
-                removed_in="0.11.0",
-                help_message=f"Property `{PYARROW_USE_LARGE_TYPES_ON_READ}` will be removed.",
-            )
-            result = result.cast(arrow_schema)
-
         return result
 
     def to_record_batches(self, tasks: Iterable[FileScanTask]) -> Iterator[pa.RecordBatch]:
@@ -1839,13 +1873,18 @@ def _to_requested_schema(
     downcast_ns_timestamp_to_us: bool = False,
     include_field_ids: bool = False,
     projected_missing_fields: dict[int, Any] = EMPTY_DICT,
+    allow_timestamp_tz_mismatch: bool = False,
 ) -> pa.RecordBatch:
     # We could reuse some of these visitors
     struct_array = visit_with_partner(
         requested_schema,
         batch,
         ArrowProjectionVisitor(
-            file_schema, downcast_ns_timestamp_to_us, include_field_ids, projected_missing_fields=projected_missing_fields
+            file_schema,
+            downcast_ns_timestamp_to_us,
+            include_field_ids,
+            projected_missing_fields=projected_missing_fields,
+            allow_timestamp_tz_mismatch=allow_timestamp_tz_mismatch,
         ),
         ArrowAccessor(file_schema),
     )
@@ -1856,29 +1895,24 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
     _file_schema: Schema
     _include_field_ids: bool
     _downcast_ns_timestamp_to_us: bool
-    _use_large_types: bool | None
     _projected_missing_fields: dict[int, Any]
+    _allow_timestamp_tz_mismatch: bool
 
     def __init__(
         self,
         file_schema: Schema,
         downcast_ns_timestamp_to_us: bool = False,
         include_field_ids: bool = False,
-        use_large_types: bool | None = None,
         projected_missing_fields: dict[int, Any] = EMPTY_DICT,
+        allow_timestamp_tz_mismatch: bool = False,
     ) -> None:
         self._file_schema = file_schema
         self._include_field_ids = include_field_ids
         self._downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
-        self._use_large_types = use_large_types
         self._projected_missing_fields = projected_missing_fields
-
-        if use_large_types is not None:
-            deprecation_message(
-                deprecated_in="0.10.0",
-                removed_in="0.11.0",
-                help_message="Argument `use_large_types` will be removed from ArrowProjectionVisitor",
-            )
+        # When True, allows projecting timestamptz (UTC) to timestamp (no tz).
+        # Allowed for reading (aligns with Spark); disallowed for writing to enforce Iceberg spec's strict typing.
+        self._allow_timestamp_tz_mismatch = allow_timestamp_tz_mismatch
 
     def _cast_if_needed(self, field: NestedField, values: pa.Array) -> pa.Array:
         file_field = self._file_schema.find_field(field.field_id)
@@ -1886,16 +1920,19 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
         if field.field_type.is_primitive:
             if (target_type := schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)) != values.type:
                 if field.field_type == TimestampType():
-                    # Downcasting of nanoseconds to microseconds
+                    source_tz_compatible = values.type.tz is None or (
+                        self._allow_timestamp_tz_mismatch and values.type.tz in UTC_ALIASES
+                    )
                     if (
                         pa.types.is_timestamp(target_type)
                         and not target_type.tz
                         and pa.types.is_timestamp(values.type)
-                        and not values.type.tz
+                        and source_tz_compatible
                     ):
+                        # Downcasting of nanoseconds to microseconds
                         if target_type.unit == "us" and values.type.unit == "ns" and self._downcast_ns_timestamp_to_us:
                             return values.cast(target_type, safe=False)
-                        elif target_type.unit == "us" and values.type.unit in {"s", "ms"}:
+                        elif target_type.unit == "us" and values.type.unit in {"s", "ms", "us"}:
                             return values.cast(target_type)
                     raise ValueError(f"Unsupported schema projection from {values.type} to {target_type}")
                 elif field.field_type == TimestamptzType():
@@ -1905,18 +1942,26 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
                         and pa.types.is_timestamp(values.type)
                         and (values.type.tz in UTC_ALIASES or values.type.tz is None)
                     ):
+                        # Downcasting of nanoseconds to microseconds
                         if target_type.unit == "us" and values.type.unit == "ns" and self._downcast_ns_timestamp_to_us:
                             return values.cast(target_type, safe=False)
                         elif target_type.unit == "us" and values.type.unit in {"s", "ms", "us"}:
                             return values.cast(target_type)
                     raise ValueError(f"Unsupported schema projection from {values.type} to {target_type}")
+                elif isinstance(field.field_type, (IntegerType, LongType)):
+                    # Cast smaller integer types to target type for cross-platform compatibility
+                    # Only allow widening conversions (smaller bit width to larger)
+                    # Narrowing conversions fall through to promote() handling below
+                    if pa.types.is_integer(values.type):
+                        source_width = values.type.bit_width
+                        target_width = target_type.bit_width
+                        if source_width < target_width:
+                            return values.cast(target_type)
 
             if field.field_type != file_field.field_type:
                 target_schema = schema_to_pyarrow(
                     promote(file_field.field_type, field.field_type), include_field_ids=self._include_field_ids
                 )
-                if self._use_large_types is False:
-                    target_schema = _pyarrow_schema_ensure_small_types(target_schema)
                 return values.cast(target_schema)
 
         return values
@@ -2117,6 +2162,12 @@ class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
 
     def visit_unknown(self, unknown_type: UnknownType) -> str:
         return "UNKNOWN"
+
+    def visit_geometry(self, geometry_type: GeometryType) -> str:
+        return "BYTE_ARRAY"
+
+    def visit_geography(self, geography_type: GeographyType) -> str:
+        return "BYTE_ARRAY"
 
 
 _PRIMITIVE_TO_PHYSICAL_TYPE_VISITOR = PrimitiveToPhysicalType()
@@ -2441,7 +2492,8 @@ class DataFileStatistics:
 
         if not iceberg_transform.preserves_order:
             raise ValueError(
-                f"Cannot infer partition value from parquet metadata for a non-linear Partition Field: {partition_field.name} with transform {partition_field.transform}"
+                f"Cannot infer partition value from parquet metadata for a non-linear Partition Field: "
+                f"{partition_field.name} with transform {partition_field.transform}"
             )
 
         transform_func = iceberg_transform.transform(source_field.field_type)
@@ -2462,7 +2514,8 @@ class DataFileStatistics:
         )
         if lower_value != upper_value:
             raise ValueError(
-                f"Cannot infer partition value from parquet metadata as there are more than one partition values for Partition Field: {partition_field.name}. {lower_value=}, {upper_value=}"
+                f"Cannot infer partition value from parquet metadata as there are more than one partition values "
+                f"for Partition Field: {partition_field.name}. {lower_value=}, {upper_value=}"
             )
 
         return lower_value
@@ -2729,7 +2782,8 @@ def _check_pyarrow_schema_compatible(
         )
         additional_names = set(provided_schema._name_to_id.keys()) - set(requested_schema._name_to_id.keys())
         raise ValueError(
-            f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. Update the schema first (hint, use union_by_name)."
+            f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. "
+            "Update the schema first (hint, use union_by_name)."
         ) from e
     _check_schema_compatible(requested_schema, provided_schema)
 

@@ -21,6 +21,7 @@ from typing import (
     Any,
     Union,
 )
+from urllib.parse import quote, unquote
 
 from pydantic import ConfigDict, Field, TypeAdapter, field_validator
 from requests import HTTPError, Session
@@ -87,6 +88,11 @@ class HttpMethod(str, Enum):
     HEAD = "HEAD"
     POST = "POST"
     DELETE = "DELETE"
+    PUT = "PUT"
+    CONNECT = "CONNECT"
+    OPTIONS = "OPTIONS"
+    TRACE = "TRACE"
+    PATCH = "PATCH"
 
 
 class Endpoint(IcebergBaseModel):
@@ -234,7 +240,8 @@ REST_SCAN_PLANNING_ENABLED_DEFAULT = False
 VIEW_ENDPOINTS_SUPPORTED = "view-endpoints-supported"
 VIEW_ENDPOINTS_SUPPORTED_DEFAULT = False
 
-NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
+NAMESPACE_SEPARATOR_PROPERTY = "namespace-separator"
+DEFAULT_NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
 
 
 def _retry_hook(retry_state: RetryCallState) -> None:
@@ -330,6 +337,7 @@ class RestCatalog(Catalog):
     _session: Session
     _auth_manager: AuthManager | None
     _supported_endpoints: set[Endpoint]
+    _namespace_separator: str
 
     def __init__(self, name: str, **properties: str):
         """Rest Catalog.
@@ -355,7 +363,7 @@ class RestCatalog(Catalog):
 
         # Sets the client side and server side SSL cert verification, if provided as properties.
         if ssl_config := self.properties.get(SSL):
-            if ssl_ca_bundle := ssl_config.get(CA_BUNDLE):
+            if (ssl_ca_bundle := ssl_config.get(CA_BUNDLE)) is not None:
                 session.verify = ssl_ca_bundle
             if ssl_client := ssl_config.get(CLIENT):
                 if all(k in ssl_client for k in (CERT, KEY)):
@@ -596,6 +604,16 @@ class RestCatalog(Catalog):
 
         return optional_oauth_param
 
+    def _encode_namespace_path(self, namespace: Identifier) -> str:
+        """
+        Encode a namespace for use as a path parameter in a URL.
+
+        Each part of the namespace is URL-encoded using `urllib.parse.quote`
+        (ensuring characters like '/' are encoded) and then joined by the
+        configured namespace separator.
+        """
+        return self._namespace_separator.join(quote(part, safe="") for part in namespace)
+
     def _fetch_config(self) -> None:
         params = {}
         if warehouse_location := self.properties.get(WAREHOUSE_LOCATION):
@@ -628,6 +646,11 @@ class RestCatalog(Catalog):
             if property_as_bool(self.properties, VIEW_ENDPOINTS_SUPPORTED, VIEW_ENDPOINTS_SUPPORTED_DEFAULT):
                 self._supported_endpoints.update(VIEW_ENDPOINTS)
 
+        separator_from_properties = self.properties.get(NAMESPACE_SEPARATOR_PROPERTY, DEFAULT_NAMESPACE_SEPARATOR)
+        if not separator_from_properties:
+            raise ValueError("Namespace separator cannot be an empty string")
+        self._namespace_separator = unquote(separator_from_properties)
+
     def _identifier_to_validated_tuple(self, identifier: str | Identifier) -> Identifier:
         identifier_tuple = self.identifier_to_tuple(identifier)
         if len(identifier_tuple) <= 1:
@@ -638,10 +661,17 @@ class RestCatalog(Catalog):
         self, identifier: str | Identifier | TableIdentifier, kind: IdentifierKind = IdentifierKind.TABLE
     ) -> Properties:
         if isinstance(identifier, TableIdentifier):
-            return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root), kind.value: identifier.name}
+            return {
+                "namespace": self._encode_namespace_path(tuple(identifier.namespace.root)),
+                kind.value: quote(identifier.name, safe=""),
+            }
         identifier_tuple = self._identifier_to_validated_tuple(identifier)
 
-        return {"namespace": NAMESPACE_SEPARATOR.join(identifier_tuple[:-1]), kind.value: identifier_tuple[-1]}
+        # Use quote to ensure that '/' aren't treated as path separators.
+        return {
+            "namespace": self._encode_namespace_path(identifier_tuple[:-1]),
+            kind.value: quote(identifier_tuple[-1], safe=""),
+        }
 
     def _split_identifier_for_json(self, identifier: str | Identifier) -> dict[str, Identifier | str]:
         identifier_tuple = self._identifier_to_validated_tuple(identifier)
@@ -765,7 +795,7 @@ class RestCatalog(Catalog):
         if location:
             location = location.rstrip("/")
         request = CreateTableRequest(
-            name=namespace_and_table["table"],
+            name=self._identifier_to_validated_tuple(identifier)[-1],
             location=location,
             table_schema=fresh_schema,
             partition_spec=fresh_partition_spec,
@@ -844,7 +874,7 @@ class RestCatalog(Catalog):
         self._check_endpoint(Capability.V1_REGISTER_TABLE)
         namespace_and_table = self._split_identifier_for_path(identifier)
         request = RegisterTableRequest(
-            name=namespace_and_table["table"],
+            name=self._identifier_to_validated_tuple(identifier)[-1],
             metadata_location=metadata_location,
         )
         serialized_json = request.model_dump_json().encode(UTF8)
@@ -864,7 +894,7 @@ class RestCatalog(Catalog):
     def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
         self._check_endpoint(Capability.V1_LIST_TABLES)
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
-        namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
+        namespace_concat = self._encode_namespace_path(namespace_tuple)
         response = self._session.get(self.url(Endpoints.list_tables, namespace=namespace_concat))
         try:
             response.raise_for_status()
@@ -950,7 +980,7 @@ class RestCatalog(Catalog):
         if Capability.V1_LIST_VIEWS not in self._supported_endpoints:
             return []
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
-        namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
+        namespace_concat = self._encode_namespace_path(namespace_tuple)
         response = self._session.get(self.url(Endpoints.list_views, namespace=namespace_concat))
         try:
             response.raise_for_status()
@@ -1020,7 +1050,7 @@ class RestCatalog(Catalog):
     def drop_namespace(self, namespace: str | Identifier) -> None:
         self._check_endpoint(Capability.V1_DELETE_NAMESPACE)
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
-        namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
+        namespace = self._encode_namespace_path(namespace_tuple)
         response = self._session.delete(self.url(Endpoints.drop_namespace, namespace=namespace))
         try:
             response.raise_for_status()
@@ -1033,7 +1063,7 @@ class RestCatalog(Catalog):
         namespace_tuple = self.identifier_to_tuple(namespace)
         response = self._session.get(
             self.url(
-                f"{Endpoints.list_namespaces}?parent={NAMESPACE_SEPARATOR.join(namespace_tuple)}"
+                f"{Endpoints.list_namespaces}?parent={self._encode_namespace_path(namespace_tuple)}"
                 if namespace_tuple
                 else Endpoints.list_namespaces
             ),
@@ -1049,7 +1079,7 @@ class RestCatalog(Catalog):
     def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
         self._check_endpoint(Capability.V1_LOAD_NAMESPACE)
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
-        namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
+        namespace = self._encode_namespace_path(namespace_tuple)
         response = self._session.get(self.url(Endpoints.load_namespace_metadata, namespace=namespace))
         try:
             response.raise_for_status()
@@ -1064,7 +1094,7 @@ class RestCatalog(Catalog):
     ) -> PropertiesUpdateSummary:
         self._check_endpoint(Capability.V1_UPDATE_NAMESPACE)
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
-        namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
+        namespace = self._encode_namespace_path(namespace_tuple)
         payload = {"removals": list(removals or []), "updates": updates}
         response = self._session.post(self.url(Endpoints.update_namespace_properties, namespace=namespace), json=payload)
         try:
@@ -1081,7 +1111,8 @@ class RestCatalog(Catalog):
     @retry(**_RETRY_ARGS)
     def namespace_exists(self, namespace: str | Identifier) -> bool:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
-        namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
+        namespace = self._encode_namespace_path(namespace_tuple)
+
         # fallback in order to work with older rest catalog implementations
         if Capability.V1_NAMESPACE_EXISTS not in self._supported_endpoints:
             try:

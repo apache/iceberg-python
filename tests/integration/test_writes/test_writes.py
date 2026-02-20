@@ -38,6 +38,7 @@ import pytz
 from pyarrow.fs import S3FileSystem
 from pydantic_core import ValidationError
 from pyspark.sql import SparkSession
+from pytest_lazy_fixtures import lf
 from pytest_mock.plugin import MockerFixture
 
 from pyiceberg.catalog import Catalog, load_catalog
@@ -966,7 +967,7 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
 
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_create_table_transaction(catalog: Catalog, format_version: int) -> None:
     identifier = f"default.arrow_create_table_transaction_{catalog.name}_{format_version}"
 
@@ -1018,7 +1019,7 @@ def test_create_table_transaction(catalog: Catalog, format_version: int) -> None
 
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_create_table_with_non_default_values(catalog: Catalog, table_schema_with_all_types: Schema, format_version: int) -> None:
     identifier = f"default.arrow_create_table_transaction_with_non_default_values_{catalog.name}_{format_version}"
     identifier_ref = f"default.arrow_create_table_transaction_with_non_default_values_ref_{catalog.name}_{format_version}"
@@ -1256,7 +1257,7 @@ def test_hive_catalog_storage_descriptor_has_changed(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_sanitize_character_partitioned(catalog: Catalog) -> None:
     table_name = "default.test_table_partitioned_sanitized_character"
     try:
@@ -1278,7 +1279,7 @@ def test_sanitize_character_partitioned(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [lf("session_catalog")])
 def test_sanitize_character_partitioned_avro_bug(catalog: Catalog) -> None:
     table_name = "default.test_table_partitioned_sanitized_character_avro"
     try:

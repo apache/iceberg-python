@@ -30,6 +30,7 @@ from pyiceberg.table.snapshots import (
     Summary,
     ancestors_between,
     ancestors_of,
+    latest_ancestor_before_timestamp,
     update_snapshot_summaries,
 )
 from pyiceberg.transforms import IdentityTransform
@@ -78,9 +79,9 @@ def test_serialize_summary_with_properties() -> None:
 
 
 def test_serialize_snapshot(snapshot: Snapshot) -> None:
-    assert (
-        snapshot.model_dump_json()
-        == """{"snapshot-id":25,"parent-snapshot-id":19,"sequence-number":200,"timestamp-ms":1602638573590,"manifest-list":"s3:/a/b/c.avro","summary":{"operation":"append"},"schema-id":3}"""
+    assert snapshot.model_dump_json() == (
+        '{"snapshot-id":25,"parent-snapshot-id":19,"sequence-number":200,"timestamp-ms":1602638573590,'
+        '"manifest-list":"s3:/a/b/c.avro","summary":{"operation":"append"},"schema-id":3}'
     )
 
 
@@ -95,14 +96,17 @@ def test_serialize_snapshot_without_sequence_number() -> None:
         schema_id=3,
     )
     actual = snapshot.model_dump_json()
-    expected = """{"snapshot-id":25,"parent-snapshot-id":19,"timestamp-ms":1602638573590,"manifest-list":"s3:/a/b/c.avro","summary":{"operation":"append"},"schema-id":3}"""
+    expected = (
+        '{"snapshot-id":25,"parent-snapshot-id":19,"timestamp-ms":1602638573590,'
+        '"manifest-list":"s3:/a/b/c.avro","summary":{"operation":"append"},"schema-id":3}'
+    )
     assert actual == expected
 
 
 def test_serialize_snapshot_with_properties(snapshot_with_properties: Snapshot) -> None:
-    assert (
-        snapshot_with_properties.model_dump_json()
-        == """{"snapshot-id":25,"parent-snapshot-id":19,"sequence-number":200,"timestamp-ms":1602638573590,"manifest-list":"s3:/a/b/c.avro","summary":{"operation":"append","foo":"bar"},"schema-id":3}"""
+    assert snapshot_with_properties.model_dump_json() == (
+        '{"snapshot-id":25,"parent-snapshot-id":19,"sequence-number":200,"timestamp-ms":1602638573590,'
+        '"manifest-list":"s3:/a/b/c.avro","summary":{"operation":"append","foo":"bar"},"schema-id":3}'
     )
 
 
@@ -118,36 +122,45 @@ def test_deserialize_summary_with_properties() -> None:
 
 
 def test_deserialize_snapshot(snapshot: Snapshot) -> None:
-    payload = """{"snapshot-id": 25, "parent-snapshot-id": 19, "sequence-number": 200, "timestamp-ms": 1602638573590, "manifest-list": "s3:/a/b/c.avro", "summary": {"operation": "append"}, "schema-id": 3}"""
+    payload = (
+        '{"snapshot-id": 25, "parent-snapshot-id": 19, "sequence-number": 200, "timestamp-ms": 1602638573590, '
+        '"manifest-list": "s3:/a/b/c.avro", "summary": {"operation": "append"}, "schema-id": 3}'
+    )
     actual = Snapshot.model_validate_json(payload)
     assert actual == snapshot
 
 
 def test_deserialize_snapshot_without_operation(snapshot: Snapshot) -> None:
-    payload = """{"snapshot-id": 25, "parent-snapshot-id": 19, "sequence-number": 200, "timestamp-ms": 1602638573590, "manifest-list": "s3:/a/b/c.avro", "summary": {}, "schema-id": 3}"""
+    payload = (
+        '{"snapshot-id": 25, "parent-snapshot-id": 19, "sequence-number": 200, "timestamp-ms": 1602638573590, '
+        '"manifest-list": "s3:/a/b/c.avro", "summary": {}, "schema-id": 3}'
+    )
     with pytest.warns(UserWarning, match="Encountered invalid snapshot summary: operation is missing, defaulting to overwrite"):
         actual = Snapshot.model_validate_json(payload)
     assert actual.summary.operation == Operation.OVERWRITE
 
 
 def test_deserialize_snapshot_with_properties(snapshot_with_properties: Snapshot) -> None:
-    payload = """{"snapshot-id":25,"parent-snapshot-id":19,"sequence-number":200,"timestamp-ms":1602638573590,"manifest-list":"s3:/a/b/c.avro","summary":{"operation":"append","foo":"bar"},"schema-id":3}"""
+    payload = (
+        '{"snapshot-id":25,"parent-snapshot-id":19,"sequence-number":200,"timestamp-ms":1602638573590,'
+        '"manifest-list":"s3:/a/b/c.avro","summary":{"operation":"append","foo":"bar"},"schema-id":3}'
+    )
     snapshot = Snapshot.model_validate_json(payload)
     assert snapshot == snapshot_with_properties
 
 
 def test_snapshot_repr(snapshot: Snapshot) -> None:
-    assert (
-        repr(snapshot)
-        == """Snapshot(snapshot_id=25, parent_snapshot_id=19, sequence_number=200, timestamp_ms=1602638573590, manifest_list='s3:/a/b/c.avro', summary=Summary(Operation.APPEND), schema_id=3)"""
+    assert repr(snapshot) == (
+        "Snapshot(snapshot_id=25, parent_snapshot_id=19, sequence_number=200, timestamp_ms=1602638573590, "
+        "manifest_list='s3:/a/b/c.avro', summary=Summary(Operation.APPEND), schema_id=3)"
     )
     assert snapshot == eval(repr(snapshot))
 
 
 def test_snapshot_with_properties_repr(snapshot_with_properties: Snapshot) -> None:
-    assert (
-        repr(snapshot_with_properties)
-        == """Snapshot(snapshot_id=25, parent_snapshot_id=19, sequence_number=200, timestamp_ms=1602638573590, manifest_list='s3:/a/b/c.avro', summary=Summary(Operation.APPEND, **{'foo': 'bar'}), schema_id=3)"""
+    assert repr(snapshot_with_properties) == (
+        "Snapshot(snapshot_id=25, parent_snapshot_id=19, sequence_number=200, timestamp_ms=1602638573590, "
+        "manifest_list='s3:/a/b/c.avro', summary=Summary(Operation.APPEND, **{'foo': 'bar'}), schema_id=3)"
     )
     assert snapshot_with_properties == eval(repr(snapshot_with_properties))
 
@@ -225,7 +238,10 @@ def test_snapshot_summary_collector_with_partition() -> None:
         "deleted-records": "300",
         "changed-partition-count": "2",
         "partition-summaries-included": "true",
-        "partitions.int_field=1": "added-files-size=1234,removed-files-size=1234,added-data-files=1,deleted-data-files=1,added-records=100,deleted-records=100",
+        "partitions.int_field=1": (
+            "added-files-size=1234,removed-files-size=1234,added-data-files=1,"
+            "deleted-data-files=1,added-records=100,deleted-records=100"
+        ),
         "partitions.int_field=2": "removed-files-size=4321,deleted-data-files=1,deleted-records=200",
     }
 
@@ -261,7 +277,10 @@ def test_snapshot_summary_collector_with_partition_limit_in_constructor() -> Non
         "deleted-records": "300",
         "changed-partition-count": "2",
         "partition-summaries-included": "true",
-        "partitions.int_field=1": "added-files-size=1234,removed-files-size=1234,added-data-files=1,deleted-data-files=1,added-records=100,deleted-records=100",
+        "partitions.int_field=1": (
+            "added-files-size=1234,removed-files-size=1234,added-data-files=1,"
+            "deleted-data-files=1,added-records=100,deleted-records=100"
+        ),
         "partitions.int_field=2": "removed-files-size=4321,deleted-data-files=1,deleted-records=200",
     }
 
@@ -456,3 +475,79 @@ def test_ancestors_between(table_v2_with_extensive_snapshots: Table) -> None:
         )
         == 2000
     )
+
+
+def test_latest_ancestor_before_timestamp() -> None:
+    from pyiceberg.table.metadata import TableMetadataV2
+
+    # Create metadata with 4 snapshots at ordered timestamps
+    metadata = TableMetadataV2(
+        **{
+            "format-version": 2,
+            "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
+            "location": "s3://bucket/test/location",
+            "last-sequence-number": 4,
+            "last-updated-ms": 1602638573590,
+            "last-column-id": 1,
+            "current-schema-id": 0,
+            "schemas": [{"type": "struct", "schema-id": 0, "fields": [{"id": 1, "name": "x", "required": True, "type": "long"}]}],
+            "default-spec-id": 0,
+            "partition-specs": [{"spec-id": 0, "fields": []}],
+            "last-partition-id": 999,
+            "default-sort-order-id": 0,
+            "sort-orders": [{"order-id": 0, "fields": []}],
+            "current-snapshot-id": 4,
+            "snapshots": [
+                {
+                    "snapshot-id": 1,
+                    "timestamp-ms": 1000,
+                    "sequence-number": 1,
+                    "summary": {"operation": "append"},
+                    "manifest-list": "s3://a/1.avro",
+                },
+                {
+                    "snapshot-id": 2,
+                    "parent-snapshot-id": 1,
+                    "timestamp-ms": 2000,
+                    "sequence-number": 2,
+                    "summary": {"operation": "append"},
+                    "manifest-list": "s3://a/2.avro",
+                },
+                {
+                    "snapshot-id": 3,
+                    "parent-snapshot-id": 2,
+                    "timestamp-ms": 3000,
+                    "sequence-number": 3,
+                    "summary": {"operation": "append"},
+                    "manifest-list": "s3://a/3.avro",
+                },
+                {
+                    "snapshot-id": 4,
+                    "parent-snapshot-id": 3,
+                    "timestamp-ms": 4000,
+                    "sequence-number": 4,
+                    "summary": {"operation": "append"},
+                    "manifest-list": "s3://a/4.avro",
+                },
+            ],
+        }
+    )
+
+    result = latest_ancestor_before_timestamp(metadata, 3500)
+    assert result is not None
+    assert result.snapshot_id == 3
+
+    result = latest_ancestor_before_timestamp(metadata, 2500)
+    assert result is not None
+    assert result.snapshot_id == 2
+
+    result = latest_ancestor_before_timestamp(metadata, 5000)
+    assert result is not None
+    assert result.snapshot_id == 4
+
+    result = latest_ancestor_before_timestamp(metadata, 3000)
+    assert result is not None
+    assert result.snapshot_id == 2
+
+    result = latest_ancestor_before_timestamp(metadata, 1000)
+    assert result is None
