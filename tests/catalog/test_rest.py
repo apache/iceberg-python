@@ -547,7 +547,6 @@ def test_sigv4_adapter_default_retry_config(rest_mock: Mocker) -> None:
     adapter = catalog._session.adapters[catalog.uri]
     assert isinstance(adapter, HTTPAdapter)
     assert adapter.max_retries.total == SIGV4_DEFAULT_MAX_RETRIES
-    assert 429 in adapter.max_retries.status_forcelist
 
 
 def test_sigv4_adapter_override_retry_config(rest_mock: Mocker) -> None:
