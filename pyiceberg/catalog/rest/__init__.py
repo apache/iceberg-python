@@ -695,6 +695,7 @@ class RestCatalog(Catalog):
         from botocore.awsrequest import AWSRequest
         from requests import PreparedRequest
         from requests.adapters import HTTPAdapter
+
         class SigV4Adapter(HTTPAdapter):
             def __init__(self, **properties: str):
                 self._properties = properties
