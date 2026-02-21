@@ -143,7 +143,6 @@ notebook = [
 [tool.uv]
 default-groups = [
     "dev",
-    "docs",
 ]
 
 [build-system]
