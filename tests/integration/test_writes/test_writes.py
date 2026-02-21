@@ -2336,10 +2336,10 @@ def test_nanosecond_support_on_catalog(
 
     _create_table(session_catalog, identifier, {"format-version": "3"}, schema=arrow_table_schema_with_all_timestamp_precisions)
 
-    with pytest.raises(NotImplementedError, match="Writing V3 is not yet supported"):
-        catalog.create_table(
-            "ns.table1", schema=arrow_table_schema_with_all_timestamp_precisions, properties={"format-version": "3"}
-        )
+    nanosecond_table = catalog.create_table(
+        "ns.table1", schema=arrow_table_schema_with_all_timestamp_precisions, properties={"format-version": "3"}
+    )
+    assert nanosecond_table.format_version == 3
 
     with pytest.raises(
         UnsupportedPyArrowTypeException, match=re.escape("Column 'timestamp_ns' has an unsupported type: timestamp[ns]")
@@ -2495,7 +2495,6 @@ def test_stage_only_overwrite_files(
     assert parent_snapshot_id == [None, first_snapshot, second_snapshot, second_snapshot, second_snapshot]
 
 
-@pytest.mark.skip("V3 writer support is not enabled.")
 @pytest.mark.integration
 def test_v3_write_and_read_row_lineage(spark: SparkSession, session_catalog: Catalog) -> None:
     """Test writing to a v3 table and reading with Spark."""
@@ -2527,6 +2526,11 @@ def test_v3_write_and_read_row_lineage(spark: SparkSession, session_catalog: Cat
     )
 
     tbl.append(test_data)
+
+    current_snapshot = tbl.current_snapshot()
+    assert current_snapshot is not None
+    assert current_snapshot.first_row_id == initial_next_row_id
+    assert current_snapshot.added_rows == len(test_data)
 
     assert tbl.metadata.next_row_id == initial_next_row_id + len(test_data), (
         "Expected next_row_id to be incremented by the number of added rows"
