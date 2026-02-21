@@ -15,6 +15,8 @@
 #  specific language governing permissions and limitations
 #  under the License.
 # pylint: disable=redefined-outer-name,unused-argument
+from __future__ import annotations
+
 import base64
 import os
 from collections.abc import Callable
@@ -50,6 +52,7 @@ from pyiceberg.exceptions import (
     OAuthError,
     ServerError,
     TableAlreadyExistsError,
+    ViewAlreadyExistsError,
 )
 from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -61,6 +64,8 @@ from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import RecursiveDict
 from pyiceberg.types import StringType
 from pyiceberg.utils.config import Config
+from pyiceberg.view import View
+from pyiceberg.view.metadata import ViewMetadata, ViewVersion
 
 TEST_URI = "https://iceberg-test-catalog/"
 TEST_CREDENTIALS = "client:secret_with:colon"
@@ -131,6 +136,18 @@ def example_table_metadata_no_snapshot_v1_rest_json(example_table_metadata_no_sn
     return {
         "metadata-location": "s3://warehouse/database/table/metadata.json",
         "metadata": example_table_metadata_no_snapshot_v1,
+        "config": {
+            "client.factory": "io.tabular.iceberg.catalog.TabularAwsClientFactory",
+            "region": "us-west-2",
+        },
+    }
+
+
+@pytest.fixture
+def example_view_metadata_rest_json(example_view_metadata_v1: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "metadata-location": "s3://warehouse/database/table/metadata/00001-5f2f8166-244c-4eae-ac36-384ecdec81fc.gz.metadata.json",
+        "metadata": example_view_metadata_v1,
         "config": {
             "client.factory": "io.tabular.iceberg.catalog.TabularAwsClientFactory",
             "region": "us-west-2",
@@ -1265,6 +1282,76 @@ def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> Non
             properties={"owner": "fokko"},
         )
     assert "Table already exists" in str(e.value)
+
+
+def test_create_view_200(rest_mock: Mocker, table_schema_simple: Schema, example_view_metadata_rest_json: dict[str, Any]) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/views",
+        json=example_view_metadata_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    actual = catalog.create_view(
+        identifier=("fokko", "fokko2"),
+        schema=table_schema_simple,
+        view_version=ViewVersion(
+            version_id=1,
+            timestamp_ms=12345,
+            schema_id=1,
+            summary={"engine-name": "spark", "engineVersion": "3.3"},
+            representations=[
+                {
+                    "type": "sql",
+                    "sql": "SELECT * FROM prod.db.table",
+                    "dialect": "spark",
+                }
+            ],
+            default_namespace=["default"],
+        ),
+        location=None,
+        properties={"owner": "fokko"},
+    )
+    expected = View(
+        identifier=("fokko", "fokko2"),
+        metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]),
+    )
+    assert actual == expected
+
+
+def test_create_view_409(
+    rest_mock: Mocker,
+    table_schema_simple: Schema,
+) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/views",
+        json={
+            "error": {
+                "message": "View already exists: fokko.already_exists in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
+                "type": "AlreadyExistsException",
+                "code": 409,
+            }
+        },
+        status_code=409,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(ViewAlreadyExistsError) as e:
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).create_view(
+            identifier=("fokko", "fokko2"),
+            schema=table_schema_simple,
+            view_version=ViewVersion(
+                version_id=1,
+                timestamp_ms=12345,
+                schema_id=1,
+                summary={"engine-name": "spark", "engineVersion": "3.3"},
+                representations=[],
+                default_namespace=[],
+            ),
+            location=None,
+            properties={"owner": "fokko"},
+        )
+    assert "View already exists" in str(e.value)
 
 
 def test_create_table_if_not_exists_200(

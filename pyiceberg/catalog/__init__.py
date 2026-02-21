@@ -68,6 +68,8 @@ from pyiceberg.typedef import (
 )
 from pyiceberg.utils.config import Config, merge_config
 from pyiceberg.utils.properties import property_as_bool
+from pyiceberg.view import View
+from pyiceberg.view.metadata import ViewVersion
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -672,6 +674,31 @@ class Catalog(ABC):
 
         Raises:
             NoSuchViewError: If a view with the given name does not exist.
+        """
+
+    @abstractmethod
+    def create_view(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        view_version: ViewVersion,
+        location: str | None = None,
+        properties: Properties = EMPTY_DICT,
+    ) -> View:
+        """Create a view.
+
+        Args:
+            identifier (str | Identifier): View identifier.
+            schema (Schema): View's schema.
+            view_version (ViewVersion): The format version for the view.
+            location (str | None): Location for the view. Optional Argument.
+            properties (Properties): View properties that can be a string based dictionary.
+
+        Returns:
+            View: the created view instance.
+
+        Raises:
+            ViewAlreadyExistsError: If a view with the name already exists.
         """
 
     @staticmethod
