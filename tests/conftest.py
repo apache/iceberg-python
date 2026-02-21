@@ -34,7 +34,7 @@ import uuid
 from collections.abc import Generator
 from datetime import date, datetime, timezone
 from pathlib import Path
-from random import choice, randint
+from random import choice
 from tempfile import TemporaryDirectory
 from typing import (
     TYPE_CHECKING,
@@ -815,19 +815,22 @@ def example_table_metadata_v2_with_extensive_snapshots() -> dict[str, Any]:
     snapshot_log = []
     initial_snapshot_id = 3051729675574597004
 
+    base_timestamp_ms = 1602638573590
     for i in range(2000):
         snapshot_id = initial_snapshot_id + i
         parent_snapshot_id = snapshot_id - 1 if i > 0 else None
-        timestamp_ms = int(time.time() * 1000) - randint(0, 1000000)
+        timestamp_ms = base_timestamp_ms + i
         snapshots.append(generate_snapshot(snapshot_id, parent_snapshot_id, timestamp_ms, i))
         snapshot_log.append({"snapshot-id": snapshot_id, "timestamp-ms": timestamp_ms})
+
+    last_updated_ms = snapshot_log[-1]["timestamp-ms"]
 
     return {
         "format-version": 2,
         "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
         "location": "s3://bucket/test/location",
         "last-sequence-number": 34,
-        "last-updated-ms": 1602638573590,
+        "last-updated-ms": last_updated_ms,
         "last-column-id": 3,
         "current-schema-id": 1,
         "schemas": [
