@@ -55,7 +55,15 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
     UnauthorizedError,
 )
-from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, FileIO, load_file_io
+from pyiceberg.io import (
+    AWS_ACCESS_KEY_ID,
+    AWS_PROFILE_NAME,
+    AWS_REGION,
+    AWS_SECRET_ACCESS_KEY,
+    AWS_SESSION_TOKEN,
+    FileIO,
+    load_file_io,
+)
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec, assign_fresh_partition_spec_ids
 from pyiceberg.schema import Schema, assign_fresh_schema_ids
 from pyiceberg.table import (
@@ -77,7 +85,7 @@ from pyiceberg.table.update import (
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
 from pyiceberg.types import transform_dict_value_to_str
 from pyiceberg.utils.deprecated import deprecation_message
-from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool
+from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool, property_as_int
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -228,6 +236,8 @@ SSL = "ssl"
 SIGV4 = "rest.sigv4-enabled"
 SIGV4_REGION = "rest.signing-region"
 SIGV4_SERVICE = "rest.signing-name"
+SIGV4_MAX_RETRIES = "rest.sigv4.max-retries"
+SIGV4_DEFAULT_MAX_RETRIES = 10
 EMPTY_BODY_SHA256: str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 OAUTH2_SERVER_URI = "oauth2-server-uri"
 SNAPSHOT_LOADING_MODE = "snapshot-loading-mode"
@@ -688,9 +698,11 @@ class RestCatalog(Catalog):
 
         class SigV4Adapter(HTTPAdapter):
             def __init__(self, **properties: str):
-                super().__init__()
                 self._properties = properties
+                max_retries = property_as_int(self._properties, SIGV4_MAX_RETRIES, SIGV4_DEFAULT_MAX_RETRIES)
+                super().__init__(max_retries=max_retries)
                 self._boto_session = boto3.Session(
+                    profile_name=get_first_property_value(self._properties, AWS_PROFILE_NAME),
                     region_name=get_first_property_value(self._properties, AWS_REGION),
                     botocore_session=self._properties.get(BOTOCORE_SESSION),
                     aws_access_key_id=get_first_property_value(self._properties, AWS_ACCESS_KEY_ID),
