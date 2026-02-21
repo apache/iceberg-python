@@ -29,7 +29,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
 )
-from urllib.parse import urlparse
+from urllib.parse import ParseResult, urlparse
 
 import requests
 from fsspec import AbstractFileSystem
@@ -244,7 +244,7 @@ def _gs(properties: Properties) -> AbstractFileSystem:
     )
 
 
-def _adls(properties: Properties) -> AbstractFileSystem:
+def _adls(properties: Properties, hostname: str | None = None) -> AbstractFileSystem:
     # https://fsspec.github.io/adlfs/api/
 
     from adlfs import AzureBlobFileSystem
@@ -258,6 +258,10 @@ def _adls(properties: Properties) -> AbstractFileSystem:
             properties[ADLS_ACCOUNT_NAME] = key.split(".")[0]
         if ADLS_SAS_TOKEN not in properties:
             properties[ADLS_SAS_TOKEN] = sas_token
+
+    # Fallback: extract account_name from URI hostname (e.g. "account.dfs.core.windows.net" -> "account")
+    if hostname and ADLS_ACCOUNT_NAME not in properties:
+        properties[ADLS_ACCOUNT_NAME] = hostname.split(".")[0]
 
     class StaticTokenCredential(AsyncTokenCredential):
         _DEFAULT_EXPIRY_SECONDS = 3600
@@ -300,7 +304,7 @@ def _hf(properties: Properties) -> AbstractFileSystem:
     )
 
 
-SCHEME_TO_FS = {
+SCHEME_TO_FS: dict[str, Callable[..., AbstractFileSystem]] = {
     "": _file,
     "file": _file,
     "s3": _s3,
@@ -312,6 +316,8 @@ SCHEME_TO_FS = {
     "gcs": _gs,
     "hf": _hf,
 }
+
+_ADLS_SCHEMES = frozenset({"abfs", "abfss", "wasb", "wasbs"})
 
 
 class FsspecInputFile(InputFile):
@@ -414,8 +420,7 @@ class FsspecFileIO(FileIO):
     """A FileIO implementation that uses fsspec."""
 
     def __init__(self, properties: Properties):
-        self._scheme_to_fs = {}
-        self._scheme_to_fs.update(SCHEME_TO_FS)
+        self._scheme_to_fs: dict[str, Callable[..., AbstractFileSystem]] = dict(SCHEME_TO_FS)
         self._thread_locals = threading.local()
         super().__init__(properties=properties)
 
@@ -429,7 +434,7 @@ class FsspecFileIO(FileIO):
             FsspecInputFile: An FsspecInputFile instance for the given location.
         """
         uri = urlparse(location)
-        fs = self.get_fs(uri.scheme)
+        fs = self._get_fs_from_uri(uri)
         return FsspecInputFile(location=location, fs=fs)
 
     def new_output(self, location: str) -> FsspecOutputFile:
@@ -442,7 +447,7 @@ class FsspecFileIO(FileIO):
             FsspecOutputFile: An FsspecOutputFile instance for the given location.
         """
         uri = urlparse(location)
-        fs = self.get_fs(uri.scheme)
+        fs = self._get_fs_from_uri(uri)
         return FsspecOutputFile(location=location, fs=fs)
 
     def delete(self, location: str | InputFile | OutputFile) -> None:
@@ -459,20 +464,30 @@ class FsspecFileIO(FileIO):
             str_location = location
 
         uri = urlparse(str_location)
-        fs = self.get_fs(uri.scheme)
+        fs = self._get_fs_from_uri(uri)
         fs.rm(str_location)
 
-    def get_fs(self, scheme: str) -> AbstractFileSystem:
+    def _get_fs_from_uri(self, uri: "ParseResult") -> AbstractFileSystem:
+        """Get a filesystem from a parsed URI, using hostname for ADLS account resolution."""
+        if uri.scheme in _ADLS_SCHEMES:
+            return self.get_fs(uri.scheme, uri.hostname)
+        return self.get_fs(uri.scheme)
+
+    def get_fs(self, scheme: str, hostname: str | None = None) -> AbstractFileSystem:
         """Get a filesystem for a specific scheme, cached per thread."""
         if not hasattr(self._thread_locals, "get_fs_cached"):
             self._thread_locals.get_fs_cached = lru_cache(self._get_fs)
 
-        return self._thread_locals.get_fs_cached(scheme)
+        return self._thread_locals.get_fs_cached(scheme, hostname)
 
-    def _get_fs(self, scheme: str) -> AbstractFileSystem:
+    def _get_fs(self, scheme: str, hostname: str | None = None) -> AbstractFileSystem:
         """Get a filesystem for a specific scheme."""
         if scheme not in self._scheme_to_fs:
             raise ValueError(f"No registered filesystem for scheme: {scheme}")
+
+        if scheme in _ADLS_SCHEMES:
+            return _adls(self.properties, hostname)
+
         return self._scheme_to_fs[scheme](self.properties)
 
     def __getstate__(self) -> dict[str, Any]:

@@ -606,6 +606,64 @@ def test_adls_account_name_sas_token_extraction() -> None:
         )
 
 
+def test_adls_account_name_extracted_from_uri_hostname() -> None:
+    """Test that account_name is extracted from the ABFSS URI hostname when not in properties."""
+    session_properties: Properties = {
+        "adls.tenant-id": "test-tenant-id",
+        "adls.client-id": "test-client-id",
+        "adls.client-secret": "test-client-secret",
+    }
+
+    with mock.patch("adlfs.AzureBlobFileSystem") as mock_adlfs:
+        adls_fileio = FsspecFileIO(properties=session_properties)
+
+        adls_fileio.new_input(
+            location="abfss://dd-michelada-us3-prod-dog@usagestorageprod.dfs.core.windows.net"
+            "/unified_datasets/aggregated/data/file.parquet"
+        )
+
+        mock_adlfs.assert_called_with(
+            connection_string=None,
+            credential=None,
+            account_name="usagestorageprod",
+            account_key=None,
+            sas_token=None,
+            tenant_id="test-tenant-id",
+            client_id="test-client-id",
+            client_secret="test-client-secret",
+            account_host=None,
+            anon=None,
+        )
+
+
+def test_adls_account_name_not_overridden_when_in_properties() -> None:
+    """Test that explicit adls.account-name in properties is not overridden by URI hostname."""
+    session_properties: Properties = {
+        "adls.account-name": "explicitly-configured-account",
+        "adls.tenant-id": "test-tenant-id",
+        "adls.client-id": "test-client-id",
+        "adls.client-secret": "test-client-secret",
+    }
+
+    with mock.patch("adlfs.AzureBlobFileSystem") as mock_adlfs:
+        adls_fileio = FsspecFileIO(properties=session_properties)
+
+        adls_fileio.new_input(location="abfss://container@usagestorageprod.dfs.core.windows.net/path/file.parquet")
+
+        mock_adlfs.assert_called_with(
+            connection_string=None,
+            credential=None,
+            account_name="explicitly-configured-account",
+            account_key=None,
+            sas_token=None,
+            tenant_id="test-tenant-id",
+            client_id="test-client-id",
+            client_secret="test-client-secret",
+            account_host=None,
+            anon=None,
+        )
+
+
 @pytest.mark.gcs
 def test_fsspec_new_input_file_gcs(fsspec_fileio_gcs: FsspecFileIO) -> None:
     """Test creating a new input file from a fsspec file-io"""

@@ -54,6 +54,10 @@ class PositionDeletes:
         start_idx = bisect_left(self._seqs, seq)
         return [delete_file for delete_file, _ in self._files[start_idx:]]
 
+    def referenced_delete_files(self) -> list[DataFile]:
+        self._ensure_indexed()
+        return [data_file for data_file, _ in self._files]
+
 
 def _has_path_bounds(delete_file: DataFile) -> bool:
     lower = delete_file.lower_bounds
@@ -140,3 +144,14 @@ class DeleteFileIndex:
             deletes.update(path_deletes.filter_by_seq(seq_num))
 
         return deletes
+
+    def referenced_delete_files(self) -> list[DataFile]:
+        data_files: list[DataFile] = []
+
+        for deletes in self._by_partition.values():
+            data_files.extend(deletes.referenced_delete_files())
+
+        for deletes in self._by_path.values():
+            data_files.extend(deletes.referenced_delete_files())
+
+        return data_files
