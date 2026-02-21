@@ -30,6 +30,7 @@ import fnmatch
 import functools
 import importlib
 import itertools
+import json
 import logging
 import operator
 import os
@@ -180,6 +181,12 @@ from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
 from pyiceberg.utils.decimal import unscaled_to_decimal
+from pyiceberg.utils.geospatial import (
+    GeometryEnvelope,
+    extract_envelope_from_wkb,
+    merge_envelopes,
+    serialize_geospatial_bound,
+)
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
@@ -205,6 +212,14 @@ DOC = "doc"
 UTC_ALIASES = {"UTC", "+00:00", "Etc/UTC", "Z"}
 
 T = TypeVar("T")
+
+
+@lru_cache(maxsize=1)
+def _warn_geoarrow_unavailable() -> None:
+    logger.warning(
+        "geoarrow-pyarrow is not installed; falling back to binary for geometry/geography columns. "
+        "Install pyiceberg with the geoarrow extra to preserve GeoArrow metadata in Parquet."
+    )
 
 
 @lru_cache
@@ -812,6 +827,7 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
 
             return ga.wkb().with_crs(geometry_type.crs)
         except ImportError:
+            _warn_geoarrow_unavailable()
             return pa.large_binary()
 
     def visit_geography(self, geography_type: GeographyType) -> pa.DataType:
@@ -830,6 +846,7 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
             # "planar" is the default edge type in GeoArrow, no need to set explicitly
             return wkb_type
         except ImportError:
+            _warn_geoarrow_unavailable()
             return pa.large_binary()
 
 
@@ -1341,6 +1358,51 @@ def _get_field_id(field: pa.Field) -> int | None:
     return None
 
 
+def _geoarrow_wkb_to_iceberg(primitive: pa.DataType) -> PrimitiveType | None:
+    if not isinstance(primitive, pa.ExtensionType) or primitive.extension_name != "geoarrow.wkb":
+        return None
+
+    # Default CRS in the Iceberg spec for both geometry and geography.
+    crs = "OGC:CRS84"
+
+    # Avoid conversions that may require optional CRS dependencies.
+    primitive_crs = getattr(primitive, "crs", None)
+    raw_crs = getattr(primitive_crs, "_crs", None)
+    if isinstance(raw_crs, str) and raw_crs:
+        crs = raw_crs
+    elif isinstance(primitive_crs, str) and primitive_crs:
+        crs = primitive_crs
+
+    edges: str | None = None
+    try:
+        serialized = primitive.__arrow_ext_serialize__()
+        if serialized:
+            payload = json.loads(serialized.decode("utf-8"))
+            if isinstance(payload, dict):
+                if isinstance(payload.get("crs"), str) and payload["crs"]:
+                    crs = payload["crs"]
+                if isinstance(payload.get("edges"), str):
+                    edges = payload["edges"].lower()
+    except (AttributeError, UnicodeDecodeError, json.JSONDecodeError):
+        pass
+
+    if edges is None:
+        edge_type = getattr(primitive, "edge_type", None)
+        edge_name = getattr(edge_type, "name", None)
+        if isinstance(edge_name, str) and edge_name.lower() == "spherical":
+            edges = edge_name.lower()
+
+    if edges == "spherical":
+        return GeographyType(crs, "spherical")
+    if edges == "planar":
+        return GeographyType(crs, "planar")
+
+    # GeoArrow WKB without explicit edge semantics maps best to geometry.
+    # This is ambiguous with geography(planar); compatibility for that case is handled
+    # explicitly at the Arrow/Parquet schema-compatibility boundary.
+    return GeometryType(crs)
+
+
 class _HasIds(PyArrowSchemaVisitor[bool]):
     def schema(self, schema: pa.Schema, struct_result: bool) -> bool:
         return struct_result
@@ -1466,6 +1528,8 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema]):
                 return TimestamptzType()
             elif primitive.tz is None:
                 return TimestampType()
+        elif geo_type := _geoarrow_wkb_to_iceberg(primitive):
+            return geo_type
 
         elif pa.types.is_binary(primitive) or pa.types.is_large_binary(primitive) or pa.types.is_binary_view(primitive):
             return BinaryType()
@@ -2248,6 +2312,58 @@ class StatsAggregator:
             return self.serialize(self.current_max)
 
 
+class GeospatialStatsAggregator:
+    primitive_type: PrimitiveType
+    current_min: Any
+    current_max: Any
+
+    def __init__(self, iceberg_type: PrimitiveType) -> None:
+        if not isinstance(iceberg_type, (GeometryType, GeographyType)):
+            raise ValueError(f"Expected GeometryType or GeographyType, got {iceberg_type}")
+        self.primitive_type = iceberg_type
+        self.current_min = None
+        self.current_max = None
+        self._envelope: GeometryEnvelope | None = None
+
+    def update_from_wkb(self, val: bytes | bytearray | memoryview | None) -> None:
+        if val is None:
+            return
+
+        envelope = extract_envelope_from_wkb(bytes(val), isinstance(self.primitive_type, GeographyType))
+        if envelope is None:
+            return
+
+        if self._envelope is None:
+            self._envelope = envelope
+        else:
+            self._envelope = merge_envelopes(
+                self._envelope,
+                envelope,
+                is_geography=isinstance(self.primitive_type, GeographyType),
+            )
+
+        self.current_min = self._envelope.to_min_bound()
+        self.current_max = self._envelope.to_max_bound()
+
+    def update_min(self, val: Any | None) -> None:
+        if isinstance(val, (bytes, bytearray, memoryview)):
+            self.update_from_wkb(val)
+
+    def update_max(self, val: Any | None) -> None:
+        if isinstance(val, (bytes, bytearray, memoryview)):
+            self.update_from_wkb(val)
+
+    def min_as_bytes(self) -> bytes | None:
+        if self._envelope is None:
+            return None
+        return serialize_geospatial_bound(self._envelope.to_min_bound())
+
+    def max_as_bytes(self) -> bytes | None:
+        if self._envelope is None:
+            return None
+        return serialize_geospatial_bound(self._envelope.to_max_bound())
+
+
 DEFAULT_TRUNCATION_LENGTH = 16
 TRUNCATION_EXPR = r"^truncate\((\d+)\)$"
 
@@ -2480,7 +2596,7 @@ class DataFileStatistics:
     value_counts: dict[int, int]
     null_value_counts: dict[int, int]
     nan_value_counts: dict[int, int]
-    column_aggregates: dict[int, StatsAggregator]
+    column_aggregates: dict[int, StatsAggregator | GeospatialStatsAggregator]
     split_offsets: list[int]
 
     def _partition_value(self, partition_field: PartitionField, schema: Schema) -> Any:
@@ -2488,6 +2604,11 @@ class DataFileStatistics:
             return None
 
         source_field = schema.find_field(partition_field.source_id)
+        if isinstance(source_field.field_type, (GeometryType, GeographyType)):
+            # Geospatial lower/upper bounds encode envelope extrema, not original values,
+            # so they cannot be used to infer a partition value.
+            return None
+
         iceberg_transform = partition_field.transform
 
         if not iceberg_transform.preserves_order:
@@ -2544,6 +2665,78 @@ class DataFileStatistics:
             "upper_bounds": upper_bounds,
             "split_offsets": self.split_offsets,
         }
+
+
+def _iter_wkb_values(column: pa.Array | ChunkedArray) -> Iterator[bytes]:
+    chunks = column.chunks if isinstance(column, ChunkedArray) else [column]
+    for chunk in chunks:
+        if isinstance(chunk, pa.ExtensionArray):
+            chunk = chunk.storage
+
+        for scalar in chunk:
+            if not scalar.is_valid:
+                continue
+
+            value = scalar.as_py()
+            if isinstance(value, bytes):
+                yield value
+            elif isinstance(value, bytearray):
+                yield bytes(value)
+            elif isinstance(value, memoryview):
+                yield value.tobytes()
+            elif hasattr(value, "to_wkb"):
+                yield bytes(value.to_wkb())
+            else:
+                raise ValueError(f"Expected a bytes-like WKB value, got {type(value)}")
+
+
+def geospatial_column_aggregates_from_arrow_table(
+    arrow_table: pa.Table, stats_columns: dict[int, StatisticsCollector]
+) -> dict[int, GeospatialStatsAggregator]:
+    geospatial_aggregates: dict[int, GeospatialStatsAggregator] = {}
+
+    for field_id, stats_col in stats_columns.items():
+        if stats_col.mode.type in (MetricModeTypes.NONE, MetricModeTypes.COUNTS):
+            continue
+
+        if not isinstance(stats_col.iceberg_type, (GeometryType, GeographyType)):
+            continue
+
+        column = _get_field_from_arrow_table(arrow_table, stats_col.column_name)
+        aggregator = GeospatialStatsAggregator(stats_col.iceberg_type)
+
+        try:
+            for value in _iter_wkb_values(column):
+                aggregator.update_from_wkb(value)
+        except ValueError as exc:
+            logger.warning("Skipping geospatial bounds for column %s: %s", stats_col.column_name, exc)
+            continue
+
+        if aggregator.min_as_bytes() is not None:
+            geospatial_aggregates[field_id] = aggregator
+
+    return geospatial_aggregates
+
+
+def geospatial_column_aggregates_from_parquet_file(
+    input_file: InputFile, stats_columns: dict[int, StatisticsCollector]
+) -> dict[int, GeospatialStatsAggregator]:
+    geospatial_stats_columns = {
+        field_id: stats_col
+        for field_id, stats_col in stats_columns.items()
+        if stats_col.mode.type not in (MetricModeTypes.NONE, MetricModeTypes.COUNTS)
+        and isinstance(stats_col.iceberg_type, (GeometryType, GeographyType))
+    }
+    if not geospatial_stats_columns:
+        return {}
+
+    with input_file.open() as input_stream:
+        arrow_table = pq.read_table(
+            input_stream,
+            columns=[stats_col.column_name for stats_col in geospatial_stats_columns.values()],
+        )
+
+    return geospatial_column_aggregates_from_arrow_table(arrow_table, geospatial_stats_columns)
 
 
 def data_file_statistics_from_parquet_metadata(
@@ -2617,6 +2810,11 @@ def data_file_statistics_from_parquet_metadata(
                     if stats_col.mode == MetricsMode(MetricModeTypes.COUNTS):
                         continue
 
+                    if isinstance(stats_col.iceberg_type, (GeometryType, GeographyType)):
+                        # Geospatial metrics bounds are computed from row values (WKB parsing),
+                        # not Parquet binary min/max statistics.
+                        continue
+
                     if field_id not in col_aggs:
                         try:
                             col_aggs[field_id] = StatsAggregator(
@@ -2660,7 +2858,7 @@ def data_file_statistics_from_parquet_metadata(
         value_counts=value_counts,
         null_value_counts=null_value_counts,
         nan_value_counts=nan_value_counts,
-        column_aggregates=col_aggs,
+        column_aggregates=cast(dict[int, StatsAggregator | GeospatialStatsAggregator], col_aggs),
         split_offsets=split_offsets,
     )
 
@@ -2707,11 +2905,13 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
                 fos, schema=arrow_table.schema, store_decimal_as_integer=True, **parquet_writer_kwargs
             ) as writer:
                 writer.write(arrow_table, row_group_size=row_group_size)
+        stats_columns = compute_statistics_plan(file_schema, table_metadata.properties)
         statistics = data_file_statistics_from_parquet_metadata(
             parquet_metadata=writer.writer.metadata,
-            stats_columns=compute_statistics_plan(file_schema, table_metadata.properties),
+            stats_columns=stats_columns,
             parquet_column_mapping=parquet_path_to_id_mapping(file_schema),
         )
+        statistics.column_aggregates.update(geospatial_column_aggregates_from_arrow_table(arrow_table, stats_columns))
         data_file = DataFile.from_args(
             content=DataFileContent.DATA,
             file_path=file_path,
@@ -2785,7 +2985,7 @@ def _check_pyarrow_schema_compatible(
             f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. "
             "Update the schema first (hint, use union_by_name)."
         ) from e
-    _check_schema_compatible(requested_schema, provided_schema)
+    _check_schema_compatible(requested_schema, provided_schema, allow_planar_geospatial_equivalence=True)
 
 
 def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_paths: Iterator[str]) -> Iterator[DataFile]:
@@ -2803,12 +3003,14 @@ def parquet_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_pa
 
     schema = table_metadata.schema()
     _check_pyarrow_schema_compatible(schema, arrow_schema, format_version=table_metadata.format_version)
+    stats_columns = compute_statistics_plan(schema, table_metadata.properties)
 
     statistics = data_file_statistics_from_parquet_metadata(
         parquet_metadata=parquet_metadata,
-        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        stats_columns=stats_columns,
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
+    statistics.column_aggregates.update(geospatial_column_aggregates_from_parquet_file(input_file, stats_columns))
     data_file = DataFile.from_args(
         content=DataFileContent.DATA,
         file_path=file_path,
