@@ -221,5 +221,5 @@ jobs:
     #   CIBW_TEST_COMMAND: uv run --directory {project} pytest tests/avro/test_decoder.py
     - name: Mirror wheel CIBW_BEFORE_TEST
       run: uv sync --directory . --only-group dev --no-install-project
-    - name: Mirror wheel CIBW_TEST_COMMAND (collection only)
-      run: uv run --directory . pytest --collect-only tests/avro/test_decoder.py -q
+    - name: Mirror wheel CIBW_TEST_COMMAND
+      run: uv run --directory . pytest tests/avro/test_decoder.py
