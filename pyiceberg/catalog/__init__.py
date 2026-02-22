@@ -218,6 +218,14 @@ def infer_catalog_type(name: str, catalog_properties: RecursiveDict) -> CatalogT
     )
 
 
+def _check_required_catalog_properties(name: str, catalog_type: CatalogType, conf: RecursiveDict) -> None:
+    """Validate required properties for explicitly selected catalog types."""
+    if catalog_type in {CatalogType.REST, CatalogType.HIVE, CatalogType.SQL} and URI not in conf:
+        raise ValueError(
+            f"URI missing, please provide using --uri, the config or environment variable PYICEBERG_CATALOG__{name.upper()}__URI"
+        )
+
+
 def load_catalog(name: str | None = None, **properties: str | None) -> Catalog:
     """Load the catalog based on the properties.
 
@@ -263,6 +271,7 @@ def load_catalog(name: str | None = None, **properties: str | None) -> Catalog:
         catalog_type = infer_catalog_type(name, conf)
 
     if catalog_type:
+        _check_required_catalog_properties(name, catalog_type, conf)
         return AVAILABLE_CATALOGS[catalog_type](name, cast(dict[str, str], conf))
 
     raise ValueError(f"Could not initialize catalog with the following properties: {properties}")
