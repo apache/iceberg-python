@@ -3171,9 +3171,7 @@ def does_support_purge_table(catalog: Catalog) -> bool:
         return property_as_bool(catalog.properties, "supports_purge_table", True)
     from pyiceberg.catalog.hive import HiveCatalog
 
-    if isinstance(catalog, HiveCatalog):
-        return False
-    if isinstance(catalog, NoopCatalog):
+    if isinstance(catalog, (HiveCatalog, NoopCatalog)):
         return False
     return True
 
@@ -3186,9 +3184,7 @@ def does_support_atomic_concurrent_updates(catalog: Catalog) -> bool:
         return property_as_bool(catalog.properties, "supports_atomic_concurrent_updates", True)
     from pyiceberg.catalog.hive import HiveCatalog
 
-    if isinstance(catalog, HiveCatalog):
-        return False
-    if isinstance(catalog, NoopCatalog):
+    if isinstance(catalog, (HiveCatalog, NoopCatalog)):
         return False
     return True
 
@@ -3204,11 +3200,7 @@ def does_support_nested_namespaces(catalog: Catalog) -> bool:
     from pyiceberg.catalog.bigquery_metastore import BigQueryMetastoreCatalog
     from pyiceberg.catalog.hive import HiveCatalog
 
-    if isinstance(catalog, HiveCatalog):
-        return False
-    if isinstance(catalog, BigQueryMetastoreCatalog):
-        return False
-    if isinstance(catalog, (NoopCatalog, GlueCatalog, DynamoDbCatalog)):
+    if isinstance(catalog, (HiveCatalog, BigQueryMetastoreCatalog, NoopCatalog, GlueCatalog, DynamoDbCatalog)):
         return False
     return True
 
@@ -3221,9 +3213,7 @@ def does_support_schema_evolution(catalog: Catalog) -> bool:
         return property_as_bool(catalog.properties, "supports_schema_evolution", True)
     from pyiceberg.catalog.hive import HiveCatalog
 
-    if isinstance(catalog, HiveCatalog):
-        return False
-    if isinstance(catalog, NoopCatalog):
+    if isinstance(catalog, (HiveCatalog, NoopCatalog)):
         return False
     return True
 
@@ -3237,9 +3227,7 @@ def does_support_slash_in_identifier(catalog: Catalog) -> bool:
         return property_as_bool(catalog.properties, "supports_slash_in_identifier", True)
     from pyiceberg.catalog.hive import HiveCatalog
 
-    if isinstance(catalog, HiveCatalog):
-        return False
-    if isinstance(catalog, (NoopCatalog, SqlCatalog)):
+    if isinstance(catalog, (HiveCatalog, NoopCatalog, SqlCatalog)):
         return False
     return True
 
@@ -3253,8 +3241,6 @@ def does_support_dot_in_identifier(catalog: Catalog) -> bool:
         return property_as_bool(catalog.properties, "supports_dot_in_identifier", True)
     from pyiceberg.catalog.hive import HiveCatalog
 
-    if isinstance(catalog, HiveCatalog):
-        return False
-    if isinstance(catalog, (NoopCatalog, SqlCatalog)):
+    if isinstance(catalog, (HiveCatalog, NoopCatalog, SqlCatalog)):
         return False
     return True
