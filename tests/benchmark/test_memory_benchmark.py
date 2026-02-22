@@ -32,8 +32,9 @@ from datetime import datetime, timezone
 import pyarrow as pa
 import pytest
 
+from pyiceberg import manifest as manifest_module
 from pyiceberg.catalog.memory import InMemoryCatalog
-from pyiceberg.manifest import _get_manifest_cache, clear_manifest_cache
+from pyiceberg.manifest import clear_manifest_cache
 
 
 def generate_test_dataframe() -> pa.Table:
@@ -95,7 +96,7 @@ def test_manifest_cache_memory_growth(memory_catalog: InMemoryCatalog) -> None:
         # Sample memory at intervals
         if (i + 1) % 10 == 0:
             current, _ = tracemalloc.get_traced_memory()
-            cache = _get_manifest_cache()
+            cache = manifest_module._manifest_cache
             cache_size = len(cache) if cache is not None else 0
 
             memory_samples.append((i + 1, current, cache_size))
@@ -151,7 +152,7 @@ def test_memory_after_gc_with_cache_cleared(memory_catalog: InMemoryCatalog) -> 
 
     gc.collect()
     before_clear_memory, _ = tracemalloc.get_traced_memory()
-    cache = _get_manifest_cache()
+    cache = manifest_module._manifest_cache
     cache_size_before = len(cache) if cache is not None else 0
     print(f"  Memory before clear: {before_clear_memory / 1024:.1f} KB")
     print(f"  Cache size: {cache_size_before}")
@@ -193,7 +194,6 @@ def test_manifest_cache_deduplication_efficiency() -> None:
         FileFormat,
         ManifestEntry,
         ManifestEntryStatus,
-        _get_manifest_cache,
         _manifests,
         clear_manifest_cache,
         write_manifest,
@@ -269,7 +269,7 @@ def test_manifest_cache_deduplication_efficiency() -> None:
             _manifests(io, list_path)
 
         # Analyze cache efficiency
-        cache = _get_manifest_cache()
+        cache = manifest_module._manifest_cache
         cache_entries = len(cache) if cache is not None else 0
         # List i contains manifests 0..i, so only the first num_lists manifests are actually used
         manifests_actually_used = num_lists
