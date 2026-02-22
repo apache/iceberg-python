@@ -828,7 +828,7 @@ def test_add_files_with_valid_upcast(
                 pa.field("list", pa.list_(pa.int64()), nullable=False),
                 pa.field("map", pa.map_(pa.string(), pa.int64()), nullable=False),
                 pa.field("double", pa.float64(), nullable=True),
-                pa.field("uuid", pa.uuid(), nullable=True),
+                pa.field("uuid", pa.binary(16), nullable=True),
             )
         )
     )

@@ -792,7 +792,11 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.large_string()
 
     def visit_uuid(self, _: UUIDType) -> pa.DataType:
-        return pa.uuid()
+        # TODO: Change to uuid when PyArrow implements filtering for UUID types
+        # Using binary(16) instead of pa.uuid() because filtering is not
+        # implemented for UUID types in PyArrow
+        # (context: https://github.com/apache/iceberg-python/issues/2372)
+        return pa.binary(16)
 
     def visit_unknown(self, _: UnknownType) -> pa.DataType:
         """Type `UnknownType` can be promoted to any primitive type in V3+ tables per the Iceberg spec."""
