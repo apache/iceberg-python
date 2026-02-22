@@ -1,0 +1,6240 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://py.iceberg.apache.org/configuration/">
+      
+      
+        <link rel="prev" href="..">
+      
+      
+        <link rel="next" href="../cli/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/iceberg-logo-icon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>Configuration - PyIceberg</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Lato:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Lato";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  
+  <!-- Matomo -->
+  <script>
+    var _paq = window._paq = window._paq || [];
+    /* tracker methods like "setCustomDimension" should be called before "trackPageView" */
+    _paq.push(["setDoNotTrack", true]);
+    _paq.push(["disableCookies"]);
+    _paq.push(['trackPageView']);
+    _paq.push(['enableLinkTracking']);
+    (function() {
+      var u="https://analytics.apache.org/";
+      _paq.push(['setTrackerUrl', u+'matomo.php']);
+      _paq.push(['setSiteId', '82']);
+      var d=document, g=d.createElement('script'), s=d.getElementsByTagName('script')[0];
+      g.async=true; g.src=u+'matomo.js'; s.parentNode.insertBefore(g,s);
+    })();
+  </script>
+  <!-- End Matomo -->
+
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#configuration" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="PyIceberg" class="md-header__button md-logo" aria-label="PyIceberg" data-md-component="logo">
+      
+  <img src="../assets/images/iceberg-logo-icon.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            PyIceberg
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Configuration
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/apache/iceberg-python" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    apache/iceberg-python
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Getting started
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Configuration
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../cli/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  CLI
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../api/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  API
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../contributing/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Contributing
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../community/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Community
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../verify-release/" class="md-tabs__link">
+          
+  
+  
+  Releases
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../reference/pyiceberg/" class="md-tabs__link">
+          
+  
+  
+  Code Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+                
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" hidden>
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="PyIceberg" class="md-nav__button md-logo" aria-label="PyIceberg" data-md-component="logo">
+      
+  <img src="../assets/images/iceberg-logo-icon.png" alt="logo">
+
+    </a>
+    PyIceberg
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/apache/iceberg-python" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    apache/iceberg-python
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#setting-configuration-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setting Configuration Values
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tables
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tables">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#write-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Write options
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#table-behavior-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table behavior options
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fileio" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FileIO
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="FileIO">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#s3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        S3
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hdfs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HDFS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#azure-data-lake" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Azure Data lake
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#google-cloud-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Google Cloud Storage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#alibaba-cloud-object-storage-service-oss" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Alibaba Cloud Object Storage Service (OSS)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hugging-face" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hugging Face
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pyarrow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PyArrow
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#location-providers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Location Providers
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Location Providers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#simple-location-provider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Simple Location Provider
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#object-store-location-provider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Object Store Location Provider
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Object Store Location Provider">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#partition-exclusion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Partition Exclusion
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#loading-a-custom-location-provider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Loading a Custom Location Provider
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#catalogs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Catalogs
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Catalogs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rest-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REST Catalog
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="REST Catalog">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#headers-in-rest-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Headers in REST Catalog
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#authentication-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authentication Options
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Authentication Options">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#legacy-oauth2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Legacy OAuth2
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sigv4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SigV4
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pluggable-authentication-via-authmanager" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pluggable Authentication via AuthManager
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pluggable Authentication via AuthManager">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#supported-authentication-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported Authentication Types
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration-properties" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Properties
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#property-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Property Reference
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#common-integrations-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Integrations &amp; Examples
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Common Integrations &amp; Examples">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#aws-glue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AWS Glue
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#unity-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unity Catalog
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r2-data-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R2 Data Catalog
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lakekeeper" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lakekeeper
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#apache-polaris" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Apache Polaris
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#apache-gravitino" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Apache Gravitino
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gcp-biglake-metastore-catalog-rest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GCP BigLake Metastore Catalog REST
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#microsoft-onelake-iceberg-rest-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Microsoft OneLake Iceberg REST Catalog
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sql-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SQL Catalog
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#in-memory-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In Memory Catalog
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hive-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hive Catalog
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#glue-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Glue Catalog
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dynamodb-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DynamoDB Catalog
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#custom-catalog-implementations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom Catalog Implementations
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unified-aws-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unified AWS Credentials
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#concurrency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Concurrency
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#backward-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backward Compatibility
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#nanoseconds-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Nanoseconds Support
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../api/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../row-filter-syntax/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Row Filter Syntax
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression-dsl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Expression DSL
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../community/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Community
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Releases
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../verify-release/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Verify a release
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../how-to-release/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How to release
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/apache/iceberg-python/releases" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../nightly-build/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Nightly Build
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Code Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../reference/pyiceberg/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pyiceberg
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8_1" id="__nav_8_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    pyiceberg
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_1_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../reference/pyiceberg/avro/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    avro
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8_1_1" id="__nav_8_1_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_8_1_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_1_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    avro
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_1_1_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../reference/pyiceberg/avro/codecs/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    codecs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8_1_1_1" id="__nav_8_1_1_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_8_1_1_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_1_1_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    codecs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/avro/codecs/bzip2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bzip2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/avro/codecs/codec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    codec
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/avro/codecs/deflate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    deflate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/avro/codecs/snappy_codec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    snappy_codec
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/avro/codecs/zstandard_codec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    zstandard_codec
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/avro/decoder/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    decoder
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/avro/encoder/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    encoder
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/avro/file/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    file
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/avro/reader/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    reader
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/avro/resolver/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resolver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/avro/writer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    writer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_1_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../reference/pyiceberg/catalog/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    catalog
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8_1_2" id="__nav_8_1_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_8_1_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_1_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    catalog
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/catalog/bigquery_metastore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bigquery_metastore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/catalog/dynamodb/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    dynamodb
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/catalog/glue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    glue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/catalog/hive/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    hive
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/catalog/memory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/catalog/noop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    noop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_1_2_7" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../reference/pyiceberg/catalog/rest/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rest
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8_1_2_7" id="__nav_8_1_2_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_8_1_2_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_1_2_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    rest
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/catalog/rest/auth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    auth
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/catalog/rest/response/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    response
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/catalog/rest/scan_planning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    scan_planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/catalog/sql/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sql
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_1_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../reference/pyiceberg/cli/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cli
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8_1_3" id="__nav_8_1_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_8_1_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_1_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    cli
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/cli/console/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    console
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/cli/output/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    output
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/conversions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    conversions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    exceptions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_1_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../reference/pyiceberg/expressions/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    expressions
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8_1_6" id="__nav_8_1_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_8_1_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_1_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    expressions
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/expressions/literals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    literals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/expressions/parser/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    parser
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/expressions/visitors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    visitors
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_1_7" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../reference/pyiceberg/io/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    io
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8_1_7" id="__nav_8_1_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_8_1_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_1_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    io
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/io/fsspec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    fsspec
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/io/pyarrow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pyarrow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/manifest/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    manifest
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/partitioning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    partitioning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/serializers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    serializers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_1_12" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../reference/pyiceberg/table/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    table
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8_1_12" id="__nav_8_1_12_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_8_1_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_1_12">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    table
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/table/delete_file_index/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    delete_file_index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/table/inspect/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    inspect
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/table/locations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    locations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/table/maintenance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    maintenance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/table/metadata/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    metadata
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/table/name_mapping/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    name_mapping
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/table/puffin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    puffin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/table/refs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    refs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/table/snapshots/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    snapshots
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/table/sorting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sorting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/table/statistics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    statistics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_1_12_12" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../reference/pyiceberg/table/update/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    update
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8_1_12_12" id="__nav_8_1_12_12_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_8_1_12_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_1_12_12">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    update
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/table/update/schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/table/update/snapshot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    snapshot
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/table/update/sorting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sorting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/table/update/spec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    spec
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/table/update/statistics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    statistics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/table/update/validate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    validate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/table/upsert_util/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    upsert_util
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/transforms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    transforms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/typedef/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    typedef
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_1_16" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../reference/pyiceberg/utils/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    utils
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8_1_16" id="__nav_8_1_16_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_8_1_16_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_1_16">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    utils
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/utils/bin_packing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bin_packing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/utils/concurrent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    concurrent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/utils/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/utils/datetime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    datetime
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/utils/decimal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    decimal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/utils/deprecated/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    deprecated
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/utils/lazydict/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    lazydict
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/utils/parsing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    parsing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/utils/properties/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    properties
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/utils/schema_conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    schema_conversion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/utils/singleton/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    singleton
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/pyiceberg/utils/truncate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    truncate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+                
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#setting-configuration-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setting Configuration Values
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tables
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tables">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#write-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Write options
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#table-behavior-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table behavior options
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fileio" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FileIO
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="FileIO">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#s3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        S3
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hdfs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HDFS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#azure-data-lake" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Azure Data lake
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#google-cloud-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Google Cloud Storage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#alibaba-cloud-object-storage-service-oss" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Alibaba Cloud Object Storage Service (OSS)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hugging-face" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hugging Face
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pyarrow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PyArrow
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#location-providers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Location Providers
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Location Providers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#simple-location-provider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Simple Location Provider
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#object-store-location-provider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Object Store Location Provider
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Object Store Location Provider">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#partition-exclusion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Partition Exclusion
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#loading-a-custom-location-provider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Loading a Custom Location Provider
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#catalogs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Catalogs
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Catalogs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rest-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REST Catalog
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="REST Catalog">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#headers-in-rest-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Headers in REST Catalog
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#authentication-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authentication Options
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Authentication Options">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#legacy-oauth2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Legacy OAuth2
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sigv4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SigV4
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pluggable-authentication-via-authmanager" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pluggable Authentication via AuthManager
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pluggable Authentication via AuthManager">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#supported-authentication-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported Authentication Types
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration-properties" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Properties
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#property-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Property Reference
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#common-integrations-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Integrations &amp; Examples
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Common Integrations &amp; Examples">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#aws-glue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AWS Glue
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#unity-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unity Catalog
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r2-data-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R2 Data Catalog
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lakekeeper" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lakekeeper
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#apache-polaris" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Apache Polaris
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#apache-gravitino" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Apache Gravitino
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gcp-biglake-metastore-catalog-rest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GCP BigLake Metastore Catalog REST
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#microsoft-onelake-iceberg-rest-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Microsoft OneLake Iceberg REST Catalog
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sql-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SQL Catalog
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#in-memory-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In Memory Catalog
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hive-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hive Catalog
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#glue-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Glue Catalog
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dynamodb-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DynamoDB Catalog
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#custom-catalog-implementations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom Catalog Implementations
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unified-aws-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unified AWS Credentials
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#concurrency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Concurrency
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#backward-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backward Compatibility
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#nanoseconds-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Nanoseconds Support
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+  
+
+
+
+  
+  
+
+
+<!--
+  - Licensed to the Apache Software Foundation (ASF) under one
+  - or more contributor license agreements.  See the NOTICE file
+  - distributed with this work for additional information
+  - regarding copyright ownership.  The ASF licenses this file
+  - to you under the Apache License, Version 2.0 (the
+  - "License"); you may not use this file except in compliance
+  - with the License.  You may obtain a copy of the License at
+  -
+  -   http://www.apache.org/licenses/LICENSE-2.0
+  -
+  - Unless required by applicable law or agreed to in writing,
+  - software distributed under the License is distributed on an
+  - "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  - KIND, either express or implied.  See the License for the
+  - specific language governing permissions and limitations
+  - under the License.
+  -->
+
+<h1 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h1>
+<h2 id="setting-configuration-values">Setting Configuration Values<a class="headerlink" href="#setting-configuration-values" title="Permanent link">&para;</a></h2>
+<p>There are three ways to pass in configuration:</p>
+<ul>
+<li>Using the <code>.pyiceberg.yaml</code> configuration file (Recommended)</li>
+<li>Through environment variables</li>
+<li>By passing in credentials through the CLI or the Python API</li>
+</ul>
+<p>The configuration file can be stored in either the directory specified by the <code>PYICEBERG_HOME</code> environment variable, the home directory, or current working directory (in this order).</p>
+<p>To change the path searched for the <code>.pyiceberg.yaml</code>, you can overwrite the <code>PYICEBERG_HOME</code> environment variable.</p>
+<p>Another option is through environment variables:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">PYICEBERG_CATALOG__DEFAULT__URI</span><span class="o">=</span>thrift://localhost:9083
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">PYICEBERG_CATALOG__DEFAULT__S3__ACCESS_KEY_ID</span><span class="o">=</span>username
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">PYICEBERG_CATALOG__DEFAULT__S3__SECRET_ACCESS_KEY</span><span class="o">=</span>password
+</code></pre></div>
+<p>The environment variable picked up by Iceberg starts with <code>PYICEBERG_</code> and then follows the yaml structure below, where a double underscore <code>__</code> represents a nested field, and the underscore <code>_</code> is converted into a dash <code>-</code>.</p>
+<p>For example, <code>PYICEBERG_CATALOG__DEFAULT__S3__ACCESS_KEY_ID</code>, sets <code>s3.access-key-id</code> on the <code>default</code> catalog.</p>
+<h2 id="tables">Tables<a class="headerlink" href="#tables" title="Permanent link">&para;</a></h2>
+<p>Iceberg tables support table properties to configure table behavior.</p>
+<h3 id="write-options">Write options<a class="headerlink" href="#write-options" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Options</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>write.parquet.compression-codec</code></td>
+<td><code>{uncompressed,zstd,gzip,snappy}</code></td>
+<td>zstd</td>
+<td>Sets the Parquet compression coddec.</td>
+</tr>
+<tr>
+<td><code>write.parquet.compression-level</code></td>
+<td>Integer</td>
+<td>null</td>
+<td>Parquet compression level for the codec. If not set, it is up to PyIceberg</td>
+</tr>
+<tr>
+<td><code>write.parquet.row-group-limit</code></td>
+<td>Number of rows</td>
+<td>1048576</td>
+<td>The upper bound of the number of entries within a single row group</td>
+</tr>
+<tr>
+<td><code>write.parquet.page-size-bytes</code></td>
+<td>Size in bytes</td>
+<td>1MB</td>
+<td>Set a target threshold for the approximate encoded size of data pages within a column chunk</td>
+</tr>
+<tr>
+<td><code>write.parquet.page-row-limit</code></td>
+<td>Number of rows</td>
+<td>20000</td>
+<td>Set a target threshold for the maximum number of rows within a column chunk</td>
+</tr>
+<tr>
+<td><code>write.parquet.dict-size-bytes</code></td>
+<td>Size in bytes</td>
+<td>2MB</td>
+<td>Set the dictionary page size limit per row group</td>
+</tr>
+<tr>
+<td><code>write.metadata.previous-versions-max</code></td>
+<td>Integer</td>
+<td>100</td>
+<td>The max number of previous version metadata files to keep before deleting after commit.</td>
+</tr>
+<tr>
+<td><code>write.metadata.delete-after-commit.enabled</code></td>
+<td>Boolean</td>
+<td>False</td>
+<td>Whether to automatically delete old <em>tracked</em> metadata files after each table commit. It will retain a number of the most recent metadata files, which can be set using property <code>write.metadata.previous-versions-max</code>.</td>
+</tr>
+<tr>
+<td><code>write.object-storage.enabled</code></td>
+<td>Boolean</td>
+<td>False</td>
+<td>Enables the <a href="./#object-store-location-provider"><code>ObjectStoreLocationProvider</code></a> that adds a hash component to file paths.</td>
+</tr>
+<tr>
+<td><code>write.object-storage.partitioned-paths</code></td>
+<td>Boolean</td>
+<td>True</td>
+<td>Controls whether <a href="./#partition-exclusion">partition values are included in file paths</a> when object storage is enabled</td>
+</tr>
+<tr>
+<td><code>write.py-location-provider.impl</code></td>
+<td>String of form <code>module.ClassName</code></td>
+<td>null</td>
+<td>Optional, <a href="./#loading-a-custom-location-provider">custom <code>LocationProvider</code></a> implementation</td>
+</tr>
+<tr>
+<td><code>write.data.path</code></td>
+<td>String pointing to location</td>
+<td><code>{metadata.location}/data</code></td>
+<td>Sets the location under which data is written.</td>
+</tr>
+<tr>
+<td><code>write.metadata.path</code></td>
+<td>String pointing to location</td>
+<td><code>{metadata.location}/metadata</code></td>
+<td>Sets the location under which metadata is written.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="table-behavior-options">Table behavior options<a class="headerlink" href="#table-behavior-options" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Options</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>commit.manifest.target-size-bytes</code></td>
+<td>Size in bytes</td>
+<td>8388608 (8MB)</td>
+<td>Target size when merging manifest files</td>
+</tr>
+<tr>
+<td><code>commit.manifest.min-count-to-merge</code></td>
+<td>Number of manifests</td>
+<td>100</td>
+<td>Minimum number of manifests to accumulate before merging</td>
+</tr>
+<tr>
+<td><code>commit.manifest-merge.enabled</code></td>
+<td>Boolean</td>
+<td>False</td>
+<td>Controls whether to automatically merge manifests on writes</td>
+</tr>
+</tbody>
+</table>
+<!-- prettier-ignore-start -->
+
+<div class="admonition note">
+<p class="admonition-title">Fast append</p>
+<p>Unlike Java implementation, PyIceberg default to the <a href="../api/#write-to-a-table">fast append</a> and thus <code>commit.manifest-merge.enabled</code> is set to <code>False</code> by default.</p>
+</div>
+<!-- prettier-ignore-end -->
+
+<h2 id="fileio">FileIO<a class="headerlink" href="#fileio" title="Permanent link">&para;</a></h2>
+<p>Iceberg works with the concept of a FileIO which is a pluggable module for reading, writing, and deleting files. By default, PyIceberg will try to initialize the FileIO that's suitable for the scheme (<code>s3://</code>, <code>gs://</code>, etc.) and will use the first one that's installed.</p>
+<ul>
+<li><strong>s3</strong>, <strong>s3a</strong>, <strong>s3n</strong>: <code>PyArrowFileIO</code>, <code>FsspecFileIO</code></li>
+<li><strong>gs</strong>: <code>PyArrowFileIO</code></li>
+<li><strong>file</strong>: <code>PyArrowFileIO</code></li>
+<li><strong>hdfs</strong>: <code>PyArrowFileIO</code></li>
+<li><strong>abfs</strong>, <strong>abfss</strong>: <code>FsspecFileIO</code></li>
+<li><strong>oss</strong>: <code>PyArrowFileIO</code></li>
+<li><strong>hf</strong>: <code>FsspecFileIO</code></li>
+</ul>
+<p>You can also set the FileIO explicitly:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Example</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>py-io-impl</td>
+<td>pyiceberg.io.fsspec.FsspecFileIO</td>
+<td>Sets the FileIO explicitly to an implementation, and will fail explicitly if it can't be loaded</td>
+</tr>
+</tbody>
+</table>
+<p>For the FileIO there are several configuration options available:</p>
+<h3 id="s3">S3<a class="headerlink" href="#s3" title="Permanent link">&para;</a></h3>
+<!-- markdown-link-check-disable -->
+
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Example</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>s3.endpoint</td>
+<td><a href="https://10.0.19.25/">https://10.0.19.25/</a></td>
+<td>Configure an alternative endpoint of the S3 service for the FileIO to access. This could be used to use S3FileIO with any s3-compatible object storage service that has a different endpoint, or access a private S3 endpoint in a virtual private cloud.</td>
+</tr>
+<tr>
+<td>s3.access-key-id</td>
+<td>admin</td>
+<td>Configure the static access key id used to access the FileIO.</td>
+</tr>
+<tr>
+<td>s3.secret-access-key</td>
+<td>password</td>
+<td>Configure the static secret access key used to access the FileIO.</td>
+</tr>
+<tr>
+<td>s3.session-token</td>
+<td>AQoDYXdzEJr...</td>
+<td>Configure the static session token used to access the FileIO.</td>
+</tr>
+<tr>
+<td>s3.profile-name</td>
+<td>default</td>
+<td>Configure the AWS profile used to access the S3 FileIO.</td>
+</tr>
+<tr>
+<td>s3.role-session-name</td>
+<td>session</td>
+<td>An optional identifier for the assumed role session.</td>
+</tr>
+<tr>
+<td>s3.role-arn</td>
+<td>arn:aws:...</td>
+<td>AWS Role ARN. If provided instead of access_key and secret_key, temporary credentials will be fetched by assuming this role.</td>
+</tr>
+<tr>
+<td>s3.signer</td>
+<td>bearer</td>
+<td>Configure the signature version of the FileIO.</td>
+</tr>
+<tr>
+<td>s3.signer.uri</td>
+<td><a href="http://my.signer:8080/s3">http://my.signer:8080/s3</a></td>
+<td>Configure the remote signing uri if it differs from the catalog uri. Remote signing is only implemented for <code>FsspecFileIO</code>. The final request is sent to <code>&lt;s3.signer.uri&gt;/&lt;s3.signer.endpoint&gt;</code>.</td>
+</tr>
+<tr>
+<td>s3.signer.endpoint</td>
+<td>v1/main/s3-sign</td>
+<td>Configure the remote signing endpoint. Remote signing is only implemented for <code>FsspecFileIO</code>. The final request is sent to <code>&lt;s3.signer.uri&gt;/&lt;s3.signer.endpoint&gt;</code>. (default : v1/aws/s3/sign).</td>
+</tr>
+<tr>
+<td>s3.region</td>
+<td>us-west-2</td>
+<td>Configure the default region used to initialize an <code>S3FileSystem</code>. <code>PyArrowFileIO</code> attempts to automatically tries to resolve the region if this isn't set (only supported for AWS S3 Buckets).</td>
+</tr>
+<tr>
+<td>s3.resolve-region</td>
+<td>False</td>
+<td>Only supported for <code>PyArrowFileIO</code>, when enabled, it will always try to resolve the location of the bucket (only supported for AWS S3 Buckets).</td>
+</tr>
+<tr>
+<td>s3.proxy-uri</td>
+<td><a href="http://my.proxy.com:8080">http://my.proxy.com:8080</a></td>
+<td>Configure the proxy server to be used by the FileIO.</td>
+</tr>
+<tr>
+<td>s3.connect-timeout</td>
+<td>60.0</td>
+<td>Configure socket connection timeout, in seconds.</td>
+</tr>
+<tr>
+<td>s3.request-timeout</td>
+<td>60.0</td>
+<td>Configure socket read timeouts on Windows and macOS, in seconds.</td>
+</tr>
+<tr>
+<td>s3.force-virtual-addressing</td>
+<td>False</td>
+<td>Whether to use virtual addressing of buckets. If true, then virtual addressing is always enabled. If false, then virtual addressing is only enabled if endpoint_override is empty. This can be used for non-AWS backends that only support virtual hosted-style access.</td>
+</tr>
+<tr>
+<td>s3.retry-strategy-impl</td>
+<td>None</td>
+<td>Ability to set a custom S3 retry strategy. A full path to a class needs to be given that extends the <a href="https://github.com/apache/arrow/blob/639201bfa412db26ce45e73851432018af6c945e/python/pyarrow/_s3fs.pyx#L110">S3RetryStrategy</a> base class.</td>
+</tr>
+<tr>
+<td>s3.anonymous</td>
+<td>True</td>
+<td>Configure whether to use anonymous connection. If False (default), uses key/secret if configured or boto's credential resolver.</td>
+</tr>
+</tbody>
+</table>
+<!-- markdown-link-check-enable-->
+
+<h3 id="hdfs">HDFS<a class="headerlink" href="#hdfs" title="Permanent link">&para;</a></h3>
+<!-- markdown-link-check-disable -->
+
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Example</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>hdfs.host</td>
+<td><a href="https://10.0.19.25/">https://10.0.19.25/</a></td>
+<td>Configure the HDFS host to connect to</td>
+</tr>
+<tr>
+<td>hdfs.port</td>
+<td>9000</td>
+<td>Configure the HDFS port to connect to.</td>
+</tr>
+<tr>
+<td>hdfs.user</td>
+<td>user</td>
+<td>Configure the HDFS username used for connection.</td>
+</tr>
+<tr>
+<td>hdfs.kerberos_ticket</td>
+<td>kerberos_ticket</td>
+<td>Configure the path to the Kerberos ticket cache.</td>
+</tr>
+</tbody>
+</table>
+<!-- markdown-link-check-enable-->
+
+<h3 id="azure-data-lake">Azure Data lake<a class="headerlink" href="#azure-data-lake" title="Permanent link">&para;</a></h3>
+<!-- markdown-link-check-disable -->
+
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Example</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>adls.connection-string</td>
+<td>AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqF...;BlobEndpoint=<a href="http://localhost/">http://localhost/</a></td>
+<td>A <a href="https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string">connection string</a>. This could be used to use FileIO with any adls-compatible object storage service that has a different endpoint (like <a href="https://github.com/azure/azurite">azurite</a>).</td>
+</tr>
+<tr>
+<td>adls.account-name</td>
+<td>devstoreaccount1</td>
+<td>The account that you want to connect to</td>
+</tr>
+<tr>
+<td>adls.account-key</td>
+<td>Eby8vdM02xNOcqF...</td>
+<td>The key to authentication against the account.</td>
+</tr>
+<tr>
+<td>adls.sas-token</td>
+<td>NuHOuuzdQN7VRM%2FOpOeqBlawRCA845IY05h9eu1Yte4%3D</td>
+<td>The shared access signature</td>
+</tr>
+<tr>
+<td>adls.tenant-id</td>
+<td>ad667be4-b811-11ed-afa1-0242ac120002</td>
+<td>The tenant-id</td>
+</tr>
+<tr>
+<td>adls.client-id</td>
+<td>ad667be4-b811-11ed-afa1-0242ac120002</td>
+<td>The client-id</td>
+</tr>
+<tr>
+<td>adls.client-secret</td>
+<td>oCA3R6P*ka#oa1Sms2J74z...</td>
+<td>The client-secret</td>
+</tr>
+<tr>
+<td>adls.account-host</td>
+<td>accountname1.blob.core.windows.net</td>
+<td>The storage account host. See <a href="https://github.com/fsspec/adlfs/blob/adb9c53b74a0d420625b86dd00fbe615b43201d2/adlfs/spec.py#L125">AzureBlobFileSystem</a> for reference</td>
+</tr>
+<tr>
+<td>adls.blob-storage-authority</td>
+<td>.blob.core.windows.net</td>
+<td>The hostname[:port] of the Blob Service. Defaults to <code>.blob.core.windows.net</code>. Useful for connecting to a local emulator, like <a href="https://github.com/azure/azurite">azurite</a>. See <a href="https://arrow.apache.org/docs/python/filesystems.html#azure-storage-file-system">AzureFileSystem</a> for reference</td>
+</tr>
+<tr>
+<td>adls.dfs-storage-authority</td>
+<td>.dfs.core.windows.net</td>
+<td>The hostname[:port] of the Data Lake Gen 2 Service. Defaults to <code>.dfs.core.windows.net</code>. Useful for connecting to a local emulator, like <a href="https://github.com/azure/azurite">azurite</a>. See <a href="https://arrow.apache.org/docs/python/filesystems.html#azure-storage-file-system">AzureFileSystem</a> for reference</td>
+</tr>
+<tr>
+<td>adls.blob-storage-scheme</td>
+<td>https</td>
+<td>Either <code>http</code> or <code>https</code>. Defaults to <code>https</code>. Useful for connecting to a local emulator, like <a href="https://github.com/azure/azurite">azurite</a>. See <a href="https://arrow.apache.org/docs/python/filesystems.html#azure-storage-file-system">AzureFileSystem</a> for reference</td>
+</tr>
+<tr>
+<td>adls.dfs-storage-scheme</td>
+<td>https</td>
+<td>Either <code>http</code> or <code>https</code>. Defaults to <code>https</code>. Useful for connecting to a local emulator, like <a href="https://github.com/azure/azurite">azurite</a>. See <a href="https://arrow.apache.org/docs/python/filesystems.html#azure-storage-file-system">AzureFileSystem</a> for reference</td>
+</tr>
+<tr>
+<td>adls.token</td>
+<td>eyJ0eXAiOiJKV1QiLCJhbGci...</td>
+<td>Static access token for authenticating with ADLS. Used for OAuth2 flows.</td>
+</tr>
+</tbody>
+</table>
+<!-- markdown-link-check-enable-->
+
+<h3 id="google-cloud-storage">Google Cloud Storage<a class="headerlink" href="#google-cloud-storage" title="Permanent link">&para;</a></h3>
+<!-- markdown-link-check-disable -->
+
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Example</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gcs.project-id</td>
+<td>my-gcp-project</td>
+<td>Configure Google Cloud Project for GCS FileIO.</td>
+</tr>
+<tr>
+<td>gcs.oauth2.token</td>
+<td>ya29.dr.AfM...</td>
+<td>String representation of the access token used for temporary access.</td>
+</tr>
+<tr>
+<td>gcs.oauth2.token-expires-at</td>
+<td>1690971805918</td>
+<td>Configure expiration for credential generated with an access token. Milliseconds since epoch</td>
+</tr>
+<tr>
+<td>gcs.access</td>
+<td>read_only</td>
+<td>Configure client to have specific access. Must be one of 'read_only', 'read_write', or 'full_control'</td>
+</tr>
+<tr>
+<td>gcs.consistency</td>
+<td>md5</td>
+<td>Configure the check method when writing files. Must be one of 'none', 'size', or 'md5'</td>
+</tr>
+<tr>
+<td>gcs.cache-timeout</td>
+<td>60</td>
+<td>Configure the cache expiration time in seconds for object metadata cache</td>
+</tr>
+<tr>
+<td>gcs.requester-pays</td>
+<td>False</td>
+<td>Configure whether to use requester-pays requests</td>
+</tr>
+<tr>
+<td>gcs.session-kwargs</td>
+<td>{}</td>
+<td>Configure a dict of parameters to pass on to aiohttp.ClientSession; can contain, for example, proxy settings.</td>
+</tr>
+<tr>
+<td>gcs.service.host</td>
+<td><a href="http://0.0.0.0:4443">http://0.0.0.0:4443</a></td>
+<td>Configure an alternative endpoint for the GCS FileIO to access (format protocol://host:port) If not given, defaults to the value of environment variable "STORAGE_EMULATOR_HOST"; if that is not set either, will use the standard Google endpoint.</td>
+</tr>
+<tr>
+<td>gcs.default-location</td>
+<td>US</td>
+<td>Configure the default location where buckets are created, like 'US' or 'EUROPE-WEST3'.</td>
+</tr>
+<tr>
+<td>gcs.version-aware</td>
+<td>False</td>
+<td>Configure whether to support object versioning on the GCS bucket.</td>
+</tr>
+</tbody>
+</table>
+<!-- markdown-link-check-enable-->
+
+<h3 id="alibaba-cloud-object-storage-service-oss">Alibaba Cloud Object Storage Service (OSS)<a class="headerlink" href="#alibaba-cloud-object-storage-service-oss" title="Permanent link">&para;</a></h3>
+<!-- markdown-link-check-disable -->
+
+<p>PyIceberg uses <a href="https://arrow.apache.org/docs/python/generated/pyarrow.fs.S3FileSystem.html">S3FileSystem</a> class to connect to OSS bucket as the service is <a href="https://www.alibabacloud.com/help/en/oss/developer-reference/use-amazon-s3-sdks-to-access-oss">compatible with S3 SDK</a> as long as the endpoint is addressed with virtual hosted style.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Example</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>s3.endpoint</td>
+<td><a href="https://s3.oss-your-bucket-region.aliyuncs.com/">https://s3.oss-your-bucket-region.aliyuncs.com/</a></td>
+<td>Configure an endpoint of the OSS service for the FileIO to access. Be sure to use S3 compatible endpoint as given in the example.</td>
+</tr>
+<tr>
+<td>s3.access-key-id</td>
+<td>admin</td>
+<td>Configure the static access key id used to access the FileIO.</td>
+</tr>
+<tr>
+<td>s3.secret-access-key</td>
+<td>password</td>
+<td>Configure the static secret access key used to access the FileIO.</td>
+</tr>
+<tr>
+<td>s3.session-token</td>
+<td>AQoDYXdzEJr...</td>
+<td>Configure the static session token used to access the FileIO.</td>
+</tr>
+<tr>
+<td>s3.force-virtual-addressing</td>
+<td>True</td>
+<td>Whether to use virtual addressing of buckets. This is set to <code>True</code> by default as OSS can only be accessed with virtual hosted style address.</td>
+</tr>
+<tr>
+<td>s3.anonymous</td>
+<td>True</td>
+<td>Configure whether to use anonymous connection. If False (default), uses key/secret if configured or standard AWS configuration methods.</td>
+</tr>
+</tbody>
+</table>
+<!-- markdown-link-check-enable-->
+
+<h3 id="hugging-face">Hugging Face<a class="headerlink" href="#hugging-face" title="Permanent link">&para;</a></h3>
+<!-- markdown-link-check-disable -->
+
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Example</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>hf.endpoint</td>
+<td><a href="https://huggingface.co">https://huggingface.co</a></td>
+<td>Configure the endpoint for Hugging Face</td>
+</tr>
+<tr>
+<td>hf.token</td>
+<td>hf_xxx</td>
+<td>The Hugging Face token to access HF Datasets repositories</td>
+</tr>
+</tbody>
+</table>
+<!-- markdown-link-check-enable-->
+
+<h3 id="pyarrow">PyArrow<a class="headerlink" href="#pyarrow" title="Permanent link">&para;</a></h3>
+<!-- markdown-link-check-disable -->
+
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Example</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>pyarrow.use-large-types-on-read</td>
+<td>True</td>
+<td>Use large PyArrow types i.e. <a href="https://arrow.apache.org/docs/python/generated/pyarrow.large_string.html">large_string</a>, <a href="https://arrow.apache.org/docs/python/generated/pyarrow.large_binary.html">large_binary</a> and <a href="https://arrow.apache.org/docs/python/generated/pyarrow.large_list.html">large_list</a> field types on table scans. The default value is True.</td>
+</tr>
+</tbody>
+</table>
+<!-- markdown-link-check-enable-->
+
+<h2 id="location-providers">Location Providers<a class="headerlink" href="#location-providers" title="Permanent link">&para;</a></h2>
+<p>Apache Iceberg uses the concept of a <code>LocationProvider</code> to manage file paths for a table's data files. In PyIceberg, the
+<code>LocationProvider</code> module is designed to be pluggable, allowing customization for specific use cases, and to additionally determine metadata file locations. The
+<code>LocationProvider</code> for a table can be specified through table properties.</p>
+<p>Both data file and metadata file locations can be customized by configuring the table properties <a href="#write-options"><code>write.data.path</code> and <code>write.metadata.path</code></a>, respectively.</p>
+<p>For more granular control, you can override the <code>LocationProvider</code>'s <code>new_data_location</code> and <code>new_metadata_location</code> methods to define custom logic for generating file paths. See <a href="./#loading-a-custom-location-provider"><code>Loading a Custom Location Provider</code></a>.</p>
+<p>PyIceberg defaults to the <a href="./#simple-location-provider"><code>SimpleLocationProvider</code></a> for managing file paths.</p>
+<h3 id="simple-location-provider">Simple Location Provider<a class="headerlink" href="#simple-location-provider" title="Permanent link">&para;</a></h3>
+<p>The <code>SimpleLocationProvider</code> provides paths prefixed by <code>{location}/data/</code>, where <code>location</code> comes from the <a href="https://iceberg.apache.org/spec/#table-metadata-fields">table metadata</a>. This can be overridden by setting <a href="#write-options"><code>write.data.path</code> table configuration</a>.</p>
+<p>For example, a non-partitioned table might have a data file with location:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>s3://bucket/ns/table/data/0000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
+</code></pre></div>
+<p>When the table is partitioned, files under a given partition are grouped into a subdirectory, with that partition key
+and value as the directory name - this is known as the <em>Hive-style</em> partition path format. For example, a table
+partitioned over a string column <code>category</code> might have a data file with location:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>s3://bucket/ns/table/data/category=orders/0000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
+</code></pre></div>
+<h3 id="object-store-location-provider">Object Store Location Provider<a class="headerlink" href="#object-store-location-provider" title="Permanent link">&para;</a></h3>
+<p>PyIceberg offers the <code>ObjectStoreLocationProvider</code>, and an optional <a href="./#partition-exclusion">partition-exclusion</a>
+optimization, designed for tables stored in object storage. For additional context and motivation concerning these configurations,
+see their <a href="https://iceberg.apache.org/docs/latest/aws/#object-store-file-layout">documentation for Iceberg's Java implementation</a>.</p>
+<p>When several files are stored under the same prefix, cloud object stores such as S3 often <a href="https://repost.aws/knowledge-center/http-5xx-errors-s3">throttle requests on prefixes</a>,
+resulting in slowdowns. The <code>ObjectStoreLocationProvider</code> counteracts this by injecting deterministic hashes, in the form of binary directories,
+into file paths, to distribute files across a larger number of object store prefixes.</p>
+<p>Paths are prefixed by <code>{location}/data/</code>, where <code>location</code> comes from the <a href="https://iceberg.apache.org/spec/#table-metadata-fields">table metadata</a>, in a similar manner to the <a href="./#simple-location-provider"><code>SimpleLocationProvider</code></a>. This can be overridden by setting <a href="#write-options"><code>write.data.path</code> table configuration</a>.</p>
+<p>For example, a table partitioned over a string column <code>category</code> might have a data file with location: (note the additional binary directories)</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>s3://bucket/ns/table/data/0101/0110/1001/10110010/category=orders/0000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
+</code></pre></div>
+<p>The <code>ObjectStoreLocationProvider</code> is enabled for a table by explicitly setting its <code>write.object-storage.enabled</code> table
+property to <code>True</code>.</p>
+<h4 id="partition-exclusion">Partition Exclusion<a class="headerlink" href="#partition-exclusion" title="Permanent link">&para;</a></h4>
+<p>When the <code>ObjectStoreLocationProvider</code> is used, the table property <code>write.object-storage.partitioned-paths</code>, which
+defaults to <code>True</code>, can be set to <code>False</code> as an additional optimization for object stores. This omits partition keys and
+values from data file paths <em>entirely</em> to further reduce key size. With it disabled, the same data file above would
+instead be written to: (note the absence of <code>category=orders</code>)</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>s3://bucket/ns/table/data/1101/0100/1011/00111010-00000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
+</code></pre></div>
+<h3 id="loading-a-custom-location-provider">Loading a Custom Location Provider<a class="headerlink" href="#loading-a-custom-location-provider" title="Permanent link">&para;</a></h3>
+<p>Similar to FileIO, a custom <code>LocationProvider</code> may be provided for a table by concretely subclassing the abstract base
+class <a href="../reference/pyiceberg/table/locations/#pyiceberg.table.locations.LocationProvider"><code>LocationProvider</code></a>.</p>
+<p>The table property <code>write.py-location-provider.impl</code> should be set to the fully-qualified name of the custom
+<code>LocationProvider</code> (i.e. <code>mymodule.MyLocationProvider</code>). Recall that a <code>LocationProvider</code> is configured per-table,
+permitting different location provision for different tables. Note also that Iceberg's Java implementation uses a
+different table property, <code>write.location-provider.impl</code>, for custom Java implementations.</p>
+<p>An example, custom <code>LocationProvider</code> implementation is shown below.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="k">class</span><span class="w"> </span><span class="nc">UUIDLocationProvider</span><span class="p">(</span><span class="n">LocationProvider</span><span class="p">):</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table_location</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">table_properties</span><span class="p">:</span> <span class="n">Properties</span><span class="p">):</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">table_location</span><span class="p">,</span> <span class="n">table_properties</span><span class="p">)</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">new_data_location</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data_file_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">partition_key</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">PartitionKey</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>        <span class="c1"># Can use any custom method to generate a file path given the partitioning information and file name</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>        <span class="n">prefix</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">table_location</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">partition_key</span><span class="o">.</span><span class="n">to_path</span><span class="p">()</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">data_file_name</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="n">partition_key</span> <span class="k">else</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">data_file_name</span><span class="si">}</span><span class="s2">&quot;</span>
+</code></pre></div>
+<h2 id="catalogs">Catalogs<a class="headerlink" href="#catalogs" title="Permanent link">&para;</a></h2>
+<p>PyIceberg currently has native catalog type support for REST, SQL, Hive, Glue and DynamoDB.
+Alternatively, you can also directly set the catalog implementation:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Example</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>type</td>
+<td>rest</td>
+<td>Type of catalog, one of <code>rest</code>, <code>sql</code>, <code>hive</code>, <code>glue</code>, <code>dymamodb</code>. Default to <code>rest</code></td>
+</tr>
+<tr>
+<td>py-catalog-impl</td>
+<td>mypackage.mymodule.MyCatalog</td>
+<td>Sets the catalog explicitly to an implementation, and will fail explicitly if it can't be loaded</td>
+</tr>
+</tbody>
+</table>
+<h3 id="rest-catalog">REST Catalog<a class="headerlink" href="#rest-catalog" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">default</span><span class="p">:</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="nt">uri</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://rest-catalog/ws/</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="nt">credential</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">t-1234:secret</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">  </span><span class="nt">default-mtls-secured-catalog</span><span class="p">:</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">    </span><span class="nt">uri</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://rest-catalog/ws/</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">    </span><span class="nt">ssl</span><span class="p">:</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">      </span><span class="nt">client</span><span class="p">:</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="w">        </span><span class="nt">cert</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/absolute/path/to/client.crt</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="w">        </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/absolute/path/to/client.key</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="w">      </span><span class="nt">cabundle</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/absolute/path/to/cabundle.pem</span>
+</code></pre></div>
+<!-- markdown-link-check-disable -->
+
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Example</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>uri</td>
+<td><a href="https://rest-catalog/ws">https://rest-catalog/ws</a></td>
+<td>URI identifying the REST Server</td>
+</tr>
+<tr>
+<td>warehouse</td>
+<td>myWarehouse</td>
+<td>Warehouse location or identifier to request from the catalog service. May be used to determine server-side overrides, such as the warehouse location.</td>
+</tr>
+<tr>
+<td>snapshot-loading-mode</td>
+<td>refs</td>
+<td>The snapshots to return in the body of the metadata. Setting the value to <code>all</code> would return the full set of snapshots currently valid for the table. Setting the value to <code>refs</code> would load all snapshots referenced by branches or tags.</td>
+</tr>
+<tr>
+<td><code>header.X-Iceberg-Access-Delegation</code></td>
+<td><code>vended-credentials</code></td>
+<td>Signal to the server that the client supports delegated access via a comma-separated list of access mechanisms. The server may choose to supply access via any or none of the requested mechanisms. When using <code>vended-credentials</code>, the server provides temporary credentials to the client. When using <code>remote-signing</code>, the server signs requests on behalf of the client. (default: <code>vended-credentials</code>)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="headers-in-rest-catalog">Headers in REST Catalog<a class="headerlink" href="#headers-in-rest-catalog" title="Permanent link">&para;</a></h4>
+<p>To configure custom headers in REST Catalog, include them in the catalog properties with <code>header.&lt;Header-Name&gt;</code>. This
+ensures that all HTTP requests to the REST service include the specified headers.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">default</span><span class="p">:</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span><span class="nt">uri</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://rest-catalog/ws/</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">    </span><span class="nt">credential</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">t-1234:secret</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">    </span><span class="nt">header.content-type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">application/vnd.api+json</span>
+</code></pre></div>
+<h4 id="authentication-options">Authentication Options<a class="headerlink" href="#authentication-options" title="Permanent link">&para;</a></h4>
+<h5 id="legacy-oauth2">Legacy OAuth2<a class="headerlink" href="#legacy-oauth2" title="Permanent link">&para;</a></h5>
+<p>Legacy OAuth2 Properties will be removed in PyIceberg 1.0 in place of pluggable AuthManager properties below</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Example</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>oauth2-server-uri</td>
+<td><a href="https://auth-service/cc">https://auth-service/cc</a></td>
+<td>Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens')</td>
+</tr>
+<tr>
+<td>token</td>
+<td>FEW23.DFSDF.FSDF</td>
+<td>Bearer token value to use for <code>Authorization</code> header</td>
+</tr>
+<tr>
+<td>credential</td>
+<td>client_id:client_secret</td>
+<td>Credential to use for OAuth2 credential flow when initializing the catalog</td>
+</tr>
+<tr>
+<td>scope</td>
+<td>openid offline corpds:ds:profile</td>
+<td>Desired scope of the requested security token (default : catalog)</td>
+</tr>
+<tr>
+<td>resource</td>
+<td>rest_catalog.iceberg.com</td>
+<td>URI for the target resource or service</td>
+</tr>
+<tr>
+<td>audience</td>
+<td>rest_catalog</td>
+<td>Logical name of target resource or service</td>
+</tr>
+</tbody>
+</table>
+<h5 id="sigv4">SigV4<a class="headerlink" href="#sigv4" title="Permanent link">&para;</a></h5>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Example</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>rest.sigv4-enabled</td>
+<td>true</td>
+<td>Sign requests to the REST Server using AWS SigV4 protocol</td>
+</tr>
+<tr>
+<td>rest.signing-region</td>
+<td>us-east-1</td>
+<td>The region to use when SigV4 signing a request</td>
+</tr>
+<tr>
+<td>rest.signing-name</td>
+<td>execute-api</td>
+<td>The service signing name to use when SigV4 signing a request</td>
+</tr>
+</tbody>
+</table>
+<h5 id="pluggable-authentication-via-authmanager">Pluggable Authentication via AuthManager<a class="headerlink" href="#pluggable-authentication-via-authmanager" title="Permanent link">&para;</a></h5>
+<p>The RESTCatalog supports pluggable authentication via the <code>auth</code> configuration block. This allows you to specify which how the access token will be fetched and managed for use with the HTTP requests to the RESTCatalog server. The authentication method is selected by setting the <code>auth.type</code> property, and additional configuration can be provided as needed for each method.</p>
+<h6 id="supported-authentication-types">Supported Authentication Types<a class="headerlink" href="#supported-authentication-types" title="Permanent link">&para;</a></h6>
+<ul>
+<li><code>noop</code>: No authentication (no Authorization header sent).</li>
+<li><code>basic</code>: HTTP Basic authentication.</li>
+<li><code>oauth2</code>: OAuth2 client credentials flow.</li>
+<li><code>custom</code>: Custom authentication manager (requires <code>auth.impl</code>).</li>
+<li><code>google</code>: Google Authentication support</li>
+<li><code>entra</code>: Microsoft Entra ID (Azure AD) authentication support</li>
+</ul>
+<h6 id="configuration-properties">Configuration Properties<a class="headerlink" href="#configuration-properties" title="Permanent link">&para;</a></h6>
+<p>The <code>auth</code> block is structured as follows:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">default</span><span class="p">:</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rest</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">    </span><span class="nt">uri</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://rest-catalog/ws/</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">    </span><span class="nt">auth</span><span class="p">:</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;auth_type&gt;</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">      </span><span class="nt">&lt;auth_type&gt;</span><span class="p">:</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">        </span><span class="c1"># Type-specific configuration</span>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">      </span><span class="nt">impl</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;custom_class_path&gt;</span><span class="w">  </span><span class="c1"># Only for custom auth</span>
+</code></pre></div>
+<h6 id="property-reference">Property Reference<a class="headerlink" href="#property-reference" title="Permanent link">&para;</a></h6>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>auth.type</code></td>
+<td>Yes</td>
+<td>The authentication type to use (<code>noop</code>, <code>basic</code>, <code>oauth2</code>, or <code>custom</code>).</td>
+</tr>
+<tr>
+<td><code>auth.impl</code></td>
+<td>Conditionally</td>
+<td>The fully qualified class path for a custom AuthManager. Required if <code>auth.type</code> is <code>custom</code>.</td>
+</tr>
+<tr>
+<td><code>auth.basic</code></td>
+<td>If type is <code>basic</code></td>
+<td>Block containing <code>username</code> and <code>password</code> for HTTP Basic authentication.</td>
+</tr>
+<tr>
+<td><code>auth.oauth2</code></td>
+<td>If type is <code>oauth2</code></td>
+<td>Block containing OAuth2 configuration (see below).</td>
+</tr>
+<tr>
+<td><code>auth.custom</code></td>
+<td>If type is <code>custom</code></td>
+<td>Block containing configuration for the custom AuthManager.</td>
+</tr>
+<tr>
+<td><code>auth.google</code></td>
+<td>If type is <code>google</code></td>
+<td>Block containing <code>credentials_path</code> to a service account file (if using). Will default to using Application Default Credentials.</td>
+</tr>
+<tr>
+<td><code>auth.entra</code></td>
+<td>If type is <code>entra</code></td>
+<td>Block containing Entra ID configuration. Will default to using DefaultAzureCredential.</td>
+</tr>
+</tbody>
+</table>
+<h6 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">&para;</a></h6>
+<p>No Authentication:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">auth</span><span class="p">:</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">noop</span>
+</code></pre></div>
+<p>Basic Authentication:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nt">auth</span><span class="p">:</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">basic</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">  </span><span class="nt">basic</span><span class="p">:</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">    </span><span class="nt">username</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myuser</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">    </span><span class="nt">password</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mypass</span>
+</code></pre></div>
+<p>OAuth2 Authentication:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">auth</span><span class="p">:</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">oauth2</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="nt">oauth2</span><span class="p">:</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">    </span><span class="nt">client_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-client-id</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">    </span><span class="nt">client_secret</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-client-secret</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">    </span><span class="nt">token_url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://auth.example.com/oauth/token</span>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">    </span><span class="nt">scope</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">read</span>
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">    </span><span class="nt">refresh_margin</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span><span class="w">         </span><span class="c1"># (optional) seconds before expiry to refresh</span>
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="w">    </span><span class="nt">expires_in</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600</span><span class="w">           </span><span class="c1"># (optional) fallback if server does not provide</span>
+</code></pre></div>
+<p>Custom Authentication:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nt">auth</span><span class="p">:</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">custom</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">  </span><span class="nt">impl</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mypackage.module.MyAuthManager</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">  </span><span class="nt">custom</span><span class="p">:</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">    </span><span class="nt">property1</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">value1</span>
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="w">    </span><span class="nt">property2</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">value2</span>
+</code></pre></div>
+<h6 id="notes">Notes<a class="headerlink" href="#notes" title="Permanent link">&para;</a></h6>
+<ul>
+<li>If <code>auth.type</code> is <code>custom</code>, you <strong>must</strong> specify <code>auth.impl</code> with the full class path to your custom AuthManager.</li>
+<li>If <code>auth.type</code> is not <code>custom</code>, specifying <code>auth.impl</code> is not allowed.</li>
+<li>The configuration block under each type (e.g., <code>basic</code>, <code>oauth2</code>, <code>custom</code>) is passed as keyword arguments to the corresponding AuthManager.</li>
+</ul>
+<!-- markdown-link-check-enable-->
+
+<h4 id="common-integrations-examples">Common Integrations &amp; Examples<a class="headerlink" href="#common-integrations-examples" title="Permanent link">&para;</a></h4>
+<h5 id="aws-glue">AWS Glue<a class="headerlink" href="#aws-glue" title="Permanent link">&para;</a></h5>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">  </span><span class="nt">s3_tables_catalog</span><span class="p">:</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rest</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">    </span><span class="nt">uri</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://glue.&lt;region&gt;.amazonaws.com/iceberg</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="w">    </span><span class="nt">warehouse</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;account-id&gt;:s3tablescatalog/&lt;table-bucket-name&gt;</span>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="w">    </span><span class="nt">rest.sigv4-enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="w">    </span><span class="nt">rest.signing-name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">glue</span>
+<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="w">    </span><span class="nt">rest.signing-region</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;region&gt;</span>
+</code></pre></div>
+<h5 id="unity-catalog">Unity Catalog<a class="headerlink" href="#unity-catalog" title="Permanent link">&para;</a></h5>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">  </span><span class="nt">unity_catalog</span><span class="p">:</span>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rest</span>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">    </span><span class="nt">uri</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://&lt;workspace-url&gt;/api/2.1/unity-catalog/iceberg-rest</span>
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="w">    </span><span class="nt">warehouse</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;uc-catalog-name&gt;</span>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="w">    </span><span class="nt">token</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;databricks-pat-token&gt;</span>
+</code></pre></div>
+<h5 id="r2-data-catalog">R2 Data Catalog<a class="headerlink" href="#r2-data-catalog" title="Permanent link">&para;</a></h5>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="w">  </span><span class="nt">r2_catalog</span><span class="p">:</span>
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rest</span>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="w">    </span><span class="nt">uri</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;r2-catalog-uri&gt;</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="w">    </span><span class="nt">warehouse</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;r2-warehouse-name&gt;</span>
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="w">    </span><span class="nt">token</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;r2-token&gt;</span>
+</code></pre></div>
+<h5 id="lakekeeper">Lakekeeper<a class="headerlink" href="#lakekeeper" title="Permanent link">&para;</a></h5>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="w">  </span><span class="nt">lakekeeper_catalog</span><span class="p">:</span>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rest</span>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="w">    </span><span class="nt">uri</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;lakekeeper-catalog-uri&gt;</span>
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="w">    </span><span class="nt">warehouse</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;lakekeeper-warehouse-name&gt;</span>
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="w">    </span><span class="nt">credential</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;client-id&gt;:&lt;client-secret&gt;</span>
+<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="w">    </span><span class="nt">oauth2-server-uri</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://localhost:30080/realms/&lt;keycloak-realm-name&gt;/protocol/openid-connect/token</span>
+<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a><span class="w">    </span><span class="nt">scope</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">lakekeeper</span>
+</code></pre></div>
+<h5 id="apache-polaris">Apache Polaris<a class="headerlink" href="#apache-polaris" title="Permanent link">&para;</a></h5>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="w">  </span><span class="nt">polaris_catalog</span><span class="p">:</span>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rest</span>
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="w">    </span><span class="nt">uri</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://&lt;account&gt;.snowflakecomputing.com/polaris/api/catalog</span>
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="w">    </span><span class="nt">warehouse</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;polaris-catalog-name&gt;</span>
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="w">    </span><span class="nt">credential</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;client-id&gt;:&lt;client-secret&gt;</span>
+<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="w">    </span><span class="nt">header.X-Iceberg-Access-Delegation</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">vended-credentials</span>
+<a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a><span class="w">    </span><span class="nt">scope</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PRINCIPAL_ROLE:ALL</span>
+<a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a><span class="w">    </span><span class="nt">token-refresh-enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a><span class="w">    </span><span class="nt">py-io-impl</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pyiceberg.io.fsspec.FsspecFileIO</span>
+</code></pre></div>
+<h5 id="apache-gravitino">Apache Gravitino<a class="headerlink" href="#apache-gravitino" title="Permanent link">&para;</a></h5>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="w">  </span><span class="nt">gravitino_catalog</span><span class="p">:</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rest</span>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="w">    </span><span class="nt">uri</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;gravitino-catalog-uri&gt;</span>
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="w">    </span><span class="nt">header.X-Iceberg-Access-Delegation</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">vended-credentials</span>
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="w">    </span><span class="nt">auth</span><span class="p">:</span>
+<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">noop</span>
+</code></pre></div>
+<h5 id="gcp-biglake-metastore-catalog-rest">GCP BigLake Metastore Catalog REST<a class="headerlink" href="#gcp-biglake-metastore-catalog-rest" title="Permanent link">&para;</a></h5>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="w">  </span><span class="nt">biglake_catalog</span><span class="p">:</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rest</span>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="w">    </span><span class="nt">uri</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://biglake.googleapis.com/iceberg/v1/restcatalog</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a><span class="w">    </span><span class="nt">warehouse</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gs://&lt;bucket-name&gt;</span><span class="w">  </span><span class="c1"># Use bq://projects/&lt;gcp-project-id&gt; for federation option (see docs)</span>
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a><span class="w">    </span><span class="nt">auth</span><span class="p">:</span>
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">google</span>
+<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a><span class="w">    </span><span class="nt">header.x-goog-user-project</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;gcp-project-id&gt;</span>
+<a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a><span class="w">    </span><span class="nt">header.X-Iceberg-Access-Delegation</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="w"> </span><span class="c1"># For user-credentials authentication, set to empty string.</span>
+</code></pre></div>
+<!-- prettier-ignore-start -->
+
+<div class="admonition note">
+<p class="admonition-title">Metastore Authentication Models</p>
+<p>If your BigLake Metastore catalog is configured for "user credentials" authentication instead of "vendor credentials", set the <code>header.X-Iceberg-Access-Delegation</code> header to an empty string as shown above.  Standard GCP Application Default Credentials (ADC) will be used to authenticate requests to the BigLake Metastore REST API.
+You can retrieve the configuration details for your BigLake Iceberg catalog at the <a href="https://console.cloud.google.com/biglake/metastore/catalogs">GCP Console BigLake Metastore page</a>. Select your catalog, then find the necessary parameters such as <code>uri</code>, <code>warehouse</code>, and authentication method (e.g. user-creds or vendor).</p>
+</div>
+<!-- prettier-ignore-end -->
+
+<h5 id="microsoft-onelake-iceberg-rest-catalog">Microsoft OneLake Iceberg REST Catalog<a class="headerlink" href="#microsoft-onelake-iceberg-rest-catalog" title="Permanent link">&para;</a></h5>
+<p>See <a href="https://aka.ms/onelakeircdocs">OneLake table APIs for Iceberg</a> for detailed documentation.</p>
+<p>Using Entra ID authentication (recommended):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="w">  </span><span class="nt">onelake_catalog</span><span class="p">:</span>
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rest</span>
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="w">    </span><span class="nt">uri</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://onelake.table.fabric.microsoft.com/iceberg</span>
+<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a><span class="w">    </span><span class="nt">warehouse</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;fabric_workspace_id&gt;/&lt;fabric_data_item_id&gt;</span>
+<a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a><span class="w">    </span><span class="nt">auth</span><span class="p">:</span>
+<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">entra</span>
+<a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a><span class="w">    </span><span class="nt">adls.account-name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">onelake</span>
+<a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a><span class="w">    </span><span class="nt">adls.account-host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">onelake.blob.fabric.microsoft.com</span>
+</code></pre></div>
+<p>Using static token:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="w">  </span><span class="nt">onelake_catalog</span><span class="p">:</span>
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rest</span>
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="w">    </span><span class="nt">uri</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://onelake.table.fabric.microsoft.com/iceberg</span>
+<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a><span class="w">    </span><span class="nt">warehouse</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;fabric_workspace_id&gt;/&lt;fabric_data_item_id&gt;</span><span class="w"> </span><span class="c1"># Example : DB0CE1EE-B014-47D3-8F0C-9D64C39C0FC2/F470A1D2-6D6D-4C9D-8796-46286C80B7C0</span>
+<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a><span class="w">    </span><span class="nt">token</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;token&gt;</span>
+<a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a><span class="w">    </span><span class="nt">adls.account-name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">onelake</span>
+<a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a><span class="w">    </span><span class="nt">adls.account-host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">onelake.blob.fabric.microsoft.com</span>
+<a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a><span class="w">    </span><span class="nt">adls.credential</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;credential&gt;</span>
+</code></pre></div>
+<!-- prettier-ignore-start -->
+
+<div class="admonition note">
+<p class="admonition-title">OneLake Authentication</p>
+<p>Use the <code>entra</code> auth type for Entra ID (Azure AD) authentication via <a href="https://learn.microsoft.com/en-us/azure/developer/python/sdk/authentication/credential-chains?tabs=dac#defaultazurecredential-overview">DefaultAzureCredential</a>, which supports environment variables, managed identity, Azure CLI, and more. Install with <code>pip install pyiceberg[entra-auth]</code>.</p>
+</div>
+<!-- prettier-ignore-end -->
+
+<h3 id="sql-catalog">SQL Catalog<a class="headerlink" href="#sql-catalog" title="Permanent link">&para;</a></h3>
+<p>The SQL catalog requires a database for its backend. PyIceberg supports PostgreSQL and SQLite through psycopg2. The database connection has to be configured using the <code>uri</code> property. The init_catalog_tables is optional and defaults to True. If it is set to False, the catalog tables will not be created when the SQLCatalog is initialized. See SQLAlchemy's <a href="https://docs.sqlalchemy.org/en/20/core/engines.html#backend-specific-urls">documentation for URL format</a>:</p>
+<p>For PostgreSQL:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="w">  </span><span class="nt">default</span><span class="p">:</span>
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sql</span>
+<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="w">    </span><span class="nt">uri</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">postgresql+psycopg2://username:password@localhost/mydatabase</span>
+<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a><span class="w">    </span><span class="nt">init_catalog_tables</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</code></pre></div>
+<p>In the case of SQLite:</p>
+<!-- prettier-ignore-start -->
+
+<div class="admonition warning inline end">
+<p class="admonition-title">Development only</p>
+<p>SQLite is not built for concurrency, you should use this catalog for exploratory or development purposes.</p>
+</div>
+<!-- prettier-ignore-end -->
+
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a><span class="w">  </span><span class="nt">default</span><span class="p">:</span>
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sql</span>
+<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a><span class="w">    </span><span class="nt">uri</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sqlite:////tmp/pyiceberg.db</span>
+<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a><span class="w">    </span><span class="nt">init_catalog_tables</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Example</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>uri</td>
+<td>postgresql+psycopg2://username:password@localhost/mydatabase</td>
+<td></td>
+<td>SQLAlchemy backend URL for the catalog database (see <a href="https://docs.sqlalchemy.org/en/20/core/engines.html#backend-specific-urls">documentation for URL format</a>)</td>
+</tr>
+<tr>
+<td>echo</td>
+<td>true</td>
+<td>false</td>
+<td>SQLAlchemy engine <a href="https://docs.sqlalchemy.org/en/20/core/engines.html#sqlalchemy.create_engine.params.echo">echo param</a> to log all statements to the default log handler</td>
+</tr>
+<tr>
+<td>pool_pre_ping</td>
+<td>true</td>
+<td>false</td>
+<td>SQLAlchemy engine <a href="https://docs.sqlalchemy.org/en/20/core/engines.html#sqlalchemy.create_engine.params.pool_pre_ping">pool_pre_ping param</a> to test connections for liveness upon each checkout</td>
+</tr>
+</tbody>
+</table>
+<h3 id="in-memory-catalog">In Memory Catalog<a class="headerlink" href="#in-memory-catalog" title="Permanent link">&para;</a></h3>
+<p>The in-memory catalog is built on top of <code>SqlCatalog</code> and uses SQLite in-memory database for its backend.</p>
+<p>It is useful for test, demo, and playground but not in production as it does not support concurrent access.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a><span class="w">  </span><span class="nt">default</span><span class="p">:</span>
+<a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">in-memory</span>
+<a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a><span class="w">    </span><span class="nt">warehouse</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/tmp/pyiceberg/warehouse</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Example</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>warehouse</td>
+<td>/tmp/pyiceberg/warehouse</td>
+<td>file:///tmp/iceberg/warehouse</td>
+<td>The directory where the in-memory catalog will store its data files.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="hive-catalog">Hive Catalog<a class="headerlink" href="#hive-catalog" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a><span class="w">  </span><span class="nt">default</span><span class="p">:</span>
+<a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a><span class="w">    </span><span class="nt">uri</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">thrift://localhost:9083</span>
+<a id="__codelineno-25-4" name="__codelineno-25-4" href="#__codelineno-25-4"></a><span class="w">    </span><span class="nt">s3.endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://localhost:9000</span>
+<a id="__codelineno-25-5" name="__codelineno-25-5" href="#__codelineno-25-5"></a><span class="w">    </span><span class="nt">s3.access-key-id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">admin</span>
+<a id="__codelineno-25-6" name="__codelineno-25-6" href="#__codelineno-25-6"></a><span class="w">    </span><span class="nt">s3.secret-access-key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">password</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Example</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>hive.hive2-compatible</td>
+<td>true</td>
+<td>Using Hive 2.x compatibility mode</td>
+</tr>
+<tr>
+<td>hive.kerberos-authentication</td>
+<td>true</td>
+<td>Using authentication via Kerberos</td>
+</tr>
+<tr>
+<td>hive.kerberos-service-name</td>
+<td>hive</td>
+<td>Kerberos service name (default hive)</td>
+</tr>
+<tr>
+<td>ugi</td>
+<td>t-1234:secret</td>
+<td>Hadoop UGI for Hive client.</td>
+</tr>
+</tbody>
+</table>
+<p>When using Hive 2.x, make sure to set the compatibility flag:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a><span class="w">  </span><span class="nt">default</span><span class="p">:</span>
+<a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a><span class="nn">...</span>
+<a id="__codelineno-26-4" name="__codelineno-26-4" href="#__codelineno-26-4"></a><span class="w">    </span><span class="nt">hive.hive2-compatible</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre></div>
+<h3 id="glue-catalog">Glue Catalog<a class="headerlink" href="#glue-catalog" title="Permanent link">&para;</a></h3>
+<p>Your AWS credentials can be passed directly through the Python API.
+Otherwise, please refer to
+<a href="https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html">How to configure AWS credentials</a> to set your AWS account credentials locally.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a><span class="w">  </span><span class="nt">default</span><span class="p">:</span>
+<a id="__codelineno-27-3" name="__codelineno-27-3" href="#__codelineno-27-3"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">glue</span>
+<a id="__codelineno-27-4" name="__codelineno-27-4" href="#__codelineno-27-4"></a><span class="w">    </span><span class="nt">glue.access-key-id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;ACCESS_KEY_ID&gt;</span>
+<a id="__codelineno-27-5" name="__codelineno-27-5" href="#__codelineno-27-5"></a><span class="w">    </span><span class="nt">glue.secret-access-key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;SECRET_ACCESS_KEY&gt;</span>
+<a id="__codelineno-27-6" name="__codelineno-27-6" href="#__codelineno-27-6"></a><span class="w">    </span><span class="nt">glue.session-token</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;SESSION_TOKEN&gt;</span>
+<a id="__codelineno-27-7" name="__codelineno-27-7" href="#__codelineno-27-7"></a><span class="w">    </span><span class="nt">glue.region</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;REGION_NAME&gt;</span>
+<a id="__codelineno-27-8" name="__codelineno-27-8" href="#__codelineno-27-8"></a><span class="w">    </span><span class="nt">s3.endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://localhost:9000</span>
+<a id="__codelineno-27-9" name="__codelineno-27-9" href="#__codelineno-27-9"></a><span class="w">    </span><span class="nt">s3.access-key-id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">admin</span>
+<a id="__codelineno-27-10" name="__codelineno-27-10" href="#__codelineno-27-10"></a><span class="w">    </span><span class="nt">s3.secret-access-key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">password</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a><span class="w">  </span><span class="nt">default</span><span class="p">:</span>
+<a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">glue</span>
+<a id="__codelineno-28-4" name="__codelineno-28-4" href="#__codelineno-28-4"></a><span class="w">    </span><span class="nt">glue.profile-name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;PROFILE_NAME&gt;</span>
+<a id="__codelineno-28-5" name="__codelineno-28-5" href="#__codelineno-28-5"></a><span class="w">    </span><span class="nt">glue.region</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;REGION_NAME&gt;</span>
+<a id="__codelineno-28-6" name="__codelineno-28-6" href="#__codelineno-28-6"></a><span class="w">    </span><span class="nt">s3.endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://localhost:9000</span>
+<a id="__codelineno-28-7" name="__codelineno-28-7" href="#__codelineno-28-7"></a><span class="w">    </span><span class="nt">s3.access-key-id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">admin</span>
+<a id="__codelineno-28-8" name="__codelineno-28-8" href="#__codelineno-28-8"></a><span class="w">    </span><span class="nt">s3.secret-access-key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">password</span>
+</code></pre></div>
+<!-- prettier-ignore-start -->
+
+<div class="admonition note">
+<p class="admonition-title">Client-specific Properties</p>
+<p><code>glue.*</code> properties are for Glue Catalog only. If you want to use the same credentials for both Glue Catalog and S3 FileIO, you can set the <code>client.*</code> properties. See the <a href="./#unified-aws-credentials">Unified AWS Credentials</a> section for more details.</p>
+</div>
+<!-- prettier-ignore-end -->
+
+<!-- markdown-link-check-disable -->
+
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Example</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>glue.id</td>
+<td>111111111111</td>
+<td>Configure the 12-digit ID of the Glue Catalog</td>
+</tr>
+<tr>
+<td>glue.skip-archive</td>
+<td>true</td>
+<td>Configure whether to skip the archival of older table versions. Default to true</td>
+</tr>
+<tr>
+<td>glue.endpoint</td>
+<td><a href="https://glue.us-east-1.amazonaws.com">https://glue.us-east-1.amazonaws.com</a></td>
+<td>Configure an alternative endpoint of the Glue service for GlueCatalog to access</td>
+</tr>
+<tr>
+<td>glue.profile-name</td>
+<td>default</td>
+<td>Configure the AWS profile used to access the Glue Catalog</td>
+</tr>
+<tr>
+<td>glue.region</td>
+<td>us-east-1</td>
+<td>Set the region of the Glue Catalog</td>
+</tr>
+<tr>
+<td>glue.access-key-id</td>
+<td>admin</td>
+<td>Configure the static access key id used to access the Glue Catalog</td>
+</tr>
+<tr>
+<td>glue.secret-access-key</td>
+<td>password</td>
+<td>Configure the static secret access key used to access the Glue Catalog</td>
+</tr>
+<tr>
+<td>glue.session-token</td>
+<td>AQoDYXdzEJr...</td>
+<td>Configure the static session token used to access the Glue Catalog</td>
+</tr>
+<tr>
+<td>glue.max-retries</td>
+<td>10</td>
+<td>Configure the maximum number of retries for the Glue service calls</td>
+</tr>
+<tr>
+<td>glue.retry-mode</td>
+<td>standard</td>
+<td>Configure the retry mode for the Glue service. Default to standard.</td>
+</tr>
+</tbody>
+</table>
+<!-- markdown-link-check-enable-->
+
+<!-- prettier-ignore-start -->
+
+<div class="admonition warning">
+<p class="admonition-title">Removed Properties</p>
+<p>The properties <code>profile_name</code>, <code>region_name</code>, <code>aws_access_key_id</code>, <code>aws_secret_access_key</code>, and <code>aws_session_token</code> were deprecated and removed in 0.8.0</p>
+</div>
+<!-- prettier-ignore-end -->
+
+<h3 id="dynamodb-catalog">DynamoDB Catalog<a class="headerlink" href="#dynamodb-catalog" title="Permanent link">&para;</a></h3>
+<p>If you want to use AWS DynamoDB as the catalog, you can use the last two ways to configure the pyiceberg and refer
+<a href="https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html">How to configure AWS credentials</a>
+to set your AWS account credentials locally.
+If you want to use the same credentials for both Dynamodb Catalog and S3 FileIO, you can set the <a href="./#unified-aws-credentials"><code>client.*</code> properties</a>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a><span class="w">  </span><span class="nt">default</span><span class="p">:</span>
+<a id="__codelineno-29-3" name="__codelineno-29-3" href="#__codelineno-29-3"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dynamodb</span>
+<a id="__codelineno-29-4" name="__codelineno-29-4" href="#__codelineno-29-4"></a><span class="w">    </span><span class="nt">table-name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">iceberg</span>
+</code></pre></div>
+<p>If you prefer to pass the credentials explicitly to the client instead of relying on environment variables,</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a><span class="w">  </span><span class="nt">default</span><span class="p">:</span>
+<a id="__codelineno-30-3" name="__codelineno-30-3" href="#__codelineno-30-3"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dynamodb</span>
+<a id="__codelineno-30-4" name="__codelineno-30-4" href="#__codelineno-30-4"></a><span class="w">    </span><span class="nt">table-name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">iceberg</span>
+<a id="__codelineno-30-5" name="__codelineno-30-5" href="#__codelineno-30-5"></a><span class="w">    </span><span class="nt">dynamodb.access-key-id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;ACCESS_KEY_ID&gt;</span>
+<a id="__codelineno-30-6" name="__codelineno-30-6" href="#__codelineno-30-6"></a><span class="w">    </span><span class="nt">dynamodb.secret-access-key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;SECRET_ACCESS_KEY&gt;</span>
+<a id="__codelineno-30-7" name="__codelineno-30-7" href="#__codelineno-30-7"></a><span class="w">    </span><span class="nt">dynamodb.session-token</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;SESSION_TOKEN&gt;</span>
+<a id="__codelineno-30-8" name="__codelineno-30-8" href="#__codelineno-30-8"></a><span class="w">    </span><span class="nt">dynamodb.region</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;REGION_NAME&gt;</span>
+<a id="__codelineno-30-9" name="__codelineno-30-9" href="#__codelineno-30-9"></a><span class="w">    </span><span class="nt">s3.endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://localhost:9000</span>
+<a id="__codelineno-30-10" name="__codelineno-30-10" href="#__codelineno-30-10"></a><span class="w">    </span><span class="nt">s3.access-key-id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">admin</span>
+<a id="__codelineno-30-11" name="__codelineno-30-11" href="#__codelineno-30-11"></a><span class="w">    </span><span class="nt">s3.secret-access-key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">password</span>
+</code></pre></div>
+<!-- prettier-ignore-start -->
+
+<div class="admonition note">
+<p class="admonition-title">Client-specific Properties</p>
+<p><code>dynamodb.*</code> properties are for DynamoDB Catalog only. If you want to use the same credentials for both DynamoDB Catalog and S3 FileIO, you can set the <code>client.*</code> properties. See the <a href="./#unified-aws-credentials">Unified AWS Credentials</a> section for more details.</p>
+</div>
+<!-- prettier-ignore-end -->
+
+<!-- markdown-link-check-disable -->
+
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Example</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>dynamodb.profile-name</td>
+<td>default</td>
+<td>Configure the static profile used to access the DynamoDB Catalog</td>
+</tr>
+<tr>
+<td>dynamodb.region</td>
+<td>us-east-1</td>
+<td>Set the region of the DynamoDB Catalog</td>
+</tr>
+<tr>
+<td>dynamodb.access-key-id</td>
+<td>admin</td>
+<td>Configure the static access key id used to access the DynamoDB Catalog</td>
+</tr>
+<tr>
+<td>dynamodb.secret-access-key</td>
+<td>password</td>
+<td>Configure the static secret access key used to access the DynamoDB Catalog</td>
+</tr>
+<tr>
+<td>dynamodb.session-token</td>
+<td>AQoDYXdzEJr...</td>
+<td>Configure the static session token used to access the DynamoDB Catalog</td>
+</tr>
+</tbody>
+</table>
+<!-- markdown-link-check-enable-->
+
+<!-- prettier-ignore-start -->
+
+<div class="admonition warning">
+<p class="admonition-title">Removed Properties</p>
+<p>The properties <code>profile_name</code>, <code>region_name</code>, <code>aws_access_key_id</code>, <code>aws_secret_access_key</code>, and <code>aws_session_token</code> were deprecated and removed in 0.8.0</p>
+</div>
+<!-- prettier-ignore-end -->
+
+<h3 id="custom-catalog-implementations">Custom Catalog Implementations<a class="headerlink" href="#custom-catalog-implementations" title="Permanent link">&para;</a></h3>
+<p>If you want to load any custom catalog implementation, you can set catalog configurations like the following:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-31-2" name="__codelineno-31-2" href="#__codelineno-31-2"></a><span class="w">  </span><span class="nt">default</span><span class="p">:</span>
+<a id="__codelineno-31-3" name="__codelineno-31-3" href="#__codelineno-31-3"></a><span class="w">    </span><span class="nt">py-catalog-impl</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mypackage.mymodule.MyCatalog</span>
+<a id="__codelineno-31-4" name="__codelineno-31-4" href="#__codelineno-31-4"></a><span class="w">    </span><span class="nt">custom-key1</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">value1</span>
+<a id="__codelineno-31-5" name="__codelineno-31-5" href="#__codelineno-31-5"></a><span class="w">    </span><span class="nt">custom-key2</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">value2</span>
+</code></pre></div>
+<h2 id="unified-aws-credentials">Unified AWS Credentials<a class="headerlink" href="#unified-aws-credentials" title="Permanent link">&para;</a></h2>
+<p>You can explicitly set the AWS credentials for both Glue/DynamoDB Catalog and S3 FileIO by configuring <code>client.*</code> properties. For example:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a><span class="nt">catalog</span><span class="p">:</span>
+<a id="__codelineno-32-2" name="__codelineno-32-2" href="#__codelineno-32-2"></a><span class="w">  </span><span class="nt">default</span><span class="p">:</span>
+<a id="__codelineno-32-3" name="__codelineno-32-3" href="#__codelineno-32-3"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">glue</span>
+<a id="__codelineno-32-4" name="__codelineno-32-4" href="#__codelineno-32-4"></a><span class="w">    </span><span class="nt">client.access-key-id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;ACCESS_KEY_ID&gt;</span>
+<a id="__codelineno-32-5" name="__codelineno-32-5" href="#__codelineno-32-5"></a><span class="w">    </span><span class="nt">client.secret-access-key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;SECRET_ACCESS_KEY&gt;</span>
+<a id="__codelineno-32-6" name="__codelineno-32-6" href="#__codelineno-32-6"></a><span class="w">    </span><span class="nt">client.region</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;REGION_NAME&gt;</span>
+</code></pre></div>
+<p>configures the AWS credentials for both Glue Catalog and S3 FileIO.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Example</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>client.region</td>
+<td>us-east-1</td>
+<td>Set the region of both the Glue/DynamoDB Catalog and the S3 FileIO</td>
+</tr>
+<tr>
+<td>client.access-key-id</td>
+<td>admin</td>
+<td>Configure the static access key id used to access both the Glue/DynamoDB Catalog and the S3 FileIO</td>
+</tr>
+<tr>
+<td>client.secret-access-key</td>
+<td>password</td>
+<td>Configure the static secret access key used to access both the Glue/DynamoDB Catalog and the S3 FileIO</td>
+</tr>
+<tr>
+<td>client.session-token</td>
+<td>AQoDYXdzEJr...</td>
+<td>Configure the static session token used to access both the Glue/DynamoDB Catalog and the S3 FileIO</td>
+</tr>
+<tr>
+<td>client.profile-name</td>
+<td>default</td>
+<td>Configure the AWS profile used to access both the Glue/DynamoDB Catalog and the S3 FileIO</td>
+</tr>
+<tr>
+<td>client.role-session-name</td>
+<td>session</td>
+<td>An optional identifier for the assumed role session.</td>
+</tr>
+<tr>
+<td>client.role-arn</td>
+<td>arn:aws:...</td>
+<td>AWS Role ARN. If provided instead of access_key and secret_key, temporary credentials will be fetched by assuming this role.</td>
+</tr>
+</tbody>
+</table>
+<!-- prettier-ignore-start -->
+
+<div class="admonition note">
+<p class="admonition-title">Properties Priority</p>
+<p><code>client.*</code> properties will be overridden by service-specific properties if they are set. For example, if <code>client.region</code> is set to <code>us-west-1</code> and <code>s3.region</code> is set to <code>us-east-1</code>, the S3 FileIO will use <code>us-east-1</code> as the region.</p>
+</div>
+<!-- prettier-ignore-end -->
+
+<h2 id="concurrency">Concurrency<a class="headerlink" href="#concurrency" title="Permanent link">&para;</a></h2>
+<p>PyIceberg uses multiple threads to parallelize operations. The number of workers can be configured by supplying a <code>max-workers</code> entry in the configuration file, or by setting the <code>PYICEBERG_MAX_WORKERS</code> environment variable. The default value depends on the system hardware and Python version. See <a href="https://docs.python.org/3/library/concurrent.futures.html#threadpoolexecutor">the Python documentation</a> for more details.</p>
+<h2 id="backward-compatibility">Backward Compatibility<a class="headerlink" href="#backward-compatibility" title="Permanent link">&para;</a></h2>
+<p>Previous versions of Java (<code>&lt;1.4.0</code>) implementations incorrectly assume the optional attribute <code>current-snapshot-id</code> to be a required attribute in TableMetadata. This means that if <code>current-snapshot-id</code> is missing in the metadata file (e.g. on table creation), the application will throw an exception without being able to load the table. This assumption has been corrected in more recent Iceberg versions. However, it is possible to force PyIceberg to create a table with a metadata file that will be compatible with previous versions. This can be configured by setting the <code>legacy-current-snapshot-id</code> property as "True" in the configuration file, or by setting the <code>PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID</code> environment variable. Refer to the <a href="https://github.com/apache/iceberg-python/pull/473">PR discussion</a> for more details on the issue</p>
+<h2 id="nanoseconds-support">Nanoseconds Support<a class="headerlink" href="#nanoseconds-support" title="Permanent link">&para;</a></h2>
+<p>PyIceberg currently only supports upto microsecond precision in its TimestampType. PyArrow timestamp types in 's' and 'ms' will be upcast automatically to 'us' precision timestamps on write. Timestamps in 'ns' precision can also be downcast automatically on write if desired. This can be configured by setting the <code>downcast-ns-timestamp-to-us-on-write</code> property as "True" in the configuration file, or by setting the <code>PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE</code> environment variable. Refer to the <a href="https://docs.google.com/document/d/1bE1DcEGNzZAMiVJSZ0X1wElKLNkT9kRkk0hDlfkXzvU/edit#heading=h.ibflcctc9i1d">nanoseconds timestamp proposal document</a> for more details on the long term roadmap for nanoseconds support</p>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+  
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.top", "navigation.tracking", "navigation.tabs", "navigation.tabs.sticky", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
