@@ -49,14 +49,6 @@ from pydantic_core import to_json
 from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog import Catalog, load_catalog
-from pyiceberg.catalog.bigquery_metastore import BigQueryMetastoreCatalog
-from pyiceberg.catalog.dynamodb import DynamoDbCatalog
-from pyiceberg.catalog.glue import GlueCatalog
-from pyiceberg.catalog.hive import HiveCatalog
-from pyiceberg.catalog.memory import InMemoryCatalog
-from pyiceberg.catalog.noop import NoopCatalog
-from pyiceberg.catalog.rest import RestCatalog
-from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.expressions import BoundReference
 from pyiceberg.io import (
     ADLS_ACCOUNT_KEY,
@@ -2497,6 +2489,8 @@ def warehouse(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.fixture
 def table_v1(example_table_metadata_v1: dict[str, Any]) -> Table:
+    from pyiceberg.catalog.noop import NoopCatalog
+
     table_metadata = TableMetadataV1(**example_table_metadata_v1)
     return Table(
         identifier=("database", "table"),
@@ -2509,6 +2503,8 @@ def table_v1(example_table_metadata_v1: dict[str, Any]) -> Table:
 
 @pytest.fixture
 def table_v2(example_table_metadata_v2: dict[str, Any]) -> Table:
+    from pyiceberg.catalog.noop import NoopCatalog
+
     table_metadata = TableMetadataV2(**example_table_metadata_v2)
     return Table(
         identifier=("database", "table"),
@@ -2521,6 +2517,8 @@ def table_v2(example_table_metadata_v2: dict[str, Any]) -> Table:
 
 @pytest.fixture
 def table_v3(example_table_metadata_v3: dict[str, Any]) -> Table:
+    from pyiceberg.catalog.noop import NoopCatalog
+
     table_metadata = TableMetadataV3(**example_table_metadata_v3)
     return Table(
         identifier=("database", "table"),
@@ -2534,6 +2532,8 @@ def table_v3(example_table_metadata_v3: dict[str, Any]) -> Table:
 @pytest.fixture
 def table_v2_orc(example_table_metadata_v2: dict[str, Any]) -> Table:
     import copy
+
+    from pyiceberg.catalog.noop import NoopCatalog
 
     metadata_dict = copy.deepcopy(example_table_metadata_v2)
     if not metadata_dict["properties"]:
@@ -2553,6 +2553,8 @@ def table_v2_orc(example_table_metadata_v2: dict[str, Any]) -> Table:
 def table_v2_with_fixed_and_decimal_types(
     table_metadata_v2_with_fixed_and_decimal_types: dict[str, Any],
 ) -> Table:
+    from pyiceberg.catalog.noop import NoopCatalog
+
     table_metadata = TableMetadataV2(
         **table_metadata_v2_with_fixed_and_decimal_types,
     )
@@ -2567,6 +2569,8 @@ def table_v2_with_fixed_and_decimal_types(
 
 @pytest.fixture
 def table_v2_with_extensive_snapshots(example_table_metadata_v2_with_extensive_snapshots: dict[str, Any]) -> Table:
+    from pyiceberg.catalog.noop import NoopCatalog
+
     table_metadata = TableMetadataV2(**example_table_metadata_v2_with_extensive_snapshots)
     return Table(
         identifier=("database", "table"),
@@ -2579,6 +2583,8 @@ def table_v2_with_extensive_snapshots(example_table_metadata_v2_with_extensive_s
 
 @pytest.fixture
 def table_v2_with_statistics(table_metadata_v2_with_statistics: dict[str, Any]) -> Table:
+    from pyiceberg.catalog.noop import NoopCatalog
+
     table_metadata = TableMetadataV2(**table_metadata_v2_with_statistics)
     return Table(
         identifier=("database", "table"),
@@ -3000,11 +3006,15 @@ def ray_session() -> Generator[Any, None, None]:
 # Catalog fixtures
 
 
-def _create_memory_catalog(name: str, warehouse: Path) -> InMemoryCatalog:
+def _create_memory_catalog(name: str, warehouse: Path) -> Catalog:
+    from pyiceberg.catalog.memory import InMemoryCatalog
+
     return InMemoryCatalog(name, warehouse=f"file://{warehouse}")
 
 
-def _create_sql_catalog(name: str, warehouse: Path) -> SqlCatalog:
+def _create_sql_catalog(name: str, warehouse: Path) -> Catalog:
+    from pyiceberg.catalog.sql import SqlCatalog
+
     catalog = SqlCatalog(
         name,
         uri="sqlite:///:memory:",
@@ -3014,7 +3024,9 @@ def _create_sql_catalog(name: str, warehouse: Path) -> SqlCatalog:
     return catalog
 
 
-def _create_sql_without_rowcount_catalog(name: str, warehouse: Path) -> SqlCatalog:
+def _create_sql_without_rowcount_catalog(name: str, warehouse: Path) -> Catalog:
+    from pyiceberg.catalog.sql import SqlCatalog
+
     props = {
         "uri": f"sqlite:////{warehouse}/sql-catalog",
         "warehouse": f"file://{warehouse}",
@@ -3152,48 +3164,97 @@ def test_table_properties() -> dict[str, str]:
 
 
 def does_support_purge_table(catalog: Catalog) -> bool:
+    from pyiceberg.catalog.noop import NoopCatalog
+    from pyiceberg.catalog.rest import RestCatalog
+
     if isinstance(catalog, RestCatalog):
         return property_as_bool(catalog.properties, "supports_purge_table", True)
-    if isinstance(catalog, (HiveCatalog, NoopCatalog)):
+    from pyiceberg.catalog.hive import HiveCatalog
+
+    if isinstance(catalog, HiveCatalog):
+        return False
+    if isinstance(catalog, NoopCatalog):
         return False
     return True
 
 
 def does_support_atomic_concurrent_updates(catalog: Catalog) -> bool:
+    from pyiceberg.catalog.noop import NoopCatalog
+    from pyiceberg.catalog.rest import RestCatalog
+
     if isinstance(catalog, RestCatalog):
         return property_as_bool(catalog.properties, "supports_atomic_concurrent_updates", True)
-    if isinstance(catalog, (HiveCatalog, NoopCatalog)):
+    from pyiceberg.catalog.hive import HiveCatalog
+
+    if isinstance(catalog, HiveCatalog):
+        return False
+    if isinstance(catalog, NoopCatalog):
         return False
     return True
 
 
 def does_support_nested_namespaces(catalog: Catalog) -> bool:
+    from pyiceberg.catalog.dynamodb import DynamoDbCatalog
+    from pyiceberg.catalog.glue import GlueCatalog
+    from pyiceberg.catalog.noop import NoopCatalog
+    from pyiceberg.catalog.rest import RestCatalog
+
     if isinstance(catalog, RestCatalog):
         return property_as_bool(catalog.properties, "supports_nested_namespaces", True)
-    if isinstance(catalog, (HiveCatalog, NoopCatalog, GlueCatalog, BigQueryMetastoreCatalog, DynamoDbCatalog)):
+    from pyiceberg.catalog.bigquery_metastore import BigQueryMetastoreCatalog
+    from pyiceberg.catalog.hive import HiveCatalog
+
+    if isinstance(catalog, HiveCatalog):
+        return False
+    if isinstance(catalog, BigQueryMetastoreCatalog):
+        return False
+    if isinstance(catalog, (NoopCatalog, GlueCatalog, DynamoDbCatalog)):
         return False
     return True
 
 
 def does_support_schema_evolution(catalog: Catalog) -> bool:
+    from pyiceberg.catalog.noop import NoopCatalog
+    from pyiceberg.catalog.rest import RestCatalog
+
     if isinstance(catalog, RestCatalog):
         return property_as_bool(catalog.properties, "supports_schema_evolution", True)
-    if isinstance(catalog, (HiveCatalog, NoopCatalog)):
+    from pyiceberg.catalog.hive import HiveCatalog
+
+    if isinstance(catalog, HiveCatalog):
+        return False
+    if isinstance(catalog, NoopCatalog):
         return False
     return True
 
 
 def does_support_slash_in_identifier(catalog: Catalog) -> bool:
+    from pyiceberg.catalog.noop import NoopCatalog
+    from pyiceberg.catalog.rest import RestCatalog
+    from pyiceberg.catalog.sql import SqlCatalog
+
     if isinstance(catalog, RestCatalog):
         return property_as_bool(catalog.properties, "supports_slash_in_identifier", True)
-    if isinstance(catalog, (HiveCatalog, NoopCatalog, SqlCatalog)):
+    from pyiceberg.catalog.hive import HiveCatalog
+
+    if isinstance(catalog, HiveCatalog):
+        return False
+    if isinstance(catalog, (NoopCatalog, SqlCatalog)):
         return False
     return True
 
 
 def does_support_dot_in_identifier(catalog: Catalog) -> bool:
+    from pyiceberg.catalog.noop import NoopCatalog
+    from pyiceberg.catalog.rest import RestCatalog
+    from pyiceberg.catalog.sql import SqlCatalog
+
     if isinstance(catalog, RestCatalog):
         return property_as_bool(catalog.properties, "supports_dot_in_identifier", True)
-    if isinstance(catalog, (HiveCatalog, NoopCatalog, SqlCatalog)):
+    from pyiceberg.catalog.hive import HiveCatalog
+
+    if isinstance(catalog, HiveCatalog):
+        return False
+    if isinstance(catalog, (NoopCatalog, SqlCatalog)):
         return False
     return True
