@@ -16,7 +16,6 @@
 # under the License.
 # pylint: disable=redefined-outer-name,arguments-renamed,fixme
 from tempfile import TemporaryDirectory
-from unittest import mock
 
 import fastavro
 import pytest
@@ -49,8 +48,6 @@ from pyiceberg.types import IntegerType, NestedField
 
 @pytest.fixture(autouse=True)
 def reset_global_manifests_cache() -> None:
-    with manifest_module._manifest_cache_lock:
-        manifest_module._manifest_cache = manifest_module._init_manifest_cache()
     clear_manifest_cache()
 
 
@@ -1001,45 +998,3 @@ def test_clear_manifest_cache() -> None:
         cache_after = manifest_module._manifest_cache
         assert cache_after is not None, "Cache should still be enabled after clear"
         assert len(cache_after) == 0, "Cache should be empty after clear"
-
-
-@pytest.mark.parametrize(
-    "env_vars,expected_enabled,expected_size",
-    [
-        ({}, True, 128),  # defaults
-        ({"PYICEBERG_MANIFEST_CACHE_SIZE": "64"}, True, 64),
-        ({"PYICEBERG_MANIFEST_CACHE_SIZE": "256"}, True, 256),
-        ({"PYICEBERG_MANIFEST_CACHE_SIZE": "0"}, False, 0),  # size=0 disables cache
-    ],
-)
-def test_manifest_cache_config_valid_values(env_vars: dict[str, str], expected_enabled: bool, expected_size: int) -> None:
-    """Test that valid config values are applied correctly."""
-    import os
-
-    with mock.patch.dict(os.environ, env_vars, clear=False):
-        with manifest_module._manifest_cache_lock:
-            manifest_module._manifest_cache = manifest_module._init_manifest_cache()
-        cache = manifest_module._manifest_cache
-
-        if expected_enabled:
-            assert cache is not None, "Cache should be enabled"
-            assert cache.maxsize == expected_size, f"Cache size should be {expected_size}"
-        else:
-            assert cache is None, "Cache should be disabled"
-
-
-@pytest.mark.parametrize(
-    "env_vars,expected_error_substring",
-    [
-        ({"PYICEBERG_MANIFEST_CACHE_SIZE": "abc"}, "manifest-cache-size should be an integer"),
-        ({"PYICEBERG_MANIFEST_CACHE_SIZE": "-5"}, "manifest-cache-size must be >= 0"),
-    ],
-)
-def test_manifest_cache_config_invalid_values(env_vars: dict[str, str], expected_error_substring: str) -> None:
-    """Test that invalid config values raise ValueError with appropriate message."""
-    import os
-
-    with mock.patch.dict(os.environ, env_vars, clear=False):
-        with pytest.raises(ValueError, match=expected_error_substring):
-            with manifest_module._manifest_cache_lock:
-                manifest_module._manifest_cache = manifest_module._init_manifest_cache()
