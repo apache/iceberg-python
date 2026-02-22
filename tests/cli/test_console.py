@@ -48,6 +48,19 @@ def test_missing_uri(mocker: MockFixture, empty_home_dir_path: str) -> None:
     assert result.output == "Could not initialize catalog with the following properties: {}\n"
 
 
+def test_hive_catalog_missing_uri_shows_helpful_error(mocker: MockFixture) -> None:
+    mock_env_config = mocker.MagicMock()
+    mock_env_config.get_catalog_config.return_value = {"type": "hive"}
+    mocker.patch("pyiceberg.catalog._ENV_CONFIG", mock_env_config)
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["--catalog", "my_hive_catalog", "list"])
+
+    assert result.exit_code == 1
+    assert "URI missing, please provide using --uri" in result.output
+    assert "'uri'" not in result.output
+
+
 @pytest.fixture(autouse=True)
 def env_vars(mocker: MockFixture) -> None:
     mocker.patch.dict(os.environ, MOCK_ENVIRONMENT)
