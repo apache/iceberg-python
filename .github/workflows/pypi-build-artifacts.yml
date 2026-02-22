@@ -71,6 +71,8 @@ jobs:
           # Ignore 32 bit architectures
           CIBW_ARCHS: "auto64"
           CIBW_PROJECT_REQUIRES_PYTHON: ">=3.10,<3.14"
+          # Keep these in sync with Python CI job `cibw-dev-env-smoke-test`
+          # in .github/workflows/python-ci.yml to catch import-time regressions early.
           CIBW_BEFORE_TEST: "uv sync --directory {project} --only-group dev --no-install-project"
           CIBW_TEST_COMMAND: "uv run --directory {project} pytest tests/avro/test_decoder.py"
           # Skip free-threaded (PEP 703) builds until we evaluate decoder_fast support
