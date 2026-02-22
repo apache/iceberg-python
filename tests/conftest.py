@@ -49,8 +49,10 @@ from pydantic_core import to_json
 from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog import Catalog, load_catalog
+from pyiceberg.catalog.bigquery_metastore import BigQueryMetastoreCatalog
 from pyiceberg.catalog.dynamodb import DynamoDbCatalog
 from pyiceberg.catalog.glue import GlueCatalog
+from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.memory import InMemoryCatalog
 from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.catalog.rest import RestCatalog
@@ -3152,7 +3154,7 @@ def test_table_properties() -> dict[str, str]:
 def does_support_purge_table(catalog: Catalog) -> bool:
     if isinstance(catalog, RestCatalog):
         return property_as_bool(catalog.properties, "supports_purge_table", True)
-    if _has_catalog_class_name(catalog, "HiveCatalog") or isinstance(catalog, NoopCatalog):
+    if isinstance(catalog, (HiveCatalog, NoopCatalog)):
         return False
     return True
 
@@ -3160,7 +3162,7 @@ def does_support_purge_table(catalog: Catalog) -> bool:
 def does_support_atomic_concurrent_updates(catalog: Catalog) -> bool:
     if isinstance(catalog, RestCatalog):
         return property_as_bool(catalog.properties, "supports_atomic_concurrent_updates", True)
-    if _has_catalog_class_name(catalog, "HiveCatalog") or isinstance(catalog, NoopCatalog):
+    if isinstance(catalog, (HiveCatalog, NoopCatalog)):
         return False
     return True
 
@@ -3168,9 +3170,7 @@ def does_support_atomic_concurrent_updates(catalog: Catalog) -> bool:
 def does_support_nested_namespaces(catalog: Catalog) -> bool:
     if isinstance(catalog, RestCatalog):
         return property_as_bool(catalog.properties, "supports_nested_namespaces", True)
-    if _has_catalog_class_name(catalog, "HiveCatalog", "BigQueryMetastoreCatalog") or isinstance(
-        catalog, (NoopCatalog, GlueCatalog, DynamoDbCatalog)
-    ):
+    if isinstance(catalog, (HiveCatalog, NoopCatalog, GlueCatalog, BigQueryMetastoreCatalog, DynamoDbCatalog)):
         return False
     return True
 
@@ -3178,7 +3178,7 @@ def does_support_nested_namespaces(catalog: Catalog) -> bool:
 def does_support_schema_evolution(catalog: Catalog) -> bool:
     if isinstance(catalog, RestCatalog):
         return property_as_bool(catalog.properties, "supports_schema_evolution", True)
-    if _has_catalog_class_name(catalog, "HiveCatalog") or isinstance(catalog, NoopCatalog):
+    if isinstance(catalog, (HiveCatalog, NoopCatalog)):
         return False
     return True
 
@@ -3186,7 +3186,7 @@ def does_support_schema_evolution(catalog: Catalog) -> bool:
 def does_support_slash_in_identifier(catalog: Catalog) -> bool:
     if isinstance(catalog, RestCatalog):
         return property_as_bool(catalog.properties, "supports_slash_in_identifier", True)
-    if _has_catalog_class_name(catalog, "HiveCatalog") or isinstance(catalog, (NoopCatalog, SqlCatalog)):
+    if isinstance(catalog, (HiveCatalog, NoopCatalog, SqlCatalog)):
         return False
     return True
 
@@ -3194,10 +3194,6 @@ def does_support_slash_in_identifier(catalog: Catalog) -> bool:
 def does_support_dot_in_identifier(catalog: Catalog) -> bool:
     if isinstance(catalog, RestCatalog):
         return property_as_bool(catalog.properties, "supports_dot_in_identifier", True)
-    if _has_catalog_class_name(catalog, "HiveCatalog") or isinstance(catalog, (NoopCatalog, SqlCatalog)):
+    if isinstance(catalog, (HiveCatalog, NoopCatalog, SqlCatalog)):
         return False
     return True
-
-
-def _has_catalog_class_name(catalog: Catalog, *class_names: str) -> bool:
-    return any(base.__name__ in class_names for base in type(catalog).__mro__)
