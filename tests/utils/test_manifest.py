@@ -34,7 +34,6 @@ from pyiceberg.manifest import (
     ManifestEntryStatus,
     ManifestFile,
     PartitionFieldSummary,
-    _get_manifest_cache,
     _manifests,
     clear_manifest_cache,
     read_manifest_list,
@@ -50,9 +49,9 @@ from pyiceberg.types import IntegerType, NestedField
 
 @pytest.fixture(autouse=True)
 def reset_global_manifests_cache() -> None:
-    # Reset cache state before each test so config is re-read
-    manifest_module._manifest_cache_manager._cache = None
-    manifest_module._manifest_cache_manager._initialized = False
+    with manifest_module._manifest_cache_lock:
+        manifest_module._manifest_cache = manifest_module._init_manifest_cache()
+    clear_manifest_cache()
 
 
 def _verify_metadata_with_fastavro(avro_file: str, expected_metadata: dict[str, str]) -> None:
@@ -808,7 +807,7 @@ def test_manifest_cache_deduplicates_manifest_files() -> None:
 
         # Verify cache size - should only have 3 unique ManifestFile objects
         # instead of 1 + 2 + 3 = 6 objects as with the old approach
-        cache = _get_manifest_cache()
+        cache = manifest_module._manifest_cache
         assert cache is not None, "Manifest cache should be enabled for this test"
         assert len(cache) == 3, f"Cache should contain exactly 3 unique ManifestFile objects, but has {len(cache)}"
 
@@ -883,7 +882,7 @@ def test_manifest_cache_efficiency_with_many_overlapping_lists() -> None:
         # With the new approach, we should have exactly N objects
 
         # Verify cache has exactly N unique entries
-        cache = _get_manifest_cache()
+        cache = manifest_module._manifest_cache
         assert cache is not None, "Manifest cache should be enabled for this test"
         assert len(cache) == num_manifests, (
             f"Cache should contain exactly {num_manifests} ManifestFile objects, "
@@ -991,7 +990,7 @@ def test_clear_manifest_cache() -> None:
         _manifests(io, list_path)
 
         # Verify cache has entries
-        cache = _get_manifest_cache()
+        cache = manifest_module._manifest_cache
         assert cache is not None, "Cache should be enabled"
         assert len(cache) > 0, "Cache should have entries after reading manifests"
 
@@ -999,7 +998,7 @@ def test_clear_manifest_cache() -> None:
         clear_manifest_cache()
 
         # Verify cache is empty but still enabled
-        cache_after = _get_manifest_cache()
+        cache_after = manifest_module._manifest_cache
         assert cache_after is not None, "Cache should still be enabled after clear"
         assert len(cache_after) == 0, "Cache should be empty after clear"
 
@@ -1008,11 +1007,9 @@ def test_clear_manifest_cache() -> None:
     "env_vars,expected_enabled,expected_size",
     [
         ({}, True, 128),  # defaults
-        ({"PYICEBERG_MANIFEST__CACHE__ENABLED": "true"}, True, 128),
-        ({"PYICEBERG_MANIFEST__CACHE__ENABLED": "false"}, False, 128),
-        ({"PYICEBERG_MANIFEST__CACHE__SIZE": "64"}, True, 64),
-        ({"PYICEBERG_MANIFEST__CACHE__SIZE": "256"}, True, 256),
-        ({"PYICEBERG_MANIFEST__CACHE__ENABLED": "false", "PYICEBERG_MANIFEST__CACHE__SIZE": "64"}, False, 64),
+        ({"PYICEBERG_MANIFEST_CACHE_SIZE": "64"}, True, 64),
+        ({"PYICEBERG_MANIFEST_CACHE_SIZE": "256"}, True, 256),
+        ({"PYICEBERG_MANIFEST_CACHE_SIZE": "0"}, False, 0),  # size=0 disables cache
     ],
 )
 def test_manifest_cache_config_valid_values(env_vars: dict[str, str], expected_enabled: bool, expected_size: int) -> None:
@@ -1020,10 +1017,9 @@ def test_manifest_cache_config_valid_values(env_vars: dict[str, str], expected_e
     import os
 
     with mock.patch.dict(os.environ, env_vars, clear=False):
-        # Reset cache state so config is re-read
-        manifest_module._manifest_cache_manager._cache = None
-        manifest_module._manifest_cache_manager._initialized = False
-        cache = _get_manifest_cache()
+        with manifest_module._manifest_cache_lock:
+            manifest_module._manifest_cache = manifest_module._init_manifest_cache()
+        cache = manifest_module._manifest_cache
 
         if expected_enabled:
             assert cache is not None, "Cache should be enabled"
@@ -1035,11 +1031,8 @@ def test_manifest_cache_config_valid_values(env_vars: dict[str, str], expected_e
 @pytest.mark.parametrize(
     "env_vars,expected_error_substring",
     [
-        ({"PYICEBERG_MANIFEST__CACHE__ENABLED": "maybe"}, "manifest.cache.enabled should be a boolean"),
-        ({"PYICEBERG_MANIFEST__CACHE__ENABLED": "invalid"}, "manifest.cache.enabled should be a boolean"),
-        ({"PYICEBERG_MANIFEST__CACHE__SIZE": "abc"}, "manifest.cache.size should be a positive integer"),
-        ({"PYICEBERG_MANIFEST__CACHE__SIZE": "0"}, "manifest.cache.size must be >= 1"),
-        ({"PYICEBERG_MANIFEST__CACHE__SIZE": "-5"}, "manifest.cache.size must be >= 1"),
+        ({"PYICEBERG_MANIFEST_CACHE_SIZE": "abc"}, "manifest-cache-size should be an integer"),
+        ({"PYICEBERG_MANIFEST_CACHE_SIZE": "-5"}, "manifest-cache-size must be >= 0"),
     ],
 )
 def test_manifest_cache_config_invalid_values(env_vars: dict[str, str], expected_error_substring: str) -> None:
@@ -1047,8 +1040,6 @@ def test_manifest_cache_config_invalid_values(env_vars: dict[str, str], expected
     import os
 
     with mock.patch.dict(os.environ, env_vars, clear=False):
-        # Reset cache state so config is re-read
-        manifest_module._manifest_cache_manager._cache = None
-        manifest_module._manifest_cache_manager._initialized = False
         with pytest.raises(ValueError, match=expected_error_substring):
-            _get_manifest_cache()
+            with manifest_module._manifest_cache_lock:
+                manifest_module._manifest_cache = manifest_module._init_manifest_cache()
