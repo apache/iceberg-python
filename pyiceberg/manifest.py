@@ -893,29 +893,15 @@ class ManifestFile(Record):
 
 
 _DEFAULT_MANIFEST_CACHE_SIZE = 128
+_manifest_cache_size = Config().get_int("manifest-cache-size") or _DEFAULT_MANIFEST_CACHE_SIZE
 _manifest_cache_lock = threading.RLock()
-
-
-def _init_manifest_cache() -> LRUCache[str, ManifestFile] | None:
-    """Initialize the manifest cache from config."""
-    manifest_cache_size = Config().get_int("manifest-cache-size")
-    if manifest_cache_size is None:
-        manifest_cache_size = _DEFAULT_MANIFEST_CACHE_SIZE
-    if manifest_cache_size < 0:
-        raise ValueError(f"manifest-cache-size must be >= 0. Current value: {manifest_cache_size}")
-    if manifest_cache_size == 0:
-        return None
-    return LRUCache(maxsize=manifest_cache_size)
-
-
-_manifest_cache = _init_manifest_cache()
+_manifest_cache: LRUCache[str, ManifestFile] = LRUCache(maxsize=_manifest_cache_size)
 
 
 def clear_manifest_cache() -> None:
-    """Clear the manifest cache. No-op if cache is disabled."""
-    if _manifest_cache is not None:
-        with _manifest_cache_lock:
-            _manifest_cache.clear()
+    """Clear the manifest cache."""
+    with _manifest_cache_lock:
+        _manifest_cache.clear()
 
 
 def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
@@ -945,18 +931,14 @@ def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
     file = io.new_input(manifest_list)
     manifest_files = list(read_manifest_list(file))
 
-    if _manifest_cache is None:
-        return tuple(manifest_files)
-
     result = []
     with _manifest_cache_lock:
-        cache = _manifest_cache
         for manifest_file in manifest_files:
             manifest_path = manifest_file.manifest_path
-            if manifest_path in cache:
-                result.append(cache[manifest_path])
+            if manifest_path in _manifest_cache:
+                result.append(_manifest_cache[manifest_path])
             else:
-                cache[manifest_path] = manifest_file
+                _manifest_cache[manifest_path] = manifest_file
                 result.append(manifest_file)
 
     return tuple(result)
