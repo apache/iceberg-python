@@ -172,8 +172,8 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
             required_last_assigned_partitioned_id = self._transaction.table_metadata.last_partition_id
             default_spec_id = self._transaction.table_metadata.default_spec_id
             requirements = (
-                AssertDefaultSpecId(default_spec_id=default_spec_id),
                 AssertLastAssignedPartitionId(last_assigned_partition_id=required_last_assigned_partitioned_id),
+                AssertDefaultSpecId(default_spec_id=default_spec_id),
             )
 
         return updates, requirements

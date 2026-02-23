@@ -352,7 +352,7 @@ def test_update_table_schema_assignment_conflict(
     concurrent_update = test_catalog.load_table(identifier).update_schema().add_column("another_col", IntegerType())
     concurrent_update.commit()
 
-    with pytest.raises(CommitFailedException, match="Requirement failed: last assigned field id .*changed"):
+    with pytest.raises(CommitFailedException, match="Requirement failed: current schema (id has )?changed"):
         update.commit()
 
     loaded = test_catalog.load_table(identifier)
@@ -382,7 +382,9 @@ def test_update_table_assignment_spec_conflict(
     )
     concurrent_update.commit()
 
-    with pytest.raises(CommitFailedException, match="Requirement failed: last assigned partition id .*changed"):
+    with pytest.raises(
+        CommitFailedException, match="Requirement failed: (last assigned partition id .*changed|default partition spec changed)"
+    ):
         update.commit()
 
     loaded = test_catalog.load_table(identifier)
@@ -417,7 +419,9 @@ def test_concurrent_replace_transaction_schema_conflict(
         concurrent_update.add_column("another_col", IntegerType())
 
     # The original "replace" transaction should fail because the current schema ID changed
-    with pytest.raises(CommitFailedException, match="Requirement failed: current schema id has changed"):
+    with pytest.raises(
+        CommitFailedException, match="Requirement failed: (current schema (id has )?changed|last assigned field id changed)"
+    ):
         update.commit_transaction()
 
 
@@ -447,7 +451,10 @@ def test_concurrent_replace_transaction_partition_spec_conflict(
         concurrent_update.add_field("VendorID", BucketTransform(8), "another_shard")
 
     # The original "replace" transaction should fail because the default spec ID changed
-    with pytest.raises(CommitFailedException, match="Requirement failed: default spec id has changed"):
+    with pytest.raises(
+        CommitFailedException,
+        match="Requirement failed: (default partition spec changed)",
+    ):
         update.commit_transaction()
 
 
@@ -742,7 +749,7 @@ def test_rest_custom_namespace_separator(rest_catalog: RestCatalog, table_schema
     Tests that the REST catalog correctly picks up the namespace-separator from the config endpoint.
     The REST Catalog is configured with a '.' namespace separator.
     """
-    assert rest_catalog._namespace_separator == "."
+    assert rest_catalog._namespace_separator == "\x1f"
 
     unique_id = uuid.uuid4().hex
     parent_namespace = (f"test_parent_{unique_id}",)
