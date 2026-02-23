@@ -352,7 +352,7 @@ def test_update_table_schema_assignment_conflict(
     concurrent_update = test_catalog.load_table(identifier).update_schema().add_column("another_col", IntegerType())
     concurrent_update.commit()
 
-    with pytest.raises(CommitFailedException, match="Requirement failed: last assigned field id has changed"):
+    with pytest.raises(CommitFailedException, match="Requirement failed: last assigned field id .*changed"):
         update.commit()
 
     loaded = test_catalog.load_table(identifier)
@@ -382,7 +382,7 @@ def test_update_table_assignment_spec_conflict(
     )
     concurrent_update.commit()
 
-    with pytest.raises(CommitFailedException, match="Requirement failed: last assigned partition id has changed"):
+    with pytest.raises(CommitFailedException, match="Requirement failed: last assigned partition id .*changed"):
         update.commit()
 
     loaded = test_catalog.load_table(identifier)
