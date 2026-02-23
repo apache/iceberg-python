@@ -70,7 +70,6 @@ jobs:
       url: https://test.pypi.org/p/pyiceberg
 
     permissions:
-      contents: read
       id-token: write  # IMPORTANT: mandatory for trusted publishing
 
     steps:
