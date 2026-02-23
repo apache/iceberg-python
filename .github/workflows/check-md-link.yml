@@ -32,6 +32,9 @@ on:
       - 'mkdocs/**'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   markdown-link-check:
     runs-on: ubuntu-latest

@@ -24,6 +24,9 @@ on:
     - cron: "0 0 * * *"  # Runs at midnight UTC every day
   workflow_dispatch:  # Allows manual triggering
 
+permissions:
+  contents: read
+
 jobs:
   set-version:
     if: github.repository == 'apache/iceberg-python'  # Only run for apache repo
@@ -67,6 +70,7 @@ jobs:
       url: https://test.pypi.org/p/pyiceberg
 
     permissions:
+      contents: read
       id-token: write  # IMPORTANT: mandatory for trusted publishing
 
     steps:
