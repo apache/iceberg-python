@@ -1744,7 +1744,7 @@ class ArrowScan:
         self._bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
         self._case_sensitive = case_sensitive
         self._limit = limit
-        self._downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE)
+        self._downcast_ns_timestamp_to_us = Config.load().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE)
 
     @property
     def _projected_field_ids(self) -> set[int]:
@@ -2685,7 +2685,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         else:
             file_schema = table_schema
 
-        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+        downcast_ns_timestamp_to_us = Config.load().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
         batches = [
             _to_requested_schema(
                 requested_schema=file_schema,
@@ -2892,7 +2892,7 @@ def _dataframe_to_data_files(
         default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
     )
     name_mapping = table_metadata.schema().name_mapping
-    downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+    downcast_ns_timestamp_to_us = Config.load().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
     task_schema = pyarrow_to_schema(
         df.schema,
         name_mapping=name_mapping,
