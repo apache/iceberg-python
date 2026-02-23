@@ -439,7 +439,7 @@ class GlueCatalog(MetastoreCatalog):
             return False
         database = database_response["Database"]
         federated = database.get("FederatedDatabase", {})
-        return (federated.get("ConnectionType") or "").lower() == GLUE_CONNECTION_S3_TABLES
+        return federated.get("ConnectionType", "") == GLUE_CONNECTION_S3_TABLES
 
     def _create_table_s3tables(
         self,
