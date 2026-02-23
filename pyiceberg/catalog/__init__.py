@@ -930,6 +930,16 @@ class MetastoreCatalog(Catalog, ABC):
         delete_files(io, prev_metadata_files, PREVIOUS_METADATA)
         delete_files(io, {table.metadata_location}, METADATA)
 
+    def create_view(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        view_version: ViewVersion,
+        location: str | None = None,
+        properties: Properties = EMPTY_DICT,
+    ) -> View:
+        raise NotImplementedError
+
     def _create_staged_table(
         self,
         identifier: str | Identifier,

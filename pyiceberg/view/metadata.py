@@ -86,7 +86,7 @@ class ViewMetadata(IcebergBaseModel):
     """A list of known versions of the view"""
     version_log: list[ViewHistoryEntry] = Field(alias="version-log")
     """A list of version log entries"""
-    properties: Properties = Field(default_factory=dict)
+    properties: dict[str, str] = Field(default_factory=dict)
     """A string to string map of view properties"""
 
     @field_validator("properties", mode="before")
