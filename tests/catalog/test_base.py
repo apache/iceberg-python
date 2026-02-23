@@ -16,17 +16,18 @@
 #  under the License.
 # pylint:disable=redefined-outer-name
 
-
 from collections.abc import Generator
 from pathlib import PosixPath
 
 import pytest
+from pytest_mock import MockFixture
 
-from pyiceberg.catalog import Catalog, load_catalog
+from pyiceberg.catalog import Catalog, _get_env_config, load_catalog
 from pyiceberg.catalog.memory import InMemoryCatalog
 from pyiceberg.io import WAREHOUSE
 from pyiceberg.schema import Schema
 from pyiceberg.types import NestedField, StringType
+from pyiceberg.utils.config import Config
 
 
 @pytest.fixture
@@ -62,6 +63,20 @@ def test_load_catalog_has_type_and_impl() -> None:
         "Must not set both catalog type and py-catalog-impl configurations, "
         "but found type sql and py-catalog-impl pyiceberg.does.not.exist.Catalog" in str(exc_info.value)
     )
+
+
+def test_get_env_config_is_lazy_and_cached(mocker: MockFixture) -> None:
+    original_config = _get_env_config()
+    _get_env_config.cache_clear()
+    config = Config({"catalog": {"test": {"type": "in-memory"}}})
+    load_mock = mocker.patch("pyiceberg.catalog.Config.load", return_value=config)
+    assert _get_env_config() is config
+    assert _get_env_config() is config
+    load_mock.assert_called_once()
+
+    _get_env_config.cache_clear()
+    mocker.patch("pyiceberg.catalog.Config.load", return_value=original_config)
+    assert _get_env_config() is original_config
 
 
 def test_catalog_repr(catalog: InMemoryCatalog) -> None:
