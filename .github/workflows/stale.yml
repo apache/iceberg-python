@@ -23,7 +23,7 @@ on:
     - cron: '0 0 * * *'
 
 permissions:
-  # All other permissions are set to none
+  contents: read
   issues: write
 
 jobs:
