@@ -23,7 +23,7 @@ on:
     - cron: '0 0 * * *'
 
 permissions:
-  contents: read
+  # All other permissions are set to none
   issues: write
 
 jobs:
