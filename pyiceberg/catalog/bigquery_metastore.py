@@ -510,7 +510,22 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
                 if bq_table.external_catalog_table_options and bq_table.external_catalog_table_options.parameters
                 else {}
             )
-            return "SUCCESS" if parameters.get(METADATA_LOCATION_PROP) == new_metadata_location else "FAILURE"
+            current_metadata_location = parameters.get(METADATA_LOCATION_PROP)
+            if current_metadata_location == new_metadata_location:
+                return "SUCCESS"
+
+            if not current_metadata_location:
+                return "FAILURE"
+
+            io = self._load_file_io(location=current_metadata_location)
+            current_metadata = FromInputFile.table_metadata(io.new_input(current_metadata_location))
+
+            previous_metadata_locations = {log.metadata_file for log in current_metadata.metadata_log}
+            previous_metadata_location = parameters.get(PREVIOUS_METADATA_LOCATION_PROP)
+            if previous_metadata_location:
+                previous_metadata_locations.add(previous_metadata_location)
+
+            return "SUCCESS" if new_metadata_location in previous_metadata_locations else "FAILURE"
         except NotFound:
             return "FAILURE"
         except Exception:
