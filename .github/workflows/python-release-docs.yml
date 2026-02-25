@@ -38,7 +38,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python }}
+          python-version: 3.12
       - name: Install UV
         uses: astral-sh/setup-uv@v7
       - name: Build docs
