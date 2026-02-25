@@ -277,3 +277,29 @@ def test_commit_table_raises_unknown_when_commit_status_is_unknown(mocker: MockF
 
     with pytest.raises(CommitStateUnknownException):
         catalog.commit_table(table, requirements=(), updates=())
+
+
+def test_check_bigquery_commit_status_returns_success_when_metadata_in_history(mocker: MockFixture) -> None:
+    client_mock = MagicMock()
+    bq_table = MagicMock()
+    bq_table.external_catalog_table_options = MagicMock(
+        parameters={"metadata_location": "gs://bucket/db/table/metadata/00002.metadata.json"}
+    )
+    client_mock.get_table.return_value = bq_table
+    mocker.patch("pyiceberg.catalog.bigquery_metastore.Client", return_value=client_mock)
+    mocker.patch.dict(os.environ, values={"PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID": "True"})
+
+    catalog = BigQueryMetastoreCatalog("test_catalog", **{"gcp.bigquery.project-id": "my-project"})
+    io_mock = MagicMock()
+    catalog._load_file_io = MagicMock(return_value=io_mock)  # type: ignore[method-assign]
+
+    current_metadata = MagicMock()
+    current_metadata.metadata_log = [MagicMock(metadata_file="gs://bucket/db/table/metadata/00001.metadata.json")]
+    mocker.patch("pyiceberg.catalog.bigquery_metastore.FromInputFile.table_metadata", return_value=current_metadata)
+
+    status = catalog._check_bigquery_commit_status(
+        TableReference(dataset_ref=DatasetReference(project="my-project", dataset_id="my-dataset"), table_id="my-table"),
+        "gs://bucket/db/table/metadata/00001.metadata.json",
+    )
+
+    assert status == "SUCCESS"
