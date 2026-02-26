@@ -257,10 +257,19 @@ _RETRY_ARGS = {
 }
 
 
+class StorageCredential(IcebergBaseModel):
+    prefix: str = Field()
+    config: Properties = Field()
+
+
 class TableResponse(IcebergBaseModel):
     metadata_location: str | None = Field(alias="metadata-location", default=None)
     metadata: TableMetadata
     config: Properties = Field(default_factory=dict)
+    storage_credentials: List[StorageCredential] = Field(
+        default_factory=list,
+        alias="storage-credentials"
+    )
 
 
 class CreateTableRequest(IcebergBaseModel):
@@ -739,7 +748,16 @@ class RestCatalog(Catalog):
             metadata_location=table_response.metadata_location,  # type: ignore
             metadata=table_response.metadata,
             io=self._load_file_io(
-                {**table_response.metadata.properties, **table_response.config}, table_response.metadata_location
+                {
+                    **table_response.metadata.properties,
+                    **self._get_credentials(
+                        table_response.storage_credentials,
+                        table_response.config,
+                        table_response.metadata_location,
+                        getattr(table_response.metadata, "location", None),
+                    ),
+                },
+                table_response.metadata_location,
             ),
             catalog=self,
             config=table_response.config,
@@ -751,10 +769,41 @@ class RestCatalog(Catalog):
             metadata_location=table_response.metadata_location,  # type: ignore
             metadata=table_response.metadata,
             io=self._load_file_io(
-                {**table_response.metadata.properties, **table_response.config}, table_response.metadata_location
+                {
+                    **table_response.metadata.properties,
+                    **self._get_credentials(
+                        table_response.storage_credentials,
+                        table_response.config,
+                        table_response.metadata_location,
+                        getattr(table_response.metadata, "location", None),
+                    ),
+                },
+                table_response.metadata_location,
             ),
             catalog=self,
         )
+
+    @staticmethod
+    def _get_credentials(
+        storage_credentials: Optional[List[StorageCredential]],
+        config: Properties,
+        metadata_location: Optional[str],
+        table_location: Optional[str],
+    ) -> Properties:
+        if not storage_credentials:
+            return config
+
+        target = metadata_location or table_location
+        if not target:
+            return config
+
+        # Choose the most specific (longest) matching prefix
+        matching: List[StorageCredential] = [sc for sc in storage_credentials if target.startswith(sc.prefix)]
+        if not matching:
+            return config
+
+        selected = max(matching, key=lambda sc: len(sc.prefix))
+        return selected.config
 
     def _refresh_token(self) -> None:
         # Reactive token refresh is atypical - we should proactively refresh tokens in a separate thread
