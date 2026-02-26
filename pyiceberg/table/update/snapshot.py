@@ -496,36 +496,7 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         return len(self._deleted_entries()) > 0
 
 
-class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
-    def _existing_manifests(self) -> list[ManifestFile]:
-        """To determine if there are any existing manifest files.
-
-        A fast append will add another ManifestFile to the ManifestList.
-        All the existing manifest files are considered existing.
-        """
-        existing_manifests = []
-
-        if self._parent_snapshot_id is not None:
-            previous_snapshot = self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
-
-            if previous_snapshot is None:
-                raise ValueError(f"Snapshot could not be found: {self._parent_snapshot_id}")
-
-            for manifest in previous_snapshot.manifests(io=self._io):
-                if manifest.has_added_files() or manifest.has_existing_files() or manifest.added_snapshot_id == self._snapshot_id:
-                    existing_manifests.append(manifest)
-
-        return existing_manifests
-
-    def _deleted_entries(self) -> list[ManifestEntry]:
-        """To determine if we need to record any deleted manifest entries.
-
-        In case of an append, nothing is deleted.
-        """
-        return []
-
-
-class _MergeAppendFiles(_FastAppendFiles):
+class _MergingSnapshotProducer(_SnapshotProducer[U]):
     _target_size_bytes: int
     _min_count_to_merge: int
     _merge_enabled: bool
@@ -561,8 +532,8 @@ class _MergeAppendFiles(_FastAppendFiles):
     def _process_manifests(self, manifests: list[ManifestFile]) -> list[ManifestFile]:
         """To perform any post-processing on the manifests before writing them to the new snapshot.
 
-        In _MergeAppendFiles, we merge manifests based on the target size and the minimum count to merge
-        if automatic merge is enabled.
+        We merge manifests based on the target size and the minimum count to merge if automatic
+        merge is enabled.
         """
         unmerged_data_manifests = [manifest for manifest in manifests if manifest.content == ManifestContent.DATA]
         unmerged_deletes_manifests = [manifest for manifest in manifests if manifest.content == ManifestContent.DELETES]
@@ -577,7 +548,44 @@ class _MergeAppendFiles(_FastAppendFiles):
         return data_manifest_merge_manager.merge_manifests(unmerged_data_manifests) + unmerged_deletes_manifests
 
 
-class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
+class _AppendFiles(_SnapshotProducer[U]):
+    def _existing_manifests(self) -> list[ManifestFile]:
+        """To determine if there are any existing manifest files.
+
+        An append will add another ManifestFile to the ManifestList.
+        All the existing manifest files are considered existing.
+        """
+        existing_manifests = []
+
+        if self._parent_snapshot_id is not None:
+            previous_snapshot = self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
+
+            if previous_snapshot is None:
+                raise ValueError(f"Snapshot could not be found: {self._parent_snapshot_id}")
+
+            for manifest in previous_snapshot.manifests(io=self._io):
+                if manifest.has_added_files() or manifest.has_existing_files() or manifest.added_snapshot_id == self._snapshot_id:
+                    existing_manifests.append(manifest)
+
+        return existing_manifests
+
+    def _deleted_entries(self) -> list[ManifestEntry]:
+        """To determine if we need to record any deleted manifest entries.
+
+        In case of an append, nothing is deleted.
+        """
+        return []
+
+
+class _FastAppendFiles(_AppendFiles["_FastAppendFiles"]):
+    pass
+
+
+class _MergeAppendFiles(_MergingSnapshotProducer["_MergeAppendFiles"], _AppendFiles["_MergeAppendFiles"]):
+    pass
+
+
+class _OverwriteFiles(_MergingSnapshotProducer["_OverwriteFiles"]):
     """Overwrites data from the table. This will produce an OVERWRITE snapshot.
 
     Data and delete files were added and removed in a logical overwrite operation.
@@ -742,7 +750,13 @@ class _ManifestMergeManager(Generic[U]):
     def _group_by_spec(self, manifests: list[ManifestFile]) -> dict[int, list[ManifestFile]]:
         groups = defaultdict(list)
         for manifest in manifests:
-            groups[manifest.partition_spec_id].append(manifest)
+            # filter out manifests that only has non-live data files
+            if (
+                manifest.has_added_files()
+                or manifest.has_existing_files()
+                or manifest.added_snapshot_id == self._snapshot_producer._snapshot_id
+            ):
+                groups[manifest.partition_spec_id].append(manifest)
         return groups
 
     def _create_manifest(self, spec_id: int, manifest_bin: list[ManifestFile]) -> ManifestFile:
