@@ -77,6 +77,7 @@ TEST_PRIMITIVE_TYPES = [
     FixedType(16),
     FixedType(20),
     UUIDType(),
+    UnknownType(),
 ]
 
 
@@ -880,6 +881,8 @@ def should_promote(file_type: IcebergType, read_type: IcebergType) -> bool:
     if isinstance(file_type, DecimalType) and isinstance(read_type, DecimalType):
         return file_type.precision <= read_type.precision and file_type.scale == file_type.scale
     if isinstance(file_type, FixedType) and isinstance(read_type, UUIDType) and len(file_type) == 16:
+        return True
+    if isinstance(file_type, UnknownType):
         return True
     return False
 
