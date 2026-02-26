@@ -699,7 +699,6 @@ class Transaction:
                     )
 
             if len(replaced_files) > 0:
-                print("HEERE")
                 with self.update_snapshot(
                     snapshot_properties=snapshot_properties, branch=branch
                 ).overwrite() as overwrite_snapshot:
