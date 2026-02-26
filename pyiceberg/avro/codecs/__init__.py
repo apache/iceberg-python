@@ -48,3 +48,10 @@ KNOWN_CODECS: dict[AvroCompressionCodec, type[Codec] | None] = {
 
 # Map to convert the naming from Iceberg to Avro
 CODEC_MAPPING_ICEBERG_TO_AVRO: dict[str, str] = {"gzip": "deflate", "zstd": "zstandard"}
+
+__all__ = [
+    "AvroCompressionCodec",
+    "AVRO_CODEC_KEY",
+    "CODEC_MAPPING_ICEBERG_TO_AVRO",
+    "KNOWN_CODECS",
+]

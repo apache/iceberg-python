@@ -17,13 +17,13 @@
 import io
 from abc import ABC, abstractmethod
 from io import SEEK_CUR
-from typing import (
-    cast,
-)
+from typing import cast
 
 from pyiceberg.avro import STRUCT_DOUBLE, STRUCT_FLOAT
 from pyiceberg.io import InputStream
 from pyiceberg.typedef import UTF8
+
+__all__: list[str] = []
 
 
 class BinaryDecoder(ABC):

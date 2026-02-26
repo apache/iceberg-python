@@ -21,3 +21,8 @@ STRUCT_FLOAT = struct.Struct("<f")  # little-endian float
 STRUCT_DOUBLE = struct.Struct("<d")  # little-endian double
 STRUCT_INT32 = struct.Struct("<i")
 STRUCT_INT64 = struct.Struct("<q")
+
+# Imported after struct constants to avoid circular imports in encoder/decoder.
+from pyiceberg.avro.file import AvroFile, AvroFileHeader, AvroOutputFile  # noqa: E402
+
+__all__ = ["AvroFile", "AvroFileHeader", "AvroOutputFile"]
