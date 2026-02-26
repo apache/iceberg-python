@@ -182,6 +182,32 @@ jobs:
         path: .coverage*
         include-hidden-files: true
 
+  benchmark-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+    - name: Install UV
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+    - name: Install system dependencies
+      run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
+    - name: Install
+      run: make install
+    - name: Run benchmarks
+      run: make test-benchmark
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results
+        path: |
+          .benchmarks/
+          benchmark-*.json
+        if-no-files-found: ignore
+
   integration-coverage-report:
     runs-on: ubuntu-latest
     needs: [integration-test, integration-test-s3, integration-test-adls, integration-test-gcs]
