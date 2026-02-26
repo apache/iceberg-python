@@ -88,6 +88,19 @@ def test_identity_transform_residual() -> None:
     assert residual == AlwaysFalse()
 
 
+def test_residual_evaluator_of_returns_fresh_instance() -> None:
+    schema = Schema(NestedField(50, "dateint", IntegerType()), NestedField(51, "hour", IntegerType()))
+    spec = PartitionSpec(PartitionField(50, 1050, IdentityTransform(), "dateint_part"))
+    predicate = LessThan("dateint", 20170815)
+
+    res_eval_1 = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
+    res_eval_2 = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
+
+    assert res_eval_1 is not res_eval_2
+    assert res_eval_1.residual_for(Record(20170814)) == AlwaysTrue()
+    assert res_eval_2.residual_for(Record(20170816)) == AlwaysFalse()
+
+
 def test_case_insensitive_identity_transform_residuals() -> None:
     schema = Schema(NestedField(50, "dateint", IntegerType()), NestedField(51, "hour", IntegerType()))
 
