@@ -190,14 +190,7 @@ Now, upload the files from the same directory:
 : "${VERSION_WITH_RC:?ERROR: VERSION_WITH_RC is not set or is empty}"
 : "${RC:?ERROR: RC is not set or is empty}"
 
-export SVN_TMP_DIR=/tmp/iceberg-${VERSION}/
-svn checkout https://dist.apache.org/repos/dist/dev/iceberg $SVN_TMP_DIR
-
-export SVN_TMP_DIR_VERSIONED=${SVN_TMP_DIR}pyiceberg-$VERSION_WITH_RC/
-mkdir -p $SVN_TMP_DIR_VERSIONED
-cp svn-release-candidate-${VERSION}rc${RC}/* $SVN_TMP_DIR_VERSIONED
-svn add $SVN_TMP_DIR_VERSIONED
-svn ci -m "PyIceberg ${VERSION_WITH_RC}" ${SVN_TMP_DIR_VERSIONED}
+svn import "svn-release-candidate-${VERSION}rc${RC}" "https://dist.apache.org/repos/dist/dev/iceberg/pyiceberg-${VERSION_WITH_RC}" -m "PyIceberg ${VERSION_WITH_RC}"
 ```
 
 Verify the artifact is uploaded to [https://dist.apache.org/repos/dist/dev/iceberg](https://dist.apache.org/repos/dist/dev/iceberg/).
