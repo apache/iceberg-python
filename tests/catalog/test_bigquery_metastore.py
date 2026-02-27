@@ -17,13 +17,14 @@
 import os
 from unittest.mock import MagicMock
 
+import pytest
 from google.api_core.exceptions import NotFound
 from google.cloud.bigquery import Dataset, DatasetReference, Table, TableReference
 from google.cloud.bigquery.external_config import ExternalCatalogDatasetOptions, ExternalCatalogTableOptions
 from pytest_mock import MockFixture
 
 from pyiceberg.catalog.bigquery_metastore import ICEBERG_TABLE_TYPE_VALUE, TABLE_TYPE_PROP, BigQueryMetastoreCatalog
-from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.exceptions import CommitStateUnknownException, NoSuchTableError
 from pyiceberg.schema import Schema
 
 
@@ -178,3 +179,127 @@ def test_list_namespaces(mocker: MockFixture) -> None:
     assert ("dataset1",) in namespaces
     assert ("dataset2",) in namespaces
     client_mock.list_datasets.assert_called_once()
+
+
+def test_commit_table_create_path_uses_create_table(mocker: MockFixture) -> None:
+    client_mock = MagicMock()
+    client_mock.get_table.side_effect = NotFound("missing")
+    mocker.patch("pyiceberg.catalog.bigquery_metastore.Client", return_value=client_mock)
+    mocker.patch.dict(os.environ, values={"PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID": "True"})
+
+    catalog = BigQueryMetastoreCatalog("test_catalog", **{"gcp.bigquery.project-id": "my-project"})
+    table = MagicMock()
+    table.name.return_value = ("my-dataset", "my-table")
+
+    staged = MagicMock()
+    staged.metadata = MagicMock()
+    staged.metadata_location = "gs://bucket/db/table/metadata/00001.metadata.json"
+    staged.io = MagicMock()
+    mocker.patch.object(catalog, "_update_and_stage_table", return_value=staged)
+    mocker.patch.object(catalog, "_write_metadata")
+    mocker.patch.object(catalog, "_make_new_table", return_value=MagicMock())
+    commit_response = MagicMock()
+    commit_response.metadata_location = staged.metadata_location
+    mocker.patch("pyiceberg.catalog.bigquery_metastore.CommitTableResponse", return_value=commit_response)
+
+    response = catalog.commit_table(table, requirements=(), updates=())
+
+    client_mock.create_table.assert_called_once()
+    client_mock.update_table.assert_not_called()
+    assert response.metadata_location == staged.metadata_location
+
+
+def test_commit_table_update_path_uses_update_table(mocker: MockFixture) -> None:
+    client_mock = MagicMock()
+    current_bq_table = MagicMock()
+    client_mock.get_table.return_value = current_bq_table
+    mocker.patch("pyiceberg.catalog.bigquery_metastore.Client", return_value=client_mock)
+    mocker.patch.dict(os.environ, values={"PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID": "True"})
+
+    catalog = BigQueryMetastoreCatalog("test_catalog", **{"gcp.bigquery.project-id": "my-project"})
+    table = MagicMock()
+    table.name.return_value = ("my-dataset", "my-table")
+
+    current_table = MagicMock()
+    current_table.metadata = MagicMock()
+    current_table.metadata_location = "gs://bucket/db/table/metadata/00000.metadata.json"
+    mocker.patch.object(catalog, "_convert_bigquery_table_to_iceberg_table", return_value=current_table)
+
+    staged = MagicMock()
+    staged.metadata = MagicMock()
+    staged.metadata.location = "gs://bucket/db/table"
+    staged.metadata_location = "gs://bucket/db/table/metadata/00001.metadata.json"
+    staged.io = MagicMock()
+    mocker.patch.object(catalog, "_update_and_stage_table", return_value=staged)
+    mocker.patch.object(catalog, "_write_metadata")
+    mocker.patch.object(catalog, "_create_table_parameters", return_value={"metadata_location": staged.metadata_location})
+    mocker.patch.object(catalog, "_create_external_catalog_table_options", return_value=MagicMock())
+    delete_old_metadata = mocker.patch.object(catalog, "_delete_old_metadata")
+    commit_response = MagicMock()
+    commit_response.metadata_location = staged.metadata_location
+    mocker.patch("pyiceberg.catalog.bigquery_metastore.CommitTableResponse", return_value=commit_response)
+
+    response = catalog.commit_table(table, requirements=(), updates=())
+
+    client_mock.update_table.assert_called_once_with(current_bq_table, ["external_catalog_table_options"])
+    client_mock.create_table.assert_not_called()
+    delete_old_metadata.assert_called_once_with(staged.io, current_table.metadata, staged.metadata)
+    assert response.metadata_location == staged.metadata_location
+
+
+def test_commit_table_raises_unknown_when_commit_status_is_unknown(mocker: MockFixture) -> None:
+    client_mock = MagicMock()
+    current_bq_table = MagicMock()
+    client_mock.get_table.return_value = current_bq_table
+    client_mock.update_table.side_effect = RuntimeError("boom")
+    mocker.patch("pyiceberg.catalog.bigquery_metastore.Client", return_value=client_mock)
+    mocker.patch.dict(os.environ, values={"PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID": "True"})
+
+    catalog = BigQueryMetastoreCatalog("test_catalog", **{"gcp.bigquery.project-id": "my-project"})
+    table = MagicMock()
+    table.name.return_value = ("my-dataset", "my-table")
+
+    current_table = MagicMock()
+    current_table.metadata = MagicMock()
+    current_table.metadata_location = "gs://bucket/db/table/metadata/00000.metadata.json"
+    mocker.patch.object(catalog, "_convert_bigquery_table_to_iceberg_table", return_value=current_table)
+
+    staged = MagicMock()
+    staged.metadata = MagicMock()
+    staged.metadata.location = "gs://bucket/db/table"
+    staged.metadata_location = "gs://bucket/db/table/metadata/00001.metadata.json"
+    staged.io = MagicMock()
+    mocker.patch.object(catalog, "_update_and_stage_table", return_value=staged)
+    mocker.patch.object(catalog, "_write_metadata")
+    mocker.patch.object(catalog, "_create_table_parameters", return_value={"metadata_location": staged.metadata_location})
+    mocker.patch.object(catalog, "_create_external_catalog_table_options", return_value=MagicMock())
+    mocker.patch.object(catalog, "_check_bigquery_commit_status", return_value="UNKNOWN")
+
+    with pytest.raises(CommitStateUnknownException):
+        catalog.commit_table(table, requirements=(), updates=())
+
+
+def test_check_bigquery_commit_status_returns_success_when_metadata_in_history(mocker: MockFixture) -> None:
+    client_mock = MagicMock()
+    bq_table = MagicMock()
+    bq_table.external_catalog_table_options = MagicMock(
+        parameters={"metadata_location": "gs://bucket/db/table/metadata/00002.metadata.json"}
+    )
+    client_mock.get_table.return_value = bq_table
+    mocker.patch("pyiceberg.catalog.bigquery_metastore.Client", return_value=client_mock)
+    mocker.patch.dict(os.environ, values={"PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID": "True"})
+
+    catalog = BigQueryMetastoreCatalog("test_catalog", **{"gcp.bigquery.project-id": "my-project"})
+    io_mock = MagicMock()
+    catalog._load_file_io = MagicMock(return_value=io_mock)  # type: ignore[method-assign]
+
+    current_metadata = MagicMock()
+    current_metadata.metadata_log = [MagicMock(metadata_file="gs://bucket/db/table/metadata/00001.metadata.json")]
+    mocker.patch("pyiceberg.catalog.bigquery_metastore.FromInputFile.table_metadata", return_value=current_metadata)
+
+    status = catalog._check_bigquery_commit_status(
+        TableReference(dataset_ref=DatasetReference(project="my-project", dataset_id="my-dataset"), table_id="my-table"),
+        "gs://bucket/db/table/metadata/00001.metadata.json",
+    )
+
+    assert status == "SUCCESS"
