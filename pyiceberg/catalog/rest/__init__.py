@@ -40,6 +40,7 @@ from pyiceberg.catalog.rest.scan_planning import (
     PlanSubmitted,
     PlanTableScanRequest,
     ScanTasks,
+    StorageCredential,
 )
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
@@ -261,6 +262,7 @@ class TableResponse(IcebergBaseModel):
     metadata_location: str | None = Field(alias="metadata-location", default=None)
     metadata: TableMetadata
     config: Properties = Field(default_factory=dict)
+    storage_credentials: list[StorageCredential] = Field(alias="storage-credentials", default_factory=list)
 
 
 class CreateTableRequest(IcebergBaseModel):
@@ -395,6 +397,26 @@ class RestCatalog(Catalog):
             self._init_sigv4(session)
 
         return session
+
+    @staticmethod
+    def _resolve_storage_credentials(storage_credentials: list[StorageCredential], location: str | None) -> Properties:
+        """Resolve the best-matching storage credential by longest prefix match.
+
+        Mirrors the Java implementation in S3FileIO.clientForStoragePath() which iterates
+        over storage credential prefixes and selects the one with the longest match.
+
+        See: https://github.com/apache/iceberg/blob/main/aws/src/main/java/org/apache/iceberg/aws/s3/S3FileIO.java
+        """
+        if not storage_credentials or not location:
+            return {}
+
+        best_match: StorageCredential | None = None
+        for cred in storage_credentials:
+            if location.startswith(cred.prefix):
+                if best_match is None or len(cred.prefix) > len(best_match.prefix):
+                    best_match = cred
+
+        return best_match.config if best_match else {}
 
     def _load_file_io(self, properties: Properties = EMPTY_DICT, location: str | None = None) -> FileIO:
         merged_properties = {**self.properties, **properties}
@@ -734,24 +756,34 @@ class RestCatalog(Catalog):
         session.mount(self.uri, SigV4Adapter(**self.properties))
 
     def _response_to_table(self, identifier_tuple: tuple[str, ...], table_response: TableResponse) -> Table:
+        # Per Iceberg spec: storage-credentials take precedence over config
+        credential_config = self._resolve_storage_credentials(
+            table_response.storage_credentials, table_response.metadata_location
+        )
         return Table(
             identifier=identifier_tuple,
             metadata_location=table_response.metadata_location,  # type: ignore
             metadata=table_response.metadata,
             io=self._load_file_io(
-                {**table_response.metadata.properties, **table_response.config}, table_response.metadata_location
+                {**table_response.metadata.properties, **table_response.config, **credential_config},
+                table_response.metadata_location,
             ),
             catalog=self,
             config=table_response.config,
         )
 
     def _response_to_staged_table(self, identifier_tuple: tuple[str, ...], table_response: TableResponse) -> StagedTable:
+        # Per Iceberg spec: storage-credentials take precedence over config
+        credential_config = self._resolve_storage_credentials(
+            table_response.storage_credentials, table_response.metadata_location
+        )
         return StagedTable(
             identifier=identifier_tuple,
             metadata_location=table_response.metadata_location,  # type: ignore
             metadata=table_response.metadata,
             io=self._load_file_io(
-                {**table_response.metadata.properties, **table_response.config}, table_response.metadata_location
+                {**table_response.metadata.properties, **table_response.config, **credential_config},
+                table_response.metadata_location,
             ),
             catalog=self,
         )
