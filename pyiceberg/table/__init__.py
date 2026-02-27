@@ -75,7 +75,7 @@ from pyiceberg.table.update import (
     update_table_metadata,
 )
 from pyiceberg.table.update.schema import UpdateSchema
-from pyiceberg.table.update.snapshot import ManageSnapshots, UpdateSnapshot, _FastAppendFiles
+from pyiceberg.table.update.snapshot import ManageSnapshots, UpdateSnapshot, _AppendFiles
 from pyiceberg.table.update.sorting import UpdateSortOrder
 from pyiceberg.table.update.spec import UpdateSpec
 from pyiceberg.table.update.statistics import UpdateStatistics
@@ -384,7 +384,7 @@ class Transaction:
 
     def _append_snapshot_producer(
         self, snapshot_properties: dict[str, str], branch: str | None = MAIN_BRANCH
-    ) -> _FastAppendFiles:
+    ) -> _AppendFiles[Any]:
         """Determine the append type based on table properties.
 
         Args:
