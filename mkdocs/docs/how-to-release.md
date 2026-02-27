@@ -134,7 +134,11 @@ This action will generate two final artifacts:
 If `gh` is available, watch the GitHub Action progress using:
 
 ```bash
+: "${GIT_TAG:?ERROR: GIT_TAG is not set or is empty}"
+
 RUN_ID=$(gh run list --repo apache/iceberg-python --workflow "Python Build Release Candidate" --branch "${GIT_TAG}" --event push --json databaseId -q '.[0].databaseId')
+: "${RUN_ID:?ERROR: RUN_ID could not be determined}"
+
 echo "Waiting for workflow to complete, this will take several minutes..."
 gh run watch $RUN_ID --repo apache/iceberg-python
 ```
@@ -142,6 +146,8 @@ gh run watch $RUN_ID --repo apache/iceberg-python
 and download the artifacts using:
 
 ```bash
+: "${RUN_ID:?ERROR: RUN_ID is not set or is empty}"
+
 gh run download $RUN_ID --repo apache/iceberg-python
 ```
 
@@ -159,6 +165,9 @@ Navigate to the artifact directory. Generate signature and checksum files:
 * `.sha512` files: SHA-512 checksums for verifying file integrity.
 
 ```bash
+: "${VERSION:?ERROR: VERSION is not set or is empty}"
+: "${RC:?ERROR: RC is not set or is empty}"
+
 (
     cd svn-release-candidate-${VERSION}rc${RC}
 
@@ -177,14 +186,11 @@ The parentheses `()` create a subshell. Any changes to the directory (`cd`) are 
 Now, upload the files from the same directory:
 
 ```bash
-export SVN_TMP_DIR=/tmp/iceberg-${VERSION}/
-svn checkout https://dist.apache.org/repos/dist/dev/iceberg $SVN_TMP_DIR
+: "${VERSION:?ERROR: VERSION is not set or is empty}"
+: "${VERSION_WITH_RC:?ERROR: VERSION_WITH_RC is not set or is empty}"
+: "${RC:?ERROR: RC is not set or is empty}"
 
-export SVN_TMP_DIR_VERSIONED=${SVN_TMP_DIR}pyiceberg-$VERSION_WITH_RC/
-mkdir -p $SVN_TMP_DIR_VERSIONED
-cp svn-release-candidate-${VERSION}rc${RC}/* $SVN_TMP_DIR_VERSIONED
-svn add $SVN_TMP_DIR_VERSIONED
-svn ci -m "PyIceberg ${VERSION_WITH_RC}" ${SVN_TMP_DIR_VERSIONED}
+svn import "svn-release-candidate-${VERSION}rc${RC}" "https://dist.apache.org/repos/dist/dev/iceberg/pyiceberg-${VERSION_WITH_RC}" -m "PyIceberg ${VERSION_WITH_RC}"
 ```
 
 Verify the artifact is uploaded to [https://dist.apache.org/repos/dist/dev/iceberg](https://dist.apache.org/repos/dist/dev/iceberg/).
@@ -215,6 +221,9 @@ Update the artifact directory to PyPi using `twine`. This **won't** bump the ver
 <!-- prettier-ignore-end -->
 
 ```bash
+: "${VERSION:?ERROR: VERSION is not set or is empty}"
+: "${RC:?ERROR: RC is not set or is empty}"
+
 twine upload pypi-release-candidate-${VERSION}rc${RC}/*
 ```
 
@@ -227,6 +236,10 @@ Verify the artifact is uploaded to [PyPi](https://pypi.org/project/pyiceberg/#hi
 Final step is to generate the email to the dev mail list:
 
 ```bash
+: "${GIT_TAG:?ERROR: GIT_TAG is not set or is empty}"
+: "${VERSION:?ERROR: VERSION is not set or is empty}"
+: "${VERSION_WITH_RC:?ERROR: VERSION_WITH_RC is not set or is empty}"
+
 export GIT_TAG_REF=$(git show-ref ${GIT_TAG})
 export GIT_TAG_HASH=${GIT_TAG_REF:0:40}
 export LAST_COMMIT_ID=$(git rev-list ${GIT_TAG} 2> /dev/null | head -n 1)
@@ -340,6 +353,8 @@ The latest version can be pushed to PyPi. Check out the Apache SVN and make sure
 <!-- prettier-ignore-end -->
 
 ```bash
+: "${VERSION:?ERROR: VERSION is not set or is empty}"
+
 svn checkout https://dist.apache.org/repos/dist/release/iceberg/pyiceberg-${VERSION} /tmp/iceberg-dist-release/pyiceberg-${VERSION}
 
 cd /tmp/iceberg-dist-release/pyiceberg-${VERSION}
