@@ -30,6 +30,7 @@ from pyiceberg import __version__
 from pyiceberg.catalog import URI, Catalog, load_catalog
 from pyiceberg.cli.output import ConsoleOutput, JsonOutput, Output
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchPropertyException, NoSuchTableError
+from pyiceberg.io import WAREHOUSE
 from pyiceberg.table import TableProperties
 from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
 from pyiceberg.utils.properties import property_as_int
@@ -66,7 +67,7 @@ def catch_exception() -> Callable:  # type: ignore
 @click.option("--ugi")
 @click.option("--uri")
 @click.option("--credential")
-@click.option("--prefix")
+@click.option("--warehouse")
 @click.pass_context
 def run(
     ctx: Context,
@@ -77,7 +78,7 @@ def run(
     ugi: str | None,
     uri: str | None,
     credential: str | None,
-    prefix: str | None,
+    warehouse: str | None,
 ) -> None:
     logging.basicConfig(
         level=getattr(logging, log_level.upper()),
@@ -91,8 +92,8 @@ def run(
         properties[URI] = uri
     if credential:
         properties["credential"] = credential
-    if prefix:
-        properties["prefix"] = prefix
+    if warehouse:
+        properties[WAREHOUSE] = warehouse
 
     ctx.ensure_object(dict)
     if output == "text":
