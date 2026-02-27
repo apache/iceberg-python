@@ -42,6 +42,7 @@ from pyiceberg.table.name_mapping import (
 from pyiceberg.table.update import (
     AddSchemaUpdate,
     AssertCurrentSchemaId,
+    AssertLastAssignedFieldId,
     SetCurrentSchemaUpdate,
     SetPropertiesUpdate,
     TableRequirement,
@@ -633,7 +634,10 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         # Check if it is different current schema ID
         if existing_schema_id != self._schema.schema_id:
-            requirements += (AssertCurrentSchemaId(current_schema_id=self._schema.schema_id),)
+            requirements += (
+                AssertCurrentSchemaId(current_schema_id=self._schema.schema_id),
+                AssertLastAssignedFieldId(last_assigned_field_id=self._transaction.table_metadata.last_column_id),
+            )
             if existing_schema_id is None:
                 updates += (
                     AddSchemaUpdate(schema=new_schema),
