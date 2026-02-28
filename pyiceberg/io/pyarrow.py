@@ -1879,11 +1879,8 @@ class ArrowScan:
         Raises:
             ResolveError: When a required field cannot be found in the file
             ValueError: When a field type in the file cannot be projected to the schema type,
-                or when an invalid order value is provided, or when concurrent_streams < 1.
+                or when concurrent_streams < 1.
         """
-        if not isinstance(order, ScanOrder):
-            raise ValueError(f"Invalid order: {order!r}. Must be a ScanOrder instance (TaskOrder() or ArrivalOrder()).")
-
         task_list, deletes_per_file = self._prepare_tasks_and_deletes(tasks)
 
         if isinstance(order, ArrivalOrder):
