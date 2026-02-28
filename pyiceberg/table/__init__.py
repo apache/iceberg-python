@@ -193,6 +193,13 @@ class ArrivalOrder(ScanOrder):
     batch_size: int | None = None
     max_buffered_batches: int = 16
 
+    def __post_init__(self) -> None:
+        """Validate ArrivalOrder parameters."""
+        if self.concurrent_streams < 1:
+            raise ValueError(f"concurrent_streams must be >= 1, got {self.concurrent_streams}")
+        if self.max_buffered_batches < 1:
+            raise ValueError(f"max_buffered_batches must be >= 1, got {self.max_buffered_batches}")
+
 
 @dataclass()
 class UpsertResult:

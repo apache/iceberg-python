@@ -378,7 +378,8 @@ for buf in tbl.scan().to_arrow_batch_reader(order=ArrivalOrder(concurrent_stream
 | Configuration | File ordering | Within-file ordering |
 |---|---|---|
 | `TaskOrder()` (default) | Batches grouped by file, in task submission order | Row order |
-| `ArrivalOrder()` | Interleaved across files (no grouping guarantee) | Row order within each file |
+| `ArrivalOrder(concurrent_streams=1)` | Sequential, one file at a time | Row order |
+| `ArrivalOrder(concurrent_streams>1)` | Interleaved across files (no grouping guarantee) | Row order within each file |
 
 The `limit` parameter is enforced correctly regardless of configuration.
 
