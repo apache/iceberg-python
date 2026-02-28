@@ -85,6 +85,8 @@ from pyiceberg.types import (
     UUIDType,
 )
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool
+from pyiceberg.view import View
+from pyiceberg.view.metadata import ViewVersion
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -808,6 +810,16 @@ class GlueCatalog(MetastoreCatalog):
         self.glue.update_database(Name=database_name, DatabaseInput=_construct_database_input(database_name, updated_properties))
 
         return properties_update_summary
+
+    def create_view(
+        self,
+        identifier: str | Identifier,
+        schema: Union[Schema, "pa.Schema"],
+        view_version: ViewVersion,
+        location: str | None = None,
+        properties: Properties = EMPTY_DICT,
+    ) -> View:
+        raise NotImplementedError
 
     def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         raise NotImplementedError

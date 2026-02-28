@@ -65,6 +65,7 @@ from pyiceberg.types import (
     StringType,
     UUIDType,
 )
+from pyiceberg.view.metadata import SQLViewRepresentation, ViewVersion
 from utils import TABLE_SCHEMA, _create_table
 
 
@@ -1757,6 +1758,45 @@ def test_table_v1_with_null_nested_namespace(session_catalog: Catalog, arrow_tab
 
     # We expect no error here
     session_catalog.drop_table(identifier)
+
+
+@pytest.mark.integration
+def test_create_view(
+    spark: SparkSession,
+    session_catalog: Catalog,
+) -> None:
+    # Create a view using the REST Catalog.
+    identifier = "default.some_view"
+    schema = pa.schema([pa.field("some_col", pa.int32())])
+    view_version = ViewVersion(
+        version_id=1,
+        schema_id=1,
+        timestamp_ms=int(time.time() * 1000),
+        summary={},
+        representations=[
+            SQLViewRepresentation(
+                type="sql",
+                sql="SELECT 1 as some_col",
+                dialect="spark",
+            )
+        ],
+        default_namespace=["default"],
+    )
+    session_catalog.create_view(
+        identifier=identifier,
+        schema=schema,
+        view_version=view_version,
+    )
+
+    # Ensure the view exists.
+    assert session_catalog.view_exists(identifier)
+
+    # Query the view in spark to ensure it was properly created.
+    df = spark.table(identifier)
+    assert df.count() == 1
+    assert df.collect()[0].some_col == 1
+
+    session_catalog.drop_view(identifier)  # clean up
 
 
 @pytest.mark.integration
