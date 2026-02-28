@@ -33,6 +33,8 @@ from pyiceberg.catalog.rest import (
     DEFAULT_ENDPOINTS,
     EMPTY_BODY_SHA256,
     OAUTH2_SERVER_URI,
+    SIGV4_DEFAULT_MAX_RETRIES,
+    SIGV4_MAX_RETRIES,
     SNAPSHOT_LOADING_MODE,
     Capability,
     Endpoint,
@@ -527,6 +529,66 @@ def test_sigv4_sign_request_with_body(rest_mock: Mocker) -> None:
     assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256")
     assert prepared.headers["Original-Authorization"] == f"Bearer {existing_token}"
     assert prepared.headers.get("x-amz-content-sha256") != EMPTY_BODY_SHA256
+
+
+def test_sigv4_adapter_default_retry_config(rest_mock: Mocker) -> None:
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "token": TEST_TOKEN,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-west-2",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+        },
+    )
+
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+    assert adapter.max_retries.total == SIGV4_DEFAULT_MAX_RETRIES
+
+
+def test_sigv4_adapter_override_retry_config(rest_mock: Mocker) -> None:
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "token": TEST_TOKEN,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-west-2",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+            SIGV4_MAX_RETRIES: "3",
+        },
+    )
+
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+    assert adapter.max_retries.total == 3
+
+
+def test_sigv4_uses_client_profile_name(rest_mock: Mocker) -> None:
+    with mock.patch("boto3.Session") as mock_session:
+        RestCatalog(
+            "rest",
+            **{
+                "uri": TEST_URI,
+                "token": TEST_TOKEN,
+                "rest.sigv4-enabled": "true",
+                "rest.signing-region": "us-west-2",
+                "client.profile-name": "rest-profile",
+            },
+        )
+
+    mock_session.assert_called_with(
+        profile_name="rest-profile",
+        region_name=None,
+        botocore_session=None,
+        aws_access_key_id=None,
+        aws_secret_access_key=None,
+        aws_session_token=None,
+    )
 
 
 def test_list_tables_404(rest_mock: Mocker) -> None:
