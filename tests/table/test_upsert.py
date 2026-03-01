@@ -100,12 +100,14 @@ def gen_target_iceberg_table(
 ) -> Table:
     additional_columns = ", t.order_id + 1000 as order_line_id" if composite_key else ""
 
-    df = ctx.sql(f"""
+    df = ctx.sql(
+        f"""
         with t as (SELECT unnest(range({start_row},{end_row + 1})) as order_id)
         SELECT t.order_id {additional_columns}
             , date '2021-01-01' as order_date, 'A' as order_type
         from t
-    """).to_arrow_table()
+    """
+    ).to_arrow_table()
 
     table = catalog.create_table(identifier, df.schema)
 
@@ -169,23 +171,27 @@ def test_merge_scenario_skip_upd_row(catalog: Catalog) -> None:
 
     ctx = SessionContext()
 
-    df = ctx.sql("""
+    df = ctx.sql(
+        """
         select 1 as order_id, date '2021-01-01' as order_date, 'A' as order_type
         union all
         select 2 as order_id, date '2021-01-01' as order_date, 'A' as order_type
-    """).to_arrow_table()
+    """
+    ).to_arrow_table()
 
     table = catalog.create_table(identifier, df.schema)
 
     table.append(df)
 
-    source_df = ctx.sql("""
+    source_df = ctx.sql(
+        """
         select 1 as order_id, date '2021-01-01' as order_date, 'A' as order_type
         union all
         select 2 as order_id, date '2021-01-01' as order_date, 'B' as order_type
         union all
         select 3 as order_id, date '2021-01-01' as order_date, 'A' as order_type
-    """).to_arrow_table()
+    """
+    ).to_arrow_table()
 
     res = table.upsert(df=source_df, join_cols=["order_id"])
 
@@ -205,23 +211,27 @@ def test_merge_scenario_date_as_key(catalog: Catalog) -> None:
     identifier = "default.test_merge_scenario_date_as_key"
     _drop_table(catalog, identifier)
 
-    df = ctx.sql("""
+    df = ctx.sql(
+        """
         select date '2021-01-01' as order_date, 'A' as order_type
         union all
         select date '2021-01-02' as order_date, 'A' as order_type
-    """).to_arrow_table()
+    """
+    ).to_arrow_table()
 
     table = catalog.create_table(identifier, df.schema)
 
     table.append(df)
 
-    source_df = ctx.sql("""
+    source_df = ctx.sql(
+        """
         select date '2021-01-01' as order_date, 'A' as order_type
         union all
         select date '2021-01-02' as order_date, 'B' as order_type
         union all
         select date '2021-01-03' as order_date, 'A' as order_type
-    """).to_arrow_table()
+    """
+    ).to_arrow_table()
 
     res = table.upsert(df=source_df, join_cols=["order_date"])
 
@@ -241,23 +251,27 @@ def test_merge_scenario_string_as_key(catalog: Catalog) -> None:
 
     ctx = SessionContext()
 
-    df = ctx.sql("""
+    df = ctx.sql(
+        """
         select 'abc' as order_id, 'A' as order_type
         union all
         select 'def' as order_id, 'A' as order_type
-    """).to_arrow_table()
+    """
+    ).to_arrow_table()
 
     table = catalog.create_table(identifier, df.schema)
 
     table.append(df)
 
-    source_df = ctx.sql("""
+    source_df = ctx.sql(
+        """
         select 'abc' as order_id, 'A' as order_type
         union all
         select 'def' as order_id, 'B' as order_type
         union all
         select 'ghi' as order_id, 'A' as order_type
-    """).to_arrow_table()
+    """
+    ).to_arrow_table()
 
     res = table.upsert(df=source_df, join_cols=["order_id"])
 
@@ -888,3 +902,670 @@ def test_upsert_snapshot_properties(catalog: Catalog) -> None:
     for snapshot in snapshots[initial_snapshot_count:]:
         assert snapshot.summary is not None
         assert snapshot.summary.additional_properties.get("test_prop") == "test_value"
+
+
+def test_coarse_match_filter_composite_key() -> None:
+    """
+    Test that create_coarse_match_filter produces efficient In() predicates for composite keys.
+    """
+    from pyiceberg.expressions import And, Or
+    from pyiceberg.table.upsert_util import create_coarse_match_filter, create_match_filter
+
+    # Create a table with composite key that has overlapping values
+    # (1, 'x'), (2, 'y'), (1, 'z') - exact filter should have 3 conditions
+    # coarse filter should have In(a, [1,2]) AND In(b, ['x','y','z'])
+    data = [
+        {"a": 1, "b": "x", "val": 1},
+        {"a": 2, "b": "y", "val": 2},
+        {"a": 1, "b": "z", "val": 3},
+    ]
+    schema = pa.schema([pa.field("a", pa.int32()), pa.field("b", pa.string()), pa.field("val", pa.int32())])
+    table = pa.Table.from_pylist(data, schema=schema)
+
+    exact_filter = create_match_filter(table, ["a", "b"])
+    coarse_filter = create_coarse_match_filter(table, ["a", "b"])
+
+    # Exact filter is an Or of And conditions
+    assert isinstance(exact_filter, Or)
+
+    # Coarse filter is an And of In conditions
+    assert isinstance(coarse_filter, And)
+    assert "In" in str(coarse_filter)
+
+
+def test_vectorized_comparison_primitives() -> None:
+    """Test vectorized comparison with primitive types."""
+    from pyiceberg.table.upsert_util import _compare_columns_vectorized
+
+    # Test integers
+    source = pa.array([1, 2, 3, 4])
+    target = pa.array([1, 2, 5, 4])
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, False, True, False]
+
+    # Test strings
+    source = pa.array(["a", "b", "c"])
+    target = pa.array(["a", "x", "c"])
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, True, False]
+
+    # Test floats
+    source = pa.array([1.0, 2.5, 3.0])
+    target = pa.array([1.0, 2.5, 3.1])
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, False, True]
+
+
+def test_vectorized_comparison_nulls() -> None:
+    """Test vectorized comparison handles nulls correctly."""
+    from pyiceberg.table.upsert_util import _compare_columns_vectorized
+
+    # null vs non-null = different
+    source = pa.array([1, None, 3])
+    target = pa.array([1, 2, 3])
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, True, False]
+
+    # non-null vs null = different
+    source = pa.array([1, 2, 3])
+    target = pa.array([1, None, 3])
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, True, False]
+
+    # null vs null = same (no update needed)
+    source = pa.array([1, None, 3])
+    target = pa.array([1, None, 3])
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, False, False]
+
+
+def test_vectorized_comparison_structs() -> None:
+    """Test vectorized comparison with nested struct types."""
+    from pyiceberg.table.upsert_util import _compare_columns_vectorized
+
+    struct_type = pa.struct([("x", pa.int32()), ("y", pa.string())])
+
+    # Same structs
+    source = pa.array([{"x": 1, "y": "a"}, {"x": 2, "y": "b"}], type=struct_type)
+    target = pa.array([{"x": 1, "y": "a"}, {"x": 2, "y": "b"}], type=struct_type)
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, False]
+
+    # Different struct values
+    source = pa.array([{"x": 1, "y": "a"}, {"x": 2, "y": "b"}], type=struct_type)
+    target = pa.array([{"x": 1, "y": "a"}, {"x": 2, "y": "c"}], type=struct_type)
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, True]
+
+
+def test_vectorized_comparison_nested_structs() -> None:
+    """Test vectorized comparison with deeply nested struct types."""
+    from pyiceberg.table.upsert_util import _compare_columns_vectorized
+
+    inner_struct = pa.struct([("val", pa.int32())])
+    outer_struct = pa.struct([("inner", inner_struct), ("name", pa.string())])
+
+    source = pa.array(
+        [{"inner": {"val": 1}, "name": "a"}, {"inner": {"val": 2}, "name": "b"}],
+        type=outer_struct,
+    )
+    target = pa.array(
+        [{"inner": {"val": 1}, "name": "a"}, {"inner": {"val": 3}, "name": "b"}],
+        type=outer_struct,
+    )
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, True]
+
+
+def test_vectorized_comparison_lists() -> None:
+    """Test vectorized comparison with list types (falls back to Python comparison)."""
+    from pyiceberg.table.upsert_util import _compare_columns_vectorized
+
+    list_type = pa.list_(pa.int32())
+
+    source = pa.array([[1, 2], [3, 4]], type=list_type)
+    target = pa.array([[1, 2], [3, 5]], type=list_type)
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, True]
+
+
+def test_get_rows_to_update_no_non_key_cols() -> None:
+    """Test get_rows_to_update when all columns are key columns."""
+    from pyiceberg.table.upsert_util import get_rows_to_update
+
+    # All columns are key columns, so no non-key columns to compare
+    source = pa.Table.from_pydict({"id": [1, 2, 3]})
+    target = pa.Table.from_pydict({"id": [1, 2, 3]})
+    rows = get_rows_to_update(source, target, ["id"])
+    assert len(rows) == 0
+
+
+def test_upsert_with_list_field(catalog: Catalog) -> None:
+    """Test upsert with list type as non-key column."""
+    from pyiceberg.types import ListType
+
+    identifier = "default.test_upsert_with_list_field"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(
+            2,
+            "tags",
+            ListType(element_id=3, element_type=StringType(), element_required=False),
+            required=False,
+        ),
+        identifier_field_ids=[1],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=False),
+            pa.field("tags", pa.list_(pa.large_string()), nullable=True),
+        ]
+    )
+
+    initial_data = pa.Table.from_pylist(
+        [
+            {"id": 1, "tags": ["a", "b"]},
+            {"id": 2, "tags": ["c"]},
+        ],
+        schema=arrow_schema,
+    )
+    tbl.append(initial_data)
+
+    # Update with changed list
+    update_data = pa.Table.from_pylist(
+        [
+            {"id": 1, "tags": ["a", "b"]},  # Same - no update
+            {"id": 2, "tags": ["c", "d"]},  # Changed - should update
+            {"id": 3, "tags": ["e"]},  # New - should insert
+        ],
+        schema=arrow_schema,
+    )
+
+    res = tbl.upsert(update_data, join_cols=["id"])
+    assert res.rows_updated == 1
+    assert res.rows_inserted == 1
+
+
+def test_vectorized_comparison_struct_level_nulls() -> None:
+    """Test vectorized comparison handles struct-level nulls correctly (not just field-level nulls)."""
+    from pyiceberg.table.upsert_util import _compare_columns_vectorized
+
+    struct_type = pa.struct([("x", pa.int32()), ("y", pa.string())])
+
+    # null struct vs non-null struct = different
+    source = pa.array([{"x": 1, "y": "a"}, None, {"x": 3, "y": "c"}], type=struct_type)
+    target = pa.array([{"x": 1, "y": "a"}, {"x": 2, "y": "b"}, {"x": 3, "y": "c"}], type=struct_type)
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, True, False]
+
+    # non-null struct vs null struct = different
+    source = pa.array([{"x": 1, "y": "a"}, {"x": 2, "y": "b"}, {"x": 3, "y": "c"}], type=struct_type)
+    target = pa.array([{"x": 1, "y": "a"}, None, {"x": 3, "y": "c"}], type=struct_type)
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, True, False]
+
+    # null struct vs null struct = same (no update needed)
+    source = pa.array([{"x": 1, "y": "a"}, None, {"x": 3, "y": "c"}], type=struct_type)
+    target = pa.array([{"x": 1, "y": "a"}, None, {"x": 3, "y": "c"}], type=struct_type)
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, False, False]
+
+
+def test_vectorized_comparison_empty_struct_with_nulls() -> None:
+    """Test that empty structs with null values are compared correctly."""
+    from pyiceberg.table.upsert_util import _compare_columns_vectorized
+
+    # Empty struct type - edge case where only struct-level null handling matters
+    empty_struct_type = pa.struct([])
+
+    # null vs non-null empty struct = different
+    source = pa.array([{}, None, {}], type=empty_struct_type)
+    target = pa.array([{}, {}, {}], type=empty_struct_type)
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, True, False]
+
+    # null vs null empty struct = same
+    source = pa.array([None, None], type=empty_struct_type)
+    target = pa.array([None, None], type=empty_struct_type)
+    diff = _compare_columns_vectorized(source, target)
+    assert diff.to_pylist() == [False, False]
+
+
+# ============================================================================
+# Tests for create_coarse_match_filter and _is_numeric_type
+# ============================================================================
+
+
+@pytest.mark.parametrize(
+    "dtype,expected_numeric",
+    [
+        (pa.int8(), True),
+        (pa.int16(), True),
+        (pa.int32(), True),
+        (pa.int64(), True),
+        (pa.uint8(), True),
+        (pa.uint16(), True),
+        (pa.uint32(), True),
+        (pa.uint64(), True),
+        (pa.float16(), True),
+        (pa.float32(), True),
+        (pa.float64(), True),
+        (pa.string(), False),
+        (pa.binary(), False),
+        (pa.date32(), False),
+        (pa.date64(), False),
+        (pa.timestamp("us"), False),
+        (pa.timestamp("ns"), False),
+        (pa.decimal128(10, 2), False),
+        (pa.decimal256(20, 4), False),
+        (pa.bool_(), False),
+        (pa.large_string(), False),
+        (pa.large_binary(), False),
+    ],
+)
+def test_is_numeric_type(dtype: pa.DataType, expected_numeric: bool) -> None:
+    """Test that _is_numeric_type correctly identifies all numeric types."""
+    from pyiceberg.table.upsert_util import _is_numeric_type
+
+    assert _is_numeric_type(dtype) == expected_numeric
+
+
+# ============================================================================
+# Thresholding Tests (Small vs Large Datasets)
+# ============================================================================
+
+
+def test_coarse_match_filter_small_dataset_uses_in_filter() -> None:
+    """Test that small datasets (< 10,000 unique keys) use In() filter."""
+    from pyiceberg.expressions import In
+    from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
+
+    # Create a dataset with 100 unique keys (well below threshold)
+    num_keys = 100
+    data = {"id": list(range(num_keys)), "value": list(range(num_keys))}
+    schema = pa.schema([pa.field("id", pa.int64()), pa.field("value", pa.int64())])
+    table = pa.Table.from_pydict(data, schema=schema)
+
+    result = create_coarse_match_filter(table, ["id"])
+
+    assert num_keys < LARGE_FILTER_THRESHOLD
+    assert isinstance(result, In)
+    assert isinstance(result.term, Reference)
+    assert result.term.name == "id"
+    assert len(result.literals) == num_keys
+
+
+def test_coarse_match_filter_threshold_boundary_uses_in_filter() -> None:
+    """Test that datasets at threshold - 1 (9,999 unique keys) still use In() filter."""
+    from pyiceberg.expressions import In
+    from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
+
+    # Create a dataset with exactly threshold - 1 unique keys
+    num_keys = LARGE_FILTER_THRESHOLD - 1
+    data = {"id": list(range(num_keys)), "value": list(range(num_keys))}
+    schema = pa.schema([pa.field("id", pa.int64()), pa.field("value", pa.int64())])
+    table = pa.Table.from_pydict(data, schema=schema)
+
+    result = create_coarse_match_filter(table, ["id"])
+
+    assert isinstance(result, In)
+    assert isinstance(result.term, Reference)
+    assert result.term.name == "id"
+    assert len(result.literals) == num_keys
+
+
+def test_coarse_match_filter_above_threshold_uses_optimized_filter() -> None:
+    """Test that datasets >= 10,000 unique keys use optimized filter strategy."""
+    from pyiceberg.expressions import GreaterThanOrEqual, LessThanOrEqual
+    from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
+
+    # Create a dense dataset (consecutive IDs) with exactly threshold unique keys
+    num_keys = LARGE_FILTER_THRESHOLD
+    data = {"id": list(range(num_keys)), "value": list(range(num_keys))}
+    schema = pa.schema([pa.field("id", pa.int64()), pa.field("value", pa.int64())])
+    table = pa.Table.from_pydict(data, schema=schema)
+
+    result = create_coarse_match_filter(table, ["id"])
+
+    # Dense IDs should use range filter (And of GreaterThanOrEqual and LessThanOrEqual)
+    assert isinstance(result, And)
+    assert isinstance(result.left, GreaterThanOrEqual)
+    assert isinstance(result.right, LessThanOrEqual)
+    assert result.left.literal.value == 0
+    assert result.right.literal.value == num_keys - 1
+
+
+def test_coarse_match_filter_large_dataset() -> None:
+    """Test that large datasets (100,000 unique keys) use optimized filter."""
+    from pyiceberg.expressions import GreaterThanOrEqual, LessThanOrEqual
+    from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
+
+    # Create a dense dataset with 100,000 unique keys
+    num_keys = 100_000
+    data = {"id": list(range(num_keys)), "value": list(range(num_keys))}
+    schema = pa.schema([pa.field("id", pa.int64()), pa.field("value", pa.int64())])
+    table = pa.Table.from_pydict(data, schema=schema)
+
+    result = create_coarse_match_filter(table, ["id"])
+
+    assert num_keys >= LARGE_FILTER_THRESHOLD
+    # Dense IDs should use range filter
+    assert isinstance(result, And)
+    assert isinstance(result.left, GreaterThanOrEqual)
+    assert isinstance(result.right, LessThanOrEqual)
+
+
+# ============================================================================
+# Density Calculation Tests
+# ============================================================================
+
+
+def test_coarse_match_filter_dense_ids_use_range_filter() -> None:
+    """Test that dense IDs (density > 10%) use range filter."""
+    from pyiceberg.expressions import GreaterThanOrEqual, LessThanOrEqual
+    from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
+
+    # Create dense IDs: all values from 0 to N-1 (100% density)
+    num_keys = LARGE_FILTER_THRESHOLD
+    data = {"id": list(range(num_keys)), "value": list(range(num_keys))}
+    schema = pa.schema([pa.field("id", pa.int64()), pa.field("value", pa.int64())])
+    table = pa.Table.from_pydict(data, schema=schema)
+
+    result = create_coarse_match_filter(table, ["id"])
+
+    # Density = 10000 / (9999 - 0 + 1) = 100%
+    # Should use range filter
+    assert isinstance(result, And)
+    assert isinstance(result.left, GreaterThanOrEqual)
+    assert isinstance(result.right, LessThanOrEqual)
+
+
+def test_coarse_match_filter_moderately_dense_ids_use_range_filter() -> None:
+    """Test that moderately dense IDs (50% density) use range filter."""
+    from pyiceberg.expressions import GreaterThanOrEqual, LessThanOrEqual
+    from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
+
+    # Create IDs: 0, 2, 4, 6, ... (every other number) - 50% density
+    num_keys = LARGE_FILTER_THRESHOLD
+    data = {"id": list(range(0, num_keys * 2, 2)), "value": list(range(num_keys))}
+    schema = pa.schema([pa.field("id", pa.int64()), pa.field("value", pa.int64())])
+    table = pa.Table.from_pydict(data, schema=schema)
+
+    result = create_coarse_match_filter(table, ["id"])
+
+    # Density = 10000 / (19998 - 0 + 1) ~= 50%
+    # Should use range filter since density > 10%
+    assert isinstance(result, And)
+    assert isinstance(result.left, GreaterThanOrEqual)
+    assert isinstance(result.right, LessThanOrEqual)
+
+
+def test_coarse_match_filter_sparse_ids_use_always_true() -> None:
+    """Test that sparse IDs (density <= 10%) use AlwaysTrue (full scan)."""
+    from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
+
+    # Create sparse IDs: values spread across a large range
+    # 10,000 values in range of ~110,000 = ~9% density
+    num_keys = LARGE_FILTER_THRESHOLD
+    ids = list(range(0, num_keys * 11, 11))  # 0, 11, 22, 33, ...
+    data = {"id": ids, "value": list(range(num_keys))}
+    schema = pa.schema([pa.field("id", pa.int64()), pa.field("value", pa.int64())])
+    table = pa.Table.from_pydict(data, schema=schema)
+
+    result = create_coarse_match_filter(table, ["id"])
+
+    # Density ~= 10000 / ((10000-1)*11 + 1) = 9.09% < 10%
+    # Should use AlwaysTrue (full scan)
+    assert isinstance(result, AlwaysTrue)
+
+
+def test_coarse_match_filter_density_boundary_at_10_percent() -> None:
+    """Test exact 10% boundary density behavior."""
+    from pyiceberg.expressions import GreaterThanOrEqual, LessThanOrEqual
+    from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
+
+    # Create IDs at exactly ~10% density
+    # 10,000 values in range of 100,000 = exactly 10%
+    num_keys = LARGE_FILTER_THRESHOLD
+    # Generate 10,000 values in range [0, 99999] -> density = 10000/100000 = 10%
+    # Using every 10th value: 0, 10, 20, ... 99990
+    ids = list(range(0, num_keys * 10, 10))
+    data = {"id": ids, "value": list(range(num_keys))}
+    schema = pa.schema([pa.field("id", pa.int64()), pa.field("value", pa.int64())])
+    table = pa.Table.from_pydict(data, schema=schema)
+
+    result = create_coarse_match_filter(table, ["id"])
+
+    # Density = 10000 / ((num_keys-1)*10 + 1) = 10000 / 99991 ~= 10.001%
+    # Should use range filter since density > 10% (just barely)
+    assert isinstance(result, And)
+    assert isinstance(result.left, GreaterThanOrEqual)
+    assert isinstance(result.right, LessThanOrEqual)
+
+
+def test_coarse_match_filter_very_sparse_ids() -> None:
+    """Test that very sparse IDs (e.g., 1, 1M, 2M) use AlwaysTrue."""
+    from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
+
+    # Create extremely sparse IDs
+    num_keys = LARGE_FILTER_THRESHOLD
+    # Values from 0 to (num_keys-1) * 1000, stepping by 1000
+    ids = list(range(0, num_keys * 1000, 1000))
+    data = {"id": ids, "value": list(range(num_keys))}
+    schema = pa.schema([pa.field("id", pa.int64()), pa.field("value", pa.int64())])
+    table = pa.Table.from_pydict(data, schema=schema)
+
+    result = create_coarse_match_filter(table, ["id"])
+
+    # Density = 10000 / ((10000-1)*1000 + 1) ~= 0.1%
+    # Should use AlwaysTrue
+    assert isinstance(result, AlwaysTrue)
+
+
+# ============================================================================
+# Edge Cases
+# ============================================================================
+
+
+def test_coarse_match_filter_empty_dataset_returns_always_false() -> None:
+    """Test that empty dataset returns AlwaysFalse."""
+    from pyiceberg.expressions import AlwaysFalse
+    from pyiceberg.table.upsert_util import create_coarse_match_filter
+
+    schema = pa.schema([pa.field("id", pa.int64()), pa.field("value", pa.int64())])
+    table = pa.Table.from_pydict({"id": [], "value": []}, schema=schema)
+
+    result = create_coarse_match_filter(table, ["id"])
+
+    assert isinstance(result, AlwaysFalse)
+
+
+def test_coarse_match_filter_single_value_dataset() -> None:
+    """Test that single value dataset uses In() or EqualTo() with single value."""
+    from pyiceberg.expressions import In
+    from pyiceberg.table.upsert_util import create_coarse_match_filter
+
+    schema = pa.schema([pa.field("id", pa.int64()), pa.field("value", pa.int64())])
+    table = pa.Table.from_pydict({"id": [42], "value": [1]}, schema=schema)
+
+    result = create_coarse_match_filter(table, ["id"])
+
+    # PyIceberg may optimize In() with a single value to EqualTo()
+    if isinstance(result, In):
+        assert isinstance(result.term, Reference)
+        assert result.term.name == "id"
+        assert len(result.literals) == 1
+        assert next(iter(result.literals)).value == 42
+    elif isinstance(result, EqualTo):
+        assert isinstance(result.term, Reference)
+        assert result.term.name == "id"
+        assert result.literal.value == 42
+    else:
+        pytest.fail(f"Expected In or EqualTo, got {type(result)}")
+
+
+def test_coarse_match_filter_negative_numbers_range() -> None:
+    """Test that negative number IDs produce correct min/max range."""
+    from pyiceberg.expressions import GreaterThanOrEqual, LessThanOrEqual
+    from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
+
+    # Create dense negative IDs: -10000 to -1
+    num_keys = LARGE_FILTER_THRESHOLD
+    ids = list(range(-num_keys, 0))
+    data = {"id": ids, "value": list(range(num_keys))}
+    schema = pa.schema([pa.field("id", pa.int64()), pa.field("value", pa.int64())])
+    table = pa.Table.from_pydict(data, schema=schema)
+
+    result = create_coarse_match_filter(table, ["id"])
+
+    # Should use range filter with negative values
+    assert isinstance(result, And)
+    assert isinstance(result.left, GreaterThanOrEqual)
+    assert isinstance(result.right, LessThanOrEqual)
+    assert result.left.literal.value == -num_keys  # min
+    assert result.right.literal.value == -1  # max
+
+
+def test_coarse_match_filter_mixed_sign_numbers_range() -> None:
+    """Test that mixed sign IDs (-500 to 500) produce correct range spanning zero."""
+    from pyiceberg.expressions import GreaterThanOrEqual, LessThanOrEqual
+    from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
+
+    # Create IDs spanning zero: -5000 to 4999
+    num_keys = LARGE_FILTER_THRESHOLD
+    ids = list(range(-num_keys // 2, num_keys // 2))
+    data = {"id": ids, "value": list(range(num_keys))}
+    schema = pa.schema([pa.field("id", pa.int64()), pa.field("value", pa.int64())])
+    table = pa.Table.from_pydict(data, schema=schema)
+
+    result = create_coarse_match_filter(table, ["id"])
+
+    # Should use range filter spanning zero
+    assert isinstance(result, And)
+    assert isinstance(result.left, GreaterThanOrEqual)
+    assert isinstance(result.right, LessThanOrEqual)
+    assert result.left.literal.value == -num_keys // 2  # min
+    assert result.right.literal.value == num_keys // 2 - 1  # max
+
+
+def test_coarse_match_filter_float_range_filter() -> None:
+    """Test that float IDs use range filter correctly."""
+    from pyiceberg.expressions import GreaterThanOrEqual, LessThanOrEqual
+    from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
+
+    # Create dense float IDs
+    num_keys = LARGE_FILTER_THRESHOLD
+    ids = [float(i) for i in range(num_keys)]
+    data = {"id": ids, "value": list(range(num_keys))}
+    schema = pa.schema([pa.field("id", pa.float64()), pa.field("value", pa.int64())])
+    table = pa.Table.from_pydict(data, schema=schema)
+
+    result = create_coarse_match_filter(table, ["id"])
+
+    # Should use range filter for float column
+    assert isinstance(result, And)
+    assert isinstance(result.left, GreaterThanOrEqual)
+    assert isinstance(result.right, LessThanOrEqual)
+    assert result.left.literal.value == 0.0
+    assert result.right.literal.value == float(num_keys - 1)
+
+
+def test_coarse_match_filter_non_numeric_column_skips_range_filter() -> None:
+    """Test that non-numeric column with >10k values returns AlwaysTrue."""
+    from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
+
+    # Create string IDs (non-numeric) with many unique values
+    num_keys = LARGE_FILTER_THRESHOLD
+    ids = [f"id_{i:05d}" for i in range(num_keys)]
+    data = {"id": ids, "value": list(range(num_keys))}
+    schema = pa.schema([pa.field("id", pa.string()), pa.field("value", pa.int64())])
+    table = pa.Table.from_pydict(data, schema=schema)
+
+    result = create_coarse_match_filter(table, ["id"])
+
+    # Non-numeric column with large dataset should use AlwaysTrue
+    assert isinstance(result, AlwaysTrue)
+
+
+# ============================================================================
+# Composite Key Tests
+# ============================================================================
+
+
+def test_coarse_match_filter_composite_key_small_dataset() -> None:
+    """Test that composite key with small dataset uses And(In(), In())."""
+
+    from pyiceberg.table.upsert_util import create_coarse_match_filter
+
+    # Create a small dataset with composite key
+    data = {
+        "a": [1, 2, 3, 1, 2, 3],
+        "b": ["x", "x", "x", "y", "y", "y"],
+        "value": [1, 2, 3, 4, 5, 6],
+    }
+    schema = pa.schema([pa.field("a", pa.int64()), pa.field("b", pa.string()), pa.field("value", pa.int64())])
+    table = pa.Table.from_pydict(data, schema=schema)
+
+    result = create_coarse_match_filter(table, ["a", "b"])
+
+    # Should be And(In(a), In(b))
+    assert isinstance(result, And)
+    # Check that both children are In() filters
+    assert "In" in str(result)
+
+
+def test_coarse_match_filter_composite_key_large_numeric_column() -> None:
+    """Test composite key where one column has >10k unique numeric values."""
+
+    from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
+
+    # Create dataset with one large dense numeric column and one small column
+    num_keys = LARGE_FILTER_THRESHOLD
+    data = {
+        "a": list(range(num_keys)),  # 10k unique dense values
+        "b": ["category_1"] * (num_keys // 2) + ["category_2"] * (num_keys // 2),  # 2 unique values
+        "value": list(range(num_keys)),
+    }
+    schema = pa.schema([pa.field("a", pa.int64()), pa.field("b", pa.string()), pa.field("value", pa.int64())])
+    table = pa.Table.from_pydict(data, schema=schema)
+
+    result = create_coarse_match_filter(table, ["a", "b"])
+
+    # Should be And of filters for both columns
+    assert isinstance(result, And)
+    # Column 'a' (large, dense, numeric) should use range filter
+    # Column 'b' (small) should use In()
+    result_str = str(result)
+    assert "GreaterThanOrEqual" in result_str or "In" in result_str
+
+
+def test_coarse_match_filter_composite_key_mixed_types() -> None:
+    """Test composite key with mixed numeric and string columns with large dataset."""
+
+    from pyiceberg.table.upsert_util import LARGE_FILTER_THRESHOLD, create_coarse_match_filter
+
+    # Create dataset with large sparse numeric column and large string column
+    num_keys = LARGE_FILTER_THRESHOLD
+    # Sparse numeric IDs
+    ids = list(range(0, num_keys * 100, 100))
+    # Many unique strings
+    strings = [f"str_{i}" for i in range(num_keys)]
+    data = {
+        "numeric_id": ids,
+        "string_id": strings,
+        "value": list(range(num_keys)),
+    }
+    schema = pa.schema([pa.field("numeric_id", pa.int64()), pa.field("string_id", pa.string()), pa.field("value", pa.int64())])
+    table = pa.Table.from_pydict(data, schema=schema)
+
+    result = create_coarse_match_filter(table, ["numeric_id", "string_id"])
+
+    # Both columns have large unique values
+    # numeric_id is sparse (density < 10%), so should use In()
+    # string_id is non-numeric, so should use In()
+    assert isinstance(result, And)
