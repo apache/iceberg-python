@@ -18,7 +18,7 @@
 
 import io
 import json
-from copy import copy
+from copy import copy, deepcopy
 from typing import Any
 from unittest.mock import MagicMock, patch
 from uuid import UUID
@@ -413,6 +413,26 @@ def test_sort_order_unsorted() -> None:
 
     # Most important here is that we correctly handle sort-order-id 0
     assert len(table_metadata.sort_orders) == 0
+
+
+def test_snapshot_log_entries_are_sorted_with_tolerance(example_table_metadata_v2: dict[str, Any]) -> None:
+    table_metadata = deepcopy(example_table_metadata_v2)
+    table_metadata["snapshot-log"][1]["timestamp-ms"] = table_metadata["snapshot-log"][0]["timestamp-ms"] - 60_001
+
+    with pytest.raises(ValidationError) as exc_info:
+        TableMetadataUtil.parse_raw(json.dumps(table_metadata))
+
+    assert "Expected sorted snapshot log entries" in str(exc_info.value)
+
+
+def test_last_updated_ms_not_before_last_snapshot_log_entry(example_table_metadata_v2: dict[str, Any]) -> None:
+    table_metadata = deepcopy(example_table_metadata_v2)
+    table_metadata["last-updated-ms"] = table_metadata["snapshot-log"][-1]["timestamp-ms"] - 60_001
+
+    with pytest.raises(ValidationError) as exc_info:
+        TableMetadataUtil.parse_raw(json.dumps(table_metadata))
+
+    assert "before last snapshot log entry at" in str(exc_info.value)
 
 
 def test_invalid_partition_spec() -> None:
