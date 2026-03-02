@@ -17,6 +17,7 @@
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
 
 import math
+import struct
 import tempfile
 import uuid
 from dataclasses import asdict, dataclass
@@ -44,16 +45,23 @@ from pyiceberg.avro import (
     STRUCT_INT64,
 )
 from pyiceberg.io.pyarrow import (
+    DataFileStatistics,
+    GeospatialStatsAggregator,
     MetricModeTypes,
     MetricsMode,
+    PyArrowFileIO,
     PyArrowStatisticsCollector,
     compute_statistics_plan,
     data_file_statistics_from_parquet_metadata,
+    geospatial_column_aggregates_from_arrow_table,
+    geospatial_column_aggregates_from_parquet_file,
     match_metrics_mode,
+    parquet_file_to_data_file,
     parquet_path_to_id_mapping,
     schema_to_pyarrow,
 )
 from pyiceberg.manifest import DataFile
+from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema, pre_order_visit
 from pyiceberg.table.metadata import (
     TableMetadata,
@@ -61,13 +69,18 @@ from pyiceberg.table.metadata import (
     TableMetadataV1,
     TableMetadataV2,
 )
+from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import (
     BooleanType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IntegerType,
+    NestedField,
     StringType,
 )
 from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, time_to_micros
+from pyiceberg.utils.geospatial import deserialize_geospatial_bound
 
 
 @dataclass(frozen=True)
@@ -175,6 +188,48 @@ def construct_test_table(
     return metadata_collector[0], table_metadata
 
 
+def construct_geospatial_test_table() -> tuple[pq.FileMetaData, TableMetadataV1 | TableMetadataV2, pa.Table]:
+    table_metadata = TableMetadataUtil.parse_obj(
+        {
+            "format-version": 3,
+            "location": "s3://bucket/test/location",
+            "last-column-id": 2,
+            "current-schema-id": 0,
+            "schemas": [
+                {
+                    "type": "struct",
+                    "schema-id": 0,
+                    "fields": [
+                        {"id": 1, "name": "geom", "required": False, "type": "geometry"},
+                        {"id": 2, "name": "geog", "required": False, "type": "geography"},
+                    ],
+                }
+            ],
+            "default-spec-id": 0,
+            "partition-specs": [{"spec-id": 0, "fields": []}],
+            "properties": {},
+        }
+    )
+    schema = Schema(
+        NestedField(1, "geom", GeometryType(), required=False),
+        NestedField(2, "geog", GeographyType(), required=False),
+    )
+    arrow_schema = schema_to_pyarrow(schema)
+
+    # LINESTRING(1 2, 3 4)
+    geom = struct.pack("<BIIdddd", 1, 2, 2, 1.0, 2.0, 3.0, 4.0)
+    # LINESTRING(170 10, -170 20)
+    geog = struct.pack("<BIIdddd", 1, 2, 2, 170.0, 10.0, -170.0, 20.0)
+    table = pa.Table.from_pydict({"geom": [geom], "geog": [geog]}, schema=arrow_schema)
+
+    metadata_collector: list[Any] = []
+    with pa.BufferOutputStream() as f:
+        with pq.ParquetWriter(f, table.schema, metadata_collector=metadata_collector, write_statistics=True) as writer:
+            writer.write_table(table)
+
+    return metadata_collector[0], table_metadata, table
+
+
 def get_current_schema(
     table_metadata: TableMetadata,
 ) -> Schema:
@@ -280,6 +335,202 @@ def test_bounds() -> None:
     assert len(datafile.upper_bounds) == 2
     assert datafile.upper_bounds[1].decode() == "zzzzzzzzzzzzzzz{"
     assert datafile.upper_bounds[2] == STRUCT_FLOAT.pack(100)
+
+
+def test_geospatial_bounds_use_bound_serialization() -> None:
+    metadata, table_metadata, arrow_table = construct_geospatial_test_table()
+    schema = get_current_schema(table_metadata)
+    stats_columns = compute_statistics_plan(schema, table_metadata.properties)
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=metadata,
+        stats_columns=stats_columns,
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
+    )
+    statistics.column_aggregates.update(geospatial_column_aggregates_from_arrow_table(arrow_table, stats_columns))
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
+
+    geom_min = deserialize_geospatial_bound(datafile.lower_bounds[1])
+    geom_max = deserialize_geospatial_bound(datafile.upper_bounds[1])
+    assert geom_min.x == 1.0
+    assert geom_min.y == 2.0
+    assert geom_max.x == 3.0
+    assert geom_max.y == 4.0
+
+    geog_min = deserialize_geospatial_bound(datafile.lower_bounds[2])
+    geog_max = deserialize_geospatial_bound(datafile.upper_bounds[2])
+    assert geog_min.x > geog_max.x
+    assert geog_min.x == 170.0
+    assert geog_max.x == -170.0
+    assert geog_min.y == 10.0
+    assert geog_max.y == 20.0
+
+
+def test_geospatial_column_aggregates_from_parquet_file() -> None:
+    schema = Schema(
+        NestedField(1, "geom", GeometryType(), required=False),
+        NestedField(2, "geog", GeographyType(), required=False),
+    )
+    stats_columns = compute_statistics_plan(schema, {})
+    arrow_schema = schema_to_pyarrow(schema)
+    geom = struct.pack("<BIIdddd", 1, 2, 2, 1.0, 2.0, 3.0, 4.0)
+    geog = struct.pack("<BIIdddd", 1, 2, 2, 170.0, 10.0, -170.0, 20.0)
+    table = pa.Table.from_pydict({"geom": [geom], "geog": [geog]}, schema=arrow_schema)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = f"{tmpdir}/geospatial.parquet"
+        pq.write_table(table, file_path)
+        aggregates = geospatial_column_aggregates_from_parquet_file(PyArrowFileIO().new_input(file_path), stats_columns)
+
+    assert set(aggregates.keys()) == {1, 2}
+
+    geom_min_bytes = aggregates[1].min_as_bytes()
+    geom_max_bytes = aggregates[1].max_as_bytes()
+    assert geom_min_bytes is not None
+    assert geom_max_bytes is not None
+    geom_min = deserialize_geospatial_bound(geom_min_bytes)
+    geom_max = deserialize_geospatial_bound(geom_max_bytes)
+    assert geom_min.x == 1.0
+    assert geom_min.y == 2.0
+    assert geom_max.x == 3.0
+    assert geom_max.y == 4.0
+
+    geog_min_bytes = aggregates[2].min_as_bytes()
+    geog_max_bytes = aggregates[2].max_as_bytes()
+    assert geog_min_bytes is not None
+    assert geog_max_bytes is not None
+    geog_min = deserialize_geospatial_bound(geog_min_bytes)
+    geog_max = deserialize_geospatial_bound(geog_max_bytes)
+    assert geog_min.x > geog_max.x
+    assert geog_min.x == 170.0
+    assert geog_max.x == -170.0
+    assert geog_min.y == 10.0
+    assert geog_max.y == 20.0
+
+
+def test_parquet_file_to_data_file_with_geospatial_schema() -> None:
+    table_metadata = TableMetadataUtil.parse_obj(
+        {
+            "format-version": 3,
+            "location": "s3://bucket/test/location",
+            "last-column-id": 2,
+            "current-schema-id": 0,
+            "schemas": [
+                {
+                    "type": "struct",
+                    "schema-id": 0,
+                    "fields": [
+                        {"id": 1, "name": "geom", "required": False, "type": "geometry"},
+                        {"id": 2, "name": "geog", "required": False, "type": "geography"},
+                    ],
+                }
+            ],
+            "default-spec-id": 0,
+            "partition-specs": [{"spec-id": 0, "fields": []}],
+            "properties": {},
+        }
+    )
+    schema = Schema(
+        NestedField(1, "geom", GeometryType(), required=False),
+        NestedField(2, "geog", GeographyType(), required=False),
+    )
+    arrow_schema = schema_to_pyarrow(schema)
+    geom = struct.pack("<BIIdddd", 1, 2, 2, 1.0, 2.0, 3.0, 4.0)
+    geog = struct.pack("<BIIdddd", 1, 2, 2, 170.0, 10.0, -170.0, 20.0)
+    table = pa.Table.from_pydict({"geom": [geom], "geog": [geog]}, schema=arrow_schema)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = f"{tmpdir}/geospatial.parquet"
+        pq.write_table(table, file_path)
+        data_file = parquet_file_to_data_file(io=PyArrowFileIO(), table_metadata=table_metadata, file_path=file_path)
+
+    assert data_file.lower_bounds is not None
+    assert data_file.upper_bounds is not None
+    assert 1 in data_file.lower_bounds
+    assert 2 in data_file.lower_bounds
+
+    geom_min = deserialize_geospatial_bound(data_file.lower_bounds[1])
+    geom_max = deserialize_geospatial_bound(data_file.upper_bounds[1])
+    assert geom_min.x == 1.0
+    assert geom_min.y == 2.0
+    assert geom_max.x == 3.0
+    assert geom_max.y == 4.0
+
+    geog_min = deserialize_geospatial_bound(data_file.lower_bounds[2])
+    geog_max = deserialize_geospatial_bound(data_file.upper_bounds[2])
+    assert geog_min.x > geog_max.x
+    assert geog_min.x == 170.0
+    assert geog_max.x == -170.0
+    assert geog_min.y == 10.0
+    assert geog_max.y == 20.0
+
+
+def test_parquet_file_to_data_file_with_planar_geography_schema() -> None:
+    table_metadata = TableMetadataUtil.parse_obj(
+        {
+            "format-version": 3,
+            "location": "s3://bucket/test/location",
+            "last-column-id": 1,
+            "current-schema-id": 0,
+            "schemas": [
+                {
+                    "type": "struct",
+                    "schema-id": 0,
+                    "fields": [
+                        {
+                            "id": 1,
+                            "name": "geog",
+                            "required": False,
+                            "type": "geography('OGC:CRS84', 'planar')",
+                        }
+                    ],
+                }
+            ],
+            "default-spec-id": 0,
+            "partition-specs": [{"spec-id": 0, "fields": []}],
+            "properties": {},
+        }
+    )
+    schema = Schema(NestedField(1, "geog", GeographyType("OGC:CRS84", "planar"), required=False))
+    arrow_schema = schema_to_pyarrow(schema)
+    geog = struct.pack("<BIIdddd", 1, 2, 2, 10.0, 20.0, 30.0, 40.0)
+    table = pa.Table.from_pydict({"geog": [geog]}, schema=arrow_schema)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = f"{tmpdir}/geospatial_planar.parquet"
+        pq.write_table(table, file_path)
+        data_file = parquet_file_to_data_file(io=PyArrowFileIO(), table_metadata=table_metadata, file_path=file_path)
+
+    assert data_file.lower_bounds is not None
+    assert data_file.upper_bounds is not None
+    geog_min = deserialize_geospatial_bound(data_file.lower_bounds[1])
+    geog_max = deserialize_geospatial_bound(data_file.upper_bounds[1])
+    assert geog_min.x == 10.0
+    assert geog_min.y == 20.0
+    assert geog_max.x == 30.0
+    assert geog_max.y == 40.0
+
+
+def test_partition_inference_skips_geospatial_bounds() -> None:
+    schema = Schema(NestedField(1, "geom", GeometryType(), required=False))
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="geom"),
+        spec_id=0,
+    )
+    geospatial_agg = GeospatialStatsAggregator(GeometryType())
+    geospatial_agg.update_from_wkb(struct.pack("<BIIdddd", 1, 2, 2, 1.0, 2.0, 3.0, 4.0))
+
+    statistics = DataFileStatistics(
+        record_count=1,
+        column_sizes={},
+        value_counts={},
+        null_value_counts={},
+        nan_value_counts={},
+        column_aggregates={1: geospatial_agg},
+        split_offsets=[],
+    )
+
+    partition = statistics.partition(partition_spec, schema)
+    assert partition[0] is None
 
 
 def test_metrics_mode_parsing() -> None:

@@ -47,7 +47,12 @@ from pyiceberg.expressions import (
     BoundNotStartsWith,
     BoundPredicate,
     BoundSetPredicate,
+    BoundSpatialPredicate,
     BoundStartsWith,
+    BoundSTContains,
+    BoundSTIntersects,
+    BoundSTOverlaps,
+    BoundSTWithin,
     BoundTerm,
     BoundUnaryPredicate,
     Not,
@@ -326,6 +331,18 @@ class BoundBooleanExpressionVisitor(BooleanExpressionVisitor[T], ABC):
     def visit_not_starts_with(self, term: BoundTerm, literal: LiteralValue) -> T:
         """Visit bound NotStartsWith predicate."""
 
+    def visit_st_contains(self, term: BoundTerm, geometry: bytes) -> T:
+        raise NotImplementedError(f"{self.__class__.__name__} does not implement st-contains")
+
+    def visit_st_intersects(self, term: BoundTerm, geometry: bytes) -> T:
+        raise NotImplementedError(f"{self.__class__.__name__} does not implement st-intersects")
+
+    def visit_st_within(self, term: BoundTerm, geometry: bytes) -> T:
+        raise NotImplementedError(f"{self.__class__.__name__} does not implement st-within")
+
+    def visit_st_overlaps(self, term: BoundTerm, geometry: bytes) -> T:
+        raise NotImplementedError(f"{self.__class__.__name__} does not implement st-overlaps")
+
     def visit_unbound_predicate(self, predicate: UnboundPredicate) -> T:
         """Visit an unbound predicate.
 
@@ -421,6 +438,26 @@ def _(expr: BoundNotStartsWith, visitor: BoundBooleanExpressionVisitor[T]) -> T:
     return visitor.visit_not_starts_with(term=expr.term, literal=expr.literal)
 
 
+@visit_bound_predicate.register(BoundSTContains)
+def _(expr: BoundSTContains, visitor: BoundBooleanExpressionVisitor[T]) -> T:
+    return visitor.visit_st_contains(term=expr.term, geometry=expr.geometry)
+
+
+@visit_bound_predicate.register(BoundSTIntersects)
+def _(expr: BoundSTIntersects, visitor: BoundBooleanExpressionVisitor[T]) -> T:
+    return visitor.visit_st_intersects(term=expr.term, geometry=expr.geometry)
+
+
+@visit_bound_predicate.register(BoundSTWithin)
+def _(expr: BoundSTWithin, visitor: BoundBooleanExpressionVisitor[T]) -> T:
+    return visitor.visit_st_within(term=expr.term, geometry=expr.geometry)
+
+
+@visit_bound_predicate.register(BoundSTOverlaps)
+def _(expr: BoundSTOverlaps, visitor: BoundBooleanExpressionVisitor[T]) -> T:
+    return visitor.visit_st_overlaps(term=expr.term, geometry=expr.geometry)
+
+
 def rewrite_not(expr: BooleanExpression) -> BooleanExpression:
     return visit(expr, _RewriteNotVisitor())
 
@@ -513,6 +550,18 @@ class _ExpressionEvaluator(BoundBooleanExpressionVisitor[bool]):
 
     def visit_not_starts_with(self, term: BoundTerm, literal: LiteralValue) -> bool:
         return not self.visit_starts_with(term, literal)
+
+    def visit_st_contains(self, term: BoundTerm, geometry: bytes) -> bool:
+        raise NotImplementedError("st-contains row-level evaluation is not implemented")
+
+    def visit_st_intersects(self, term: BoundTerm, geometry: bytes) -> bool:
+        raise NotImplementedError("st-intersects row-level evaluation is not implemented")
+
+    def visit_st_within(self, term: BoundTerm, geometry: bytes) -> bool:
+        raise NotImplementedError("st-within row-level evaluation is not implemented")
+
+    def visit_st_overlaps(self, term: BoundTerm, geometry: bytes) -> bool:
+        raise NotImplementedError("st-overlaps row-level evaluation is not implemented")
 
     def visit_true(self) -> bool:
         return True
@@ -762,6 +811,18 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
 
         return ROWS_MIGHT_MATCH
 
+    def visit_st_contains(self, term: BoundTerm, geometry: bytes) -> bool:
+        return ROWS_MIGHT_MATCH
+
+    def visit_st_intersects(self, term: BoundTerm, geometry: bytes) -> bool:
+        return ROWS_MIGHT_MATCH
+
+    def visit_st_within(self, term: BoundTerm, geometry: bytes) -> bool:
+        return ROWS_MIGHT_MATCH
+
+    def visit_st_overlaps(self, term: BoundTerm, geometry: bytes) -> bool:
+        return ROWS_MIGHT_MATCH
+
     def visit_true(self) -> bool:
         return ROWS_MIGHT_MATCH
 
@@ -905,6 +966,8 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
                 pred = predicate.as_unbound(field.name, predicate.literal)
             elif isinstance(predicate, BoundSetPredicate):
                 pred = predicate.as_unbound(field.name, predicate.literals)
+            elif isinstance(predicate, BoundSpatialPredicate):
+                raise NotImplementedError("Spatial predicate translation is not supported when source columns are missing")
             else:
                 raise ValueError(f"Unsupported predicate: {predicate}")
 
@@ -926,6 +989,8 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
             return predicate.as_unbound(file_column_name, predicate.literal)
         elif isinstance(predicate, BoundSetPredicate):
             return predicate.as_unbound(file_column_name, predicate.literals)
+        elif isinstance(predicate, BoundSpatialPredicate):
+            return predicate.as_unbound(file_column_name, predicate.geometry)
         else:
             raise ValueError(f"Unsupported predicate: {predicate}")
 
@@ -1065,6 +1130,18 @@ class ExpressionToPlainFormat(BoundBooleanExpressionVisitor[list[tuple[str, str,
     def visit_not_starts_with(self, term: BoundTerm, literal: LiteralValue) -> list[tuple[str, str, Any]]:
         return []
 
+    def visit_st_contains(self, term: BoundTerm, geometry: bytes) -> list[tuple[str, str, Any]]:
+        return []
+
+    def visit_st_intersects(self, term: BoundTerm, geometry: bytes) -> list[tuple[str, str, Any]]:
+        return []
+
+    def visit_st_within(self, term: BoundTerm, geometry: bytes) -> list[tuple[str, str, Any]]:
+        return []
+
+    def visit_st_overlaps(self, term: BoundTerm, geometry: bytes) -> list[tuple[str, str, Any]]:
+        return []
+
     def visit_true(self) -> list[tuple[str, str, Any]]:
         return []  # Not supported
 
@@ -1152,6 +1229,18 @@ class _MetricsEvaluator(BoundBooleanExpressionVisitor[bool], ABC):
         except TypeError:
             # In the case of None or other non-numeric types
             return False
+
+    def visit_st_contains(self, term: BoundTerm, geometry: bytes) -> bool:
+        return ROWS_MIGHT_MATCH
+
+    def visit_st_intersects(self, term: BoundTerm, geometry: bytes) -> bool:
+        return ROWS_MIGHT_MATCH
+
+    def visit_st_within(self, term: BoundTerm, geometry: bytes) -> bool:
+        return ROWS_MIGHT_MATCH
+
+    def visit_st_overlaps(self, term: BoundTerm, geometry: bytes) -> bool:
+        return ROWS_MIGHT_MATCH
 
 
 class _InclusiveMetricsEvaluator(_MetricsEvaluator):
@@ -1737,6 +1826,18 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
         return ROWS_MIGHT_NOT_MATCH
 
     def visit_not_starts_with(self, term: BoundTerm, literal: LiteralValue) -> bool:
+        return ROWS_MIGHT_NOT_MATCH
+
+    def visit_st_contains(self, term: BoundTerm, geometry: bytes) -> bool:
+        return ROWS_MIGHT_NOT_MATCH
+
+    def visit_st_intersects(self, term: BoundTerm, geometry: bytes) -> bool:
+        return ROWS_MIGHT_NOT_MATCH
+
+    def visit_st_within(self, term: BoundTerm, geometry: bytes) -> bool:
+        return ROWS_MIGHT_NOT_MATCH
+
+    def visit_st_overlaps(self, term: BoundTerm, geometry: bytes) -> bool:
         return ROWS_MIGHT_NOT_MATCH
 
     def _get_field(self, field_id: int) -> NestedField:
