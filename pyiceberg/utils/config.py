@@ -14,6 +14,8 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
+
 import logging
 import os
 
@@ -59,10 +61,14 @@ def _lowercase_dictionary_keys(input_dict: RecursiveDict) -> RecursiveDict:
 class Config:
     config: RecursiveDict
 
-    def __init__(self) -> None:
-        config = self._from_configuration_files() or {}
-        config = merge_config(config, self._from_environment_variables(config))
-        self.config = FrozenDict(**config)
+    def __init__(self, config: RecursiveDict | None = None) -> None:
+        self.config = FrozenDict(**(config or {}))
+
+    @classmethod
+    def load(cls) -> Config:
+        config = cls._from_configuration_files() or {}
+        config = merge_config(config, cls._from_environment_variables(config))
+        return cls(config)
 
     @staticmethod
     def _from_configuration_files() -> RecursiveDict | None:
