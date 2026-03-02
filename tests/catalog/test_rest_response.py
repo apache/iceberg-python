@@ -113,10 +113,12 @@ def test_empty_body_falls_back_to_http_status_phrase() -> None:
 
 
 def test_oauth_error_with_description() -> None:
-    body = json.dumps({
-        "error": "invalid_client",
-        "error_description": "Client authentication failed",
-    })
+    body = json.dumps(
+        {
+            "error": "invalid_client",
+            "error_description": "Client authentication failed",
+        }
+    )
     exc = _make_http_error(401, body=body)
 
     with pytest.raises(OAuthError, match="invalid_client: Client authentication failed"):
@@ -124,11 +126,13 @@ def test_oauth_error_with_description() -> None:
 
 
 def test_oauth_error_with_uri() -> None:
-    body = json.dumps({
-        "error": "invalid_scope",
-        "error_description": "scope not allowed",
-        "error_uri": "https://example.com/help",
-    })
+    body = json.dumps(
+        {
+            "error": "invalid_scope",
+            "error_description": "scope not allowed",
+            "error_uri": "https://example.com/help",
+        }
+    )
     exc = _make_http_error(400, body=body)
 
     with pytest.raises(OAuthError, match=r"invalid_scope: scope not allowed \(https://example.com/help\)"):

@@ -14,10 +14,9 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+from http import HTTPStatus
 from json import JSONDecodeError
 from typing import Literal
-
-from http import HTTPStatus
 
 from pydantic import Field, ValidationError
 from requests import HTTPError
