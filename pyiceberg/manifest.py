@@ -51,6 +51,7 @@ from pyiceberg.types import (
     StringType,
     StructType,
 )
+from pyiceberg.utils.config import Config
 
 UNASSIGNED_SEQ = -1
 DEFAULT_BLOCK_SIZE = 67108864  # 64 * 1024 * 1024
@@ -891,13 +892,16 @@ class ManifestFile(Record):
         return hash(self.manifest_path)
 
 
-# Global cache for ManifestFile objects, keyed by manifest_path.
-# This deduplicates ManifestFile objects across manifest lists, which commonly
-# share manifests after append operations.
-_manifest_cache: LRUCache[str, ManifestFile] = LRUCache(maxsize=128)
-
-# Lock for thread-safe cache access
+_DEFAULT_MANIFEST_CACHE_SIZE = 128
+_manifest_cache_size = Config().get_int("manifest-cache-size") or _DEFAULT_MANIFEST_CACHE_SIZE
 _manifest_cache_lock = threading.RLock()
+_manifest_cache: LRUCache[str, ManifestFile] = LRUCache(maxsize=_manifest_cache_size)
+
+
+def clear_manifest_cache() -> None:
+    """Clear the manifest cache."""
+    with _manifest_cache_lock:
+        _manifest_cache.clear()
 
 
 def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:

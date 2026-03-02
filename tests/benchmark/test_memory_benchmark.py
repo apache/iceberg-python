@@ -32,8 +32,9 @@ from datetime import datetime, timezone
 import pyarrow as pa
 import pytest
 
+from pyiceberg import manifest as manifest_module
 from pyiceberg.catalog.memory import InMemoryCatalog
-from pyiceberg.manifest import _manifest_cache
+from pyiceberg.manifest import clear_manifest_cache
 
 
 def generate_test_dataframe() -> pa.Table:
@@ -64,7 +65,7 @@ def memory_catalog(tmp_path_factory: pytest.TempPathFactory) -> InMemoryCatalog:
 @pytest.fixture(autouse=True)
 def clear_caches() -> None:
     """Clear caches before each test."""
-    _manifest_cache.clear()
+    clear_manifest_cache()
     gc.collect()
 
 
@@ -95,7 +96,8 @@ def test_manifest_cache_memory_growth(memory_catalog: InMemoryCatalog) -> None:
         # Sample memory at intervals
         if (i + 1) % 10 == 0:
             current, _ = tracemalloc.get_traced_memory()
-            cache_size = len(_manifest_cache)
+            cache = manifest_module._manifest_cache
+            cache_size = len(cache) if cache is not None else 0
 
             memory_samples.append((i + 1, current, cache_size))
             print(f"  Iteration {i + 1}: Memory={current / 1024:.1f} KB, Cache entries={cache_size}")
@@ -150,13 +152,14 @@ def test_memory_after_gc_with_cache_cleared(memory_catalog: InMemoryCatalog) -> 
 
     gc.collect()
     before_clear_memory, _ = tracemalloc.get_traced_memory()
-    cache_size_before = len(_manifest_cache)
+    cache = manifest_module._manifest_cache
+    cache_size_before = len(cache) if cache is not None else 0
     print(f"  Memory before clear: {before_clear_memory / 1024:.1f} KB")
     print(f"  Cache size: {cache_size_before}")
 
     # Phase 2: Clear cache and GC
     print("\nPhase 2: Clearing cache and running GC...")
-    _manifest_cache.clear()
+    clear_manifest_cache()
     gc.collect()
     gc.collect()  # Multiple GC passes for thorough cleanup
 
@@ -192,6 +195,7 @@ def test_manifest_cache_deduplication_efficiency() -> None:
         ManifestEntry,
         ManifestEntryStatus,
         _manifests,
+        clear_manifest_cache,
         write_manifest,
         write_manifest_list,
     )
@@ -245,7 +249,7 @@ def test_manifest_cache_deduplication_efficiency() -> None:
         num_lists = 10
         print(f"Creating {num_lists} manifest lists with overlapping manifests...")
 
-        _manifest_cache.clear()
+        clear_manifest_cache()
 
         for i in range(num_lists):
             list_path = f"{tmp_dir}/manifest-list_{i}.avro"
@@ -265,7 +269,8 @@ def test_manifest_cache_deduplication_efficiency() -> None:
             _manifests(io, list_path)
 
         # Analyze cache efficiency
-        cache_entries = len(_manifest_cache)
+        cache = manifest_module._manifest_cache
+        cache_entries = len(cache) if cache is not None else 0
         # List i contains manifests 0..i, so only the first num_lists manifests are actually used
         manifests_actually_used = num_lists
 
