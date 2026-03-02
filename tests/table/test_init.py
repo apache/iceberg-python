@@ -41,7 +41,7 @@ from pyiceberg.table import (
     Table,
     TableIdentifier,
 )
-from pyiceberg.table.metadata import TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
+from pyiceberg.table.metadata import TableMetadataUtil, TableMetadataV2, TableMetadataV3, _generate_snapshot_id
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     MetadataLogEntry,
@@ -81,6 +81,7 @@ from pyiceberg.table.update import (
     SetPropertiesUpdate,
     SetSnapshotRefUpdate,
     SetStatisticsUpdate,
+    UpgradeFormatVersionUpdate,
     _apply_table_update,
     _TableMetadataUpdateContext,
     update_table_metadata,
@@ -942,6 +943,14 @@ def test_update_metadata_update_sort_order_invalid(table_v2: Table) -> None:
         update_table_metadata(table_v2.metadata, (SetDefaultSortOrderUpdate(sort_order_id=invalid_order_id),))
 
 
+def test_upgrade_format_version_to_v3_initializes_next_row_id(table_v2: Table) -> None:
+    new_metadata = update_table_metadata(table_v2.metadata, (UpgradeFormatVersionUpdate(format_version=3),))
+
+    assert isinstance(new_metadata, TableMetadataV3)
+    assert new_metadata.format_version == 3
+    assert new_metadata.next_row_id == 0
+
+
 def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
     base_metadata = table_v1.metadata
     transaction = table_v1.transaction()
@@ -1705,6 +1714,45 @@ def test_add_snapshot_update_fails_with_smaller_first_row_id(table_v3: Table) ->
     with pytest.raises(
         ValueError,
         match="Cannot add a snapshot with first row id smaller than the table's next-row-id",
+    ):
+        update_table_metadata(table_v3.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
+
+
+def test_add_snapshot_update_fails_without_added_rows(table_v3: Table) -> None:
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=200,
+        timestamp_ms=1602638593590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+        first_row_id=2,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Cannot add snapshot without added rows",
+    ):
+        update_table_metadata(table_v3.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
+
+
+def test_add_snapshot_update_fails_with_stale_sequence_number_in_v3(table_v3: Table) -> None:
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=34,
+        timestamp_ms=1602638593590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+        first_row_id=2,
+        added_rows=1,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Cannot add snapshot with sequence number 34 older than last sequence number 34",
     ):
         update_table_metadata(table_v3.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
 

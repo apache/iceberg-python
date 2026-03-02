@@ -362,7 +362,7 @@ def test_write_empty_manifest() -> None:
                 pass
 
 
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [1, 2, 3])
 @pytest.mark.parametrize("compression", ["null", "deflate", "zstd"])
 def test_write_manifest(
     generated_manifest_file_file_v1: str,
@@ -534,7 +534,7 @@ def test_write_manifest(
         assert data_file.sort_order_id == 0
 
 
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [1, 2, 3])
 @pytest.mark.parametrize("parent_snapshot_id", [19, None])
 @pytest.mark.parametrize("compression", ["null", "deflate"])
 def test_write_manifest_list(
@@ -566,6 +566,7 @@ def test_write_manifest_list(
             parent_snapshot_id=parent_snapshot_id,
             sequence_number=0,
             avro_compression=compression,
+            snapshot_first_row_id=0 if format_version == 3 else None,
         ) as writer:
             writer.add_manifests(demo_manifest_list)
         new_manifest_list = list(read_manifest_list(io.new_input(path)))
@@ -575,8 +576,10 @@ def test_write_manifest_list(
         else:
             expected_metadata = {"snapshot-id": "25", "parent-snapshot-id": "null", "format-version": str(format_version)}
 
-        if format_version == 2:
+        if format_version in (2, 3):
             expected_metadata["sequence-number"] = "0"
+        if format_version == 3:
+            expected_metadata["first-row-id"] = "0"
         _verify_metadata_with_fastavro(path, expected_metadata)
 
         manifest_file = new_manifest_list[0]
@@ -616,6 +619,89 @@ def test_write_manifest_list(
         assert entry.file_sequence_number == 0 if format_version == 1 else 3
         assert entry.snapshot_id == 8744736658442914487
         assert entry.status == ManifestEntryStatus.ADDED
+
+
+def test_write_manifest_list_v3_requires_snapshot_first_row_id() -> None:
+    io = load_file_io()
+
+    with TemporaryDirectory() as tmp_dir:
+        path = tmp_dir + "/manifest-list.avro"
+        output = io.new_output(path)
+        with pytest.raises(ValueError, match="snapshot_first_row_id is required for V3 tables"):
+            with write_manifest_list(
+                format_version=3,
+                output_file=output,
+                snapshot_id=25,
+                parent_snapshot_id=19,
+                sequence_number=7,
+                avro_compression="null",
+            ):
+                pass
+
+
+def test_write_manifest_list_v3_assigns_first_row_id_and_tracks_next_row_id() -> None:
+    io = load_file_io()
+    commit_snapshot_id = 25
+
+    data_manifest = ManifestFile.from_args(
+        manifest_path="/tmp/data-manifest.avro",
+        manifest_length=1,
+        partition_spec_id=0,
+        content=ManifestContent.DATA,
+        sequence_number=-1,
+        min_sequence_number=-1,
+        added_snapshot_id=commit_snapshot_id,
+        added_files_count=1,
+        existing_files_count=1,
+        deleted_files_count=0,
+        added_rows_count=7,
+        existing_rows_count=5,
+        deleted_rows_count=0,
+        partitions=[],
+        key_metadata=None,
+        first_row_id=None,
+        _table_format_version=3,
+    )
+
+    data_manifest_with_existing_row_id = ManifestFile.from_args(
+        manifest_path="/tmp/data-manifest-with-row-id.avro",
+        manifest_length=1,
+        partition_spec_id=0,
+        content=ManifestContent.DATA,
+        sequence_number=9,
+        min_sequence_number=9,
+        added_snapshot_id=23,
+        added_files_count=1,
+        existing_files_count=0,
+        deleted_files_count=0,
+        added_rows_count=3,
+        existing_rows_count=0,
+        deleted_rows_count=0,
+        partitions=[],
+        key_metadata=None,
+        first_row_id=100,
+        _table_format_version=3,
+    )
+
+    with TemporaryDirectory() as tmp_dir:
+        path = tmp_dir + "/manifest-list.avro"
+        output = io.new_output(path)
+        with write_manifest_list(
+            format_version=3,
+            output_file=output,
+            snapshot_id=commit_snapshot_id,
+            parent_snapshot_id=19,
+            sequence_number=7,
+            avro_compression="null",
+            snapshot_first_row_id=11,
+        ) as writer:
+            writer.add_manifests([data_manifest, data_manifest_with_existing_row_id])
+            assert writer.next_row_id == 23
+
+        new_manifest_list = list(read_manifest_list(io.new_input(path)))
+
+    assert new_manifest_list[0].first_row_id == 11
+    assert new_manifest_list[1].first_row_id == 100
 
 
 @pytest.mark.parametrize(
@@ -899,7 +985,7 @@ def test_manifest_cache_efficiency_with_many_overlapping_lists() -> None:
                     assert ref is references[0], f"All references to manifest {i} should be the same object instance"
 
 
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [1, 2, 3])
 def test_manifest_writer_tell(format_version: TableVersion) -> None:
     io = load_file_io()
     test_schema = Schema(NestedField(1, "foo", IntegerType(), False))
