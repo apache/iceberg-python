@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import json
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Union
 
 from google.api_core.exceptions import NotFound
@@ -63,6 +64,12 @@ ICEBERG_TABLE_TYPE_VALUE = "ICEBERG"
 HIVE_SERIALIZATION_LIBRARY = "org.apache.iceberg.mr.hive.HiveIcebergSerDe"
 HIVE_FILE_INPUT_FORMAT = "org.apache.iceberg.mr.hive.HiveIcebergInputFormat"
 HIVE_FILE_OUTPUT_FORMAT = "org.apache.iceberg.mr.hive.HiveIcebergOutputFormat"
+
+
+class BigqueryCommitStatus(str, Enum):
+    SUCCESS = "SUCCESS"
+    FAILURE = "FAILURE"
+    UNKNOWN = "UNKNOWN"
 
 
 class BigQueryMetastoreCatalog(MetastoreCatalog):
@@ -302,9 +309,9 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         finally:
             if commit_error:
                 commit_status = self._check_bigquery_commit_status(table_ref, updated_staged_table.metadata_location)
-                if commit_status == "SUCCESS":
+                if commit_status == BigqueryCommitStatus.SUCCESS:
                     commit_error = None
-                elif commit_status == "UNKNOWN":
+                elif commit_status == BigqueryCommitStatus.UNKNOWN:
                     raise CommitStateUnknownException(
                         f"Commit state unknown for table {dataset_name}.{table_name}"
                     ) from commit_error
@@ -512,10 +519,10 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
             )
             current_metadata_location = parameters.get(METADATA_LOCATION_PROP)
             if current_metadata_location == new_metadata_location:
-                return "SUCCESS"
+                return BigqueryCommitStatus.SUCCESS
 
             if not current_metadata_location:
-                return "FAILURE"
+                return BigqueryCommitStatus.FAILURE
 
             io = self._load_file_io(location=current_metadata_location)
             current_metadata = FromInputFile.table_metadata(io.new_input(current_metadata_location))
@@ -525,11 +532,11 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
             if previous_metadata_location:
                 previous_metadata_locations.add(previous_metadata_location)
 
-            return "SUCCESS" if new_metadata_location in previous_metadata_locations else "FAILURE"
+            return BigqueryCommitStatus.SUCCESS if new_metadata_location in previous_metadata_locations else "FAILURE"
         except NotFound:
-            return "FAILURE"
+            return BigqueryCommitStatus.FAILURE
         except Exception:
-            return "UNKNOWN"
+            return BigqueryCommitStatus.UNKNOWN
 
     def _default_storage_location(self, location: str | None, dataset_ref: DatasetReference) -> str | None:
         if location:
