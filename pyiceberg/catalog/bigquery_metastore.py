@@ -319,9 +319,6 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         if commit_error:
             raise commit_error
 
-        if current_table:
-            self._delete_old_metadata(updated_staged_table.io, current_table.metadata, updated_staged_table.metadata)
-
         return CommitTableResponse(
             metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
         )
