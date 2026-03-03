@@ -96,6 +96,9 @@ git checkout -b pyiceberg-0.8.x pyiceberg-0.8.0
 
 # Cherry-pick commits for the upcoming patch release
 git cherry-pick <commit>
+
+# Push the new branch
+git push git@github.com:apache/iceberg-python.git pyiceberg-0.8.x
 ```
 
 ### Create Tag
