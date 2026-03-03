@@ -74,7 +74,7 @@ jobs:
 
     steps:
     - name: Download all the artifacts
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
       with:
         merge-multiple: true
         path: dist/

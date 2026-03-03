@@ -197,7 +197,7 @@ jobs:
     - name: Install dependencies
       run: uv sync --group dev
     - name: Download all coverage artifacts
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
       with:
         pattern: coverage-*
         merge-multiple: true
