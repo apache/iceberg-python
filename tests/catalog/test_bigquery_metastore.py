@@ -227,14 +227,16 @@ def test_commit_table_update_path_uses_update_table(mocker: MockFixture) -> None
 
     staged = MagicMock()
     staged.metadata = MagicMock()
+    staged.metadata.table_uuid = "test-table-uuid"
     staged.metadata.location = "gs://bucket/db/table"
     staged.metadata_location = "gs://bucket/db/table/metadata/00001.metadata.json"
     staged.io = MagicMock()
     mocker.patch.object(catalog, "_update_and_stage_table", return_value=staged)
     mocker.patch.object(catalog, "_write_metadata")
-    mocker.patch.object(catalog, "_create_table_parameters", return_value={"metadata_location": staged.metadata_location})
+    create_table_parameters = mocker.patch.object(
+        catalog, "_create_table_parameters", return_value={"metadata_location": staged.metadata_location}
+    )
     mocker.patch.object(catalog, "_create_external_catalog_table_options", return_value=MagicMock())
-    delete_old_metadata = mocker.patch.object(catalog, "_delete_old_metadata")
     commit_response = MagicMock()
     commit_response.metadata_location = staged.metadata_location
     mocker.patch("pyiceberg.catalog.bigquery_metastore.CommitTableResponse", return_value=commit_response)
@@ -243,7 +245,11 @@ def test_commit_table_update_path_uses_update_table(mocker: MockFixture) -> None
 
     client_mock.update_table.assert_called_once_with(current_bq_table, ["external_catalog_table_options"])
     client_mock.create_table.assert_not_called()
-    delete_old_metadata.assert_called_once_with(staged.io, current_table.metadata, staged.metadata)
+    create_table_parameters.assert_called_once_with(
+        metadata_file_location=staged.metadata_location,
+        table_metadata=staged.metadata,
+        previous_metadata_location=current_table.metadata_location,
+    )
     assert response.metadata_location == staged.metadata_location
 
 
