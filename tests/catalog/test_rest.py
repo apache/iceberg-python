@@ -493,9 +493,10 @@ def test_sigv4_sign_request_without_body(rest_mock: Mocker) -> None:
     assert isinstance(adapter, HTTPAdapter)
     adapter.add_headers(prepared)
 
-    assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256")
+    assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256 Credential=")
     assert prepared.headers["Original-Authorization"] == f"Bearer {existing_token}"
     assert prepared.headers["x-amz-content-sha256"] == EMPTY_BODY_SHA256
+    assert "SignedHeaders=" in prepared.headers["Authorization"]
 
 
 def test_sigv4_sign_request_with_body(rest_mock: Mocker) -> None:
@@ -524,9 +525,74 @@ def test_sigv4_sign_request_with_body(rest_mock: Mocker) -> None:
     assert isinstance(adapter, HTTPAdapter)
     adapter.add_headers(prepared)
 
-    assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256")
+    assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256 Credential=")
+    assert "SignedHeaders=" in prepared.headers["Authorization"]
+    # Conflicting Authorization header is relocated
     assert prepared.headers["Original-Authorization"] == f"Bearer {existing_token}"
-    assert prepared.headers.get("x-amz-content-sha256") != EMPTY_BODY_SHA256
+    assert prepared.headers["x-amz-content-sha256"] == "nhKdVGKGU3IMGjYlod9xKUVc7/H5K6zTWj60yJOM80k="
+
+
+def test_sigv4_content_sha256_with_bytes_body(rest_mock: Mocker) -> None:
+    existing_token = "existing_token"
+
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "token": existing_token,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-west-2",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+        },
+    )
+
+    body_content = b'{"namespace": "test_namespace"}'
+    prepared = catalog._session.prepare_request(
+        Request(
+            "POST",
+            f"{TEST_URI}v1/namespaces",
+            data=body_content,
+        )
+    )
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+    adapter.add_headers(prepared)
+
+    assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256 Credential=")
+    assert "SignedHeaders=" in prepared.headers["Authorization"]
+    assert prepared.headers["x-amz-content-sha256"] == "sD20bEQP+WnwKPT7jxn7PIACGciAeWjQPlzFCK5Fifo="
+
+
+def test_sigv4_conflicting_sigv4_headers(rest_mock: Mocker) -> None:
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-west-2",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+        },
+    )
+
+    prepared = catalog._session.prepare_request(Request("GET", f"{TEST_URI}v1/config"))
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+
+    # Inject conflicting SigV4 headers before signing
+    prepared.headers["x-amz-content-sha256"] = "fake"
+    prepared.headers["X-Amz-Date"] = "fake"
+
+    adapter.add_headers(prepared)
+
+    # Matching Java SDK: conflicting headers are relocated with "Original-" prefix
+    assert prepared.headers.get("Original-x-amz-content-sha256") == "fake"
+    assert prepared.headers.get("Original-X-Amz-Date") == "fake"
+    # SigV4 headers are set correctly after signing
+    assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256 Credential=")
+    assert prepared.headers["x-amz-content-sha256"] == EMPTY_BODY_SHA256
+    assert "X-Amz-Date" in prepared.headers
 
 
 def test_list_tables_404(rest_mock: Mocker) -> None:
