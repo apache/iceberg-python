@@ -740,6 +740,8 @@ class RestCatalog(Catalog):
         return {"namespace": identifier_tuple[:-1], "name": identifier_tuple[-1]}
 
     def _init_sigv4(self, session: Session) -> None:
+        import base64
+        import hashlib
         from urllib import parse
 
         import boto3
@@ -747,6 +749,12 @@ class RestCatalog(Catalog):
         from botocore.awsrequest import AWSRequest
         from requests import PreparedRequest
         from requests.adapters import HTTPAdapter
+
+        class _IcebergSigV4Auth(SigV4Auth):
+            def canonical_request(self, request: Any) -> str:
+                cr = super().canonical_request(request)
+                # Replace the last line (body_checksum) with hex-encoded payload hash.
+                return cr.rsplit("\n", 1)[0] + "\n" + self.payload(request)
 
         class SigV4Adapter(HTTPAdapter):
             def __init__(self, **properties: str):
@@ -774,17 +782,27 @@ class RestCatalog(Catalog):
                 # remove the connection header as it will be updated after signing
                 if "connection" in request.headers:
                     del request.headers["connection"]
-                # For empty bodies, explicitly set the content hash header to the SHA256 of an empty string
-                if not request.body:
-                    request.headers["x-amz-content-sha256"] = EMPTY_BODY_SHA256
+
+                # Compute the x-amz-content-sha256 header to match Iceberg Java SDK:
+                #   - empty body → hex (EMPTY_BODY_SHA256)
+                #   - non-empty body → base64
+                if request.body:
+                    body_bytes = request.body.encode("utf-8") if isinstance(request.body, str) else request.body
+                    content_sha256_header = base64.b64encode(hashlib.sha256(body_bytes).digest()).decode()
+                else:
+                    content_sha256_header = EMPTY_BODY_SHA256
+
+                signing_headers = dict(request.headers)
+                signing_headers["x-amz-content-sha256"] = content_sha256_header
 
                 aws_request = AWSRequest(
-                    method=request.method, url=url, params=params, data=request.body, headers=dict(request.headers)
+                    method=request.method, url=url, params=params, data=request.body, headers=signing_headers
                 )
 
-                SigV4Auth(credentials, service, region).add_auth(aws_request)
-                original_header = request.headers
-                signed_headers = aws_request.headers
+                _IcebergSigV4Auth(credentials, service, region).add_auth(aws_request)
+
+                original_header = dict(request.headers)
+                signed_headers = dict(aws_request.headers)
                 relocated_headers = {}
 
                 # relocate headers if there is a conflict with signed headers
