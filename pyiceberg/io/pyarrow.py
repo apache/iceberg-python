@@ -120,7 +120,7 @@ from pyiceberg.io import (
     OutputFile,
     OutputStream,
 )
-from pyiceberg.io.fileformat import DataFileStatistics
+from pyiceberg.io.fileformat import DataFileStatistics as DataFileStatistics
 from pyiceberg.manifest import (
     DataFile,
     DataFileContent,
