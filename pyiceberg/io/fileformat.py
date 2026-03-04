@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""File Format API for reading and writing Iceberg data files."""
+"""File Format API for writing Iceberg data files."""
 
 from __future__ import annotations
 
