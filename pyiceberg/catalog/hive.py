@@ -504,8 +504,13 @@ class HiveCatalog(MetastoreCatalog):
         return _do_wait_for_lock()
 
     def _do_commit(
-        self, open_client: Client, table_identifier: Identifier, database_name: str, table_name: str,
-        requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...],
+        self,
+        open_client: Client,
+        table_identifier: Identifier,
+        database_name: str,
+        table_name: str,
+        requirements: tuple[TableRequirement, ...],
+        updates: tuple[TableUpdate, ...],
     ) -> CommitTableResponse:
         """Perform the actual commit logic (get table, update, write metadata, alter/create in HMS).
 
