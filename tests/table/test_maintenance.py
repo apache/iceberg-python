@@ -73,7 +73,7 @@ def test_maintenance_compact(catalog: Catalog) -> None:
     table.refresh()
     after_files = list(table.scan().plan_files())
     assert len(after_files) == 3  # Should be 1 optimized data file per partition
-    
+
     arrow_table_after = table.scan().to_arrow()
     assert arrow_table_after.num_rows == 120
     assert arrow_table_before.column_names == arrow_table_after.column_names
