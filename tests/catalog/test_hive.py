@@ -51,7 +51,6 @@ from pyiceberg.catalog.hive import (
     LOCK_CHECK_MAX_WAIT_TIME,
     LOCK_CHECK_MIN_WAIT_TIME,
     LOCK_CHECK_RETRIES,
-    LOCK_ENABLED,
     HiveCatalog,
     _construct_hive_storage_descriptor,
     _HiveClient,
@@ -66,6 +65,7 @@ from pyiceberg.exceptions import (
 )
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table import TableProperties
 from pyiceberg.table.metadata import TableMetadataUtil, TableMetadataV1, TableMetadataV2
 from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
@@ -1410,28 +1410,43 @@ def test_create_hive_client_with_kerberos_using_context_manager(
             assert open_client._iprot.trans.isOpen()
 
 
-def test_lock_enabled_defaults_to_true() -> None:
-    """Verify that lock-enabled defaults to True for backward compatibility."""
+def test_hive_lock_enabled_defaults_to_true() -> None:
+    """Without any lock property set, locking should be enabled (backward compatible)."""
+    assert HiveCatalog._hive_lock_enabled(table_properties={}, catalog_properties={}) is True
+
+
+def test_hive_lock_enabled_table_property_disables_lock() -> None:
+    """Table property engine.hive.lock-enabled=false disables locking."""
+    table_props = {TableProperties.HIVE_LOCK_ENABLED: "false"}
+    assert HiveCatalog._hive_lock_enabled(table_properties=table_props, catalog_properties={}) is False
+
+
+def test_hive_lock_enabled_catalog_property_disables_lock() -> None:
+    """Catalog property engine.hive.lock-enabled=false disables locking when table doesn't set it."""
+    catalog_props = {TableProperties.HIVE_LOCK_ENABLED: "false"}
+    assert HiveCatalog._hive_lock_enabled(table_properties={}, catalog_properties=catalog_props) is False
+
+
+def test_hive_lock_enabled_table_property_overrides_catalog() -> None:
+    """Table property takes precedence over catalog property."""
+    table_props = {TableProperties.HIVE_LOCK_ENABLED: "true"}
+    catalog_props = {TableProperties.HIVE_LOCK_ENABLED: "false"}
+    assert HiveCatalog._hive_lock_enabled(table_properties=table_props, catalog_properties=catalog_props) is True
+
+    table_props = {TableProperties.HIVE_LOCK_ENABLED: "false"}
+    catalog_props = {TableProperties.HIVE_LOCK_ENABLED: "true"}
+    assert HiveCatalog._hive_lock_enabled(table_properties=table_props, catalog_properties=catalog_props) is False
+
+
+def test_commit_table_skips_locking_when_table_property_disables_it() -> None:
+    """When table property engine.hive.lock-enabled=false, commit_table must not lock/unlock."""
     prop = {"uri": HIVE_METASTORE_FAKE_URL}
-    catalog = HiveCatalog(HIVE_CATALOG_NAME, **prop)
-    assert catalog._lock_enabled is True
-
-
-def test_lock_enabled_can_be_disabled() -> None:
-    """Verify that lock-enabled can be set to false."""
-    prop = {"uri": HIVE_METASTORE_FAKE_URL, LOCK_ENABLED: "false"}
-    catalog = HiveCatalog(HIVE_CATALOG_NAME, **prop)
-    assert catalog._lock_enabled is False
-
-
-def test_commit_table_skips_locking_when_lock_disabled() -> None:
-    """When lock-enabled is false, commit_table must not call lock, check_lock, or unlock."""
-    prop = {"uri": HIVE_METASTORE_FAKE_URL, LOCK_ENABLED: "false"}
     catalog = HiveCatalog(HIVE_CATALOG_NAME, **prop)
     catalog._client = MagicMock()
 
     mock_table = MagicMock()
     mock_table.name.return_value = ("default", "my_table")
+    mock_table.properties = {TableProperties.HIVE_LOCK_ENABLED: "false"}
 
     mock_do_commit = MagicMock()
     mock_do_commit.return_value = MagicMock()
@@ -1439,17 +1454,36 @@ def test_commit_table_skips_locking_when_lock_disabled() -> None:
     with patch.object(catalog, "_do_commit", mock_do_commit):
         catalog.commit_table(mock_table, requirements=(), updates=())
 
-    # The core commit logic should still be called
     mock_do_commit.assert_called_once()
-
-    # But no locking operations should have been performed
     catalog._client.__enter__().lock.assert_not_called()
     catalog._client.__enter__().check_lock.assert_not_called()
     catalog._client.__enter__().unlock.assert_not_called()
 
 
-def test_commit_table_uses_locking_when_lock_enabled() -> None:
-    """When lock-enabled is true (default), commit_table must call lock and unlock."""
+def test_commit_table_skips_locking_when_catalog_property_disables_it() -> None:
+    """When catalog property engine.hive.lock-enabled=false, commit_table must not lock/unlock."""
+    prop = {"uri": HIVE_METASTORE_FAKE_URL, TableProperties.HIVE_LOCK_ENABLED: "false"}
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, **prop)
+    catalog._client = MagicMock()
+
+    mock_table = MagicMock()
+    mock_table.name.return_value = ("default", "my_table")
+    mock_table.properties = {}
+
+    mock_do_commit = MagicMock()
+    mock_do_commit.return_value = MagicMock()
+
+    with patch.object(catalog, "_do_commit", mock_do_commit):
+        catalog.commit_table(mock_table, requirements=(), updates=())
+
+    mock_do_commit.assert_called_once()
+    catalog._client.__enter__().lock.assert_not_called()
+    catalog._client.__enter__().check_lock.assert_not_called()
+    catalog._client.__enter__().unlock.assert_not_called()
+
+
+def test_commit_table_uses_locking_by_default() -> None:
+    """When no lock property is set, commit_table must acquire and release a lock."""
     lockid = 99999
     prop = {"uri": HIVE_METASTORE_FAKE_URL}
     catalog = HiveCatalog(HIVE_CATALOG_NAME, **prop)
@@ -1462,6 +1496,7 @@ def test_commit_table_uses_locking_when_lock_enabled() -> None:
 
     mock_table = MagicMock()
     mock_table.name.return_value = ("default", "my_table")
+    mock_table.properties = {}
 
     mock_do_commit = MagicMock()
     mock_do_commit.return_value = MagicMock()
@@ -1469,8 +1504,6 @@ def test_commit_table_uses_locking_when_lock_enabled() -> None:
     with patch.object(catalog, "_do_commit", mock_do_commit):
         catalog.commit_table(mock_table, requirements=(), updates=())
 
-    # Locking operations should have been performed
     mock_client.lock.assert_called_once()
     mock_client.unlock.assert_called_once()
-    # The core commit logic should still be called
     mock_do_commit.assert_called_once()

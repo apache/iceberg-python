@@ -247,6 +247,9 @@ class TableProperties:
     MIN_SNAPSHOTS_TO_KEEP = "history.expire.min-snapshots-to-keep"
     MIN_SNAPSHOTS_TO_KEEP_DEFAULT = 1
 
+    HIVE_LOCK_ENABLED = "engine.hive.lock-enabled"
+    HIVE_LOCK_ENABLED_DEFAULT = True
+
 
 class Transaction:
     _table: Table
