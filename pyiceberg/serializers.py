@@ -129,7 +129,7 @@ class ToOutputFile:
         """
         with output_file.create(overwrite=overwrite) as output_stream:
             # We need to serialize None values, in order to dump `None` current-snapshot-id as `-1`
-            exclude_none = False if Config().get_bool("legacy-current-snapshot-id") else True
+            exclude_none = False if Config.load().get_bool("legacy-current-snapshot-id") else True
 
             json_bytes = metadata.model_dump_json(exclude_none=exclude_none).encode(UTF8)
             json_bytes = Compressor.get_compressor(output_file.location).bytes_compressor()(json_bytes)

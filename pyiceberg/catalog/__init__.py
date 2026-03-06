@@ -25,6 +25,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
+from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -74,7 +75,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_ENV_CONFIG = Config()
+
+@lru_cache(maxsize=1)
+def _get_env_config() -> Config:
+    return Config.load()
+
 
 TOKEN = "token"
 TYPE = "type"
@@ -243,9 +248,9 @@ def load_catalog(name: str | None = None, **properties: str | None) -> Catalog:
             or if it could not determine the catalog based on the properties.
     """
     if name is None:
-        name = _ENV_CONFIG.get_default_catalog_name()
+        name = _get_env_config().get_default_catalog_name()
 
-    env = _ENV_CONFIG.get_catalog_config(name)
+    env = _get_env_config().get_catalog_config(name)
     conf: RecursiveDict = merge_config(env or {}, cast(RecursiveDict, properties))
 
     catalog_type: CatalogType | None
@@ -278,7 +283,7 @@ def load_catalog(name: str | None = None, **properties: str | None) -> Catalog:
 
 
 def list_catalogs() -> list[str]:
-    return _ENV_CONFIG.get_known_catalogs()
+    return _get_env_config().get_known_catalogs()
 
 
 def delete_files(io: FileIO, files_to_delete: set[str], file_type: str) -> None:
@@ -781,7 +786,7 @@ class Catalog(ABC):
 
             from pyiceberg.io.pyarrow import _ConvertToIcebergWithoutIDs, visit_pyarrow
 
-            downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+            downcast_ns_timestamp_to_us = Config.load().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
             if isinstance(schema, pa.Schema):
                 schema: Schema = visit_pyarrow(  # type: ignore
                     schema,

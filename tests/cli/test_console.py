@@ -39,19 +39,19 @@ from pyiceberg.utils.config import Config
 def test_missing_uri(mocker: MockFixture, empty_home_dir_path: str) -> None:
     # mock to prevent parsing ~/.pyiceberg.yaml or {PYICEBERG_HOME}/.pyiceberg.yaml
     mocker.patch.dict(os.environ, values={"HOME": empty_home_dir_path, "PYICEBERG_HOME": empty_home_dir_path})
-    mocker.patch("pyiceberg.catalog._ENV_CONFIG", return_value=Config())
+    mocker.patch("pyiceberg.catalog._get_env_config", return_value=Config())
 
     runner = CliRunner()
     result = runner.invoke(run, ["list"])
 
     assert result.exit_code == 1
-    assert result.output == "Could not initialize catalog with the following properties: {}\n"
+    assert "URI missing, please provide using --uri" in result.output
 
 
 def test_hive_catalog_missing_uri_shows_helpful_error(mocker: MockFixture) -> None:
     mock_env_config = mocker.MagicMock()
     mock_env_config.get_catalog_config.return_value = {"type": "hive"}
-    mocker.patch("pyiceberg.catalog._ENV_CONFIG", mock_env_config)
+    mocker.patch("pyiceberg.catalog._get_env_config", return_value=mock_env_config)
 
     runner = CliRunner()
     result = runner.invoke(run, ["--catalog", "my_hive_catalog", "list"])

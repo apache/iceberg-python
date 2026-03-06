@@ -71,7 +71,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
             raise ValueError(f"Missing property: {GCP_PROJECT_ID}")
 
         # BigQuery requires current-snapshot-id to be present for tables to be created.
-        if not Config().get_bool("legacy-current-snapshot-id"):
+        if not Config.load().get_bool("legacy-current-snapshot-id"):
             raise ValueError("legacy-current-snapshot-id must be enabled to work with BigQuery.")
 
         if credentials_file and credentials_info_str:
