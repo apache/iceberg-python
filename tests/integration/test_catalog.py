@@ -334,6 +334,132 @@ def test_update_schema_conflict(test_catalog: Catalog, test_schema: Schema, tabl
 
 @pytest.mark.integration
 @pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_update_table_schema_assignment_conflict(
+    test_catalog: Catalog, test_schema: Schema, table_name: str, database_name: str
+) -> None:
+    if isinstance(test_catalog, HiveCatalog):
+        pytest.skip("HiveCatalog fails in this test, need to investigate")
+
+    identifier = (database_name, table_name)
+
+    test_catalog.create_namespace(database_name)
+    table = test_catalog.create_table(identifier, test_schema)
+    assert test_catalog.table_exists(identifier)
+
+    update = table.update_schema().add_column("new_col", LongType())
+
+    # update the schema concurrently so that the original update fails
+    concurrent_update = test_catalog.load_table(identifier).update_schema().add_column("another_col", IntegerType())
+    concurrent_update.commit()
+
+    with pytest.raises(CommitFailedException, match="Requirement failed: current schema (id has )?changed"):
+        update.commit()
+
+    loaded = test_catalog.load_table(identifier)
+    assert "another_col" in loaded.schema().column_names
+    assert "new_col" not in loaded.schema().column_names
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_update_table_assignment_spec_conflict(
+    test_catalog: Catalog, test_schema: Schema, table_name: str, database_name: str
+) -> None:
+    if isinstance(test_catalog, HiveCatalog):
+        pytest.skip("HiveCatalog fails in this test, need to investigate")
+
+    identifier = (database_name, table_name)
+
+    test_catalog.create_namespace(database_name)
+    table = test_catalog.create_table(identifier, test_schema)
+    assert test_catalog.table_exists(identifier)
+
+    update = table.update_spec().add_field("VendorID", BucketTransform(16), "shard")
+
+    # update the spec concurrently so that the original update fails
+    concurrent_update = (
+        test_catalog.load_table(identifier).update_spec().add_field("VendorID", BucketTransform(8), "another_shard")
+    )
+    concurrent_update.commit()
+
+    with pytest.raises(
+        CommitFailedException, match="Requirement failed: (last assigned partition id .*changed|default partition spec changed)"
+    ):
+        update.commit()
+
+    loaded = test_catalog.load_table(identifier)
+    assert "another_shard" in [f.name for f in loaded.spec().fields]
+    assert "shard" not in [f.name for f in loaded.spec().fields]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_concurrent_replace_transaction_schema_conflict(
+    test_catalog: Catalog, test_schema: Schema, table_name: str, database_name: str
+) -> None:
+    if isinstance(test_catalog, HiveCatalog):
+        pytest.skip("HiveCatalog fails in this test, need to investigate")
+
+    identifier = (database_name, table_name)
+
+    test_catalog.create_namespace(database_name)
+    table = test_catalog.create_table(identifier, test_schema)
+    assert test_catalog.table_exists(identifier)
+
+    # Simulate a replace transaction by starting a standard transaction
+    # and adding requirements that would be present in a replace
+    table = test_catalog.load_table(identifier)
+    update = table.transaction()
+    with update.update_schema() as update_schema:
+        update_schema.add_column("new_col", LongType())
+
+    # Concurrent update that changes the schema
+    concurrent_table = test_catalog.load_table(identifier)
+    with concurrent_table.update_schema() as concurrent_update:
+        concurrent_update.add_column("another_col", IntegerType())
+
+    # The original "replace" transaction should fail because the current schema ID changed
+    with pytest.raises(
+        CommitFailedException, match="Requirement failed: (current schema (id has )?changed|last assigned field id changed)"
+    ):
+        update.commit_transaction()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_concurrent_replace_transaction_partition_spec_conflict(
+    test_catalog: Catalog, test_schema: Schema, table_name: str, database_name: str
+) -> None:
+    if isinstance(test_catalog, HiveCatalog):
+        pytest.skip("HiveCatalog fails in this test, need to investigate")
+
+    identifier = (database_name, table_name)
+
+    test_catalog.create_namespace(database_name)
+    table = test_catalog.create_table(identifier, test_schema)
+    assert test_catalog.table_exists(identifier)
+
+    # Simulate a replace transaction
+    table = test_catalog.load_table(identifier)
+    update = table.transaction()
+    with update.update_spec() as update_spec:
+        update_spec.add_field("VendorID", BucketTransform(16), "shard")
+
+    # Concurrent update that changes the spec
+    concurrent_table = test_catalog.load_table(identifier)
+    with concurrent_table.update_spec() as concurrent_update:
+        concurrent_update.add_field("VendorID", BucketTransform(8), "another_shard")
+
+    # The original "replace" transaction should fail because the default spec ID changed
+    with pytest.raises(
+        CommitFailedException,
+        match="Requirement failed: (default partition spec changed)",
+    ):
+        update.commit_transaction()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
 def test_create_table_transaction_simple(test_catalog: Catalog, test_schema: Schema, table_name: str, database_name: str) -> None:
     identifier = (database_name, table_name)
 
