@@ -127,9 +127,6 @@ HIVE_KERBEROS_AUTH_DEFAULT = False
 HIVE_KERBEROS_SERVICE_NAME = "hive.kerberos-service-name"
 HIVE_KERBEROS_SERVICE_NAME_DEFAULT = "hive"
 
-LOCK_ENABLED = "lock-enabled"
-DEFAULT_LOCK_ENABLED = True
-
 LOCK_CHECK_MIN_WAIT_TIME = "lock-check-min-wait-time"
 LOCK_CHECK_MAX_WAIT_TIME = "lock-check-max-wait-time"
 LOCK_CHECK_RETRIES = "lock-check-retries"
@@ -304,7 +301,6 @@ class HiveCatalog(MetastoreCatalog):
         super().__init__(name, **properties)
         self._client = self._create_hive_client(properties)
 
-        self._lock_enabled = property_as_bool(properties, LOCK_ENABLED, DEFAULT_LOCK_ENABLED)
         self._lock_check_min_wait_time = property_as_float(properties, LOCK_CHECK_MIN_WAIT_TIME, DEFAULT_LOCK_CHECK_MIN_WAIT_TIME)
         self._lock_check_max_wait_time = property_as_float(properties, LOCK_CHECK_MAX_WAIT_TIME, DEFAULT_LOCK_CHECK_MAX_WAIT_TIME)
         self._lock_check_retries = property_as_float(
@@ -593,6 +589,19 @@ class HiveCatalog(MetastoreCatalog):
             metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
         )
 
+    @staticmethod
+    def _hive_lock_enabled(table_properties: Properties, catalog_properties: Properties) -> bool:
+        """Determine whether HMS locking is enabled for a commit.
+
+        Matches the Java implementation in HiveTableOperations: checks the table property first,
+        then falls back to catalog properties, then defaults to True.
+        """
+        if TableProperties.HIVE_LOCK_ENABLED in table_properties:
+            return property_as_bool(
+                table_properties, TableProperties.HIVE_LOCK_ENABLED, TableProperties.HIVE_LOCK_ENABLED_DEFAULT
+            )
+        return property_as_bool(catalog_properties, TableProperties.HIVE_LOCK_ENABLED, TableProperties.HIVE_LOCK_ENABLED_DEFAULT)
+
     def commit_table(
         self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
@@ -612,10 +621,11 @@ class HiveCatalog(MetastoreCatalog):
         """
         table_identifier = table.name()
         database_name, table_name = self.identifier_to_database_and_table(table_identifier, NoSuchTableError)
+        lock_enabled = self._hive_lock_enabled(table.properties, self.properties)
         # commit to hive
         # https://github.com/apache/hive/blob/master/standalone-metastore/metastore-common/src/main/thrift/hive_metastore.thrift#L1232
         with self._client as open_client:
-            if self._lock_enabled:
+            if lock_enabled:
                 lock: LockResponse = open_client.lock(self._create_lock_request(database_name, table_name))
 
                 try:

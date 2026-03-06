@@ -247,6 +247,9 @@ class TableProperties:
     MIN_SNAPSHOTS_TO_KEEP = "history.expire.min-snapshots-to-keep"
     MIN_SNAPSHOTS_TO_KEEP_DEFAULT = 1
 
+    HIVE_LOCK_ENABLED = "engine.hive.lock-enabled"
+    HIVE_LOCK_ENABLED_DEFAULT = True
+
 
 class Transaction:
     _table: Table
@@ -2002,13 +2005,11 @@ class DataScan(TableScan):
         # The lambda created here is run in multiple threads.
         # So we avoid creating _EvaluatorExpression methods bound to a single
         # shared instance across multiple threads.
-        return lambda datafile: (
-            residual_evaluator_of(
-                spec=spec,
-                expr=self.row_filter,
-                case_sensitive=self.case_sensitive,
-                schema=self.table_metadata.schema(),
-            )
+        return lambda datafile: residual_evaluator_of(
+            spec=spec,
+            expr=self.row_filter,
+            case_sensitive=self.case_sensitive,
+            schema=self.table_metadata.schema(),
         )
 
     @staticmethod
