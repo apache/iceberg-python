@@ -20,6 +20,7 @@ from tempfile import TemporaryDirectory
 import fastavro
 import pytest
 
+import pyiceberg.manifest as manifest_module
 from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.io import load_file_io
 from pyiceberg.io.pyarrow import PyArrowFileIO
@@ -32,8 +33,8 @@ from pyiceberg.manifest import (
     ManifestEntryStatus,
     ManifestFile,
     PartitionFieldSummary,
-    _manifest_cache,
     _manifests,
+    clear_manifest_cache,
     read_manifest_list,
     write_manifest,
     write_manifest_list,
@@ -46,9 +47,8 @@ from pyiceberg.types import IntegerType, NestedField
 
 
 @pytest.fixture(autouse=True)
-def clear_global_manifests_cache() -> None:
-    # Clear the global cache before each test
-    _manifest_cache.clear()
+def reset_global_manifests_cache() -> None:
+    clear_manifest_cache()
 
 
 def _verify_metadata_with_fastavro(avro_file: str, expected_metadata: dict[str, str]) -> None:
@@ -804,9 +804,9 @@ def test_manifest_cache_deduplicates_manifest_files() -> None:
 
         # Verify cache size - should only have 3 unique ManifestFile objects
         # instead of 1 + 2 + 3 = 6 objects as with the old approach
-        assert len(_manifest_cache) == 3, (
-            f"Cache should contain exactly 3 unique ManifestFile objects, but has {len(_manifest_cache)}"
-        )
+        cache = manifest_module._manifest_cache
+        assert cache is not None, "Manifest cache should be enabled for this test"
+        assert len(cache) == 3, f"Cache should contain exactly 3 unique ManifestFile objects, but has {len(cache)}"
 
 
 def test_manifest_cache_efficiency_with_many_overlapping_lists() -> None:
@@ -879,9 +879,11 @@ def test_manifest_cache_efficiency_with_many_overlapping_lists() -> None:
         # With the new approach, we should have exactly N objects
 
         # Verify cache has exactly N unique entries
-        assert len(_manifest_cache) == num_manifests, (
+        cache = manifest_module._manifest_cache
+        assert cache is not None, "Manifest cache should be enabled for this test"
+        assert len(cache) == num_manifests, (
             f"Cache should contain exactly {num_manifests} ManifestFile objects, "
-            f"but has {len(_manifest_cache)}. "
+            f"but has {len(cache)}. "
             f"Old approach would have {num_manifests * (num_manifests + 1) // 2} objects."
         )
 
@@ -932,3 +934,67 @@ def test_manifest_writer_tell(format_version: TableVersion) -> None:
             after_entry_bytes = writer.tell()
 
             assert after_entry_bytes > initial_bytes, "Bytes should increase after adding entry"
+
+
+def test_clear_manifest_cache() -> None:
+    """Test that clear_manifest_cache() clears cache entries while keeping cache enabled."""
+    io = PyArrowFileIO()
+
+    with TemporaryDirectory() as tmp_dir:
+        schema = Schema(NestedField(field_id=1, name="id", field_type=IntegerType(), required=True))
+        spec = UNPARTITIONED_PARTITION_SPEC
+
+        # Create a manifest file
+        manifest_path = f"{tmp_dir}/manifest.avro"
+        with write_manifest(
+            format_version=2,
+            spec=spec,
+            schema=schema,
+            output_file=io.new_output(manifest_path),
+            snapshot_id=1,
+            avro_compression="zstandard",
+        ) as writer:
+            data_file = DataFile.from_args(
+                content=DataFileContent.DATA,
+                file_path=f"{tmp_dir}/data.parquet",
+                file_format=FileFormat.PARQUET,
+                partition=Record(),
+                record_count=100,
+                file_size_in_bytes=1000,
+            )
+            writer.add_entry(
+                ManifestEntry.from_args(
+                    status=ManifestEntryStatus.ADDED,
+                    snapshot_id=1,
+                    data_file=data_file,
+                )
+            )
+        manifest_file = writer.to_manifest_file()
+
+        # Create a manifest list
+        list_path = f"{tmp_dir}/manifest-list.avro"
+        with write_manifest_list(
+            format_version=2,
+            output_file=io.new_output(list_path),
+            snapshot_id=1,
+            parent_snapshot_id=None,
+            sequence_number=1,
+            avro_compression="zstandard",
+        ) as list_writer:
+            list_writer.add_manifests([manifest_file])
+
+        # Populate the cache
+        _manifests(io, list_path)
+
+        # Verify cache has entries
+        cache = manifest_module._manifest_cache
+        assert cache is not None, "Cache should be enabled"
+        assert len(cache) > 0, "Cache should have entries after reading manifests"
+
+        # Clear the cache
+        clear_manifest_cache()
+
+        # Verify cache is empty but still enabled
+        cache_after = manifest_module._manifest_cache
+        assert cache_after is not None, "Cache should still be enabled after clear"
+        assert len(cache_after) == 0, "Cache should be empty after clear"
