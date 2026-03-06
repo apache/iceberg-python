@@ -45,8 +45,7 @@ class MaintenanceTable:
         return ExpireSnapshots(transaction=Transaction(self.tbl, autocommit=True))
 
     def compact(self) -> None:
-        """Compact the table's data and delete files by reading and overwriting
-        the entire table.
+        """Compact the table's data and delete files by reading and overwriting the entire table.
 
         Note: This is a full-table compaction that leverages Arrow for binpacking.
         It currently reads the entire table into memory via `.to_arrow()`.
