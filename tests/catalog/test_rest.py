@@ -33,7 +33,7 @@ from pyiceberg.catalog.rest import (
     DEFAULT_ENDPOINTS,
     EMPTY_BODY_SHA256,
     OAUTH2_SERVER_URI,
-    SIGV4_DEFAULT_MAX_RETRIES,
+    SIGV4_MAX_RETRIES_DEFAULT,
     SIGV4_MAX_RETRIES,
     SNAPSHOT_LOADING_MODE,
     Capability,
@@ -546,7 +546,7 @@ def test_sigv4_adapter_default_retry_config(rest_mock: Mocker) -> None:
 
     adapter = catalog._session.adapters[catalog.uri]
     assert isinstance(adapter, HTTPAdapter)
-    assert adapter.max_retries.total == SIGV4_DEFAULT_MAX_RETRIES
+    assert adapter.max_retries.total == SIGV4_MAX_RETRIES_DEFAULT
 
 
 def test_sigv4_adapter_override_retry_config(rest_mock: Mocker) -> None:
