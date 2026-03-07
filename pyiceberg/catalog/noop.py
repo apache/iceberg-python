@@ -14,9 +14,10 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+from __future__ import annotations
+
 from typing import (
     TYPE_CHECKING,
-    Union,
 )
 
 from pyiceberg.catalog import Catalog, PropertiesUpdateSummary
@@ -33,6 +34,8 @@ from pyiceberg.table.update import (
     TableUpdate,
 )
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
+from pyiceberg.view import View
+from pyiceberg.view.metadata import ViewVersion
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -42,7 +45,7 @@ class NoopCatalog(Catalog):
     def create_table(
         self,
         identifier: str | Identifier,
-        schema: Union[Schema, "pa.Schema"],
+        schema: Schema | pa.Schema,
         location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -53,7 +56,7 @@ class NoopCatalog(Catalog):
     def create_table_transaction(
         self,
         identifier: str | Identifier,
-        schema: Union[Schema, "pa.Schema"],
+        schema: Schema | pa.Schema,
         location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -129,4 +132,14 @@ class NoopCatalog(Catalog):
         raise NotImplementedError
 
     def drop_view(self, identifier: str | Identifier) -> None:
+        raise NotImplementedError
+
+    def create_view(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        view_version: ViewVersion,
+        location: str | None = None,
+        properties: Properties = EMPTY_DICT,
+    ) -> View:
         raise NotImplementedError

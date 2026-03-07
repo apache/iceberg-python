@@ -14,12 +14,13 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+from __future__ import annotations
+
 from collections import deque
 from enum import Enum
 from typing import (
     TYPE_CHECKING,
     Any,
-    Union,
 )
 from urllib.parse import quote, unquote
 
@@ -55,6 +56,7 @@ from pyiceberg.exceptions import (
     NoSuchViewError,
     TableAlreadyExistsError,
     UnauthorizedError,
+    ViewAlreadyExistsError,
 )
 from pyiceberg.io import (
     AWS_ACCESS_KEY_ID,
@@ -87,6 +89,8 @@ from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Pr
 from pyiceberg.types import transform_dict_value_to_str
 from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool, property_as_int
+from pyiceberg.view import View
+from pyiceberg.view.metadata import ViewMetadata, ViewVersion
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -123,7 +127,7 @@ class Endpoint(IcebergBaseModel):
         return f"{self.http_method.value} {self.path}"
 
     @classmethod
-    def from_string(cls, endpoint: str) -> "Endpoint":
+    def from_string(cls, endpoint: str) -> Endpoint:
         elements = endpoint.strip().split(None, 1)
         if len(elements) != 2:
             raise ValueError(f"Invalid endpoint (must consist of two elements separated by a single space): {endpoint}")
@@ -148,6 +152,7 @@ class Endpoints:
     get_token: str = "oauth/tokens"
     rename_table: str = "tables/rename"
     list_views: str = "namespaces/{namespace}/views"
+    create_view: str = "namespaces/{namespace}/views"
     drop_view: str = "namespaces/{namespace}/views/{view}"
     view_exists: str = "namespaces/{namespace}/views/{view}"
     plan_table_scan: str = "namespaces/{namespace}/tables/{table}/plan"
@@ -275,6 +280,12 @@ class TableResponse(IcebergBaseModel):
     storage_credentials: list[StorageCredential] = Field(alias="storage-credentials", default_factory=list)
 
 
+class ViewResponse(IcebergBaseModel):
+    metadata_location: str | None = Field(alias="metadata-location", default=None)
+    metadata: ViewMetadata
+    config: Properties = Field(default_factory=dict)
+
+
 class CreateTableRequest(IcebergBaseModel):
     name: str = Field()
     location: str | None = Field()
@@ -285,6 +296,18 @@ class CreateTableRequest(IcebergBaseModel):
     properties: dict[str, str] = Field(default_factory=dict)
 
     # validators
+    @field_validator("properties", mode="before")
+    def transform_properties_dict_value_to_str(cls, properties: Properties) -> dict[str, str]:
+        return transform_dict_value_to_str(properties)
+
+
+class CreateViewRequest(IcebergBaseModel):
+    name: str = Field()
+    location: str | None = Field()
+    view_schema: Schema = Field(alias="schema")
+    view_version: ViewVersion = Field(alias="view-version")
+    properties: Properties = Field(default_factory=dict)
+
     @field_validator("properties", mode="before")
     def transform_properties_dict_value_to_str(cls, properties: Properties) -> dict[str, str]:
         return transform_dict_value_to_str(properties)
@@ -800,6 +823,12 @@ class RestCatalog(Catalog):
             catalog=self,
         )
 
+    def _response_to_view(self, identifier_tuple: tuple[str, ...], view_response: ViewResponse) -> View:
+        return View(
+            identifier=identifier_tuple,
+            metadata=view_response.metadata,
+        )
+
     def _refresh_token(self) -> None:
         # Reactive token refresh is atypical - we should proactively refresh tokens in a separate thread
         # instead of retrying on Auth Exceptions. Keeping refresh behavior for the LegacyOAuth2AuthManager
@@ -819,7 +848,7 @@ class RestCatalog(Catalog):
     def _create_table(
         self,
         identifier: str | Identifier,
-        schema: Union[Schema, "pa.Schema"],
+        schema: Schema | pa.Schema,
         location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -862,7 +891,7 @@ class RestCatalog(Catalog):
     def create_table(
         self,
         identifier: str | Identifier,
-        schema: Union[Schema, "pa.Schema"],
+        schema: Schema | pa.Schema,
         location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -883,7 +912,7 @@ class RestCatalog(Catalog):
     def create_table_transaction(
         self,
         identifier: str | Identifier,
-        schema: Union[Schema, "pa.Schema"],
+        schema: Schema | pa.Schema,
         location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -900,6 +929,44 @@ class RestCatalog(Catalog):
         )
         staged_table = self._response_to_staged_table(self.identifier_to_tuple(identifier), table_response)
         return CreateTableTransaction(staged_table)
+
+    @retry(**_RETRY_ARGS)
+    def create_view(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        view_version: ViewVersion,
+        location: str | None = None,
+        properties: Properties = EMPTY_DICT,
+    ) -> View:
+        iceberg_schema = self._convert_schema_if_needed(schema)
+        fresh_schema = assign_fresh_schema_ids(iceberg_schema)
+
+        namespace_and_view = self._split_identifier_for_path(identifier, IdentifierKind.VIEW)
+        if location:
+            location = location.rstrip("/")
+
+        request = CreateViewRequest(
+            name=namespace_and_view["view"],
+            location=location,
+            view_schema=fresh_schema,
+            view_version=view_version,
+            properties=properties,
+        )
+
+        serialized_json = request.model_dump_json().encode(UTF8)
+        response = self._session.post(
+            self.url(Endpoints.create_view, namespace=namespace_and_view["namespace"]),
+            data=serialized_json,
+        )
+
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            _handle_non_200_response(exc, {409: ViewAlreadyExistsError})
+
+        view_response = ViewResponse.model_validate_json(response.text)
+        return self._response_to_view(self.identifier_to_tuple(identifier), view_response)
 
     @retry(**_RETRY_ARGS)
     def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
