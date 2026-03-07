@@ -14,6 +14,7 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+from http import HTTPStatus
 from json import JSONDecodeError
 from typing import Literal
 
@@ -101,8 +102,13 @@ def _handle_non_200_response(exc: HTTPError, error_handler: dict[int, type[Excep
             if uri := error.error_uri:
                 response += f" ({uri})"
         else:
-            error = ErrorResponse.model_validate_json(exc.response.text).error
-            response = f"{error.type}: {error.message}"
+            # Handle empty response bodies (Specifically HEAD requests via exist requests)
+            if not exc.response.text:
+                http_status = HTTPStatus(code)
+                response = f"{exception.__name__}: RestError: {http_status.phrase}"
+            else:
+                error = ErrorResponse.model_validate_json(exc.response.text).error
+                response = f"{error.type}: {error.message}"
     except JSONDecodeError:
         # In the case we don't have a proper response
         response = f"RESTError {exc.response.status_code}: Could not decode json payload: {exc.response.text}"
