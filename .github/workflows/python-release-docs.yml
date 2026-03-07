@@ -21,6 +21,9 @@ name: "Release Docs"
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -28,12 +31,14 @@ concurrency:
 jobs:
   docs:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python }}
+          python-version: 3.12
       - name: Install UV
         uses: astral-sh/setup-uv@v7
       - name: Build docs

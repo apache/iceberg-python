@@ -35,6 +35,8 @@ from pyiceberg.catalog.rest import (
     DEFAULT_ENDPOINTS,
     EMPTY_BODY_SHA256,
     OAUTH2_SERVER_URI,
+    SIGV4_MAX_RETRIES,
+    SIGV4_MAX_RETRIES_DEFAULT,
     SNAPSHOT_LOADING_MODE,
     Capability,
     Endpoint,
@@ -544,6 +546,66 @@ def test_sigv4_sign_request_with_body(rest_mock: Mocker) -> None:
     assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256")
     assert prepared.headers["Original-Authorization"] == f"Bearer {existing_token}"
     assert prepared.headers.get("x-amz-content-sha256") != EMPTY_BODY_SHA256
+
+
+def test_sigv4_adapter_default_retry_config(rest_mock: Mocker) -> None:
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "token": TEST_TOKEN,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-west-2",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+        },
+    )
+
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+    assert adapter.max_retries.total == SIGV4_MAX_RETRIES_DEFAULT
+
+
+def test_sigv4_adapter_override_retry_config(rest_mock: Mocker) -> None:
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "token": TEST_TOKEN,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-west-2",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+            SIGV4_MAX_RETRIES: "3",
+        },
+    )
+
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+    assert adapter.max_retries.total == 3
+
+
+def test_sigv4_uses_client_profile_name(rest_mock: Mocker) -> None:
+    with mock.patch("boto3.Session") as mock_session:
+        RestCatalog(
+            "rest",
+            **{
+                "uri": TEST_URI,
+                "token": TEST_TOKEN,
+                "rest.sigv4-enabled": "true",
+                "rest.signing-region": "us-west-2",
+                "client.profile-name": "rest-profile",
+            },
+        )
+
+    mock_session.assert_called_with(
+        profile_name="rest-profile",
+        region_name=None,
+        botocore_session=None,
+        aws_access_key_id=None,
+        aws_secret_access_key=None,
+        aws_session_token=None,
+    )
 
 
 def test_list_tables_404(rest_mock: Mocker) -> None:
@@ -2477,3 +2539,85 @@ def test_endpoint_parsing_from_string_with_valid_http_method() -> None:
 def test_endpoint_parsing_from_string_with_invalid_http_method() -> None:
     with pytest.raises(ValueError, match="not a valid HttpMethod"):
         Endpoint.from_string("INVALID /v1/resource")
+
+
+def test_resolve_storage_credentials_longest_prefix_wins() -> None:
+    from pyiceberg.catalog.rest.scan_planning import StorageCredential
+
+    credentials = [
+        StorageCredential(prefix="s3://warehouse/", config={"s3.access-key-id": "short-prefix-key"}),
+        StorageCredential(prefix="s3://warehouse/database/table", config={"s3.access-key-id": "long-prefix-key"}),
+    ]
+    result = RestCatalog._resolve_storage_credentials(credentials, "s3://warehouse/database/table/metadata/00001.json")
+    assert result == {"s3.access-key-id": "long-prefix-key"}
+
+
+def test_resolve_storage_credentials_no_match() -> None:
+    from pyiceberg.catalog.rest.scan_planning import StorageCredential
+
+    credentials = [
+        StorageCredential(prefix="s3://other-bucket/", config={"s3.access-key-id": "no-match"}),
+    ]
+    result = RestCatalog._resolve_storage_credentials(credentials, "s3://warehouse/database/table/metadata/00001.json")
+    assert result == {}
+
+
+def test_resolve_storage_credentials_empty() -> None:
+    assert RestCatalog._resolve_storage_credentials([], "s3://warehouse/foo") == {}
+    assert RestCatalog._resolve_storage_credentials([], None) == {}
+
+
+def test_load_table_with_storage_credentials(rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]) -> None:
+    metadata_location = "s3://warehouse/database/table/metadata/00001.metadata.json"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": example_table_metadata_with_snapshot_v1,
+            "config": {
+                "s3.access-key-id": "from-config",
+                "s3.secret-access-key": "from-config-secret",
+            },
+            "storage-credentials": [
+                {
+                    "prefix": "s3://warehouse/database/table",
+                    "config": {
+                        "s3.access-key-id": "vended-key",
+                        "s3.secret-access-key": "vended-secret",
+                        "s3.session-token": "vended-token",
+                    },
+                }
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    table = catalog.load_table(("fokko", "table"))
+
+    # Storage credentials should override config values
+    assert table.io.properties["s3.access-key-id"] == "vended-key"
+    assert table.io.properties["s3.secret-access-key"] == "vended-secret"
+    assert table.io.properties["s3.session-token"] == "vended-token"
+
+
+def test_load_table_without_storage_credentials(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    actual = catalog.load_table(("fokko", "table"))
+    expected = Table(
+        identifier=("fokko", "table"),
+        metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
+        metadata=TableMetadataV1(**example_table_metadata_with_snapshot_v1_rest_json["metadata"]),
+        io=load_file_io(),
+        catalog=catalog,
+    )
+    assert actual.metadata.model_dump() == expected.metadata.model_dump()
+    assert actual == expected

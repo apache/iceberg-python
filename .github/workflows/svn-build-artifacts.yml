@@ -26,6 +26,9 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   svn-build-artifacts:
     name: Build artifacts for SVN on ${{ matrix.os }}

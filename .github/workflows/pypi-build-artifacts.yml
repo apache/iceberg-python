@@ -26,6 +26,9 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   pypi-build-artifacts:
     name: Build artifacts for PyPi on ${{ matrix.os }}
