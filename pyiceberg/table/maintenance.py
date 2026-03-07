@@ -63,6 +63,11 @@ class MaintenanceTable:
             logger.info("Table contains no rows, skipping compaction.")
             return
 
-        # Overwrite the table atomically (REPLACE operation)
+        # Replace existing files with new compacted files
         with self.tbl.transaction() as txn:
-            txn.overwrite(arrow_table, snapshot_properties={"snapshot-type": "replace", "replace-operation": "compaction"})
+            files_to_delete = [task.file for task in self.tbl.scan().plan_files()]
+            txn.replace(
+                df=arrow_table,
+                files_to_delete=files_to_delete,
+                snapshot_properties={"snapshot-type": "replace", "replace-operation": "compaction"},
+            )
