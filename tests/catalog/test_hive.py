@@ -65,6 +65,7 @@ from pyiceberg.exceptions import (
 )
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table import TableProperties
 from pyiceberg.table.metadata import TableMetadataUtil, TableMetadataV1, TableMetadataV2
 from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
@@ -1407,3 +1408,102 @@ def test_create_hive_client_with_kerberos_using_context_manager(
         # closing and re-opening work as expected.
         with client as open_client:
             assert open_client._iprot.trans.isOpen()
+
+
+def test_hive_lock_enabled_defaults_to_true() -> None:
+    """Without any lock property set, locking should be enabled (backward compatible)."""
+    assert HiveCatalog._hive_lock_enabled(table_properties={}, catalog_properties={}) is True
+
+
+def test_hive_lock_enabled_table_property_disables_lock() -> None:
+    """Table property engine.hive.lock-enabled=false disables locking."""
+    table_props = {TableProperties.HIVE_LOCK_ENABLED: "false"}
+    assert HiveCatalog._hive_lock_enabled(table_properties=table_props, catalog_properties={}) is False
+
+
+def test_hive_lock_enabled_catalog_property_disables_lock() -> None:
+    """Catalog property engine.hive.lock-enabled=false disables locking when table doesn't set it."""
+    catalog_props = {TableProperties.HIVE_LOCK_ENABLED: "false"}
+    assert HiveCatalog._hive_lock_enabled(table_properties={}, catalog_properties=catalog_props) is False
+
+
+def test_hive_lock_enabled_table_property_overrides_catalog() -> None:
+    """Table property takes precedence over catalog property."""
+    table_props = {TableProperties.HIVE_LOCK_ENABLED: "true"}
+    catalog_props = {TableProperties.HIVE_LOCK_ENABLED: "false"}
+    assert HiveCatalog._hive_lock_enabled(table_properties=table_props, catalog_properties=catalog_props) is True
+
+    table_props = {TableProperties.HIVE_LOCK_ENABLED: "false"}
+    catalog_props = {TableProperties.HIVE_LOCK_ENABLED: "true"}
+    assert HiveCatalog._hive_lock_enabled(table_properties=table_props, catalog_properties=catalog_props) is False
+
+
+def test_commit_table_skips_locking_when_table_property_disables_it() -> None:
+    """When table property engine.hive.lock-enabled=false, commit_table must not lock/unlock."""
+    prop = {"uri": HIVE_METASTORE_FAKE_URL}
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, **prop)
+    catalog._client = MagicMock()
+
+    mock_table = MagicMock()
+    mock_table.name.return_value = ("default", "my_table")
+    mock_table.properties = {TableProperties.HIVE_LOCK_ENABLED: "false"}
+
+    mock_do_commit = MagicMock()
+    mock_do_commit.return_value = MagicMock()
+
+    with patch.object(catalog, "_do_commit", mock_do_commit):
+        catalog.commit_table(mock_table, requirements=(), updates=())
+
+    mock_do_commit.assert_called_once()
+    catalog._client.__enter__().lock.assert_not_called()
+    catalog._client.__enter__().check_lock.assert_not_called()
+    catalog._client.__enter__().unlock.assert_not_called()
+
+
+def test_commit_table_skips_locking_when_catalog_property_disables_it() -> None:
+    """When catalog property engine.hive.lock-enabled=false, commit_table must not lock/unlock."""
+    prop = {"uri": HIVE_METASTORE_FAKE_URL, TableProperties.HIVE_LOCK_ENABLED: "false"}
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, **prop)
+    catalog._client = MagicMock()
+
+    mock_table = MagicMock()
+    mock_table.name.return_value = ("default", "my_table")
+    mock_table.properties = {}
+
+    mock_do_commit = MagicMock()
+    mock_do_commit.return_value = MagicMock()
+
+    with patch.object(catalog, "_do_commit", mock_do_commit):
+        catalog.commit_table(mock_table, requirements=(), updates=())
+
+    mock_do_commit.assert_called_once()
+    catalog._client.__enter__().lock.assert_not_called()
+    catalog._client.__enter__().check_lock.assert_not_called()
+    catalog._client.__enter__().unlock.assert_not_called()
+
+
+def test_commit_table_uses_locking_by_default() -> None:
+    """When no lock property is set, commit_table must acquire and release a lock."""
+    lockid = 99999
+    prop = {"uri": HIVE_METASTORE_FAKE_URL}
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, **prop)
+
+    mock_client = MagicMock()
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+    mock_client.lock.return_value = LockResponse(lockid=lockid, state=LockState.ACQUIRED)
+    catalog._client = mock_client
+
+    mock_table = MagicMock()
+    mock_table.name.return_value = ("default", "my_table")
+    mock_table.properties = {}
+
+    mock_do_commit = MagicMock()
+    mock_do_commit.return_value = MagicMock()
+
+    with patch.object(catalog, "_do_commit", mock_do_commit):
+        catalog.commit_table(mock_table, requirements=(), updates=())
+
+    mock_client.lock.assert_called_once()
+    mock_client.unlock.assert_called_once()
+    mock_do_commit.assert_called_once()
