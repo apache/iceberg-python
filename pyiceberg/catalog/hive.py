@@ -551,7 +551,12 @@ class HiveCatalog(MetastoreCatalog):
                             raise CommitFailedException(f"Failed to acquire lock for {table_identifier}, state: {lock.state}")
 
                     return self._do_commit(
-                        open_client, table_identifier, database_name, table_name, requirements, updates,
+                        open_client,
+                        table_identifier,
+                        database_name,
+                        table_name,
+                        requirements,
+                        updates,
                         lock_enabled=True,
                     )
                 except WaitingForLockException as e:
@@ -560,7 +565,12 @@ class HiveCatalog(MetastoreCatalog):
                     open_client.unlock(UnlockRequest(lockid=lock.lockid))
             else:
                 return self._do_commit(
-                    open_client, table_identifier, database_name, table_name, requirements, updates,
+                    open_client,
+                    table_identifier,
+                    database_name,
+                    table_name,
+                    requirements,
+                    updates,
                     lock_enabled=False,
                 )
 
