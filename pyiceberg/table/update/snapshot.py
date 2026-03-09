@@ -666,6 +666,81 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
         else:
             return []
 
+class _RewriteFiles(_SnapshotProducer["_RewriteFiles"]):
+    """A snapshot producer that rewrites data files."""
+
+    def __init__(self, operation: Operation, transaction: Transaction, io: FileIO, snapshot_properties: dict[str, str]):
+        super().__init__(operation, transaction, io, snapshot_properties)
+
+    def _commit(self) -> UpdatesAndRequirements:
+        # Only produce a commit when there is something to rewrite
+        if self._deleted_data_files or self._added_data_files:
+            return super()._commit()
+        else:
+            return (), ()
+
+    def _deleted_entries(self) -> list[ManifestEntry]:
+        """Check if we need to mark the files as deleted."""
+        if self._parent_snapshot_id is not None:
+            previous_snapshot = self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
+            if previous_snapshot is None:
+                raise ValueError(f"Could not find the previous snapshot: {self._parent_snapshot_id}")
+
+            executor = ExecutorFactory.get_or_create()
+
+            def _get_entries(manifest: ManifestFile) -> list[ManifestEntry]:
+                return [
+                    ManifestEntry.from_args(
+                        status=ManifestEntryStatus.DELETED,
+                        snapshot_id=entry.snapshot_id,
+                        sequence_number=entry.sequence_number,
+                        file_sequence_number=entry.file_sequence_number,
+                        data_file=entry.data_file,
+                    )
+                    for entry in manifest.fetch_manifest_entry(self._io, discard_deleted=True)
+                    if entry.data_file.content == DataFileContent.DATA and entry.data_file in self._deleted_data_files
+                ]
+
+            list_of_entries = executor.map(_get_entries, previous_snapshot.manifests(self._io))
+            return list(itertools.chain(*list_of_entries))
+        else:
+            return []
+
+    def _existing_manifests(self) -> list[ManifestFile]:
+        """To determine if there are any existing manifests."""
+        existing_files = []
+        if snapshot := self._transaction.table_metadata.snapshot_by_name(name=self._target_branch):
+            for manifest_file in snapshot.manifests(io=self._io):
+                entries_to_write: set[ManifestEntry] = set()
+                found_deleted_entries: set[ManifestEntry] = set()
+
+                for entry in manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True):
+                    if entry.data_file in self._deleted_data_files:
+                        found_deleted_entries.add(entry)
+                    else:
+                        entries_to_write.add(entry)
+
+                if len(found_deleted_entries) == 0:
+                    existing_files.append(manifest_file)
+                    continue
+
+                if len(entries_to_write) == 0:
+                    continue
+
+                with self.new_manifest_writer(self.spec(manifest_file.partition_spec_id)) as writer:
+                    for entry in entries_to_write:
+                        writer.add_entry(
+                            ManifestEntry.from_args(
+                                status=ManifestEntryStatus.EXISTING,
+                                snapshot_id=entry.snapshot_id,
+                                sequence_number=entry.sequence_number,
+                                file_sequence_number=entry.file_sequence_number,
+                                data_file=entry.data_file,
+                            )
+                        )
+                existing_files.append(writer.to_manifest_file())
+        return existing_files
+
 
 class UpdateSnapshot:
     _transaction: Transaction
@@ -724,7 +799,13 @@ class UpdateSnapshot:
             snapshot_properties=self._snapshot_properties,
         )
 
-
+    def replace(self) -> _RewriteFiles:
+        return _RewriteFiles(
+            operation=Operation.REPLACE,
+            transaction=self._transaction,
+            io=self._io,
+            snapshot_properties=self._snapshot_properties,
+        )
 class _ManifestMergeManager(Generic[U]):
     _target_size_bytes: int
     _min_count_to_merge: int
