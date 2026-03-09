@@ -48,6 +48,7 @@ from pyiceberg.catalog.hive import (
     DO_NOT_UPDATE_STATS_DEFAULT,
     HIVE_KERBEROS_AUTH,
     HIVE_KERBEROS_SERVICE_NAME,
+    HIVE_LOCK_ENABLED,
     LOCK_CHECK_MAX_WAIT_TIME,
     LOCK_CHECK_MIN_WAIT_TIME,
     LOCK_CHECK_RETRIES,
@@ -68,7 +69,6 @@ from pyiceberg.exceptions import (
 )
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import TableProperties
 from pyiceberg.table.metadata import TableMetadataUtil, TableMetadataV1, TableMetadataV2
 from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
@@ -1420,24 +1420,24 @@ def test_hive_lock_enabled_defaults_to_true() -> None:
 
 def test_hive_lock_enabled_table_property_disables_lock() -> None:
     """Table property engine.hive.lock-enabled=false disables locking."""
-    table_props = {TableProperties.HIVE_LOCK_ENABLED: "false"}
+    table_props = {HIVE_LOCK_ENABLED: "false"}
     assert HiveCatalog._hive_lock_enabled(table_properties=table_props, catalog_properties={}) is False
 
 
 def test_hive_lock_enabled_catalog_property_disables_lock() -> None:
     """Catalog property engine.hive.lock-enabled=false disables locking when table doesn't set it."""
-    catalog_props = {TableProperties.HIVE_LOCK_ENABLED: "false"}
+    catalog_props = {HIVE_LOCK_ENABLED: "false"}
     assert HiveCatalog._hive_lock_enabled(table_properties={}, catalog_properties=catalog_props) is False
 
 
 def test_hive_lock_enabled_table_property_overrides_catalog() -> None:
     """Table property takes precedence over catalog property."""
-    table_props = {TableProperties.HIVE_LOCK_ENABLED: "true"}
-    catalog_props = {TableProperties.HIVE_LOCK_ENABLED: "false"}
+    table_props = {HIVE_LOCK_ENABLED: "true"}
+    catalog_props = {HIVE_LOCK_ENABLED: "false"}
     assert HiveCatalog._hive_lock_enabled(table_properties=table_props, catalog_properties=catalog_props) is True
 
-    table_props = {TableProperties.HIVE_LOCK_ENABLED: "false"}
-    catalog_props = {TableProperties.HIVE_LOCK_ENABLED: "true"}
+    table_props = {HIVE_LOCK_ENABLED: "false"}
+    catalog_props = {HIVE_LOCK_ENABLED: "true"}
     assert HiveCatalog._hive_lock_enabled(table_properties=table_props, catalog_properties=catalog_props) is False
 
 
@@ -1449,7 +1449,7 @@ def test_commit_table_skips_locking_when_table_property_disables_it() -> None:
 
     mock_table = MagicMock()
     mock_table.name.return_value = ("default", "my_table")
-    mock_table.properties = {TableProperties.HIVE_LOCK_ENABLED: "false"}
+    mock_table.properties = {HIVE_LOCK_ENABLED: "false"}
 
     mock_do_commit = MagicMock()
     mock_do_commit.return_value = MagicMock()
@@ -1467,7 +1467,7 @@ def test_commit_table_skips_locking_when_table_property_disables_it() -> None:
 
 def test_commit_table_skips_locking_when_catalog_property_disables_it() -> None:
     """When catalog property engine.hive.lock-enabled=false, commit_table must not lock/unlock."""
-    prop = {"uri": HIVE_METASTORE_FAKE_URL, TableProperties.HIVE_LOCK_ENABLED: "false"}
+    prop = {"uri": HIVE_METASTORE_FAKE_URL, HIVE_LOCK_ENABLED: "false"}
     catalog = HiveCatalog(HIVE_CATALOG_NAME, **prop)
     catalog._client = MagicMock()
 
@@ -1551,8 +1551,13 @@ def test_do_commit_env_context_includes_expected_params_when_lock_disabled() -> 
         mock_stage.return_value = mock_staged
 
         catalog._do_commit(
-            mock_client, ("default", "my_table"), "default", "my_table",
-            requirements=(), updates=(), lock_enabled=False,
+            mock_client,
+            ("default", "my_table"),
+            "default",
+            "my_table",
+            requirements=(),
+            updates=(),
+            lock_enabled=False,
         )
 
     mock_client.alter_table_with_environment_context.assert_called_once()
@@ -1594,8 +1599,13 @@ def test_do_commit_env_context_excludes_expected_params_when_lock_enabled() -> N
         mock_stage.return_value = mock_staged
 
         catalog._do_commit(
-            mock_client, ("default", "my_table"), "default", "my_table",
-            requirements=(), updates=(), lock_enabled=True,
+            mock_client,
+            ("default", "my_table"),
+            "default",
+            "my_table",
+            requirements=(),
+            updates=(),
+            lock_enabled=True,
         )
 
     mock_client.alter_table_with_environment_context.assert_called_once()

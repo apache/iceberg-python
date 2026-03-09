@@ -133,11 +133,15 @@ LOCK_CHECK_RETRIES = "lock-check-retries"
 DEFAULT_LOCK_CHECK_MIN_WAIT_TIME = 0.1  # 100 milliseconds
 DEFAULT_LOCK_CHECK_MAX_WAIT_TIME = 60  # 1 min
 DEFAULT_LOCK_CHECK_RETRIES = 4
+
 DO_NOT_UPDATE_STATS = "DO_NOT_UPDATE_STATS"
 DO_NOT_UPDATE_STATS_DEFAULT = "true"
 
 NO_LOCK_EXPECTED_KEY = "expected_parameter_key"
 NO_LOCK_EXPECTED_VALUE = "expected_parameter_value"
+
+HIVE_LOCK_ENABLED = "engine.hive.lock-enabled"
+HIVE_LOCK_ENABLED_DEFAULT = True
 
 logger = logging.getLogger(__name__)
 
@@ -509,11 +513,9 @@ class HiveCatalog(MetastoreCatalog):
         Matches the Java implementation in HiveTableOperations: checks the table property first,
         then falls back to catalog properties, then defaults to True.
         """
-        if TableProperties.HIVE_LOCK_ENABLED in table_properties:
-            return property_as_bool(
-                table_properties, TableProperties.HIVE_LOCK_ENABLED, TableProperties.HIVE_LOCK_ENABLED_DEFAULT
-            )
-        return property_as_bool(catalog_properties, TableProperties.HIVE_LOCK_ENABLED, TableProperties.HIVE_LOCK_ENABLED_DEFAULT)
+        if HIVE_LOCK_ENABLED in table_properties:
+            return property_as_bool(table_properties, HIVE_LOCK_ENABLED, HIVE_LOCK_ENABLED_DEFAULT)
+        return property_as_bool(catalog_properties, HIVE_LOCK_ENABLED, HIVE_LOCK_ENABLED_DEFAULT)
 
     def commit_table(
         self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
