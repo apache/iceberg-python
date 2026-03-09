@@ -136,6 +136,9 @@ DEFAULT_LOCK_CHECK_RETRIES = 4
 DO_NOT_UPDATE_STATS = "DO_NOT_UPDATE_STATS"
 DO_NOT_UPDATE_STATS_DEFAULT = "true"
 
+NO_LOCK_EXPECTED_KEY = "expected_parameter_key"
+NO_LOCK_EXPECTED_VALUE = "expected_parameter_value"
+
 logger = logging.getLogger(__name__)
 
 
@@ -499,6 +502,66 @@ class HiveCatalog(MetastoreCatalog):
 
         return _do_wait_for_lock()
 
+    @staticmethod
+    def _hive_lock_enabled(table_properties: Properties, catalog_properties: Properties) -> bool:
+        """Determine whether HMS locking is enabled for a commit.
+
+        Matches the Java implementation in HiveTableOperations: checks the table property first,
+        then falls back to catalog properties, then defaults to True.
+        """
+        if TableProperties.HIVE_LOCK_ENABLED in table_properties:
+            return property_as_bool(
+                table_properties, TableProperties.HIVE_LOCK_ENABLED, TableProperties.HIVE_LOCK_ENABLED_DEFAULT
+            )
+        return property_as_bool(catalog_properties, TableProperties.HIVE_LOCK_ENABLED, TableProperties.HIVE_LOCK_ENABLED_DEFAULT)
+
+    def commit_table(
+        self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
+    ) -> CommitTableResponse:
+        """Commit updates to a table.
+
+        Args:
+            table (Table): The table to be updated.
+            requirements: (Tuple[TableRequirement, ...]): Table requirements.
+            updates: (Tuple[TableUpdate, ...]): Table updates.
+
+        Returns:
+            CommitTableResponse: The updated metadata.
+
+        Raises:
+            NoSuchTableError: If a table with the given identifier does not exist.
+            CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
+        """
+        table_identifier = table.name()
+        database_name, table_name = self.identifier_to_database_and_table(table_identifier, NoSuchTableError)
+        lock_enabled = self._hive_lock_enabled(table.properties, self.properties)
+        # commit to hive
+        # https://github.com/apache/hive/blob/master/standalone-metastore/metastore-common/src/main/thrift/hive_metastore.thrift#L1232
+        with self._client as open_client:
+            if lock_enabled:
+                lock: LockResponse = open_client.lock(self._create_lock_request(database_name, table_name))
+
+                try:
+                    if lock.state != LockState.ACQUIRED:
+                        if lock.state == LockState.WAITING:
+                            self._wait_for_lock(database_name, table_name, lock.lockid, open_client)
+                        else:
+                            raise CommitFailedException(f"Failed to acquire lock for {table_identifier}, state: {lock.state}")
+
+                    return self._do_commit(
+                        open_client, table_identifier, database_name, table_name, requirements, updates,
+                        lock_enabled=True,
+                    )
+                except WaitingForLockException as e:
+                    raise CommitFailedException(f"Failed to acquire lock for {table_identifier}, state: {lock.state}") from e
+                finally:
+                    open_client.unlock(UnlockRequest(lockid=lock.lockid))
+            else:
+                return self._do_commit(
+                    open_client, table_identifier, database_name, table_name, requirements, updates,
+                    lock_enabled=False,
+                )
+
     def _do_commit(
         self,
         open_client: Client,
@@ -507,10 +570,13 @@ class HiveCatalog(MetastoreCatalog):
         table_name: str,
         requirements: tuple[TableRequirement, ...],
         updates: tuple[TableUpdate, ...],
+        lock_enabled: bool = True,
     ) -> CommitTableResponse:
         """Perform the actual commit logic (get table, update, write metadata, alter/create in HMS).
 
         This method contains the core commit logic, separated from locking concerns.
+        When lock_enabled is False, an optimistic concurrency check via the HMS EnvironmentContext
+        is used instead (requires HIVE-26882 on the server).
         """
         hive_table: HiveTable | None
         current_table: Table | None
@@ -566,11 +632,16 @@ class HiveCatalog(MetastoreCatalog):
                 updated_staged_table.location(),
                 property_as_bool(self.properties, HIVE2_COMPATIBLE, HIVE2_COMPATIBLE_DEFAULT),
             )
+            env_context_properties: dict[str, str] = {DO_NOT_UPDATE_STATS: DO_NOT_UPDATE_STATS_DEFAULT}
+            if not lock_enabled:
+                env_context_properties[NO_LOCK_EXPECTED_KEY] = PROP_METADATA_LOCATION
+                env_context_properties[NO_LOCK_EXPECTED_VALUE] = current_table.metadata_location
+
             open_client.alter_table_with_environment_context(
                 dbname=database_name,
                 tbl_name=table_name,
                 new_tbl=hive_table,
-                environment_context=EnvironmentContext(properties={DO_NOT_UPDATE_STATS: DO_NOT_UPDATE_STATS_DEFAULT}),
+                environment_context=EnvironmentContext(properties=env_context_properties),
             )
         else:
             # Table does not exist, create it.
@@ -588,60 +659,6 @@ class HiveCatalog(MetastoreCatalog):
         return CommitTableResponse(
             metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
         )
-
-    @staticmethod
-    def _hive_lock_enabled(table_properties: Properties, catalog_properties: Properties) -> bool:
-        """Determine whether HMS locking is enabled for a commit.
-
-        Matches the Java implementation in HiveTableOperations: checks the table property first,
-        then falls back to catalog properties, then defaults to True.
-        """
-        if TableProperties.HIVE_LOCK_ENABLED in table_properties:
-            return property_as_bool(
-                table_properties, TableProperties.HIVE_LOCK_ENABLED, TableProperties.HIVE_LOCK_ENABLED_DEFAULT
-            )
-        return property_as_bool(catalog_properties, TableProperties.HIVE_LOCK_ENABLED, TableProperties.HIVE_LOCK_ENABLED_DEFAULT)
-
-    def commit_table(
-        self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
-    ) -> CommitTableResponse:
-        """Commit updates to a table.
-
-        Args:
-            table (Table): The table to be updated.
-            requirements: (Tuple[TableRequirement, ...]): Table requirements.
-            updates: (Tuple[TableUpdate, ...]): Table updates.
-
-        Returns:
-            CommitTableResponse: The updated metadata.
-
-        Raises:
-            NoSuchTableError: If a table with the given identifier does not exist.
-            CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
-        """
-        table_identifier = table.name()
-        database_name, table_name = self.identifier_to_database_and_table(table_identifier, NoSuchTableError)
-        lock_enabled = self._hive_lock_enabled(table.properties, self.properties)
-        # commit to hive
-        # https://github.com/apache/hive/blob/master/standalone-metastore/metastore-common/src/main/thrift/hive_metastore.thrift#L1232
-        with self._client as open_client:
-            if lock_enabled:
-                lock: LockResponse = open_client.lock(self._create_lock_request(database_name, table_name))
-
-                try:
-                    if lock.state != LockState.ACQUIRED:
-                        if lock.state == LockState.WAITING:
-                            self._wait_for_lock(database_name, table_name, lock.lockid, open_client)
-                        else:
-                            raise CommitFailedException(f"Failed to acquire lock for {table_identifier}, state: {lock.state}")
-
-                    return self._do_commit(open_client, table_identifier, database_name, table_name, requirements, updates)
-                except WaitingForLockException as e:
-                    raise CommitFailedException(f"Failed to acquire lock for {table_identifier}, state: {lock.state}") from e
-                finally:
-                    open_client.unlock(UnlockRequest(lockid=lock.lockid))
-            else:
-                return self._do_commit(open_client, table_identifier, database_name, table_name, requirements, updates)
 
     def load_table(self, identifier: str | Identifier) -> Table:
         """Load the table's metadata and return the table instance.
