@@ -666,11 +666,12 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
         else:
             return []
 
+
 class _RewriteFiles(_SnapshotProducer["_RewriteFiles"]):
     """A snapshot producer that rewrites data files."""
 
     def __init__(self, operation: Operation, transaction: Transaction, io: FileIO, snapshot_properties: dict[str, str]):
-        super().__init__(operation, transaction, io, snapshot_properties)
+        super().__init__(operation, transaction, io, snapshot_properties=snapshot_properties)
 
     def _commit(self) -> UpdatesAndRequirements:
         # Only produce a commit when there is something to rewrite
@@ -806,6 +807,8 @@ class UpdateSnapshot:
             io=self._io,
             snapshot_properties=self._snapshot_properties,
         )
+
+
 class _ManifestMergeManager(Generic[U]):
     _target_size_bytes: int
     _min_count_to_merge: int
