@@ -103,7 +103,9 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     # Step 4: Compare all rows using Python
     to_update_indices = []
     for source_idx, target_idx in zip(
-        matching_indices[SOURCE_INDEX_COLUMN_NAME].to_pylist(), matching_indices[TARGET_INDEX_COLUMN_NAME].to_pylist()
+        matching_indices[SOURCE_INDEX_COLUMN_NAME].to_pylist(),
+        matching_indices[TARGET_INDEX_COLUMN_NAME].to_pylist(),
+        strict=True,
     ):
         source_row = source_table.slice(source_idx, 1)
         target_row = target_table.slice(target_idx, 1)

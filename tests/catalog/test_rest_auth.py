@@ -22,7 +22,7 @@ import pytest
 import requests
 from requests_mock import Mocker
 
-from pyiceberg.catalog.rest.auth import AuthManagerAdapter, BasicAuthManager, GoogleAuthManager, NoopAuthManager
+from pyiceberg.catalog.rest.auth import AuthManagerAdapter, BasicAuthManager, EntraAuthManager, GoogleAuthManager, NoopAuthManager
 
 TEST_URI = "https://iceberg-test-catalog/"
 GOOGLE_CREDS_URI = "https://oauth2.googleapis.com/token"
@@ -153,3 +153,99 @@ def test_google_auth_manager_import_error() -> None:
     with patch.dict("sys.modules", {"google.auth": None, "google.auth.transport.requests": None}):
         with pytest.raises(ImportError, match="Google Auth libraries not found. Please install 'google-auth'."):
             GoogleAuthManager()
+
+
+@patch("azure.identity.DefaultAzureCredential")
+def test_entra_auth_manager_default_credential(mock_default_cred: MagicMock, rest_mock: Mocker) -> None:
+    """Test EntraAuthManager with DefaultAzureCredential."""
+    mock_credential_instance = MagicMock()
+    mock_token = MagicMock()
+    mock_token.token = "entra_default_token"
+    mock_token.expires_on = 9999999999  # Far future timestamp
+    mock_credential_instance.get_token.return_value = mock_token
+    mock_default_cred.return_value = mock_credential_instance
+
+    auth_manager = EntraAuthManager()
+    session = requests.Session()
+    session.auth = AuthManagerAdapter(auth_manager)
+    session.get(TEST_URI)
+
+    mock_default_cred.assert_called_once_with()
+    mock_credential_instance.get_token.assert_called_once_with("https://storage.azure.com/.default")
+    history = rest_mock.request_history
+    assert len(history) == 1
+    actual_headers = history[0].headers
+    assert actual_headers["Authorization"] == "Bearer entra_default_token"
+
+
+@patch("azure.identity.DefaultAzureCredential")
+def test_entra_auth_manager_with_managed_identity_client_id(mock_default_cred: MagicMock, rest_mock: Mocker) -> None:
+    """Test EntraAuthManager with managed_identity_client_id passed to DefaultAzureCredential."""
+    mock_credential_instance = MagicMock()
+    mock_token = MagicMock()
+    mock_token.token = "entra_mi_token"
+    mock_token.expires_on = 9999999999
+    mock_credential_instance.get_token.return_value = mock_token
+    mock_default_cred.return_value = mock_credential_instance
+
+    auth_manager = EntraAuthManager(managed_identity_client_id="user-assigned-client-id")
+    session = requests.Session()
+    session.auth = AuthManagerAdapter(auth_manager)
+    session.get(TEST_URI)
+
+    mock_default_cred.assert_called_once_with(managed_identity_client_id="user-assigned-client-id")
+    mock_credential_instance.get_token.assert_called_once_with("https://storage.azure.com/.default")
+    history = rest_mock.request_history
+    assert len(history) == 1
+    actual_headers = history[0].headers
+    assert actual_headers["Authorization"] == "Bearer entra_mi_token"
+
+
+@patch("azure.identity.DefaultAzureCredential")
+def test_entra_auth_manager_custom_scopes(mock_default_cred: MagicMock, rest_mock: Mocker) -> None:
+    """Test EntraAuthManager with custom scopes."""
+    mock_credential_instance = MagicMock()
+    mock_token = MagicMock()
+    mock_token.token = "entra_custom_scope_token"
+    mock_token.expires_on = 9999999999
+    mock_credential_instance.get_token.return_value = mock_token
+    mock_default_cred.return_value = mock_credential_instance
+
+    custom_scopes = ["https://datalake.azure.net/.default", "https://storage.azure.com/.default"]
+    auth_manager = EntraAuthManager(scopes=custom_scopes)
+    session = requests.Session()
+    session.auth = AuthManagerAdapter(auth_manager)
+    session.get(TEST_URI)
+
+    mock_default_cred.assert_called_once_with()
+    mock_credential_instance.get_token.assert_called_once_with(*custom_scopes)
+    history = rest_mock.request_history
+    assert len(history) == 1
+    actual_headers = history[0].headers
+    assert actual_headers["Authorization"] == "Bearer entra_custom_scope_token"
+
+
+def test_entra_auth_manager_import_error() -> None:
+    """Test EntraAuthManager raises ImportError if azure-identity is not installed."""
+    with patch.dict("sys.modules", {"azure.identity": None}):
+        with pytest.raises(ImportError, match="Azure Identity library not found"):
+            EntraAuthManager()
+
+
+@patch("azure.identity.DefaultAzureCredential")
+def test_entra_auth_manager_token_failure(mock_default_cred: MagicMock, rest_mock: Mocker) -> None:
+    """Test EntraAuthManager raises exception when token acquisition fails."""
+    mock_credential_instance = MagicMock()
+    mock_credential_instance.get_token.side_effect = Exception("Failed to acquire token")
+    mock_default_cred.return_value = mock_credential_instance
+
+    auth_manager = EntraAuthManager()
+    session = requests.Session()
+    session.auth = AuthManagerAdapter(auth_manager)
+
+    with pytest.raises(Exception, match="Failed to acquire token"):
+        session.get(TEST_URI)
+
+    # Verify no requests were made with a blank/missing auth header
+    history = rest_mock.request_history
+    assert len(history) == 0

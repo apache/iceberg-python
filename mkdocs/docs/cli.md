@@ -26,31 +26,36 @@ hide:
 
 Pyiceberg comes with a CLI that's available after installing the `pyiceberg` package.
 
-You can pass the path to the Catalog using the `--uri` and `--credential` argument, but it is recommended to setup a `~/.pyiceberg.yaml` config as described in the [Catalog](configuration.md) section.
+You can pass the path to the Catalog using `--uri` and `--credential`. For REST catalogs, you can also set `--warehouse` to request a specific warehouse from the catalog service. It is still recommended to set up a `~/.pyiceberg.yaml` config as described in the [Catalog](configuration.md) section.
 
 ```sh
 ➜  pyiceberg --help
 Usage: pyiceberg [OPTIONS] COMMAND [ARGS]...
 
 Options:
---catalog TEXT
---verbose BOOLEAN
---output [text|json]
---ugi TEXT
---uri TEXT
---credential TEXT
---help                Show this message and exit.
+  --catalog TEXT
+  --verbose BOOLEAN
+  --output [text|json]
+  --ugi TEXT
+  --uri TEXT
+  --credential TEXT
+  --warehouse TEXT
+  --help                Show this message and exit.
 
 Commands:
-describe    Describes a namespace xor table
-drop        Operations to drop a namespace or table
-list        Lists tables or namespaces
-location    Returns the location of the table
-properties  Properties on tables/namespaces
-rename      Renames a table
-schema      Gets the schema of the table
-spec        Returns the partition spec of the table
-uuid        Returns the UUID of the table
+  create      Operation to create a namespace.
+  describe    Describe a namespace or a table.
+  drop        Operations to drop a namespace or table.
+  files       List all the files of the table.
+  list        List tables or namespaces.
+  list-refs   List all the refs in the provided table.
+  location    Return the location of the table.
+  properties  Properties on tables/namespaces.
+  rename      Rename a table.
+  schema      Get the schema of the table.
+  spec        Return the partition spec of the table.
+  uuid        Return the UUID of the table.
+  version     Print pyiceberg version.
 ```
 
 This example assumes that you have a default catalog set. If you want to load another catalog, for example, the rest example above. Then you need to set `--catalog rest`.

@@ -17,6 +17,7 @@
 # pylint:disable=redefined-outer-name
 
 import pytest
+from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
@@ -45,10 +46,10 @@ def _create_table_with_schema(catalog: Catalog, schema: Schema, format_version: 
 @pytest.mark.parametrize(
     "catalog, format_version",
     [
-        (pytest.lazy_fixture("session_catalog"), "1"),
-        (pytest.lazy_fixture("session_catalog_hive"), "1"),
-        (pytest.lazy_fixture("session_catalog"), "2"),
-        (pytest.lazy_fixture("session_catalog_hive"), "2"),
+        (lf("session_catalog"), "1"),
+        (lf("session_catalog_hive"), "1"),
+        (lf("session_catalog"), "2"),
+        (lf("session_catalog_hive"), "2"),
     ],
 )
 def test_map_column_name_to_id(catalog: Catalog, format_version: str, table_schema_simple: Schema) -> None:
@@ -61,10 +62,10 @@ def test_map_column_name_to_id(catalog: Catalog, format_version: str, table_sche
 @pytest.mark.parametrize(
     "catalog, format_version",
     [
-        (pytest.lazy_fixture("session_catalog"), "1"),
-        (pytest.lazy_fixture("session_catalog_hive"), "1"),
-        (pytest.lazy_fixture("session_catalog"), "2"),
-        (pytest.lazy_fixture("session_catalog_hive"), "2"),
+        (lf("session_catalog"), "1"),
+        (lf("session_catalog_hive"), "1"),
+        (lf("session_catalog"), "2"),
+        (lf("session_catalog_hive"), "2"),
     ],
 )
 def test_update_sort_order(catalog: Catalog, format_version: str, table_schema_simple: Schema) -> None:
@@ -83,10 +84,10 @@ def test_update_sort_order(catalog: Catalog, format_version: str, table_schema_s
 @pytest.mark.parametrize(
     "catalog, format_version",
     [
-        (pytest.lazy_fixture("session_catalog"), "1"),
-        (pytest.lazy_fixture("session_catalog_hive"), "1"),
-        (pytest.lazy_fixture("session_catalog"), "2"),
-        (pytest.lazy_fixture("session_catalog_hive"), "2"),
+        (lf("session_catalog"), "1"),
+        (lf("session_catalog_hive"), "1"),
+        (lf("session_catalog"), "2"),
+        (lf("session_catalog_hive"), "2"),
     ],
 )
 def test_increment_existing_sort_order_id(catalog: Catalog, format_version: str, table_schema_simple: Schema) -> None:
@@ -113,10 +114,10 @@ def test_increment_existing_sort_order_id(catalog: Catalog, format_version: str,
 @pytest.mark.parametrize(
     "catalog, format_version",
     [
-        (pytest.lazy_fixture("session_catalog"), "1"),
-        (pytest.lazy_fixture("session_catalog_hive"), "1"),
-        (pytest.lazy_fixture("session_catalog"), "2"),
-        (pytest.lazy_fixture("session_catalog_hive"), "2"),
+        (lf("session_catalog"), "1"),
+        (lf("session_catalog_hive"), "1"),
+        (lf("session_catalog"), "2"),
+        (lf("session_catalog_hive"), "2"),
     ],
 )
 def test_update_existing_sort_order(catalog: Catalog, format_version: str, table_schema_simple: Schema) -> None:
@@ -144,10 +145,10 @@ def test_update_existing_sort_order(catalog: Catalog, format_version: str, table
 @pytest.mark.parametrize(
     "catalog, format_version",
     [
-        (pytest.lazy_fixture("session_catalog"), "1"),
-        (pytest.lazy_fixture("session_catalog_hive"), "1"),
-        (pytest.lazy_fixture("session_catalog"), "2"),
-        (pytest.lazy_fixture("session_catalog_hive"), "2"),
+        (lf("session_catalog"), "1"),
+        (lf("session_catalog_hive"), "1"),
+        (lf("session_catalog"), "2"),
+        (lf("session_catalog_hive"), "2"),
     ],
 )
 def test_update_existing_sort_order_with_unsorted_sort_order(

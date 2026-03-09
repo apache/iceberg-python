@@ -24,7 +24,7 @@ import uuid
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 from urllib.parse import urlparse
 
 import fastavro
@@ -38,6 +38,7 @@ import pytz
 from pyarrow.fs import S3FileSystem
 from pydantic_core import ValidationError
 from pyspark.sql import SparkSession
+from pytest_lazy_fixtures import lf
 from pytest_mock.plugin import MockerFixture
 
 from pyiceberg.catalog import Catalog, load_catalog
@@ -64,6 +65,7 @@ from pyiceberg.types import (
     StringType,
     UUIDType,
 )
+from pyiceberg.view.metadata import SQLViewRepresentation, ViewVersion
 from utils import TABLE_SCHEMA, _create_table
 
 
@@ -639,7 +641,7 @@ def test_write_parquet_compression_properties(
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
     format_version: int,
-    properties: Dict[str, Any],
+    properties: dict[str, Any],
     expected_compression_name: str,
 ) -> None:
     identifier = "default.write_parquet_compression_properties"
@@ -674,8 +676,8 @@ def test_write_parquet_other_properties(
     spark: SparkSession,
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
-    properties: Dict[str, Any],
-    expected_kwargs: Dict[str, Any],
+    properties: dict[str, Any],
+    expected_kwargs: dict[str, Any],
 ) -> None:
     identifier = "default.test_write_parquet_other_properties"
 
@@ -701,7 +703,7 @@ def test_write_parquet_unsupported_properties(
     spark: SparkSession,
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
-    properties: Dict[str, str],
+    properties: dict[str, str],
 ) -> None:
     identifier = "default.write_parquet_unsupported_properties"
 
@@ -759,7 +761,9 @@ def test_spark_writes_orc_pyiceberg_reads(spark: SparkSession, session_catalog: 
     ]
 
     # Verify PyIceberg results contain the expected data (appears twice due to create + append)
-    pyiceberg_data = list(zip(pyiceberg_df["id"], pyiceberg_df["name"], pyiceberg_df["age"], pyiceberg_df["is_active"]))
+    pyiceberg_data = list(
+        zip(pyiceberg_df["id"], pyiceberg_df["name"], pyiceberg_df["age"], pyiceberg_df["is_active"], strict=True)
+    )
     assert pyiceberg_data == expected_data + expected_data  # Data should appear twice
 
     # Verify PyIceberg data types are correct
@@ -964,7 +968,7 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
 
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_create_table_transaction(catalog: Catalog, format_version: int) -> None:
     identifier = f"default.arrow_create_table_transaction_{catalog.name}_{format_version}"
 
@@ -1016,7 +1020,7 @@ def test_create_table_transaction(catalog: Catalog, format_version: int) -> None
 
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_create_table_with_non_default_values(catalog: Catalog, table_schema_with_all_types: Schema, format_version: int) -> None:
     identifier = f"default.arrow_create_table_transaction_with_non_default_values_{catalog.name}_{format_version}"
     identifier_ref = f"default.arrow_create_table_transaction_with_non_default_values_ref_{catalog.name}_{format_version}"
@@ -1170,7 +1174,7 @@ def test_inspect_snapshots(
     lhs = spark.table(f"{identifier}.snapshots").toPandas()
     rhs = df.to_pandas()
     for column in df.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if column == "summary":
                 # Arrow returns a list of tuples, instead of a dict
                 right = dict(right)
@@ -1254,7 +1258,7 @@ def test_hive_catalog_storage_descriptor_has_changed(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_sanitize_character_partitioned(catalog: Catalog) -> None:
     table_name = "default.test_table_partitioned_sanitized_character"
     try:
@@ -1276,7 +1280,7 @@ def test_sanitize_character_partitioned(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [lf("session_catalog")])
 def test_sanitize_character_partitioned_avro_bug(catalog: Catalog) -> None:
     table_name = "default.test_table_partitioned_sanitized_character_avro"
     try:
@@ -1466,7 +1470,7 @@ def test_table_write_schema_with_valid_nullability_diff(
     rhs = written_arrow_table.to_pandas()
 
     for column in written_arrow_table.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             assert left == right
 
 
@@ -1506,7 +1510,7 @@ def test_table_write_schema_with_valid_upcast(
     rhs = written_arrow_table.to_pandas()
 
     for column in written_arrow_table.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if column == "map":
                 # Arrow returns a list of tuples, instead of a dict
                 right = dict(right)
@@ -1552,7 +1556,7 @@ def test_write_all_timestamp_precision(
     rhs = written_arrow_table.to_pandas()
 
     for column in written_arrow_table.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list(), strict=True):
             if pd.isnull(left):
                 assert pd.isnull(right)
             else:
@@ -1648,18 +1652,18 @@ def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with
     for i in range(3):
         tbl_a_data_file = tbl_a_entries["data_file"][i]
         assert tbl_a_data_file["column_sizes"] == [
-            (1, 49),
-            (2, 78),
-            (3, 128),
-            (4, 94),
-            (5, 118),
-            (6, 94),
-            (7, 118),
-            (8, 118),
-            (9, 118),
-            (10, 94),
-            (11, 78),
-            (12, 109),
+            (1, 51),
+            (2, 80),
+            (3, 130),
+            (4, 96),
+            (5, 120),
+            (6, 96),
+            (7, 120),
+            (8, 120),
+            (9, 120),
+            (10, 96),
+            (11, 80),
+            (12, 111),
         ]
         assert tbl_a_data_file["content"] == 0
         assert tbl_a_data_file["equality_ids"] is None
@@ -1754,6 +1758,45 @@ def test_table_v1_with_null_nested_namespace(session_catalog: Catalog, arrow_tab
 
     # We expect no error here
     session_catalog.drop_table(identifier)
+
+
+@pytest.mark.integration
+def test_create_view(
+    spark: SparkSession,
+    session_catalog: Catalog,
+) -> None:
+    # Create a view using the REST Catalog.
+    identifier = "default.some_view"
+    schema = pa.schema([pa.field("some_col", pa.int32())])
+    view_version = ViewVersion(
+        version_id=1,
+        schema_id=1,
+        timestamp_ms=int(time.time() * 1000),
+        summary={},
+        representations=[
+            SQLViewRepresentation(
+                type="sql",
+                sql="SELECT 1 as some_col",
+                dialect="spark",
+            )
+        ],
+        default_namespace=["default"],
+    )
+    session_catalog.create_view(
+        identifier=identifier,
+        schema=schema,
+        view_version=view_version,
+    )
+
+    # Ensure the view exists.
+    assert session_catalog.view_exists(identifier)
+
+    # Query the view in spark to ensure it was properly created.
+    df = spark.table(identifier)
+    assert df.count() == 1
+    assert df.collect()[0].some_col == 1
+
+    session_catalog.drop_view(identifier)  # clean up
 
 
 @pytest.mark.integration

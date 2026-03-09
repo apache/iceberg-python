@@ -18,7 +18,7 @@
 
 
 import tempfile
-from typing import Any, Dict
+from typing import Any
 
 from fastavro import reader
 
@@ -72,7 +72,7 @@ def test_comprehensive_field_name_sanitization() -> None:
         schema = Schema(NestedField(field_id=1, name=original_name, field_type=StringType(), required=True))
 
         avro_schema: AvroType = AvroSchemaConversion().iceberg_to_avro(schema)
-        avro_dict: Dict[str, Any] = avro_schema
+        avro_dict: dict[str, Any] = avro_schema
 
         assert avro_dict["fields"][0]["name"] == expected_sanitized
 
@@ -126,7 +126,7 @@ def test_comprehensive_avro_compatibility() -> None:
             avro_reader = reader(fo)
 
             avro_schema: AvroType = avro_reader.writer_schema
-            avro_dict: Dict[str, Any] = avro_schema
+            avro_dict: dict[str, Any] = avro_schema
             field_names = [field["name"] for field in avro_dict["fields"]]
 
             # Expected sanitized names (matching Java implementation)
@@ -143,7 +143,7 @@ def test_comprehensive_avro_compatibility() -> None:
 
             # Verify iceberg-field-name properties
             for field in avro_dict["fields"]:
-                field_dict: Dict[str, Any] = field
+                field_dict: dict[str, Any] = field
                 if field_dict["name"] == "invalid_x2Efield":
                     assert "iceberg-field-name" in field_dict
                     assert field_dict["iceberg-field-name"] == "invalid.field"
@@ -201,7 +201,7 @@ def test_emoji_field_name_sanitization() -> None:
     )
 
     avro_schema: AvroType = AvroSchemaConversion().iceberg_to_avro(schema, schema_name="emoji_test")
-    avro_dict: Dict[str, Any] = avro_schema
+    avro_dict: dict[str, Any] = avro_schema
 
     field_names = [field["name"] for field in avro_dict["fields"]]
     expected_field_names = [
@@ -213,7 +213,7 @@ def test_emoji_field_name_sanitization() -> None:
     assert field_names == expected_field_names
 
     for field in avro_dict["fields"]:
-        field_dict: Dict[str, Any] = field
+        field_dict: dict[str, Any] = field
         if field_dict["name"] == "_x1F60E":
             assert field_dict["iceberg-field-name"] == "😎"
         elif field_dict["name"] == "_x1F60E_with_text":
@@ -240,13 +240,13 @@ def test_emoji_field_name_sanitization() -> None:
             avro_reader = reader(fo)
 
             avro_schema_reader: AvroType = avro_reader.writer_schema
-            avro_dict_reader: Dict[str, Any] = avro_schema_reader
+            avro_dict_reader: dict[str, Any] = avro_schema_reader
             field_names_reader = [field["name"] for field in avro_dict_reader["fields"]]
 
             assert field_names_reader == expected_field_names
 
             for field in avro_dict_reader["fields"]:
-                field_dict_reader: Dict[str, Any] = field
+                field_dict_reader: dict[str, Any] = field
                 if field_dict_reader["name"] == "_x1F60E":
                     assert field_dict_reader["iceberg-field-name"] == "😎"
                 elif field_dict_reader["name"] == "_x1F60E_with_text":

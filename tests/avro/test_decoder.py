@@ -18,9 +18,9 @@ from __future__ import annotations
 
 import itertools
 import struct
+from collections.abc import Callable
 from io import SEEK_SET
 from types import TracebackType
-from typing import Callable, Optional, Type
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -129,9 +129,7 @@ class OneByteAtATimeInputStream(InputStream):
     def __enter__(self) -> OneByteAtATimeInputStream:
         return self
 
-    def __exit__(
-        self, exctype: Optional[Type[BaseException]], excinst: Optional[BaseException], exctb: Optional[TracebackType]
-    ) -> None:
+    def __exit__(self, exctype: type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
         self.close()
 
 

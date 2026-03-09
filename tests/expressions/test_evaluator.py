@@ -685,7 +685,7 @@ def data_file_nan() -> DataFile:
 
 
 def test_inclusive_metrics_evaluator_less_than_and_less_than_equal(schema_data_file_nan: Schema, data_file_nan: DataFile) -> None:
-    operators: tuple[type[LiteralPredicate[Any]], ...] = (LessThan, LessThanOrEqual)
+    operators: tuple[type[LiteralPredicate], ...] = (LessThan, LessThanOrEqual)
     for operator in operators:
         should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("all_nan", 1)).eval(data_file_nan)
         assert not should_read, "Should not match: all nan column doesn't contain number"
@@ -714,7 +714,7 @@ def test_inclusive_metrics_evaluator_less_than_and_less_than_equal(schema_data_f
 def test_inclusive_metrics_evaluator_greater_than_and_greater_than_equal(
     schema_data_file_nan: Schema, data_file_nan: DataFile
 ) -> None:
-    operators: tuple[type[LiteralPredicate[Any]], ...] = (GreaterThan, GreaterThanOrEqual)
+    operators: tuple[type[LiteralPredicate], ...] = (GreaterThan, GreaterThanOrEqual)
     for operator in operators:
         should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, operator("all_nan", 1)).eval(data_file_nan)
         assert not should_read, "Should not match: all nan column doesn't contain number"
@@ -1427,7 +1427,9 @@ def test_strict_integer_in(strict_data_file_schema: Schema, strict_data_file_1: 
 
 
 def test_strict_integer_not_in(strict_data_file_schema: Schema, strict_data_file_1: DataFile) -> None:
-    # should_read = _StrictMetricsEvaluator(strict_data_file_schema, NotIn("id", {INT_MIN_VALUE - 25, INT_MIN_VALUE - 24})).eval(strict_data_file_1)
+    # should_read = _StrictMetricsEvaluator(
+    #     strict_data_file_schema, NotIn("id", {INT_MIN_VALUE - 25, INT_MIN_VALUE - 24})
+    # ).eval(strict_data_file_1)
     # assert should_read, "Should match: all values != 5 and != 6"
 
     should_read = _StrictMetricsEvaluator(strict_data_file_schema, NotIn("id", {INT_MIN_VALUE - 1, INT_MIN_VALUE})).eval(

@@ -19,7 +19,6 @@
 
 import math
 from decimal import Decimal
-from typing import Optional, Union
 
 
 def decimal_to_unscaled(value: Decimal) -> int:
@@ -49,7 +48,7 @@ def unscaled_to_decimal(unscaled: int, scale: int) -> Decimal:
     return Decimal((sign, digits, -scale))
 
 
-def bytes_required(value: Union[int, Decimal]) -> int:
+def bytes_required(value: int | Decimal) -> int:
     """Return the minimum number of bytes needed to serialize a decimal or unscaled value.
 
     Args:
@@ -66,7 +65,7 @@ def bytes_required(value: Union[int, Decimal]) -> int:
     raise ValueError(f"Unsupported value: {value}")
 
 
-def decimal_to_bytes(value: Decimal, byte_length: Optional[int] = None) -> bytes:
+def decimal_to_bytes(value: Decimal, byte_length: int | None = None) -> bytes:
     """Return a byte representation of a decimal.
 
     Args:

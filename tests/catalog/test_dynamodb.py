@@ -14,7 +14,6 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
-from typing import List
 from unittest import mock
 
 import boto3
@@ -393,7 +392,7 @@ def test_fail_on_rename_non_iceberg_table(
 
 @mock_aws
 def test_list_tables(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_list: List[str]
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_list: list[str]
 ) -> None:
     test_catalog = DynamoDbCatalog("test_ddb_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
@@ -405,7 +404,7 @@ def test_list_tables(
 
 
 @mock_aws
-def test_list_namespaces(_bucket_initialize: None, database_list: List[str]) -> None:
+def test_list_namespaces(_bucket_initialize: None, database_list: list[str]) -> None:
     test_catalog = DynamoDbCatalog("test_ddb_catalog")
     for database_name in database_list:
         test_catalog.create_namespace(namespace=database_name)

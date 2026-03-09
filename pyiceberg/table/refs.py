@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 from enum import Enum
-from typing import Annotated, Optional
+from typing import Annotated
 
 from pydantic import Field, model_validator
 
@@ -41,9 +41,9 @@ class SnapshotRefType(str, Enum):
 class SnapshotRef(IcebergBaseModel):
     snapshot_id: int = Field(alias="snapshot-id")
     snapshot_ref_type: SnapshotRefType = Field(alias="type")
-    min_snapshots_to_keep: Annotated[Optional[int], Field(alias="min-snapshots-to-keep", default=None, gt=0)]
-    max_snapshot_age_ms: Annotated[Optional[int], Field(alias="max-snapshot-age-ms", default=None, gt=0)]
-    max_ref_age_ms: Annotated[Optional[int], Field(alias="max-ref-age-ms", default=None, gt=0)]
+    min_snapshots_to_keep: Annotated[int | None, Field(alias="min-snapshots-to-keep", default=None, gt=0)]
+    max_snapshot_age_ms: Annotated[int | None, Field(alias="max-snapshot-age-ms", default=None, gt=0)]
+    max_ref_age_ms: Annotated[int | None, Field(alias="max-ref-age-ms", default=None, gt=0)]
 
     @model_validator(mode="after")
     def check_min_snapshots_to_keep(self) -> "SnapshotRef":

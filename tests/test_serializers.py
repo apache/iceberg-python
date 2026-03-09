@@ -18,7 +18,7 @@
 import json
 import os
 import uuid
-from typing import Any, Dict, Tuple
+from typing import Any
 
 import pytest
 from pytest_mock import MockFixture
@@ -31,7 +31,7 @@ from pyiceberg.typedef import IcebergBaseModel
 
 
 def test_legacy_current_snapshot_id(
-    mocker: MockFixture, tmp_path_factory: pytest.TempPathFactory, example_table_metadata_no_snapshot_v1: Dict[str, Any]
+    mocker: MockFixture, tmp_path_factory: pytest.TempPathFactory, example_table_metadata_no_snapshot_v1: dict[str, Any]
 ) -> None:
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
@@ -54,7 +54,7 @@ def test_legacy_current_snapshot_id(
 
 def test_null_serializer_field() -> None:
     class ExampleRequest(IcebergBaseModel):
-        requirements: Tuple[TableRequirement, ...]
+        requirements: tuple[TableRequirement, ...]
 
     request = ExampleRequest(requirements=(AssertRefSnapshotId(ref="main", snapshot_id=None),))
     dumped_json = request.model_dump_json()

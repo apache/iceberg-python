@@ -16,8 +16,8 @@
 # under the License.
 # pylint:disable=redefined-outer-name
 import random
+from collections.abc import Generator
 from datetime import datetime, timedelta
-from typing import Generator, List
 
 import pyarrow as pa
 import pytest
@@ -34,7 +34,7 @@ from pyiceberg.transforms import HourTransform, IdentityTransform
 from pyiceberg.types import LongType, NestedField, StringType
 
 
-def run_spark_commands(spark: SparkSession, sqls: List[str]) -> None:
+def run_spark_commands(spark: SparkSession, sqls: list[str]) -> None:
     for sql in sqls:
         spark.sql(sql)
 

@@ -16,11 +16,12 @@
 # under the License.
 from __future__ import annotations
 
+import builtins
 import itertools
 from copy import copy
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union
+from typing import TYPE_CHECKING, Any
 
 from pyiceberg.exceptions import ResolveError, ValidationError
 from pyiceberg.expressions import literal  # type: ignore
@@ -70,22 +71,22 @@ class _Move:
     field_id: int
     full_name: str
     op: _MoveOperation
-    other_field_id: Optional[int] = None
+    other_field_id: int | None = None
 
 
 class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
     _schema: Schema
     _last_column_id: itertools.count[int]
-    _identifier_field_names: Set[str]
+    _identifier_field_names: set[str]
 
-    _adds: Dict[int, List[NestedField]] = {}
-    _updates: Dict[int, NestedField] = {}
-    _deletes: Set[int] = set()
-    _moves: Dict[int, List[_Move]] = {}
+    _adds: dict[int, list[NestedField]] = {}
+    _updates: dict[int, NestedField] = {}
+    _deletes: set[int] = set()
+    _moves: dict[int, list[_Move]] = {}
 
-    _added_name_to_id: Dict[str, int] = {}
+    _added_name_to_id: dict[str, int] = {}
     # Part of https://github.com/apache/iceberg/pull/8393
-    _id_to_parent: Dict[int, str] = {}
+    _id_to_parent: dict[int, str] = {}
     _allow_incompatible_changes: bool
     _case_sensitive: bool
 
@@ -94,8 +95,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         transaction: Transaction,
         allow_incompatible_changes: bool = False,
         case_sensitive: bool = True,
-        schema: Optional[Schema] = None,
-        name_mapping: Optional[NameMapping] = None,
+        schema: Schema | None = None,
+        name_mapping: NameMapping | None = None,
     ) -> None:
         super().__init__(transaction)
 
@@ -145,7 +146,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
     def union_by_name(
         # TODO: Move TableProperties.DEFAULT_FORMAT_VERSION to separate file and set that as format_version default.
         self,
-        new_schema: Union[Schema, "pa.Schema"],
+        new_schema: Schema | pa.Schema,
         format_version: TableVersion = 2,
     ) -> UpdateSchema:
         from pyiceberg.catalog import Catalog
@@ -161,11 +162,11 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
     def add_column(
         self,
-        path: Union[str, Tuple[str, ...]],
+        path: str | tuple[str, ...],
         field_type: IcebergType,
-        doc: Optional[str] = None,
+        doc: str | None = None,
         required: bool = False,
-        default_value: Optional[L] = None,
+        default_value: L | None = None,
     ) -> UpdateSchema:
         """Add a new column to a nested struct or Add a new top-level column.
 
@@ -257,7 +258,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         return self
 
-    def delete_column(self, path: Union[str, Tuple[str, ...]]) -> UpdateSchema:
+    def delete_column(self, path: str | tuple[str, ...]) -> UpdateSchema:
         """Delete a column from a table.
 
         Args:
@@ -280,7 +281,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         return self
 
-    def set_default_value(self, path: Union[str, Tuple[str, ...]], default_value: Optional[L]) -> UpdateSchema:
+    def set_default_value(self, path: str | tuple[str, ...], default_value: L | None) -> UpdateSchema:
         """Set the default value of a column.
 
         Args:
@@ -293,7 +294,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         return self
 
-    def rename_column(self, path_from: Union[str, Tuple[str, ...]], new_name: str) -> UpdateSchema:
+    def rename_column(self, path_from: str | tuple[str, ...], new_name: str) -> UpdateSchema:
         """Update the name of a column.
 
         Args:
@@ -339,7 +340,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         return self
 
-    def make_column_optional(self, path: Union[str, Tuple[str, ...]]) -> UpdateSchema:
+    def make_column_optional(self, path: str | tuple[str, ...]) -> UpdateSchema:
         """Make a column optional.
 
         Args:
@@ -354,7 +355,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
     def set_identifier_fields(self, *fields: str) -> None:
         self._identifier_field_names = set(fields)
 
-    def _set_column_requirement(self, path: Union[str, Tuple[str, ...]], required: bool) -> None:
+    def _set_column_requirement(self, path: str | tuple[str, ...], required: bool) -> None:
         path = (path,) if isinstance(path, str) else path
         name = ".".join(path)
 
@@ -391,7 +392,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 write_default=field.write_default,
             )
 
-    def _set_column_default_value(self, path: Union[str, Tuple[str, ...]], default_value: Any) -> None:
+    def _set_column_default_value(self, path: str | tuple[str, ...], default_value: Any) -> None:
         path = (path,) if isinstance(path, str) else path
         name = ".".join(path)
 
@@ -437,10 +438,10 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
     def update_column(
         self,
-        path: Union[str, Tuple[str, ...]],
-        field_type: Optional[IcebergType] = None,
-        required: Optional[bool] = None,
-        doc: Optional[str] = None,
+        path: str | tuple[str, ...],
+        field_type: IcebergType | None = None,
+        required: bool | None = None,
+        doc: str | None = None,
     ) -> UpdateSchema:
         """Update the type of column.
 
@@ -501,7 +502,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         return self
 
-    def _find_for_move(self, name: str) -> Optional[int]:
+    def _find_for_move(self, name: str) -> int | None:
         try:
             return self._schema.find_field(name, self._case_sensitive).field_id
         except ValueError:
@@ -534,7 +535,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
             self._moves[TABLE_ROOT_ID] = self._moves.get(TABLE_ROOT_ID, []) + [move]
 
-    def move_first(self, path: Union[str, Tuple[str, ...]]) -> UpdateSchema:
+    def move_first(self, path: str | tuple[str, ...]) -> UpdateSchema:
         """Move the field to the first position of the parent struct.
 
         Args:
@@ -554,7 +555,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         return self
 
-    def move_before(self, path: Union[str, Tuple[str, ...]], before_path: Union[str, Tuple[str, ...]]) -> UpdateSchema:
+    def move_before(self, path: str | tuple[str, ...], before_path: str | tuple[str, ...]) -> UpdateSchema:
         """Move the field to before another field.
 
         Args:
@@ -588,7 +589,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         return self
 
-    def move_after(self, path: Union[str, Tuple[str, ...]], after_name: Union[str, Tuple[str, ...]]) -> UpdateSchema:
+    def move_after(self, path: str | tuple[str, ...], after_name: str | tuple[str, ...]) -> UpdateSchema:
         """Move the field to after another field.
 
         Args:
@@ -627,8 +628,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
             (schema.schema_id for schema in self._transaction.table_metadata.schemas if schema == new_schema), None
         )
 
-        requirements: Tuple[TableRequirement, ...] = ()
-        updates: Tuple[TableUpdate, ...] = ()
+        requirements: tuple[TableRequirement, ...] = ()
+        updates: tuple[TableUpdate, ...] = ()
 
         # Check if it is different current schema ID
         if existing_schema_id != self._schema.schema_id:
@@ -693,25 +694,25 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         return next(self._last_column_id)
 
 
-class _ApplyChanges(SchemaVisitor[Optional[IcebergType]]):
-    _adds: Dict[int, List[NestedField]]
-    _updates: Dict[int, NestedField]
-    _deletes: Set[int]
-    _moves: Dict[int, List[_Move]]
+class _ApplyChanges(SchemaVisitor[IcebergType | None]):
+    _adds: dict[int, builtins.list[NestedField]]
+    _updates: dict[int, NestedField]
+    _deletes: set[int]
+    _moves: dict[int, builtins.list[_Move]]
 
     def __init__(
         self,
-        adds: Dict[int, List[NestedField]],
-        updates: Dict[int, NestedField],
-        deletes: Set[int],
-        moves: Dict[int, List[_Move]],
+        adds: dict[int, builtins.list[NestedField]],
+        updates: dict[int, NestedField],
+        deletes: set[int],
+        moves: dict[int, builtins.list[_Move]],
     ) -> None:
         self._adds = adds
         self._updates = updates
         self._deletes = deletes
         self._moves = moves
 
-    def schema(self, schema: Schema, struct_result: Optional[IcebergType]) -> Optional[IcebergType]:
+    def schema(self, schema: Schema, struct_result: IcebergType | None) -> IcebergType | None:
         added = self._adds.get(TABLE_ROOT_ID)
         moves = self._moves.get(TABLE_ROOT_ID)
 
@@ -724,7 +725,7 @@ class _ApplyChanges(SchemaVisitor[Optional[IcebergType]]):
 
         return struct_result
 
-    def struct(self, struct: StructType, field_results: List[Optional[IcebergType]]) -> Optional[IcebergType]:
+    def struct(self, struct: StructType, field_results: builtins.list[IcebergType | None]) -> IcebergType | None:
         has_changes = False
         new_fields = []
 
@@ -777,7 +778,7 @@ class _ApplyChanges(SchemaVisitor[Optional[IcebergType]]):
 
         return struct
 
-    def field(self, field: NestedField, field_result: Optional[IcebergType]) -> Optional[IcebergType]:
+    def field(self, field: NestedField, field_result: IcebergType | None) -> IcebergType | None:
         # the API validates deletes, updates, and additions don't conflict handle deletes
         if field.field_id in self._deletes:
             return None
@@ -799,16 +800,18 @@ class _ApplyChanges(SchemaVisitor[Optional[IcebergType]]):
 
         return field_result
 
-    def list(self, list_type: ListType, element_result: Optional[IcebergType]) -> Optional[IcebergType]:
+    def list(self, list_type: ListType, element_result: IcebergType | None) -> IcebergType | None:
         element_type = self.field(list_type.element_field, element_result)
         if element_type is None:
             raise ValueError(f"Cannot delete element type from list: {element_result}")
 
-        return ListType(element_id=list_type.element_id, element=element_type, element_required=list_type.element_required)
+        element_required = list_type.element_required
+        if update := self._updates.get(list_type.element_id):
+            element_required = update.required
 
-    def map(
-        self, map_type: MapType, key_result: Optional[IcebergType], value_result: Optional[IcebergType]
-    ) -> Optional[IcebergType]:
+        return ListType(element_id=list_type.element_id, element=element_type, element_required=element_required)
+
+    def map(self, map_type: MapType, key_result: IcebergType | None, value_result: IcebergType | None) -> IcebergType | None:
         key_id: int = map_type.key_field.field_id
 
         if key_id in self._deletes:
@@ -828,15 +831,19 @@ class _ApplyChanges(SchemaVisitor[Optional[IcebergType]]):
         if value_type is None:
             raise ValueError(f"Cannot delete value type from map: {value_field}")
 
+        value_required = map_type.value_required
+        if update := self._updates.get(map_type.value_id):
+            value_required = update.required
+
         return MapType(
             key_id=map_type.key_id,
             key_type=map_type.key_type,
             value_id=map_type.value_id,
             value_type=value_type,
-            value_required=map_type.value_required,
+            value_required=value_required,
         )
 
-    def primitive(self, primitive: PrimitiveType) -> Optional[IcebergType]:
+    def primitive(self, primitive: PrimitiveType) -> IcebergType | None:
         return primitive
 
 
@@ -850,10 +857,10 @@ class _UnionByNameVisitor(SchemaWithPartnerVisitor[int, bool]):
         self.existing_schema = existing_schema
         self.case_sensitive = case_sensitive
 
-    def schema(self, schema: Schema, partner_id: Optional[int], struct_result: bool) -> bool:
+    def schema(self, schema: Schema, partner_id: int | None, struct_result: bool) -> bool:
         return struct_result
 
-    def struct(self, struct: StructType, partner_id: Optional[int], missing_positions: List[bool]) -> bool:
+    def struct(self, struct: StructType, partner_id: int | None, missing_positions: builtins.list[bool]) -> bool:
         if partner_id is None:
             return True
 
@@ -875,7 +882,7 @@ class _UnionByNameVisitor(SchemaWithPartnerVisitor[int, bool]):
 
     def _add_column(self, parent_id: int, field: NestedField) -> None:
         if parent_name := self.existing_schema.find_column_name(parent_id):
-            path: Tuple[str, ...] = (parent_name, field.name)
+            path: tuple[str, ...] = (parent_name, field.name)
         else:
             path = (field.name,)
 
@@ -908,10 +915,10 @@ class _UnionByNameVisitor(SchemaWithPartnerVisitor[int, bool]):
         else:
             return self.existing_schema.find_field(field_id).field_type
 
-    def field(self, field: NestedField, partner_id: Optional[int], field_result: bool) -> bool:
+    def field(self, field: NestedField, partner_id: int | None, field_result: bool) -> bool:
         return partner_id is None
 
-    def list(self, list_type: ListType, list_partner_id: Optional[int], element_missing: bool) -> bool:
+    def list(self, list_type: ListType, list_partner_id: int | None, element_missing: bool) -> bool:
         if list_partner_id is None:
             return True
 
@@ -926,7 +933,7 @@ class _UnionByNameVisitor(SchemaWithPartnerVisitor[int, bool]):
 
         return False
 
-    def map(self, map_type: MapType, map_partner_id: Optional[int], key_missing: bool, value_missing: bool) -> bool:
+    def map(self, map_type: MapType, map_partner_id: int | None, key_missing: bool, value_missing: bool) -> bool:
         if map_partner_id is None:
             return True
 
@@ -945,7 +952,7 @@ class _UnionByNameVisitor(SchemaWithPartnerVisitor[int, bool]):
 
         return False
 
-    def primitive(self, primitive: PrimitiveType, primitive_partner_id: Optional[int]) -> bool:
+    def primitive(self, primitive: PrimitiveType, primitive_partner_id: int | None) -> bool:
         return primitive_partner_id is None
 
 
@@ -957,10 +964,10 @@ class PartnerIdByNameAccessor(PartnerAccessor[int]):
         self.partner_schema = partner_schema
         self.case_sensitive = case_sensitive
 
-    def schema_partner(self, partner: Optional[int]) -> Optional[int]:
+    def schema_partner(self, partner: int | None) -> int | None:
         return -1
 
-    def field_partner(self, partner_field_id: Optional[int], field_id: int, field_name: str) -> Optional[int]:
+    def field_partner(self, partner_field_id: int | None, field_id: int, field_name: str) -> int | None:
         if partner_field_id is not None:
             if partner_field_id == -1:
                 struct = self.partner_schema.as_struct()
@@ -974,7 +981,7 @@ class PartnerIdByNameAccessor(PartnerAccessor[int]):
 
         return None
 
-    def list_element_partner(self, partner_list_id: Optional[int]) -> Optional[int]:
+    def list_element_partner(self, partner_list_id: int | None) -> int | None:
         if partner_list_id is not None and (field := self.partner_schema.find_field(partner_list_id)):
             if not isinstance(field.field_type, ListType):
                 raise ValueError(f"Expected ListType: {field}")
@@ -982,7 +989,7 @@ class PartnerIdByNameAccessor(PartnerAccessor[int]):
         else:
             return None
 
-    def map_key_partner(self, partner_map_id: Optional[int]) -> Optional[int]:
+    def map_key_partner(self, partner_map_id: int | None) -> int | None:
         if partner_map_id is not None and (field := self.partner_schema.find_field(partner_map_id)):
             if not isinstance(field.field_type, MapType):
                 raise ValueError(f"Expected MapType: {field}")
@@ -990,7 +997,7 @@ class PartnerIdByNameAccessor(PartnerAccessor[int]):
         else:
             return None
 
-    def map_value_partner(self, partner_map_id: Optional[int]) -> Optional[int]:
+    def map_value_partner(self, partner_map_id: int | None) -> int | None:
         if partner_map_id is not None and (field := self.partner_schema.find_field(partner_map_id)):
             if not isinstance(field.field_type, MapType):
                 raise ValueError(f"Expected MapType: {field}")
@@ -999,12 +1006,12 @@ class PartnerIdByNameAccessor(PartnerAccessor[int]):
             return None
 
 
-def _add_fields(fields: Tuple[NestedField, ...], adds: Optional[List[NestedField]]) -> Tuple[NestedField, ...]:
+def _add_fields(fields: tuple[NestedField, ...], adds: list[NestedField] | None) -> tuple[NestedField, ...]:
     adds = adds or []
     return fields + tuple(adds)
 
 
-def _move_fields(fields: Tuple[NestedField, ...], moves: List[_Move]) -> Tuple[NestedField, ...]:
+def _move_fields(fields: tuple[NestedField, ...], moves: list[_Move]) -> tuple[NestedField, ...]:
     reordered = list(copy(fields))
     for move in moves:
         # Find the field that we're about to move
@@ -1028,8 +1035,8 @@ def _move_fields(fields: Tuple[NestedField, ...], moves: List[_Move]) -> Tuple[N
 
 
 def _add_and_move_fields(
-    fields: Tuple[NestedField, ...], adds: List[NestedField], moves: List[_Move]
-) -> Optional[Tuple[NestedField, ...]]:
+    fields: tuple[NestedField, ...], adds: list[NestedField], moves: list[_Move]
+) -> tuple[NestedField, ...] | None:
     if len(adds) > 0:
         # always apply adds first so that added fields can be moved
         added = _add_fields(fields, adds)

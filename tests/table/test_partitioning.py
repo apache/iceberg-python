@@ -21,6 +21,7 @@ from uuid import UUID
 
 import pytest
 
+from pyiceberg.exceptions import ValidationError
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import (
@@ -47,6 +48,7 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 
@@ -119,9 +121,10 @@ def test_serialize_partition_spec() -> None:
         PartitionField(source_id=2, field_id=1001, transform=BucketTransform(num_buckets=25), name="int_bucket"),
         spec_id=3,
     )
-    assert (
-        partitioned.model_dump_json()
-        == """{"spec-id":3,"fields":[{"source-id":1,"field-id":1000,"transform":"truncate[19]","name":"str_truncate"},{"source-id":2,"field-id":1001,"transform":"bucket[25]","name":"int_bucket"}]}"""
+    assert partitioned.model_dump_json() == (
+        '{"spec-id":3,"fields":['
+        '{"source-id":1,"field-id":1000,"transform":"truncate[19]","name":"str_truncate"},'
+        '{"source-id":2,"field-id":1001,"transform":"bucket[25]","name":"int_bucket"}]}'
     )
 
 
@@ -133,7 +136,11 @@ def test_deserialize_unpartition_spec() -> None:
 
 
 def test_deserialize_partition_spec() -> None:
-    json_partition_spec = """{"spec-id": 3, "fields": [{"source-id": 1, "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}, {"source-id": 2, "field-id": 1001, "transform": "bucket[25]", "name": "int_bucket"}]}"""
+    json_partition_spec = (
+        '{"spec-id": 3, "fields": ['
+        '{"source-id": 1, "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}, '
+        '{"source-id": 2, "field-id": 1001, "transform": "bucket[25]", "name": "int_bucket"}]}'
+    )
 
     spec = PartitionSpec.model_validate_json(json_partition_spec)
 
@@ -165,6 +172,28 @@ def test_partition_spec_to_path() -> None:
     assert spec.partition_to_path(record, schema) == "my%23str%25bucket=my%2Bstr/other+str%2Bbucket=%28+%29/my%21int%3Abucket=10"
 
 
+def test_partition_spec_to_path_dropped_source_id() -> None:
+    schema = Schema(
+        NestedField(field_id=1, name="str", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="other_str", field_type=StringType(), required=False),
+        NestedField(field_id=3, name="int", field_type=IntegerType(), required=True),
+    )
+
+    spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="my#str%bucket"),
+        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="other str+bucket"),
+        # Point partition field to missing source id
+        PartitionField(source_id=4, field_id=1002, transform=BucketTransform(num_buckets=25), name="my!int:bucket"),
+        spec_id=3,
+    )
+
+    record = Record("my+str", "( )", 10)
+
+    # Both partition field names and values should be URL encoded, with spaces mapping to plus signs, to match the Java
+    # behaviour: https://github.com/apache/iceberg/blob/ca3db931b0f024f0412084751ac85dd4ef2da7e7/api/src/main/java/org/apache/iceberg/PartitionSpec.java#L198-L204
+    assert spec.partition_to_path(record, schema) == "my%23str%25bucket=my%2Bstr/other+str%2Bbucket=%28+%29/my%21int%3Abucket=10"
+
+
 def test_partition_type(table_schema_simple: Schema) -> None:
     spec = PartitionSpec(
         PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate"),
@@ -175,6 +204,19 @@ def test_partition_type(table_schema_simple: Schema) -> None:
     assert spec.partition_type(table_schema_simple) == StructType(
         NestedField(field_id=1000, name="str_truncate", field_type=StringType(), required=False),
         NestedField(field_id=1001, name="int_bucket", field_type=IntegerType(), required=True),
+    )
+
+
+def test_partition_type_missing_source_field(table_schema_simple: Schema) -> None:
+    spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate"),
+        PartitionField(source_id=10, field_id=1001, transform=BucketTransform(num_buckets=25), name="int_bucket"),
+        spec_id=3,
+    )
+
+    assert spec.partition_type(table_schema_simple) == StructType(
+        NestedField(field_id=1000, name="str_truncate", field_type=StringType(), required=False),
+        NestedField(field_id=1001, name="int_bucket", field_type=UnknownType(), required=False),
     )
 
 
@@ -223,3 +265,36 @@ def test_deserialize_partition_field_v3() -> None:
 
     field = PartitionField.model_validate_json(json_partition_spec)
     assert field == PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate")
+
+
+def test_incompatible_source_column_not_found() -> None:
+    schema = Schema(NestedField(1, "foo", IntegerType()), NestedField(2, "bar", IntegerType()))
+
+    spec = PartitionSpec(PartitionField(3, 1000, IdentityTransform(), "some_partition"))
+
+    with pytest.raises(ValidationError) as exc:
+        spec.check_compatible(schema)
+
+    assert "Cannot find source column for partition field: 1000: some_partition: identity(3)" in str(exc.value)
+
+
+def test_incompatible_non_primitive_type() -> None:
+    schema = Schema(NestedField(1, "foo", StructType()), NestedField(2, "bar", IntegerType()))
+
+    spec = PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "some_partition"))
+
+    with pytest.raises(ValidationError) as exc:
+        spec.check_compatible(schema)
+
+    assert "Cannot partition by non-primitive source field: 1: foo: optional struct<>" in str(exc.value)
+
+
+def test_incompatible_transform_source_type() -> None:
+    schema = Schema(NestedField(1, "foo", IntegerType()), NestedField(2, "bar", IntegerType()))
+
+    spec = PartitionSpec(PartitionField(1, 1000, YearTransform(), "some_partition"))
+
+    with pytest.raises(ValidationError) as exc:
+        spec.check_compatible(schema)
+
+    assert "Invalid source field foo with type int for transform: year" in str(exc.value)

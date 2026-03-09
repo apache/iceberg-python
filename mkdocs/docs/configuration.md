@@ -81,7 +81,7 @@ Iceberg tables support table properties to configure table behavior.
 <!-- prettier-ignore-start -->
 
 !!! note "Fast append"
-    Unlike Java implementation, PyIceberg default to the [fast append](api.md#write-support) and thus `commit.manifest-merge.enabled` is set to `False` by default.
+    Unlike Java implementation, PyIceberg default to the [fast append](api.md#write-to-a-table) and thus `commit.manifest-merge.enabled` is set to `False` by default.
 
 <!-- prettier-ignore-end -->
 
@@ -110,24 +110,25 @@ For the FileIO there are several configuration options available:
 <!-- markdown-link-check-disable -->
 
 | Key                         | Example                    | Description                                                                                                                                                                                                                                                 |
-|-----------------------------|----------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| s3.endpoint                 | <https://10.0.19.25/>      | Configure an alternative endpoint of the S3 service for the FileIO to access. This could be used to use S3FileIO with any s3-compatible object storage service that has a different endpoint, or access a private S3 endpoint in a virtual private cloud.   |
-| s3.access-key-id            | admin                      | Configure the static access key id used to access the FileIO.                                                                                                                                                                                               |
-| s3.secret-access-key        | password                   | Configure the static secret access key used to access the FileIO.                                                                                                                                                                                           |
-| s3.session-token            | AQoDYXdzEJr...             | Configure the static session token used to access the FileIO.                                                                                                                                                                                               |
-| s3.role-session-name        | session                    | An optional identifier for the assumed role session.                                                                                                                                                                                                        |
-| s3.role-arn                 | arn:aws:...                | AWS Role ARN. If provided instead of access_key and secret_key, temporary credentials will be fetched by assuming this role.                                                                                                                                |
-| s3.signer                   | bearer                     | Configure the signature version of the FileIO.                                                                                                                                                                                                              |
-| s3.signer.uri               | <http://my.signer:8080/s3> | Configure the remote signing uri if it differs from the catalog uri. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.signer.uri>/<s3.signer.endpoint>`.                                                            |
-| s3.signer.endpoint          | v1/main/s3-sign            | Configure the remote signing endpoint. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.signer.uri>/<s3.signer.endpoint>`. (default : v1/aws/s3/sign).                                                              |
-| s3.region                   | us-west-2                  | Configure the default region used to initialize an `S3FileSystem`. `PyArrowFileIO` attempts to automatically tries to resolve the region if this isn't set (only supported for AWS S3 Buckets).                                                             |
-| s3.resolve-region           | False                      | Only supported for `PyArrowFileIO`, when enabled, it will always try to resolve the location of the bucket (only supported for AWS S3 Buckets).                                                                                                             |
-| s3.proxy-uri                | <http://my.proxy.com:8080> | Configure the proxy server to be used by the FileIO.                                                                                                                                                                                                        |
-| s3.connect-timeout          | 60.0                       | Configure socket connection timeout, in seconds.                                                                                                                                                                                                            |
-| s3.request-timeout          | 60.0                       | Configure socket read timeouts on Windows and macOS, in seconds.                                                                                                                                                                                            |
+|-----------------------------|----------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| s3.endpoint                 | <https://10.0.19.25/>      | Configure an alternative endpoint of the S3 service for the FileIO to access. This could be used to use S3FileIO with any s3-compatible object storage service that has a different endpoint, or access a private S3 endpoint in a virtual private cloud.               |
+| s3.access-key-id            | admin                      | Configure the static access key id used to access the FileIO.                                                                                                                                                                                                           |
+| s3.secret-access-key        | password                   | Configure the static secret access key used to access the FileIO.                                                                                                                                                                                                       |
+| s3.session-token            | AQoDYXdzEJr...             | Configure the static session token used to access the FileIO.                                                                                                                                                                                                           |
+| s3.profile-name             | default                    | Configure the AWS profile used to access the S3 FileIO (only supported by `FsspecFileIO` currently).                                                                                                                                                                    |
+| s3.role-session-name        | session                    | An optional identifier for the assumed role session.                                                                                                                                                                                                                    |
+| s3.role-arn                 | arn:aws:...                | AWS Role ARN. If provided instead of access_key and secret_key, temporary credentials will be fetched by assuming this role.                                                                                                                                            |
+| s3.signer                   | bearer                     | Configure the signature version of the FileIO.                                                                                                                                                                                                                          |
+| s3.signer.uri               | <http://my.signer:8080/s3> | Configure the remote signing uri if it differs from the catalog uri. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.signer.uri>/<s3.signer.endpoint>`.                                                                        |
+| s3.signer.endpoint          | v1/main/s3-sign            | Configure the remote signing endpoint. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.signer.uri>/<s3.signer.endpoint>`. (default : v1/aws/s3/sign).                                                                          |
+| s3.region                   | us-west-2                  | Configure the default region used to initialize an `S3FileSystem`. `PyArrowFileIO` attempts to automatically tries to resolve the region if this isn't set (only supported for AWS S3 Buckets).                                                                         |
+| s3.resolve-region           | False                      | Only supported for `PyArrowFileIO`, when enabled, it will always try to resolve the location of the bucket (only supported for AWS S3 Buckets).                                                                                                                         |
+| s3.proxy-uri                | <http://my.proxy.com:8080> | Configure the proxy server to be used by the FileIO.                                                                                                                                                                                                                    |
+| s3.connect-timeout          | 60.0                       | Configure socket connection timeout, in seconds.                                                                                                                                                                                                                        |
+| s3.request-timeout          | 60.0                       | Configure socket read timeouts on Windows and macOS, in seconds.                                                                                                                                                                                                        |
 | s3.force-virtual-addressing | False                      | Whether to use virtual addressing of buckets. If true, then virtual addressing is always enabled. If false, then virtual addressing is only enabled if endpoint_override is empty. This can be used for non-AWS backends that only support virtual hosted-style access. |
-| s3.retry-strategy-impl      | None                       | Ability to set a custom S3 retry strategy. A full path to a class needs to be given that extends the [S3RetryStrategy](https://github.com/apache/arrow/blob/639201bfa412db26ce45e73851432018af6c945e/python/pyarrow/_s3fs.pyx#L110) base class.            |
-| s3.anonymous                | True                       | Configure whether to use anonymous connection. If False (default), uses key/secret if configured or boto's credential resolver. |
+| s3.retry-strategy-impl      | None                       | Ability to set a custom S3 retry strategy. A full path to a class needs to be given that extends the [S3RetryStrategy](https://github.com/apache/arrow/blob/639201bfa412db26ce45e73851432018af6c945e/python/pyarrow/_s3fs.pyx#L110) base class.                         |
+| s3.anonymous                | True                       | Configure whether to use anonymous connection. If False (default), uses key/secret if configured or boto's credential resolver.                                                                                                                                         |
 
 <!-- markdown-link-check-enable-->
 
@@ -394,6 +395,7 @@ The RESTCatalog supports pluggable authentication via the `auth` configuration b
 - `oauth2`: OAuth2 client credentials flow.
 - `custom`: Custom authentication manager (requires `auth.impl`).
 - `google`: Google Authentication support
+- `entra`: Microsoft Entra ID (Azure AD) authentication support
 
 ###### Configuration Properties
 
@@ -421,6 +423,7 @@ catalog:
 | `auth.oauth2`    | If type is `oauth2` | Block containing OAuth2 configuration (see below).                                 |
 | `auth.custom`    | If type is `custom` | Block containing configuration for the custom AuthManager.                          |
 | `auth.google`    | If type is `google` | Block containing `credentials_path` to a service account file (if using). Will default to using Application Default Credentials. |
+| `auth.entra`     | If type is `entra` | Block containing Entra ID configuration. Will default to using DefaultAzureCredential. |
 
 ###### Examples
 
@@ -551,6 +554,66 @@ catalog:
       type: noop
 ```
 
+##### GCP BigLake Metastore Catalog REST
+
+```yaml
+catalog:
+  biglake_catalog:
+    type: rest
+    uri: https://biglake.googleapis.com/iceberg/v1/restcatalog
+    warehouse: gs://<bucket-name>  # Use bq://projects/<gcp-project-id> for federation option (see docs)
+    auth:
+      type: google
+    header.x-goog-user-project: <gcp-project-id>
+    header.X-Iceberg-Access-Delegation: "" # For user-credentials authentication, set to empty string.
+```
+
+<!-- prettier-ignore-start -->
+
+!!! Note "Metastore Authentication Models"
+    If your BigLake Metastore catalog is configured for "user credentials" authentication instead of "vendor credentials", set the `header.X-Iceberg-Access-Delegation` header to an empty string as shown above.  Standard GCP Application Default Credentials (ADC) will be used to authenticate requests to the BigLake Metastore REST API.
+    You can retrieve the configuration details for your BigLake Iceberg catalog at the [GCP Console BigLake Metastore page](https://console.cloud.google.com/biglake/metastore/catalogs). Select your catalog, then find the necessary parameters such as `uri`, `warehouse`, and authentication method (e.g. user-creds or vendor).
+
+<!-- prettier-ignore-end -->
+
+##### Microsoft OneLake Iceberg REST Catalog
+
+See [OneLake table APIs for Iceberg](https://aka.ms/onelakeircdocs) for detailed documentation.
+
+Using Entra ID authentication (recommended):
+
+```yaml
+catalog:
+  onelake_catalog:
+    type: rest
+    uri: https://onelake.table.fabric.microsoft.com/iceberg
+    warehouse: <fabric_workspace_id>/<fabric_data_item_id>
+    auth:
+      type: entra
+    adls.account-name: onelake
+    adls.account-host: onelake.blob.fabric.microsoft.com
+```
+
+Using static token:
+
+```yaml
+catalog:
+  onelake_catalog:
+    type: rest
+    uri: https://onelake.table.fabric.microsoft.com/iceberg
+    warehouse: <fabric_workspace_id>/<fabric_data_item_id> # Example : DB0CE1EE-B014-47D3-8F0C-9D64C39C0FC2/F470A1D2-6D6D-4C9D-8796-46286C80B7C0
+    token: <token>
+    adls.account-name: onelake
+    adls.account-host: onelake.blob.fabric.microsoft.com
+    adls.credential: <credential>
+```
+
+<!-- prettier-ignore-start -->
+
+!!! Note "OneLake Authentication"
+    Use the `entra` auth type for Entra ID (Azure AD) authentication via [DefaultAzureCredential](https://learn.microsoft.com/en-us/azure/developer/python/sdk/authentication/credential-chains?tabs=dac#defaultazurecredential-overview), which supports environment variables, managed identity, Azure CLI, and more. Install with `pip install pyiceberg[entra-auth]`.
+<!-- prettier-ignore-end -->
+
 ### SQL Catalog
 
 The SQL catalog requires a database for its backend. PyIceberg supports PostgreSQL and SQLite through psycopg2. The database connection has to be configured using the `uri` property. The init_catalog_tables is optional and defaults to True. If it is set to False, the catalog tables will not be created when the SQLCatalog is initialized. See SQLAlchemy's [documentation for URL format](https://docs.sqlalchemy.org/en/20/core/engines.html#backend-specific-urls):
@@ -676,7 +739,7 @@ catalog:
 | glue.id                | 111111111111                           | Configure the 12-digit ID of the Glue Catalog                                   |
 | glue.skip-archive      | true                                   | Configure whether to skip the archival of older table versions. Default to true |
 | glue.endpoint          | <https://glue.us-east-1.amazonaws.com> | Configure an alternative endpoint of the Glue service for GlueCatalog to access |
-| glue.profile-name      | default                                | Configure the static profile used to access the Glue Catalog                    |
+| glue.profile-name      | default                                | Configure the AWS profile used to access the Glue Catalog                       |
 | glue.region            | us-east-1                              | Set the region of the Glue Catalog                                              |
 | glue.access-key-id     | admin                                  | Configure the static access key id used to access the Glue Catalog              |
 | glue.secret-access-key | password                               | Configure the static secret access key used to access the Glue Catalog          |
@@ -776,14 +839,15 @@ catalog:
 
 configures the AWS credentials for both Glue Catalog and S3 FileIO.
 
-| Key                      | Example        | Description                                                                                            |
-| ------------------------ | -------------- | ------------------------------------------------------------------------------------------------------ |
-| client.region            | us-east-1      | Set the region of both the Glue/DynamoDB Catalog and the S3 FileIO                                     |
-| client.access-key-id     | admin          | Configure the static access key id used to access both the Glue/DynamoDB Catalog and the S3 FileIO     |
-| client.secret-access-key | password       | Configure the static secret access key used to access both the Glue/DynamoDB Catalog and the S3 FileIO |
-| client.session-token     | AQoDYXdzEJr... | Configure the static session token used to access both the Glue/DynamoDB Catalog and the S3 FileIO     |
-| client.role-session-name      | session                    | An optional identifier for the assumed role session.                                                                                                                                                                                                      |
-| client.role-arn          | arn:aws:...                | AWS Role ARN. If provided instead of access_key and secret_key, temporary credentials will be fetched by assuming this role.                                                                                                                              |
+| Key                      | Example        | Description                                                                                                                            |
+| ------------------------ | -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| client.region            | us-east-1      | Set the region of both the Glue/DynamoDB Catalog and the S3 FileIO                                                                     |
+| client.access-key-id     | admin          | Configure the static access key id used to access both the Glue/DynamoDB Catalog and the S3 FileIO                                     |
+| client.secret-access-key | password       | Configure the static secret access key used to access both the Glue/DynamoDB Catalog and the S3 FileIO                                 |
+| client.session-token     | AQoDYXdzEJr... | Configure the static session token used to access both the Glue/DynamoDB Catalog and the S3 FileIO                                     |
+| client.profile-name      | default        | Configure the AWS profile used to access both the Glue/DynamoDB Catalog and the S3 FileIO (only supported by `FsspecFileIO` currently) |
+| client.role-session-name | session        | An optional identifier for the assumed role session.                                                                                   |
+| client.role-arn          | arn:aws:...    | AWS Role ARN. If provided instead of access_key and secret_key, temporary credentials will be fetched by assuming this role.           |
 
 <!-- prettier-ignore-start -->
 

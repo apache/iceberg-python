@@ -56,8 +56,9 @@ select = [
     "C4", # flake8-comprehensions
     "I", # isort
     "UP", # pyupgrade
+    "T100", # flake8-debugger
 ]
-ignore = ["E501","E203","B024","B028","UP037", "UP035", "UP006"]
+ignore = []
 
 # Allow autofix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]

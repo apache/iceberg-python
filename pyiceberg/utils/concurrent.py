@@ -18,17 +18,16 @@
 
 import os
 from concurrent.futures import Executor, ThreadPoolExecutor
-from typing import Optional
 
 from pyiceberg.utils.config import Config
 
 
 class ExecutorFactory:
-    _instance: Optional[Executor] = None
-    _instance_pid: Optional[int] = None
+    _instance: Executor | None = None
+    _instance_pid: int | None = None
 
     @staticmethod
-    def max_workers() -> Optional[int]:
+    def max_workers() -> int | None:
         """Return the max number of workers configured."""
         return Config().get_int("max-workers")
 

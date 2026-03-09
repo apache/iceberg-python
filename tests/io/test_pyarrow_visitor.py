@@ -16,7 +16,6 @@
 # under the License.
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
 import re
-from typing import Any
 
 import pyarrow as pa
 import pytest
@@ -191,7 +190,8 @@ def test_pyarrow_timestamp_invalid_units() -> None:
     with pytest.raises(
         TypeError,
         match=re.escape(
-            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
+            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' "
+            "configuration property to automatically downcast 'ns' to 'us' on write."
         ),
     ):
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
@@ -213,7 +213,8 @@ def test_pyarrow_timestamp_tz_invalid_units() -> None:
     with pytest.raises(
         TypeError,
         match=re.escape(
-            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
+            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' "
+            "configuration property to automatically downcast 'ns' to 'us' on write."
         ),
     ):
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
@@ -717,21 +718,21 @@ def test_pyarrow_schema_round_trip_ensure_large_types_and_then_small_types(pyarr
 
 
 @pytest.fixture
-def bound_reference_str() -> BoundReference[Any]:
+def bound_reference_str() -> BoundReference:
     return BoundReference(
         field=NestedField(1, "string_field", StringType(), required=False), accessor=Accessor(position=0, inner=None)
     )
 
 
 @pytest.fixture
-def bound_reference_float() -> BoundReference[Any]:
+def bound_reference_float() -> BoundReference:
     return BoundReference(
         field=NestedField(2, "float_field", FloatType(), required=False), accessor=Accessor(position=1, inner=None)
     )
 
 
 @pytest.fixture
-def bound_reference_double() -> BoundReference[Any]:
+def bound_reference_double() -> BoundReference:
     return BoundReference(
         field=NestedField(3, "double_field", DoubleType(), required=False),
         accessor=Accessor(position=2, inner=None),
@@ -739,32 +740,32 @@ def bound_reference_double() -> BoundReference[Any]:
 
 
 @pytest.fixture
-def bound_eq_str_field(bound_reference_str: BoundReference[Any]) -> BoundEqualTo[Any]:
+def bound_eq_str_field(bound_reference_str: BoundReference) -> BoundEqualTo:
     return BoundEqualTo(term=bound_reference_str, literal=literal("hello"))
 
 
 @pytest.fixture
-def bound_greater_than_float_field(bound_reference_float: BoundReference[Any]) -> BoundGreaterThan[Any]:
+def bound_greater_than_float_field(bound_reference_float: BoundReference) -> BoundGreaterThan:
     return BoundGreaterThan(term=bound_reference_float, literal=literal(100))
 
 
 @pytest.fixture
-def bound_is_nan_float_field(bound_reference_float: BoundReference[Any]) -> BoundIsNaN[Any]:
+def bound_is_nan_float_field(bound_reference_float: BoundReference) -> BoundIsNaN:
     return BoundIsNaN(bound_reference_float)
 
 
 @pytest.fixture
-def bound_eq_double_field(bound_reference_double: BoundReference[Any]) -> BoundEqualTo[Any]:
+def bound_eq_double_field(bound_reference_double: BoundReference) -> BoundEqualTo:
     return BoundEqualTo(term=bound_reference_double, literal=literal(False))
 
 
 @pytest.fixture
-def bound_is_null_double_field(bound_reference_double: BoundReference[Any]) -> BoundIsNull[Any]:
+def bound_is_null_double_field(bound_reference_double: BoundReference) -> BoundIsNull:
     return BoundIsNull(bound_reference_double)
 
 
 def test_collect_null_nan_unmentioned_terms(
-    bound_eq_str_field: BoundEqualTo[Any], bound_is_nan_float_field: BoundIsNaN[Any], bound_is_null_double_field: BoundIsNull[Any]
+    bound_eq_str_field: BoundEqualTo, bound_is_nan_float_field: BoundIsNaN, bound_is_null_double_field: BoundIsNull
 ) -> None:
     bound_expr = And(
         Or(And(bound_eq_str_field, bound_is_nan_float_field), bound_is_null_double_field), Not(bound_is_nan_float_field)
@@ -786,11 +787,11 @@ def test_collect_null_nan_unmentioned_terms(
 
 
 def test_collect_null_nan_unmentioned_terms_with_multiple_predicates_on_the_same_term(
-    bound_eq_str_field: BoundEqualTo[Any],
-    bound_greater_than_float_field: BoundGreaterThan[Any],
-    bound_is_nan_float_field: BoundIsNaN[Any],
-    bound_eq_double_field: BoundEqualTo[Any],
-    bound_is_null_double_field: BoundIsNull[Any],
+    bound_eq_str_field: BoundEqualTo,
+    bound_greater_than_float_field: BoundGreaterThan,
+    bound_is_nan_float_field: BoundIsNaN,
+    bound_eq_double_field: BoundEqualTo,
+    bound_is_null_double_field: BoundIsNull,
 ) -> None:
     """Test a single term appears multiple places in the expression tree"""
     bound_expr = And(
@@ -818,11 +819,11 @@ def test_collect_null_nan_unmentioned_terms_with_multiple_predicates_on_the_same
 
 
 def test_expression_to_complementary_pyarrow(
-    bound_eq_str_field: BoundEqualTo[Any],
-    bound_greater_than_float_field: BoundGreaterThan[Any],
-    bound_is_nan_float_field: BoundIsNaN[Any],
-    bound_eq_double_field: BoundEqualTo[Any],
-    bound_is_null_double_field: BoundIsNull[Any],
+    bound_eq_str_field: BoundEqualTo,
+    bound_greater_than_float_field: BoundGreaterThan,
+    bound_is_nan_float_field: BoundIsNaN,
+    bound_eq_double_field: BoundEqualTo,
+    bound_is_null_double_field: BoundIsNull,
 ) -> None:
     bound_expr = And(
         Or(
@@ -833,8 +834,13 @@ def test_expression_to_complementary_pyarrow(
         Not(bound_is_null_double_field),
     )
     result = _expression_to_complementary_pyarrow(bound_expr)
-    # Notice an isNan predicate on a str column is automatically converted to always false and removed from Or and thus will not appear in the pc.expr.
-    assert (
-        repr(result)
-        == """<pyarrow.compute.Expression (((invert(((((string_field == "hello") and (float_field > 100)) or ((is_nan(float_field) and (double_field == 0)) or (float_field > 100))) and invert(is_null(double_field, {nan_is_null=false})))) or is_null(float_field, {nan_is_null=false})) or is_null(string_field, {nan_is_null=false})) or is_nan(double_field))>"""
+    # Notice an isNan predicate on a str column is automatically converted to always false and removed from Or
+    # and thus will not appear in the pc.expr.
+    expected_repr = (
+        '<pyarrow.compute.Expression (((invert(((((string_field == "hello") and (float_field > 100)) '
+        "or ((is_nan(float_field) and (double_field == 0)) or (float_field > 100))) "
+        "and invert(is_null(double_field, {nan_is_null=false})))) "
+        "or is_null(float_field, {nan_is_null=false})) "
+        "or is_null(string_field, {nan_is_null=false})) or is_nan(double_field))>"
     )
+    assert repr(result) == expected_repr

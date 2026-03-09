@@ -31,15 +31,13 @@ Note:
 
 import codecs
 import uuid
+from collections.abc import Callable
 from datetime import date, datetime, time
 from decimal import Decimal
 from functools import singledispatch
 from struct import Struct
 from typing import (
     Any,
-    Callable,
-    Optional,
-    Union,
 )
 
 from pyiceberg.typedef import UTF8, L
@@ -51,6 +49,8 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IntegerType,
     LongType,
     PrimitiveType,
@@ -98,7 +98,7 @@ def handle_none(func: Callable) -> Callable:  # type: ignore
         func (Callable): A function registered to the singledispatch function `partition_to_py`.
     """
 
-    def wrapper(primitive_type: PrimitiveType, value_str: Optional[str]) -> Any:
+    def wrapper(primitive_type: PrimitiveType, value_str: str | None) -> Any:
         if value_str is None:
             return None
         elif value_str == "__HIVE_DEFAULT_PARTITION__":
@@ -109,7 +109,7 @@ def handle_none(func: Callable) -> Callable:  # type: ignore
 
 
 @singledispatch
-def partition_to_py(primitive_type: PrimitiveType, value_str: str) -> Union[int, float, str, uuid.UUID, bytes, Decimal]:
+def partition_to_py(primitive_type: PrimitiveType, value_str: str) -> int | float | str | uuid.UUID | bytes | Decimal:
     """Convert a partition string to a python built-in.
 
     Args:
@@ -121,7 +121,7 @@ def partition_to_py(primitive_type: PrimitiveType, value_str: str) -> Union[int,
 
 @partition_to_py.register(BooleanType)
 @handle_none
-def _(primitive_type: BooleanType, value_str: str) -> Union[int, float, str, uuid.UUID]:
+def _(primitive_type: BooleanType, value_str: str) -> int | float | str | uuid.UUID:
     return strtobool(value_str)
 
 
@@ -184,14 +184,27 @@ def _(type_: UnknownType, _: str) -> None:
     return None
 
 
+@partition_to_py.register(GeometryType)
+@partition_to_py.register(GeographyType)
+@handle_none
+def _(_: PrimitiveType, value_str: str) -> bytes:
+    """Convert a geometry/geography partition string to bytes.
+
+    Note: Partition values for geometry/geography types are expected to be
+    hex-encoded WKB (Well-Known Binary) strings.
+    """
+    return bytes.fromhex(value_str)
+
+
 @singledispatch
 def to_bytes(
-    primitive_type: PrimitiveType, _: Union[bool, bytes, Decimal, date, datetime, float, int, str, time, uuid.UUID]
+    primitive_type: PrimitiveType, _: bool | bytes | Decimal | date | datetime | float | int | str | time | uuid.UUID
 ) -> bytes:
     """Convert a built-in python value to bytes.
 
-    This conversion follows the serialization scheme for storing single values as individual binary values defined in the Iceberg specification that
-    can be found at https://iceberg.apache.org/spec/#appendix-d-single-value-serialization
+    This conversion follows the serialization scheme for storing single values as individual binary values
+    defined in the Iceberg specification that can be found at
+    https://iceberg.apache.org/spec/#appendix-d-single-value-serialization
 
     Args:
         primitive_type (PrimitiveType): An implementation of the PrimitiveType base class.
@@ -218,7 +231,7 @@ def _(_: PrimitiveType, value: int) -> bytes:
 
 @to_bytes.register(TimestampType)
 @to_bytes.register(TimestamptzType)
-def _(_: PrimitiveType, value: Union[datetime, int]) -> bytes:
+def _(_: PrimitiveType, value: datetime | int) -> bytes:
     if isinstance(value, datetime):
         value = datetime_to_micros(value)
     return _LONG_STRUCT.pack(value)
@@ -226,21 +239,21 @@ def _(_: PrimitiveType, value: Union[datetime, int]) -> bytes:
 
 @to_bytes.register(TimestampNanoType)
 @to_bytes.register(TimestamptzNanoType)
-def _(_: PrimitiveType, value: Union[datetime, int]) -> bytes:
+def _(_: PrimitiveType, value: datetime | int) -> bytes:
     if isinstance(value, datetime):
         value = datetime_to_nanos(value)
     return _LONG_STRUCT.pack(value)
 
 
 @to_bytes.register(DateType)
-def _(_: DateType, value: Union[date, int]) -> bytes:
+def _(_: DateType, value: date | int) -> bytes:
     if isinstance(value, date):
         value = date_to_days(value)
     return _INT_STRUCT.pack(value)
 
 
 @to_bytes.register(TimeType)
-def _(_: TimeType, value: Union[time, int]) -> bytes:
+def _(_: TimeType, value: time | int) -> bytes:
     if isinstance(value, time):
         value = time_to_micros(value)
     return _LONG_STRUCT.pack(value)
@@ -267,7 +280,7 @@ def _(_: StringType, value: str) -> bytes:
 
 
 @to_bytes.register(UUIDType)
-def _(_: UUIDType, value: Union[uuid.UUID, bytes]) -> bytes:
+def _(_: UUIDType, value: uuid.UUID | bytes) -> bytes:
     if isinstance(value, bytes):
         return value
     return value.bytes
@@ -275,6 +288,8 @@ def _(_: UUIDType, value: Union[uuid.UUID, bytes]) -> bytes:
 
 @to_bytes.register(BinaryType)
 @to_bytes.register(FixedType)
+@to_bytes.register(GeometryType)
+@to_bytes.register(GeographyType)
 def _(_: PrimitiveType, value: bytes) -> bytes:
     return value
 
@@ -356,6 +371,8 @@ def _(_: StringType, b: bytes) -> str:
 @from_bytes.register(BinaryType)
 @from_bytes.register(FixedType)
 @from_bytes.register(UUIDType)
+@from_bytes.register(GeometryType)
+@from_bytes.register(GeographyType)
 def _(_: PrimitiveType, b: bytes) -> bytes:
     return b
 
@@ -392,13 +409,13 @@ def _(_: BooleanType, val: bool) -> bool:
 
 @to_json.register(IntegerType)
 @to_json.register(LongType)
-def _(_: Union[IntegerType, LongType], val: int) -> int:
+def _(_: IntegerType | LongType, val: int) -> int:
     """Python int automatically converts to a JSON int."""
     return val
 
 
 @to_json.register(DateType)
-def _(_: DateType, val: Union[date, int]) -> str:
+def _(_: DateType, val: date | int) -> str:
     """JSON date is string encoded."""
     if isinstance(val, date):
         val = date_to_days(val)
@@ -406,7 +423,7 @@ def _(_: DateType, val: Union[date, int]) -> str:
 
 
 @to_json.register(TimeType)
-def _(_: TimeType, val: Union[int, time]) -> str:
+def _(_: TimeType, val: int | time) -> str:
     """Python time or microseconds since epoch serializes into an ISO8601 time."""
     if isinstance(val, time):
         val = time_to_micros(val)
@@ -414,7 +431,7 @@ def _(_: TimeType, val: Union[int, time]) -> str:
 
 
 @to_json.register(TimestampType)
-def _(_: PrimitiveType, val: Union[int, datetime]) -> str:
+def _(_: PrimitiveType, val: int | datetime) -> str:
     """Python datetime (without timezone) or microseconds since epoch serializes into an ISO8601 timestamp."""
     if isinstance(val, datetime):
         val = datetime_to_micros(val)
@@ -423,7 +440,7 @@ def _(_: PrimitiveType, val: Union[int, datetime]) -> str:
 
 
 @to_json.register(TimestamptzType)
-def _(_: TimestamptzType, val: Union[int, datetime]) -> str:
+def _(_: TimestamptzType, val: int | datetime) -> str:
     """Python datetime (with timezone) or microseconds since epoch serializes into an ISO8601 timestamp."""
     if isinstance(val, datetime):
         val = datetime_to_micros(val)
@@ -432,7 +449,7 @@ def _(_: TimestamptzType, val: Union[int, datetime]) -> str:
 
 @to_json.register(FloatType)
 @to_json.register(DoubleType)
-def _(_: Union[FloatType, DoubleType], val: float) -> float:
+def _(_: FloatType | DoubleType, val: float) -> float:
     """Float serializes into JSON float."""
     return val
 
@@ -476,6 +493,40 @@ def _(_: UUIDType, val: uuid.UUID) -> str:
     return str(val)
 
 
+@to_json.register(GeometryType)
+def _(_: GeometryType, val: bytes) -> str:
+    """Serialize geometry to WKT string per Iceberg spec.
+
+    Note: This requires WKB to WKT conversion which is not yet implemented.
+    The Iceberg spec requires geometry values to be serialized as WKT strings
+    in JSON, but PyIceberg stores geometry as WKB bytes at runtime.
+
+    Raises:
+        NotImplementedError: WKB to WKT conversion is not yet supported.
+    """
+    raise NotImplementedError(
+        "Geometry JSON serialization requires WKB to WKT conversion, which is not yet implemented. "
+        "See https://iceberg.apache.org/spec/#json-single-value-serialization for spec details."
+    )
+
+
+@to_json.register(GeographyType)
+def _(_: GeographyType, val: bytes) -> str:
+    """Serialize geography to WKT string per Iceberg spec.
+
+    Note: This requires WKB to WKT conversion which is not yet implemented.
+    The Iceberg spec requires geography values to be serialized as WKT strings
+    in JSON, but PyIceberg stores geography as WKB bytes at runtime.
+
+    Raises:
+        NotImplementedError: WKB to WKT conversion is not yet supported.
+    """
+    raise NotImplementedError(
+        "Geography JSON serialization requires WKB to WKT conversion, which is not yet implemented. "
+        "See https://iceberg.apache.org/spec/#json-single-value-serialization for spec details."
+    )
+
+
 @singledispatch  # type: ignore
 def from_json(primitive_type: PrimitiveType, val: Any) -> L:  # type: ignore
     """Convert JSON value types into built-in python values.
@@ -497,13 +548,13 @@ def _(_: BooleanType, val: bool) -> bool:
 
 @from_json.register(IntegerType)
 @from_json.register(LongType)
-def _(_: Union[IntegerType, LongType], val: int) -> int:
+def _(_: IntegerType | LongType, val: int) -> int:
     """JSON int automatically converts to a Python int."""
     return val
 
 
 @from_json.register(DateType)
-def _(_: DateType, val: Union[str, int, date]) -> date:
+def _(_: DateType, val: str | int | date) -> date:
     """JSON date is string encoded."""
     if isinstance(val, str):
         val = date_str_to_days(val)
@@ -514,7 +565,7 @@ def _(_: DateType, val: Union[str, int, date]) -> date:
 
 
 @from_json.register(TimeType)
-def _(_: TimeType, val: Union[str, int, time]) -> time:
+def _(_: TimeType, val: str | int | time) -> time:
     """JSON ISO8601 string into Python time."""
     if isinstance(val, str):
         val = time_str_to_micros(val)
@@ -525,7 +576,7 @@ def _(_: TimeType, val: Union[str, int, time]) -> time:
 
 
 @from_json.register(TimestampType)
-def _(_: PrimitiveType, val: Union[str, int, datetime]) -> datetime:
+def _(_: PrimitiveType, val: str | int | datetime) -> datetime:
     """JSON ISO8601 string into Python datetime."""
     if isinstance(val, str):
         val = timestamp_to_micros(val)
@@ -536,7 +587,7 @@ def _(_: PrimitiveType, val: Union[str, int, datetime]) -> datetime:
 
 
 @from_json.register(TimestamptzType)
-def _(_: TimestamptzType, val: Union[str, int, datetime]) -> datetime:
+def _(_: TimestamptzType, val: str | int | datetime) -> datetime:
     """JSON ISO8601 string into Python datetime."""
     if isinstance(val, str):
         val = timestamptz_to_micros(val)
@@ -548,7 +599,7 @@ def _(_: TimestamptzType, val: Union[str, int, datetime]) -> datetime:
 
 @from_json.register(FloatType)
 @from_json.register(DoubleType)
-def _(_: Union[FloatType, DoubleType], val: float) -> float:
+def _(_: FloatType | DoubleType, val: float) -> float:
     """JSON float deserializes into a Python float."""
     return val
 
@@ -560,7 +611,7 @@ def _(_: StringType, val: str) -> str:
 
 
 @from_json.register(FixedType)
-def _(t: FixedType, val: Union[str, bytes]) -> bytes:
+def _(t: FixedType, val: str | bytes) -> bytes:
     """JSON hexadecimal encoded string into bytes."""
     if isinstance(val, str):
         val = codecs.decode(val.encode(UTF8), "hex")
@@ -572,7 +623,7 @@ def _(t: FixedType, val: Union[str, bytes]) -> bytes:
 
 
 @from_json.register(BinaryType)
-def _(_: BinaryType, val: Union[bytes, str]) -> bytes:
+def _(_: BinaryType, val: bytes | str) -> bytes:
     """JSON hexadecimal encoded string into bytes."""
     if isinstance(val, str):
         return codecs.decode(val.encode(UTF8), "hex")
@@ -587,7 +638,7 @@ def _(_: DecimalType, val: str) -> Decimal:
 
 
 @from_json.register(UUIDType)
-def _(_: UUIDType, val: Union[str, bytes, uuid.UUID]) -> uuid.UUID:
+def _(_: UUIDType, val: str | bytes | uuid.UUID) -> uuid.UUID:
     """Convert JSON string into Python UUID."""
     if isinstance(val, str):
         return uuid.UUID(val)
@@ -595,3 +646,43 @@ def _(_: UUIDType, val: Union[str, bytes, uuid.UUID]) -> uuid.UUID:
         return uuid.UUID(bytes=val)
     else:
         return val
+
+
+@from_json.register(GeometryType)
+def _(_: GeometryType, val: str | bytes) -> bytes:
+    """Convert JSON WKT string into WKB bytes per Iceberg spec.
+
+    Note: This requires WKT to WKB conversion which is not yet implemented.
+    The Iceberg spec requires geometry values to be represented as WKT strings
+    in JSON, but PyIceberg stores geometry as WKB bytes at runtime.
+
+    Raises:
+        NotImplementedError: WKT to WKB conversion is not yet supported.
+    """
+    if isinstance(val, bytes):
+        # Already WKB bytes, return as-is
+        return val
+    raise NotImplementedError(
+        "Geometry JSON deserialization requires WKT to WKB conversion, which is not yet implemented. "
+        "See https://iceberg.apache.org/spec/#json-single-value-serialization for spec details."
+    )
+
+
+@from_json.register(GeographyType)
+def _(_: GeographyType, val: str | bytes) -> bytes:
+    """Convert JSON WKT string into WKB bytes per Iceberg spec.
+
+    Note: This requires WKT to WKB conversion which is not yet implemented.
+    The Iceberg spec requires geography values to be represented as WKT strings
+    in JSON, but PyIceberg stores geography as WKB bytes at runtime.
+
+    Raises:
+        NotImplementedError: WKT to WKB conversion is not yet supported.
+    """
+    if isinstance(val, bytes):
+        # Already WKB bytes, return as-is
+        return val
+    raise NotImplementedError(
+        "Geography JSON deserialization requires WKT to WKB conversion, which is not yet implemented. "
+        "See https://iceberg.apache.org/spec/#json-single-value-serialization for spec details."
+    )

@@ -16,13 +16,13 @@
 # under the License.
 import threading
 from datetime import datetime, timedelta
-from typing import Dict
 from unittest.mock import MagicMock, Mock
 from uuid import uuid4
 
 import pytest
 
 from pyiceberg.table import CommitTableResponse, Table
+from pyiceberg.table.update import RemoveSnapshotsUpdate, update_table_metadata
 from pyiceberg.table.update.snapshot import ExpireSnapshots
 
 
@@ -252,7 +252,7 @@ def test_thread_safety_fix() -> None:
 
 def test_concurrent_operations() -> None:
     """Test concurrent operations with separate ExpireSnapshots instances."""
-    results: Dict[str, set[int]] = {"expire1_snapshots": set(), "expire2_snapshots": set()}
+    results: dict[str, set[int]] = {"expire1_snapshots": set(), "expire2_snapshots": set()}
 
     def worker1() -> None:
         expire1 = ExpireSnapshots(Mock())
@@ -280,3 +280,39 @@ def test_concurrent_operations() -> None:
 
     assert results["expire1_snapshots"] == expected_1, "Worker 1 snapshots contaminated"
     assert results["expire2_snapshots"] == expected_2, "Worker 2 snapshots contaminated"
+
+
+def test_update_remove_snapshots_with_statistics(table_v2_with_statistics: Table) -> None:
+    """
+    Test removing snapshots from a table that has statistics.
+
+    This test exercises the code path where RemoveStatisticsUpdate is instantiated
+    within the RemoveSnapshotsUpdate handler. Before the fix for #2558, this would
+    fail with: TypeError: BaseModel.__init__() takes 1 positional argument but 2 were given
+    """
+    # The table has 2 snapshots with IDs: 3051729675574597004 and 3055729675574597004
+    # Both snapshots have statistics associated with them
+    REMOVE_SNAPSHOT = 3051729675574597004
+    KEEP_SNAPSHOT = 3055729675574597004
+
+    # Verify fixture assumptions
+    assert len(table_v2_with_statistics.metadata.snapshots) == 2
+    assert len(table_v2_with_statistics.metadata.statistics) == 2
+    assert any(stat.snapshot_id == REMOVE_SNAPSHOT for stat in table_v2_with_statistics.metadata.statistics), (
+        "Snapshot to remove should have statistics"
+    )
+
+    # This should trigger RemoveStatisticsUpdate instantiation for the removed snapshot
+    update = RemoveSnapshotsUpdate(snapshot_ids=[REMOVE_SNAPSHOT])
+    new_metadata = update_table_metadata(table_v2_with_statistics.metadata, (update,))
+
+    # Verify the snapshot was removed
+    assert len(new_metadata.snapshots) == 1
+    assert new_metadata.snapshots[0].snapshot_id == KEEP_SNAPSHOT
+
+    # Verify the statistics for the removed snapshot were also removed
+    assert len(new_metadata.statistics) == 1
+    assert new_metadata.statistics[0].snapshot_id == KEEP_SNAPSHOT
+    assert not any(stat.snapshot_id == REMOVE_SNAPSHOT for stat in new_metadata.statistics), (
+        "Statistics for removed snapshot should be gone"
+    )

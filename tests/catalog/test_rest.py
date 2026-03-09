@@ -15,18 +15,34 @@
 #  specific language governing permissions and limitations
 #  under the License.
 # pylint: disable=redefined-outer-name,unused-argument
+from __future__ import annotations
+
 import base64
 import os
-from typing import Any, Callable, Dict, cast
+from collections.abc import Callable
+from typing import Any, cast
 from unittest import mock
 
 import pytest
+from requests import Request
+from requests.adapters import HTTPAdapter
 from requests.exceptions import HTTPError
 from requests_mock import Mocker
 
 import pyiceberg
 from pyiceberg.catalog import PropertiesUpdateSummary, load_catalog
-from pyiceberg.catalog.rest import OAUTH2_SERVER_URI, SNAPSHOT_LOADING_MODE, RestCatalog
+from pyiceberg.catalog.rest import (
+    DEFAULT_ENDPOINTS,
+    EMPTY_BODY_SHA256,
+    OAUTH2_SERVER_URI,
+    SIGV4_MAX_RETRIES,
+    SIGV4_MAX_RETRIES_DEFAULT,
+    SNAPSHOT_LOADING_MODE,
+    Capability,
+    Endpoint,
+    HttpMethod,
+    RestCatalog,
+)
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
     NamespaceAlreadyExistsError,
@@ -38,6 +54,7 @@ from pyiceberg.exceptions import (
     OAuthError,
     ServerError,
     TableAlreadyExistsError,
+    ViewAlreadyExistsError,
 )
 from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -47,10 +64,13 @@ from pyiceberg.table.metadata import TableMetadataV1
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import RecursiveDict
+from pyiceberg.types import StringType
 from pyiceberg.utils.config import Config
+from pyiceberg.view import View
+from pyiceberg.view.metadata import ViewMetadata, ViewVersion
 
 TEST_URI = "https://iceberg-test-catalog/"
-TEST_CREDENTIALS = "client:secret"
+TEST_CREDENTIALS = "client:secret_with:colon"
 TEST_OAUTH2_SERVER_URI = "https://auth-endpoint/"
 TEST_TOKEN = "some_jwt_token"
 TEST_SCOPE = "openid_offline_corpds_ds_profile"
@@ -67,9 +87,31 @@ OAUTH_TEST_HEADERS = {
     "Content-type": "application/x-www-form-urlencoded",
 }
 
+TEST_SUPPORTED_ENDPOINTS = [
+    Capability.V1_LIST_NAMESPACES,
+    Capability.V1_LOAD_NAMESPACE,
+    Capability.V1_NAMESPACE_EXISTS,
+    Capability.V1_UPDATE_NAMESPACE,
+    Capability.V1_CREATE_NAMESPACE,
+    Capability.V1_DELETE_NAMESPACE,
+    Capability.V1_LIST_TABLES,
+    Capability.V1_LOAD_TABLE,
+    Capability.V1_TABLE_EXISTS,
+    Capability.V1_CREATE_TABLE,
+    Capability.V1_UPDATE_TABLE,
+    Capability.V1_DELETE_TABLE,
+    Capability.V1_RENAME_TABLE,
+    Capability.V1_REGISTER_TABLE,
+    Capability.V1_LIST_VIEWS,
+    Capability.V1_VIEW_EXISTS,
+    Capability.V1_DELETE_VIEW,
+    Capability.V1_SUBMIT_TABLE_SCAN_PLAN,
+    Capability.V1_TABLE_SCAN_PLAN_TASKS,
+]
+
 
 @pytest.fixture
-def example_table_metadata_with_snapshot_v1_rest_json(example_table_metadata_with_snapshot_v1: Dict[str, Any]) -> Dict[str, Any]:
+def example_table_metadata_with_snapshot_v1_rest_json(example_table_metadata_with_snapshot_v1: dict[str, Any]) -> dict[str, Any]:
     return {
         "metadata-location": "s3://warehouse/database/table/metadata/00001-5f2f8166-244c-4eae-ac36-384ecdec81fc.gz.metadata.json",
         "metadata": example_table_metadata_with_snapshot_v1,
@@ -81,7 +123,7 @@ def example_table_metadata_with_snapshot_v1_rest_json(example_table_metadata_wit
 
 
 @pytest.fixture
-def example_table_metadata_with_no_location(example_table_metadata_with_snapshot_v1: Dict[str, Any]) -> Dict[str, Any]:
+def example_table_metadata_with_no_location(example_table_metadata_with_snapshot_v1: dict[str, Any]) -> dict[str, Any]:
     return {
         "metadata": example_table_metadata_with_snapshot_v1,
         "config": {
@@ -92,10 +134,22 @@ def example_table_metadata_with_no_location(example_table_metadata_with_snapshot
 
 
 @pytest.fixture
-def example_table_metadata_no_snapshot_v1_rest_json(example_table_metadata_no_snapshot_v1: Dict[str, Any]) -> Dict[str, Any]:
+def example_table_metadata_no_snapshot_v1_rest_json(example_table_metadata_no_snapshot_v1: dict[str, Any]) -> dict[str, Any]:
     return {
         "metadata-location": "s3://warehouse/database/table/metadata.json",
         "metadata": example_table_metadata_no_snapshot_v1,
+        "config": {
+            "client.factory": "io.tabular.iceberg.catalog.TabularAwsClientFactory",
+            "region": "us-west-2",
+        },
+    }
+
+
+@pytest.fixture
+def example_view_metadata_rest_json(example_view_metadata_v1: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "metadata-location": "s3://warehouse/database/table/metadata/00001-5f2f8166-244c-4eae-ac36-384ecdec81fc.gz.metadata.json",
+        "metadata": example_view_metadata_v1,
         "config": {
             "client.factory": "io.tabular.iceberg.catalog.TabularAwsClientFactory",
             "region": "us-west-2",
@@ -111,7 +165,7 @@ def rest_mock(requests_mock: Mocker) -> Mocker:
     """
     requests_mock.get(
         f"{TEST_URI}v1/config",
-        json={"defaults": {}, "overrides": {}},
+        json={"defaults": {}, "overrides": {}, "endpoints": [str(endpoint) for endpoint in TEST_SUPPORTED_ENDPOINTS]},
         status_code=200,
     )
     return requests_mock
@@ -123,7 +177,8 @@ def test_no_uri_supplied() -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 def test_token_200(rest_mock: Mocker) -> None:
     rest_mock.post(
@@ -146,7 +201,8 @@ def test_token_200(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 def test_token_200_without_optional_fields(rest_mock: Mocker) -> None:
     rest_mock.post(
@@ -165,7 +221,8 @@ def test_token_200_without_optional_fields(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 def test_token_with_optional_oauth_params(rest_mock: Mocker) -> None:
     mock_request = rest_mock.post(
@@ -190,7 +247,8 @@ def test_token_with_optional_oauth_params(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 def test_token_with_optional_oauth_params_as_empty(rest_mock: Mocker) -> None:
     mock_request = rest_mock.post(
@@ -213,7 +271,8 @@ def test_token_with_optional_oauth_params_as_empty(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 def test_token_with_default_scope(rest_mock: Mocker) -> None:
     mock_request = rest_mock.post(
@@ -234,7 +293,8 @@ def test_token_with_default_scope(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 def test_token_with_custom_scope(rest_mock: Mocker) -> None:
     mock_request = rest_mock.post(
@@ -256,7 +316,8 @@ def test_token_with_custom_scope(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 def test_token_200_w_oauth2_server_uri(rest_mock: Mocker) -> None:
     rest_mock.post(
@@ -281,7 +342,8 @@ def test_token_200_w_oauth2_server_uri(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 def test_config_200(requests_mock: Mocker) -> None:
     requests_mock.get(
@@ -369,7 +431,8 @@ def test_config_sets_headers(requests_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 def test_token_400(rest_mock: Mocker) -> None:
     rest_mock.post(
@@ -385,7 +448,8 @@ def test_token_400(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 def test_token_401(rest_mock: Mocker) -> None:
     message = "invalid_client"
@@ -426,6 +490,122 @@ def test_list_tables_200_sigv4(rest_mock: Mocker) -> None:
         ("examples", "fooshare")
     ]
     assert rest_mock.called
+
+
+def test_sigv4_sign_request_without_body(rest_mock: Mocker) -> None:
+    existing_token = "existing_token"
+
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "token": existing_token,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-west-2",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+        },
+    )
+
+    prepared = catalog._session.prepare_request(Request("GET", f"{TEST_URI}v1/config"))
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+    adapter.add_headers(prepared)
+
+    assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256")
+    assert prepared.headers["Original-Authorization"] == f"Bearer {existing_token}"
+    assert prepared.headers["x-amz-content-sha256"] == EMPTY_BODY_SHA256
+
+
+def test_sigv4_sign_request_with_body(rest_mock: Mocker) -> None:
+    existing_token = "existing_token"
+
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "token": existing_token,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-west-2",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+        },
+    )
+
+    prepared = catalog._session.prepare_request(
+        Request(
+            "POST",
+            f"{TEST_URI}v1/namespaces",
+            data={"namespace": "asdfasd"},
+        )
+    )
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+    adapter.add_headers(prepared)
+
+    assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256")
+    assert prepared.headers["Original-Authorization"] == f"Bearer {existing_token}"
+    assert prepared.headers.get("x-amz-content-sha256") != EMPTY_BODY_SHA256
+
+
+def test_sigv4_adapter_default_retry_config(rest_mock: Mocker) -> None:
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "token": TEST_TOKEN,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-west-2",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+        },
+    )
+
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+    assert adapter.max_retries.total == SIGV4_MAX_RETRIES_DEFAULT
+
+
+def test_sigv4_adapter_override_retry_config(rest_mock: Mocker) -> None:
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "token": TEST_TOKEN,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-west-2",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+            SIGV4_MAX_RETRIES: "3",
+        },
+    )
+
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+    assert adapter.max_retries.total == 3
+
+
+def test_sigv4_uses_client_profile_name(rest_mock: Mocker) -> None:
+    with mock.patch("boto3.Session") as mock_session:
+        RestCatalog(
+            "rest",
+            **{
+                "uri": TEST_URI,
+                "token": TEST_TOKEN,
+                "rest.sigv4-enabled": "true",
+                "rest.signing-region": "us-west-2",
+                "client.profile-name": "rest-profile",
+            },
+        )
+
+    mock_session.assert_called_with(
+        profile_name="rest-profile",
+        region_name=None,
+        botocore_session=None,
+        aws_access_key_id=None,
+        aws_secret_access_key=None,
+        aws_session_token=None,
+    )
 
 
 def test_list_tables_404(rest_mock: Mocker) -> None:
@@ -575,7 +755,8 @@ def test_list_namespace_with_parent_404(rest_mock: Mocker) -> None:
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 @pytest.mark.parametrize("status_code", [401, 419])
 def test_list_namespaces_token_expired_success_on_retries(rest_mock: Mocker, status_code: int) -> None:
@@ -837,7 +1018,7 @@ def test_update_namespace_properties_404(rest_mock: Mocker) -> None:
     assert "Namespace does not exist" in str(e.value)
 
 
-def test_load_table_200(rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]) -> None:
+def test_load_table_200(rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces/fokko/tables/table",
         json=example_table_metadata_with_snapshot_v1_rest_json,
@@ -859,7 +1040,7 @@ def test_load_table_200(rest_mock: Mocker, example_table_metadata_with_snapshot_
 
 
 def test_load_table_200_loading_mode(
-    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
 ) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces/fokko/tables/table?snapshots=refs",
@@ -882,7 +1063,7 @@ def test_load_table_200_loading_mode(
 
 
 def test_load_table_honor_access_delegation(
-    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
 ) -> None:
     test_headers_with_remote_signing = {**TEST_HEADERS, "X-Iceberg-Access-Delegation": "remote-signing"}
     rest_mock.get(
@@ -914,7 +1095,7 @@ def test_load_table_honor_access_delegation(
 
 
 def test_load_table_from_self_identifier_200(
-    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
 ) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces/pdames/tables/table",
@@ -1017,7 +1198,7 @@ def test_drop_table_404(rest_mock: Mocker) -> None:
 
 
 def test_create_table_200(
-    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: Dict[str, Any]
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any]
 ) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/fokko/tables",
@@ -1047,7 +1228,7 @@ def test_create_table_200(
 
 
 def test_create_table_with_given_location_removes_trailing_slash_200(
-    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: Dict[str, Any]
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any]
 ) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/fokko/tables",
@@ -1074,9 +1255,12 @@ def test_create_table_with_given_location_removes_trailing_slash_200(
 def test_create_staged_table_200(
     rest_mock: Mocker,
     table_schema_simple: Schema,
-    example_table_metadata_with_no_location: Dict[str, Any],
-    example_table_metadata_no_snapshot_v1_rest_json: Dict[str, Any],
+    example_table_metadata_with_no_location: dict[str, Any],
+    example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any],
 ) -> None:
+    expected_table_uuid = example_table_metadata_with_no_location["metadata"]["table-uuid"]
+    example_table_metadata_no_snapshot_v1_rest_json["metadata"]["table-uuid"] = expected_table_uuid
+
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/fokko/tables",
         json=example_table_metadata_with_no_location,
@@ -1162,13 +1346,83 @@ def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> Non
     assert "Table already exists" in str(e.value)
 
 
-def test_create_table_if_not_exists_200(
-    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: Dict[str, Any]
+def test_create_view_200(rest_mock: Mocker, table_schema_simple: Schema, example_view_metadata_rest_json: dict[str, Any]) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/views",
+        json=example_view_metadata_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    actual = catalog.create_view(
+        identifier=("fokko", "fokko2"),
+        schema=table_schema_simple,
+        view_version=ViewVersion(
+            version_id=1,
+            timestamp_ms=12345,
+            schema_id=1,
+            summary={"engine-name": "spark", "engineVersion": "3.3"},
+            representations=[
+                {
+                    "type": "sql",
+                    "sql": "SELECT * FROM prod.db.table",
+                    "dialect": "spark",
+                }
+            ],
+            default_namespace=["default"],
+        ),
+        location=None,
+        properties={"owner": "fokko"},
+    )
+    expected = View(
+        identifier=("fokko", "fokko2"),
+        metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]),
+    )
+    assert actual == expected
+
+
+def test_create_view_409(
+    rest_mock: Mocker,
+    table_schema_simple: Schema,
 ) -> None:
-    def json_callback() -> Callable[[Any, Any], Dict[str, Any]]:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/views",
+        json={
+            "error": {
+                "message": "View already exists: fokko.already_exists in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
+                "type": "AlreadyExistsException",
+                "code": 409,
+            }
+        },
+        status_code=409,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(ViewAlreadyExistsError) as e:
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).create_view(
+            identifier=("fokko", "fokko2"),
+            schema=table_schema_simple,
+            view_version=ViewVersion(
+                version_id=1,
+                timestamp_ms=12345,
+                schema_id=1,
+                summary={"engine-name": "spark", "engineVersion": "3.3"},
+                representations=[],
+                default_namespace=[],
+            ),
+            location=None,
+            properties={"owner": "fokko"},
+        )
+    assert "View already exists" in str(e.value)
+
+
+def test_create_table_if_not_exists_200(
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    def json_callback() -> Callable[[Any, Any], dict[str, Any]]:
         call_count = 0
 
-        def callback(request: Any, context: Any) -> Dict[str, Any]:
+        def callback(request: Any, context: Any) -> dict[str, Any]:
             nonlocal call_count
             call_count += 1
 
@@ -1250,7 +1504,7 @@ def test_create_table_419(rest_mock: Mocker, table_schema_simple: Schema) -> Non
 
 
 def test_register_table_200(
-    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: Dict[str, Any]
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any]
 ) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/default/register",
@@ -1318,7 +1572,7 @@ def test_delete_table_204(rest_mock: Mocker) -> None:
 
 
 def test_delete_table_from_self_identifier_204(
-    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
 ) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces/pdames/tables/table",
@@ -1337,7 +1591,7 @@ def test_delete_table_from_self_identifier_204(
     catalog.drop_table(table.name())
 
 
-def test_rename_table_200(rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]) -> None:
+def test_rename_table_200(rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/tables/rename",
         json={
@@ -1374,7 +1628,7 @@ def test_rename_table_200(rest_mock: Mocker, example_table_metadata_with_snapsho
 
 
 def test_rename_table_from_self_identifier_200(
-    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
 ) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces/pdames/tables/source",
@@ -1536,6 +1790,19 @@ def test_update_namespace_properties_invalid_namespace(rest_mock: Mocker) -> Non
         # Missing namespace
         RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).update_namespace_properties(())
     assert "Empty namespace identifier" in str(e.value)
+
+
+def test_with_disabled_ssl_ca_bundle(rest_mock: Mocker) -> None:
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "token": TEST_TOKEN,
+        "ssl": {
+            "cabundle": False,
+        },
+    }
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert catalog._session.verify is False
 
 
 def test_request_session_with_ssl_ca_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1795,7 +2062,7 @@ def test_catalog_from_parameters_empty_env(rest_mock: Mocker) -> None:
 
 
 def test_table_identifier_in_commit_table_request(
-    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_v2: Dict[str, Any]
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_v2: dict[str, Any]
 ) -> None:
     metadata_location = "s3://some_bucket/metadata.json"
     rest_mock.post(
@@ -1899,8 +2166,34 @@ def test_rest_catalog_with_google_credentials_path(
     assert actual_headers["Authorization"] == expected_auth_header
 
 
+def test_custom_namespace_separator(rest_mock: Mocker) -> None:
+    custom_separator = "-"
+    namespace_part1 = "some"
+    namespace_part2 = "namespace"
+    # The expected URL path segment should use the literal custom_separator
+    expected_url_path_segment = f"{namespace_part1}{custom_separator}{namespace_part2}"
+
+    rest_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{expected_url_path_segment}",
+        json={"namespace": [namespace_part1, namespace_part2], "properties": {"prop": "yes"}},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{"namespace-separator": custom_separator})
+    catalog.load_namespace_properties((namespace_part1, namespace_part2))
+
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/{expected_url_path_segment}"
+
+
 @pytest.mark.filterwarnings(
-    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
+    "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
 def test_auth_header(rest_mock: Mocker) -> None:
     mock_request = rest_mock.post(
@@ -1919,6 +2212,12 @@ def test_auth_header(rest_mock: Mocker) -> None:
 
     RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, audience="", resource="", **{"header.Custom": "Value"})
     assert mock_request.last_request.text == "grant_type=client_credentials&client_id=client&client_secret=secret&scope=catalog"
+
+
+def test_client_version_header(rest_mock: Mocker) -> None:
+    catalog = RestCatalog("rest", uri=TEST_URI, warehouse="s3://some-bucket")
+    assert catalog._session.headers.get("X-Client-Version") == f"PyIceberg {pyiceberg.__version__}"
+    assert rest_mock.last_request.headers["X-Client-Version"] == f"PyIceberg {pyiceberg.__version__}"
 
 
 class TestRestCatalogClose:
@@ -1992,3 +2291,333 @@ class TestRestCatalogClose:
 
         assert catalog is not None and hasattr(catalog, "_session")
         assert len(catalog._session.adapters) == self.EXPECTED_ADAPTERS_SIGV4
+
+    def test_server_side_planning_disabled_by_default(self, rest_mock: Mocker) -> None:
+        catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+        assert catalog.supports_server_side_planning() is False
+
+    def test_server_side_planning_enabled_by_property(self, rest_mock: Mocker) -> None:
+        catalog = RestCatalog(
+            "rest",
+            uri=TEST_URI,
+            token=TEST_TOKEN,
+            **{"rest-scan-planning-enabled": "true"},
+        )
+
+        assert catalog.supports_server_side_planning() is True
+
+    def test_server_side_planning_disabled_when_endpoint_unsupported(self, requests_mock: Mocker) -> None:
+        # config endpoint does not populate endpoint falling back to default
+        requests_mock.get(
+            f"{TEST_URI}v1/config",
+            json={"defaults": {}, "overrides": {}},
+            status_code=200,
+        )
+        catalog = RestCatalog(
+            "rest",
+            uri=TEST_URI,
+            token=TEST_TOKEN,
+            **{"rest-scan-planning-enabled": "true"},
+        )
+
+        assert catalog.supports_server_side_planning() is False
+
+    def test_server_side_planning_explicitly_disabled(self, rest_mock: Mocker) -> None:
+        catalog = RestCatalog(
+            "rest",
+            uri=TEST_URI,
+            token=TEST_TOKEN,
+            **{"rest-scan-planning-enabled": "false"},
+        )
+
+        assert catalog.supports_server_side_planning() is False
+
+    def test_server_side_planning_enabled_from_server_config(self, rest_mock: Mocker) -> None:
+        rest_mock.get(
+            f"{TEST_URI}v1/config",
+            json={
+                "defaults": {"rest-scan-planning-enabled": "true"},
+                "overrides": {},
+                "endpoints": ["POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan"],
+            },
+            status_code=200,
+        )
+        catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+        assert catalog.supports_server_side_planning() is True
+
+    def test_supported_endpoint(self, requests_mock: Mocker) -> None:
+        requests_mock.get(
+            f"{TEST_URI}v1/config",
+            json={
+                "defaults": {},
+                "overrides": {},
+                "endpoints": ["GET /v1/{prefix}/namespaces", "GET /v1/{prefix}/namespaces/{namespace}/tables"],
+            },
+            status_code=200,
+        )
+        catalog = RestCatalog("rest", uri=TEST_URI, token="token")
+
+        # Should not raise since these endpoints are in the supported set
+        catalog._check_endpoint(Capability.V1_LIST_NAMESPACES)
+        catalog._check_endpoint(Capability.V1_LIST_TABLES)
+
+    def test_unsupported_endpoint(self, requests_mock: Mocker) -> None:
+        requests_mock.get(
+            f"{TEST_URI}v1/config",
+            json={
+                "defaults": {},
+                "overrides": {},
+                "endpoints": ["GET /v1/{prefix}/namespaces"],
+            },
+            status_code=200,
+        )
+        catalog = RestCatalog("rest", uri=TEST_URI, token="token")
+
+        with pytest.raises(NotImplementedError, match="Server does not support endpoint"):
+            catalog._check_endpoint(Capability.V1_LIST_TABLES)
+
+    def test_config_returns_invalid_endpoint(self, requests_mock: Mocker) -> None:
+        requests_mock.get(
+            f"{TEST_URI}v1/config",
+            json={
+                "defaults": {},
+                "overrides": {},
+                "endpoints": ["INVALID_ENDPOINT"],
+            },
+            status_code=200,
+        )
+
+        with pytest.raises(ValueError, match="Invalid endpoint"):
+            RestCatalog("rest", uri=TEST_URI, token="token")
+
+    def test_default_endpoints_used_when_none_returned(self, requests_mock: Mocker) -> None:
+        requests_mock.get(
+            f"{TEST_URI}v1/config",
+            json={"defaults": {}, "overrides": {}},
+            status_code=200,
+        )
+        catalog = RestCatalog("rest", uri=TEST_URI, token="token")
+
+        # Should not raise for default endpoints
+        for endpoint in DEFAULT_ENDPOINTS:
+            catalog._check_endpoint(endpoint)
+
+    def test_view_endpoints_not_included_by_default(self, requests_mock: Mocker) -> None:
+        requests_mock.get(
+            f"{TEST_URI}v1/config",
+            json={"defaults": {}, "overrides": {}},
+            status_code=200,
+        )
+        catalog = RestCatalog("rest", uri=TEST_URI, token="token")
+
+        with pytest.raises(NotImplementedError, match="Server does not support endpoint"):
+            catalog._check_endpoint(Capability.V1_LIST_VIEWS)
+
+    def test_view_endpoints_enabled_with_config(self, requests_mock: Mocker) -> None:
+        requests_mock.get(
+            f"{TEST_URI}v1/config",
+            json={"defaults": {}, "overrides": {}},
+            status_code=200,
+        )
+        catalog = RestCatalog(
+            "rest",
+            uri=TEST_URI,
+            token="token",
+            **{"view-endpoints-supported": "true"},
+        )
+
+        # View endpoints should be supported when enabled
+        catalog._check_endpoint(Capability.V1_LIST_VIEWS)
+        catalog._check_endpoint(Capability.V1_DELETE_VIEW)
+
+
+def test_table_uuid_check_on_commit(rest_mock: Mocker, example_table_metadata_v2: dict[str, Any]) -> None:
+    """Test that UUID mismatch is detected on commit response (matches Java RESTTableOperations behavior)."""
+    original_uuid = "9c12d441-03fe-4693-9a96-a0705ddf69c1"
+    different_uuid = "550e8400-e29b-41d4-a716-446655440000"
+    metadata_location = "s3://warehouse/database/table/metadata.json"
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": example_table_metadata_v2,
+            "config": {},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    table = catalog.load_table(("namespace", "table_name"))
+
+    assert str(table.metadata.table_uuid) == original_uuid
+
+    metadata_with_different_uuid = {**example_table_metadata_v2, "table-uuid": different_uuid}
+
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": metadata_with_different_uuid,
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        table.update_schema().add_column("new_col", StringType()).commit()
+
+    assert "Table UUID does not match" in str(exc_info.value)
+    assert f"current={original_uuid}" in str(exc_info.value)
+    assert f"refreshed={different_uuid}" in str(exc_info.value)
+
+
+def test_table_uuid_check_on_refresh(rest_mock: Mocker, example_table_metadata_v2: dict[str, Any]) -> None:
+    original_uuid = "9c12d441-03fe-4693-9a96-a0705ddf69c1"
+    different_uuid = "550e8400-e29b-41d4-a716-446655440000"
+    metadata_location = "s3://warehouse/database/table/metadata.json"
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": example_table_metadata_v2,
+            "config": {},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    table = catalog.load_table(("namespace", "table_name"))
+
+    assert str(table.metadata.table_uuid) == original_uuid
+
+    metadata_with_different_uuid = {**example_table_metadata_v2, "table-uuid": different_uuid}
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": metadata_with_different_uuid,
+            "config": {},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        table.refresh()
+
+    assert "Table UUID does not match" in str(exc_info.value)
+    assert f"current={original_uuid}" in str(exc_info.value)
+    assert f"refreshed={different_uuid}" in str(exc_info.value)
+
+
+def test_endpoint_parsing_from_string_with_valid_http_method() -> None:
+    test_cases = [
+        ("GET /v1/resource", HttpMethod.GET, "/v1/resource"),
+        ("HEAD /v1/resource", HttpMethod.HEAD, "/v1/resource"),
+        ("POST /v1/resource", HttpMethod.POST, "/v1/resource"),
+        ("DELETE /v1/resource", HttpMethod.DELETE, "/v1/resource"),
+        ("PUT /v1/resource", HttpMethod.PUT, "/v1/resource"),
+        ("CONNECT /v1/resource", HttpMethod.CONNECT, "/v1/resource"),
+        ("OPTIONS /v1/resource", HttpMethod.OPTIONS, "/v1/resource"),
+        ("TRACE /v1/resource", HttpMethod.TRACE, "/v1/resource"),
+        ("PATCH /v1/resource", HttpMethod.PATCH, "/v1/resource"),
+    ]
+
+    for raw_string, http_method, path in test_cases:
+        endpoint = Endpoint.from_string(raw_string)
+        assert endpoint.http_method == http_method
+        assert endpoint.path == path
+
+
+def test_endpoint_parsing_from_string_with_invalid_http_method() -> None:
+    with pytest.raises(ValueError, match="not a valid HttpMethod"):
+        Endpoint.from_string("INVALID /v1/resource")
+
+
+def test_resolve_storage_credentials_longest_prefix_wins() -> None:
+    from pyiceberg.catalog.rest.scan_planning import StorageCredential
+
+    credentials = [
+        StorageCredential(prefix="s3://warehouse/", config={"s3.access-key-id": "short-prefix-key"}),
+        StorageCredential(prefix="s3://warehouse/database/table", config={"s3.access-key-id": "long-prefix-key"}),
+    ]
+    result = RestCatalog._resolve_storage_credentials(credentials, "s3://warehouse/database/table/metadata/00001.json")
+    assert result == {"s3.access-key-id": "long-prefix-key"}
+
+
+def test_resolve_storage_credentials_no_match() -> None:
+    from pyiceberg.catalog.rest.scan_planning import StorageCredential
+
+    credentials = [
+        StorageCredential(prefix="s3://other-bucket/", config={"s3.access-key-id": "no-match"}),
+    ]
+    result = RestCatalog._resolve_storage_credentials(credentials, "s3://warehouse/database/table/metadata/00001.json")
+    assert result == {}
+
+
+def test_resolve_storage_credentials_empty() -> None:
+    assert RestCatalog._resolve_storage_credentials([], "s3://warehouse/foo") == {}
+    assert RestCatalog._resolve_storage_credentials([], None) == {}
+
+
+def test_load_table_with_storage_credentials(rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]) -> None:
+    metadata_location = "s3://warehouse/database/table/metadata/00001.metadata.json"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": example_table_metadata_with_snapshot_v1,
+            "config": {
+                "s3.access-key-id": "from-config",
+                "s3.secret-access-key": "from-config-secret",
+            },
+            "storage-credentials": [
+                {
+                    "prefix": "s3://warehouse/database/table",
+                    "config": {
+                        "s3.access-key-id": "vended-key",
+                        "s3.secret-access-key": "vended-secret",
+                        "s3.session-token": "vended-token",
+                    },
+                }
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    table = catalog.load_table(("fokko", "table"))
+
+    # Storage credentials should override config values
+    assert table.io.properties["s3.access-key-id"] == "vended-key"
+    assert table.io.properties["s3.secret-access-key"] == "vended-secret"
+    assert table.io.properties["s3.session-token"] == "vended-token"
+
+
+def test_load_table_without_storage_credentials(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    actual = catalog.load_table(("fokko", "table"))
+    expected = Table(
+        identifier=("fokko", "table"),
+        metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
+        metadata=TableMetadataV1(**example_table_metadata_with_snapshot_v1_rest_json["metadata"]),
+        io=load_file_io(),
+        catalog=catalog,
+    )
+    assert actual.metadata.model_dump() == expected.metadata.model_dump()
+    assert actual == expected

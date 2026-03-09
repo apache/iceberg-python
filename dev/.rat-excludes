@@ -1,7 +1,8 @@
-.github/*
-.rat-excludes
-build
-.git
-.gitignore
-poetry.lock
-mkdocs/*
+.github/**
+dev/.rat-excludes
+uv.lock
+.ruff_cache/**
+.pytest_cache/**
+.mypy_cache/**
+mkdocs/**
+notebooks/**

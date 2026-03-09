@@ -16,7 +16,6 @@
 # under the License.
 
 from tempfile import TemporaryDirectory
-from typing import Optional
 
 import pytest
 from pydantic import Field
@@ -287,7 +286,7 @@ def test_column_assignment() -> None:
 
         class Ints(Record):
             c: int = Field()
-            d: Optional[int] = Field()
+            d: int | None = Field()
 
         ints_schema = Schema(
             NestedField(3, "c", IntegerType(), required=True),

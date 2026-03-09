@@ -273,7 +273,7 @@ def nanos_to_time(nanos: int) -> time:
 
 def nanos_to_hours(nanos: int) -> int:
     """Convert a timestamp in nanoseconds to hours from 1970-01-01T00:00."""
-    return nanos // 3_600_000_000_0000
+    return nanos // 3_600_000_000_000
 
 
 def nanos_to_micros(nanos: int) -> int:

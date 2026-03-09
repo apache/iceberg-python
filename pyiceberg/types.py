@@ -38,10 +38,7 @@ from typing import (
     Annotated,
     Any,
     ClassVar,
-    Dict,
     Literal,
-    Optional,
-    Tuple,
 )
 
 from pydantic import (
@@ -64,8 +61,19 @@ DECIMAL_REGEX = re.compile(r"decimal\((\d+),\s*(\d+)\)")
 FIXED = "fixed"
 FIXED_PARSER = ParseNumberFromBrackets(FIXED)
 
+# Default CRS for geometry and geography types per Iceberg v3 spec
+DEFAULT_GEOMETRY_CRS = "OGC:CRS84"
+DEFAULT_GEOGRAPHY_CRS = "OGC:CRS84"
+DEFAULT_GEOGRAPHY_ALGORITHM = "spherical"
 
-def transform_dict_value_to_str(dict: Dict[str, Any]) -> Dict[str, str]:
+# Regex patterns for parsing geometry and geography type strings
+# Matches: geometry, geometry('CRS'), geometry('crs'), geometry("CRS")
+GEOMETRY_REGEX = re.compile(r"geometry(?:\(\s*['\"]([^'\"]+)['\"]\s*\))?$")
+# Matches: geography, geography('CRS'), geography('crs', 'algo')
+GEOGRAPHY_REGEX = re.compile(r"geography(?:\(\s*['\"]([^'\"]+)['\"](?:\s*,\s*['\"]([^'\"]+)['\"])?\s*\))?$")
+
+
+def transform_dict_value_to_str(dict: dict[str, Any]) -> dict[str, str]:
     """Transform all values in the dictionary to string. Raise an error if any value is None."""
     for key, value in dict.items():
         if value is None:
@@ -73,7 +81,7 @@ def transform_dict_value_to_str(dict: Dict[str, Any]) -> Dict[str, str]:
     return {k: str(v).lower() if isinstance(v, bool) else str(v) for k, v in dict.items()}
 
 
-def _parse_decimal_type(decimal: Any) -> Tuple[int, int]:
+def _parse_decimal_type(decimal: Any) -> tuple[int, int]:
     if isinstance(decimal, str):
         matches = DECIMAL_REGEX.search(decimal)
         if matches:
@@ -93,6 +101,53 @@ def _parse_fixed_type(fixed: Any) -> int:
         return fixed["length"]
     else:
         return fixed
+
+
+def _parse_geometry_type(geometry: Any) -> str:
+    """Parse geometry type string and return CRS.
+
+    Args:
+        geometry: The geometry type specification (string or dict).
+
+    Returns:
+        The CRS string (defaults to DEFAULT_GEOMETRY_CRS if not specified).
+    """
+    if isinstance(geometry, str):
+        match = GEOMETRY_REGEX.match(geometry)
+        if match:
+            crs = match.group(1)
+            return crs if crs else DEFAULT_GEOMETRY_CRS
+        else:
+            raise ValidationError(f"Could not parse {geometry} into a GeometryType")
+    elif isinstance(geometry, dict):
+        return geometry.get("crs", DEFAULT_GEOMETRY_CRS)
+    else:
+        return geometry
+
+
+def _parse_geography_type(geography: Any) -> tuple[str, str]:
+    """Parse geography type string and return (CRS, algorithm).
+
+    Args:
+        geography: The geography type specification (string or dict).
+
+    Returns:
+        Tuple of (CRS, algorithm) with defaults applied where not specified.
+    """
+    if isinstance(geography, str):
+        match = GEOGRAPHY_REGEX.match(geography)
+        if match:
+            crs = match.group(1) if match.group(1) else DEFAULT_GEOGRAPHY_CRS
+            algorithm = match.group(2) if match.group(2) else DEFAULT_GEOGRAPHY_ALGORITHM
+            return crs, algorithm
+        else:
+            raise ValidationError(f"Could not parse {geography} into a GeographyType")
+    elif isinstance(geography, dict):
+        crs = geography.get("crs", DEFAULT_GEOGRAPHY_CRS)
+        algorithm = geography.get("algorithm", DEFAULT_GEOGRAPHY_ALGORITHM)
+        return crs, algorithm
+    else:
+        return geography
 
 
 def strtobool(val: str) -> bool:
@@ -127,6 +182,15 @@ class IcebergType(IcebergBaseModel):
         # Pydantic works mostly around dicts, and there seems to be something
         # by not serializing into a RootModel, might revisit this.
         if isinstance(v, str):
+            # GeometryType/GeographyType inherit this validator, but their root values are
+            # a CRS string (or CRS, algorithm tuple). If we try to parse those as type
+            # strings here, we'd re-enter this validator (or raise) instead of letting
+            # pydantic validate the raw root values.
+            if cls.__name__ == "GeometryType" and not v.startswith("geometry"):
+                return handler(v)
+            if cls.__name__ == "GeographyType" and not v.startswith("geography"):
+                return handler(v)
+
             if v == "boolean":
                 return BooleanType()
             elif v == "string":
@@ -162,6 +226,12 @@ class IcebergType(IcebergBaseModel):
             if v.startswith("decimal"):
                 precision, scale = _parse_decimal_type(v)
                 return DecimalType(precision, scale)
+            if v.startswith("geometry"):
+                crs = _parse_geometry_type(v)
+                return GeometryType(crs)
+            if v.startswith("geography"):
+                crs, algorithm = _parse_geography_type(v)
+                return GeographyType(crs, algorithm)
             else:
                 raise ValueError(f"Type not recognized: {v}")
         if isinstance(v, dict) and cls == IcebergType:
@@ -251,7 +321,7 @@ class DecimalType(PrimitiveType):
         True
     """
 
-    root: Tuple[int, int]
+    root: tuple[int, int]
 
     def __init__(self, precision: int, scale: int) -> None:
         super().__init__(root=(precision, scale))
@@ -283,7 +353,7 @@ class DecimalType(PrimitiveType):
         """Return the hash of the tuple."""
         return hash(self.root)
 
-    def __getnewargs__(self) -> Tuple[int, int]:
+    def __getnewargs__(self) -> tuple[int, int]:
         """Pickle the DecimalType class."""
         return self.precision, self.scale
 
@@ -339,9 +409,9 @@ class NestedField(IcebergType):
     name: str = Field()
     field_type: SerializeAsAny[IcebergType] = Field(alias="type")
     required: bool = Field(default=False)
-    doc: Optional[str] = Field(default=None, repr=False)
-    initial_default: Optional[DefaultValue] = Field(alias="initial-default", default=None, repr=True)  # type: ignore
-    write_default: Optional[DefaultValue] = Field(alias="write-default", default=None, repr=True)  # type: ignore
+    doc: str | None = Field(default=None, repr=False)
+    initial_default: DefaultValue | None = Field(alias="initial-default", default=None, repr=True)  # type: ignore
+    write_default: DefaultValue | None = Field(alias="write-default", default=None, repr=True)  # type: ignore
 
     @field_validator("field_type", mode="before")
     def convert_field_type(cls, v: Any) -> IcebergType:
@@ -355,13 +425,13 @@ class NestedField(IcebergType):
 
     def __init__(
         self,
-        field_id: Optional[int] = None,
-        name: Optional[str] = None,
-        field_type: Optional[IcebergType | str] = None,
+        field_id: int | None = None,
+        name: str | None = None,
+        field_type: IcebergType | str | None = None,
         required: bool = False,
-        doc: Optional[str] = None,
-        initial_default: Optional[Any] = None,
-        write_default: Optional[L] = None,
+        doc: str | None = None,
+        initial_default: Any | None = None,
+        write_default: L | None = None,
         **data: Any,
     ):
         # We need an init when we want to use positional arguments, but
@@ -376,7 +446,7 @@ class NestedField(IcebergType):
         super().__init__(**data)
 
     @model_serializer()
-    def serialize_model(self) -> Dict[str, Any]:
+    def serialize_model(self) -> dict[str, Any]:
         from pyiceberg.conversions import to_json
 
         fields = {
@@ -416,7 +486,7 @@ class NestedField(IcebergType):
 
         return f"NestedField({', '.join(parts)})"
 
-    def __getnewargs__(self) -> Tuple[int, str, IcebergType, bool, Optional[str]]:
+    def __getnewargs__(self) -> tuple[int, str, IcebergType, bool, str | None]:
         """Pickle the NestedField class."""
         return (self.field_id, self.name, self.field_type, self.required, self.doc)
 
@@ -437,7 +507,7 @@ class StructType(IcebergType):
     """
 
     type: Literal["struct"] = Field(default="struct")
-    fields: Tuple[NestedField, ...] = Field(default_factory=tuple)
+    fields: tuple[NestedField, ...] = Field(default_factory=tuple)
     _hash: int = PrivateAttr()
 
     def __init__(self, *fields: NestedField, **data: Any):
@@ -447,13 +517,13 @@ class StructType(IcebergType):
         super().__init__(**data)
         self._hash = hash(self.fields)
 
-    def field(self, field_id: int) -> Optional[NestedField]:
+    def field(self, field_id: int) -> NestedField | None:
         for field in self.fields:
             if field.field_id == field_id:
                 return field
         return None
 
-    def field_by_name(self, name: str, case_sensitive: bool = True) -> Optional[NestedField]:
+    def field_by_name(self, name: str, case_sensitive: bool = True) -> NestedField | None:
         if case_sensitive:
             for field in self.fields:
                 if field.name == name:
@@ -477,7 +547,7 @@ class StructType(IcebergType):
         """Return the length of an instance of the StructType class."""
         return len(self.fields)
 
-    def __getnewargs__(self) -> Tuple[NestedField, ...]:
+    def __getnewargs__(self) -> tuple[NestedField, ...]:
         """Pickle the StructType class."""
         return self.fields
 
@@ -506,7 +576,7 @@ class ListType(IcebergType):
     _hash: int = PrivateAttr()
 
     def __init__(
-        self, element_id: Optional[int] = None, element: Optional[IcebergType] = None, element_required: bool = True, **data: Any
+        self, element_id: int | None = None, element: IcebergType | None = None, element_required: bool = True, **data: Any
     ):
         data["element-id"] = data["element-id"] if "element-id" in data else element_id
         data["element"] = element or data["element_type"]
@@ -527,7 +597,7 @@ class ListType(IcebergType):
         """Return the string representation of the ListType class."""
         return f"list<{self.element_type}>"
 
-    def __getnewargs__(self) -> Tuple[int, IcebergType, bool]:
+    def __getnewargs__(self) -> tuple[int, IcebergType, bool]:
         """Pickle the ListType class."""
         return (self.element_id, self.element_type, self.element_required)
 
@@ -558,10 +628,10 @@ class MapType(IcebergType):
 
     def __init__(
         self,
-        key_id: Optional[int] = None,
-        key_type: Optional[IcebergType] = None,
-        value_id: Optional[int] = None,
-        value_type: Optional[IcebergType] = None,
+        key_id: int | None = None,
+        key_type: IcebergType | None = None,
+        value_id: int | None = None,
+        value_type: IcebergType | None = None,
         value_required: bool = True,
         **data: Any,
     ):
@@ -595,7 +665,7 @@ class MapType(IcebergType):
         """Return the string representation of the MapType class."""
         return f"map<{self.key_type}, {self.value_type}>"
 
-    def __getnewargs__(self) -> Tuple[int, IcebergType, int, IcebergType, bool]:
+    def __getnewargs__(self) -> tuple[int, IcebergType, int, IcebergType, bool]:
         """Pickle the MapType class."""
         return (self.key_id, self.key_type, self.value_id, self.value_type, self.value_required)
 
@@ -881,4 +951,150 @@ class UnknownType(PrimitiveType):
     root: Literal["unknown"] = Field(default="unknown")
 
     def minimum_format_version(self) -> TableVersion:
+        return 3
+
+
+class GeometryType(PrimitiveType):
+    """A geometry data type in Iceberg (v3+) for storing spatial geometries.
+
+    Geometries are stored as WKB (Well-Known Binary) at runtime. The CRS (Coordinate Reference System)
+    parameter specifies the spatial reference system for the geometry values.
+
+    Example:
+        >>> column_foo = GeometryType()
+        >>> isinstance(column_foo, GeometryType)
+        True
+        >>> column_foo
+        GeometryType()
+        >>> column_foo.crs
+        'OGC:CRS84'
+        >>> GeometryType("EPSG:4326")
+        GeometryType(crs='EPSG:4326')
+        >>> str(GeometryType("EPSG:4326"))
+        "geometry('EPSG:4326')"
+    """
+
+    root: str = Field(default=DEFAULT_GEOMETRY_CRS)
+
+    def __init__(self, crs: str = DEFAULT_GEOMETRY_CRS) -> None:
+        super().__init__(root=crs)
+
+    @model_serializer
+    def ser_model(self) -> str:
+        """Serialize the model to a string."""
+        if self.crs == DEFAULT_GEOMETRY_CRS:
+            return "geometry"
+        return f"geometry('{self.crs}')"
+
+    @property
+    def crs(self) -> str:
+        """Return the CRS (Coordinate Reference System) of the geometry."""
+        return self.root
+
+    def __repr__(self) -> str:
+        """Return the string representation of the GeometryType class."""
+        if self.crs == DEFAULT_GEOMETRY_CRS:
+            return "GeometryType()"
+        return f"GeometryType(crs={self.crs!r})"
+
+    def __str__(self) -> str:
+        """Return the string representation."""
+        if self.crs == DEFAULT_GEOMETRY_CRS:
+            return "geometry"
+        return f"geometry('{self.crs}')"
+
+    def __hash__(self) -> int:
+        """Return the hash of the CRS."""
+        return hash(self.root)
+
+    def __getnewargs__(self) -> tuple[str]:
+        """Pickle the GeometryType class."""
+        return (self.crs,)
+
+    def __eq__(self, other: Any) -> bool:
+        """Compare to another object."""
+        return self.root == other.root if isinstance(other, GeometryType) else False
+
+    def minimum_format_version(self) -> TableVersion:
+        """Geometry type requires Iceberg format version 3."""
+        return 3
+
+
+class GeographyType(PrimitiveType):
+    """A geography data type in Iceberg (v3+) for storing spatial geographies.
+
+    Geographies are stored as WKB (Well-Known Binary) at runtime. The CRS (Coordinate Reference System)
+    and algorithm parameters specify the spatial reference system and the algorithm used for
+    geographic calculations.
+
+    Example:
+        >>> column_foo = GeographyType()
+        >>> isinstance(column_foo, GeographyType)
+        True
+        >>> column_foo
+        GeographyType()
+        >>> column_foo.crs
+        'OGC:CRS84'
+        >>> column_foo.algorithm
+        'spherical'
+        >>> GeographyType("EPSG:4326", "planar")
+        GeographyType(crs='EPSG:4326', algorithm='planar')
+        >>> str(GeographyType("EPSG:4326", "planar"))
+        "geography('EPSG:4326', 'planar')"
+    """
+
+    root: tuple[str, str] = Field(default=(DEFAULT_GEOGRAPHY_CRS, DEFAULT_GEOGRAPHY_ALGORITHM))
+
+    def __init__(self, crs: str = DEFAULT_GEOGRAPHY_CRS, algorithm: str = DEFAULT_GEOGRAPHY_ALGORITHM) -> None:
+        super().__init__(root=(crs, algorithm))
+
+    @model_serializer
+    def ser_model(self) -> str:
+        """Serialize the model to a string."""
+        if self.crs == DEFAULT_GEOGRAPHY_CRS and self.algorithm == DEFAULT_GEOGRAPHY_ALGORITHM:
+            return "geography"
+        if self.algorithm == DEFAULT_GEOGRAPHY_ALGORITHM:
+            return f"geography('{self.crs}')"
+        return f"geography('{self.crs}', '{self.algorithm}')"
+
+    @property
+    def crs(self) -> str:
+        """Return the CRS (Coordinate Reference System) of the geography."""
+        return self.root[0]
+
+    @property
+    def algorithm(self) -> str:
+        """Return the algorithm used for geographic calculations."""
+        return self.root[1]
+
+    def __repr__(self) -> str:
+        """Return the string representation of the GeographyType class."""
+        if self.crs == DEFAULT_GEOGRAPHY_CRS and self.algorithm == DEFAULT_GEOGRAPHY_ALGORITHM:
+            return "GeographyType()"
+        if self.algorithm == DEFAULT_GEOGRAPHY_ALGORITHM:
+            return f"GeographyType(crs={self.crs!r})"
+        return f"GeographyType(crs={self.crs!r}, algorithm={self.algorithm!r})"
+
+    def __str__(self) -> str:
+        """Return the string representation."""
+        if self.crs == DEFAULT_GEOGRAPHY_CRS and self.algorithm == DEFAULT_GEOGRAPHY_ALGORITHM:
+            return "geography"
+        if self.algorithm == DEFAULT_GEOGRAPHY_ALGORITHM:
+            return f"geography('{self.crs}')"
+        return f"geography('{self.crs}', '{self.algorithm}')"
+
+    def __hash__(self) -> int:
+        """Return the hash of the tuple."""
+        return hash(self.root)
+
+    def __getnewargs__(self) -> tuple[str, str]:
+        """Pickle the GeographyType class."""
+        return self.crs, self.algorithm
+
+    def __eq__(self, other: Any) -> bool:
+        """Compare to another object."""
+        return self.root == other.root if isinstance(other, GeographyType) else False
+
+    def minimum_format_version(self) -> TableVersion:
+        """Geography type requires Iceberg format version 3."""
         return 3

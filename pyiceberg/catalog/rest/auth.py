@@ -22,7 +22,7 @@ import threading
 import time
 from abc import ABC, abstractmethod
 from functools import cached_property
-from typing import Any, Dict, List, Optional, Type
+from typing import Any
 
 import requests
 from requests import HTTPError, PreparedRequest, Session
@@ -30,6 +30,8 @@ from requests.auth import AuthBase
 
 from pyiceberg.catalog.rest.response import TokenResponse, _handle_non_200_response
 from pyiceberg.exceptions import OAuthError
+
+AUTH_MANAGER = "auth.manager"
 
 COLON = ":"
 logger = logging.getLogger(__name__)
@@ -43,14 +45,14 @@ class AuthManager(ABC):
     """
 
     @abstractmethod
-    def auth_header(self) -> Optional[str]:
+    def auth_header(self) -> str | None:
         """Return the Authorization header value, or None if not applicable."""
 
 
 class NoopAuthManager(AuthManager):
     """Auth Manager implementation with no auth."""
 
-    def auth_header(self) -> Optional[str]:
+    def auth_header(self) -> str | None:
         return None
 
 
@@ -73,18 +75,18 @@ class LegacyOAuth2AuthManager(AuthManager):
     """
 
     _session: Session
-    _auth_url: Optional[str]
-    _token: Optional[str]
-    _credential: Optional[str]
-    _optional_oauth_params: Optional[Dict[str, str]]
+    _auth_url: str | None
+    _token: str | None
+    _credential: str | None
+    _optional_oauth_params: dict[str, str] | None
 
     def __init__(
         self,
         session: Session,
-        auth_url: Optional[str] = None,
-        credential: Optional[str] = None,
-        initial_token: Optional[str] = None,
-        optional_oauth_params: Optional[Dict[str, str]] = None,
+        auth_url: str | None = None,
+        credential: str | None = None,
+        initial_token: str | None = None,
+        optional_oauth_params: dict[str, str] | None = None,
     ):
         self._session = session
         self._auth_url = auth_url
@@ -95,7 +97,7 @@ class LegacyOAuth2AuthManager(AuthManager):
 
     def _fetch_access_token(self, credential: str) -> str:
         if COLON in credential:
-            client_id, client_secret = credential.split(COLON)
+            client_id, client_secret = credential.split(COLON, maxsplit=1)
         else:
             client_id, client_secret = None, credential
 
@@ -131,11 +133,11 @@ class OAuth2TokenProvider:
     client_id: str
     client_secret: str
     token_url: str
-    scope: Optional[str]
+    scope: str | None
     refresh_margin: int
-    expires_in: Optional[int]
+    expires_in: int | None
 
-    _token: Optional[str]
+    _token: str | None
     _expires_at: int
     _lock: threading.Lock
 
@@ -144,9 +146,9 @@ class OAuth2TokenProvider:
         client_id: str,
         client_secret: str,
         token_url: str,
-        scope: Optional[str] = None,
+        scope: str | None = None,
         refresh_margin: int = 60,
-        expires_in: Optional[int] = None,
+        expires_in: int | None = None,
     ):
         self.client_id = client_id
         self.client_secret = client_secret
@@ -179,7 +181,8 @@ class OAuth2TokenProvider:
         expires_in = result.get("expires_in", self.expires_in)
         if expires_in is None:
             raise ValueError(
-                "The expiration time of the Token must be provided by the Server in the Access Token Response in `expires_in` field, or by the PyIceberg Client."
+                "The expiration time of the Token must be provided by the Server in the Access Token Response "
+                "in `expires_in` field, or by the PyIceberg Client."
             )
         self._expires_at = time.monotonic() + expires_in - self.refresh_margin
 
@@ -200,9 +203,9 @@ class OAuth2AuthManager(AuthManager):
         client_id: str,
         client_secret: str,
         token_url: str,
-        scope: Optional[str] = None,
+        scope: str | None = None,
         refresh_margin: int = 60,
-        expires_in: Optional[int] = None,
+        expires_in: int | None = None,
     ):
         self.token_provider = OAuth2TokenProvider(
             client_id,
@@ -220,7 +223,7 @@ class OAuth2AuthManager(AuthManager):
 class GoogleAuthManager(AuthManager):
     """An auth manager that is responsible for handling Google credentials."""
 
-    def __init__(self, credentials_path: Optional[str] = None, scopes: Optional[List[str]] = None):
+    def __init__(self, credentials_path: str | None = None, scopes: list[str] | None = None):
         """
         Initialize GoogleAuthManager.
 
@@ -246,9 +249,72 @@ class GoogleAuthManager(AuthManager):
         return f"Bearer {self.credentials.token}"
 
 
-class AuthManagerAdapter(AuthBase):
-    """A `requests.auth.AuthBase` adapter that integrates an `AuthManager` into a `requests.Session` to automatically attach the appropriate Authorization header to every request.
+class EntraAuthManager(AuthManager):
+    """Auth Manager implementation that supports Microsoft Entra ID (Azure AD) authentication.
 
+    This manager uses the Azure Identity library's DefaultAzureCredential which automatically
+    tries multiple authentication methods including environment variables, managed identity,
+    and Azure CLI.
+
+    See https://learn.microsoft.com/en-us/azure/developer/python/sdk/authentication/credential-chains
+    for more details on DefaultAzureCredential.
+    """
+
+    DEFAULT_SCOPE = "https://storage.azure.com/.default"
+
+    def __init__(
+        self,
+        scopes: list[str] | None = None,
+        **credential_kwargs: Any,
+    ):
+        """
+        Initialize EntraAuthManager.
+
+        Args:
+            scopes: List of OAuth2 scopes. Defaults to ["https://storage.azure.com/.default"].
+            **credential_kwargs: Arguments passed to DefaultAzureCredential.
+                Supported authentication methods:
+                - Environment Variables: Set AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET
+                - Managed Identity: Works automatically on Azure; for user-assigned, pass managed_identity_client_id
+                - Azure CLI: Works automatically if logged in via `az login`
+                - Workload Identity: Works automatically in AKS with workload identity configured  # codespell:ignore aks
+        """
+        try:
+            from azure.identity import DefaultAzureCredential
+        except ImportError as e:
+            raise ImportError("Azure Identity library not found. Please install with: pip install pyiceberg[entra-auth]") from e
+
+        self._scopes = scopes or [self.DEFAULT_SCOPE]
+        self._lock = threading.Lock()
+        self._token: str | None = None
+        self._expires_at: float = 0
+        self._credential = DefaultAzureCredential(**credential_kwargs)
+
+    def _refresh_token(self) -> None:
+        """Refresh the access token from Azure."""
+        token = self._credential.get_token(*self._scopes)
+        self._token = token.token
+        # expires_on is a Unix timestamp; add a 60-second margin for safety
+        self._expires_at = token.expires_on - 60
+
+    def _get_token(self) -> str:
+        """Get a valid access token, refreshing if necessary."""
+        with self._lock:
+            if not self._token or time.time() >= self._expires_at:
+                self._refresh_token()
+            if self._token is None:
+                raise ValueError("Failed to obtain Entra access token")
+            return self._token
+
+    def auth_header(self) -> str:
+        """Return the Authorization header value with a valid Bearer token."""
+        return f"Bearer {self._get_token()}"
+
+
+class AuthManagerAdapter(AuthBase):
+    """A `requests.auth.AuthBase` adapter for integrating an `AuthManager` into a `requests.Session`.
+
+    This adapter automatically attaches the appropriate Authorization header to every request.
     This adapter is useful when working with `requests.Session.auth`
     and allows reuse of authentication strategies defined by `AuthManager`.
     This AuthManagerAdapter is only intended to be used against the REST Catalog
@@ -280,10 +346,10 @@ class AuthManagerAdapter(AuthBase):
 
 
 class AuthManagerFactory:
-    _registry: Dict[str, Type["AuthManager"]] = {}
+    _registry: dict[str, type["AuthManager"]] = {}
 
     @classmethod
-    def register(cls, name: str, auth_manager_class: Type["AuthManager"]) -> None:
+    def register(cls, name: str, auth_manager_class: type["AuthManager"]) -> None:
         """
         Register a string name to a known AuthManager class.
 
@@ -297,7 +363,7 @@ class AuthManagerFactory:
         cls._registry[name] = auth_manager_class
 
     @classmethod
-    def create(cls, class_or_name: str, config: Dict[str, Any]) -> AuthManager:
+    def create(cls, class_or_name: str, config: dict[str, Any]) -> AuthManager:
         """
         Create an AuthManager by name or fully-qualified class path.
 
@@ -326,3 +392,4 @@ AuthManagerFactory.register("basic", BasicAuthManager)
 AuthManagerFactory.register("legacyoauth2", LegacyOAuth2AuthManager)
 AuthManagerFactory.register("oauth2", OAuth2AuthManager)
 AuthManagerFactory.register("google", GoogleAuthManager)
+AuthManagerFactory.register("entra", EntraAuthManager)

@@ -19,11 +19,7 @@
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
-    List,
     Optional,
-    Set,
-    Tuple,
     Union,
     cast,
 )
@@ -52,7 +48,7 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
-from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
+from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_PROFILE_NAME, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.serializers import FromInputFile
@@ -89,6 +85,8 @@ from pyiceberg.types import (
     UUIDType,
 )
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool
+from pyiceberg.view import View
+from pyiceberg.view.metadata import ViewVersion
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -142,8 +140,8 @@ EXISTING_RETRY_MODES = [STANDARD_RETRY_MODE, ADAPTIVE_RETRY_MODE, LEGACY_RETRY_M
 def _construct_parameters(
     metadata_location: str,
     glue_table: Optional["TableTypeDef"] = None,
-    prev_metadata_location: Optional[str] = None,
-    metadata_properties: Optional[Properties] = None,
+    prev_metadata_location: str | None = None,
+    metadata_properties: Properties | None = None,
 ) -> Properties:
     new_parameters = glue_table.get("Parameters", {}) if glue_table else {}
     new_parameters.update({TABLE_TYPE: ICEBERG.upper(), METADATA_LOCATION: metadata_location})
@@ -178,7 +176,7 @@ class _IcebergSchemaToGlueType(SchemaVisitor[str]):
     def schema(self, schema: Schema, struct_result: str) -> str:
         return struct_result
 
-    def struct(self, struct: StructType, field_results: List[str]) -> str:
+    def struct(self, struct: StructType, field_results: list[str]) -> str:
         return f"struct<{','.join(field_results)}>"
 
     def field(self, field: NestedField, field_result: str) -> str:
@@ -198,8 +196,8 @@ class _IcebergSchemaToGlueType(SchemaVisitor[str]):
         return GLUE_PRIMITIVE_TYPES[primitive_type]
 
 
-def _to_columns(metadata: TableMetadata) -> List["ColumnTypeDef"]:
-    results: Dict[str, "ColumnTypeDef"] = {}
+def _to_columns(metadata: TableMetadata) -> list["ColumnTypeDef"]:
+    results: dict[str, ColumnTypeDef] = {}
 
     def _append_to_results(field: NestedField, is_current: bool) -> None:
         if field.name in results:
@@ -239,9 +237,9 @@ def _construct_table_input(
     properties: Properties,
     metadata: TableMetadata,
     glue_table: Optional["TableTypeDef"] = None,
-    prev_metadata_location: Optional[str] = None,
+    prev_metadata_location: str | None = None,
 ) -> "TableInputTypeDef":
-    table_input: "TableInputTypeDef" = {
+    table_input: TableInputTypeDef = {
         "Name": table_name,
         "TableType": EXTERNAL_TABLE,
         "Parameters": _construct_parameters(metadata_location, glue_table, prev_metadata_location, properties),
@@ -258,7 +256,7 @@ def _construct_table_input(
 
 
 def _construct_rename_table_input(to_table_name: str, glue_table: "TableTypeDef") -> "TableInputTypeDef":
-    rename_table_input: "TableInputTypeDef" = {"Name": to_table_name}
+    rename_table_input: TableInputTypeDef = {"Name": to_table_name}
     # use the same Glue info to create the new table, pointing to the old metadata
     if not glue_table["TableType"]:
         raise ValueError("Glue table type is missing, cannot rename table")
@@ -283,7 +281,7 @@ def _construct_rename_table_input(to_table_name: str, glue_table: "TableTypeDef"
 
 
 def _construct_database_input(database_name: str, properties: Properties) -> "DatabaseInputTypeDef":
-    database_input: "DatabaseInputTypeDef" = {"Name": database_name}
+    database_input: DatabaseInputTypeDef = {"Name": database_name}
     parameters = {}
     for k, v in properties.items():
         if k == "Description":
@@ -305,7 +303,7 @@ def _register_glue_catalog_id_with_glue_client(glue: "GlueClient", glue_catalog_
     """
     event_system = glue.meta.events
 
-    def add_glue_catalog_id(params: Dict[str, str], **kwargs: Any) -> None:
+    def add_glue_catalog_id(params: dict[str, str], **kwargs: Any) -> None:
         if "CatalogId" not in params:
             params["CatalogId"] = glue_catalog_id
 
@@ -333,7 +331,7 @@ class GlueCatalog(MetastoreCatalog):
             retry_mode_prop_value = get_first_property_value(properties, GLUE_RETRY_MODE)
 
             session = boto3.Session(
-                profile_name=properties.get(GLUE_PROFILE_NAME),
+                profile_name=get_first_property_value(properties, GLUE_PROFILE_NAME, AWS_PROFILE_NAME),
                 region_name=get_first_property_value(properties, GLUE_REGION, AWS_REGION),
                 botocore_session=properties.get(BOTOCORE_SESSION),
                 aws_access_key_id=get_first_property_value(properties, GLUE_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
@@ -410,7 +408,8 @@ class GlueCatalog(MetastoreCatalog):
             raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name} (Glue table version {version_id})") from e
         except self.glue.exceptions.ConcurrentModificationException as e:
             raise CommitFailedException(
-                f"Cannot commit {database_name}.{table_name} because Glue detected concurrent update to table version {version_id}"
+                f"Cannot commit {database_name}.{table_name} because Glue detected concurrent update "
+                f"to table version {version_id}"
             ) from e
 
     def _get_glue_table(self, database_name: str, table_name: str) -> "TableTypeDef":
@@ -422,9 +421,9 @@ class GlueCatalog(MetastoreCatalog):
 
     def create_table(
         self,
-        identifier: Union[str, Identifier],
+        identifier: str | Identifier,
         schema: Union[Schema, "pa.Schema"],
-        location: Optional[str] = None,
+        location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
@@ -464,7 +463,7 @@ class GlueCatalog(MetastoreCatalog):
 
         return self.load_table(identifier=identifier)
 
-    def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
+    def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
         """Register a new table using existing metadata.
 
         Args:
@@ -487,7 +486,7 @@ class GlueCatalog(MetastoreCatalog):
         return self.load_table(identifier=identifier)
 
     def commit_table(
-        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+        self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
         """Commit updates to a table.
 
@@ -506,9 +505,9 @@ class GlueCatalog(MetastoreCatalog):
         table_identifier = table.name()
         database_name, table_name = self.identifier_to_database_and_table(table_identifier, NoSuchTableError)
 
-        current_glue_table: Optional["TableTypeDef"]
-        glue_table_version_id: Optional[str]
-        current_table: Optional[Table]
+        current_glue_table: TableTypeDef | None
+        glue_table_version_id: str | None
+        current_table: Table | None
         try:
             current_glue_table = self._get_glue_table(database_name=database_name, table_name=table_name)
             glue_table_version_id = current_glue_table.get("VersionId")
@@ -565,7 +564,7 @@ class GlueCatalog(MetastoreCatalog):
             metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
         )
 
-    def load_table(self, identifier: Union[str, Identifier]) -> Table:
+    def load_table(self, identifier: str | Identifier) -> Table:
         """Load the table's metadata and returns the table instance.
 
         You can also use this method to check for table existence using 'try catalog.table() except TableNotFoundError'.
@@ -584,7 +583,7 @@ class GlueCatalog(MetastoreCatalog):
 
         return self._convert_glue_to_iceberg(self._get_glue_table(database_name=database_name, table_name=table_name))
 
-    def drop_table(self, identifier: Union[str, Identifier]) -> None:
+    def drop_table(self, identifier: str | Identifier) -> None:
         """Drop a table.
 
         Args:
@@ -599,7 +598,7 @@ class GlueCatalog(MetastoreCatalog):
         except self.glue.exceptions.EntityNotFoundException as e:
             raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}") from e
 
-    def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
+    def rename_table(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> Table:
         """Rename a fully classified table name.
 
         This method can only rename Iceberg tables in AWS Glue.
@@ -659,7 +658,7 @@ class GlueCatalog(MetastoreCatalog):
 
         return self.load_table(to_identifier)
 
-    def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
+    def create_namespace(self, namespace: str | Identifier, properties: Properties = EMPTY_DICT) -> None:
         """Create a namespace in the catalog.
 
         Args:
@@ -676,7 +675,7 @@ class GlueCatalog(MetastoreCatalog):
         except self.glue.exceptions.AlreadyExistsException as e:
             raise NamespaceAlreadyExistsError(f"Database {database_name} already exists") from e
 
-    def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
+    def drop_namespace(self, namespace: str | Identifier) -> None:
         """Drop a namespace.
 
         A Glue namespace can only be dropped if it is empty.
@@ -705,7 +704,7 @@ class GlueCatalog(MetastoreCatalog):
                 )
         self.glue.delete_database(Name=database_name)
 
-    def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
         """List Iceberg tables under the given namespace in the catalog.
 
         Args:
@@ -718,8 +717,8 @@ class GlueCatalog(MetastoreCatalog):
             NoSuchNamespaceError: If a namespace with the given name does not exist, or the identifier is invalid.
         """
         database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
-        table_list: List["TableTypeDef"] = []
-        next_token: Optional[str] = None
+        table_list: list[TableTypeDef] = []
+        next_token: str | None = None
         try:
             while True:
                 table_list_response = (
@@ -736,7 +735,7 @@ class GlueCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
         return [(database_name, table["Name"]) for table in table_list if self.__is_iceberg_table(table)]
 
-    def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
 
         Returns:
@@ -746,8 +745,8 @@ class GlueCatalog(MetastoreCatalog):
         if namespace:
             return []
 
-        database_list: List["DatabaseTypeDef"] = []
-        next_token: Optional[str] = None
+        database_list: list[DatabaseTypeDef] = []
+        next_token: str | None = None
 
         while True:
             databases_response = self.glue.get_databases() if not next_token else self.glue.get_databases(NextToken=next_token)
@@ -758,7 +757,7 @@ class GlueCatalog(MetastoreCatalog):
 
         return [self.identifier_to_tuple(database["Name"]) for database in database_list]
 
-    def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
+    def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
         """Get properties for a namespace.
 
         Args:
@@ -789,7 +788,7 @@ class GlueCatalog(MetastoreCatalog):
         return properties
 
     def update_namespace_properties(
-        self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = EMPTY_DICT
+        self, namespace: str | Identifier, removals: set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
         """Remove provided property keys and updates properties for a namespace.
 
@@ -812,13 +811,23 @@ class GlueCatalog(MetastoreCatalog):
 
         return properties_update_summary
 
-    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+    def create_view(
+        self,
+        identifier: str | Identifier,
+        schema: Union[Schema, "pa.Schema"],
+        view_version: ViewVersion,
+        location: str | None = None,
+        properties: Properties = EMPTY_DICT,
+    ) -> View:
         raise NotImplementedError
 
-    def drop_view(self, identifier: Union[str, Identifier]) -> None:
+    def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         raise NotImplementedError
 
-    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
+    def drop_view(self, identifier: str | Identifier) -> None:
+        raise NotImplementedError
+
+    def view_exists(self, identifier: str | Identifier) -> bool:
         raise NotImplementedError
 
     @staticmethod

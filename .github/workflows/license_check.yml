@@ -20,9 +20,12 @@
 name: "Run License Check"
 on: pull_request
 
+permissions:
+  contents: read
+
 jobs:
   rat:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - run: dev/check-license

@@ -22,7 +22,7 @@ import uuid
 import warnings
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -81,6 +81,7 @@ from pyiceberg.io.pyarrow import (
     expression_to_pyarrow,
     parquet_path_to_id_mapping,
     schema_to_pyarrow,
+    write_file,
 )
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -98,6 +99,8 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IntegerType,
     ListType,
     LongType,
@@ -596,6 +599,108 @@ def test_binary_type_to_pyarrow() -> None:
     assert visit(iceberg_type, _ConvertToArrowSchema()) == pa.large_binary()
 
 
+def test_geometry_type_to_pyarrow_without_geoarrow() -> None:
+    """Test geometry type falls back to large_binary when geoarrow is not available."""
+    import sys
+
+    iceberg_type = GeometryType()
+
+    # Remove geoarrow from sys.modules if present and block re-import
+    saved_modules = {}
+    for mod_name in list(sys.modules.keys()):
+        if mod_name.startswith("geoarrow"):
+            saved_modules[mod_name] = sys.modules.pop(mod_name)
+
+    import builtins
+
+    original_import = builtins.__import__
+
+    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name.startswith("geoarrow"):
+            raise ImportError(f"No module named '{name}'")
+        return original_import(name, *args, **kwargs)
+
+    try:
+        builtins.__import__ = mock_import
+        result = visit(iceberg_type, _ConvertToArrowSchema())
+        assert result == pa.large_binary()
+    finally:
+        builtins.__import__ = original_import
+        sys.modules.update(saved_modules)
+
+
+def test_geography_type_to_pyarrow_without_geoarrow() -> None:
+    """Test geography type falls back to large_binary when geoarrow is not available."""
+    import sys
+
+    iceberg_type = GeographyType()
+
+    # Remove geoarrow from sys.modules if present and block re-import
+    saved_modules = {}
+    for mod_name in list(sys.modules.keys()):
+        if mod_name.startswith("geoarrow"):
+            saved_modules[mod_name] = sys.modules.pop(mod_name)
+
+    import builtins
+
+    original_import = builtins.__import__
+
+    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name.startswith("geoarrow"):
+            raise ImportError(f"No module named '{name}'")
+        return original_import(name, *args, **kwargs)
+
+    try:
+        builtins.__import__ = mock_import
+        result = visit(iceberg_type, _ConvertToArrowSchema())
+        assert result == pa.large_binary()
+    finally:
+        builtins.__import__ = original_import
+        sys.modules.update(saved_modules)
+
+
+def test_geometry_type_to_pyarrow_with_geoarrow() -> None:
+    """Test geometry type uses geoarrow WKB extension type when available."""
+    pytest.importorskip("geoarrow.pyarrow")
+    import geoarrow.pyarrow as ga
+
+    # Test default CRS
+    iceberg_type = GeometryType()
+    result = visit(iceberg_type, _ConvertToArrowSchema())
+    expected = ga.wkb().with_crs("OGC:CRS84")
+    assert result == expected
+
+    # Test custom CRS
+    iceberg_type_custom = GeometryType("EPSG:4326")
+    result_custom = visit(iceberg_type_custom, _ConvertToArrowSchema())
+    expected_custom = ga.wkb().with_crs("EPSG:4326")
+    assert result_custom == expected_custom
+
+
+def test_geography_type_to_pyarrow_with_geoarrow() -> None:
+    """Test geography type uses geoarrow WKB extension type with edge type when available."""
+    pytest.importorskip("geoarrow.pyarrow")
+    import geoarrow.pyarrow as ga
+
+    # Test default (spherical algorithm)
+    iceberg_type = GeographyType()
+    result = visit(iceberg_type, _ConvertToArrowSchema())
+    expected = ga.wkb().with_crs("OGC:CRS84").with_edge_type(ga.EdgeType.SPHERICAL)
+    assert result == expected
+
+    # Test custom CRS with spherical
+    iceberg_type_custom = GeographyType("EPSG:4326", "spherical")
+    result_custom = visit(iceberg_type_custom, _ConvertToArrowSchema())
+    expected_custom = ga.wkb().with_crs("EPSG:4326").with_edge_type(ga.EdgeType.SPHERICAL)
+    assert result_custom == expected_custom
+
+    # Test planar algorithm (no edge type set, uses default)
+    iceberg_type_planar = GeographyType("OGC:CRS84", "planar")
+    result_planar = visit(iceberg_type_planar, _ConvertToArrowSchema())
+    expected_planar = ga.wkb().with_crs("OGC:CRS84")
+    assert result_planar == expected_planar
+
+
 def test_struct_type_to_pyarrow(table_schema_simple: Schema) -> None:
     expected = pa.struct(
         [
@@ -633,12 +738,12 @@ def test_list_type_to_pyarrow() -> None:
 
 
 @pytest.fixture
-def bound_reference(table_schema_simple: Schema) -> BoundReference[str]:
+def bound_reference(table_schema_simple: Schema) -> BoundReference:
     return BoundReference(table_schema_simple.find_field(1), table_schema_simple.accessor_for_field(1))
 
 
 @pytest.fixture
-def bound_double_reference() -> BoundReference[float]:
+def bound_double_reference() -> BoundReference:
     schema = Schema(
         NestedField(field_id=1, name="foo", field_type=DoubleType(), required=False),
         schema_id=1,
@@ -647,68 +752,68 @@ def bound_double_reference() -> BoundReference[float]:
     return BoundReference(schema.find_field(1), schema.accessor_for_field(1))
 
 
-def test_expr_is_null_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_is_null_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundIsNull(bound_reference)))
         == "<pyarrow.compute.Expression is_null(foo, {nan_is_null=false})>"
     )
 
 
-def test_expr_not_null_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_not_null_to_pyarrow(bound_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(BoundNotNull(bound_reference))) == "<pyarrow.compute.Expression is_valid(foo)>"
 
 
-def test_expr_is_nan_to_pyarrow(bound_double_reference: BoundReference[str]) -> None:
+def test_expr_is_nan_to_pyarrow(bound_double_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(BoundIsNaN(bound_double_reference))) == "<pyarrow.compute.Expression is_nan(foo)>"
 
 
-def test_expr_not_nan_to_pyarrow(bound_double_reference: BoundReference[str]) -> None:
+def test_expr_not_nan_to_pyarrow(bound_double_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(BoundNotNaN(bound_double_reference))) == "<pyarrow.compute.Expression invert(is_nan(foo))>"
 
 
-def test_expr_equal_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_equal_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundEqualTo(bound_reference, literal("hello"))))
         == '<pyarrow.compute.Expression (foo == "hello")>'
     )
 
 
-def test_expr_not_equal_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_not_equal_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundNotEqualTo(bound_reference, literal("hello"))))
         == '<pyarrow.compute.Expression (foo != "hello")>'
     )
 
 
-def test_expr_greater_than_or_equal_equal_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_greater_than_or_equal_equal_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundGreaterThanOrEqual(bound_reference, literal("hello"))))
         == '<pyarrow.compute.Expression (foo >= "hello")>'
     )
 
 
-def test_expr_greater_than_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_greater_than_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundGreaterThan(bound_reference, literal("hello"))))
         == '<pyarrow.compute.Expression (foo > "hello")>'
     )
 
 
-def test_expr_less_than_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_less_than_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundLessThan(bound_reference, literal("hello"))))
         == '<pyarrow.compute.Expression (foo < "hello")>'
     )
 
 
-def test_expr_less_than_or_equal_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_less_than_or_equal_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundLessThanOrEqual(bound_reference, literal("hello"))))
         == '<pyarrow.compute.Expression (foo <= "hello")>'
     )
 
 
-def test_expr_in_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_in_to_pyarrow(bound_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(BoundIn(bound_reference, {literal("hello"), literal("world")}))) in (
         """<pyarrow.compute.Expression is_in(foo, {value_set=large_string:[
   "hello",
@@ -721,7 +826,7 @@ def test_expr_in_to_pyarrow(bound_reference: BoundReference[str]) -> None:
     )
 
 
-def test_expr_not_in_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_not_in_to_pyarrow(bound_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(BoundNotIn(bound_reference, {literal("hello"), literal("world")}))) in (
         """<pyarrow.compute.Expression invert(is_in(foo, {value_set=large_string:[
   "hello",
@@ -734,46 +839,46 @@ def test_expr_not_in_to_pyarrow(bound_reference: BoundReference[str]) -> None:
     )
 
 
-def test_expr_starts_with_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_starts_with_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundStartsWith(bound_reference, literal("he"))))
         == '<pyarrow.compute.Expression starts_with(foo, {pattern="he", ignore_case=false})>'
     )
 
 
-def test_expr_not_starts_with_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_expr_not_starts_with_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundNotStartsWith(bound_reference, literal("he"))))
         == '<pyarrow.compute.Expression invert(starts_with(foo, {pattern="he", ignore_case=false}))>'
     )
 
 
-def test_and_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_and_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(And(BoundEqualTo(bound_reference, literal("hello")), BoundIsNull(bound_reference))))
         == '<pyarrow.compute.Expression ((foo == "hello") and is_null(foo, {nan_is_null=false}))>'
     )
 
 
-def test_or_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_or_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(Or(BoundEqualTo(bound_reference, literal("hello")), BoundIsNull(bound_reference))))
         == '<pyarrow.compute.Expression ((foo == "hello") or is_null(foo, {nan_is_null=false}))>'
     )
 
 
-def test_not_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_not_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(Not(BoundEqualTo(bound_reference, literal("hello")))))
         == '<pyarrow.compute.Expression invert((foo == "hello"))>'
     )
 
 
-def test_always_true_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_always_true_to_pyarrow(bound_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(AlwaysTrue())) == "<pyarrow.compute.Expression true>"
 
 
-def test_always_false_to_pyarrow(bound_reference: BoundReference[str]) -> None:
+def test_always_false_to_pyarrow(bound_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(AlwaysFalse())) == "<pyarrow.compute.Expression false>"
 
 
@@ -1014,7 +1119,7 @@ def file_map(schema_map: Schema, tmpdir: str) -> str:
 
 
 def project(
-    schema: Schema, files: List[str], expr: Optional[BooleanExpression] = None, table_schema: Optional[Schema] = None
+    schema: Schema, files: list[str], expr: BooleanExpression | None = None, table_schema: Schema | None = None
 ) -> pa.Table:
     def _set_spec_id(datafile: DataFile) -> DataFile:
         datafile.spec_id = 0
@@ -1076,16 +1181,16 @@ def test_projection_add_column(file_int: str) -> None:
     for col in result_table.columns:
         assert len(col) == 3
 
-    for actual, expected in zip(result_table.columns[0], [None, None, None]):
+    for actual, expected in zip(result_table.columns[0], [None, None, None], strict=True):
         assert actual.as_py() == expected
 
-    for actual, expected in zip(result_table.columns[1], [None, None, None]):
+    for actual, expected in zip(result_table.columns[1], [None, None, None], strict=True):
         assert actual.as_py() == expected
 
-    for actual, expected in zip(result_table.columns[2], [None, None, None]):
+    for actual, expected in zip(result_table.columns[2], [None, None, None], strict=True):
         assert actual.as_py() == expected
 
-    for actual, expected in zip(result_table.columns[3], [None, None, None]):
+    for actual, expected in zip(result_table.columns[3], [None, None, None], strict=True):
         assert actual.as_py() == expected
     assert (
         repr(result_table.schema)
@@ -1106,7 +1211,9 @@ def test_read_list(schema_list: Schema, file_list: str) -> None:
     result_table = project(schema_list, [file_list])
 
     assert len(result_table.columns[0]) == 3
-    for actual, expected in zip(result_table.columns[0], [list(range(1, 10)), list(range(2, 20)), list(range(3, 30))]):
+    for actual, expected in zip(
+        result_table.columns[0], [list(range(1, 10)), list(range(2, 20)), list(range(3, 30))], strict=True
+    ):
         assert actual.as_py() == expected
 
     assert (
@@ -1120,7 +1227,7 @@ def test_read_map(schema_map: Schema, file_map: str) -> None:
     result_table = project(schema_map, [file_map])
 
     assert len(result_table.columns[0]) == 3
-    for actual, expected in zip(result_table.columns[0], [[("a", "b")], [("c", "d")], [("e", "f"), ("g", "h")]]):
+    for actual, expected in zip(result_table.columns[0], [[("a", "b")], [("c", "d")], [("e", "f"), ("g", "h")]], strict=True):
         assert actual.as_py() == expected
 
     assert (
@@ -1177,7 +1284,7 @@ def test_projection_rename_column(schema_int: Schema, file_int: str) -> None:
     )
     result_table = project(schema, [file_int])
     assert len(result_table.columns[0]) == 3
-    for actual, expected in zip(result_table.columns[0], [0, 1, 2]):
+    for actual, expected in zip(result_table.columns[0], [0, 1, 2], strict=True):
         assert actual.as_py() == expected
 
     assert repr(result_table.schema) == "other_name: int32 not null"
@@ -1186,14 +1293,15 @@ def test_projection_rename_column(schema_int: Schema, file_int: str) -> None:
 def test_projection_concat_files(schema_int: Schema, file_int: str) -> None:
     result_table = project(schema_int, [file_int, file_int])
 
-    for actual, expected in zip(result_table.columns[0], [0, 1, 2, 0, 1, 2]):
+    for actual, expected in zip(result_table.columns[0], [0, 1, 2, 0, 1, 2], strict=True):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 6
     assert repr(result_table.schema) == "id: int32"
 
 
 def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCatalog) -> None:
-    # Test by adding a non-partitioned data file to a partitioned table, verifying partition value projection from manifest metadata.
+    # Test by adding a non-partitioned data file to a partitioned table, verifying partition value
+    # projection from manifest metadata.
     # TODO: Update to use a data file created by writing data to an unpartitioned table once add_files supports field IDs.
     # (context: https://github.com/apache/iceberg-python/pull/1443#discussion_r1901374875)
 
@@ -1262,7 +1370,8 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
 
 
 def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryCatalog) -> None:
-    # Test by adding a non-partitioned data file to a multi-partitioned table, verifying partition value projection from manifest metadata.
+    # Test by adding a non-partitioned data file to a multi-partitioned table, verifying partition value
+    # projection from manifest metadata.
     # TODO: Update to use a data file created by writing data to an unpartitioned table once add_files supports field IDs.
     # (context: https://github.com/apache/iceberg-python/pull/1443#discussion_r1901374875)
     schema = Schema(
@@ -1350,7 +1459,7 @@ def test_projection_filter_add_column(schema_int: Schema, file_int: str, file_st
     """We have one file that has the column, and the other one doesn't"""
     result_table = project(schema_int, [file_int, file_string])
 
-    for actual, expected in zip(result_table.columns[0], [0, 1, 2, None, None, None]):
+    for actual, expected in zip(result_table.columns[0], [0, 1, 2, None, None, None], strict=True):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 6
     assert repr(result_table.schema) == "id: int32"
@@ -1360,7 +1469,7 @@ def test_projection_filter_add_column_promote(file_int: str) -> None:
     schema_long = Schema(NestedField(1, "id", LongType(), required=True))
     result_table = project(schema_long, [file_int])
 
-    for actual, expected in zip(result_table.columns[0], [0, 1, 2]):
+    for actual, expected in zip(result_table.columns[0], [0, 1, 2], strict=True):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 3
     assert repr(result_table.schema) == "id: int64 not null"
@@ -1388,7 +1497,7 @@ def test_projection_nested_struct_subset(file_struct: str) -> None:
 
     result_table = project(schema, [file_struct])
 
-    for actual, expected in zip(result_table.columns[0], [52.371807, 52.387386, 52.078663]):
+    for actual, expected in zip(result_table.columns[0], [52.371807, 52.387386, 52.078663], strict=True):
         assert actual.as_py() == {"lat": expected}
 
     assert len(result_table.columns[0]) == 3
@@ -1413,7 +1522,7 @@ def test_projection_nested_new_field(file_struct: str) -> None:
 
     result_table = project(schema, [file_struct])
 
-    for actual, expected in zip(result_table.columns[0], [None, None, None]):
+    for actual, expected in zip(result_table.columns[0], [None, None, None], strict=True):
         assert actual.as_py() == {"null": expected}
     assert len(result_table.columns[0]) == 3
     assert (
@@ -1445,6 +1554,7 @@ def test_projection_nested_struct(schema_struct: Schema, file_struct: str) -> No
             {"lat": 52.387386, "long": 4.646219, "null": None},
             {"lat": 52.078663, "long": 4.288788, "null": None},
         ],
+        strict=True,
     ):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 3
@@ -1536,18 +1646,22 @@ def test_projection_maps_of_structs(schema_map_of_structs: Schema, file_map_of_s
                 ("4", {"latitude": 52.387386, "longitude": 4.646219, "altitude": None}),
             ],
         ],
+        strict=True,
     ):
         assert actual.as_py() == expected
-    assert (
-        repr(result_table.schema)
-        == """locations: map<string, struct<latitude: double not null, longitude: double not null, altitude: double>>
-  child 0, entries: struct<key: string not null, value: struct<latitude: double not null, longitude: double not null, al (... 25 chars omitted) not null
-      child 0, key: string not null
-      child 1, value: struct<latitude: double not null, longitude: double not null, altitude: double> not null
-          child 0, latitude: double not null
-          child 1, longitude: double not null
-          child 2, altitude: double"""
+    expected_schema_repr = (
+        "locations: map<string, struct<latitude: double not null, "
+        "longitude: double not null, altitude: double>>\n"
+        "  child 0, entries: struct<key: string not null, value: struct<latitude: double not null, "
+        "longitude: double not null, al (... 25 chars omitted) not null\n"
+        "      child 0, key: string not null\n"
+        "      child 1, value: struct<latitude: double not null, longitude: double not null, "
+        "altitude: double> not null\n"
+        "          child 0, latitude: double not null\n"
+        "          child 1, longitude: double not null\n"
+        "          child 2, altitude: double"
     )
+    assert repr(result_table.schema) == expected_schema_repr
 
 
 def test_projection_nested_struct_different_parent_id(file_struct: str) -> None:
@@ -1563,7 +1677,7 @@ def test_projection_nested_struct_different_parent_id(file_struct: str) -> None:
     )
 
     result_table = project(schema, [file_struct])
-    for actual, expected in zip(result_table.columns[0], [None, None, None]):
+    for actual, expected in zip(result_table.columns[0], [None, None, None], strict=True):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 3
     assert (
@@ -1579,10 +1693,7 @@ def test_projection_filter_on_unprojected_field(schema_int_str: Schema, file_int
 
     result_table = project(schema, [file_int_str], GreaterThan("data", "1"), schema_int_str)
 
-    for actual, expected in zip(
-        result_table.columns[0],
-        [2],
-    ):
+    for actual, expected in zip(result_table.columns[0], [2], strict=True):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 1
     assert repr(result_table.schema) == "id: int32 not null"
@@ -2159,7 +2270,7 @@ def test_make_compatible_name() -> None:
         ([None, None, None], DateType(), None),
     ],
 )
-def test_stats_aggregator_update_min(vals: List[Any], primitive_type: PrimitiveType, expected_result: Any) -> None:
+def test_stats_aggregator_update_min(vals: list[Any], primitive_type: PrimitiveType, expected_result: Any) -> None:
     stats = StatsAggregator(primitive_type, _primitive_to_physical(primitive_type))
 
     for val in vals:
@@ -2179,7 +2290,7 @@ def test_stats_aggregator_update_min(vals: List[Any], primitive_type: PrimitiveT
         ([None, None, None], DateType(), None),
     ],
 )
-def test_stats_aggregator_update_max(vals: List[Any], primitive_type: PrimitiveType, expected_result: Any) -> None:
+def test_stats_aggregator_update_max(vals: list[Any], primitive_type: PrimitiveType, expected_result: Any) -> None:
     stats = StatsAggregator(primitive_type, _primitive_to_physical(primitive_type))
 
     for val in vals:
@@ -2245,6 +2356,12 @@ def test_bin_pack_arrow_table(arrow_table_with_null: pa.Table) -> None:
     # and will produce half the number of files if we double the target size
     bin_packed = bin_pack_arrow_table(bigger_arrow_tbl, target_file_size=arrow_table_with_null.nbytes * 2)
     assert len(list(bin_packed)) == 5
+
+
+def test_bin_pack_arrow_table_target_size_smaller_than_row(arrow_table_with_null: pa.Table) -> None:
+    bin_packed = list(bin_pack_arrow_table(arrow_table_with_null, target_file_size=1))
+    assert len(bin_packed) == arrow_table_with_null.num_rows
+    assert sum(batch.num_rows for bin_ in bin_packed for batch in bin_) == arrow_table_with_null.num_rows
 
 
 def test_schema_mismatch_type(table_schema_simple: Schema) -> None:
@@ -2479,7 +2596,7 @@ def test_partition_for_demo() -> None:
         PartitionField(source_id=2, field_id=1002, transform=IdentityTransform(), name="n_legs_identity"),
         PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="year_identity"),
     )
-    result = _determine_partitions(partition_spec, test_schema, arrow_table)
+    result = list(_determine_partitions(partition_spec, test_schema, arrow_table))
     assert {table_partition.partition_key.partition for table_partition in result} == {
         Record(2, 2020),
         Record(100, 2021),
@@ -2518,7 +2635,7 @@ def test_partition_for_nested_field() -> None:
     ]
 
     arrow_table = pa.Table.from_pylist(test_data, schema=schema.as_arrow())
-    partitions = _determine_partitions(spec, schema, arrow_table)
+    partitions = list(_determine_partitions(spec, schema, arrow_table))
     partition_values = {p.partition_key.partition[0] for p in partitions}
 
     assert partition_values == {486729, 486730}
@@ -2550,7 +2667,7 @@ def test_partition_for_deep_nested_field() -> None:
     ]
 
     arrow_table = pa.Table.from_pylist(test_data, schema=schema.as_arrow())
-    partitions = _determine_partitions(spec, schema, arrow_table)
+    partitions = list(_determine_partitions(spec, schema, arrow_table))
 
     assert len(partitions) == 2  # 2 unique partitions
     partition_values = {p.partition_key.partition[0] for p in partitions}
@@ -2587,6 +2704,36 @@ def test_inspect_partition_for_nested_field(catalog: InMemoryCatalog) -> None:
     assert {part["part"] for part in partitions} == {"data-a", "data-b"}
 
 
+def test_inspect_partitions_respects_partition_evolution(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="dt", field_type=DateType(), required=False),
+        NestedField(id=2, name="category", field_type=StringType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="dt"))
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test_inspect_partitions_respects_partition_evolution", schema=schema, partition_spec=spec
+    )
+
+    old_spec_id = table.spec().spec_id
+    old_data = [{"dt": date(2025, 1, 1), "category": "old"}]
+    table.append(pa.Table.from_pylist(old_data, schema=table.schema().as_arrow()))
+
+    table.update_spec().add_identity("category").commit()
+    new_spec_id = table.spec().spec_id
+    assert new_spec_id != old_spec_id
+
+    partitions_table = table.inspect.partitions()
+    partitions = partitions_table["partition"].to_pylist()
+    assert all("category" not in partition for partition in partitions)
+
+    new_data = [{"dt": date(2025, 1, 2), "category": "new"}]
+    table.append(pa.Table.from_pylist(new_data, schema=table.schema().as_arrow()))
+
+    partitions_table = table.inspect.partitions()
+    assert set(partitions_table["spec_id"].to_pylist()) == {old_spec_id, new_spec_id}
+
+
 def test_identity_partition_on_multi_columns() -> None:
     test_pa_schema = pa.schema([("born_year", pa.int64()), ("n_legs", pa.int64()), ("animal", pa.string())])
     test_schema = Schema(
@@ -2621,7 +2768,7 @@ def test_identity_partition_on_multi_columns() -> None:
         }
         arrow_table = pa.Table.from_pydict(test_data, schema=test_pa_schema)
 
-        result = _determine_partitions(partition_spec, test_schema, arrow_table)
+        result = list(_determine_partitions(partition_spec, test_schema, arrow_table))
 
         assert {table_partition.partition_key.partition for table_partition in result} == expected
         concatenated_arrow_table = pa.concat_tables([table_partition.arrow_table_partition for table_partition in result])
@@ -2683,6 +2830,106 @@ def test__to_requested_schema_timestamp_to_timestamptz_projection() -> None:
     assert expected.equals(actual_result)
 
 
+def test__to_requested_schema_timestamptz_to_timestamp_projection() -> None:
+    # file is written with timestamp with timezone
+    file_schema = Schema(NestedField(1, "ts_field", TimestamptzType(), required=False))
+    batch = pa.record_batch(
+        [
+            pa.array(
+                [
+                    datetime(2025, 8, 14, 12, 0, 0, tzinfo=timezone.utc),
+                    datetime(2025, 8, 14, 13, 0, 0, tzinfo=timezone.utc),
+                ],
+                type=pa.timestamp("us", tz="UTC"),
+            )
+        ],
+        names=["ts_field"],
+    )
+
+    # table schema expects timestamp without timezone
+    table_schema = Schema(NestedField(1, "ts_field", TimestampType(), required=False))
+
+    # allow_timestamp_tz_mismatch=True enables reading timestamptz as timestamp
+    actual_result = _to_requested_schema(
+        table_schema, file_schema, batch, downcast_ns_timestamp_to_us=True, allow_timestamp_tz_mismatch=True
+    )
+    expected = pa.record_batch(
+        [
+            pa.array(
+                [
+                    datetime(2025, 8, 14, 12, 0, 0),
+                    datetime(2025, 8, 14, 13, 0, 0),
+                ],
+                type=pa.timestamp("us"),
+            )
+        ],
+        names=["ts_field"],
+    )
+
+    # expect actual_result to have no timezone
+    assert expected.equals(actual_result)
+
+
+def test__to_requested_schema_timestamptz_to_timestamp_write_rejects() -> None:
+    """Test that the write path (default) rejects timestamptz to timestamp casting.
+
+    This ensures we enforce the Iceberg spec distinction between timestamp and timestamptz on writes,
+    while the read path can be more permissive (like Spark) via allow_timestamp_tz_mismatch=True.
+    """
+    # file is written with timestamp with timezone
+    file_schema = Schema(NestedField(1, "ts_field", TimestamptzType(), required=False))
+    batch = pa.record_batch(
+        [
+            pa.array(
+                [
+                    datetime(2025, 8, 14, 12, 0, 0, tzinfo=timezone.utc),
+                    datetime(2025, 8, 14, 13, 0, 0, tzinfo=timezone.utc),
+                ],
+                type=pa.timestamp("us", tz="UTC"),
+            )
+        ],
+        names=["ts_field"],
+    )
+
+    # table schema expects timestamp without timezone
+    table_schema = Schema(NestedField(1, "ts_field", TimestampType(), required=False))
+
+    # allow_timestamp_tz_mismatch=False (default, used in write path) should raise
+    with pytest.raises(ValueError, match="Unsupported schema projection"):
+        _to_requested_schema(
+            table_schema, file_schema, batch, downcast_ns_timestamp_to_us=True, allow_timestamp_tz_mismatch=False
+        )
+
+
+def test_write_file_rejects_timestamptz_to_timestamp(tmp_path: Path) -> None:
+    """Test that write_file rejects writing timestamptz data to a timestamp column."""
+    from pyiceberg.table import WriteTask
+
+    # Table expects timestamp (no tz), but data has timestamptz
+    table_schema = Schema(NestedField(1, "ts_field", TimestampType(), required=False))
+    task_schema = Schema(NestedField(1, "ts_field", TimestamptzType(), required=False))
+
+    arrow_data = pa.table({"ts_field": [datetime(2025, 8, 14, 12, 0, 0, tzinfo=timezone.utc)]})
+
+    table_metadata = TableMetadataV2(
+        location=f"file://{tmp_path}",
+        last_column_id=1,
+        format_version=2,
+        schemas=[table_schema],
+        partition_specs=[PartitionSpec()],
+    )
+
+    task = WriteTask(
+        write_uuid=uuid.uuid4(),
+        task_id=0,
+        record_batches=arrow_data.to_batches(),
+        schema=task_schema,
+    )
+
+    with pytest.raises(ValueError, match="Unsupported schema projection"):
+        list(write_file(io=PyArrowFileIO(), table_metadata=table_metadata, tasks=iter([task])))
+
+
 def test__to_requested_schema_timestamps(
     arrow_table_schema_with_all_timestamp_precisions: pa.Schema,
     arrow_table_with_all_timestamp_precisions: pa.Table,
@@ -2715,8 +2962,41 @@ def test__to_requested_schema_timestamps_without_downcast_raises_exception(
     assert "Unsupported schema projection from timestamp[ns] to timestamp[us]" in str(exc_info.value)
 
 
+@pytest.mark.parametrize(
+    "arrow_type,iceberg_type,expected_arrow_type",
+    [
+        (pa.uint8(), IntegerType(), pa.int32()),
+        (pa.int8(), IntegerType(), pa.int32()),
+        (pa.int16(), IntegerType(), pa.int32()),
+        (pa.uint16(), IntegerType(), pa.int32()),
+        (pa.uint32(), LongType(), pa.int64()),
+        (pa.int32(), LongType(), pa.int64()),
+    ],
+)
+def test__to_requested_schema_integer_promotion(
+    arrow_type: pa.DataType,
+    iceberg_type: PrimitiveType,
+    expected_arrow_type: pa.DataType,
+) -> None:
+    """Test that smaller integer types are cast to target Iceberg type during write."""
+    requested_schema = Schema(NestedField(1, "col", iceberg_type, required=False))
+    file_schema = requested_schema
+
+    arrow_schema = pa.schema([pa.field("col", arrow_type)])
+    data = pa.array([1, 2, 3, None], type=arrow_type)
+    batch = pa.RecordBatch.from_arrays([data], schema=arrow_schema)
+
+    result = _to_requested_schema(
+        requested_schema, file_schema, batch, downcast_ns_timestamp_to_us=False, include_field_ids=False
+    )
+
+    assert result.schema[0].type == expected_arrow_type
+    assert result.column(0).to_pylist() == [1, 2, 3, None]
+
+
 def test_pyarrow_file_io_fs_by_scheme_cache() -> None:
-    # It's better to set up multi-region minio servers for an integration test once `endpoint_url` argument becomes available for `resolve_s3_region`
+    # It's better to set up multi-region minio servers for an integration test once `endpoint_url` argument
+    # becomes available for `resolve_s3_region`
     # Refer to: https://github.com/apache/arrow/issues/43713
 
     pyarrow_file_io = PyArrowFileIO()
@@ -2750,7 +3030,8 @@ def test_pyarrow_file_io_fs_by_scheme_cache() -> None:
 
 
 def test_pyarrow_io_new_input_multi_region(caplog: Any) -> None:
-    # It's better to set up multi-region minio servers for an integration test once `endpoint_url` argument becomes available for `resolve_s3_region`
+    # It's better to set up multi-region minio servers for an integration test once `endpoint_url` argument
+    # becomes available for `resolve_s3_region`
     # Refer to: https://github.com/apache/arrow/issues/43713
     user_provided_region = "ap-southeast-1"
     bucket_regions = [
@@ -2803,7 +3084,7 @@ def test_pyarrow_io_multi_fs() -> None:
 class SomeRetryStrategy(AwsDefaultS3RetryStrategy):
     def __init__(self) -> None:
         super().__init__()
-        warnings.warn("Initialized SomeRetryStrategy 👍")
+        warnings.warn("Initialized SomeRetryStrategy 👍", stacklevel=2)
 
 
 def test_retry_strategy() -> None:
@@ -2846,6 +3127,7 @@ def test_task_to_record_batches_nanos(format_version: TableVersion, tmpdir: str)
             FileScanTask(data_file),
             bound_row_filter=AlwaysTrue(),
             projected_schema=table_schema,
+            table_schema=table_schema,
             projected_field_ids={1},
             positional_deletes=None,
             case_sensitive=True,
@@ -2960,7 +3242,8 @@ def test_iceberg_read_orc(tmp_path: Path) -> None:
         partition_specs=[PartitionSpec()],
         properties={
             "write.format.default": "parquet",  # This doesn't matter for reading
-            "schema.name-mapping.default": '[{"field-id": 1, "names": ["id"]}, {"field-id": 2, "names": ["name"]}]',  # Add name mapping for ORC files without field IDs
+            # Add name mapping for ORC files without field IDs
+            "schema.name-mapping.default": ('[{"field-id": 1, "names": ["id"]}, {"field-id": 2, "names": ["name"]}]'),
         },
     )
     io = PyArrowFileIO()
@@ -3060,7 +3343,10 @@ def test_orc_row_filtering_predicate_pushdown(tmp_path: Path) -> None:
         schemas=[schema],
         partition_specs=[PartitionSpec()],
         properties={
-            "schema.name-mapping.default": '[{"field-id": 1, "names": ["id"]}, {"field-id": 2, "names": ["name"]}, {"field-id": 3, "names": ["age"]}, {"field-id": 4, "names": ["active"]}]',
+            "schema.name-mapping.default": (
+                '[{"field-id": 1, "names": ["id"]}, {"field-id": 2, "names": ["name"]}, '
+                '{"field-id": 3, "names": ["age"]}, {"field-id": 4, "names": ["active"]}]'
+            ),
         },
     )
     io = PyArrowFileIO()
@@ -3838,8 +4124,46 @@ def test_orc_schema_conversion_with_field_ids() -> None:
     id_field_no_ids = arrow_schema_no_ids.field(0)
     name_field_no_ids = arrow_schema_no_ids.field(1)
 
-    assert not id_field_no_ids.metadata
-    assert not name_field_no_ids.metadata
+    assert ORC_FIELD_ID_KEY not in id_field_no_ids.metadata
+    assert ORC_FIELD_ID_KEY not in name_field_no_ids.metadata
+    assert PYARROW_PARQUET_FIELD_ID_KEY not in id_field_no_ids.metadata
+    assert PYARROW_PARQUET_FIELD_ID_KEY not in name_field_no_ids.metadata
+
+
+def test_orc_schema_conversion_with_required_attribute() -> None:
+    """
+    Test that schema_to_pyarrow correctly adds ORC iceberg.required attribute.
+    To run just this test:
+        pytest tests/io/test_pyarrow.py -k test_orc_schema_conversion_with_required_attribute
+    """
+    from pyiceberg.io.pyarrow import ORC_FIELD_REQUIRED_KEY, schema_to_pyarrow
+    from pyiceberg.manifest import FileFormat
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import IntegerType, StringType
+
+    # Define schema
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(2, "name", StringType(), required=False),
+    )
+
+    # Test 1: Specify Parquet format
+    arrow_schema_default = schema_to_pyarrow(schema, file_format=FileFormat.PARQUET)
+
+    id_field = arrow_schema_default.field(0)
+    name_field = arrow_schema_default.field(1)
+
+    assert ORC_FIELD_REQUIRED_KEY not in id_field.metadata
+    assert ORC_FIELD_REQUIRED_KEY not in name_field.metadata
+
+    # Test 2: Specify ORC format
+    arrow_schema_orc = schema_to_pyarrow(schema, file_format=FileFormat.ORC)
+
+    id_field_orc = arrow_schema_orc.field(0)
+    name_field_orc = arrow_schema_orc.field(1)
+
+    assert id_field_orc.metadata[ORC_FIELD_REQUIRED_KEY] == b"true"
+    assert name_field_orc.metadata[ORC_FIELD_REQUIRED_KEY] == b"false"
 
 
 def test_orc_batching_behavior_documentation(tmp_path: Path) -> None:
@@ -4302,7 +4626,8 @@ def test_orc_stripe_size_batch_size_compression_interaction(tmp_path: Path) -> N
         # Assert batching behavior
         assert len(batches) > 0, f"Should have at least one batch for {description}"
         assert len(batches) == actual_stripes, (
-            f"Number of batches should match number of stripes for {description}: {len(batches)} batches vs {actual_stripes} stripes"
+            f"Number of batches should match number of stripes for {description}: "
+            f"{len(batches)} batches vs {actual_stripes} stripes"
         )
 
         # Assert data integrity
@@ -4372,7 +4697,10 @@ def test_orc_near_perfect_stripe_size_mapping(tmp_path: Path) -> None:
         {
             "id": pa.array(
                 [
-                    f"very_long_string_value_{i:06d}_with_lots_of_padding_to_make_it_harder_to_compress_{i * 7919 % 100000:05d}_more_padding_{i * 7919 % 100000:05d}"
+                    (
+                        f"very_long_string_value_{i:06d}_with_lots_of_padding_to_make_it_harder_to_compress_"
+                        f"{i * 7919 % 100000:05d}_more_padding_{i * 7919 % 100000:05d}"
+                    )
                     for i in range(1, 50001)
                 ]
             )  # 50K rows
@@ -4447,7 +4775,8 @@ def test_orc_near_perfect_stripe_size_mapping(tmp_path: Path) -> None:
         # Assert batching behavior
         assert len(batches) > 0, f"Should have at least one batch for stripe_size={stripe_size}"
         assert len(batches) == actual_stripes, (
-            f"Number of batches should match number of stripes for stripe_size={stripe_size}: {len(batches)} batches vs {actual_stripes} stripes"
+            f"Number of batches should match number of stripes for stripe_size={stripe_size}: "
+            f"{len(batches)} batches vs {actual_stripes} stripes"
         )
 
         # Assert data integrity
@@ -4590,3 +4919,72 @@ def test_orc_stripe_based_batching(tmp_path: Path) -> None:
         # Verify total rows
         total_rows = sum(batch.num_rows for batch in batches)
         assert total_rows == 10000, f"Expected 10000 total rows, got {total_rows}"
+
+
+def test_partition_column_projection_with_schema_evolution(catalog: InMemoryCatalog) -> None:
+    """Test column projection on partitioned table after schema evolution (https://github.com/apache/iceberg-python/issues/2672)."""
+    initial_schema = Schema(
+        NestedField(1, "partition_date", DateType(), required=False),
+        NestedField(2, "id", IntegerType(), required=False),
+        NestedField(3, "name", StringType(), required=False),
+        NestedField(4, "value", IntegerType(), required=False),
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="partition_date"),
+    )
+
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test_schema_evolution_projection",
+        schema=initial_schema,
+        partition_spec=partition_spec,
+    )
+
+    data_v1 = pa.Table.from_pylist(
+        [
+            {"partition_date": date(2024, 1, 1), "id": 1, "name": "Alice", "value": 100},
+            {"partition_date": date(2024, 1, 1), "id": 2, "name": "Bob", "value": 200},
+        ],
+        schema=pa.schema(
+            [
+                ("partition_date", pa.date32()),
+                ("id", pa.int32()),
+                ("name", pa.string()),
+                ("value", pa.int32()),
+            ]
+        ),
+    )
+
+    table.append(data_v1)
+
+    with table.update_schema() as update:
+        update.add_column("new_column", StringType())
+
+    table = catalog.load_table("default.test_schema_evolution_projection")
+
+    data_v2 = pa.Table.from_pylist(
+        [
+            {"partition_date": date(2024, 1, 2), "id": 3, "name": "Charlie", "value": 300, "new_column": "new1"},
+            {"partition_date": date(2024, 1, 2), "id": 4, "name": "David", "value": 400, "new_column": "new2"},
+        ],
+        schema=pa.schema(
+            [
+                ("partition_date", pa.date32()),
+                ("id", pa.int32()),
+                ("name", pa.string()),
+                ("value", pa.int32()),
+                ("new_column", pa.string()),
+            ]
+        ),
+    )
+
+    table.append(data_v2)
+
+    result = table.scan(selected_fields=("id", "name", "value", "new_column")).to_arrow()
+
+    assert set(result.schema.names) == {"id", "name", "value", "new_column"}
+    assert result.num_rows == 4
+    result_sorted = result.sort_by("name")
+    assert result_sorted["name"].to_pylist() == ["Alice", "Bob", "Charlie", "David"]
+    assert result_sorted["new_column"].to_pylist() == [None, None, "new1", "new2"]

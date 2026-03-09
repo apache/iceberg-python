@@ -21,7 +21,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from functools import cached_property, singledispatch
-from typing import Annotated, Any, Dict, Generic, List, Optional, Set, Tuple, TypeVar, Union
+from typing import Annotated, Any, Generic, TypeVar
 from urllib.parse import quote_plus
 
 from pydantic import (
@@ -32,6 +32,7 @@ from pydantic import (
     model_validator,
 )
 
+from pyiceberg.exceptions import ValidationError
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import (
     BucketTransform,
@@ -56,6 +57,7 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, time_to_micros
@@ -86,10 +88,10 @@ class PartitionField(IcebergBaseModel):
 
     def __init__(
         self,
-        source_id: Optional[int] = None,
-        field_id: Optional[int] = None,
-        transform: Optional[Transform[Any, Any]] = None,
-        name: Optional[str] = None,
+        source_id: int | None = None,
+        field_id: int | None = None,
+        transform: Transform[Any, Any] | None = None,
+        name: str | None = None,
         **data: Any,
     ):
         if source_id is not None:
@@ -131,7 +133,7 @@ class PartitionSpec(IcebergBaseModel):
     """
 
     spec_id: int = Field(alias="spec-id", default=INITIAL_PARTITION_SPEC_ID)
-    fields: Tuple[PartitionField, ...] = Field(default_factory=tuple)
+    fields: tuple[PartitionField, ...] = Field(default_factory=tuple)
 
     def __init__(
         self,
@@ -181,15 +183,15 @@ class PartitionSpec(IcebergBaseModel):
         return PARTITION_FIELD_ID_START - 1
 
     @cached_property
-    def source_id_to_fields_map(self) -> Dict[int, List[PartitionField]]:
-        source_id_to_fields_map: Dict[int, List[PartitionField]] = {}
+    def source_id_to_fields_map(self) -> dict[int, list[PartitionField]]:
+        source_id_to_fields_map: dict[int, list[PartitionField]] = {}
         for partition_field in self.fields:
             existing = source_id_to_fields_map.get(partition_field.source_id, [])
             existing.append(partition_field)
             source_id_to_fields_map[partition_field.source_id] = existing
         return source_id_to_fields_map
 
-    def fields_by_source_id(self, field_id: int) -> List[PartitionField]:
+    def fields_by_source_id(self, field_id: int) -> list[PartitionField]:
         return self.source_id_to_fields_map.get(field_id, [])
 
     def compatible_with(self, other: PartitionSpec) -> bool:
@@ -202,7 +204,7 @@ class PartitionSpec(IcebergBaseModel):
             this_field.source_id == that_field.source_id
             and this_field.transform == that_field.transform
             and this_field.name == that_field.name
-            for this_field, that_field in zip(self.fields, other.fields)
+            for this_field, that_field in zip(self.fields, other.fields, strict=True)
         )
 
     def partition_type(self, schema: Schema) -> StructType:
@@ -222,11 +224,14 @@ class PartitionSpec(IcebergBaseModel):
         :return: A StructType that represents the PartitionSpec, with a NestedField for each PartitionField.
         """
         nested_fields = []
+        schema_ids = schema._lazy_id_to_field
         for field in self.fields:
-            source_type = schema.find_type(field.source_id)
-            result_type = field.transform.result_type(source_type)
-            required = schema.find_field(field.source_id).required
-            nested_fields.append(NestedField(field.field_id, field.name, result_type, required=required))
+            if source_field := schema_ids.get(field.source_id):
+                result_type = field.transform.result_type(source_field.field_type)
+                nested_fields.append(NestedField(field.field_id, field.name, result_type, required=source_field.required))
+            else:
+                # Since the source field has been drop we cannot determine the type
+                nested_fields.append(NestedField(field.field_id, field.name, UnknownType()))
         return StructType(*nested_fields)
 
     def partition_to_path(self, data: Record, schema: Schema) -> str:
@@ -242,8 +247,41 @@ class PartitionSpec(IcebergBaseModel):
             value_strs.append(quote_plus(value_str, safe=""))
             field_strs.append(quote_plus(partition_field.name, safe=""))
 
-        path = "/".join([field_str + "=" + value_str for field_str, value_str in zip(field_strs, value_strs)])
+        path = "/".join([field_str + "=" + value_str for field_str, value_str in zip(field_strs, value_strs, strict=True)])
         return path
+
+    def check_compatible(self, schema: Schema, allow_missing_fields: bool = False) -> None:
+        # if the underlying field is dropped, we cannot check they are compatible -- continue
+        schema_fields = schema._lazy_id_to_field
+        parents = schema._lazy_id_to_parent
+
+        for field in self.fields:
+            source_field = schema_fields.get(field.source_id)
+
+            if allow_missing_fields and source_field is None:
+                continue
+
+            if isinstance(field.transform, VoidTransform):
+                continue
+
+            if not source_field:
+                raise ValidationError(f"Cannot find source column for partition field: {field}")
+
+            source_type = source_field.field_type
+            if not source_type.is_primitive:
+                raise ValidationError(f"Cannot partition by non-primitive source field: {source_field}")
+            if not field.transform.can_transform(source_type):
+                raise ValidationError(
+                    f"Invalid source field {source_field.name} with type {source_type} " + f"for transform: {field.transform}"
+                )
+
+            # The only valid parent types for a PartitionField are StructTypes. This must be checked recursively
+            parent_id = parents.get(field.source_id)
+            while parent_id:
+                parent_type = schema.find_type(parent_id)
+                if not parent_type.is_struct:
+                    raise ValidationError(f"Invalid partition field parent: {parent_type}")
+                parent_id = parents.get(parent_id)
 
 
 UNPARTITIONED_PARTITION_SPEC = PartitionSpec(spec_id=0)
@@ -254,7 +292,7 @@ def validate_partition_name(
     partition_transform: Transform[Any, Any],
     source_id: int,
     schema: Schema,
-    partition_names: Set[str],
+    partition_names: set[str],
 ) -> None:
     """Validate that a partition field name doesn't conflict with schema field names."""
     try:
@@ -372,7 +410,7 @@ R = TypeVar("R")
 
 
 @singledispatch
-def _visit(spec: PartitionSpec, schema: Schema, visitor: PartitionSpecVisitor[R]) -> List[R]:
+def _visit(spec: PartitionSpec, schema: Schema, visitor: PartitionSpecVisitor[R]) -> list[R]:
     return [_visit_partition_field(schema, field, visitor) for field in spec.fields]
 
 
@@ -412,7 +450,7 @@ class PartitionFieldValue:
 
 @dataclass(frozen=True)
 class PartitionKey:
-    field_values: List[PartitionFieldValue]
+    field_values: list[PartitionFieldValue]
     partition_spec: PartitionSpec
     schema: Schema
 
@@ -466,7 +504,7 @@ def _to_partition_representation(type: IcebergType, value: Any) -> Any:
 
 @_to_partition_representation.register(TimestampType)
 @_to_partition_representation.register(TimestamptzType)
-def _(type: IcebergType, value: Optional[Union[int, datetime]]) -> Optional[int]:
+def _(type: IcebergType, value: int | datetime | None) -> int | None:
     if value is None:
         return None
     elif isinstance(value, int):
@@ -478,7 +516,7 @@ def _(type: IcebergType, value: Optional[Union[int, datetime]]) -> Optional[int]
 
 
 @_to_partition_representation.register(DateType)
-def _(type: IcebergType, value: Optional[Union[int, date]]) -> Optional[int]:
+def _(type: IcebergType, value: int | date | None) -> int | None:
     if value is None:
         return None
     elif isinstance(value, int):
@@ -490,12 +528,12 @@ def _(type: IcebergType, value: Optional[Union[int, date]]) -> Optional[int]:
 
 
 @_to_partition_representation.register(TimeType)
-def _(type: IcebergType, value: Optional[time]) -> Optional[int]:
+def _(type: IcebergType, value: time | None) -> int | None:
     return time_to_micros(value) if value is not None else None
 
 
 @_to_partition_representation.register(UUIDType)
-def _(type: IcebergType, value: Optional[Union[uuid.UUID, int, bytes]]) -> Optional[Union[bytes, int]]:
+def _(type: IcebergType, value: uuid.UUID | int | bytes | None) -> bytes | int | None:
     if value is None:
         return None
     elif isinstance(value, bytes):
@@ -509,5 +547,5 @@ def _(type: IcebergType, value: Optional[Union[uuid.UUID, int, bytes]]) -> Optio
 
 
 @_to_partition_representation.register(PrimitiveType)
-def _(type: IcebergType, value: Optional[Any]) -> Optional[Any]:
+def _(type: IcebergType, value: Any | None) -> Any | None:
     return value
