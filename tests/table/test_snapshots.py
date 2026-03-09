@@ -398,7 +398,7 @@ def test_merge_snapshot_summaries_overwrite_summary() -> None:
 
 def test_invalid_operation() -> None:
     with pytest.raises(ValueError) as e:
-        update_snapshot_summaries(summary=Summary(Operation("invalid")))  # type: ignore
+        update_snapshot_summaries(summary=Summary(Operation("invalid")))
     assert "Operation not implemented: Operation" in str(e.value)
 
 
