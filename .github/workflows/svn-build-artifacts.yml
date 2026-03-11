@@ -26,6 +26,9 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   svn-build-artifacts:
     name: Build artifacts for SVN on ${{ matrix.os }}
@@ -58,7 +61,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.3.1
+        uses: pypa/cibuildwheel@v3.4.0
         with:
           output-dir: wheelhouse
           config-file: "pyproject.toml"
