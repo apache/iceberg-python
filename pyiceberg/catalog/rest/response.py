@@ -108,7 +108,6 @@ def _handle_non_200_response(exc: HTTPError, error_handler: dict[int, type[Excep
                 phrase = exc.response.reason or f"HTTP {code}"
             response = f"{exception.__name__}: RestError: {phrase}"
         else:
-        else:
             error = ErrorResponse.model_validate_json(exc.response.text).error
             response = f"{error.type}: {error.message}"
     except JSONDecodeError:
