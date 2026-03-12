@@ -328,7 +328,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
 
     @field_serializer("current_snapshot_id")
     def serialize_current_snapshot_id(self, current_snapshot_id: int | None) -> int | None:
-        if current_snapshot_id is None and Config().get_bool("legacy-current-snapshot-id"):
+        if current_snapshot_id is None and Config.load().get_bool("legacy-current-snapshot-id"):
             return -1
         return current_snapshot_id
 

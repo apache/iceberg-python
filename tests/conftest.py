@@ -122,7 +122,8 @@ def _isolate_pyiceberg_config() -> None:
     from pyiceberg.utils.config import Config
 
     with mock.patch.object(Config, "_from_configuration_files", return_value=None):
-        _catalog_module._ENV_CONFIG = Config()
+        _catalog_module._get_env_config.cache_clear()
+        _catalog_module._get_env_config()
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

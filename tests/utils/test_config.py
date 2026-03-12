@@ -28,18 +28,30 @@ EXAMPLE_ENV = {"PYICEBERG_CATALOG__PRODUCTION__URI": "https://service.io/api"}
 
 
 def test_config() -> None:
-    """To check if all the file lookups go well without any mocking"""
+    """Config() should be a pure empty container and perform no implicit IO."""
     assert Config()
+    assert Config().config == {}
+
+
+def test_config_does_not_load_implicitly() -> None:
+    with (
+        mock.patch.object(Config, "_from_configuration_files") as from_files_mock,
+        mock.patch.object(Config, "_from_environment_variables") as from_env_mock,
+    ):
+        Config()
+
+    from_files_mock.assert_not_called()
+    from_env_mock.assert_not_called()
 
 
 @mock.patch.dict(os.environ, EXAMPLE_ENV)
 def test_from_environment_variables() -> None:
-    assert Config().get_catalog_config("production") == {"uri": "https://service.io/api"}
+    assert Config.load().get_catalog_config("production") == {"uri": "https://service.io/api"}
 
 
 @mock.patch.dict(os.environ, EXAMPLE_ENV)
 def test_from_environment_variables_uppercase() -> None:
-    assert Config().get_catalog_config("PRODUCTION") == {"uri": "https://service.io/api"}
+    assert Config.load().get_catalog_config("PRODUCTION") == {"uri": "https://service.io/api"}
 
 
 @mock.patch.dict(
@@ -50,7 +62,7 @@ def test_from_environment_variables_uppercase() -> None:
     },
 )
 def test_fix_nested_objects_from_environment_variables() -> None:
-    assert Config().get_catalog_config("PRODUCTION") == {
+    assert Config.load().get_catalog_config("PRODUCTION") == {
         "s3.region": "eu-north-1",
         "s3.access-key-id": "username",
     }
@@ -59,7 +71,7 @@ def test_fix_nested_objects_from_environment_variables() -> None:
 @mock.patch.dict(os.environ, EXAMPLE_ENV)
 @mock.patch.dict(os.environ, {"PYICEBERG_CATALOG__DEVELOPMENT__URI": "https://dev.service.io/api"})
 def test_list_all_known_catalogs() -> None:
-    catalogs = Config().get_known_catalogs()
+    catalogs = Config.load().get_known_catalogs()
     assert "production" in catalogs
     assert "development" in catalogs
 
@@ -71,7 +83,7 @@ def test_from_configuration_files(tmp_path_factory: pytest.TempPathFactory) -> N
         file.write(yaml_str)
 
     os.environ["PYICEBERG_HOME"] = config_path
-    assert Config().get_catalog_config("production") == {"uri": "https://service.io/api"}
+    assert Config.load().get_catalog_config("production") == {"uri": "https://service.io/api"}
 
 
 def test_lowercase_dictionary_keys() -> None:
@@ -95,13 +107,13 @@ def test_from_configuration_files_get_typed_value(tmp_path_factory: pytest.TempP
 
     os.environ["PYICEBERG_HOME"] = config_path
     with pytest.raises(ValueError):
-        Config().get_bool("max-workers")
+        Config.load().get_bool("max-workers")
 
     with pytest.raises(ValueError):
-        Config().get_int("legacy-current-snapshot-id")
+        Config.load().get_int("legacy-current-snapshot-id")
 
-    assert Config().get_bool("legacy-current-snapshot-id")
-    assert Config().get_int("max-workers") == 4
+    assert Config.load().get_bool("legacy-current-snapshot-id")
+    assert Config.load().get_int("max-workers") == 4
 
 
 @pytest.mark.parametrize(
@@ -183,3 +195,14 @@ def test_config_lookup_order(
     assert (
         result["catalog"]["default"]["uri"] if result else None  # type: ignore
     ) == expected_result, f"Unexpected configuration result. Expected: {expected_result}, Actual: {result}"
+
+
+def test_load_reads_file_and_environment_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PYICEBERG_CATALOG__PRODUCTION__URI", "https://env.service.io/api")
+    with mock.patch.object(
+        Config, "_from_configuration_files", return_value={"catalog": {"production": {"type": "rest"}}}
+    ) as files_mock:
+        config = Config.load()
+
+    files_mock.assert_called_once()
+    assert config.get_catalog_config("production") == {"type": "rest", "uri": "https://env.service.io/api"}
