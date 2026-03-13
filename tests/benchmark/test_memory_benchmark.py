@@ -96,8 +96,7 @@ def test_manifest_cache_memory_growth(memory_catalog: InMemoryCatalog) -> None:
         # Sample memory at intervals
         if (i + 1) % 10 == 0:
             current, _ = tracemalloc.get_traced_memory()
-            cache = manifest_module._manifest_cache
-            cache_size = len(cache) if cache is not None else 0
+            cache_size = len(manifest_module._manifest_cache)
 
             memory_samples.append((i + 1, current, cache_size))
             print(f"  Iteration {i + 1}: Memory={current / 1024:.1f} KB, Cache entries={cache_size}")
@@ -152,8 +151,7 @@ def test_memory_after_gc_with_cache_cleared(memory_catalog: InMemoryCatalog) -> 
 
     gc.collect()
     before_clear_memory, _ = tracemalloc.get_traced_memory()
-    cache = manifest_module._manifest_cache
-    cache_size_before = len(cache) if cache is not None else 0
+    cache_size_before = len(manifest_module._manifest_cache)
     print(f"  Memory before clear: {before_clear_memory / 1024:.1f} KB")
     print(f"  Cache size: {cache_size_before}")
 
@@ -269,8 +267,7 @@ def test_manifest_cache_deduplication_efficiency() -> None:
             _manifests(io, list_path)
 
         # Analyze cache efficiency
-        cache = manifest_module._manifest_cache
-        cache_entries = len(cache) if cache is not None else 0
+        cache_entries = len(manifest_module._manifest_cache)
         # List i contains manifests 0..i, so only the first num_lists manifests are actually used
         manifests_actually_used = num_lists
 
