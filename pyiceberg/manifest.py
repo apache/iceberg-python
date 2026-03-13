@@ -892,14 +892,28 @@ class ManifestFile(Record):
         return hash(self.manifest_path)
 
 
+# Global cache for ManifestFile objects, keyed by manifest_path.
+# This deduplicates ManifestFile objects across manifest lists, which commonly
+# share manifests after append operations.
 _DEFAULT_MANIFEST_CACHE_SIZE = 128
-_manifest_cache_size = Config().get_int("manifest-cache-size") or _DEFAULT_MANIFEST_CACHE_SIZE
+_configured_manifest_cache_size = Config().get_int("manifest-cache-size")
+_manifest_cache_size = (
+    _configured_manifest_cache_size if _configured_manifest_cache_size is not None else _DEFAULT_MANIFEST_CACHE_SIZE
+)
+
+# Lock for thread-safe cache access.
 _manifest_cache_lock = threading.RLock()
-_manifest_cache: LRUCache[str, ManifestFile] = LRUCache(maxsize=_manifest_cache_size)
+_manifest_cache: LRUCache[str, ManifestFile] | dict[str, ManifestFile] = (
+    LRUCache(maxsize=_manifest_cache_size) if _manifest_cache_size > 0 else {}
+)
 
 
 def clear_manifest_cache() -> None:
-    """Clear the manifest cache."""
+    """Clear cached ManifestFile objects.
+
+    This is primarily useful in long-lived or memory-sensitive processes that
+    want to release cached manifest metadata between bursts of table reads.
+    """
     with _manifest_cache_lock:
         _manifest_cache.clear()
 
@@ -930,6 +944,9 @@ def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
     """
     file = io.new_input(manifest_list)
     manifest_files = list(read_manifest_list(file))
+
+    if _manifest_cache_size == 0:
+        return tuple(manifest_files)
 
     result = []
     with _manifest_cache_lock:
