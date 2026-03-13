@@ -54,7 +54,7 @@ from pyiceberg.types import (
 
 UNASSIGNED_SEQ = -1
 DEFAULT_BLOCK_SIZE = 67108864  # 64 * 1024 * 1024
-DEFAULT_READ_VERSION: Literal[2] = 2
+DEFAULT_READ_VERSION: Literal[3] = 3
 
 INITIAL_SEQUENCE_NUMBER = 0
 
@@ -852,6 +852,17 @@ class ManifestFile(Record):
     def key_metadata(self) -> bytes | None:
         return self._data[14]
 
+    @property
+    def first_row_id(self) -> int | None:
+        return self._data[15] if len(self._data) > 15 else None
+
+    @first_row_id.setter
+    def first_row_id(self, value: int | None) -> None:
+        if len(self._data) <= 15:
+            self._data.append(value)
+        else:
+            self._data[15] = value
+
     def has_added_files(self) -> bool:
         return self.added_files_count is None or self.added_files_count > 0
 
@@ -1240,6 +1251,12 @@ class ManifestWriterV2(ManifestWriter):
         return entry
 
 
+class ManifestWriterV3(ManifestWriterV2):
+    @property
+    def version(self) -> TableVersion:
+        return 3
+
+
 def write_manifest(
     format_version: TableVersion,
     spec: PartitionSpec,
@@ -1252,6 +1269,8 @@ def write_manifest(
         return ManifestWriterV1(spec, schema, output_file, snapshot_id, avro_compression)
     elif format_version == 2:
         return ManifestWriterV2(spec, schema, output_file, snapshot_id, avro_compression)
+    elif format_version == 3:
+        return ManifestWriterV3(spec, schema, output_file, snapshot_id, avro_compression)
     else:
         raise ValueError(f"Cannot write manifest for table version: {format_version}")
 
@@ -1294,6 +1313,10 @@ class ManifestListWriter(ABC):
 
     @abstractmethod
     def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile: ...
+
+    @property
+    def next_row_id(self) -> int | None:
+        return None
 
     def add_manifests(self, manifest_files: list[ManifestFile]) -> ManifestListWriter:
         self._writer.write_block([self.prepare_manifest(manifest_file) for manifest_file in manifest_files])
@@ -1351,9 +1374,7 @@ class ManifestListWriterV2(ManifestListWriter):
         self._commit_snapshot_id = snapshot_id
         self._sequence_number = sequence_number
 
-    def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
-        wrapped_manifest_file = copy(manifest_file)
-
+    def _prepare_manifest_for_commit(self, wrapped_manifest_file: ManifestFile) -> ManifestFile:
         if wrapped_manifest_file.sequence_number == UNASSIGNED_SEQ:
             # if the sequence number is being assigned here, then the manifest must be created by the current operation.
             # To validate this, check that the snapshot id matches the current commit
@@ -1374,6 +1395,59 @@ class ManifestListWriterV2(ManifestListWriter):
             wrapped_manifest_file.min_sequence_number = self._sequence_number
         return wrapped_manifest_file
 
+    def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
+        return self._prepare_manifest_for_commit(copy(manifest_file))
+
+
+class ManifestListWriterV3(ManifestListWriterV2):
+    _next_row_id: int
+
+    def __init__(
+        self,
+        output_file: OutputFile,
+        snapshot_id: int,
+        parent_snapshot_id: int | None,
+        sequence_number: int,
+        snapshot_first_row_id: int,
+        compression: AvroCompressionCodec,
+    ):
+        super().__init__(
+            output_file=output_file,
+            snapshot_id=snapshot_id,
+            parent_snapshot_id=parent_snapshot_id,
+            sequence_number=sequence_number,
+            compression=compression,
+        )
+        self._format_version = 3
+        self._meta = {
+            "snapshot-id": str(snapshot_id),
+            "parent-snapshot-id": str(parent_snapshot_id) if parent_snapshot_id is not None else "null",
+            "sequence-number": str(sequence_number),
+            "first-row-id": str(snapshot_first_row_id),
+            "format-version": "3",
+            AVRO_CODEC_KEY: compression,
+        }
+        self._next_row_id = snapshot_first_row_id
+
+    @property
+    def next_row_id(self) -> int | None:
+        return self._next_row_id
+
+    def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
+        wrapped_manifest_file = self._prepare_manifest_for_commit(copy(manifest_file))
+
+        if wrapped_manifest_file.content == ManifestContent.DATA and wrapped_manifest_file.first_row_id is None:
+            if wrapped_manifest_file.existing_rows_count is None or wrapped_manifest_file.added_rows_count is None:
+                raise ValueError(
+                    "Cannot assign first row id for a v3 manifest without existing-rows-count and added-rows-count: "
+                    f"{wrapped_manifest_file.manifest_path}"
+                )
+
+            wrapped_manifest_file.first_row_id = self._next_row_id
+            self._next_row_id += wrapped_manifest_file.existing_rows_count + wrapped_manifest_file.added_rows_count
+
+        return wrapped_manifest_file
+
 
 def write_manifest_list(
     format_version: TableVersion,
@@ -1382,6 +1456,7 @@ def write_manifest_list(
     parent_snapshot_id: int | None,
     sequence_number: int | None,
     avro_compression: AvroCompressionCodec,
+    snapshot_first_row_id: int | None = None,
 ) -> ManifestListWriter:
     if format_version == 1:
         return ManifestListWriterV1(output_file, snapshot_id, parent_snapshot_id, avro_compression)
@@ -1389,5 +1464,18 @@ def write_manifest_list(
         if sequence_number is None:
             raise ValueError(f"Sequence-number is required for V2 tables: {sequence_number}")
         return ManifestListWriterV2(output_file, snapshot_id, parent_snapshot_id, sequence_number, avro_compression)
+    elif format_version == 3:
+        if sequence_number is None:
+            raise ValueError(f"Sequence-number is required for V3 tables: {sequence_number}")
+        if snapshot_first_row_id is None:
+            raise ValueError(f"snapshot_first_row_id is required for V3 tables: {snapshot_first_row_id}")
+        return ManifestListWriterV3(
+            output_file=output_file,
+            snapshot_id=snapshot_id,
+            parent_snapshot_id=parent_snapshot_id,
+            sequence_number=sequence_number,
+            snapshot_first_row_id=snapshot_first_row_id,
+            compression=avro_compression,
+        )
     else:
         raise ValueError(f"Cannot write manifest list for table version: {format_version}")

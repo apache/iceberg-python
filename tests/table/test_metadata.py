@@ -184,12 +184,13 @@ def test_serialize_v2(example_table_metadata_v2: dict[str, Any]) -> None:
 
 
 def test_serialize_v3(example_table_metadata_v3: dict[str, Any]) -> None:
-    # Writing will be part of https://github.com/apache/iceberg-python/issues/1551
+    table_metadata = TableMetadataV3(**example_table_metadata_v3)
+    table_metadata_json = table_metadata.model_dump_json()
+    parsed = json.loads(table_metadata_json)
 
-    with pytest.raises(NotImplementedError) as exc_info:
-        _ = TableMetadataV3(**example_table_metadata_v3).model_dump_json()
-
-    assert "Writing V3 is not yet supported, see: https://github.com/apache/iceberg-python/issues/1551" in str(exc_info.value)
+    assert parsed["format-version"] == 3
+    assert parsed["next-row-id"] == 1
+    assert TableMetadataV3(**parsed) == table_metadata
 
 
 def test_migrate_v1_schemas(example_table_metadata_v1: dict[str, Any]) -> None:
@@ -837,6 +838,7 @@ def test_new_table_metadata_with_v3_schema() -> None:
         default_sort_order_id=1,
         refs={},
         format_version=3,
+        next_row_id=0,
     )
 
     assert actual.model_dump() == expected.model_dump()
