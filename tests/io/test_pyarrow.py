@@ -80,6 +80,7 @@ from pyiceberg.io.pyarrow import (
     data_file_statistics_from_parquet_metadata,
     expression_to_pyarrow,
     parquet_path_to_id_mapping,
+    pyarrow_to_schema,
     schema_to_pyarrow,
     write_file,
 )
@@ -659,6 +660,41 @@ def test_geography_type_to_pyarrow_without_geoarrow() -> None:
         sys.modules.update(saved_modules)
 
 
+def test_geospatial_type_to_pyarrow_without_geoarrow_logs_warning_once(caplog: pytest.LogCaptureFixture) -> None:
+    """Test missing geoarrow dependency logs a single warning and falls back to binary."""
+    import sys
+
+    import pyiceberg.io.pyarrow as pyarrow_io
+
+    pyarrow_io._warn_geoarrow_unavailable.cache_clear()
+    caplog.set_level(logging.WARNING, logger="pyiceberg.io.pyarrow")
+
+    saved_modules = {}
+    for mod_name in list(sys.modules.keys()):
+        if mod_name.startswith("geoarrow"):
+            saved_modules[mod_name] = sys.modules.pop(mod_name)
+
+    import builtins
+
+    original_import = builtins.__import__
+
+    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name.startswith("geoarrow"):
+            raise ImportError(f"No module named '{name}'")
+        return original_import(name, *args, **kwargs)
+
+    try:
+        builtins.__import__ = mock_import
+        assert visit(GeometryType(), _ConvertToArrowSchema()) == pa.large_binary()
+        assert visit(GeographyType(), _ConvertToArrowSchema()) == pa.large_binary()
+    finally:
+        builtins.__import__ = original_import
+        sys.modules.update(saved_modules)
+
+    warning_records = [r for r in caplog.records if "geoarrow-pyarrow is not installed" in r.getMessage()]
+    assert len(warning_records) == 1
+
+
 def test_geometry_type_to_pyarrow_with_geoarrow() -> None:
     """Test geometry type uses geoarrow WKB extension type when available."""
     pytest.importorskip("geoarrow.pyarrow")
@@ -699,6 +735,44 @@ def test_geography_type_to_pyarrow_with_geoarrow() -> None:
     result_planar = visit(iceberg_type_planar, _ConvertToArrowSchema())
     expected_planar = ga.wkb().with_crs("OGC:CRS84")
     assert result_planar == expected_planar
+
+
+def test_pyarrow_to_schema_with_geoarrow_wkb_extensions() -> None:
+    pytest.importorskip("geoarrow.pyarrow")
+
+    iceberg_schema = Schema(
+        NestedField(1, "geom", GeometryType(), required=False),
+        NestedField(2, "geog", GeographyType(), required=False),
+        schema_id=1,
+    )
+    arrow_schema = schema_to_pyarrow(iceberg_schema)
+    converted = pyarrow_to_schema(arrow_schema, format_version=3)
+
+    assert converted.find_field("geom").field_type == GeometryType()
+    assert converted.find_field("geog").field_type == GeographyType()
+
+
+def test_check_pyarrow_schema_compatible_allows_planar_geography_geometry_equivalence() -> None:
+    pytest.importorskip("geoarrow.pyarrow")
+
+    requested_schema = Schema(NestedField(1, "shape", GeographyType("OGC:CRS84", "planar"), required=False), schema_id=1)
+    provided_arrow_schema = schema_to_pyarrow(
+        Schema(NestedField(1, "shape", GeometryType("OGC:CRS84"), required=False), schema_id=1)
+    )
+
+    _check_pyarrow_schema_compatible(requested_schema, provided_arrow_schema, format_version=3)
+
+
+def test_check_pyarrow_schema_compatible_rejects_spherical_geography_geometry_equivalence() -> None:
+    pytest.importorskip("geoarrow.pyarrow")
+
+    requested_schema = Schema(NestedField(1, "shape", GeographyType("OGC:CRS84", "spherical"), required=False), schema_id=1)
+    provided_arrow_schema = schema_to_pyarrow(
+        Schema(NestedField(1, "shape", GeometryType("OGC:CRS84"), required=False), schema_id=1)
+    )
+
+    with pytest.raises(ValueError, match="Mismatch in fields"):
+        _check_pyarrow_schema_compatible(requested_schema, provided_arrow_schema, format_version=3)
 
 
 def test_struct_type_to_pyarrow(table_schema_simple: Schema) -> None:
