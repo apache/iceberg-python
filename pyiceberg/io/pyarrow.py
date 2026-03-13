@@ -120,12 +120,13 @@ from pyiceberg.io import (
     OutputFile,
     OutputStream,
 )
+from pyiceberg.io.fileformat import DataFileStatistics as DataFileStatistics
 from pyiceberg.manifest import (
     DataFile,
     DataFileContent,
     FileFormat,
 )
-from pyiceberg.partitioning import PartitionField, PartitionFieldValue, PartitionKey, PartitionSpec, partition_record_value
+from pyiceberg.partitioning import PartitionFieldValue, PartitionKey, PartitionSpec
 from pyiceberg.schema import (
     PartnerAccessor,
     PreOrderSchemaVisitor,
@@ -2471,79 +2472,6 @@ def parquet_path_to_id_mapping(
     for pair in pre_order_visit(schema, ID2ParquetPathVisitor()):
         result[pair.parquet_path] = pair.field_id
     return result
-
-
-@dataclass(frozen=True)
-class DataFileStatistics:
-    record_count: int
-    column_sizes: dict[int, int]
-    value_counts: dict[int, int]
-    null_value_counts: dict[int, int]
-    nan_value_counts: dict[int, int]
-    column_aggregates: dict[int, StatsAggregator]
-    split_offsets: list[int]
-
-    def _partition_value(self, partition_field: PartitionField, schema: Schema) -> Any:
-        if partition_field.source_id not in self.column_aggregates:
-            return None
-
-        source_field = schema.find_field(partition_field.source_id)
-        iceberg_transform = partition_field.transform
-
-        if not iceberg_transform.preserves_order:
-            raise ValueError(
-                f"Cannot infer partition value from parquet metadata for a non-linear Partition Field: "
-                f"{partition_field.name} with transform {partition_field.transform}"
-            )
-
-        transform_func = iceberg_transform.transform(source_field.field_type)
-
-        lower_value = transform_func(
-            partition_record_value(
-                partition_field=partition_field,
-                value=self.column_aggregates[partition_field.source_id].current_min,
-                schema=schema,
-            )
-        )
-        upper_value = transform_func(
-            partition_record_value(
-                partition_field=partition_field,
-                value=self.column_aggregates[partition_field.source_id].current_max,
-                schema=schema,
-            )
-        )
-        if lower_value != upper_value:
-            raise ValueError(
-                f"Cannot infer partition value from parquet metadata as there are more than one partition values "
-                f"for Partition Field: {partition_field.name}. {lower_value=}, {upper_value=}"
-            )
-
-        return lower_value
-
-    def partition(self, partition_spec: PartitionSpec, schema: Schema) -> Record:
-        return Record(*[self._partition_value(field, schema) for field in partition_spec.fields])
-
-    def to_serialized_dict(self) -> dict[str, Any]:
-        lower_bounds = {}
-        upper_bounds = {}
-
-        for k, agg in self.column_aggregates.items():
-            _min = agg.min_as_bytes()
-            if _min is not None:
-                lower_bounds[k] = _min
-            _max = agg.max_as_bytes()
-            if _max is not None:
-                upper_bounds[k] = _max
-        return {
-            "record_count": self.record_count,
-            "column_sizes": self.column_sizes,
-            "value_counts": self.value_counts,
-            "null_value_counts": self.null_value_counts,
-            "nan_value_counts": self.nan_value_counts,
-            "lower_bounds": lower_bounds,
-            "upper_bounds": upper_bounds,
-            "split_offsets": self.split_offsets,
-        }
 
 
 def data_file_statistics_from_parquet_metadata(
