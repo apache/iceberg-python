@@ -2194,22 +2194,40 @@ class DataScan(TableScan):
         tasks = self.plan_files()
 
         for task in tasks:
+            # If limit is set and we've already reached it, stop processing more tasks
+            if self.limit is not None and res >= self.limit:
+                break
+
             # task.residual is a Boolean Expression if the filter condition is fully satisfied by the
             # partition value and task.delete_files represents that positional delete haven't been merged yet
             # hence those files have to read as a pyarrow table applying the filter and deletes
             if task.residual == AlwaysTrue() and len(task.delete_files) == 0:
                 # Every File has a metadata stat that stores the file record count
-                res += task.file.record_count
+                record_count = task.file.record_count
+                # If limit is set, don't exceed it
+                if self.limit is not None and res + record_count > self.limit:
+                    record_count = self.limit - res
+                res += record_count
             else:
+                # Calculate remaining limit to pass to ArrowScan
+                remaining_limit = None
+                if self.limit is not None:
+                    remaining_limit = self.limit - res
+
                 arrow_scan = ArrowScan(
                     table_metadata=self.table_metadata,
                     io=self.io,
                     projected_schema=self.projection(),
                     row_filter=self.row_filter,
                     case_sensitive=self.case_sensitive,
+                    limit=remaining_limit,
                 )
                 tbl = arrow_scan.to_table([task])
-                res += len(tbl)
+                tbl_len = len(tbl)
+                # If limit is set, don't exceed it (though ArrowScan should have handled this)
+                if self.limit is not None and res + tbl_len > self.limit:
+                    tbl_len = self.limit - res
+                res += tbl_len
         return res
 
 
