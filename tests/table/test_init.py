@@ -828,6 +828,40 @@ def test_update_metadata_add_snapshot(table_v2: Table) -> None:
     assert new_metadata.last_updated_ms == new_snapshot.timestamp_ms
 
 
+def test_update_metadata_add_snapshot_rejects_old_timestamp_vs_snapshot_log(table_v2: Table) -> None:
+    oldest_allowed_snapshot_ts = table_v2.metadata.snapshot_log[-1].timestamp_ms - 60_000
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=200,
+        timestamp_ms=oldest_allowed_snapshot_ts - 1,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+    )
+
+    with pytest.raises(ValueError, match="before last snapshot timestamp"):
+        update_table_metadata(table_v2.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
+
+
+def test_update_metadata_add_snapshot_rejects_old_timestamp_vs_last_updated(table_v2: Table) -> None:
+    # Clear snapshot-log to isolate the last_updated_ms guard.
+    base_metadata = table_v2.metadata.model_copy(update={"snapshot_log": []})
+    oldest_allowed_snapshot_ts = base_metadata.last_updated_ms - 60_000
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=200,
+        timestamp_ms=oldest_allowed_snapshot_ts - 1,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+    )
+
+    with pytest.raises(ValueError, match="before last updated timestamp"):
+        update_table_metadata(base_metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
+
+
 def test_update_metadata_set_ref_snapshot(table_v2: Table) -> None:
     update, _ = table_v2.transaction()._set_ref_snapshot(
         snapshot_id=3051729675574597004,
