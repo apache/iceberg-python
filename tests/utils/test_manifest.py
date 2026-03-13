@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=redefined-outer-name,arguments-renamed,fixme
+import importlib
 from tempfile import TemporaryDirectory
 
 import fastavro
@@ -1039,3 +1040,65 @@ def test_clear_manifest_cache() -> None:
         cache_after = manifest_module._manifest_cache
         assert cache_after is not None, "Cache should still be enabled after clear"
         assert len(cache_after) == 0, "Cache should be empty after clear"
+
+
+def test_manifest_cache_can_be_disabled_with_zero_size(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that setting manifest-cache-size to 0 disables caching."""
+    monkeypatch.setenv("PYICEBERG_MANIFEST_CACHE_SIZE", "0")
+    importlib.reload(manifest_module)
+
+    try:
+        assert manifest_module._manifest_cache_size == 0
+        assert len(manifest_module._manifest_cache) == 0
+
+        io = PyArrowFileIO()
+
+        with TemporaryDirectory() as tmp_dir:
+            schema = Schema(NestedField(field_id=1, name="id", field_type=IntegerType(), required=True))
+            spec = UNPARTITIONED_PARTITION_SPEC
+
+            manifest_path = f"{tmp_dir}/manifest.avro"
+            with manifest_module.write_manifest(
+                format_version=2,
+                spec=spec,
+                schema=schema,
+                output_file=io.new_output(manifest_path),
+                snapshot_id=1,
+                avro_compression="zstandard",
+            ) as writer:
+                data_file = manifest_module.DataFile.from_args(
+                    content=manifest_module.DataFileContent.DATA,
+                    file_path=f"{tmp_dir}/data.parquet",
+                    file_format=manifest_module.FileFormat.PARQUET,
+                    partition=Record(),
+                    record_count=100,
+                    file_size_in_bytes=1000,
+                )
+                writer.add_entry(
+                    manifest_module.ManifestEntry.from_args(
+                        status=manifest_module.ManifestEntryStatus.ADDED,
+                        snapshot_id=1,
+                        data_file=data_file,
+                    )
+                )
+            manifest_file = writer.to_manifest_file()
+
+            list_path = f"{tmp_dir}/manifest-list.avro"
+            with manifest_module.write_manifest_list(
+                format_version=2,
+                output_file=io.new_output(list_path),
+                snapshot_id=1,
+                parent_snapshot_id=None,
+                sequence_number=1,
+                avro_compression="zstandard",
+            ) as list_writer:
+                list_writer.add_manifests([manifest_file])
+
+            manifests_first_call = manifest_module._manifests(io, list_path)
+            manifests_second_call = manifest_module._manifests(io, list_path)
+
+            assert len(manifest_module._manifest_cache) == 0
+            assert manifests_first_call[0] is not manifests_second_call[0]
+    finally:
+        monkeypatch.delenv("PYICEBERG_MANIFEST_CACHE_SIZE", raising=False)
+        importlib.reload(manifest_module)
