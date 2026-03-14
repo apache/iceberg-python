@@ -392,69 +392,69 @@ def test_fsspec_unified_session_properties() -> None:
 
 
 @pytest.mark.adls
-def test_fsspec_new_input_file_adls(adls_fsspec_fileio: FsspecFileIO) -> None:
+def test_fsspec_new_input_file_adls(adls_fsspec_fileio: FsspecFileIO, adls_scheme: str) -> None:
     """Test creating a new input file from an fsspec file-io"""
     filename = str(uuid.uuid4())
 
-    input_file = adls_fsspec_fileio.new_input(f"abfss://tests/{filename}")
+    input_file = adls_fsspec_fileio.new_input(f"{adls_scheme}://tests/{filename}")
 
     assert isinstance(input_file, fsspec.FsspecInputFile)
-    assert input_file.location == f"abfss://tests/{filename}"
+    assert input_file.location == f"{adls_scheme}://tests/{filename}"
 
 
 @pytest.mark.adls
-def test_fsspec_new_abfss_output_file_adls(adls_fsspec_fileio: FsspecFileIO) -> None:
+def test_fsspec_new_output_file_adls(adls_fsspec_fileio: FsspecFileIO, adls_scheme: str) -> None:
     """Test creating a new output file from an fsspec file-io"""
     filename = str(uuid.uuid4())
 
-    output_file = adls_fsspec_fileio.new_output(f"abfss://tests/{filename}")
+    output_file = adls_fsspec_fileio.new_output(f"{adls_scheme}://tests/{filename}")
 
     assert isinstance(output_file, fsspec.FsspecOutputFile)
-    assert output_file.location == f"abfss://tests/{filename}"
+    assert output_file.location == f"{adls_scheme}://tests/{filename}"
 
 
 @pytest.mark.adls
-def test_fsspec_write_and_read_file_adls(adls_fsspec_fileio: FsspecFileIO) -> None:
+def test_fsspec_write_and_read_file_adls(adls_fsspec_fileio: FsspecFileIO, adls_scheme: str) -> None:
     """Test writing and reading a file using FsspecInputFile and FsspecOutputFile"""
     filename = str(uuid.uuid4())
-    output_file = adls_fsspec_fileio.new_output(location=f"abfss://tests/{filename}")
+    output_file = adls_fsspec_fileio.new_output(location=f"{adls_scheme}://tests/{filename}")
     with output_file.create() as f:
         f.write(b"foo")
 
-    input_file = adls_fsspec_fileio.new_input(f"abfss://tests/{filename}")
+    input_file = adls_fsspec_fileio.new_input(f"{adls_scheme}://tests/{filename}")
     assert input_file.open().read() == b"foo"
 
     adls_fsspec_fileio.delete(input_file)
 
 
 @pytest.mark.adls
-def test_fsspec_getting_length_of_file_adls(adls_fsspec_fileio: FsspecFileIO) -> None:
+def test_fsspec_getting_length_of_file_adls(adls_fsspec_fileio: FsspecFileIO, adls_scheme: str) -> None:
     """Test getting the length of an FsspecInputFile and FsspecOutputFile"""
     filename = str(uuid.uuid4())
 
-    output_file = adls_fsspec_fileio.new_output(location=f"abfss://tests/{filename}")
+    output_file = adls_fsspec_fileio.new_output(location=f"{adls_scheme}://tests/{filename}")
     with output_file.create() as f:
         f.write(b"foobar")
 
     assert len(output_file) == 6
 
-    input_file = adls_fsspec_fileio.new_input(location=f"abfss://tests/{filename}")
+    input_file = adls_fsspec_fileio.new_input(location=f"{adls_scheme}://tests/{filename}")
     assert len(input_file) == 6
 
     adls_fsspec_fileio.delete(output_file)
 
 
 @pytest.mark.adls
-def test_fsspec_file_tell_adls(adls_fsspec_fileio: FsspecFileIO) -> None:
+def test_fsspec_file_tell_adls(adls_fsspec_fileio: FsspecFileIO, adls_scheme: str) -> None:
     """Test finding cursor position for an fsspec file-io file"""
 
     filename = str(uuid.uuid4())
 
-    output_file = adls_fsspec_fileio.new_output(location=f"abfss://tests/{filename}")
+    output_file = adls_fsspec_fileio.new_output(location=f"{adls_scheme}://tests/{filename}")
     with output_file.create() as write_file:
         write_file.write(b"foobar")
 
-    input_file = adls_fsspec_fileio.new_input(location=f"abfss://tests/{filename}")
+    input_file = adls_fsspec_fileio.new_input(location=f"{adls_scheme}://tests/{filename}")
     f = input_file.open()
 
     f.seek(0)
@@ -466,19 +466,19 @@ def test_fsspec_file_tell_adls(adls_fsspec_fileio: FsspecFileIO) -> None:
     f.seek(0)
     assert f.tell() == 0
 
-    adls_fsspec_fileio.delete(f"abfss://tests/{filename}")
+    adls_fsspec_fileio.delete(f"{adls_scheme}://tests/{filename}")
 
 
 @pytest.mark.adls
-def test_fsspec_read_specified_bytes_for_file_adls(adls_fsspec_fileio: FsspecFileIO) -> None:
+def test_fsspec_read_specified_bytes_for_file_adls(adls_fsspec_fileio: FsspecFileIO, adls_scheme: str) -> None:
     """Test reading a specified number of bytes from an fsspec file-io file"""
 
     filename = str(uuid.uuid4())
-    output_file = adls_fsspec_fileio.new_output(location=f"abfss://tests/{filename}")
+    output_file = adls_fsspec_fileio.new_output(location=f"{adls_scheme}://tests/{filename}")
     with output_file.create() as write_file:
         write_file.write(b"foo")
 
-    input_file = adls_fsspec_fileio.new_input(location=f"abfss://tests/{filename}")
+    input_file = adls_fsspec_fileio.new_input(location=f"{adls_scheme}://tests/{filename}")
     f = input_file.open()
 
     f.seek(0)
@@ -496,11 +496,11 @@ def test_fsspec_read_specified_bytes_for_file_adls(adls_fsspec_fileio: FsspecFil
 
 
 @pytest.mark.adls
-def test_fsspec_raise_on_opening_file_not_found_adls(adls_fsspec_fileio: FsspecFileIO) -> None:
+def test_fsspec_raise_on_opening_file_not_found_adls(adls_fsspec_fileio: FsspecFileIO, adls_scheme: str) -> None:
     """Test that an fsspec input file raises appropriately when the adls file is not found"""
 
     filename = str(uuid.uuid4())
-    input_file = adls_fsspec_fileio.new_input(location=f"abfss://tests/{filename}")
+    input_file = adls_fsspec_fileio.new_input(location=f"{adls_scheme}://tests/{filename}")
     with pytest.raises(FileNotFoundError) as exc_info:
         input_file.open().read()
 
@@ -508,73 +508,73 @@ def test_fsspec_raise_on_opening_file_not_found_adls(adls_fsspec_fileio: FsspecF
 
 
 @pytest.mark.adls
-def test_checking_if_a_file_exists_adls(adls_fsspec_fileio: FsspecFileIO) -> None:
+def test_checking_if_a_file_exists_adls(adls_fsspec_fileio: FsspecFileIO, adls_scheme: str) -> None:
     """Test checking if a file exists"""
 
-    non_existent_file = adls_fsspec_fileio.new_input(location="abfss://tests/does-not-exist.txt")
+    non_existent_file = adls_fsspec_fileio.new_input(location=f"{adls_scheme}://tests/does-not-exist.txt")
     assert not non_existent_file.exists()
 
     filename = str(uuid.uuid4())
-    output_file = adls_fsspec_fileio.new_output(location=f"abfss://tests/{filename}")
+    output_file = adls_fsspec_fileio.new_output(location=f"{adls_scheme}://tests/{filename}")
     assert not output_file.exists()
     with output_file.create() as f:
         f.write(b"foo")
 
-    existing_input_file = adls_fsspec_fileio.new_input(location=f"abfss://tests/{filename}")
+    existing_input_file = adls_fsspec_fileio.new_input(location=f"{adls_scheme}://tests/{filename}")
     assert existing_input_file.exists()
 
-    existing_output_file = adls_fsspec_fileio.new_output(location=f"abfss://tests/{filename}")
+    existing_output_file = adls_fsspec_fileio.new_output(location=f"{adls_scheme}://tests/{filename}")
     assert existing_output_file.exists()
 
     adls_fsspec_fileio.delete(existing_output_file)
 
 
 @pytest.mark.adls
-def test_closing_a_file_adls(adls_fsspec_fileio: FsspecFileIO) -> None:
+def test_closing_a_file_adls(adls_fsspec_fileio: FsspecFileIO, adls_scheme: str) -> None:
     """Test closing an output file and input file"""
     filename = str(uuid.uuid4())
-    output_file = adls_fsspec_fileio.new_output(location=f"abfss://tests/{filename}")
+    output_file = adls_fsspec_fileio.new_output(location=f"{adls_scheme}://tests/{filename}")
     with output_file.create() as write_file:
         write_file.write(b"foo")
         assert not write_file.closed  # type: ignore
     assert write_file.closed  # type: ignore
 
-    input_file = adls_fsspec_fileio.new_input(location=f"abfss://tests/{filename}")
+    input_file = adls_fsspec_fileio.new_input(location=f"{adls_scheme}://tests/{filename}")
     f = input_file.open()
     assert not f.closed  # type: ignore
     f.close()
     assert f.closed  # type: ignore
 
-    adls_fsspec_fileio.delete(f"abfss://tests/{filename}")
+    adls_fsspec_fileio.delete(f"{adls_scheme}://tests/{filename}")
 
 
 @pytest.mark.adls
-def test_fsspec_converting_an_outputfile_to_an_inputfile_adls(adls_fsspec_fileio: FsspecFileIO) -> None:
+def test_fsspec_converting_an_outputfile_to_an_inputfile_adls(adls_fsspec_fileio: FsspecFileIO, adls_scheme: str) -> None:
     """Test converting an output file to an input file"""
     filename = str(uuid.uuid4())
-    output_file = adls_fsspec_fileio.new_output(location=f"abfss://tests/{filename}")
+    output_file = adls_fsspec_fileio.new_output(location=f"{adls_scheme}://tests/{filename}")
     input_file = output_file.to_input_file()
     assert input_file.location == output_file.location
 
 
 @pytest.mark.adls
-def test_writing_avro_file_adls(generated_manifest_entry_file: str, adls_fsspec_fileio: FsspecFileIO) -> None:
+def test_writing_avro_file_adls(generated_manifest_entry_file: str, adls_fsspec_fileio: FsspecFileIO, adls_scheme: str) -> None:
     """Test that bytes match when reading a local avro file, writing it using fsspec file-io, and then reading it again"""
     filename = str(uuid.uuid4())
     with PyArrowFileIO().new_input(location=generated_manifest_entry_file).open() as f:
         b1 = f.read()
-        with adls_fsspec_fileio.new_output(location=f"abfss://tests/{filename}").create() as out_f:
+        with adls_fsspec_fileio.new_output(location=f"{adls_scheme}://tests/{filename}").create() as out_f:
             out_f.write(b1)
-        with adls_fsspec_fileio.new_input(location=f"abfss://tests/{filename}").open() as in_f:
+        with adls_fsspec_fileio.new_input(location=f"{adls_scheme}://tests/{filename}").open() as in_f:
             b2 = in_f.read()
             assert b1 == b2  # Check that bytes of read from local avro file match bytes written to adls
 
-    adls_fsspec_fileio.delete(f"abfss://tests/{filename}")
+    adls_fsspec_fileio.delete(f"{adls_scheme}://tests/{filename}")
 
 
 @pytest.mark.adls
-def test_fsspec_pickle_round_trip_aldfs(adls_fsspec_fileio: FsspecFileIO) -> None:
-    _test_fsspec_pickle_round_trip(adls_fsspec_fileio, "abfss://tests/foo.txt")
+def test_fsspec_pickle_round_trip_aldfs(adls_fsspec_fileio: FsspecFileIO, adls_scheme: str) -> None:
+    _test_fsspec_pickle_round_trip(adls_fsspec_fileio, f"{adls_scheme}://tests/foo.txt")
 
 
 @pytest.mark.adls

@@ -251,6 +251,16 @@ def _adls(properties: Properties, hostname: str | None = None) -> AbstractFileSy
     from azure.core.credentials import AccessToken
     from azure.core.credentials_async import AsyncTokenCredential
 
+    # Monkeypatch AzureBlobFileSystem._strip_protocol function
+    # adlfs expects abfs/abfss. For compatibility, convert wasb/wasbs to abfs/abfss
+    _original_strip_protocol = AzureBlobFileSystem._strip_protocol
+
+    def strip_protocol_patch(cls, path: str):  # type: ignore
+        path = path.replace("wasb://", "abfs://").replace("wasbs://", "abfss://")
+        return _original_strip_protocol(path)
+
+    AzureBlobFileSystem._strip_protocol = classmethod(strip_protocol_patch)
+
     for key, sas_token in {
         key.replace(f"{ADLS_SAS_TOKEN}.", ""): value for key, value in properties.items() if key.startswith(f"{ADLS_SAS_TOKEN}.")
     }.items():
@@ -312,6 +322,8 @@ SCHEME_TO_FS: dict[str, Callable[..., AbstractFileSystem]] = {
     "s3n": _s3,
     "abfs": _adls,
     "abfss": _adls,
+    "wasb": _adls,
+    "wasbs": _adls,
     "gs": _gs,
     "gcs": _gs,
     "hf": _hf,
