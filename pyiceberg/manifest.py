@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 import threading
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Iterator, MutableMapping
 from copy import copy
 from enum import Enum
 from types import TracebackType
@@ -898,14 +898,12 @@ class ManifestFile(Record):
 _DEFAULT_MANIFEST_CACHE_SIZE = 128
 _configured_manifest_cache_size = Config().get_int("manifest-cache-size")
 _manifest_cache_size = (
-    _configured_manifest_cache_size if _configured_manifest_cache_size is not None else _DEFAULT_MANIFEST_CACHE_SIZE
+    max(_configured_manifest_cache_size, 0) if _configured_manifest_cache_size is not None else _DEFAULT_MANIFEST_CACHE_SIZE
 )
 
-# Lock for thread-safe cache access.
+# Lock for thread-safe cache access
 _manifest_cache_lock = threading.RLock()
-_manifest_cache: LRUCache[str, ManifestFile] | dict[str, ManifestFile] = (
-    LRUCache(maxsize=_manifest_cache_size) if _manifest_cache_size > 0 else {}
-)
+_manifest_cache: MutableMapping[str, ManifestFile] = LRUCache(maxsize=_manifest_cache_size) if _manifest_cache_size > 0 else {}
 
 
 def clear_manifest_cache() -> None:
