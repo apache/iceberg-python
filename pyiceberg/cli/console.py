@@ -101,6 +101,9 @@ def run(
     else:
         ctx.obj["output"] = JsonOutput(verbose=verbose)
 
+    if ctx.invoked_subcommand == "version":
+        return
+
     try:
         ctx.obj["catalog"] = load_catalog(catalog, **properties)
     except Exception as e:

@@ -25,6 +25,7 @@ import pytest
 from click.testing import CliRunner
 from pytest_mock import MockFixture
 
+from pyiceberg import __version__
 from pyiceberg.catalog.memory import InMemoryCatalog
 from pyiceberg.cli.console import run
 from pyiceberg.io import WAREHOUSE
@@ -59,6 +60,17 @@ def test_hive_catalog_missing_uri_shows_helpful_error(mocker: MockFixture) -> No
     assert result.exit_code == 1
     assert "URI missing, please provide using --uri" in result.output
     assert "'uri'" not in result.output
+
+
+def test_version_does_not_load_catalog(mocker: MockFixture) -> None:
+    mock_load_catalog = mocker.patch("pyiceberg.cli.console.load_catalog", side_effect=Exception("should not be called"))
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["version"])
+
+    assert result.exit_code == 0
+    assert result.output == f"{__version__}\n"
+    mock_load_catalog.assert_not_called()
 
 
 @pytest.fixture(autouse=True)
