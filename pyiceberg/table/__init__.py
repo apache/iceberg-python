@@ -542,12 +542,69 @@ class Transaction:
             )
         )
 
-        partitions_to_overwrite = {data_file.partition for data_file in data_files}
-        delete_filter = self._build_partition_predicate(
-            partition_records=partitions_to_overwrite, spec=self.table_metadata.spec(), schema=self.table_metadata.schema()
-        )
-        self.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties, branch=branch)
+        # partitions_to_overwrite = {data_file.partition for data_file in data_files}
+        # delete_filter = self._build_partition_predicate(
+        #     partition_records=partitions_to_overwrite, spec=self.table_metadata.spec(), schema=self.table_metadata.schema()
+        # )
+        # self.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties, branch=branch)
 
+        # Build the partition predicate per-spec to handle tables that have
+        # undergone partition spec evolution. Manifests in the snapshot may be
+        # written under different (older) specs. We need to project the overwrite
+        # partitions into each historical spec's coordinate space so that the
+        # manifest evaluator correctly identifies which old manifests to delete.
+        current_spec = self.table_metadata.spec()
+        current_schema = self.table_metadata.schema()
+
+        # Collect the source column names (e.g. "category") that are being
+        # overwritten — these are stable across spec evolution (only field IDs matter).
+        overwrite_source_ids = {field.source_id for field in current_spec.fields}
+
+        delete_filter: BooleanExpression = AlwaysFalse()
+
+        # For each historical spec in the snapshot, build a predicate using
+        # only the fields that spec knows about, matched against the
+        # corresponding positions in the new data files' partition records.
+        snapshot = self.table_metadata.snapshot_by_name(branch or MAIN_BRANCH)
+        if snapshot is not None:
+            spec_ids_in_snapshot = {m.partition_spec_id for m in snapshot.manifests(io=self._table.io)}
+        else:
+            spec_ids_in_snapshot = {current_spec.spec_id}
+
+        for spec_id in spec_ids_in_snapshot:
+            historical_spec = self.table_metadata.specs()[spec_id]
+            # Find which fields this historical spec shares with the current spec
+            shared_source_ids = {f.source_id for f in historical_spec.fields} & overwrite_source_ids
+            if not shared_source_ids:
+                # No overlap — this spec's manifests cannot contain our partitions
+                continue
+
+            # Project the new data files' partitions into this historical spec's space:
+            # for each new data file, build a partition record using only the
+            # fields this historical spec knows about.
+            historical_partitions: set[Record] = set()
+            for data_file in data_files:
+                # data_file.partition is under current_spec — extract shared field values
+                record_values = []
+                for field in historical_spec.fields:
+                    if field.source_id in overwrite_source_ids:
+                        # find position of this source_id in current spec
+                        current_pos = next(i for i, f in enumerate(current_spec.fields) if f.source_id == field.source_id)
+                        record_values.append(data_file.partition[current_pos])
+                    else:
+                        record_values.append(None)
+                historical_partitions.add(Record(*record_values))
+
+            delete_filter = Or(
+                delete_filter,
+                self._build_partition_predicate(
+                    partition_records=historical_partitions,
+                    spec=historical_spec,
+                    schema=current_schema,
+                ),
+            )
+
+        self.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties, branch=branch)
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
             append_files.commit_uuid = append_snapshot_commit_uuid
             for data_file in data_files:
