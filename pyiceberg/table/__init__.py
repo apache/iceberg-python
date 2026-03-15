@@ -553,7 +553,6 @@ class Transaction:
         # written under different (older) specs. We need to project the overwrite
         # partitions into each historical spec's coordinate space so that the
         # manifest evaluator correctly identifies which old manifests to delete.
-        # See: https://github.com/apache/iceberg-python/issues/XXXX
         current_spec = self.table_metadata.spec()
         current_schema = self.table_metadata.schema()
 
