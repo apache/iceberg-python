@@ -26,7 +26,6 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 import thrift.transport.TSocket
-from thrift.transport import TSocket, TTransport
 from hive_metastore.ttypes import (
     AlreadyExistsException,
     EnvironmentContext,
@@ -42,6 +41,7 @@ from hive_metastore.ttypes import (
 )
 from hive_metastore.ttypes import Database as HiveDatabase
 from hive_metastore.ttypes import Table as HiveTable
+from thrift.transport import TSocket, TTransport
 
 from pyiceberg.catalog import PropertiesUpdateSummary
 from pyiceberg.catalog.hive import (
@@ -1329,9 +1329,7 @@ def test_create_hive_client_success() -> None:
 
     with patch("pyiceberg.catalog.hive._HiveClient", return_value=MagicMock()) as mock_hive_client:
         client = HiveCatalog._create_hive_client(properties)
-        mock_hive_client.assert_called_once_with(
-            "thrift://localhost:10000", "user", False, "hive", auth_mechanism=None
-        )
+        mock_hive_client.assert_called_once_with("thrift://localhost:10000", "user", False, "hive", auth_mechanism=None)
         assert client is not None
 
 
@@ -1344,9 +1342,7 @@ def test_create_hive_client_with_kerberos_success() -> None:
     }
     with patch("pyiceberg.catalog.hive._HiveClient", return_value=MagicMock()) as mock_hive_client:
         client = HiveCatalog._create_hive_client(properties)
-        mock_hive_client.assert_called_once_with(
-            "thrift://localhost:10000", "user", True, "hiveuser", auth_mechanism=None
-        )
+        mock_hive_client.assert_called_once_with("thrift://localhost:10000", "user", True, "hiveuser", auth_mechanism=None)
         assert client is not None
 
 
@@ -1358,10 +1354,12 @@ def test_create_hive_client_multiple_uris() -> None:
 
         client = HiveCatalog._create_hive_client(properties)
         assert mock_hive_client.call_count == 2
-        mock_hive_client.assert_has_calls([
-            call("thrift://localhost:10000", "user", False, "hive", auth_mechanism=None),
-            call("thrift://localhost:10001", "user", False, "hive", auth_mechanism=None),
-        ])
+        mock_hive_client.assert_has_calls(
+            [
+                call("thrift://localhost:10000", "user", False, "hive", auth_mechanism=None),
+                call("thrift://localhost:10001", "user", False, "hive", auth_mechanism=None),
+            ]
+        )
         assert client is not None
 
 

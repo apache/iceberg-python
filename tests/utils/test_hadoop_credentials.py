@@ -161,9 +161,11 @@ def test_read_hadoop_text_invalid_utf8() -> None:
 def test_read_hive_delegation_token_valid(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     identifier = b"test-identifier-bytes"
     password = b"test-password-bytes"
-    token_data = _build_token_file([
-        (identifier, password, "HIVE_DELEGATION_TOKEN", "hive_service"),
-    ])
+    token_data = _build_token_file(
+        [
+            (identifier, password, "HIVE_DELEGATION_TOKEN", "hive_service"),
+        ]
+    )
 
     token_file = tmp_path / "token_file"
     token_file.write_bytes(token_data)
@@ -179,10 +181,12 @@ def test_read_hive_delegation_token_multiple_tokens(tmp_path: pathlib.Path, monk
     """The parser should find the HIVE_DELEGATION_TOKEN even if other tokens come first."""
     identifier = b"hive-id"
     password = b"hive-pw"
-    token_data = _build_token_file([
-        (b"hdfs-id", b"hdfs-pw", "HDFS_DELEGATION_TOKEN", "hdfs_service"),
-        (identifier, password, "HIVE_DELEGATION_TOKEN", "hive_service"),
-    ])
+    token_data = _build_token_file(
+        [
+            (b"hdfs-id", b"hdfs-pw", "HDFS_DELEGATION_TOKEN", "hdfs_service"),
+            (identifier, password, "HIVE_DELEGATION_TOKEN", "hive_service"),
+        ]
+    )
 
     token_file = tmp_path / "token_file"
     token_file.write_bytes(token_data)
@@ -239,9 +243,11 @@ def test_read_hive_delegation_token_unsupported_version(tmp_path: pathlib.Path, 
 
 
 def test_read_hive_delegation_token_no_hive_token(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    token_data = _build_token_file([
-        (b"hdfs-id", b"hdfs-pw", "HDFS_DELEGATION_TOKEN", "hdfs_service"),
-    ])
+    token_data = _build_token_file(
+        [
+            (b"hdfs-id", b"hdfs-pw", "HDFS_DELEGATION_TOKEN", "hdfs_service"),
+        ]
+    )
 
     token_file = tmp_path / "token_file"
     token_file.write_bytes(token_data)
@@ -253,9 +259,11 @@ def test_read_hive_delegation_token_no_hive_token(tmp_path: pathlib.Path, monkey
 
 def test_read_hive_delegation_token_truncated(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Build a valid file and then truncate it
-    token_data = _build_token_file([
-        (b"test-id", b"test-pw", "HIVE_DELEGATION_TOKEN", "hive_service"),
-    ])
+    token_data = _build_token_file(
+        [
+            (b"test-id", b"test-pw", "HIVE_DELEGATION_TOKEN", "hive_service"),
+        ]
+    )
     truncated = token_data[:10]  # Cut off in the middle
 
     token_file = tmp_path / "token_file"

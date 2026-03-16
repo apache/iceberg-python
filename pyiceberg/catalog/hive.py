@@ -206,10 +206,7 @@ class _HiveClient:
                 password=password,
             )
         else:
-            raise HiveAuthError(
-                f"Unknown auth mechanism: {self._auth_mechanism!r}. "
-                f"Valid values: NONE, KERBEROS, DIGEST-MD5"
-            )
+            raise HiveAuthError(f"Unknown auth mechanism: {self._auth_mechanism!r}. Valid values: NONE, KERBEROS, DIGEST-MD5")
 
     def _client(self) -> Client:
         protocol = TBinaryProtocol.TBinaryProtocol(self._transport)

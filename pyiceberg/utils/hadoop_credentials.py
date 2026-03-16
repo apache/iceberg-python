@@ -138,6 +138,5 @@ def read_hive_delegation_token() -> tuple[str, str]:
             )
 
     raise HiveAuthError(
-        f"No {HIVE_DELEGATION_TOKEN_KIND} found in token file: {token_file}. "
-        f"File contains {num_tokens} token(s)."
+        f"No {HIVE_DELEGATION_TOKEN_KIND} found in token file: {token_file}. File contains {num_tokens} token(s)."
     )
