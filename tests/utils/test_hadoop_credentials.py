@@ -17,7 +17,7 @@
 # pylint: disable=protected-access
 
 import base64
-import os
+import pathlib
 import struct
 from io import BytesIO
 
@@ -34,11 +34,22 @@ from pyiceberg.utils.hadoop_credentials import (
 
 
 def _write_vint(value: int) -> bytes:
-    """Encode a non-negative integer as a Hadoop VInt (simplified for tests)."""
-    if value <= 0x7F:
-        return bytes([value])
-    # For values > 127, use 2-byte encoding (sufficient for test data)
-    return bytes([0x80 | ((value >> 8) & 0x7F), value & 0xFF])
+    """Encode an integer as a Hadoop VInt (matching Java WritableUtils.writeVLong)."""
+    if -112 <= value <= 127:
+        return struct.pack("b", value)
+    negative = value < 0
+    work = ~value if negative else value
+    # Java: len starts at -120 (negative) or -112 (positive),
+    # decrements for each significant byte in the value
+    prefix = -120 if negative else -112
+    tmp = work
+    while tmp != 0:
+        tmp >>= 8
+        prefix -= 1
+    num_bytes = (-119 - prefix) if negative else (-111 - prefix)
+    result = struct.pack("b", prefix)
+    result += work.to_bytes(num_bytes, byteorder="big", signed=False)
+    return result
 
 
 def _write_bytes(data: bytes) -> bytes:
@@ -69,6 +80,9 @@ def _build_token_file(tokens: list[tuple[bytes, bytes, str, str]]) -> bytes:
     return bytes(buf)
 
 
+# --- VInt unit tests ---
+
+
 def test_read_hadoop_vint_single_byte() -> None:
     stream = BytesIO(bytes([42]))
     assert _read_hadoop_vint(stream) == 42
@@ -84,10 +98,42 @@ def test_read_hadoop_vint_max_single_byte() -> None:
     assert _read_hadoop_vint(stream) == 127
 
 
+def test_read_hadoop_vint_negative_single_byte() -> None:
+    """Values -112 through -1 are single-byte in Hadoop VInt."""
+    for value in [-1, -50, -112]:
+        encoded = _write_vint(value)
+        assert _read_hadoop_vint(BytesIO(encoded)) == value
+
+
+def test_read_hadoop_vint_multi_byte_positive() -> None:
+    """Values > 127 require multi-byte encoding."""
+    for value in [128, 255, 256, 1000, 65535]:
+        encoded = _write_vint(value)
+        assert _read_hadoop_vint(BytesIO(encoded)) == value
+
+
+def test_read_hadoop_vint_multi_byte_negative() -> None:
+    """Values < -112 require multi-byte encoding with negative flag."""
+    for value in [-113, -200, -1000]:
+        encoded = _write_vint(value)
+        assert _read_hadoop_vint(BytesIO(encoded)) == value
+
+
 def test_read_hadoop_vint_empty_stream() -> None:
     stream = BytesIO(b"")
     with pytest.raises(HiveAuthError, match="Unexpected end of token file"):
         _read_hadoop_vint(stream)
+
+
+def test_read_hadoop_vint_truncated_multi_byte() -> None:
+    """Multi-byte VInt with missing payload bytes should raise."""
+    # Prefix byte for 2-byte positive value, but no payload
+    stream = BytesIO(struct.pack("b", -113))
+    with pytest.raises(HiveAuthError, match="Unexpected end of token file"):
+        _read_hadoop_vint(stream)
+
+
+# --- Bytes/Text unit tests ---
 
 
 def test_read_hadoop_bytes() -> None:
@@ -101,25 +147,35 @@ def test_read_hadoop_text() -> None:
     assert _read_hadoop_text(stream) == "hello"
 
 
-def test_read_hive_delegation_token_valid(tmp_path: object, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_read_hadoop_text_invalid_utf8() -> None:
+    """Invalid UTF-8 in text field should raise HiveAuthError."""
+    invalid_bytes = b"\xff\xfe"
+    raw = _write_vint(len(invalid_bytes)) + invalid_bytes
+    with pytest.raises(HiveAuthError, match="invalid UTF-8"):
+        _read_hadoop_text(BytesIO(raw))
+
+
+# --- Token file tests ---
+
+
+def test_read_hive_delegation_token_valid(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     identifier = b"test-identifier-bytes"
     password = b"test-password-bytes"
     token_data = _build_token_file([
         (identifier, password, "HIVE_DELEGATION_TOKEN", "hive_service"),
     ])
 
-    token_file = os.path.join(str(tmp_path), "token_file")
-    with open(token_file, "wb") as f:
-        f.write(token_data)
+    token_file = tmp_path / "token_file"
+    token_file.write_bytes(token_data)
 
-    monkeypatch.setenv(HADOOP_TOKEN_FILE_LOCATION, token_file)
+    monkeypatch.setenv(HADOOP_TOKEN_FILE_LOCATION, str(token_file))
     result_id, result_pw = read_hive_delegation_token()
 
     assert result_id == base64.b64encode(identifier).decode("ascii")
     assert result_pw == base64.b64encode(password).decode("ascii")
 
 
-def test_read_hive_delegation_token_multiple_tokens(tmp_path: object, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_read_hive_delegation_token_multiple_tokens(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The parser should find the HIVE_DELEGATION_TOKEN even if other tokens come first."""
     identifier = b"hive-id"
     password = b"hive-pw"
@@ -128,11 +184,10 @@ def test_read_hive_delegation_token_multiple_tokens(tmp_path: object, monkeypatc
         (identifier, password, "HIVE_DELEGATION_TOKEN", "hive_service"),
     ])
 
-    token_file = os.path.join(str(tmp_path), "token_file")
-    with open(token_file, "wb") as f:
-        f.write(token_data)
+    token_file = tmp_path / "token_file"
+    token_file.write_bytes(token_data)
 
-    monkeypatch.setenv(HADOOP_TOKEN_FILE_LOCATION, token_file)
+    monkeypatch.setenv(HADOOP_TOKEN_FILE_LOCATION, str(token_file))
     result_id, result_pw = read_hive_delegation_token()
 
     assert result_id == base64.b64encode(identifier).decode("ascii")
@@ -147,55 +202,65 @@ def test_read_hive_delegation_token_env_not_set(monkeypatch: pytest.MonkeyPatch)
 
 def test_read_hive_delegation_token_file_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(HADOOP_TOKEN_FILE_LOCATION, "/nonexistent/path/token_file")
-    with pytest.raises(HiveAuthError, match="not found"):
+    with pytest.raises(HiveAuthError, match="Cannot read Hadoop token file"):
         read_hive_delegation_token()
 
 
-def test_read_hive_delegation_token_bad_magic(tmp_path: object, monkeypatch: pytest.MonkeyPatch) -> None:
-    token_file = os.path.join(str(tmp_path), "token_file")
-    with open(token_file, "wb") as f:
-        f.write(b"BAAD\x00\x00")
+def test_read_hive_delegation_token_permission_error(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Permission errors on the token file should raise HiveAuthError."""
+    token_file = tmp_path / "token_file"
+    token_file.write_bytes(b"HDTS\x00\x00")
+    token_file.chmod(0o000)
 
-    monkeypatch.setenv(HADOOP_TOKEN_FILE_LOCATION, token_file)
+    monkeypatch.setenv(HADOOP_TOKEN_FILE_LOCATION, str(token_file))
+    try:
+        with pytest.raises(HiveAuthError, match="Cannot read Hadoop token file"):
+            read_hive_delegation_token()
+    finally:
+        token_file.chmod(0o644)
+
+
+def test_read_hive_delegation_token_bad_magic(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    token_file = tmp_path / "token_file"
+    token_file.write_bytes(b"BAAD\x00\x00")
+
+    monkeypatch.setenv(HADOOP_TOKEN_FILE_LOCATION, str(token_file))
     with pytest.raises(HiveAuthError, match="Invalid Hadoop token file magic"):
         read_hive_delegation_token()
 
 
-def test_read_hive_delegation_token_unsupported_version(tmp_path: object, monkeypatch: pytest.MonkeyPatch) -> None:
-    token_file = os.path.join(str(tmp_path), "token_file")
-    with open(token_file, "wb") as f:
-        f.write(b"HDTS\x01\x00")  # version 1
+def test_read_hive_delegation_token_unsupported_version(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    token_file = tmp_path / "token_file"
+    token_file.write_bytes(b"HDTS\x01\x00")  # version 1
 
-    monkeypatch.setenv(HADOOP_TOKEN_FILE_LOCATION, token_file)
+    monkeypatch.setenv(HADOOP_TOKEN_FILE_LOCATION, str(token_file))
     with pytest.raises(HiveAuthError, match="Unsupported.*version"):
         read_hive_delegation_token()
 
 
-def test_read_hive_delegation_token_no_hive_token(tmp_path: object, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_read_hive_delegation_token_no_hive_token(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     token_data = _build_token_file([
         (b"hdfs-id", b"hdfs-pw", "HDFS_DELEGATION_TOKEN", "hdfs_service"),
     ])
 
-    token_file = os.path.join(str(tmp_path), "token_file")
-    with open(token_file, "wb") as f:
-        f.write(token_data)
+    token_file = tmp_path / "token_file"
+    token_file.write_bytes(token_data)
 
-    monkeypatch.setenv(HADOOP_TOKEN_FILE_LOCATION, token_file)
+    monkeypatch.setenv(HADOOP_TOKEN_FILE_LOCATION, str(token_file))
     with pytest.raises(HiveAuthError, match="No HIVE_DELEGATION_TOKEN found"):
         read_hive_delegation_token()
 
 
-def test_read_hive_delegation_token_truncated(tmp_path: object, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_read_hive_delegation_token_truncated(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Build a valid file and then truncate it
     token_data = _build_token_file([
         (b"test-id", b"test-pw", "HIVE_DELEGATION_TOKEN", "hive_service"),
     ])
     truncated = token_data[:10]  # Cut off in the middle
 
-    token_file = os.path.join(str(tmp_path), "token_file")
-    with open(token_file, "wb") as f:
-        f.write(truncated)
+    token_file = tmp_path / "token_file"
+    token_file.write_bytes(truncated)
 
-    monkeypatch.setenv(HADOOP_TOKEN_FILE_LOCATION, token_file)
+    monkeypatch.setenv(HADOOP_TOKEN_FILE_LOCATION, str(token_file))
     with pytest.raises(HiveAuthError, match="Unexpected end of token file"):
         read_hive_delegation_token()

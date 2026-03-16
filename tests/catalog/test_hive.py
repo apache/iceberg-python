@@ -1429,15 +1429,13 @@ def test_auth_mechanism_none_creates_buffered_transport_explicit() -> None:
     assert client._auth_mechanism == "NONE"
 
 
-def test_auth_mechanism_kerberos_resolved() -> None:
-    """When auth_mechanism is KERBEROS, _auth_mechanism is set correctly.
-
-    We don't fully instantiate because TSaslClientTransport with GSSAPI
-    requires the kerberos C module which may not be installed.
-    """
-    client = _HiveClient.__new__(_HiveClient)
-    client._auth_mechanism = "KERBEROS"
+def test_auth_mechanism_kerberos_resolved(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When auth_mechanism is KERBEROS, _auth_mechanism is resolved correctly."""
+    # Stub TSaslClientTransport.__init__ to avoid requiring the kerberos C module
+    monkeypatch.setattr(TTransport.TSaslClientTransport, "__init__", lambda *a, **kw: None)
+    client = _HiveClient(uri="thrift://localhost:9083", auth_mechanism="KERBEROS")
     assert client._auth_mechanism == "KERBEROS"
+    assert isinstance(client._transport, TTransport.TSaslClientTransport)
 
 
 def test_auth_mechanism_digest_md5_creates_digest_transport(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1447,12 +1445,12 @@ def test_auth_mechanism_digest_md5_creates_digest_transport(monkeypatch: pytest.
     assert isinstance(client._transport, _DigestMD5SaslTransport)
 
 
-def test_legacy_kerberos_auth_backward_compat() -> None:
+def test_legacy_kerberos_auth_backward_compat(monkeypatch: pytest.MonkeyPatch) -> None:
     """Legacy kerberos_auth=True resolves to KERBEROS auth_mechanism."""
-    client = _HiveClient.__new__(_HiveClient)
-    # Replicate the constructor's mechanism resolution logic
-    client._auth_mechanism = "KERBEROS"  # what kerberos_auth=True produces
+    monkeypatch.setattr(TTransport.TSaslClientTransport, "__init__", lambda *a, **kw: None)
+    client = _HiveClient(uri="thrift://localhost:9083", kerberos_auth=True)
     assert client._auth_mechanism == "KERBEROS"
+    assert isinstance(client._transport, TTransport.TSaslClientTransport)
 
 
 def test_auth_mechanism_overrides_kerberos_auth() -> None:
@@ -1460,6 +1458,14 @@ def test_auth_mechanism_overrides_kerberos_auth() -> None:
     client = _HiveClient(uri="thrift://localhost:9083", kerberos_auth=True, auth_mechanism="NONE")
     assert isinstance(client._transport, TTransport.TBufferedTransport)
     assert client._auth_mechanism == "NONE"
+
+
+def test_auth_mechanism_unknown_raises() -> None:
+    """Unknown auth mechanism should raise HiveAuthError, not silently fall back."""
+    from pyiceberg.exceptions import HiveAuthError
+
+    with pytest.raises(HiveAuthError, match="Unknown auth mechanism.*PLAIN"):
+        _HiveClient(uri="thrift://localhost:9083", auth_mechanism="PLAIN")
 
 
 def test_auth_mechanism_case_insensitive(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1480,8 +1486,8 @@ def test_create_hive_client_passes_auth_mechanism(monkeypatch: pytest.MonkeyPatc
     assert client._auth_mechanism == "DIGEST-MD5"
 
 
-def test_digest_md5_transport_coerces_none_to_empty_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
-    """_DigestMD5SaslTransport.open() coerces None initial sasl.process() to b''."""
+def test_digest_md5_transport_send_sasl_msg_coerces_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """_DigestMD5SaslTransport.send_sasl_msg coerces None body to b''."""
     monkeypatch.setattr("pyiceberg.catalog.hive.read_hive_delegation_token", _fake_read_token)
 
     transport = _DigestMD5SaslTransport(
@@ -1493,36 +1499,18 @@ def test_digest_md5_transport_coerces_none_to_empty_bytes(monkeypatch: pytest.Mo
         password="dGVzdC1wdw==",
     )
 
-    # Build a simple sasl stand-in that returns None on first call
-    class FakeSasl:
-        def __init__(self) -> None:
-            self._call_count = 0
-            self.complete = True
+    # Capture what the parent send_sasl_msg receives
+    captured_calls: list[tuple[int, bytes | None]] = []
 
-        def process(self, challenge: bytes | None = None) -> bytes | None:
-            self._call_count += 1
-            if self._call_count == 1:
-                return None  # DIGEST-MD5 initial response is None
-            return b"response-data"
+    def capture_send(self: TTransport.TSaslClientTransport, status: int, body: bytes | None) -> None:
+        captured_calls.append((status, body))
 
-    original_sasl = transport.sasl
-    transport.sasl = FakeSasl()  # type: ignore[assignment]
+    monkeypatch.setattr(TTransport.TSaslClientTransport, "send_sasl_msg", capture_send)
 
-    # Capture what the patched process returns during open()
-    captured_results: list[bytes | None] = []
+    # Send with None body — should be coerced to b""
+    transport.send_sasl_msg(1, None)
+    # Send with real body — should pass through unchanged
+    transport.send_sasl_msg(2, b"real-data")
 
-    def fake_super_open(self: TTransport.TSaslClientTransport) -> None:
-        captured_results.append(self.sasl.process(None))
-        captured_results.append(self.sasl.process(b"challenge"))
-
-    monkeypatch.setattr(TTransport.TSaslClientTransport, "open", fake_super_open)
-
-    try:
-        transport.open()
-    finally:
-        transport.sasl = original_sasl
-
-    # None from first process() should have been coerced to b""
-    assert captured_results[0] == b""
-    # Non-None result passes through unchanged
-    assert captured_results[1] == b"response-data"
+    assert captured_calls[0] == (1, b""), "None body should be coerced to b''"
+    assert captured_calls[1] == (2, b"real-data"), "Non-None body should pass through"

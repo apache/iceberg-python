@@ -154,21 +154,8 @@ class _DigestMD5SaslTransport(TTransport.TSaslClientTransport):
     coerces ``None`` to ``b""`` so the SASL handshake proceeds normally.
     """
 
-    def open(self) -> None:
-        # Intercept sasl.process to coerce the initial None response
-        original_process = self.sasl.process
-
-        def _patched_process(challenge: bytes | None = None) -> bytes | None:
-            result = original_process(challenge)
-            if result is None:
-                return b""
-            return result
-
-        self.sasl.process = _patched_process
-        try:
-            super().open()
-        finally:
-            self.sasl.process = original_process
+    def send_sasl_msg(self, status: int, body: bytes | None) -> None:  # type: ignore[override]
+        super().send_sasl_msg(status, body if body is not None else b"")
 
 
 class _HiveClient:
@@ -182,7 +169,7 @@ class _HiveClient:
         uri: str,
         ugi: str | None = None,
         kerberos_auth: bool | None = HIVE_KERBEROS_AUTH_DEFAULT,
-        kerberos_service_name: str | None = HIVE_KERBEROS_SERVICE_NAME,
+        kerberos_service_name: str | None = HIVE_KERBEROS_SERVICE_NAME_DEFAULT,
         auth_mechanism: str | None = None,
     ):
         self._uri = uri
@@ -204,7 +191,9 @@ class _HiveClient:
         url_parts = urlparse(self._uri)
         socket = TSocket.TSocket(url_parts.hostname, url_parts.port)
 
-        if self._auth_mechanism == "KERBEROS":
+        if self._auth_mechanism == "NONE":
+            return TTransport.TBufferedTransport(socket)
+        elif self._auth_mechanism == "KERBEROS":
             return TTransport.TSaslClientTransport(socket, host=url_parts.hostname, service=self._kerberos_service_name)
         elif self._auth_mechanism == "DIGEST-MD5":
             identifier, password = read_hive_delegation_token()
@@ -217,7 +206,10 @@ class _HiveClient:
                 password=password,
             )
         else:
-            return TTransport.TBufferedTransport(socket)
+            raise HiveAuthError(
+                f"Unknown auth mechanism: {self._auth_mechanism!r}. "
+                f"Valid values: NONE, KERBEROS, DIGEST-MD5"
+            )
 
     def _client(self) -> Client:
         protocol = TBinaryProtocol.TBinaryProtocol(self._transport)

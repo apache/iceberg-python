@@ -36,29 +36,32 @@ HDTS_SUPPORTED_VERSION = 0
 
 
 def _read_hadoop_vint(stream: BytesIO) -> int:
-    """Decode a Hadoop WritableUtils VInt/VLong from a byte stream."""
+    """Decode a Hadoop WritableUtils VInt/VLong from a byte stream.
+
+    Matches the encoding in Java's ``WritableUtils.readVInt``/``readVLong``:
+    - If the first byte (interpreted as signed) is >= -112, it *is* the value.
+    - Otherwise the first byte encodes both a negativity flag and the number
+      of additional big-endian payload bytes that carry the actual value.
+    """
     first = stream.read(1)
     if not first:
         raise HiveAuthError("Unexpected end of token file while reading VInt")
+    # Reinterpret as signed byte to match Java's signed-byte semantics
     b = first[0]
-    if b <= 0x7F:
+    if b > 127:
+        b -= 256
+    if b >= -112:
         return b
-    # Number of additional bytes is encoded in leading 1-bits
-    num_extra = 0
-    mask = 0x80
-    while b & mask:
-        num_extra += 1
-        mask >>= 1
-    # First byte contributes the remaining bits
-    result = b & (mask - 1)
-    extra = stream.read(num_extra)
-    if len(extra) != num_extra:
+    negative = b < -120
+    length = (-119 - b) if negative else (-111 - b)
+    extra = stream.read(length)
+    if len(extra) != length:
         raise HiveAuthError("Unexpected end of token file while reading VInt")
-    for byte in extra:
-        result = (result << 8) | byte
-    # Sign-extend if negative (high bit of decoded value is set)
-    if result >= (1 << (8 * num_extra + (8 - num_extra - 1) - 1)):
-        result -= 1 << (8 * num_extra + (8 - num_extra - 1))
+    result = 0
+    for byte_val in extra:
+        result = (result << 8) | byte_val
+    if negative:
+        result = ~result
     return result
 
 
@@ -75,7 +78,11 @@ def _read_hadoop_bytes(stream: BytesIO) -> bytes:
 
 def _read_hadoop_text(stream: BytesIO) -> str:
     """Read a VInt-prefixed UTF-8 string from a Hadoop token stream."""
-    return _read_hadoop_bytes(stream).decode("utf-8")
+    raw = _read_hadoop_bytes(stream)
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise HiveAuthError(f"Token file contains invalid UTF-8 in text field: {e}") from e
 
 
 def read_hive_delegation_token() -> tuple[str, str]:
@@ -99,8 +106,8 @@ def read_hive_delegation_token() -> tuple[str, str]:
     try:
         with open(token_file, "rb") as f:
             data = f.read()
-    except FileNotFoundError:
-        raise HiveAuthError(f"Hadoop token file not found: {token_file}")
+    except OSError as e:
+        raise HiveAuthError(f"Cannot read Hadoop token file {token_file}: {e}") from e
 
     stream = BytesIO(data)
 
