@@ -63,6 +63,7 @@ from pyiceberg.catalog import (
 )
 from pyiceberg.exceptions import (
     CommitFailedException,
+    HiveAuthError,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchIcebergTableError,
@@ -109,6 +110,7 @@ from pyiceberg.types import (
     UnknownType,
     UUIDType,
 )
+from pyiceberg.utils.hadoop_credentials import read_hive_delegation_token
 from pyiceberg.utils.properties import property_as_bool, property_as_float
 
 if TYPE_CHECKING:
@@ -127,6 +129,9 @@ HIVE_KERBEROS_AUTH_DEFAULT = False
 HIVE_KERBEROS_SERVICE_NAME = "hive.kerberos-service-name"
 HIVE_KERBEROS_SERVICE_NAME_DEFAULT = "hive"
 
+HIVE_METASTORE_AUTH = "hive.metastore.authentication"
+HIVE_METASTORE_AUTH_DEFAULT = "NONE"
+
 LOCK_CHECK_MIN_WAIT_TIME = "lock-check-min-wait-time"
 LOCK_CHECK_MAX_WAIT_TIME = "lock-check-max-wait-time"
 LOCK_CHECK_RETRIES = "lock-check-retries"
@@ -137,6 +142,33 @@ DO_NOT_UPDATE_STATS = "DO_NOT_UPDATE_STATS"
 DO_NOT_UPDATE_STATS_DEFAULT = "true"
 
 logger = logging.getLogger(__name__)
+
+
+class _DigestMD5SaslTransport(TTransport.TSaslClientTransport):
+    """TSaslClientTransport subclass that works around THRIFT-5926.
+
+    The upstream ``TSaslClientTransport.open()`` passes the first
+    ``sasl.process()`` response directly to ``_send_sasl_message()``,
+    but for DIGEST-MD5 the initial response is ``None`` (challenge-first
+    mechanism). Sending ``None`` causes a ``TypeError``.  This subclass
+    coerces ``None`` to ``b""`` so the SASL handshake proceeds normally.
+    """
+
+    def open(self) -> None:
+        # Intercept sasl.process to coerce the initial None response
+        original_process = self.sasl.process
+
+        def _patched_process(challenge: bytes | None = None) -> bytes | None:
+            result = original_process(challenge)
+            if result is None:
+                return b""
+            return result
+
+        self.sasl.process = _patched_process
+        try:
+            super().open()
+        finally:
+            self.sasl.process = original_process
 
 
 class _HiveClient:
@@ -151,20 +183,41 @@ class _HiveClient:
         ugi: str | None = None,
         kerberos_auth: bool | None = HIVE_KERBEROS_AUTH_DEFAULT,
         kerberos_service_name: str | None = HIVE_KERBEROS_SERVICE_NAME,
+        auth_mechanism: str | None = None,
     ):
         self._uri = uri
-        self._kerberos_auth = kerberos_auth
         self._kerberos_service_name = kerberos_service_name
         self._ugi = ugi.split(":") if ugi else None
+
+        # Resolve auth mechanism: explicit auth_mechanism takes precedence,
+        # then fall back to legacy kerberos_auth boolean for backward compat.
+        if auth_mechanism is not None:
+            self._auth_mechanism = auth_mechanism.upper()
+        elif kerberos_auth:
+            self._auth_mechanism = "KERBEROS"
+        else:
+            self._auth_mechanism = HIVE_METASTORE_AUTH_DEFAULT
+
         self._transport = self._init_thrift_transport()
 
     def _init_thrift_transport(self) -> TTransport:
         url_parts = urlparse(self._uri)
         socket = TSocket.TSocket(url_parts.hostname, url_parts.port)
-        if not self._kerberos_auth:
-            return TTransport.TBufferedTransport(socket)
-        else:
+
+        if self._auth_mechanism == "KERBEROS":
             return TTransport.TSaslClientTransport(socket, host=url_parts.hostname, service=self._kerberos_service_name)
+        elif self._auth_mechanism == "DIGEST-MD5":
+            identifier, password = read_hive_delegation_token()
+            return _DigestMD5SaslTransport(
+                socket,
+                host=url_parts.hostname,
+                service=self._kerberos_service_name,
+                mechanism="DIGEST-MD5",
+                username=identifier,
+                password=password,
+            )
+        else:
+            return TTransport.TBufferedTransport(socket)
 
     def _client(self) -> Client:
         protocol = TBinaryProtocol.TBinaryProtocol(self._transport)
@@ -319,6 +372,7 @@ class HiveCatalog(MetastoreCatalog):
                     properties.get("ugi"),
                     property_as_bool(properties, HIVE_KERBEROS_AUTH, HIVE_KERBEROS_AUTH_DEFAULT),
                     properties.get(HIVE_KERBEROS_SERVICE_NAME, HIVE_KERBEROS_SERVICE_NAME_DEFAULT),
+                    auth_mechanism=properties.get(HIVE_METASTORE_AUTH),
                 )
             except BaseException as e:
                 last_exception = e

@@ -130,3 +130,7 @@ class WaitingForLockException(Exception):
 
 class ValidationException(Exception):
     """Raised when validation fails."""
+
+
+class HiveAuthError(Exception):
+    """Raised when Hive Metastore authentication fails."""

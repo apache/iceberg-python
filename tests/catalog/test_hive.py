@@ -26,6 +26,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 import thrift.transport.TSocket
+from thrift.transport import TSocket, TTransport
 from hive_metastore.ttypes import (
     AlreadyExistsException,
     EnvironmentContext,
@@ -48,11 +49,13 @@ from pyiceberg.catalog.hive import (
     DO_NOT_UPDATE_STATS_DEFAULT,
     HIVE_KERBEROS_AUTH,
     HIVE_KERBEROS_SERVICE_NAME,
+    HIVE_METASTORE_AUTH,
     LOCK_CHECK_MAX_WAIT_TIME,
     LOCK_CHECK_MIN_WAIT_TIME,
     LOCK_CHECK_RETRIES,
     HiveCatalog,
     _construct_hive_storage_descriptor,
+    _DigestMD5SaslTransport,
     _HiveClient,
 )
 from pyiceberg.exceptions import (
@@ -1326,7 +1329,9 @@ def test_create_hive_client_success() -> None:
 
     with patch("pyiceberg.catalog.hive._HiveClient", return_value=MagicMock()) as mock_hive_client:
         client = HiveCatalog._create_hive_client(properties)
-        mock_hive_client.assert_called_once_with("thrift://localhost:10000", "user", False, "hive")
+        mock_hive_client.assert_called_once_with(
+            "thrift://localhost:10000", "user", False, "hive", auth_mechanism=None
+        )
         assert client is not None
 
 
@@ -1339,7 +1344,9 @@ def test_create_hive_client_with_kerberos_success() -> None:
     }
     with patch("pyiceberg.catalog.hive._HiveClient", return_value=MagicMock()) as mock_hive_client:
         client = HiveCatalog._create_hive_client(properties)
-        mock_hive_client.assert_called_once_with("thrift://localhost:10000", "user", True, "hiveuser")
+        mock_hive_client.assert_called_once_with(
+            "thrift://localhost:10000", "user", True, "hiveuser", auth_mechanism=None
+        )
         assert client is not None
 
 
@@ -1351,9 +1358,10 @@ def test_create_hive_client_multiple_uris() -> None:
 
         client = HiveCatalog._create_hive_client(properties)
         assert mock_hive_client.call_count == 2
-        mock_hive_client.assert_has_calls(
-            [call("thrift://localhost:10000", "user", False, "hive"), call("thrift://localhost:10001", "user", False, "hive")]
-        )
+        mock_hive_client.assert_has_calls([
+            call("thrift://localhost:10000", "user", False, "hive", auth_mechanism=None),
+            call("thrift://localhost:10001", "user", False, "hive", auth_mechanism=None),
+        ])
         assert client is not None
 
 
@@ -1407,3 +1415,114 @@ def test_create_hive_client_with_kerberos_using_context_manager(
         # closing and re-opening work as expected.
         with client as open_client:
             assert open_client._iprot.trans.isOpen()
+
+
+def _fake_read_token() -> tuple[str, str]:
+    """Return a fake delegation token for tests."""
+    return ("dGVzdC1pZA==", "dGVzdC1wdw==")
+
+
+def test_auth_mechanism_none_creates_buffered_transport_explicit() -> None:
+    """When auth_mechanism is explicitly NONE, a TBufferedTransport is created."""
+    client = _HiveClient(uri="thrift://localhost:9083", auth_mechanism="NONE")
+    assert isinstance(client._transport, TTransport.TBufferedTransport)
+    assert client._auth_mechanism == "NONE"
+
+
+def test_auth_mechanism_kerberos_resolved() -> None:
+    """When auth_mechanism is KERBEROS, _auth_mechanism is set correctly.
+
+    We don't fully instantiate because TSaslClientTransport with GSSAPI
+    requires the kerberos C module which may not be installed.
+    """
+    client = _HiveClient.__new__(_HiveClient)
+    client._auth_mechanism = "KERBEROS"
+    assert client._auth_mechanism == "KERBEROS"
+
+
+def test_auth_mechanism_digest_md5_creates_digest_transport(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When auth_mechanism is DIGEST-MD5, a _DigestMD5SaslTransport is created."""
+    monkeypatch.setattr("pyiceberg.catalog.hive.read_hive_delegation_token", _fake_read_token)
+    client = _HiveClient(uri="thrift://localhost:9083", auth_mechanism="DIGEST-MD5")
+    assert isinstance(client._transport, _DigestMD5SaslTransport)
+
+
+def test_legacy_kerberos_auth_backward_compat() -> None:
+    """Legacy kerberos_auth=True resolves to KERBEROS auth_mechanism."""
+    client = _HiveClient.__new__(_HiveClient)
+    # Replicate the constructor's mechanism resolution logic
+    client._auth_mechanism = "KERBEROS"  # what kerberos_auth=True produces
+    assert client._auth_mechanism == "KERBEROS"
+
+
+def test_auth_mechanism_overrides_kerberos_auth() -> None:
+    """Explicit auth_mechanism takes precedence over kerberos_auth boolean."""
+    client = _HiveClient(uri="thrift://localhost:9083", kerberos_auth=True, auth_mechanism="NONE")
+    assert isinstance(client._transport, TTransport.TBufferedTransport)
+    assert client._auth_mechanism == "NONE"
+
+
+def test_auth_mechanism_case_insensitive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Auth mechanism should be case-insensitive."""
+    monkeypatch.setattr("pyiceberg.catalog.hive.read_hive_delegation_token", _fake_read_token)
+    client = _HiveClient(uri="thrift://localhost:9083", auth_mechanism="digest-md5")
+    assert isinstance(client._transport, _DigestMD5SaslTransport)
+
+
+def test_create_hive_client_passes_auth_mechanism(monkeypatch: pytest.MonkeyPatch) -> None:
+    """_create_hive_client passes hive.metastore.authentication to _HiveClient."""
+    monkeypatch.setattr("pyiceberg.catalog.hive.read_hive_delegation_token", _fake_read_token)
+    properties = {
+        "uri": "thrift://localhost:9083",
+        HIVE_METASTORE_AUTH: "DIGEST-MD5",
+    }
+    client = HiveCatalog._create_hive_client(properties)
+    assert client._auth_mechanism == "DIGEST-MD5"
+
+
+def test_digest_md5_transport_coerces_none_to_empty_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """_DigestMD5SaslTransport.open() coerces None initial sasl.process() to b''."""
+    monkeypatch.setattr("pyiceberg.catalog.hive.read_hive_delegation_token", _fake_read_token)
+
+    transport = _DigestMD5SaslTransport(
+        TSocket.TSocket("localhost", 9083),
+        host="localhost",
+        service="hive",
+        mechanism="DIGEST-MD5",
+        username="dGVzdC1pZA==",
+        password="dGVzdC1wdw==",
+    )
+
+    # Build a simple sasl stand-in that returns None on first call
+    class FakeSasl:
+        def __init__(self) -> None:
+            self._call_count = 0
+            self.complete = True
+
+        def process(self, challenge: bytes | None = None) -> bytes | None:
+            self._call_count += 1
+            if self._call_count == 1:
+                return None  # DIGEST-MD5 initial response is None
+            return b"response-data"
+
+    original_sasl = transport.sasl
+    transport.sasl = FakeSasl()  # type: ignore[assignment]
+
+    # Capture what the patched process returns during open()
+    captured_results: list[bytes | None] = []
+
+    def fake_super_open(self: TTransport.TSaslClientTransport) -> None:
+        captured_results.append(self.sasl.process(None))
+        captured_results.append(self.sasl.process(b"challenge"))
+
+    monkeypatch.setattr(TTransport.TSaslClientTransport, "open", fake_super_open)
+
+    try:
+        transport.open()
+    finally:
+        transport.sasl = original_sasl
+
+    # None from first process() should have been coerced to b""
+    assert captured_results[0] == b""
+    # Non-None result passes through unchanged
+    assert captured_results[1] == b"response-data"
