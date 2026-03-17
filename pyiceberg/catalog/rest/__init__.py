@@ -1327,7 +1327,7 @@ class RestCatalog(Catalog):
             _handle_non_200_response(exc, {404: NoSuchViewError})
 
     @retry(**_RETRY_ARGS)
-    def rename_view(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> None:
+    def rename_view(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> None:
         payload = {
             "source": self._split_identifier_for_json(from_identifier),
             "destination": self._split_identifier_for_json(to_identifier),

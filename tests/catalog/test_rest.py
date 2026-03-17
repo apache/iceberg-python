@@ -2676,8 +2676,8 @@ def test_rename_view_204(rest_mock: Mocker) -> None:
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
     catalog.rename_view(from_identifier, to_identifier)
     assert (
-        rest_mock.last_request.text
-        == '''{"source": {"namespace": ["some_namespace"], "name": "old_view"}, "destination": {"namespace": ["some_namespace"], "name": "new_view"}}'''
+        rest_mock.last_request.text == """{"source": {"namespace": ["some_namespace"], "name": "old_view"}, """
+        """"destination": {"namespace": ["some_namespace"], "name": "new_view"}}"""
     )
 
 

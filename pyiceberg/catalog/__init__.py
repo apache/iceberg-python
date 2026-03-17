@@ -35,10 +35,8 @@ from pyiceberg.exceptions import (
     NamespaceAlreadyExistsError,
     NoSuchNamespaceError,
     NoSuchTableError,
-    NoSuchViewError,
     NotInstalledError,
     TableAlreadyExistsError,
-    ViewAlreadyExistsError,
 )
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import ManifestFile
