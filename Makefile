@@ -148,7 +148,7 @@ test-polaris-exec: ## Run Polaris integration tests
 	PYICEBERG_CATALOG__POLARIS__S3__REGION="us-east-1" \
 	$(TEST_RUNNER) pytest tests/integration/test_catalog.py -k "rest_test_catalog and not test_update_namespace_properties" $(PYTEST_ARGS)
 	# Skip test_update_namespace_properties: Polaris triggers a CommitConflictException when updates and removals are in the same request.
-
+	# TODO: Remove test exception after https://github.com/apache/polaris/pull/4013 is merged.
 
 test-polaris-cleanup: ## Clean up Polaris integration test environment
 	@if [ "${KEEP_COMPOSE}" != "1" ]; then \
