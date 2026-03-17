@@ -2071,9 +2071,9 @@ import pyarrow as pa
 | `DateType`                      | `pa.date32()`                       |
 | `TimeType`                      | `pa.time64("us")`                   |
 | `TimestampType`                 | `pa.timestamp("us")`                |
-| `TimestampNanoType`             | `pa.timestamp("ns")`                |
-| `TimestamptzType`               | `pa.timestamp("us", tz="UTC")`      |
-| `TimestamptzNanoType`           | `pa.timestamp("ns", tz="UTC")`      |
+| `TimestampNanoType` (format version 3 only) | `pa.timestamp("ns")` [[2]](#notes) |
+| `TimestamptzType` | `pa.timestamp("us", tz="UTC")` [[1]](#notes)     |
+| `TimestamptzNanoType` (format version 3 only) | `pa.timestamp("ns", tz="UTC")` [[1]](#notes) [[2]](#notes) |
 | `StringType`                    | `pa.large_string()`                 |
 | `UUIDType`                      | `pa.uuid()`                         |
 | `BinaryType`                    | `pa.large_binary()`                 |
@@ -2081,7 +2081,7 @@ import pyarrow as pa
 | `StructType`                    | `pa.struct()`                       |
 | `ListType(e)`                   | `pa.large_list(e)`                  |
 | `MapType(k, v)`                 | `pa.map_(k, v)`                     |
-| `UnknownType`                   | `pa.null()`                         |
+| `UnknownType` (format version 3 only) | `pa.null()` [[2]](#notes) |
 
 ---
 
@@ -2090,7 +2090,7 @@ import pyarrow as pa
 | PyArrow type                       | PyIceberg type class        |
 |------------------------------------|-----------------------------|
 | `pa.bool_()`                       | `BooleanType`               |
-| `pa.int32()`                       | `IntegerType`               |
+| `pa.int8()` / `pa.int16()` / `pa.int32()` | `IntegerType`        |
 | `pa.int64()`                       | `LongType`                  |
 | `pa.float32()`                     | `FloatType`                 |
 | `pa.float64()`                     | `DoubleType`                |
@@ -2099,24 +2099,27 @@ import pyarrow as pa
 | `pa.date32()`                      | `DateType`                  |
 | `pa.date64()`                      | Unsupported                 |
 | `pa.time64("us")`                  | `TimeType`                  |
-| `pa.timestamp("us")`               | `TimestampType`             |
-| `pa.timestamp("ns")`               | `TimestampNanoType`         |
-| `pa.timestamp("us", tz="UTC")`     | `TimestamptzType`           |
-| `pa.timestamp("ns", tz="UTC")`     | `TimestamptzNanoType`       |
-| `pa.string()` / `pa.large_string()`| `StringType`                |
+| `pa.timestamp("s")` / `pa.timestamp("ms")` / `pa.timestamp("us")` | `TimestampType` |
+| `pa.timestamp("ns")` | `TimestampNanoType` (format version 3 only) [[2]](#notes) |
+| `pa.timestamp("s", tz="UTC")` / `pa.timestamp("ms", tz="UTC")` / `pa.timestamp("us", tz="UTC")` | `TimestamptzType` [[1]](#notes) |
+| `pa.timestamp("ns", tz="UTC")` | `TimestamptzNanoType` (format version 3 only) [[1]](#notes) [[2]](#notes) |
+| `pa.string()` / `pa.large_string()` / `pa.string_view()` | `StringType` |
 | `pa.uuid()`                        | `UUIDType`                  |
-| `pa.binary()` / `pa.large_binary()`| `BinaryType`                |
+| `pa.binary()` / `pa.large_binary()` / `pa.binary_view()` | `BinaryType` |
 | `pa.binary(L)`                     | `FixedType(L)`              |
 | `pa.struct([...])`                 | `StructType`                |
-| `pa.list_(e)` / `pa.large_list(e)` | `ListType(e)`               |
+| `pa.list_(e)` / `pa.large_list(e)` / `pa.list_(e, fixed_size)` | `ListType(e)` |
 | `pa.map_(k, v)`                    | `MapType(k, v)`             |
-| `pa.null()`                        | `UnknownType`               |
+| `pa.null()` | `UnknownType` (format version 3 only) [[2]](#notes) |
 
 ---
 
-***Notes***
+#### Notes
 
-- PyIceberg `GeometryType` and `GeographyType` types are mapped to a GeoArrow WKB extension type.
-Otherwise, falls back to `pa.large_binary()` which stores WKB bytes.
-- For timestamp types (`TimestampNanoType`, `TimestamptzType`, `TimestamptzNanoType`), writing in format version 3 (which supports the `ns` unit) is not yet implemented
-(see [Github issue](https://github.com/apache/iceberg-python/issues/1551)). Only the `UTC` timezone and its aliases are supported.
+[1] Only the `UTC` timezone and its aliases are supported for PyArrow-to-PyIceberg timestamp-with-timezone conversion.
+
+[2] The PyArrow-to-PyIceberg mappings for `pa.timestamp("ns")`, `pa.timestamp("ns", tz="UTC")`, and `pa.null()` require Iceberg format version 3. By default, `pyarrow_to_schema()` uses format version 2. `TimestampNanoType`, `TimestamptzNanoType`, and `UnknownType` are likewise format-version-3-only Iceberg types.
+
+[3] For nanosecond Iceberg timestamp types (`TimestampNanoType` and `TimestamptzNanoType`), writing in format version 3 is not yet implemented (see [GitHub issue #1551](https://github.com/apache/iceberg-python/issues/1551)).
+
+[4] The mappings are not fully symmetric. On read, PyArrow normalizes some families of types into a single Iceberg type, and on write PyIceberg emits a canonical PyArrow type: for example, `pa.int8()` and `pa.int16()` read as `IntegerType` and write back as `pa.int32()`, `pa.string()` reads as `StringType` and writes back as `pa.large_string()`, `pa.binary()` reads as `BinaryType` and writes back as `pa.large_binary()`, `pa.list_(...)` writes back as `pa.large_list(...)`, and `pa.timestamp("s")` / `pa.timestamp("ms")` read as `TimestampType` and write back as `pa.timestamp("us")`.
