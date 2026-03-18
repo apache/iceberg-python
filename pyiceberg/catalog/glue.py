@@ -49,10 +49,10 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
-from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_PROFILE_NAME, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
+from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_PROFILE_NAME, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, FileIO
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema, SchemaVisitor, visit
-from pyiceberg.serializers import FromInputFile
+from pyiceberg.serializers import FromInputFile, ToOutputFile
 from pyiceberg.table import (
     CommitTableResponse,
     Table,
@@ -441,6 +441,10 @@ class GlueCatalog(MetastoreCatalog):
         federated = database.get("FederatedDatabase", {})
         return federated.get("ConnectionType", "") == GLUE_CONNECTION_S3_TABLES
 
+    @staticmethod
+    def _write_metadata_no_exist_check(metadata: TableMetadata, io: FileIO, metadata_path: str) -> None:
+        ToOutputFile.table_metadata(metadata, io.new_output(metadata_path), overwrite=True)
+
     def _create_table_s3tables(
         self,
         identifier: str | Identifier,
@@ -499,7 +503,8 @@ class GlueCatalog(MetastoreCatalog):
             )
 
             # Write metadata and update the Glue table with the metadata pointer.
-            self._write_metadata(staged_table.metadata, staged_table.io, staged_table.metadata_location)
+            # Skip the exist check before writing; S3 Tables doesn't support ListObjectsV2.
+            self._write_metadata_no_exist_check(staged_table.metadata, staged_table.io, staged_table.metadata_location)
             table_input = _construct_table_input(table_name, staged_table.metadata_location, properties, staged_table.metadata)
             version_id = glue_table.get("VersionId")
             if not version_id:
