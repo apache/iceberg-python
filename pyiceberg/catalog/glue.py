@@ -657,7 +657,11 @@ class GlueCatalog(MetastoreCatalog):
         if current_table and updated_staged_table.metadata == current_table.metadata:
             # no changes, do nothing
             return CommitTableResponse(metadata=current_table.metadata, metadata_location=current_table.metadata_location)
-        self._write_metadata(
+        # S3 Tables managed storage doesn't support ListObjectsV2, so skip the exist check.
+        write_metadata = (
+            self._write_metadata_no_exist_check if self._is_s3tables_database(database_name) else self._write_metadata
+        )
+        write_metadata(
             metadata=updated_staged_table.metadata,
             io=updated_staged_table.io,
             metadata_path=updated_staged_table.metadata_location,
