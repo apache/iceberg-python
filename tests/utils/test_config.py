@@ -19,8 +19,10 @@ from typing import Any
 from unittest import mock
 
 import pytest
+from pytest_mock import MockFixture
 from strictyaml import as_document
 
+from pyiceberg.catalog import _get_env_config
 from pyiceberg.typedef import UTF8, RecursiveDict
 from pyiceberg.utils.config import Config, _lowercase_dictionary_keys, merge_config
 
@@ -206,3 +208,17 @@ def test_load_reads_file_and_environment_once(monkeypatch: pytest.MonkeyPatch) -
 
     files_mock.assert_called_once()
     assert config.get_catalog_config("production") == {"type": "rest", "uri": "https://env.service.io/api"}
+
+
+def test_get_env_config_is_lazy_and_cached(mocker: MockFixture) -> None:
+    original_config = _get_env_config()
+    _get_env_config.cache_clear()
+    config = Config({"catalog": {"test": {"type": "in-memory"}}})
+    load_mock = mocker.patch("pyiceberg.catalog.Config.load", return_value=config)
+    assert _get_env_config() is config
+    assert _get_env_config() is config
+    load_mock.assert_called_once()
+
+    _get_env_config.cache_clear()
+    mocker.patch("pyiceberg.catalog.Config.load", return_value=original_config)
+    assert _get_env_config() is original_config

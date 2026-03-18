@@ -2042,7 +2042,7 @@ def test_catalog_from_environment_variables_override(rest_mock: Mocker) -> None:
         json={"defaults": {}, "overrides": {}},
         status_code=200,
     )
-    env_config: RecursiveDict = Config._from_environment_variables({})
+    env_config: RecursiveDict = Config.load().config
     mock_env_config = mock.Mock()
     mock_env_config.get_catalog_config.return_value = cast(RecursiveDict, env_config.get("catalog")).get("production")
     with mock.patch("pyiceberg.catalog._get_env_config", return_value=mock_env_config):
