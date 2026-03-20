@@ -4711,8 +4711,8 @@ requires-dist = [
     { name = "pyarrow", marker = "extra == 'pyarrow'", specifier = ">=17.0.0" },
     { name = "pyarrow", marker = "extra == 'ray'", specifier = ">=17.0.0" },
     { name = "pydantic", specifier = ">=2.0,!=2.4.0,!=2.4.1,!=2.12.0,!=2.12.1,<3.0" },
-    { name = "pyiceberg-core", marker = "extra == 'pyarrow'", specifier = ">=0.5.1,<0.9.0" },
-    { name = "pyiceberg-core", marker = "extra == 'pyiceberg-core'", specifier = ">=0.5.1,<0.9.0" },
+    { name = "pyiceberg-core", marker = "extra == 'pyarrow'", specifier = ">=0.5.1,<0.10.0" },
+    { name = "pyiceberg-core", marker = "extra == 'pyiceberg-core'", specifier = ">=0.5.1,<0.10.0" },
     { name = "pyparsing", specifier = ">=3.1.0,<4.0.0" },
     { name = "pyroaring", specifier = ">=1.0.0,<2.0.0" },
     { name = "python-snappy", marker = "extra == 'snappy'", specifier = ">=0.6.0,<1.0.0" },
@@ -4771,17 +4771,16 @@ notebook = [{ name = "jupyterlab", specifier = ">=4.0.0" }]
 
 [[package]]
 name = "pyiceberg-core"
-version = "0.8.0"
+version = "0.9.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/9c/a0/0bcedbbe901484aacb6c605505f8574fd65954826e592fdb163e1cfb09f2/pyiceberg_core-0.8.0.tar.gz", hash = "sha256:59021ca5bc7ca95f2b06fb0730280fb3f60ed898060bcd874c156d093853b5f3", size = 618882, upload-time = "2026-01-20T00:50:40.076Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ab/a3/2fd5953aa1cdc8dca3b498b4d7691db8431a1199df95a4e826d120860880/pyiceberg_core-0.9.0.tar.gz", hash = "sha256:c8493b99160c269e175757f46fc0ff06bc79314106865ec3cc49da07099194f4", size = 687481, upload-time = "2026-03-20T18:37:08.758Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/77/e0/9a8fa537d29d34e3265682056d6517b926975107b5b1af6057d1713557d6/pyiceberg_core-0.8.0-cp310-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:d60c75a741a1d9199277a9e50fc3adbc84ab286a881f9b1f721fa120e7197912", size = 24733948, upload-time = "2026-01-20T00:50:20.566Z" },
-    { url = "https://files.pythonhosted.org/packages/6d/3e/f5522c1e9c20c3e89bfd76b2f54ba38e57389e5a2872233e49e60a131e04/pyiceberg_core-0.8.0-cp310-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:1d71e566b2d56141760ff8734667eede5a5d60963dfbcdce80c2dd3cf2edb39d", size = 11682041, upload-time = "2026-01-20T00:50:22.843Z" },
-    { url = "https://files.pythonhosted.org/packages/95/4b/f799e5c7a2b2ede75514e64901503358a7a134ca1ea217fd86535af533b6/pyiceberg_core-0.8.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:82782d1b974200c5526d069391ba2bc235a868b5d0d6ac17ca406df735ab89a3", size = 13835428, upload-time = "2026-01-20T00:50:25.021Z" },
-    { url = "https://files.pythonhosted.org/packages/0b/ff/2dbd6f7c99a2f782f908be2cc997371de45cc1df61abeeff1fc0165c05b6/pyiceberg_core-0.8.0-cp310-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:0e14b2aea26293ba5878c398adc880fff0f1ce5d989e00d4b1a930c143541114", size = 14580807, upload-time = "2026-01-20T00:50:27.158Z" },
-    { url = "https://files.pythonhosted.org/packages/bc/13/176c2b00a9b804af79d8b697ba1a2525f4390e959be777076972071ca069/pyiceberg_core-0.8.0-cp310-abi3-win_amd64.whl", hash = "sha256:a5726cc62f9ac2582a0d5dde92e4140b711b5e29ec0c6c636d6d2782d984031b", size = 13354110, upload-time = "2026-01-20T00:50:29.785Z" },
-    { url = "https://files.pythonhosted.org/packages/43/33/2c93b4d40f38e173dcfb2f555a2d992e3345d38eba8f8fbb2731c2e18462/pyiceberg_core-0.8.0-pp310-pypy310_pp73-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:0c51f1e6a4112864c8fface904429814b26baa45efab7efbae8013796e815915", size = 11682427, upload-time = "2026-01-20T00:50:31.714Z" },
-    { url = "https://files.pythonhosted.org/packages/7c/97/25e835c2bf9b090bf97174638bc26a034952208e2767730035e285766bb6/pyiceberg_core-0.8.0-pp310-pypy310_pp73-manylinux_2_28_aarch64.whl", hash = "sha256:6d2e71fb83ae578d93f24699ee131b77e5ee630b8ec6310acf570d04062ef2fb", size = 14581679, upload-time = "2026-01-20T00:50:33.869Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/2f/ccb605b8f09dc417dc01345f13273688efcd08e9a4c8297749fab20a1441/pyiceberg_core-0.9.0-cp310-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:c359af999247087119f5986c11420eaa41cc31d30de89cf59ddc3077c4498523", size = 18447345, upload-time = "2026-03-20T18:36:46.952Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/c0/f1b0d969b8c29d76c2a5bce8bdc5cc7ad50d91f221f287b5a00f144475b0/pyiceberg_core-0.9.0-cp310-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:117e38359219d2834b949124027d0c9d82d42bb5b41e7475bd484bb1769703ea", size = 8796400, upload-time = "2026-03-20T18:36:49.444Z" },
+    { url = "https://files.pythonhosted.org/packages/c2/70/1d80a9f612748f8fdd62c5acddddac89b8c5834f44d10a522657e3b7b041/pyiceberg_core-0.9.0-cp310-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:125272db73593b4153d7a95f559ab1e5623b60564c5e45fb89cf638f4b57870a", size = 10869079, upload-time = "2026-03-20T18:36:52.182Z" },
+    { url = "https://files.pythonhosted.org/packages/46/30/5b65a2748ed6d96ca9fbc68a99eb9430127a0387393c92efb363fc709c98/pyiceberg_core-0.9.0-cp310-abi3-win_amd64.whl", hash = "sha256:b0d126bdd901a7a3e9b42901a22be9c221b46a8e9931ee2da404508f891e03a2", size = 9924305, upload-time = "2026-03-20T18:36:54.28Z" },
+    { url = "https://files.pythonhosted.org/packages/c1/6e/9a2bdad1efc1aefe6bf9651eb2251ca28a09ed4309ce50d365abb3640e5a/pyiceberg_core-0.9.0-pp310-pypy310_pp73-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:c67d9e4d2c5d831796fe51d63d7edb95fb4db4d6c05ff9c653873d52be8816cf", size = 8796030, upload-time = "2026-03-20T18:36:58.98Z" },
+    { url = "https://files.pythonhosted.org/packages/d3/12/59167a1ec7868eb06178bf91c16ffbc0f646ea8a09bef04b3b2433c5e290/pyiceberg_core-0.9.0-pp310-pypy310_pp73-manylinux_2_28_aarch64.whl", hash = "sha256:cad7fc1faac17455122d4abf6f7f83e818cbc66d20720a6c53395cd07e154370", size = 10869219, upload-time = "2026-03-20T18:37:00.98Z" },
 ]
 
 [[package]]
