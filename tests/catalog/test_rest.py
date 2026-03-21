@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import os
 from collections.abc import Callable
 from typing import Any, cast
@@ -512,10 +513,16 @@ def test_sigv4_sign_request_without_body(rest_mock: Mocker) -> None:
     assert isinstance(adapter, HTTPAdapter)
     adapter.add_headers(prepared)
 
-    assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256 Credential=")
+    auth_header = prepared.headers["Authorization"]
+    assert auth_header.startswith("AWS4-HMAC-SHA256 Credential=")
     assert prepared.headers["Original-Authorization"] == f"Bearer {existing_token}"
     assert prepared.headers["x-amz-content-sha256"] == EMPTY_BODY_SHA256
-    assert "SignedHeaders=" in prepared.headers["Authorization"]
+    # Verify the signature format: Credential, SignedHeaders, Signature
+    assert "Credential=" in auth_header
+    assert "SignedHeaders=" in auth_header
+    assert "Signature=" in auth_header
+    # x-amz-content-sha256 should be in signed headers
+    assert "x-amz-content-sha256" in auth_header
 
 
 def test_sigv4_sign_request_with_body(rest_mock: Mocker) -> None:
@@ -544,11 +551,19 @@ def test_sigv4_sign_request_with_body(rest_mock: Mocker) -> None:
     assert isinstance(adapter, HTTPAdapter)
     adapter.add_headers(prepared)
 
-    assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256 Credential=")
-    assert "SignedHeaders=" in prepared.headers["Authorization"]
+    auth_header = prepared.headers["Authorization"]
+    assert auth_header.startswith("AWS4-HMAC-SHA256 Credential=")
+    assert "SignedHeaders=" in auth_header
     # Conflicting Authorization header is relocated
     assert prepared.headers["Original-Authorization"] == f"Bearer {existing_token}"
-    assert prepared.headers["x-amz-content-sha256"] == "nhKdVGKGU3IMGjYlod9xKUVc7/H5K6zTWj60yJOM80k="
+    # Non-empty body should have base64-encoded SHA256
+    content_sha256 = prepared.headers["x-amz-content-sha256"]
+    assert content_sha256 == "nhKdVGKGU3IMGjYlod9xKUVc7/H5K6zTWj60yJOM80k="
+    # Verify it's valid base64 and matches the body
+    decoded = base64.b64decode(content_sha256)
+    assert len(decoded) == 32  # SHA256 produces 32 bytes
+    # x-amz-content-sha256 should be in signed headers
+    assert "x-amz-content-sha256" in auth_header
 
 
 def test_sigv4_content_sha256_with_bytes_body(rest_mock: Mocker) -> None:
@@ -580,7 +595,12 @@ def test_sigv4_content_sha256_with_bytes_body(rest_mock: Mocker) -> None:
 
     assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256 Credential=")
     assert "SignedHeaders=" in prepared.headers["Authorization"]
-    assert prepared.headers["x-amz-content-sha256"] == "sD20bEQP+WnwKPT7jxn7PIACGciAeWjQPlzFCK5Fifo="
+    content_sha256 = prepared.headers["x-amz-content-sha256"]
+    assert content_sha256 == "sD20bEQP+WnwKPT7jxn7PIACGciAeWjQPlzFCK5Fifo="
+    # Verify it's valid base64 and matches the body
+    decoded = base64.b64decode(content_sha256)
+    assert len(decoded) == 32  # SHA256 produces 32 bytes
+    assert decoded == hashlib.sha256(body_content).digest()
 
 
 def test_sigv4_conflicting_sigv4_headers(rest_mock: Mocker) -> None:
