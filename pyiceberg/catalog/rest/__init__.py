@@ -752,9 +752,20 @@ class RestCatalog(Catalog):
 
         class _IcebergSigV4Auth(SigV4Auth):
             def canonical_request(self, request: Any) -> str:
-                cr = super().canonical_request(request)
-                # Replace the last line (body_checksum) with hex-encoded payload hash.
-                return cr.rsplit("\n", 1)[0] + "\n" + self.payload(request)
+                # Reuses the logic from botocore's SigV4Auth.canonical_request
+                # (https://github.com/boto/botocore/blob/develop/botocore/auth.py)
+                # but always uses self.payload(request) for the body checksum.
+                cr = [request.method.upper()]
+                path = self._normalize_url_path(parse.urlsplit(request.url).path)
+                cr.append(path)
+                cr.append(self.canonical_query_string(request))
+                headers_to_sign = self.headers_to_sign(request)
+                cr.append(self.canonical_headers(headers_to_sign) + "\n")
+                cr.append(self.signed_headers(headers_to_sign))
+                # Always use hex-encoded payload hash per SigV4 spec,
+                # regardless of the x-amz-content-sha256 header value (which may be base64).
+                cr.append(self.payload(request))
+                return "\n".join(cr)
 
         class SigV4Adapter(HTTPAdapter):
             def __init__(self, **properties: str):
