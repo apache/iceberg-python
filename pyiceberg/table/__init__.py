@@ -1559,7 +1559,7 @@ class Table:
 
         return pl.scan_iceberg(self)
 
-    def __datafusion_table_provider__(self) -> IcebergDataFusionTable:
+    def __datafusion_table_provider__(self, session: Any | None = None) -> IcebergDataFusionTable:
         """Return the DataFusion table provider PyCapsule interface.
 
         To support DataFusion features such as push down filtering, this function will return a PyCapsule
@@ -1598,11 +1598,12 @@ class Table:
         """
         from pyiceberg_core.datafusion import IcebergDataFusionTable
 
-        return IcebergDataFusionTable(
+        provider = IcebergDataFusionTable(
             identifier=self.name(),
             metadata_location=self.metadata_location,
             file_io_properties=self.io.properties,
-        ).__datafusion_table_provider__()
+        ).__datafusion_table_provider__
+        return provider(session)
 
 
 class StaticTable(Table):
