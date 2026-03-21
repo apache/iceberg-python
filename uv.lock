@@ -4692,7 +4692,7 @@ requires-dist = [
     { name = "cachetools", specifier = ">=5.5,<8.0" },
     { name = "click", specifier = ">=7.1.1,<9.0.0" },
     { name = "daft", marker = "extra == 'daft'", specifier = ">=0.5.0" },
-    { name = "datafusion", marker = "extra == 'datafusion'", specifier = ">=51,<53" },
+    { name = "datafusion", marker = "extra == 'datafusion'", specifier = ">=52,<53" },
     { name = "duckdb", marker = "extra == 'duckdb'", specifier = ">=0.5.0,<2.0.0" },
     { name = "fsspec", specifier = ">=2023.1.0" },
     { name = "gcsfs", marker = "extra == 'gcsfs'", specifier = ">=2023.1.0" },
