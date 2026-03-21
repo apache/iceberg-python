@@ -3513,14 +3513,14 @@ wheels = [
 
 [[package]]
 name = "mypy-boto3-dynamodb"
-version = "1.42.55"
+version = "1.42.73"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "typing-extensions", marker = "python_full_version < '3.12'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/48/e5/e68bf109e994cf1a2468c915606c20bf0ebb5b10ff0b82e63c7f7f102e8b/mypy_boto3_dynamodb-1.42.55.tar.gz", hash = "sha256:a445f439b6bc4532fd592cb7f44444c8fc8f397271c0d9087e712f71f196d2f9", size = 48685, upload-time = "2026-02-23T20:40:16.728Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/70/a2/fc93b44ed07322ede4cc45c6c66370ff53ad8a195b95f9f80d1edbb7735a/mypy_boto3_dynamodb-1.42.73.tar.gz", hash = "sha256:3fd9e093a8c982a53d55f6ac3d109d89957fe82b5c7ece65f27b772ed7a5ca9b", size = 48723, upload-time = "2026-03-20T19:59:32.033Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/80/ce/89a62cc767f4120c8601ab20a3942653370c50935bbd2628d33dc60d162e/mypy_boto3_dynamodb-1.42.55-py3-none-any.whl", hash = "sha256:652af33641601d223fb35207b89bd98513a7493d2b95ae4cba47c925b6ec103c", size = 58774, upload-time = "2026-02-23T20:35:18.462Z" },
+    { url = "https://files.pythonhosted.org/packages/6a/41/f4ececbceb13d1c2fbc1cfee56d65231c98b19f4d0b41baf3ab5d88b6863/mypy_boto3_dynamodb-1.42.73-py3-none-any.whl", hash = "sha256:2df84f71ff41fba5f12e803be19c4483daa64ba030fc9d62ba5e5f9f09a4def8", size = 58828, upload-time = "2026-03-20T19:59:24.878Z" },
 ]
 
 [[package]]
