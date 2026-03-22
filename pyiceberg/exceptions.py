@@ -133,4 +133,4 @@ class ValidationException(Exception):
 
 
 class HiveAuthError(Exception):
-    """Raised when Hive Metastore authentication fails."""
+    """Raised when Hive Metastore authentication fails or the delegation token file is missing or malformed."""

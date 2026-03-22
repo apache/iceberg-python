@@ -1466,6 +1466,25 @@ def test_auth_mechanism_unknown_raises() -> None:
         _HiveClient(uri="thrift://localhost:9083", auth_mechanism="PLAIN")
 
 
+def test_auth_mechanism_empty_string_raises() -> None:
+    """Empty string auth mechanism should raise HiveAuthError."""
+    from pyiceberg.exceptions import HiveAuthError
+
+    with pytest.raises(HiveAuthError, match="Unknown auth mechanism.*''"):
+        _HiveClient(uri="thrift://localhost:9083", auth_mechanism="")
+
+
+def test_create_hive_client_passes_kerberos_via_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """_create_hive_client passes hive.metastore.authentication=KERBEROS to _HiveClient."""
+    monkeypatch.setattr(TTransport.TSaslClientTransport, "__init__", lambda *a, **kw: None)
+    properties = {
+        "uri": "thrift://localhost:9083",
+        HIVE_METASTORE_AUTH: "KERBEROS",
+    }
+    client = HiveCatalog._create_hive_client(properties)
+    assert client._auth_mechanism == "KERBEROS"
+
+
 def test_auth_mechanism_case_insensitive(monkeypatch: pytest.MonkeyPatch) -> None:
     """Auth mechanism should be case-insensitive."""
     monkeypatch.setattr("pyiceberg.catalog.hive.read_hive_delegation_token", _fake_read_token)
