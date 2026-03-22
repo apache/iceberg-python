@@ -154,7 +154,7 @@ class _DigestMD5SaslTransport(TTransport.TSaslClientTransport):
     coerces ``None`` to ``b""`` so the SASL handshake proceeds normally.
     """
 
-    def send_sasl_msg(self, status: int, body: bytes | None) -> None:  # type: ignore[override]
+    def send_sasl_msg(self, status: int, body: bytes | None) -> None:
         super().send_sasl_msg(status, body if body is not None else b"")
 
 
