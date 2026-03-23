@@ -68,6 +68,8 @@ from pyiceberg.typedef import (
 )
 from pyiceberg.utils.config import Config, merge_config
 from pyiceberg.utils.properties import property_as_bool
+from pyiceberg.view import View
+from pyiceberg.view.metadata import ViewVersion
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -218,6 +220,14 @@ def infer_catalog_type(name: str, catalog_properties: RecursiveDict) -> CatalogT
     )
 
 
+def _check_required_catalog_properties(name: str, catalog_type: CatalogType, conf: RecursiveDict) -> None:
+    """Validate required properties for explicitly selected catalog types."""
+    if catalog_type in {CatalogType.REST, CatalogType.HIVE, CatalogType.SQL} and URI not in conf:
+        raise ValueError(
+            f"URI missing, please provide using --uri, the config or environment variable PYICEBERG_CATALOG__{name.upper()}__URI"
+        )
+
+
 def load_catalog(name: str | None = None, **properties: str | None) -> Catalog:
     """Load the catalog based on the properties.
 
@@ -263,6 +273,7 @@ def load_catalog(name: str | None = None, **properties: str | None) -> Catalog:
         catalog_type = infer_catalog_type(name, conf)
 
     if catalog_type:
+        _check_required_catalog_properties(name, catalog_type, conf)
         return AVAILABLE_CATALOGS[catalog_type](name, cast(dict[str, str], conf))
 
     raise ValueError(f"Could not initialize catalog with the following properties: {properties}")
@@ -674,6 +685,31 @@ class Catalog(ABC):
             NoSuchViewError: If a view with the given name does not exist.
         """
 
+    @abstractmethod
+    def create_view(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        view_version: ViewVersion,
+        location: str | None = None,
+        properties: Properties = EMPTY_DICT,
+    ) -> View:
+        """Create a view.
+
+        Args:
+            identifier (str | Identifier): View identifier.
+            schema (Schema): View's schema.
+            view_version (ViewVersion): The format version for the view.
+            location (str | None): Location for the view. Optional Argument.
+            properties (Properties): View properties that can be a string based dictionary.
+
+        Returns:
+            View: the created view instance.
+
+        Raises:
+            ViewAlreadyExistsError: If a view with the name already exists.
+        """
+
     @staticmethod
     def identifier_to_tuple(identifier: str | Identifier) -> Identifier:
         """Parse an identifier to a tuple.
@@ -893,6 +929,16 @@ class MetastoreCatalog(Catalog, ABC):
         delete_files(io, manifest_lists_to_delete, MANIFEST_LIST)
         delete_files(io, prev_metadata_files, PREVIOUS_METADATA)
         delete_files(io, {table.metadata_location}, METADATA)
+
+    def create_view(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        view_version: ViewVersion,
+        location: str | None = None,
+        properties: Properties = EMPTY_DICT,
+    ) -> View:
+        raise NotImplementedError
 
     def _create_staged_table(
         self,

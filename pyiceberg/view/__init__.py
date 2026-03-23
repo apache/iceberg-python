@@ -1,4 +1,3 @@
-#
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -15,40 +14,34 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-#
+from __future__ import annotations
 
-name: "CodeQL"
+from typing import (
+    Any,
+)
 
-on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-  schedule:
-    - cron: '16 4 * * 1'
+from pyiceberg.typedef import Identifier
+from pyiceberg.view.metadata import ViewMetadata
 
-permissions:
-  contents: read
 
-jobs:
-  analyze:
-    name: Analyze Actions
-    runs-on: ubuntu-slim
-    permissions:
-      contents: read
-      security-events: write
-      packages: read
+class View:
+    """An Iceberg view."""
 
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
+    _identifier: Identifier
+    metadata: ViewMetadata
 
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v4
-      with:
-        languages: actions
+    def __init__(
+        self,
+        identifier: Identifier,
+        metadata: ViewMetadata,
+    ) -> None:
+        self._identifier = identifier
+        self.metadata = metadata
 
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v4
-      with:
-        category: "/language:actions"
+    def name(self) -> Identifier:
+        """Return the identifier of this view."""
+        return self._identifier
+
+    def __eq__(self, other: Any) -> bool:
+        """Return the equality of two instances of the View class."""
+        return self.name() == other.name() and self.metadata == other.metadata if isinstance(other, View) else False

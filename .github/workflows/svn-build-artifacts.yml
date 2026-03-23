@@ -26,6 +26,9 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   svn-build-artifacts:
     name: Build artifacts for SVN on ${{ matrix.os }}
@@ -49,7 +52,7 @@ jobs:
             3.13
 
       - name: Install UV
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098
 
       # Publish the source distribution with the version that's in
       # the repository, otherwise the tests will fail
@@ -58,7 +61,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.3.1
+        uses: pypa/cibuildwheel@v3.4.0
         with:
           output-dir: wheelhouse
           config-file: "pyproject.toml"

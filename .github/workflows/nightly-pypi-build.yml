@@ -24,6 +24,9 @@ on:
     - cron: "0 0 * * *"  # Runs at midnight UTC every day
   workflow_dispatch:  # Allows manual triggering
 
+permissions:
+  contents: read
+
 jobs:
   set-version:
     if: github.repository == 'apache/iceberg-python'  # Only run for apache repo
@@ -40,7 +43,7 @@ jobs:
           python-version: 3.12
 
       - name: Install UV
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098
 
       - name: Set version
         id: set-version
@@ -71,7 +74,7 @@ jobs:
 
     steps:
     - name: Download all the artifacts
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
       with:
         merge-multiple: true
         path: dist/

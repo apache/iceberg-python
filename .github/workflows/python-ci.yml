@@ -38,6 +38,9 @@ on:
     - '!LICENSE'
     - '!NOTICE'
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -57,11 +60,13 @@ jobs:
       with:
         python-version: ${{ matrix.python }}
     - name: Install UV
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098
       with:
         enable-cache: true
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
+    - name: Check uv.lock is up to date
+      run: uv lock --check
     - name: Install
       run: make install
     - name: Run linters
@@ -79,7 +84,7 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098
       with:
         enable-cache: true
     - name: Install system dependencies
@@ -106,7 +111,7 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098
       with:
         enable-cache: true
     - name: Install system dependencies
@@ -133,7 +138,7 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098
       with:
         enable-cache: true
     - name: Install system dependencies
@@ -160,7 +165,7 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098
       with:
         enable-cache: true
     - name: Install system dependencies
@@ -188,15 +193,38 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098
       with:
         enable-cache: true
     - name: Install dependencies
       run: uv sync --group dev
     - name: Download all coverage artifacts
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
       with:
         pattern: coverage-*
         merge-multiple: true
     - name: Generate coverage report (75%) # Coverage threshold should only increase over time — never decrease it!
       run: COVERAGE_FAIL_UNDER=75 make coverage-report
+
+  cibw-dev-env-smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+    - name: Install UV
+      uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098
+      with:
+        enable-cache: true
+    # Why this exists:
+    # Catch import-time regressions (e.g., global conftest optional deps)
+    # in the same dev-only environment used by cibuildwheel wheel tests.
+    # Keep this in sync with wheel build test setup in
+    # .github/workflows/pypi-build-artifacts.yml:
+    #   CIBW_BEFORE_TEST: uv sync --directory {project} --only-group dev --no-install-project
+    #   CIBW_TEST_COMMAND: uv run --directory {project} pytest tests/avro/test_decoder.py
+    - name: Mirror wheel CIBW_BEFORE_TEST
+      run: uv sync --directory . --only-group dev --no-install-project
+    - name: Mirror wheel CIBW_TEST_COMMAND
+      run: uv run --directory . pytest tests/avro/test_decoder.py

@@ -26,7 +26,7 @@ hide:
 
 Pyiceberg comes with a CLI that's available after installing the `pyiceberg` package.
 
-You can pass the path to the Catalog using `--uri` and `--credential`. For REST catalogs that require a path prefix, you can also set `--prefix`. It is still recommended to set up a `~/.pyiceberg.yaml` config as described in the [Catalog](configuration.md) section.
+You can pass the path to the Catalog using `--uri` and `--credential`. For REST catalogs, you can also set `--warehouse` to request a specific warehouse from the catalog service. It is still recommended to set up a `~/.pyiceberg.yaml` config as described in the [Catalog](configuration.md) section.
 
 ```sh
 ➜  pyiceberg --help
@@ -39,7 +39,7 @@ Options:
   --ugi TEXT
   --uri TEXT
   --credential TEXT
-  --prefix TEXT
+  --warehouse TEXT
   --help                Show this message and exit.
 
 Commands:
