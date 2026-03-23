@@ -76,7 +76,7 @@ def has_duplicate_rows(df: pyarrow_table, join_cols: list[str]) -> bool:
     return len(df.select(join_cols).group_by(join_cols).aggregate([([], "count_all")]).filter(pc.field("count_all") > 1)) > 0
 
 
-def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols: list[str]) -> pa.Table:
+def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols: list[str], null_safe_eq: bool) -> pa.Table:
     """
     Return a table with rows that need to be updated in the target table based on the join columns.
 
@@ -121,16 +121,20 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     target_index = target_table.select(join_cols_set).append_column(TARGET_INDEX_COLUMN_NAME, pa.array(range(len(target_table))))
 
     # Step 3: Perform an inner join to find which rows from source exist in target
-    # PyArrow joins ignore null values, and we want null==null to hold, so we compute the join in Python.
-    # This is equivalent to:
-    # matching_indices = source_index.join(target_index, keys=list(join_cols_set), join_type="inner")
-    source_indices = {tuple(row[col] for col in join_cols): row[SOURCE_INDEX_COLUMN_NAME] for row in source_index.to_pylist()}
-    target_indices = {tuple(row[col] for col in join_cols): row[TARGET_INDEX_COLUMN_NAME] for row in target_index.to_pylist()}
-    matching_indices = [(s, t) for key, s in source_indices.items() if (t := target_indices.get(key)) is not None]
+    if null_safe_eq:
+        # PyArrow joins ignore null values, and we want null==null to hold, so we compute the join in Python.
+        source_indices = {tuple(row[col] for col in join_cols): row[SOURCE_INDEX_COLUMN_NAME] for row in source_index.to_pylist()}
+        target_indices = {tuple(row[col] for col in join_cols): row[TARGET_INDEX_COLUMN_NAME] for row in target_index.to_pylist()}
+        paired_indices = [(s, t) for key, s in source_indices.items() if (t := target_indices.get(key)) is not None]
+    else:
+        matching_indices = source_index.join(target_index, keys=list(join_cols_set), join_type="inner")
+        source_indices = matching_indices[SOURCE_INDEX_COLUMN_NAME].to_pylist()
+        target_indices = matching_indices[TARGET_INDEX_COLUMN_NAME].to_pylist()
+        paired_indices = list(zip(source_indices, target_indices, strict=True))
 
     # Step 4: Compare all rows using Python
     to_update_indices = []
-    for source_idx, target_idx in matching_indices:
+    for source_idx, target_idx in paired_indices:
         source_row = source_table.slice(source_idx, 1)
         target_row = target_table.slice(target_idx, 1)
 

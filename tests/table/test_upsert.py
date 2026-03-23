@@ -810,7 +810,7 @@ def test_upsert_with_nulls_in_join_columns(catalog: Catalog) -> None:
         ],
         schema=schema,
     )
-    upd = table.upsert(data_with_null, join_cols=["foo"])
+    upd = table.upsert(data_with_null, join_cols=["foo"], null_safe_eq=True)
     assert upd.rows_updated == 0
     assert upd.rows_inserted == 1
     assert table.scan().to_arrow() == pa.Table.from_pylist(
@@ -828,7 +828,7 @@ def test_upsert_with_nulls_in_join_columns(catalog: Catalog) -> None:
         ],
         schema=schema,
     )
-    upd = table.upsert(data_with_null, join_cols=["foo", "bar"])
+    upd = table.upsert(data_with_null, join_cols=["foo", "bar"], null_safe_eq=True)
     assert upd.rows_updated == 1
     assert upd.rows_inserted == 1
     assert table.scan().to_arrow() == pa.Table.from_pylist(
