@@ -1049,6 +1049,7 @@ class Table:
     io: FileIO
     catalog: Catalog
     config: dict[str, str]
+    labels: dict[str, Any]
 
     def __init__(
         self,
@@ -1058,6 +1059,7 @@ class Table:
         io: FileIO,
         catalog: Catalog,
         config: dict[str, str] = EMPTY_DICT,
+        labels: dict[str, Any] | None = None,
     ) -> None:
         self._identifier = identifier
         self.metadata = metadata
@@ -1065,6 +1067,24 @@ class Table:
         self.io = io
         self.catalog = catalog
         self.config = config
+        self.labels = labels or {}
+
+    @property
+    def table_labels(self) -> dict[str, str]:
+        """Table-level labels from catalog enrichment."""
+        return self.labels.get("table", {})
+
+    @property
+    def column_labels(self) -> list[dict[str, Any]]:
+        """Column-level labels from catalog enrichment."""
+        return self.labels.get("columns", [])
+
+    def get_column_label(self, field_id: int) -> dict[str, str]:
+        """Get labels for a specific column by field-id."""
+        for col in self.column_labels:
+            if col.get("field-id") == field_id:
+                return col.get("labels", {})
+        return {}
 
     def transaction(self) -> Transaction:
         """Create a new transaction object to first stage the changes, and then commit them to the catalog.
