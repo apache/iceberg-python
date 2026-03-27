@@ -450,32 +450,6 @@ class Transaction:
         """
         return UpdateStatistics(transaction=self)
 
-    def replace(
-        self,
-        files_to_delete: Iterable[DataFile],
-        files_to_add: Iterable[DataFile],
-        snapshot_properties: dict[str, str] = EMPTY_DICT,
-        branch: str | None = MAIN_BRANCH,
-    ) -> None:
-        """
-        Shorthand for replacing existing files with new files.
-
-        A replace will produce a REPLACE snapshot that will ignore existing
-        files and replace them with the new files.
-
-        Args:
-            files_to_delete: The files to delete
-            files_to_add: The new files to add that replace the deleted files
-            snapshot_properties: Custom properties to be added to the snapshot summary
-            branch: Branch Reference to run the replace operation
-        """
-        with self.update_snapshot(snapshot_properties=snapshot_properties, branch=branch).replace() as replace_snapshot:
-            for file_to_delete in files_to_delete:
-                replace_snapshot.delete_data_file(file_to_delete)
-
-            for data_file in files_to_add:
-                replace_snapshot.append_data_file(data_file)
-
     def append(self, df: pa.Table, snapshot_properties: dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH) -> None:
         """
         Shorthand API for appending a PyArrow table to a table transaction.
@@ -1409,33 +1383,6 @@ class Table:
         """
         with self.transaction() as tx:
             tx.append(df=df, snapshot_properties=snapshot_properties, branch=branch)
-
-    def replace(
-        self,
-        files_to_delete: Iterable[DataFile],
-        files_to_add: Iterable[DataFile],
-        snapshot_properties: dict[str, str] = EMPTY_DICT,
-        branch: str | None = MAIN_BRANCH,
-    ) -> None:
-        """
-        Shorthand for replacing existing files with new files.
-
-        A replace will produce a REPLACE snapshot that will ignore existing
-        files and replace them with the new files.
-
-        Args:
-            files_to_delete: The files to delete
-            files_to_add: The new files to add that replace the deleted files
-            snapshot_properties: Custom properties to be added to the snapshot summary
-            branch: Branch Reference to run the replace operation
-        """
-        with self.transaction() as tx:
-            tx.replace(
-                files_to_delete=files_to_delete,
-                files_to_add=files_to_add,
-                snapshot_properties=snapshot_properties,
-                branch=branch,
-            )
 
     def dynamic_partition_overwrite(
         self, df: pa.Table, snapshot_properties: dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH
