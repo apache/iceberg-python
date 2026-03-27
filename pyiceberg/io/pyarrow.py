@@ -1452,7 +1452,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema]):
                 elif self._format_version >= 3:
                     if primitive.tz in UTC_ALIASES:
                         return TimestamptzNanoType()
-                    else:
+                    elif primitive.tz is None:
                         return TimestampNanoType()
                 else:
                     raise TypeError(

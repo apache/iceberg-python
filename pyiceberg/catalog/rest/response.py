@@ -14,6 +14,7 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+from http import HTTPStatus
 from json import JSONDecodeError
 from typing import Literal
 
@@ -100,6 +101,12 @@ def _handle_non_200_response(exc: HTTPError, error_handler: dict[int, type[Excep
                 response += f": {description}"
             if uri := error.error_uri:
                 response += f" ({uri})"
+        elif not exc.response.text:
+            try:
+                phrase = HTTPStatus(code).phrase
+            except ValueError:
+                phrase = exc.response.reason or f"HTTP {code}"
+            response = f"{exception.__name__}: RestError: {phrase}"
         else:
             error = ErrorResponse.model_validate_json(exc.response.text).error
             response = f"{error.type}: {error.message}"

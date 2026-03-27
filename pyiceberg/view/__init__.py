@@ -1,4 +1,3 @@
-#
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -15,36 +14,34 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-#
+from __future__ import annotations
 
-name: "Python CI Docs"
+from typing import (
+    Any,
+)
 
-on:
-  push:
-    branches:
-      - 'main'
-  pull_request:
-
-permissions:
-  contents: read
+from pyiceberg.typedef import Identifier
+from pyiceberg.view.metadata import ViewMetadata
 
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+class View:
+    """An Iceberg view."""
 
-jobs:
-  docs:
-    runs-on: ubuntu-slim
+    _identifier: Identifier
+    metadata: ViewMetadata
 
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: 3.12
-      - name: Install UV
-        uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098
-      - name: Build docs
-        run: make docs-build
-      - name: Run linters
-        run: make lint
+    def __init__(
+        self,
+        identifier: Identifier,
+        metadata: ViewMetadata,
+    ) -> None:
+        self._identifier = identifier
+        self.metadata = metadata
+
+    def name(self) -> Identifier:
+        """Return the identifier of this view."""
+        return self._identifier
+
+    def __eq__(self, other: Any) -> bool:
+        """Return the equality of two instances of the View class."""
+        return self.name() == other.name() and self.metadata == other.metadata if isinstance(other, View) else False

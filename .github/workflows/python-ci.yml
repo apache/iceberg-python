@@ -60,11 +60,13 @@ jobs:
       with:
         python-version: ${{ matrix.python }}
     - name: Install UV
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098
       with:
         enable-cache: true
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
+    - name: Check uv.lock is up to date
+      run: uv lock --check
     - name: Install
       run: make install
     - name: Run linters
@@ -82,7 +84,7 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098
       with:
         enable-cache: true
     - name: Install system dependencies
@@ -109,7 +111,7 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098
       with:
         enable-cache: true
     - name: Install system dependencies
@@ -136,7 +138,7 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098
       with:
         enable-cache: true
     - name: Install system dependencies
@@ -163,7 +165,7 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098
       with:
         enable-cache: true
     - name: Install system dependencies
@@ -191,13 +193,13 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098
       with:
         enable-cache: true
     - name: Install dependencies
       run: uv sync --group dev
     - name: Download all coverage artifacts
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
       with:
         pattern: coverage-*
         merge-multiple: true
@@ -212,7 +214,7 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098
       with:
         enable-cache: true
     # Why this exists:

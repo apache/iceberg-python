@@ -21,7 +21,7 @@ import pyarrow as pa
 import pytest
 from moto import mock_aws
 
-from pyiceberg.catalog.glue import GlueCatalog
+from pyiceberg.catalog.glue import GLUE_CONNECTION_S3_TABLES, GlueCatalog
 from pyiceberg.exceptions import (
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
@@ -42,6 +42,57 @@ from tests.conftest import (
     TABLE_METADATA_LOCATION_REGEX,
     UNIFIED_AWS_SESSION_PROPERTIES,
 )
+
+S3TABLES_WAREHOUSE_LOCATION = "s3tables-warehouse-location"
+
+
+def _patch_moto_for_s3tables(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Patch moto to simulate S3 Tables federated databases.
+
+    Moto does not support FederatedDatabase on GetDatabase responses or
+    auto-populating StorageDescriptor.Location for S3 Tables. These patches
+    simulate the S3 Tables service behavior so that the GlueCatalog S3 Tables
+    code path can be tested end-to-end with moto.
+    """
+    from moto.glue.models import FakeDatabase, FakeTable
+
+    # Patch 1: Make GetDatabase return FederatedDatabase from the stored input.
+    _original_db_as_dict = FakeDatabase.as_dict
+
+    def _db_as_dict_with_federated(self):  # type: ignore
+        result = _original_db_as_dict(self)
+        if federated := self.input.get("FederatedDatabase"):
+            result["FederatedDatabase"] = federated
+        return result
+
+    monkeypatch.setattr(FakeDatabase, "as_dict", _db_as_dict_with_federated)
+
+    # Patch 2: When a table is created with format=ICEBERG (the S3 Tables convention),
+    # inject a StorageDescriptor.Location to simulate S3 Tables vending a table
+    # warehouse location.
+    _original_table_init = FakeTable.__init__
+
+    def _table_init_with_location(self, database_name, table_name, table_input, catalog_id):  # type: ignore
+        if table_input.get("Parameters", {}).get("format") == "ICEBERG" and "StorageDescriptor" not in table_input:
+            table_input = {
+                **table_input,
+                "StorageDescriptor": {
+                    "Columns": [],
+                    "Location": f"s3://{S3TABLES_WAREHOUSE_LOCATION}/{database_name}/{table_name}/",
+                    "InputFormat": "",
+                    "OutputFormat": "",
+                    "SerdeInfo": {},
+                },
+            }
+        _original_table_init(self, database_name, table_name, table_input, catalog_id)
+
+    monkeypatch.setattr(FakeTable, "__init__", _table_init_with_location)
+
+    # Create a bucket backing the simulated table warehouse location. S3 Tables manages
+    # this storage internally, but in tests moto needs a real bucket for metadata file
+    # writes to succeed.
+    s3 = boto3.client("s3", region_name="us-east-1")
+    s3.create_bucket(Bucket=S3TABLES_WAREHOUSE_LOCATION)
 
 
 @mock_aws
@@ -953,3 +1004,78 @@ def test_glue_client_override() -> None:
     test_client = boto3.client("glue", region_name="us-west-2")
     test_catalog = GlueCatalog(catalog_name, test_client)
     assert test_catalog.glue is test_client
+
+
+def _create_s3tables_database(catalog: GlueCatalog, database_name: str) -> None:
+    """Create a Glue database with S3 Tables federation metadata."""
+    catalog.glue.create_database(
+        DatabaseInput={
+            "Name": database_name,
+            "FederatedDatabase": {
+                "Identifier": "arn:aws:s3tables:us-east-1:123456789012:bucket/my-bucket",
+                "ConnectionType": GLUE_CONNECTION_S3_TABLES,
+            },
+        }
+    )
+
+
+@mock_aws
+def test_create_table_s3tables(
+    monkeypatch: pytest.MonkeyPatch,
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    table_schema_nested: Schema,
+    database_name: str,
+    table_name: str,
+) -> None:
+    _patch_moto_for_s3tables(monkeypatch)
+
+    identifier = (database_name, table_name)
+    test_catalog = GlueCatalog("s3tables", **{"s3.endpoint": moto_endpoint_url})
+    _create_s3tables_database(test_catalog, database_name)
+
+    table = test_catalog.create_table(identifier, table_schema_nested)
+    assert table.name() == identifier
+    assert table.location() == f"s3://{S3TABLES_WAREHOUSE_LOCATION}/{database_name}/{table_name}"
+    assert table.metadata_location.startswith(f"s3://{S3TABLES_WAREHOUSE_LOCATION}/{database_name}/{table_name}/metadata/00000-")
+    assert table.metadata_location.endswith(".metadata.json")
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+
+
+@mock_aws
+def test_create_table_s3tables_rejects_location(
+    monkeypatch: pytest.MonkeyPatch,
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    table_schema_nested: Schema,
+    database_name: str,
+    table_name: str,
+) -> None:
+    _patch_moto_for_s3tables(monkeypatch)
+
+    identifier = (database_name, table_name)
+    test_catalog = GlueCatalog("s3tables", **{"s3.endpoint": moto_endpoint_url})
+    _create_s3tables_database(test_catalog, database_name)
+
+    with pytest.raises(ValueError, match="Cannot specify a location for S3 Tables table"):
+        test_catalog.create_table(identifier, table_schema_nested, location="s3://some-bucket/some-path")
+
+
+@mock_aws
+def test_create_table_s3tables_duplicate(
+    monkeypatch: pytest.MonkeyPatch,
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    table_schema_nested: Schema,
+    database_name: str,
+    table_name: str,
+) -> None:
+    _patch_moto_for_s3tables(monkeypatch)
+
+    identifier = (database_name, table_name)
+    test_catalog = GlueCatalog("s3tables", **{"s3.endpoint": moto_endpoint_url})
+    _create_s3tables_database(test_catalog, database_name)
+
+    test_catalog.create_table(identifier, table_schema_nested)
+    with pytest.raises(TableAlreadyExistsError):
+        test_catalog.create_table(identifier, table_schema_nested)
