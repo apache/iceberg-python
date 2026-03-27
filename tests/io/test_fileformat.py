@@ -15,6 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from typing import Any
+
+import pytest
+
+from pyiceberg.io.fileformat import DataFileStatistics, FileFormatWriter
+
 
 def test_backward_compat_import() -> None:
     """DataFileStatistics can still be imported from pyiceberg.io.pyarrow."""
@@ -22,3 +28,18 @@ def test_backward_compat_import() -> None:
     from pyiceberg.io.pyarrow import DataFileStatistics  # noqa: F401
 
     assert DataFileStatistics is dFS
+
+
+def test_result_before_close_raises() -> None:
+    """Calling result before close should raise an error."""
+
+    class _DummyWriter(FileFormatWriter):
+        def write(self, table: Any) -> None:
+            pass
+
+        def close(self) -> DataFileStatistics:
+            raise NotImplementedError
+
+    writer = _DummyWriter()
+    with pytest.raises(RuntimeError, match="Writer has not been closed yet"):
+        writer.result()
