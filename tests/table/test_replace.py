@@ -15,13 +15,13 @@
 # specific language governing permissions and limitations
 # under the License.
 from pyiceberg.catalog import Catalog
-from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
+from pyiceberg.manifest import DataFile, DataFileContent, FileFormat, ManifestEntryStatus
 from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.typedef import Record
 
 
-def test_replace_api(catalog: Catalog) -> None:
+def test_replace_internally(catalog: Catalog) -> None:
     # Setup a basic table using the catalog fixture
     catalog.create_namespace("default")
     table = catalog.create_table(
@@ -29,7 +29,7 @@ def test_replace_api(catalog: Catalog) -> None:
         schema=Schema(),
     )
 
-    # Create mock DataFiles for the test
+    # 1. File we will delete
     file_to_delete = DataFile.from_args(
         file_path="s3://bucket/test/data/deleted.parquet",
         file_format=FileFormat.PARQUET,
@@ -40,6 +40,18 @@ def test_replace_api(catalog: Catalog) -> None:
     )
     file_to_delete.spec_id = 0
 
+    # 2. File we will leave completely untouched
+    file_to_keep = DataFile.from_args(
+        file_path="s3://bucket/test/data/kept.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=50,
+        file_size_in_bytes=512,
+        content=DataFileContent.DATA,
+    )
+    file_to_keep.spec_id = 0
+
+    # 3. File we are adding as a replacement
     file_to_add = DataFile.from_args(
         file_path="s3://bucket/test/data/added.parquet",
         file_format=FileFormat.PARQUET,
@@ -50,47 +62,163 @@ def test_replace_api(catalog: Catalog) -> None:
     )
     file_to_add.spec_id = 0
 
-    # Initially append to have something to replace
+    # Initially append BOTH the file to delete and the file to keep
     with table.transaction() as tx:
         with tx.update_snapshot().fast_append() as append_snapshot:
             append_snapshot.append_data_file(file_to_delete)
+            append_snapshot.append_data_file(file_to_keep)
 
-    # Verify initial append snapshot
-    assert len(table.history()) == 1
+    old_snapshot = table.current_snapshot()
+    old_snapshot_id = old_snapshot.snapshot_id
+    old_sequence_number = old_snapshot.sequence_number
+
+    # Call the internal replace API
+    with table.transaction() as tx:
+        with tx.update_snapshot().replace() as rewrite:
+            rewrite.delete_data_file(file_to_delete)
+            rewrite.append_data_file(file_to_add)
+
     snapshot = table.current_snapshot()
-    assert snapshot is not None
-    assert snapshot.summary is not None
-    assert snapshot.summary["operation"] == Operation.APPEND
-
-    # Call the replace API
-    table.replace(files_to_delete=[file_to_delete], files_to_add=[file_to_add])
-
-    # Verify the replacement created a REPLACE snapshot
-    assert len(table.history()) == 2
-    snapshot = table.current_snapshot()
-    assert snapshot is not None
-    assert snapshot.summary is not None
+    
+    # 1. Has a unique snapshot ID
+    assert snapshot.snapshot_id is not None
+    assert snapshot.snapshot_id != old_snapshot_id
+    
+    # 2. Parent points to the previous snapshot
+    assert snapshot.parent_snapshot_id == old_snapshot_id
+    
+    # 3. Sequence number is exactly previous + 1
+    assert snapshot.sequence_number == old_sequence_number + 1
+    
+    # 4. Operation type is set to "replace"
     assert snapshot.summary["operation"] == Operation.REPLACE
-
-    # Verify the correct files are added and deleted
-    # The summary property tracks these counts
+    
+    # 5. Manifest list path is correct (just verify it exists and is a string path)
+    assert snapshot.manifest_list is not None
+    assert isinstance(snapshot.manifest_list, str)
+    
+    # 6. Summary counts are accurate
     assert snapshot.summary["added-data-files"] == "1"
     assert snapshot.summary["deleted-data-files"] == "1"
     assert snapshot.summary["added-records"] == "100"
     assert snapshot.summary["deleted-records"] == "100"
+    assert snapshot.summary["total-records"] == "150"
 
-    # Verify the new file exists in the new manifest
+    # Fetch all entries from the new manifests
     manifest_files = snapshot.manifests(table.io)
-    assert len(manifest_files) == 2  # One for ADDED, one for DELETED
-
-    # Check that sequence numbers were handled properly natively by verifying the manifest contents
     entries = []
     for manifest in manifest_files:
-        for entry in manifest.fetch_manifest_entry(table.io, discard_deleted=False):
-            entries.append(entry)
+        entries.extend(manifest.fetch_manifest_entry(table.io, discard_deleted=False))
 
-    # One entry for ADDED (new file), one for DELETED (old file)
-    assert len(entries) == 2
+    # We expect 3 entries: ADDED, DELETED, and EXISTING
+    assert len(entries) == 3
+    
+    # Check ADDED
+    added_entries = [e for e in entries if e.status == ManifestEntryStatus.ADDED]
+    assert len(added_entries) == 1
+    assert added_entries[0].data_file.file_path == file_to_add.file_path
+    assert added_entries[0].snapshot_id == snapshot.snapshot_id
+
+    # Check DELETED
+    deleted_entries = [e for e in entries if e.status == ManifestEntryStatus.DELETED]
+    assert len(deleted_entries) == 1
+    assert deleted_entries[0].data_file.file_path == file_to_delete.file_path
+    assert deleted_entries[0].snapshot_id == snapshot.snapshot_id
+
+    # Check EXISTING
+    existing_entries = [e for e in entries if e.status == ManifestEntryStatus.EXISTING]
+    assert len(existing_entries) == 1
+    assert existing_entries[0].data_file.file_path == file_to_keep.file_path
+    assert existing_entries[0].snapshot_id == old_snapshot_id
+
+
+def test_replace_reuses_unaffected_manifests(catalog: Catalog) -> None:
+    # Setup a basic table
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        identifier="default.test_replace_reuse_manifest",
+        schema=Schema(),
+    )
+
+    file_a = DataFile.from_args(
+        file_path="s3://bucket/test/data/a.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=10,
+        file_size_in_bytes=100,
+        content=DataFileContent.DATA,
+    )
+    file_a.spec_id = 0
+
+    file_b = DataFile.from_args(
+        file_path="s3://bucket/test/data/b.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=10,
+        file_size_in_bytes=100,
+        content=DataFileContent.DATA,
+    )
+    file_b.spec_id = 0
+
+    file_c = DataFile.from_args(
+        file_path="s3://bucket/test/data/c.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=10,
+        file_size_in_bytes=100,
+        content=DataFileContent.DATA,
+    )
+    file_c.spec_id = 0
+
+    # Commit 1: Append file A (Creates Manifest 1)
+    with table.transaction() as tx:
+        with tx.update_snapshot().fast_append() as append_snapshot:
+            append_snapshot.append_data_file(file_a)
+
+    # Commit 2: Append file B (Creates Manifest 2)
+    with table.transaction() as tx:
+        with tx.update_snapshot().fast_append() as append_snapshot:
+            append_snapshot.append_data_file(file_b)
+
+    snapshot_before = table.current_snapshot()
+    manifests_before = snapshot_before.manifests(table.io)
+    assert len(manifests_before) == 2
+
+    # Identify which manifest belongs to file_b and file_a
+    manifest_b_path = None
+    manifest_a_path = None
+    for m in manifests_before:
+        entries = m.fetch_manifest_entry(table.io, discard_deleted=False)
+        if any(e.data_file.file_path == file_b.file_path for e in entries):
+            manifest_b_path = m.manifest_path
+        if any(e.data_file.file_path == file_a.file_path for e in entries):
+            manifest_a_path = m.manifest_path
+
+    assert manifest_b_path is not None
+    assert manifest_a_path is not None
+
+    # Commit 3: Replace file A with file C
+    with table.transaction() as tx:
+        with tx.update_snapshot().replace() as rewrite:
+            rewrite.delete_data_file(file_a)
+            rewrite.append_data_file(file_c)
+
+    snapshot_after = table.current_snapshot()
+    manifests_after = snapshot_after.manifests(table.io)
+    
+    # We expect 3 manifests: 
+    # 1. The reused one for file B
+    # 2. The newly rewritten one marking file A as DELETED
+    # 3. The new one for file C (ADDED)
+    assert len(manifests_after) == 3
+    
+    manifest_paths_after = [m.manifest_path for m in manifests_after]
+    
+    # ASSERTION 1: The untouched manifest is completely reused (the path matches exactly)
+    assert manifest_b_path in manifest_paths_after
+
+    # ASSERTION 2: File A's old manifest is NOT reused (since it was rewritten to change status to DELETED)
+    assert manifest_a_path not in manifest_paths_after
 
 
 def test_replace_empty_files(catalog: Catalog) -> None:
@@ -102,8 +230,211 @@ def test_replace_empty_files(catalog: Catalog) -> None:
     )
 
     # Replacing empty lists should not throw errors, but should produce no changes.
-    table.replace([], [])
+    with table.transaction() as tx:
+        with tx.update_snapshot().replace():
+            pass  # Entering and exiting the context manager without adding/deleting
 
     # History should be completely empty since no files were rewritten
     assert len(table.history()) == 0
     assert table.current_snapshot() is None
+
+
+def test_replace_missing_file_abort(catalog: Catalog) -> None:
+    # Setup a basic table
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        identifier="default.test_replace_missing",
+        schema=Schema(),
+    )
+
+    fake_data_file = DataFile.from_args(
+        file_path="s3://bucket/test/data/does_not_exist.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=100,
+        file_size_in_bytes=1024,
+        content=DataFileContent.DATA,
+    )
+    fake_data_file.spec_id = 0
+
+    new_data_file = DataFile.from_args(
+        file_path="s3://bucket/test/data/new.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=100,
+        file_size_in_bytes=1024,
+        content=DataFileContent.DATA,
+    )
+    new_data_file.spec_id = 0
+
+    # Ensure it aborts when trying to replace a file that isn't in the table
+    with pytest.raises(ValueError, match="Cannot delete files that are not present in the table"):
+        with table.transaction() as tx:
+            with tx.update_snapshot().replace() as rewrite:
+                rewrite.delete_data_file(fake_data_file)
+                rewrite.append_data_file(new_data_file)
+
+
+def test_replace_invariant_violation(catalog: Catalog) -> None:
+    # Setup a basic table
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        identifier="default.test_replace_invariant",
+        schema=Schema(),
+    )
+
+    file_to_delete = DataFile.from_args(
+        file_path="s3://bucket/test/data/deleted.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=100,
+        file_size_in_bytes=1024,
+        content=DataFileContent.DATA,
+    )
+    file_to_delete.spec_id = 0
+
+    # Create a new file with MORE records than the one we are deleting
+    too_many_records_file = DataFile.from_args(
+        file_path="s3://bucket/test/data/too_many.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=101, 
+        file_size_in_bytes=1024,
+        content=DataFileContent.DATA,
+    )
+    too_many_records_file.spec_id = 0
+
+    # Initially append to have something to replace
+    with table.transaction() as tx:
+        with tx.update_snapshot().fast_append() as append_snapshot:
+            append_snapshot.append_data_file(file_to_delete)
+
+    # Ensure it enforces the invariant: records added <= records removed
+    with pytest.raises(ValueError, match=r"Invalid replace: records added \(101\) exceeds records removed \(100\)"):
+        with table.transaction() as tx:
+            with tx.update_snapshot().replace() as rewrite:
+                rewrite.delete_data_file(file_to_delete)
+                rewrite.append_data_file(too_many_records_file)
+
+
+def test_replace_allows_shrinking_for_soft_deletes(catalog: Catalog) -> None:
+    # Setup a basic table
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        identifier="default.test_replace_shrink",
+        schema=Schema(),
+    )
+
+    # Old data file has 100 records
+    file_to_delete = DataFile.from_args(
+        file_path="s3://bucket/test/data/deleted.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=100,
+        file_size_in_bytes=1024,
+        content=DataFileContent.DATA,
+    )
+    file_to_delete.spec_id = 0
+
+    # New data file only has 90 records (simulating 10 records were soft-deleted)
+    shrunk_file_to_add = DataFile.from_args(
+        file_path="s3://bucket/test/data/shrunk.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=90, 
+        file_size_in_bytes=900,
+        content=DataFileContent.DATA,
+    )
+    shrunk_file_to_add.spec_id = 0
+
+    # Initially append
+    with table.transaction() as tx:
+        with tx.update_snapshot().fast_append() as append_snapshot:
+            append_snapshot.append_data_file(file_to_delete)
+
+    # This should succeed without throwing an invariant violation
+    with table.transaction() as tx:
+        with tx.update_snapshot().replace() as rewrite:
+            rewrite.delete_data_file(file_to_delete)
+            rewrite.append_data_file(shrunk_file_to_add)
+
+    snapshot = table.current_snapshot()
+    assert snapshot.summary["operation"] == Operation.REPLACE
+    assert snapshot.summary["added-records"] == "90"
+    assert snapshot.summary["deleted-records"] == "100"
+
+
+def test_replace_passes_through_delete_manifests(catalog: Catalog) -> None:
+    # Setup a basic table
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        identifier="default.test_replace_delete_manifests",
+        schema=Schema(),
+    )
+
+    # 1. Data file we will replace
+    file_a = DataFile.from_args(
+        file_path="s3://bucket/test/data/a.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=10,
+        file_size_in_bytes=100,
+        content=DataFileContent.DATA,
+    )
+    file_a.spec_id = 0
+
+    # 2. A Position Delete file (representing row-level deletes)
+    file_a_deletes = DataFile.from_args(
+        file_path="s3://bucket/test/data/a_deletes.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=2,
+        file_size_in_bytes=50,
+        content=DataFileContent.POSITION_DELETES,
+    )
+    file_a_deletes.spec_id = 0
+
+    # 3. Data file we are adding as a replacement
+    file_b = DataFile.from_args(
+        file_path="s3://bucket/test/data/b.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=10,
+        file_size_in_bytes=100,
+        content=DataFileContent.DATA,
+    )
+    file_b.spec_id = 0
+
+    # Commit 1: Append the data file
+    with table.transaction() as tx:
+        with tx.update_snapshot().fast_append() as append_snapshot:
+            append_snapshot.append_data_file(file_a)
+
+    # Commit 2: Append the delete file
+    with table.transaction() as tx:
+        with tx.update_snapshot().fast_append() as append_snapshot:
+            append_snapshot.append_data_file(file_a_deletes)
+
+    # Find the path of the delete manifest so we can verify it survives
+    snapshot_before = table.current_snapshot()
+    manifests_before = snapshot_before.manifests(table.io)
+    
+    delete_manifest_path = None
+    for m in manifests_before:
+        if m.content == ManifestContent.DELETES:
+            delete_manifest_path = m.manifest_path
+            
+    assert delete_manifest_path is not None
+
+    # Commit 3: Replace data file A with data file B
+    with table.transaction() as tx:
+        with tx.update_snapshot().replace() as rewrite:
+            rewrite.delete_data_file(file_a)
+            rewrite.append_data_file(file_b)
+
+    # Verify the delete manifest was passed through unchanged
+    snapshot_after = table.current_snapshot()
+    manifests_after = snapshot_after.manifests(table.io)
+    manifest_paths_after = [m.manifest_path for m in manifests_after]
+
+    assert delete_manifest_path in manifest_paths_after
