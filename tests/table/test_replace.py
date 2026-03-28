@@ -23,7 +23,6 @@ from pyiceberg.manifest import (
     DataFile,
     DataFileContent,
     FileFormat,
-    ManifestContent,
     ManifestEntry,
     ManifestEntryStatus,
 )
@@ -385,6 +384,7 @@ def test_replace_passes_through_delete_manifests(catalog: Catalog) -> None:
     table = catalog.create_table(
         identifier="default.test_replace_delete_manifests",
         schema=Schema(),
+        properties={"format-version": "2"},
     )
 
     # 1. Data file we will replace
@@ -436,8 +436,10 @@ def test_replace_passes_through_delete_manifests(catalog: Catalog) -> None:
 
     delete_manifest_path = None
     for m in manifests_before:
-        if m.content == ManifestContent.DELETES:
+        entries = m.fetch_manifest_entry(table.io, discard_deleted=False)
+        if any(e.data_file.file_path == file_a_deletes.file_path for e in entries):
             delete_manifest_path = m.manifest_path
+            break
 
     assert delete_manifest_path is not None
 
