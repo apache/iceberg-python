@@ -15,7 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 from typing import cast
+
 import pytest
+
 from pyiceberg.catalog import Catalog
 from pyiceberg.manifest import (
     DataFile,
@@ -93,20 +95,20 @@ def test_replace_internally(catalog: Catalog) -> None:
     # 1. Has a unique snapshot ID
     assert snapshot.snapshot_id is not None
     assert snapshot.snapshot_id != old_snapshot_id
-    
+
     # 2. Parent points to the previous snapshot
     assert snapshot.parent_snapshot_id == old_snapshot_id
-    
+
     # 3. Sequence number is exactly previous + 1
     assert snapshot.sequence_number == old_sequence_number + 1
-    
+
     # 4. Operation type is set to "replace"
     assert summary["operation"] == Operation.REPLACE
-    
+
     # 5. Manifest list path is correct (just verify it exists and is a string path)
     assert snapshot.manifest_list is not None
     assert isinstance(snapshot.manifest_list, str)
-    
+
     # 6. Summary counts are accurate
     assert summary["added-data-files"] == "1"
     assert summary["deleted-data-files"] == "1"
@@ -122,7 +124,7 @@ def test_replace_internally(catalog: Catalog) -> None:
 
     # We expect 3 entries: ADDED, DELETED, and EXISTING
     assert len(entries) == 3
-    
+
     # Check ADDED
     added_entries = [e for e in entries if e.status == ManifestEntryStatus.ADDED]
     assert len(added_entries) == 1
@@ -216,15 +218,15 @@ def test_replace_reuses_unaffected_manifests(catalog: Catalog) -> None:
     snapshot_after = cast(Snapshot, table.current_snapshot())
     assert snapshot_after is not None
     manifests_after = snapshot_after.manifests(table.io)
-    
-    # We expect 3 manifests: 
+
+    # We expect 3 manifests:
     # 1. The reused one for file B
     # 2. The newly rewritten one marking file A as DELETED
     # 3. The new one for file C (ADDED)
     assert len(manifests_after) == 3
-    
+
     manifest_paths_after = [m.manifest_path for m in manifests_after]
-    
+
     # ASSERTION 1: The untouched manifest is completely reused (the path matches exactly)
     assert manifest_b_path in manifest_paths_after
 
@@ -309,7 +311,7 @@ def test_replace_invariant_violation(catalog: Catalog) -> None:
         file_path="s3://bucket/test/data/too_many.parquet",
         file_format=FileFormat.PARQUET,
         partition=Record(),
-        record_count=101, 
+        record_count=101,
         file_size_in_bytes=1024,
         content=DataFileContent.DATA,
     )
@@ -352,7 +354,7 @@ def test_replace_allows_shrinking_for_soft_deletes(catalog: Catalog) -> None:
         file_path="s3://bucket/test/data/shrunk.parquet",
         file_format=FileFormat.PARQUET,
         partition=Record(),
-        record_count=90, 
+        record_count=90,
         file_size_in_bytes=900,
         content=DataFileContent.DATA,
     )
@@ -436,7 +438,7 @@ def test_replace_passes_through_delete_manifests(catalog: Catalog) -> None:
     for m in manifests_before:
         if m.content == ManifestContent.DELETES:
             delete_manifest_path = m.manifest_path
-            
+
     assert delete_manifest_path is not None
 
     # Commit 3: Replace data file A with data file B
