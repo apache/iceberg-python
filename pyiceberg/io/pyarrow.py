@@ -407,7 +407,6 @@ class PyArrowFileIO(FileIO):
         else:
             return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
 
-
     def _initialize_fs(self, scheme: str, netloc: str | None = None) -> FileSystem:
         """Initialize FileSystem for different scheme."""
         if scheme in {"oss"}:
