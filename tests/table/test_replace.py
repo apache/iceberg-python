@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from typing import cast
 import pytest
 from pyiceberg.catalog import Catalog
 from pyiceberg.manifest import (
@@ -25,7 +26,7 @@ from pyiceberg.manifest import (
     ManifestEntryStatus,
 )
 from pyiceberg.schema import Schema
-from pyiceberg.table.snapshots import Operation
+from pyiceberg.table.snapshots import Operation, Snapshot, Summary
 from pyiceberg.typedef import Record
 
 
@@ -76,9 +77,9 @@ def test_replace_internally(catalog: Catalog) -> None:
             append_snapshot.append_data_file(file_to_delete)
             append_snapshot.append_data_file(file_to_keep)
 
-    old_snapshot = table.current_snapshot()
+    old_snapshot = cast(Snapshot, table.current_snapshot())
     old_snapshot_id = old_snapshot.snapshot_id
-    old_sequence_number = old_snapshot.sequence_number
+    old_sequence_number = cast(int, old_snapshot.sequence_number)
 
     # Call the internal replace API
     with table.transaction() as tx:
@@ -86,8 +87,9 @@ def test_replace_internally(catalog: Catalog) -> None:
             rewrite.delete_data_file(file_to_delete)
             rewrite.append_data_file(file_to_add)
 
-    snapshot = table.current_snapshot()
-    
+    snapshot = cast(Snapshot, table.current_snapshot())
+    summary = cast(Summary, snapshot.summary)
+
     # 1. Has a unique snapshot ID
     assert snapshot.snapshot_id is not None
     assert snapshot.snapshot_id != old_snapshot_id
@@ -99,22 +101,22 @@ def test_replace_internally(catalog: Catalog) -> None:
     assert snapshot.sequence_number == old_sequence_number + 1
     
     # 4. Operation type is set to "replace"
-    assert snapshot.summary["operation"] == Operation.REPLACE
+    assert summary["operation"] == Operation.REPLACE
     
     # 5. Manifest list path is correct (just verify it exists and is a string path)
     assert snapshot.manifest_list is not None
     assert isinstance(snapshot.manifest_list, str)
     
     # 6. Summary counts are accurate
-    assert snapshot.summary["added-data-files"] == "1"
-    assert snapshot.summary["deleted-data-files"] == "1"
-    assert snapshot.summary["added-records"] == "100"
-    assert snapshot.summary["deleted-records"] == "100"
-    assert snapshot.summary["total-records"] == "150"
+    assert summary["added-data-files"] == "1"
+    assert summary["deleted-data-files"] == "1"
+    assert summary["added-records"] == "100"
+    assert summary["deleted-records"] == "100"
+    assert summary["total-records"] == "150"
 
     # Fetch all entries from the new manifests
     manifest_files = snapshot.manifests(table.io)
-    entries = []
+    entries: list[ManifestEntry] = []
     for manifest in manifest_files:
         entries.extend(manifest.fetch_manifest_entry(table.io, discard_deleted=False))
 
@@ -188,7 +190,7 @@ def test_replace_reuses_unaffected_manifests(catalog: Catalog) -> None:
         with tx.update_snapshot().fast_append() as append_snapshot:
             append_snapshot.append_data_file(file_b)
 
-    snapshot_before = table.current_snapshot()
+    snapshot_before = cast(Snapshot, table.current_snapshot())
     manifests_before = snapshot_before.manifests(table.io)
     assert len(manifests_before) == 2
 
@@ -211,7 +213,7 @@ def test_replace_reuses_unaffected_manifests(catalog: Catalog) -> None:
             rewrite.delete_data_file(file_a)
             rewrite.append_data_file(file_c)
 
-    snapshot_after = table.current_snapshot()
+    snapshot_after = cast(Snapshot, table.current_snapshot())
     assert snapshot_after is not None
     manifests_after = snapshot_after.manifests(table.io)
     
@@ -367,10 +369,12 @@ def test_replace_allows_shrinking_for_soft_deletes(catalog: Catalog) -> None:
             rewrite.delete_data_file(file_to_delete)
             rewrite.append_data_file(shrunk_file_to_add)
 
-    snapshot = table.current_snapshot()
-    assert snapshot.summary["operation"] == Operation.REPLACE
-    assert snapshot.summary["added-records"] == "90"
-    assert snapshot.summary["deleted-records"] == "100"
+    snapshot = cast(Snapshot, table.current_snapshot())
+    summary = cast(Summary, snapshot.summary)
+
+    assert summary["operation"] == Operation.REPLACE
+    assert summary["added-records"] == "90"
+    assert summary["deleted-records"] == "100"
 
 
 def test_replace_passes_through_delete_manifests(catalog: Catalog) -> None:
@@ -425,9 +429,9 @@ def test_replace_passes_through_delete_manifests(catalog: Catalog) -> None:
             append_snapshot.append_data_file(file_a_deletes)
 
     # Find the path of the delete manifest so we can verify it survives
-    snapshot_before = table.current_snapshot()
+    snapshot_before = cast(Snapshot, table.current_snapshot())
     manifests_before = snapshot_before.manifests(table.io)
-    
+
     delete_manifest_path = None
     for m in manifests_before:
         if m.content == ManifestContent.DELETES:
@@ -442,7 +446,7 @@ def test_replace_passes_through_delete_manifests(catalog: Catalog) -> None:
             rewrite.append_data_file(file_b)
 
     # Verify the delete manifest was passed through unchanged
-    snapshot_after = table.current_snapshot()
+    snapshot_after = cast(Snapshot, table.current_snapshot())
     assert snapshot_after is not None
     manifests_after = snapshot_after.manifests(table.io)
     manifest_paths_after = [m.manifest_path for m in manifests_after]
