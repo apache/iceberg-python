@@ -676,6 +676,20 @@ class _RewriteFiles(_SnapshotProducer["_RewriteFiles"]):
     def _commit(self) -> UpdatesAndRequirements:
         # Only produce a commit when there is something to rewrite
         if self._deleted_data_files or self._added_data_files:
+            # Grab the entries that we actually found in the table's manifests
+            deleted_entries = self._deleted_entries()
+            found_deleted_files = {entry.data_file for entry in deleted_entries}
+
+            # If the user asked to delete files that aren't in the table, abort.
+            if len(found_deleted_files) != len(self._deleted_data_files):
+                raise ValueError("Cannot delete files that are not present in the table")
+
+            added_records = sum(f.record_count for f in self._added_data_files)
+            deleted_records = sum(entry.data_file.record_count for entry in deleted_entries)
+
+            if added_records > deleted_records:
+                raise ValueError(f"Invalid replace: records added ({added_records}) exceeds records removed ({deleted_records})")
+
             return super()._commit()
         else:
             return (), ()
