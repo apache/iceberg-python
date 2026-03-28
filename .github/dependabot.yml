@@ -26,3 +26,7 @@ updates:
     open-pull-requests-limit: 50
     ignore:
       - dependency-name: "datafusion"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
