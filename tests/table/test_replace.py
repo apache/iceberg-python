@@ -23,7 +23,8 @@ from pyiceberg.manifest import (
     ManifestContent,
     ManifestEntry,
     ManifestEntryStatus,
-)from pyiceberg.schema import Schema
+)
+from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.typedef import Record
 
