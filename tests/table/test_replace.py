@@ -14,9 +14,16 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import pytest
 from pyiceberg.catalog import Catalog
-from pyiceberg.manifest import DataFile, DataFileContent, FileFormat, ManifestEntryStatus
-from pyiceberg.schema import Schema
+from pyiceberg.manifest import (
+    DataFile,
+    DataFileContent,
+    FileFormat,
+    ManifestContent,
+    ManifestEntry,
+    ManifestEntryStatus,
+)from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.typedef import Record
 
@@ -204,6 +211,7 @@ def test_replace_reuses_unaffected_manifests(catalog: Catalog) -> None:
             rewrite.append_data_file(file_c)
 
     snapshot_after = table.current_snapshot()
+    assert snapshot_after is not None
     manifests_after = snapshot_after.manifests(table.io)
     
     # We expect 3 manifests: 
@@ -434,6 +442,7 @@ def test_replace_passes_through_delete_manifests(catalog: Catalog) -> None:
 
     # Verify the delete manifest was passed through unchanged
     snapshot_after = table.current_snapshot()
+    assert snapshot_after is not None
     manifests_after = snapshot_after.manifests(table.io)
     manifest_paths_after = [m.manifest_path for m in manifests_after]
 
