@@ -62,6 +62,10 @@ def test_hive_catalog_missing_uri_shows_helpful_error(mocker: MockFixture) -> No
     assert "'uri'" not in result.output
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.11.0, will be removed in 1.0.0. "
+    "Please use `pyiceberg --version` instead of `pyiceberg version`:DeprecationWarning"
+)
 def test_version_does_not_load_catalog(mocker: MockFixture) -> None:
     mock_load_catalog = mocker.patch("pyiceberg.cli.console.load_catalog", side_effect=Exception("should not be called"))
 
@@ -69,8 +73,28 @@ def test_version_does_not_load_catalog(mocker: MockFixture) -> None:
     result = runner.invoke(run, ["version"])
 
     assert result.exit_code == 0
-    assert result.output == f"{__version__}\n"
+    assert __version__ in result.output
     mock_load_catalog.assert_not_called()
+
+
+def test_version_flag() -> None:
+    runner = CliRunner()
+    result = runner.invoke(run, ["--version"])
+
+    assert result.exit_code == 0
+    assert result.output == f"{__version__}\n"
+
+
+def test_version_command_emits_deprecation_warning(mocker: MockFixture) -> None:
+    mocker.patch("pyiceberg.cli.console.load_catalog")
+
+    runner = CliRunner()
+    with pytest.warns(DeprecationWarning, match="Please use `pyiceberg --version` instead of `pyiceberg version`"):
+        result = runner.invoke(run, ["version"])
+
+    assert result.exit_code == 0
+    assert "deprecated" in result.output.lower()
+    assert "pyiceberg --version" in result.output
 
 
 @pytest.fixture(autouse=True)

@@ -33,6 +33,7 @@ from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchPropertyException, 
 from pyiceberg.io import WAREHOUSE
 from pyiceberg.table import TableProperties
 from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
+from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import property_as_int
 
 
@@ -54,6 +55,7 @@ def catch_exception() -> Callable:  # type: ignore
 
 
 @click.group()
+@click.version_option(__version__, message="%(version)s")
 @click.option("--catalog")
 @click.option("--verbose", type=click.BOOL)
 @click.option("--output", type=click.Choice(["text", "json"]), default="text")
@@ -235,7 +237,17 @@ def location(ctx: Context, identifier: str) -> None:
 @click.pass_context
 @catch_exception()
 def version(ctx: Context) -> None:
-    """Print pyiceberg version."""
+    """Print pyiceberg's installed package number (deprecated, use ``--version`` instead)."""
+    deprecation_message(
+        deprecated_in="0.11.0",
+        removed_in="1.0.0",
+        help_message="Please use `pyiceberg --version` instead of `pyiceberg version`",
+    )
+    click.echo(
+        "Deprecation warning: the `version` command is deprecated and will be removed in 1.0.0. "
+        "Please use `pyiceberg --version` instead.",
+        err=True,
+    )
     ctx.obj["output"].version(__version__)
 
 
