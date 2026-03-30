@@ -16,6 +16,7 @@
 # under the License.
 import logging
 import os
+from functools import lru_cache
 
 import strictyaml
 
@@ -179,3 +180,8 @@ class Config:
             except ValueError as err:
                 raise ValueError(f"{key} should be a boolean or left unset. Current value: {val}") from err
         return None
+
+
+@lru_cache(maxsize=1)
+def get_env_config() -> Config:
+    return Config()
