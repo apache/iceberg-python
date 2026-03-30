@@ -42,7 +42,14 @@ from pyiceberg.expressions import (
     Reference,
     StartsWith,
 )
-from pyiceberg.expressions.literals import DecimalLiteral, LongLiteral, literal
+from pyiceberg.expressions.literals import DecimalLiteral, LongLiteral, StringLiteral, literal
+from pyiceberg.transforms import (
+    DayTransform,
+    HourTransform,
+    MonthTransform,
+    UnboundTransform,
+    YearTransform,
+)
 
 
 def test_always_true() -> None:
@@ -272,3 +279,86 @@ def test_valid_between_with_numerics() -> None:
     ) == parser.parse("foo between '2025-01-01T00:00:00.000000' and '2025-01-10T12:00:00.000000'")
 
     assert parser.parse("foo between 1 and 3") == parser.parse("1 <= foo and foo <= 3")
+
+
+def test_cast_date_comparison() -> None:
+    expected = EqualTo(
+        UnboundTransform(Reference("created_at"), DayTransform()),
+        StringLiteral("2024-01-01"),
+    )
+    assert expected == parser.parse("CAST(created_at AS date) = '2024-01-01'")
+
+
+def test_cast_year_comparison() -> None:
+    expected = GreaterThan(
+        UnboundTransform(Reference("ts"), YearTransform()),
+        LongLiteral(2020),
+    )
+    assert expected == parser.parse("CAST(ts AS year) > 2020")
+
+
+def test_cast_month_comparison() -> None:
+    expected = EqualTo(
+        UnboundTransform(Reference("ts"), MonthTransform()),
+        LongLiteral(6),
+    )
+    assert expected == parser.parse("CAST(ts AS month) = 6")
+
+
+def test_cast_hour_comparison() -> None:
+    expected = GreaterThanOrEqual(
+        UnboundTransform(Reference("ts"), HourTransform()),
+        LongLiteral(12),
+    )
+    assert expected == parser.parse("CAST(ts AS hour) >= 12")
+
+
+def test_cast_case_insensitive() -> None:
+    """CAST keyword and type name should be case-insensitive."""
+    expected = EqualTo(
+        UnboundTransform(Reference("created_at"), DayTransform()),
+        StringLiteral("2024-01-01"),
+    )
+    assert expected == parser.parse("cast(created_at as DATE) = '2024-01-01'")
+
+
+def test_cast_nested_field() -> None:
+    """CAST should work with dotted column references."""
+    expected = EqualTo(
+        UnboundTransform(Reference("event.timestamp"), DayTransform()),
+        StringLiteral("2024-01-01"),
+    )
+    assert expected == parser.parse("CAST(event.timestamp AS date) = '2024-01-01'")
+
+
+def test_cast_unsupported_type() -> None:
+    with pytest.raises(ValueError, match="Unsupported CAST target type"):
+        parser.parse("CAST(col AS foobar) = 5")
+
+
+def test_cast_not_equal() -> None:
+    expected = NotEqualTo(
+        UnboundTransform(Reference("ts"), YearTransform()),
+        LongLiteral(2020),
+    )
+    assert expected == parser.parse("CAST(ts AS year) != 2020")
+
+
+def test_cast_less_than_or_equal() -> None:
+    expected = LessThanOrEqual(
+        UnboundTransform(Reference("ts"), MonthTransform()),
+        LongLiteral(6),
+    )
+    assert expected == parser.parse("CAST(ts AS month) <= 6")
+
+
+def test_cast_with_and() -> None:
+    """CAST predicates compose with AND/OR via infix_notation."""
+    result = parser.parse("CAST(ts AS date) = '2024-01-01' and status = 'active'")
+    assert isinstance(result, And)
+
+
+def test_cast_with_not() -> None:
+    """NOT should negate a CAST predicate."""
+    result = parser.parse("not CAST(ts AS date) = '2024-01-01'")
+    assert isinstance(result, Not)
