@@ -29,7 +29,7 @@ permissions:
 
 jobs:
   set-version:
-    if: github.repository == 'apache/iceberg-python'  # Only run for apache repo
+    if: github.repository == 'apache/iceberg-python' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       VERSION: ${{ steps.set-version.outputs.VERSION }}
@@ -66,6 +66,7 @@ jobs:
       VERSION: ${{ needs.set-version.outputs.VERSION }}
   testpypi-publish:
     name: Publish to TestPypi
+    if: github.repository == 'apache/iceberg-python'
     needs:
       - nightly-build
     runs-on: ubuntu-latest
