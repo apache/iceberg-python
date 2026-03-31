@@ -226,7 +226,7 @@ def _check_required_catalog_properties(name: str, catalog_type: CatalogType, con
         )
 
 
-def load_catalog(name: str | None = None, config: Config | None = None, **properties: str | None) -> Catalog:
+def load_catalog(name: str | None = None, **properties: str | None) -> Catalog:
     """Load the catalog based on the properties.
 
     Will look up the properties from the config, based on the name.
@@ -242,7 +242,7 @@ def load_catalog(name: str | None = None, config: Config | None = None, **proper
         ValueError: Raises a ValueError in case properties are missing or malformed,
             or if it could not determine the catalog based on the properties.
     """
-    config = config or get_env_config()
+    config = get_env_config()
     if name is None:
         name = config.get_default_catalog_name()
 

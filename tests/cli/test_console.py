@@ -50,7 +50,7 @@ def test_missing_uri(mocker: MockFixture, empty_home_dir_path: str) -> None:
 def test_hive_catalog_missing_uri_shows_helpful_error(mocker: MockFixture) -> None:
     mock_env_config = mocker.MagicMock()
     mock_env_config.get_catalog_config.return_value = {"type": "hive"}
-    mocker.patch("pyiceberg.catalog._ENV_CONFIG", mock_env_config)
+    mocker.patch("pyiceberg.catalog.get_env_config", return_value=mock_env_config)
 
     runner = CliRunner()
     result = runner.invoke(run, ["--catalog", "my_hive_catalog", "list"])

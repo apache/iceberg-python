@@ -71,7 +71,8 @@ def test_from_configuration_files(tmp_path_factory: pytest.TempPathFactory) -> N
         file.write(yaml_str)
 
     os.environ["PYICEBERG_HOME"] = config_path
-    assert Config().get_catalog_config("production") == {"uri": "https://service.io/api"}
+    config = Config()
+    assert config.get_catalog_config("production") == {"uri": "https://service.io/api"}
 
 
 def test_lowercase_dictionary_keys() -> None:
