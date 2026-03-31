@@ -44,7 +44,7 @@ jobs:
           python-version: 3.12
 
       - name: Install UV
-        uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098
+        uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098 # v7.3.1
 
       - name: Set version
         id: set-version
@@ -60,7 +60,7 @@ jobs:
 
   nightly-build:
     needs: set-version
-    uses: ./.github/workflows/pypi-build-artifacts.yml
+    uses: ./.github/workflows/pypi-build-artifacts.yml # local reusable workflow
     with:
       version: ${{ needs.set-version.outputs.VERSION }}
   testpypi-publish:
