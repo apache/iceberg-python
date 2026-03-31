@@ -55,6 +55,7 @@ jobs:
 
       - name: Debug version
         run: echo "Publishing version ${STEPS_SET_VERSION_OUTPUTS_VERSION}"
+        shell: bash
         env:
           STEPS_SET_VERSION_OUTPUTS_VERSION: ${{ steps.set-version.outputs.VERSION }}
 
