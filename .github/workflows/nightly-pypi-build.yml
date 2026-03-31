@@ -62,7 +62,7 @@ jobs:
     needs: set-version
     uses: ./.github/workflows/pypi-build-artifacts.yml
     with:
-      version: ${{ needs.set-version.outputs.VERSION }}
+      VERSION: ${{ needs.set-version.outputs.VERSION }}
   testpypi-publish:
     name: Publish to TestPypi
     needs:
