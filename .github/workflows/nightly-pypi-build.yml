@@ -63,7 +63,7 @@ jobs:
     needs: set-version
     uses: ./.github/workflows/pypi-build-artifacts.yml
     with:
-      VERSION: ${{ needs.set-version.outputs.VERSION }}
+      version: ${{ needs.set-version.outputs.VERSION }}
   testpypi-publish:
     name: Publish to TestPypi
     if: github.repository == 'apache/iceberg-python'
