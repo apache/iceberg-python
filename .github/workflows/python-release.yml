@@ -81,6 +81,7 @@ jobs:
           # Export variables for future steps
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "RC=$RC" >> $GITHUB_OUTPUT
+        shell: bash
         env:
           GITHUB_EVENT_INPUTS_VERSION: ${{ github.event.inputs.version }}
           GITHUB_EVENT_INPUTS_RC: ${{ github.event.inputs.rc }}
@@ -89,6 +90,7 @@ jobs:
         run: |
           echo "Using Version: ${STEPS_VALIDATE_INPUTS_OUTPUTS_VERSION}"
           echo "Using RC: ${STEPS_VALIDATE_INPUTS_OUTPUTS_RC}"
+        shell: bash
         env:
           STEPS_VALIDATE_INPUTS_OUTPUTS_VERSION: ${{ steps.validate-inputs.outputs.VERSION }}
           STEPS_VALIDATE_INPUTS_OUTPUTS_RC: ${{ steps.validate-inputs.outputs.RC }}
@@ -113,6 +115,7 @@ jobs:
           enable-cache: false
 
       - name: Validate current pyiceberg version
+        shell: bash
         env:
           VERSION: ${{ needs.validate-inputs.outputs.VERSION }}
         run: |
