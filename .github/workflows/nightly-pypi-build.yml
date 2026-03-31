@@ -60,7 +60,7 @@ jobs:
 
   nightly-build:
     needs: set-version
-    uses: ./.github/workflows/pypi-build-artifacts.yml # local reusable workflow
+    uses: ./.github/workflows/pypi-build-artifacts.yml
     with:
       version: ${{ needs.set-version.outputs.VERSION }}
   testpypi-publish:
