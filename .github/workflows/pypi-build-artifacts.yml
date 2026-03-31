@@ -72,7 +72,6 @@ jobs:
         with:
           output-dir: wheelhouse
           config-file: "pyproject.toml"
-        shell: bash
         env:
           # Ignore 32 bit architectures
           CIBW_ARCHS: "auto64"
