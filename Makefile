@@ -129,26 +129,10 @@ test-polaris-setup: install ## Start Docker services for Polaris integration tes
 	docker compose -f dev/docker-compose-polaris.yml kill
 	docker compose -f dev/docker-compose-polaris.yml rm -f
 	docker compose -f dev/docker-compose-polaris.yml up -d --build --wait
-	uv run $(PYTHON_ARG) python dev/provision_polaris.py > dev/polaris_creds.env
+	docker compose -f dev/docker-compose-polaris.yml exec -T polaris-setup cat /tmp/polaris_creds.env > dev/polaris_creds.env
 
 test-polaris-exec: ## Run Polaris integration tests
-	@eval $$(cat dev/polaris_creds.env) && \
-	PYICEBERG_TEST_CATALOG="polaris" \
-	PYICEBERG_CATALOG__POLARIS__TYPE="rest" \
-	PYICEBERG_CATALOG__POLARIS__URI="http://localhost:8181/api/catalog" \
-	PYICEBERG_CATALOG__POLARIS__OAUTH2_SERVER_URI="http://localhost:8181/api/catalog/v1/oauth/tokens" \
-	PYICEBERG_CATALOG__POLARIS__CREDENTIAL="$$CLIENT_ID:$$CLIENT_SECRET" \
-	PYICEBERG_CATALOG__POLARIS__SCOPE="PRINCIPAL_ROLE:ALL" \
-	PYICEBERG_CATALOG__POLARIS__WAREHOUSE="polaris" \
-	PYICEBERG_CATALOG__POLARIS__HEADER__X_ICEBERG_ACCESS_DELEGATION="vended-credentials" \
-	PYICEBERG_CATALOG__POLARIS__HEADER__REALM="POLARIS" \
-	PYICEBERG_CATALOG__POLARIS__S3__ENDPOINT="http://localhost:9000" \
-	PYICEBERG_CATALOG__POLARIS__S3__ACCESS_KEY_ID="admin" \
-	PYICEBERG_CATALOG__POLARIS__S3__SECRET_ACCESS_KEY="password" \
-	PYICEBERG_CATALOG__POLARIS__S3__REGION="us-east-1" \
-	$(TEST_RUNNER) pytest tests/integration/test_catalog.py -k "rest_test_catalog and not test_update_namespace_properties" $(PYTEST_ARGS)
-	# Skip test_update_namespace_properties: Polaris triggers a CommitConflictException when updates and removals are in the same request.
-	# TODO: Remove test exception after https://github.com/apache/polaris/pull/4013 is merged.
+	TEST_RUNNER="$(TEST_RUNNER)" sh dev/test-polaris.sh $(PYTEST_ARGS)
 
 test-polaris-cleanup: ## Clean up Polaris integration test environment
 	@if [ "${KEEP_COMPOSE}" != "1" ]; then \
