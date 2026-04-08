@@ -558,10 +558,9 @@ def test_sigv4_sign_request_with_body(rest_mock: Mocker) -> None:
     assert prepared.headers["Original-Authorization"] == f"Bearer {existing_token}"
     # Non-empty body should have base64-encoded SHA256
     content_sha256 = prepared.headers["x-amz-content-sha256"]
-    assert content_sha256 == "nhKdVGKGU3IMGjYlod9xKUVc7/H5K6zTWj60yJOM80k="
-    # Verify it's valid base64 and matches the body
-    decoded = base64.b64decode(content_sha256)
-    assert len(decoded) == 32  # SHA256 produces 32 bytes
+    body_bytes = prepared.body.encode("utf-8") if isinstance(prepared.body, str) else prepared.body
+    expected_sha256 = base64.b64encode(hashlib.sha256(body_bytes).digest()).decode()
+    assert content_sha256 == expected_sha256
     # x-amz-content-sha256 should be in signed headers
     assert "x-amz-content-sha256" in auth_header
 
@@ -596,11 +595,8 @@ def test_sigv4_content_sha256_with_bytes_body(rest_mock: Mocker) -> None:
     assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256 Credential=")
     assert "SignedHeaders=" in prepared.headers["Authorization"]
     content_sha256 = prepared.headers["x-amz-content-sha256"]
-    assert content_sha256 == "sD20bEQP+WnwKPT7jxn7PIACGciAeWjQPlzFCK5Fifo="
-    # Verify it's valid base64 and matches the body
-    decoded = base64.b64decode(content_sha256)
-    assert len(decoded) == 32  # SHA256 produces 32 bytes
-    assert decoded == hashlib.sha256(body_content).digest()
+    expected_sha256 = base64.b64encode(hashlib.sha256(body_content).digest()).decode()
+    assert content_sha256 == expected_sha256
 
 
 def test_sigv4_conflicting_sigv4_headers(rest_mock: Mocker) -> None:
@@ -632,6 +628,57 @@ def test_sigv4_conflicting_sigv4_headers(rest_mock: Mocker) -> None:
     assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256 Credential=")
     assert prepared.headers["x-amz-content-sha256"] == EMPTY_BODY_SHA256
     assert "X-Amz-Date" in prepared.headers
+
+
+def test_sigv4_canonical_request_uses_hex_payload(rest_mock: Mocker) -> None:
+    """Verify that the canonical request uses hex-encoded payload hash, not the base64 header value."""
+    from unittest.mock import patch
+
+    from botocore.auth import SigV4Auth
+
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "token": "token",
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-west-2",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+        },
+    )
+
+    body_content = b'{"namespace": "test"}'
+    prepared = catalog._session.prepare_request(
+        Request(
+            "POST",
+            f"{TEST_URI}v1/namespaces",
+            data=body_content,
+        )
+    )
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+
+    # Capture the canonical request string during signing
+    captured_canonical = []
+    original_add_auth = SigV4Auth.add_auth
+
+    def capturing_add_auth(self: Any, request: Any) -> None:
+        captured_canonical.append(self.canonical_request(request))
+        original_add_auth(self, request)
+
+    with patch.object(SigV4Auth, "add_auth", capturing_add_auth):
+        adapter.add_headers(prepared)
+
+    assert len(captured_canonical) == 1
+    canonical_lines = captured_canonical[0].split("\n")
+    # Last line of canonical request is the payload hash
+    payload_hash = canonical_lines[-1]
+    # Must be hex-encoded (64 hex chars), not base64
+    assert len(payload_hash) == 64
+    assert payload_hash == hashlib.sha256(body_content).hexdigest()
+    # Meanwhile the header is base64-encoded
+    assert prepared.headers["x-amz-content-sha256"] == base64.b64encode(hashlib.sha256(body_content).digest()).decode()
 
 
 def test_sigv4_adapter_default_retry_config(rest_mock: Mocker) -> None:

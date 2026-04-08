@@ -755,6 +755,8 @@ class RestCatalog(Catalog):
                 # Reuses the logic from botocore's SigV4Auth.canonical_request
                 # (https://github.com/boto/botocore/blob/develop/botocore/auth.py)
                 # but always uses self.payload(request) for the body checksum.
+                # Validated against botocore <= 1.42.x
+                # (https://github.com/boto/botocore/blob/1.42.85/botocore/auth.py#L622-L637)
                 cr = [request.method.upper()]
                 path = self._normalize_url_path(parse.urlsplit(request.url).path)
                 cr.append(path)
