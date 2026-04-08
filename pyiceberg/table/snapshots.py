@@ -31,6 +31,7 @@ from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 
 if TYPE_CHECKING:
+    from pyiceberg.encryption.manager import EncryptionManager
     from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.typedef import IcebergBaseModel
 
@@ -252,6 +253,9 @@ class Snapshot(IcebergBaseModel):
     added_rows: int | None = Field(
         alias="added-rows", default=None, description="The upper bound of the number of rows with assigned row IDs"
     )
+    key_id: str | None = Field(
+        alias="key-id", default=None, description="ID of the encryption key used to encrypt this snapshot's manifest list"
+    )
 
     def __str__(self) -> str:
         """Return the string representation of the Snapshot class."""
@@ -277,9 +281,16 @@ class Snapshot(IcebergBaseModel):
         filtered_fields = [field for field in fields if field is not None]
         return f"Snapshot({', '.join(filtered_fields)})"
 
-    def manifests(self, io: FileIO) -> list[ManifestFile]:
+    def manifests(self, io: FileIO, encryption_manager: EncryptionManager | None = None) -> list[ManifestFile]:
         """Return the manifests for the given snapshot."""
-        return list(_manifests(io, self.manifest_list))
+        return list(
+            _manifests(
+                io,
+                self.manifest_list,
+                encryption_manager=encryption_manager,
+                snapshot_key_id=self.key_id,
+            )
+        )
 
 
 class MetadataLogEntry(IcebergBaseModel):
