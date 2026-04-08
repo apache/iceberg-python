@@ -26,7 +26,7 @@ on:
       - 'pyiceberg/**'
       - 'tests/**'
       - 'dev/docker-compose-polaris.yml'
-      - 'dev/provision_polaris.py'
+      - 'dev/test-polaris.sh'
       - '.github/workflows/python-ci-polaris.yml'
       - 'Makefile'
       - 'pyproject.toml'
