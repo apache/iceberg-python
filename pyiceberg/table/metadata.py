@@ -16,6 +16,7 @@
 # under the License.
 from __future__ import annotations
 
+import base64
 import datetime
 import uuid
 from collections.abc import Iterable
@@ -47,6 +48,25 @@ from pyiceberg.typedef import (
 from pyiceberg.types import NestedField, StructType, transform_dict_value_to_str
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import datetime_to_millis
+
+
+class EncryptedKeyModel(IcebergBaseModel):
+    """An encrypted key entry in table metadata.
+
+    Matches the EncryptedKey schema in the REST API spec.
+    """
+
+    key_id: str = Field(alias="key-id")
+    encrypted_key_metadata: str = Field(alias="encrypted-key-metadata")
+    """Base64-encoded encrypted key metadata bytes."""
+    encrypted_by_id: str | None = Field(alias="encrypted-by-id", default=None)
+    properties: dict[str, str] = Field(default_factory=dict)
+
+    @property
+    def encrypted_key_metadata_bytes(self) -> bytes:
+        """Decode the base64-encoded encrypted key metadata."""
+        return base64.b64decode(self.encrypted_key_metadata)
+
 
 CURRENT_SNAPSHOT_ID = "current-snapshot-id"
 CURRENT_SCHEMA_ID = "current-schema-id"
@@ -573,6 +593,10 @@ class TableMetadataV3(TableMetadataCommonFields, IcebergBaseModel):
 
     next_row_id: int | None = Field(alias="next-row-id", default=None)
     """A long higher than all assigned row IDs; the next snapshot's `first-row-id`."""
+
+    encryption_keys: list[EncryptedKeyModel] = Field(alias="encryption-keys", default_factory=list)
+    """Encryption key entries for the two-layer envelope encryption scheme.
+    Only valid for format version 3 and higher."""
 
     def model_dump_json(self, exclude_none: bool = True, exclude: Any | None = None, by_alias: bool = True, **kwargs: Any) -> str:
         raise NotImplementedError("Writing V3 is not yet supported, see: https://github.com/apache/iceberg-python/issues/1551")

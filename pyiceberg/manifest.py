@@ -24,6 +24,7 @@ from copy import copy
 from enum import Enum
 from types import TracebackType
 from typing import (
+    TYPE_CHECKING,
     Any,
     Literal,
 )
@@ -39,6 +40,9 @@ from pyiceberg.io import FileIO, InputFile, OutputFile
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.typedef import Record, TableVersion
+
+if TYPE_CHECKING:
+    from pyiceberg.encryption.manager import EncryptionManager
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -858,18 +862,34 @@ class ManifestFile(Record):
     def has_existing_files(self) -> bool:
         return self.existing_files_count is None or self.existing_files_count > 0
 
-    def fetch_manifest_entry(self, io: FileIO, discard_deleted: bool = True) -> list[ManifestEntry]:
+    def fetch_manifest_entry(
+        self,
+        io: FileIO,
+        discard_deleted: bool = True,
+        encryption_manager: EncryptionManager | None = None,
+    ) -> list[ManifestEntry]:
         """
         Read the manifest entries from the manifest file.
 
         Args:
             io: The FileIO to fetch the file.
             discard_deleted: Filter on live entries.
+            encryption_manager: Optional encryption manager for decrypting encrypted manifests.
 
         Returns:
             An Iterator of manifest entries.
         """
         input_file = io.new_input(self.manifest_path)
+
+        # If this manifest has key_metadata, it's AGS1-encrypted
+        if self.key_metadata is not None and encryption_manager is not None:
+            from pyiceberg.encryption.io import BytesInputFile
+
+            with input_file.open() as f:
+                encrypted_data = f.read()
+            decrypted_data = encryption_manager.decrypt_manifest(encrypted_data, self.key_metadata)
+            input_file = BytesInputFile(self.manifest_path, decrypted_data)
+
         with AvroFile[ManifestEntry](
             input_file,
             MANIFEST_ENTRY_SCHEMAS[DEFAULT_READ_VERSION],
@@ -900,7 +920,12 @@ _manifest_cache: LRUCache[str, ManifestFile] = LRUCache(maxsize=128)
 _manifest_cache_lock = threading.RLock()
 
 
-def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
+def _manifests(
+    io: FileIO,
+    manifest_list: str,
+    encryption_manager: EncryptionManager | None = None,
+    snapshot_key_id: str | None = None,
+) -> tuple[ManifestFile, ...]:
     """Read manifests from a manifest list, deduplicating ManifestFile objects via cache.
 
     Caches individual ManifestFile objects by manifest_path. This is memory-efficient
@@ -920,12 +945,14 @@ def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
     Args:
         io: FileIO instance for reading the manifest list.
         manifest_list: Path to the manifest list file.
+        encryption_manager: Optional encryption manager for decrypting encrypted manifest lists.
+        snapshot_key_id: Optional key ID from snapshot for manifest list decryption.
 
     Returns:
         A tuple of ManifestFile objects.
     """
     file = io.new_input(manifest_list)
-    manifest_files = list(read_manifest_list(file))
+    manifest_files = list(read_manifest_list(file, encryption_manager=encryption_manager, snapshot_key_id=snapshot_key_id))
 
     result = []
     with _manifest_cache_lock:
@@ -940,16 +967,31 @@ def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
     return tuple(result)
 
 
-def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
+def read_manifest_list(
+    input_file: InputFile,
+    encryption_manager: EncryptionManager | None = None,
+    snapshot_key_id: str | None = None,
+) -> Iterator[ManifestFile]:
     """
     Read the manifests from the manifest list.
 
     Args:
         input_file: The input file where the stream can be read from.
+        encryption_manager: Optional encryption manager for decrypting encrypted manifest lists.
+        snapshot_key_id: Optional key ID from snapshot for manifest list decryption.
 
     Returns:
         An iterator of ManifestFiles that are part of the list.
     """
+    # If we have encryption info, decrypt the manifest list first
+    if snapshot_key_id is not None and encryption_manager is not None:
+        from pyiceberg.encryption.io import BytesInputFile
+
+        with input_file.open() as f:
+            encrypted_data = f.read()
+        decrypted_data = encryption_manager.decrypt_manifest_list(encrypted_data, snapshot_key_id)
+        input_file = BytesInputFile(input_file.location, decrypted_data)
+
     with AvroFile[ManifestFile](
         input_file,
         MANIFEST_LIST_FILE_SCHEMAS[DEFAULT_READ_VERSION],
