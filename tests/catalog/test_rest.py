@@ -558,6 +558,7 @@ def test_sigv4_sign_request_with_body(rest_mock: Mocker) -> None:
     assert prepared.headers["Original-Authorization"] == f"Bearer {existing_token}"
     # Non-empty body should have base64-encoded SHA256
     content_sha256 = prepared.headers["x-amz-content-sha256"]
+    assert prepared.body is not None
     body_bytes = prepared.body.encode("utf-8") if isinstance(prepared.body, str) else prepared.body
     expected_sha256 = base64.b64encode(hashlib.sha256(body_bytes).digest()).decode()
     assert content_sha256 == expected_sha256
