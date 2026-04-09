@@ -152,6 +152,7 @@ class Endpoints:
     get_token: str = "oauth/tokens"
     rename_table: str = "tables/rename"
     list_views: str = "namespaces/{namespace}/views"
+    load_view: str = "namespaces/{namespace}/views/{view}"
     create_view: str = "namespaces/{namespace}/views"
     drop_view: str = "namespaces/{namespace}/views/{view}"
     view_exists: str = "namespaces/{namespace}/views/{view}"
@@ -180,6 +181,7 @@ class Capability:
     V1_REGISTER_TABLE = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.register_table}")
 
     V1_LIST_VIEWS = Endpoint(http_method=HttpMethod.GET, path=f"{API_PREFIX}/{Endpoints.list_views}")
+    V1_LOAD_VIEW = Endpoint(http_method=HttpMethod.GET, path=f"{API_PREFIX}/{Endpoints.load_view}")
     V1_VIEW_EXISTS = Endpoint(http_method=HttpMethod.HEAD, path=f"{API_PREFIX}/{Endpoints.view_exists}")
     V1_DELETE_VIEW = Endpoint(http_method=HttpMethod.DELETE, path=f"{API_PREFIX}/{Endpoints.drop_view}")
     V1_SUBMIT_TABLE_SCAN_PLAN = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.plan_table_scan}")
@@ -209,6 +211,7 @@ DEFAULT_ENDPOINTS: frozenset[Endpoint] = frozenset(
 VIEW_ENDPOINTS: frozenset[Endpoint] = frozenset(
     (
         Capability.V1_LIST_VIEWS,
+        Capability.V1_LOAD_VIEW,
         Capability.V1_DELETE_VIEW,
     )
 )
@@ -1105,6 +1108,21 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             _handle_non_200_response(exc, {404: NoSuchNamespaceError})
         return [(*view.namespace, view.name) for view in ListViewsResponse.model_validate_json(response.text).identifiers]
+
+    @retry(**_RETRY_ARGS)
+    def load_view(self, identifier: str | Identifier) -> View:
+        self._check_endpoint(Capability.V1_LOAD_VIEW)
+        response = self._session.get(
+            self.url(Endpoints.load_view, prefixed=True, **self._split_identifier_for_path(identifier, IdentifierKind.VIEW)),
+            params={},
+        )
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            _handle_non_200_response(exc, {404: NoSuchViewError})
+
+        view_response = ViewResponse.model_validate_json(response.text)
+        return self._response_to_view(self.identifier_to_tuple(identifier), view_response)
 
     @retry(**_RETRY_ARGS)
     def commit_table(

@@ -744,6 +744,9 @@ class SqlCatalog(MetastoreCatalog):
     def drop_view(self, identifier: str | Identifier) -> None:
         raise NotImplementedError
 
+    def load_view(self, identifier: str | Identifier) -> View:
+        raise NotImplementedError
+
     def close(self) -> None:
         """Close the catalog and release database connections.
 

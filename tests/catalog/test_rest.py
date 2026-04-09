@@ -103,6 +103,7 @@ TEST_SUPPORTED_ENDPOINTS = [
     Capability.V1_RENAME_TABLE,
     Capability.V1_REGISTER_TABLE,
     Capability.V1_LIST_VIEWS,
+    Capability.V1_LOAD_VIEW,
     Capability.V1_VIEW_EXISTS,
     Capability.V1_DELETE_VIEW,
     Capability.V1_SUBMIT_TABLE_SCAN_PLAN,
@@ -1447,6 +1448,38 @@ def test_create_view_409(
             properties={"owner": "fokko"},
         )
     assert "View already exists" in str(e.value)
+
+
+def test_load_view_200(rest_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/views/view",
+        json=example_view_metadata_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    actual = catalog.load_view(("fokko", "view"))
+    expected = View(identifier=("fokko", "view"), metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]))
+    assert actual == expected
+
+
+def test_load_view_404(rest_mock: Mocker) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/views/non_existent_view",
+        json={
+            "error": {
+                "message": "View does not exist: examples.non_existent_view in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
+                "type": "NoSuchNamespaceErrorException",
+                "code": 404,
+            }
+        },
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(NoSuchViewError) as e:
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).load_view(("fokko", "non_existent_view"))
+    assert "View does not exist" in str(e.value)
 
 
 def test_create_table_if_not_exists_200(
