@@ -2054,7 +2054,12 @@ class DataScan(TableScan):
             case_sensitive=self.case_sensitive,
         )
 
-        return self.catalog.plan_scan(self.table_identifier, request)
+        tasks, credential_config = self.catalog._plan_scan_for_table(self.table_identifier, request, self.table_metadata.location)
+        # Per Iceberg spec: storage-credentials from PlanCompleted take precedence over config.
+        # Update the FileIO so data files in this scan are read with the vended credentials.
+        if credential_config:
+            self.io = self.catalog._load_file_io({**self.io.properties, **credential_config}, self.table_metadata.location)
+        return tasks
 
     def _plan_files_local(self) -> Iterable[FileScanTask]:
         """Plan files locally by reading manifests."""
@@ -2112,9 +2117,13 @@ class DataScan(TableScan):
         """
         from pyiceberg.io.pyarrow import ArrowScan
 
+        # plan_files() must be called before capturing self.io so that any vended credentials
+        # returned by server-side scan planning (PlanCompleted.storage_credentials) are applied
+        # to self.io before ArrowScan is constructed.
+        tasks = self.plan_files()
         return ArrowScan(
             self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
-        ).to_table(self.plan_files())
+        ).to_table(tasks)
 
     def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
         """Return an Arrow RecordBatchReader from this DataScan.
@@ -2132,9 +2141,11 @@ class DataScan(TableScan):
         from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
 
         target_schema = schema_to_pyarrow(self.projection())
+        # plan_files() must be called before capturing self.io (same reason as to_arrow).
+        tasks = self.plan_files()
         batches = ArrowScan(
             self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
-        ).to_record_batches(self.plan_files())
+        ).to_record_batches(tasks)
 
         return pa.RecordBatchReader.from_batches(
             target_schema,
