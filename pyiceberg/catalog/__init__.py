@@ -66,6 +66,7 @@ from pyiceberg.typedef import (
     RecursiveDict,
     TableVersion,
 )
+from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config, merge_config
 from pyiceberg.utils.properties import property_as_bool
 from pyiceberg.view import View
@@ -90,6 +91,7 @@ MANIFEST = "manifest"
 MANIFEST_LIST = "manifest list"
 PREVIOUS_METADATA = "previous metadata"
 METADATA = "metadata"
+DATA_FILE = "data"
 URI = "uri"
 LOCATION = "location"
 EXTERNAL_TABLE = "EXTERNAL_TABLE"
@@ -284,7 +286,7 @@ def list_catalogs() -> list[str]:
 
 
 def delete_files(io: FileIO, files_to_delete: set[str], file_type: str) -> None:
-    """Delete files.
+    """Delete files in parallel.
 
     Log warnings if failing to delete any file.
 
@@ -293,15 +295,22 @@ def delete_files(io: FileIO, files_to_delete: set[str], file_type: str) -> None:
         files_to_delete: A set of file paths to be deleted.
         file_type: The type of the file.
     """
-    for file in files_to_delete:
+
+    def _delete_file(file: str) -> None:
         try:
             io.delete(file)
         except OSError:
             logger.warning(f"Failed to delete {file_type} file {file}", exc_info=logger.isEnabledFor(logging.DEBUG))
 
+    executor = ExecutorFactory.get_or_create()
+    list(executor.map(_delete_file, files_to_delete))
+
 
 def delete_data_files(io: FileIO, manifests_to_delete: list[ManifestFile]) -> None:
     """Delete data files linked to given manifests.
+
+    Deduplicates manifests by path before reading entries, since the same manifest
+    appears across multiple snapshots' manifest lists. Deletes data files in parallel.
 
     Log warnings if failing to delete any file.
 
@@ -309,16 +318,18 @@ def delete_data_files(io: FileIO, manifests_to_delete: list[ManifestFile]) -> No
         io: The FileIO used to delete the object.
         manifests_to_delete: A list of manifest contains paths of data files to be deleted.
     """
-    deleted_files: dict[str, bool] = {}
+    unique_manifests: dict[str, ManifestFile] = {}
     for manifest_file in manifests_to_delete:
+        unique_manifests.setdefault(manifest_file.manifest_path, manifest_file)
+
+    # Collect all unique data file paths
+    data_file_paths: set[str] = set()
+    for manifest_file in unique_manifests.values():
         for entry in manifest_file.fetch_manifest_entry(io, discard_deleted=False):
-            path = entry.data_file.file_path
-            if not deleted_files.get(path, False):
-                try:
-                    io.delete(path)
-                except OSError:
-                    logger.warning(f"Failed to delete data file {path}", exc_info=logger.isEnabledFor(logging.DEBUG))
-                deleted_files[path] = True
+            data_file_paths.add(entry.data_file.file_path)
+
+    # Delete in parallel
+    delete_files(io, data_file_paths, DATA_FILE)
 
 
 def _import_catalog(name: str, catalog_impl: str, properties: Properties) -> Catalog | None:
