@@ -1121,6 +1121,7 @@ class Table:
         snapshot_id: int | None = None,
         options: Properties = EMPTY_DICT,
         limit: int | None = None,
+        dictionary_columns: tuple[str, ...] | None = None,
     ) -> DataScan:
         """Fetch a DataScan based on the table's current metadata.
 
@@ -1147,6 +1148,13 @@ class Table:
                 An integer representing the number of rows to
                 return in the scan result. If None, fetches all
                 matching rows.
+            dictionary_columns:
+                A tuple of column names that PyArrow should read as
+                dictionary-encoded (DictionaryArray). Reduces memory
+                usage for columns with large or repeated string values
+                (e.g. large JSON blobs). Only applies to Parquet files;
+                silently ignored for ORC. Columns absent from the file
+                are silently skipped. Default is None (no dictionary encoding).
 
         Returns:
             A DataScan based on the table's current metadata.
@@ -1162,6 +1170,7 @@ class Table:
             limit=limit,
             catalog=self.catalog,
             table_identifier=self._identifier,
+            dictionary_columns=dictionary_columns,
         )
 
     @property
@@ -1664,6 +1673,7 @@ class StagedTable(Table):
         snapshot_id: int | None = None,
         options: Properties = EMPTY_DICT,
         limit: int | None = None,
+        dictionary_columns: tuple[str, ...] | None = None,
     ) -> DataScan:
         raise ValueError("Cannot scan a staged table")
 
@@ -1916,6 +1926,36 @@ def _min_sequence_number(manifests: list[ManifestFile]) -> int:
 
 
 class DataScan(TableScan):
+    dictionary_columns: tuple[str, ...] | None
+
+    def __init__(
+        self,
+        table_metadata: TableMetadata,
+        io: FileIO,
+        row_filter: str | BooleanExpression = ALWAYS_TRUE,
+        selected_fields: tuple[str, ...] = ("*",),
+        case_sensitive: bool = True,
+        snapshot_id: int | None = None,
+        options: Properties = EMPTY_DICT,
+        limit: int | None = None,
+        catalog: Catalog | None = None,
+        table_identifier: Identifier | None = None,
+        dictionary_columns: tuple[str, ...] | None = None,
+    ) -> None:
+        super().__init__(
+            table_metadata=table_metadata,
+            io=io,
+            row_filter=row_filter,
+            selected_fields=selected_fields,
+            case_sensitive=case_sensitive,
+            snapshot_id=snapshot_id,
+            options=options,
+            limit=limit,
+            catalog=catalog,
+            table_identifier=table_identifier,
+        )
+        self.dictionary_columns = dictionary_columns
+
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
         project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id], self.case_sensitive)
         return project(self.row_filter)
@@ -2113,7 +2153,13 @@ class DataScan(TableScan):
         from pyiceberg.io.pyarrow import ArrowScan
 
         return ArrowScan(
-            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
+            self.table_metadata,
+            self.io,
+            self.projection(),
+            self.row_filter,
+            self.case_sensitive,
+            self.limit,
+            dictionary_columns=self.dictionary_columns,
         ).to_table(self.plan_files())
 
     def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
@@ -2132,8 +2178,29 @@ class DataScan(TableScan):
         from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
 
         target_schema = schema_to_pyarrow(self.projection())
+
+        # When dictionary_columns is set, PyArrow returns DictionaryArray for those columns.
+        # target_schema uses plain string types, so .cast(target_schema) would silently decode
+        # them back to plain strings. Rebuild target_schema with dictionary types for the listed
+        # columns so from_batches and cast both preserve the encoding.
+        if self.dictionary_columns:
+            dict_cols_set = set(self.dictionary_columns)
+            target_schema = pa.schema(
+                [
+                    field.with_type(pa.dictionary(pa.int32(), field.type)) if field.name in dict_cols_set else field
+                    for field in target_schema
+                ],
+                metadata=target_schema.metadata,
+            )
+
         batches = ArrowScan(
-            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
+            self.table_metadata,
+            self.io,
+            self.projection(),
+            self.row_filter,
+            self.case_sensitive,
+            self.limit,
+            dictionary_columns=self.dictionary_columns,
         ).to_record_batches(self.plan_files())
 
         return pa.RecordBatchReader.from_batches(

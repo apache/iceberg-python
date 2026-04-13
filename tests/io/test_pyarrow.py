@@ -3152,6 +3152,168 @@ def test_task_to_record_batches_nanos(format_version: TableVersion, tmpdir: str)
     assert _expected_batch("ns" if format_version > 2 else "us").equals(actual_result)
 
 
+def test_task_to_record_batches_dictionary_columns(tmpdir: str) -> None:
+    """dictionary_columns causes the column to be read as DictionaryArray, saving memory."""
+    arrow_table = pa.table(
+        {"json_col": pa.array(["large-json-1", "large-json-2", "large-json-1"], type=pa.string())},
+        schema=pa.schema([pa.field("json_col", pa.string(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"})]),
+    )
+    data_file = _write_table_to_data_file(f"{tmpdir}/test_dictionary_columns.parquet", arrow_table.schema, arrow_table)
+    table_schema = Schema(NestedField(1, "json_col", StringType(), required=False))
+
+    batches = list(
+        _task_to_record_batches(
+            PyArrowFileIO(),
+            FileScanTask(data_file),
+            bound_row_filter=AlwaysTrue(),
+            projected_schema=table_schema,
+            table_schema=table_schema,
+            projected_field_ids={1},
+            positional_deletes=None,
+            case_sensitive=True,
+            dictionary_columns=("json_col",),
+        )
+    )
+
+    assert len(batches) == 1, "Expected exactly one record batch"
+    col = batches[0].column("json_col")
+    assert pa.types.is_dictionary(col.type), (
+        f"Expected DictionaryArray for 'json_col' when dictionary_columns is set, got {col.type}"
+    )
+
+
+def test_task_to_record_batches_no_dictionary_columns_by_default(tmpdir: str) -> None:
+    """Without dictionary_columns, string columns are returned as plain StringArray — default unchanged."""
+    arrow_table = pa.table(
+        {"json_col": pa.array(["a", "b", "c"], type=pa.string())},
+        schema=pa.schema([pa.field("json_col", pa.string(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"})]),
+    )
+    data_file = _write_table_to_data_file(f"{tmpdir}/test_no_dictionary_default.parquet", arrow_table.schema, arrow_table)
+    table_schema = Schema(NestedField(1, "json_col", StringType(), required=False))
+
+    batches = list(
+        _task_to_record_batches(
+            PyArrowFileIO(),
+            FileScanTask(data_file),
+            bound_row_filter=AlwaysTrue(),
+            projected_schema=table_schema,
+            table_schema=table_schema,
+            projected_field_ids={1},
+            positional_deletes=None,
+            case_sensitive=True,
+            # dictionary_columns intentionally omitted — must not change behavior
+        )
+    )
+
+    assert len(batches) == 1, "Expected exactly one record batch"
+    col = batches[0].column("json_col")
+    assert not pa.types.is_dictionary(col.type), f"Expected plain StringArray by default, got {col.type}"
+
+
+def test_arrow_scan_to_table_with_dictionary_columns(tmpdir: str) -> None:
+    """ArrowScan.to_table() with dictionary_columns: named column is DictionaryArray, others are not."""
+    import pyarrow.parquet as pq
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),
+            pa.field("json_col", pa.string(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "2"}),
+        ]
+    )
+    arrow_table = pa.table(
+        {
+            "id": pa.array([1, 2, 3], type=pa.int32()),
+            "json_col": pa.array(['{"x": 1}', '{"x": 2}', '{"x": 1}'], type=pa.string()),
+        },
+        schema=arrow_schema,
+    )
+    filepath = f"{tmpdir}/test_e2e_dictionary.parquet"
+    with pq.ParquetWriter(filepath, arrow_schema) as writer:
+        writer.write_table(arrow_table)
+
+    iceberg_schema = Schema(
+        NestedField(1, "id", IntegerType(), required=False),
+        NestedField(2, "json_col", StringType(), required=False),
+    )
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=filepath,
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=3,
+        file_size_in_bytes=100,
+    )
+    data_file.spec_id = 0
+
+    result = ArrowScan(
+        TableMetadataV2(
+            location="file://a/b/",
+            last_column_id=2,
+            format_version=2,
+            schemas=[iceberg_schema],
+            partition_specs=[PartitionSpec()],
+        ),
+        PyArrowFileIO(),
+        iceberg_schema,
+        AlwaysTrue(),
+        dictionary_columns=("json_col",),
+    ).to_table(tasks=[FileScanTask(data_file)])
+
+    assert pa.types.is_dictionary(result.schema.field("json_col").type), (
+        f"Expected DictionaryArray for 'json_col', got {result.schema.field('json_col').type}"
+    )
+    assert not pa.types.is_dictionary(result.schema.field("id").type), "Non-listed column 'id' should NOT be dictionary-encoded"
+
+
+def test_arrow_scan_to_record_batches_preserves_dictionary_encoding(tmpdir: str) -> None:
+    """ArrowScan.to_record_batches() must preserve DictionaryArray — not decode back to plain string."""
+    import pyarrow.parquet as pq
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("json_col", pa.string(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),
+        ]
+    )
+    arrow_table = pa.table(
+        {"json_col": pa.array(['{"a": 1}', '{"b": 2}'], type=pa.string())},
+        schema=arrow_schema,
+    )
+    filepath = f"{tmpdir}/test_batch_reader_dict.parquet"
+    with pq.ParquetWriter(filepath, arrow_schema) as writer:
+        writer.write_table(arrow_table)
+
+    iceberg_schema = Schema(NestedField(1, "json_col", StringType(), required=False))
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=filepath,
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=2,
+        file_size_in_bytes=100,
+    )
+    data_file.spec_id = 0
+
+    batches = list(
+        ArrowScan(
+            TableMetadataV2(
+                location="file://a/b/",
+                last_column_id=1,
+                format_version=2,
+                schemas=[iceberg_schema],
+                partition_specs=[PartitionSpec()],
+            ),
+            PyArrowFileIO(),
+            iceberg_schema,
+            AlwaysTrue(),
+            dictionary_columns=("json_col",),
+        ).to_record_batches(tasks=[FileScanTask(data_file)])
+    )
+
+    assert len(batches) >= 1, "Expected at least one record batch"
+    col = batches[0].column("json_col")
+    assert pa.types.is_dictionary(col.type), f"DictionaryArray must be preserved through to_record_batches, got {col.type}"
+
+
 def test_parse_location_defaults() -> None:
     """Test that parse_location uses defaults."""
 
