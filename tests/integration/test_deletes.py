@@ -975,3 +975,58 @@ def test_manifest_entry_after_deletes(session_catalog: RestCatalog) -> None:
     assert after_delete_snapshot is not None
 
     assert_manifest_entry(ManifestEntryStatus.DELETED, after_delete_snapshot.snapshot_id)
+
+
+@pytest.mark.integration
+def test_manifest_entry_snapshot_id_after_partial_deletes(session_catalog: RestCatalog) -> None:
+    """Test that DELETED manifest entries from a CoW overwrite (partial delete) have the correct snapshot_id.
+
+    When only some rows match the delete filter, PyIceberg rewrites the file via _OverwriteFiles.
+    The DELETED entry's snapshot_id must be the deleting snapshot's ID, not the original INSERT snapshot's ID.
+    See: https://github.com/apache/iceberg-python/issues/3236
+    """
+    identifier = "default.test_manifest_entry_snapshot_id_after_partial_deletes"
+    try:
+        session_catalog.drop_table(identifier)
+    except NoSuchTableError:
+        pass
+
+    schema = pa.schema(
+        [
+            ("id", pa.int32()),
+            ("name", pa.string()),
+        ]
+    )
+
+    table = session_catalog.create_table(identifier, schema)
+    data = pa.Table.from_pylist(
+        [
+            {"id": 1, "name": "keep"},
+            {"id": 2, "name": "keep"},
+            {"id": 3, "name": "delete_me"},
+            {"id": 4, "name": "delete_me"},
+        ],
+        schema=schema,
+    )
+    table.append(data)
+
+    # Partial delete: only some rows match, triggering CoW overwrite via _OverwriteFiles
+    table.delete(EqualTo("name", "delete_me"))
+    after_delete_snapshot = table.refresh().current_snapshot()
+    assert after_delete_snapshot is not None
+
+    manifests = after_delete_snapshot.manifests(table.io)
+    deleted_entries = [
+        entry
+        for manifest in manifests
+        for entry in manifest.fetch_manifest_entry(table.io, discard_deleted=False)
+        if entry.status == ManifestEntryStatus.DELETED
+    ]
+
+    assert len(deleted_entries) > 0, "Expected at least one DELETED manifest entry from the CoW overwrite"
+
+    for entry in deleted_entries:
+        assert entry.snapshot_id == after_delete_snapshot.snapshot_id, (
+            f"DELETED entry snapshot_id should be {after_delete_snapshot.snapshot_id} "
+            f"(the deleting snapshot), but was {entry.snapshot_id}"
+        )
