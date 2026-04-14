@@ -337,7 +337,14 @@ class ListNamespaceResponse(IcebergBaseModel):
 
 class NamespaceResponse(IcebergBaseModel):
     namespace: Identifier = Field()
-    properties: Properties = Field()
+    properties: Properties = Field(default_factory=dict)
+
+    @field_validator("properties", mode="before")
+    @classmethod
+    def replace_none_with_dict(cls, v: Any) -> Properties:
+        if v is None:
+            return {}
+        return v
 
 
 class UpdateNamespacePropertiesResponse(IcebergBaseModel):
