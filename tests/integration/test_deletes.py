@@ -979,12 +979,6 @@ def test_manifest_entry_after_deletes(session_catalog: RestCatalog) -> None:
 
 @pytest.mark.integration
 def test_manifest_entry_snapshot_id_after_partial_deletes(session_catalog: RestCatalog) -> None:
-    """Test that DELETED manifest entries from a CoW overwrite (partial delete) have the correct snapshot_id.
-
-    When only some rows match the delete filter, PyIceberg rewrites the file via _OverwriteFiles.
-    The DELETED entry's snapshot_id must be the deleting snapshot's ID, not the original INSERT snapshot's ID.
-    See: https://github.com/apache/iceberg-python/issues/3236
-    """
     identifier = "default.test_manifest_entry_snapshot_id_after_partial_deletes"
     try:
         session_catalog.drop_table(identifier)
