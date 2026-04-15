@@ -1113,8 +1113,7 @@ class RestCatalog(Catalog):
     def load_view(self, identifier: str | Identifier) -> View:
         self._check_endpoint(Capability.V1_LOAD_VIEW)
         response = self._session.get(
-            self.url(Endpoints.load_view, prefixed=True, **self._split_identifier_for_path(identifier, IdentifierKind.VIEW)),
-            params={},
+            self.url(Endpoints.load_view, prefixed=True, **self._split_identifier_for_path(identifier, IdentifierKind.VIEW))
         )
         try:
             response.raise_for_status()
