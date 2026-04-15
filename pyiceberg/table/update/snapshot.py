@@ -165,6 +165,49 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                 added_rows += manifest.added_rows_count
         return added_rows
 
+    def _get_existing_manifests(self) -> list[ManifestFile]:
+        """Filters existing manifests and rewrites those containing deleted data files."""
+        existing_files = []
+        # Use manifest pruning if a predicate is set (primarily for Overwrite)
+        manifest_evaluators: dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
+
+        if snapshot := self._transaction.table_metadata.snapshot_by_name(name=self._target_branch):
+            for manifest_file in snapshot.manifests(io=self._io):
+                # Skip pruning for rewrite operations unless we want to optimize later
+                if self._operation == Operation.OVERWRITE and not manifest_evaluators[manifest_file.partition_spec_id](
+                    manifest_file
+                ):
+                    existing_files.append(manifest_file)
+                    continue
+
+                entries_to_write: list[ManifestEntry] = []
+                found_deleted_entries = False
+
+                for entry in manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True):
+                    if entry.data_file in self._deleted_data_files:
+                        found_deleted_entries = True
+                    else:
+                        entries_to_write.append(entry)
+
+                if not found_deleted_entries:
+                    existing_files.append(manifest_file)
+                    continue
+
+                if len(entries_to_write) > 0:
+                    with self.new_manifest_writer(self.spec(manifest_file.partition_spec_id)) as writer:
+                        for entry in entries_to_write:
+                            writer.add_entry(
+                                ManifestEntry.from_args(
+                                    status=ManifestEntryStatus.EXISTING,
+                                    snapshot_id=entry.snapshot_id,
+                                    sequence_number=entry.sequence_number,
+                                    file_sequence_number=entry.file_sequence_number,
+                                    data_file=entry.data_file,
+                                )
+                            )
+                    existing_files.append(writer.to_manifest_file())
+        return existing_files
+
     @abstractmethod
     def _deleted_entries(self) -> list[ManifestEntry]: ...
 
@@ -585,49 +628,7 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
 
     def _existing_manifests(self) -> list[ManifestFile]:
         """Determine if there are any existing manifest files."""
-        existing_files = []
-
-        manifest_evaluators: dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
-        if snapshot := self._transaction.table_metadata.snapshot_by_name(name=self._target_branch):
-            for manifest_file in snapshot.manifests(io=self._io):
-                # Manifest does not contain rows that match the files to delete partitions
-                if not manifest_evaluators[manifest_file.partition_spec_id](manifest_file):
-                    existing_files.append(manifest_file)
-                    continue
-
-                entries_to_write: set[ManifestEntry] = set()
-                found_deleted_entries: set[ManifestEntry] = set()
-
-                for entry in manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True):
-                    if entry.data_file in self._deleted_data_files:
-                        found_deleted_entries.add(entry)
-                    else:
-                        entries_to_write.add(entry)
-
-                # Is the intercept the empty set?
-                if len(found_deleted_entries) == 0:
-                    existing_files.append(manifest_file)
-                    continue
-
-                # Delete all files from manifest
-                if len(entries_to_write) == 0:
-                    continue
-
-                # We have to rewrite the manifest file without the deleted data files
-                with self.new_manifest_writer(self.spec(manifest_file.partition_spec_id)) as writer:
-                    for entry in entries_to_write:
-                        writer.add_entry(
-                            ManifestEntry.from_args(
-                                status=ManifestEntryStatus.EXISTING,
-                                snapshot_id=entry.snapshot_id,
-                                sequence_number=entry.sequence_number,
-                                file_sequence_number=entry.file_sequence_number,
-                                data_file=entry.data_file,
-                            )
-                        )
-                existing_files.append(writer.to_manifest_file())
-
-        return existing_files
+        return self._get_existing_manifests()
 
     def _deleted_entries(self) -> list[ManifestEntry]:
         """To determine if we need to record any deleted entries.
@@ -723,38 +724,7 @@ class _RewriteFiles(_SnapshotProducer["_RewriteFiles"]):
 
     def _existing_manifests(self) -> list[ManifestFile]:
         """To determine if there are any existing manifests."""
-        existing_files = []
-        if snapshot := self._transaction.table_metadata.snapshot_by_name(name=self._target_branch):
-            for manifest_file in snapshot.manifests(io=self._io):
-                entries_to_write: set[ManifestEntry] = set()
-                found_deleted_entries: set[ManifestEntry] = set()
-
-                for entry in manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True):
-                    if entry.data_file in self._deleted_data_files:
-                        found_deleted_entries.add(entry)
-                    else:
-                        entries_to_write.add(entry)
-
-                if len(found_deleted_entries) == 0:
-                    existing_files.append(manifest_file)
-                    continue
-
-                if len(entries_to_write) == 0:
-                    continue
-
-                with self.new_manifest_writer(self.spec(manifest_file.partition_spec_id)) as writer:
-                    for entry in entries_to_write:
-                        writer.add_entry(
-                            ManifestEntry.from_args(
-                                status=ManifestEntryStatus.EXISTING,
-                                snapshot_id=entry.snapshot_id,
-                                sequence_number=entry.sequence_number,
-                                file_sequence_number=entry.file_sequence_number,
-                                data_file=entry.data_file,
-                            )
-                        )
-                existing_files.append(writer.to_manifest_file())
-        return existing_files
+        return self._get_existing_manifests()
 
 
 class UpdateSnapshot:
