@@ -2600,6 +2600,67 @@ def test_resolve_storage_credentials_empty() -> None:
     assert RestCatalog._resolve_storage_credentials([], None) == {}
 
 
+def test_resolve_storage_credentials_skips_hadoop_only() -> None:
+    from pyiceberg.catalog.rest.scan_planning import StorageCredential
+
+    # The longer fs.* prefix would win a blind longest-match; the filter drops it.
+    credentials = [
+        StorageCredential(prefix="s3://warehouse/jindo", config={"fs.s3.access-key": "hadoop-k"}),
+        StorageCredential(prefix="s3://warehouse", config={"s3.access-key-id": "native-k"}),
+    ]
+    result = RestCatalog._resolve_storage_credentials(credentials, "s3://warehouse/jindo/table/data")
+    assert result == {"s3.access-key-id": "native-k"}
+
+
+def test_resolve_storage_credentials_mixed_prefix_namespaces_preserved() -> None:
+    from pyiceberg.catalog.rest.scan_planning import StorageCredential
+
+    credentials = [
+        StorageCredential(prefix="gs", config={"gs.oauth2.token": "tok"}),
+        StorageCredential(prefix="s3", config={"s3.access-key-id": "native-k"}),
+    ]
+    result = RestCatalog._resolve_storage_credentials(credentials, "gs://bucket/path")
+    assert result == {"gs.oauth2.token": "tok"}
+
+
+def test_resolve_storage_credentials_all_hadoop_only_returns_empty() -> None:
+    from pyiceberg.catalog.rest.scan_planning import StorageCredential
+
+    credentials = [
+        StorageCredential(prefix="custom", config={"fs.custom.access-key": "hadoop-k"}),
+    ]
+    assert RestCatalog._resolve_storage_credentials(credentials, "custom://bucket/path") == {}
+
+
+def test_resolve_storage_credentials_root_prefix_fallback_for_s3_compatible_scheme() -> None:
+    from pyiceberg.catalog.rest.scan_planning import StorageCredential
+
+    # oss:// is routed through pyarrow's S3FileSystem, so ROOT_PREFIX "s3" applies.
+    credentials = [
+        StorageCredential(prefix="s3", config={"s3.access-key-id": "native-k"}),
+    ]
+    result = RestCatalog._resolve_storage_credentials(credentials, "oss://bucket/path")
+    assert result == {"s3.access-key-id": "native-k"}
+
+
+def test_resolve_storage_credentials_root_prefix_fallback_respects_consumable() -> None:
+    from pyiceberg.catalog.rest.scan_planning import StorageCredential
+
+    credentials = [
+        StorageCredential(prefix="s3", config={"fs.s3.access-key": "hadoop-k"}),
+    ]
+    assert RestCatalog._resolve_storage_credentials(credentials, "s3://bucket/path") == {}
+
+
+def test_resolve_storage_credentials_fallback_skipped_for_non_s3_scheme() -> None:
+    from pyiceberg.catalog.rest.scan_planning import StorageCredential
+
+    credentials = [
+        StorageCredential(prefix="s3", config={"s3.access-key-id": "native-k"}),
+    ]
+    assert RestCatalog._resolve_storage_credentials(credentials, "gs://bucket/path") == {}
+
+
 def test_load_table_with_storage_credentials(rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]) -> None:
     metadata_location = "s3://warehouse/database/table/metadata/00001.metadata.json"
     rest_mock.get(
