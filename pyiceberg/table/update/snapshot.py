@@ -166,7 +166,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         return added_rows
 
     def _get_existing_manifests(self) -> list[ManifestFile]:
-        """Filters existing manifests and rewrites those containing deleted data files."""
+        """Filter existing manifests and rewrite those containing deleted data files."""
         existing_files = []
         # Use manifest pruning if a predicate is set (primarily for Overwrite)
         manifest_evaluators: dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
