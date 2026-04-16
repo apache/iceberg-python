@@ -672,9 +672,6 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
 class _RewriteFiles(_SnapshotProducer["_RewriteFiles"]):
     """A snapshot producer that rewrites data files."""
 
-    def __init__(self, operation: Operation, transaction: Transaction, io: FileIO, snapshot_properties: dict[str, str]):
-        super().__init__(operation, transaction, io, snapshot_properties=snapshot_properties)
-
     def _commit(self) -> UpdatesAndRequirements:
         # Only produce a commit when there is something to rewrite
         if self._deleted_data_files or self._added_data_files:
@@ -795,6 +792,7 @@ class UpdateSnapshot:
             operation=Operation.REPLACE,
             transaction=self._transaction,
             io=self._io,
+            branch=self._branch,
             snapshot_properties=self._snapshot_properties,
         )
 
