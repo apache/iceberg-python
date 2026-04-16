@@ -165,7 +165,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                 added_rows += manifest.added_rows_count
         return added_rows
 
-    def _get_existing_manifests(self) -> list[ManifestFile]:
+    def _get_existing_manifests(self, should_use_manifest_pruning: bool = False) -> list[ManifestFile]:
         """Filter existing manifests and rewrite those containing deleted data files."""
         existing_files: list[ManifestFile] = []
         # Use manifest pruning if a predicate is set (primarily for Overwrite)
@@ -174,9 +174,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         if snapshot := self._transaction.table_metadata.snapshot_by_name(name=self._target_branch):
             for manifest_file in snapshot.manifests(io=self._io):
                 # Skip pruning for rewrite operations unless we want to optimize later
-                if self._operation == Operation.OVERWRITE and not manifest_evaluators[manifest_file.partition_spec_id](
-                    manifest_file
-                ):
+                if should_use_manifest_pruning and not manifest_evaluators[manifest_file.partition_spec_id](manifest_file):
                     existing_files.append(manifest_file)
                     continue
 
@@ -629,7 +627,7 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
 
     def _existing_manifests(self) -> list[ManifestFile]:
         """Determine if there are any existing manifest files."""
-        return self._get_existing_manifests()
+        return self._get_existing_manifests(should_use_manifest_pruning=True)
 
     def _deleted_entries(self) -> list[ManifestEntry]:
         """To determine if we need to record any deleted entries.
