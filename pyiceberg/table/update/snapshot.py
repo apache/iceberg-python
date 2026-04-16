@@ -720,11 +720,9 @@ class _RewriteFiles(_SnapshotProducer["_RewriteFiles"]):
             return []
 
     def _deleted_entries(self) -> list[ManifestEntry]:
-        """Check if we need to mark the files as deleted."""
         return self._cached_deleted_entries
 
     def _existing_manifests(self) -> list[ManifestFile]:
-        """To determine if there are any existing manifests."""
         return self._get_existing_manifests()
 
 
