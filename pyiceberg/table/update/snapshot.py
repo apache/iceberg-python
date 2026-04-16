@@ -167,7 +167,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
 
     def _get_existing_manifests(self) -> list[ManifestFile]:
         """Filter existing manifests and rewrite those containing deleted data files."""
-        existing_files = []
+        existing_files: list[ManifestFile] = []
         # Use manifest pruning if a predicate is set (primarily for Overwrite)
         manifest_evaluators: dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
 
@@ -206,6 +206,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                                 )
                             )
                     existing_files.append(writer.to_manifest_file())
+
         return existing_files
 
     @abstractmethod
@@ -695,7 +696,8 @@ class _RewriteFiles(_SnapshotProducer["_RewriteFiles"]):
         else:
             return (), ()
 
-    def _deleted_entries(self) -> list[ManifestEntry]:
+    @cached_property
+    def _cached_deleted_entries(self) -> list[ManifestEntry]:
         """Check if we need to mark the files as deleted."""
         if self._parent_snapshot_id is not None:
             previous_snapshot = self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
@@ -721,6 +723,10 @@ class _RewriteFiles(_SnapshotProducer["_RewriteFiles"]):
             return list(itertools.chain(*list_of_entries))
         else:
             return []
+
+    def _deleted_entries(self) -> list[ManifestEntry]:
+        """Check if we need to mark the files as deleted."""
+        return self._cached_deleted_entries
 
     def _existing_manifests(self) -> list[ManifestFile]:
         """To determine if there are any existing manifests."""
