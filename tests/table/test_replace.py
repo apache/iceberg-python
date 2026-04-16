@@ -635,3 +635,68 @@ def test_replace_no_op_on_non_empty_table(catalog: Catalog) -> None:
     # Successive calls to current_snapshot() should yield the same snapshot
     assert table.current_snapshot() == initial_snapshot
     assert len(table.history()) == 1
+
+
+def test_replace_on_custom_branch(catalog: Catalog) -> None:
+    # Setup a basic table using the catalog fixture
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        identifier="default.test_replace_branch",
+        schema=Schema(),
+    )
+
+    # 1. File we will delete
+    file_to_delete = DataFile.from_args(
+        file_path="s3://bucket/test/data/deleted.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=100,
+        file_size_in_bytes=1024,
+        content=DataFileContent.DATA,
+    )
+    file_to_delete.spec_id = 0
+
+    # 2. File we are adding as a replacement
+    file_to_add = DataFile.from_args(
+        file_path="s3://bucket/test/data/added.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=100,
+        file_size_in_bytes=1024,
+        content=DataFileContent.DATA,
+    )
+    file_to_add.spec_id = 0
+
+    # Initially append to have something to replace on main
+    with table.transaction() as tx:
+        with tx.update_snapshot().fast_append() as append_snapshot:
+            append_snapshot.append_data_file(file_to_delete)
+
+    initial_main_snapshot = cast(Snapshot, table.current_snapshot())
+    initial_main_snapshot_id = initial_main_snapshot.snapshot_id
+
+    # Create a new branch called "test-branch" pointing to the initial snapshot
+    table.manage_snapshots().create_branch(branch_name="test-branch", snapshot_id=initial_main_snapshot_id).commit()
+
+    # Perform a replace() operation explicitly targeting "test-branch"
+    with table.transaction() as tx:
+        with tx.update_snapshot(branch="test-branch").replace() as rewrite:
+            rewrite.delete_data_file(file_to_delete)
+            rewrite.append_data_file(file_to_add)
+
+    # Reload table to get updated refs
+    table = catalog.load_table("default.test_replace_branch")
+
+    test_branch_ref = table.metadata.refs["test-branch"]
+    main_branch_ref = table.metadata.refs["main"]
+
+    # Assert that the operation was successful on test-branch
+    assert test_branch_ref.snapshot_id != initial_main_snapshot_id
+
+    # Assert that the "test-branch" reference now points to a REPLACE snapshot
+    new_snapshot = table.snapshot_by_id(test_branch_ref.snapshot_id)
+    assert new_snapshot is not None
+    assert new_snapshot.summary["operation"] == Operation.REPLACE
+
+    # Assert that the "main" branch reference was completely untouched
+    assert main_branch_ref.snapshot_id == initial_main_snapshot_id
