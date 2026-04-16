@@ -141,6 +141,7 @@ def test_replace_internally(catalog: Catalog) -> None:
     assert len(existing_entries) == 1
     assert existing_entries[0].data_file.file_path == file_to_keep.file_path
     assert existing_entries[0].snapshot_id == old_snapshot_id
+    assert existing_entries[0].sequence_number == old_sequence_number
 
 
 def test_replace_reuses_unaffected_manifests(catalog: Catalog) -> None:
@@ -456,3 +457,181 @@ def test_replace_passes_through_delete_manifests(catalog: Catalog) -> None:
     manifest_paths_after = [m.manifest_path for m in manifests_after]
 
     assert delete_manifest_path in manifest_paths_after
+
+
+def test_replace_multiple_files(catalog: Catalog) -> None:
+    # Setup a basic table
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        identifier="default.test_replace_multiple",
+        schema=Schema(),
+    )
+
+    file_1 = DataFile.from_args(
+        file_path="s3://bucket/test/data/1.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=100,
+        file_size_in_bytes=1024,
+        content=DataFileContent.DATA,
+    )
+    file_1.spec_id = 0
+
+    file_2 = DataFile.from_args(
+        file_path="s3://bucket/test/data/2.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=100,
+        file_size_in_bytes=1024,
+        content=DataFileContent.DATA,
+    )
+    file_2.spec_id = 0
+
+    file_1_new = DataFile.from_args(
+        file_path="s3://bucket/test/data/1_new.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=50,
+        file_size_in_bytes=512,
+        content=DataFileContent.DATA,
+    )
+    file_1_new.spec_id = 0
+
+    file_2_new = DataFile.from_args(
+        file_path="s3://bucket/test/data/2_new.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=50,
+        file_size_in_bytes=512,
+        content=DataFileContent.DATA,
+    )
+    file_2_new.spec_id = 0
+
+    # Append initial files
+    with table.transaction() as tx:
+        with tx.update_snapshot().fast_append() as append_snapshot:
+            append_snapshot.append_data_file(file_1)
+            append_snapshot.append_data_file(file_2)
+
+    # Replace both files with new ones
+    with table.transaction() as tx:
+        with tx.update_snapshot().replace() as rewrite:
+            rewrite.delete_data_file(file_1)
+            rewrite.delete_data_file(file_2)
+            rewrite.append_data_file(file_1_new)
+            rewrite.append_data_file(file_2_new)
+
+    snapshot = cast(Snapshot, table.current_snapshot())
+    summary = cast(Summary, snapshot.summary)
+
+    assert summary["added-data-files"] == "2"
+    assert summary["deleted-data-files"] == "2"
+    assert summary["added-records"] == "100"
+    assert summary["deleted-records"] == "200"
+    assert summary["total-records"] == "100"
+
+
+def test_replace_partitioned_table(catalog: Catalog) -> None:
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.transforms import IdentityTransform
+    from pyiceberg.types import IntegerType, NestedField, StringType
+
+    # Setup a partitioned table
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=IntegerType(), required=True),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=True),
+    )
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="id"))
+    table = catalog.create_table(
+        identifier="default.test_replace_partitioned",
+        schema=schema,
+        partition_spec=spec,
+    )
+
+    # File in partition id=1
+    file_part1 = DataFile.from_args(
+        file_path="s3://bucket/test/data/part1.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(1),
+        record_count=100,
+        file_size_in_bytes=1024,
+        content=DataFileContent.DATA,
+    )
+    file_part1.spec_id = table.spec().spec_id
+
+    # File in partition id=2
+    file_part2 = DataFile.from_args(
+        file_path="s3://bucket/test/data/part2.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(2),
+        record_count=100,
+        file_size_in_bytes=1024,
+        content=DataFileContent.DATA,
+    )
+    file_part2.spec_id = table.spec().spec_id
+
+    # Add initial files
+    with table.transaction() as tx:
+        with tx.update_snapshot().fast_append() as append_snapshot:
+            append_snapshot.append_data_file(file_part1)
+            append_snapshot.append_data_file(file_part2)
+
+    # Replace file in partition 1
+    file_part1_new = DataFile.from_args(
+        file_path="s3://bucket/test/data/part1_new.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(1),
+        record_count=50,
+        file_size_in_bytes=512,
+        content=DataFileContent.DATA,
+    )
+    file_part1_new.spec_id = table.spec().spec_id
+
+    with table.transaction() as tx:
+        with tx.update_snapshot().replace() as rewrite:
+            rewrite.delete_data_file(file_part1)
+            rewrite.append_data_file(file_part1_new)
+
+    snapshot = cast(Snapshot, table.current_snapshot())
+    summary = cast(Summary, snapshot.summary)
+
+    assert summary["added-data-files"] == "1"
+    assert summary["deleted-data-files"] == "1"
+    assert summary["total-records"] == "150"
+
+
+def test_replace_no_op_on_non_empty_table(catalog: Catalog) -> None:
+    # Setup a basic table
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        identifier="default.test_replace_noop_nonempty",
+        schema=Schema(),
+    )
+
+    file_a = DataFile.from_args(
+        file_path="s3://bucket/test/data/a.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=10,
+        file_size_in_bytes=100,
+        content=DataFileContent.DATA,
+    )
+    file_a.spec_id = 0
+
+    # Commit 1: Append file A
+    with table.transaction() as tx:
+        with tx.update_snapshot().fast_append() as append_snapshot:
+            append_snapshot.append_data_file(file_a)
+
+    initial_snapshot = table.current_snapshot()
+    assert initial_snapshot is not None
+
+    # Perform a no-op replace
+    with table.transaction() as tx:
+        with tx.update_snapshot().replace():
+            pass
+
+    # Successive calls to current_snapshot() should yield the same snapshot
+    assert table.current_snapshot() == initial_snapshot
+    assert len(table.history()) == 1
