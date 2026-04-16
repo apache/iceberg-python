@@ -696,7 +696,8 @@ def test_replace_on_custom_branch(catalog: Catalog) -> None:
     # Assert that the "test-branch" reference now points to a REPLACE snapshot
     new_snapshot = table.snapshot_by_id(test_branch_ref.snapshot_id)
     assert new_snapshot is not None
-    assert new_snapshot.summary["operation"] == Operation.REPLACE
+    summary = cast(Summary, new_snapshot.summary)
+    assert summary["operation"] == Operation.REPLACE
 
     # Assert that the "main" branch reference was completely untouched
     assert main_branch_ref.snapshot_id == initial_main_snapshot_id
