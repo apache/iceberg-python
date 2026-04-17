@@ -39,11 +39,12 @@ jobs:
         os: [ ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-15-intel, macos-latest ]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 1
+          persist-credentials: false
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: |
             3.10
@@ -52,7 +53,7 @@ jobs:
             3.13
 
       - name: Install UV
-        uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098
+        uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098 # v7.3.1
 
       # Publish the source distribution with the version that's in
       # the repository, otherwise the tests will fail
@@ -61,7 +62,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@ee02a1537ce3071a004a6b08c41e72f0fdc42d9a
+        uses: pypa/cibuildwheel@8d2b08b68458a16aeb24b64e68a09ab1c8e82084 # v3.4.1
         with:
           output-dir: wheelhouse
           config-file: "pyproject.toml"
@@ -78,7 +79,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: ls -lah dist/* && cp dist/* wheelhouse/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: "svn-release-candidate-${{ matrix.os }}"
           path: ./wheelhouse/*
@@ -89,7 +90,7 @@ jobs:
       - svn-build-artifacts
     steps:
       - name: Merge Artifacts
-        uses: actions/upload-artifact/merge@v4
+        uses: actions/upload-artifact/merge@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: "svn-release-candidate-${{ inputs.VERSION }}"
           pattern: svn-release-candidate*

@@ -922,6 +922,39 @@ def test_load_namespace_properties_200(rest_mock: Mocker) -> None:
     assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).load_namespace_properties(namespace) == {"prop": "yes"}
 
 
+def test_load_namespace_properties_200_without_properties(rest_mock: Mocker) -> None:
+    namespace = "leden"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}",
+        json={"namespace": ["leden"]},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).load_namespace_properties(namespace) == {}
+
+
+def test_load_namespace_properties_200_with_null_properties(rest_mock: Mocker) -> None:
+    namespace = "leden"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}",
+        json={"namespace": ["leden"], "properties": None},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).load_namespace_properties(namespace) == {}
+
+
+def test_load_namespace_properties_200_with_empty_properties(rest_mock: Mocker) -> None:
+    namespace = "leden"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}",
+        json={"namespace": ["leden"], "properties": {}},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).load_namespace_properties(namespace) == {}
+
+
 def test_load_namespace_properties_404(rest_mock: Mocker) -> None:
     namespace = "leden"
     rest_mock.get(

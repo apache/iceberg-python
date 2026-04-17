@@ -618,6 +618,7 @@ def test_register_table_existing(test_catalog: Catalog, table_schema_nested: Sch
 
 
 @pytest.mark.integration
+@pytest.mark.skip(reason="Requires Iceberg REST Fixtures 1.11.x")
 def test_rest_custom_namespace_separator(rest_catalog: RestCatalog, table_schema_simple: Schema) -> None:
     """
     Tests that the REST catalog correctly picks up the namespace-separator from the config endpoint.

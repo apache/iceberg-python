@@ -17,20 +17,30 @@
 # under the License.
 #
 
-version: 2
-updates:
-  - package-ecosystem: "uv"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 50
-    ignore:
-      - dependency-name: "datafusion"
-    cooldown:
-      default-days: 7
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    cooldown:
-      default-days: 7
+# Verifies all GitHub Actions refs are on the ASF allowlist.
+# Actions not on the allowlist silently fail with "Startup failure" — no logs,
+# no notifications, and PRs may appear green because no checks ran.
+# See https://github.com/apache/infrastructure-actions/issues/574
+name: "ASF Allowlist Check"
+
+on:
+  pull_request:
+    paths:
+      - ".github/**"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/**"
+
+permissions:
+  contents: read
+
+jobs:
+  asf-allowlist-check:
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      with:
+        persist-credentials: false
+    - uses: apache/infrastructure-actions/allowlist-check@4e9c961f587f72b170874b6f5cd4ac15f7f26eb8  # main
