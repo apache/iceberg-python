@@ -1172,7 +1172,7 @@ wheels = [
 
 [[package]]
 name = "daft"
-version = "0.7.8"
+version = "0.6.14"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fsspec" },
@@ -1181,13 +1181,13 @@ dependencies = [
     { name = "tqdm" },
     { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/17/92/84f1712ee6369a17eba7750c99ba29b863b9cbcce983f226e35162469c2b/daft-0.7.8.tar.gz", hash = "sha256:192ad75adf70a6a3a551aa26ec53fc5c551f50fe18abb739c7407f089c016322", size = 2973748, upload-time = "2026-04-08T10:44:27.399Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f5/cc/1da6b22727afa04e9fb9b57e9b7c3416d1ef536d699eb79c4e358364fb39/daft-0.6.14.tar.gz", hash = "sha256:1466ae5b672ac640f1867f46e5d825ac213986cb5e2e9d14ebb04e95fea3ac63", size = 10785985, upload-time = "2025-11-17T20:02:58.572Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3e/39/97bc0892a07b277f446c84444ec84858e358a6cddf0e7a8fba98dca029c4/daft-0.7.8-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:254457cc4daf30528c15010ae1b3cd06e1b04af263d6582d9b8db97a31438053", size = 57452326, upload-time = "2026-04-08T10:43:57.685Z" },
-    { url = "https://files.pythonhosted.org/packages/f0/bd/d475b329639445aca08b30e642a8441aafc318390957f996c048e5ebcebc/daft-0.7.8-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:0934e5b819f09c809ae645efea482ddc1cfebf22df29cb96bd252f036c987db0", size = 53245253, upload-time = "2026-04-08T10:44:01.361Z" },
-    { url = "https://files.pythonhosted.org/packages/ac/11/8790b8f3d29db6badfa81ae3d2dea0dcd685f4e8dc1084457267da18b339/daft-0.7.8-cp310-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:17ea85fd0c9ca9161dd4ec947482a74f48633de0c14e2f7e8c2f9169b37593dd", size = 55674942, upload-time = "2026-04-08T10:44:04.924Z" },
-    { url = "https://files.pythonhosted.org/packages/76/f8/bc635277c497e2fa277e207939f5fc5f092312994f21aa55745e02a7af81/daft-0.7.8-cp310-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:3ba1ad07abc699ef3b280326493cf9ab2d7eddbb4f5a0ceaf3a63127e3254d16", size = 57892242, upload-time = "2026-04-08T10:44:08.518Z" },
-    { url = "https://files.pythonhosted.org/packages/42/68/7c87400ba31b23e340b17af551eae191713f835952dfc308953468af5f2f/daft-0.7.8-cp310-abi3-win_amd64.whl", hash = "sha256:d64e745b9c0659c6132d4a0af0bbba9792036b25cfb661d56a62670b3c940bbb", size = 58733284, upload-time = "2026-04-08T10:44:12.103Z" },
+    { url = "https://files.pythonhosted.org/packages/b1/ac/367314da18ecd05c9b8567eebd9bbf1edd065b42df0cb70d20ec907d7df8/daft-0.6.14-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:56939ee5e195e36dc95659344e918876dd1101e9fde4398a44e3999741c0e9b4", size = 51908854, upload-time = "2025-11-17T20:02:27.642Z" },
+    { url = "https://files.pythonhosted.org/packages/b7/c6/eac1db77a33ad760e1e8b173b0c1c97de0d638ff96266299dc70a9df33e3/daft-0.6.14-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:f9b82a095248fc2dc53b014ff99c3556fcb25a385987a28da35c235f9405632a", size = 48300243, upload-time = "2025-11-17T20:02:35.431Z" },
+    { url = "https://files.pythonhosted.org/packages/05/5f/57f670d98a4f5a879e5ad7ba7c22b875efe887ffd47c38c9d6f97c9b22f6/daft-0.6.14-cp310-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:19b029886752a24ef50f3948c541c4c4a01a87847d861ab51ea0be52e7352745", size = 49720024, upload-time = "2025-11-17T20:02:38.941Z" },
+    { url = "https://files.pythonhosted.org/packages/e0/bd/ed3ae603955725be7af8575144f7e6cf2baaef12513838c783f998252161/daft-0.6.14-cp310-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:49d54e31ea587413bfc5120a28d4a023a56f22fc304c6aa1e28c888cfada54b5", size = 52240413, upload-time = "2025-11-17T20:02:42.199Z" },
+    { url = "https://files.pythonhosted.org/packages/ff/2c/170a87c35bfd8390c3b52cd9828c5d5d84fc986f0db7348d05391f5e3c32/daft-0.6.14-cp310-abi3-win_amd64.whl", hash = "sha256:be4cddf55d5a49a7fe15299e01ae9d41d74472a9834d5a7f5a91517b87ab6de0", size = 50655066, upload-time = "2025-11-17T20:02:45.593Z" },
 ]
 
 [[package]]
@@ -1619,16 +1619,16 @@ wheels = [
 
 [[package]]
 name = "fsspec"
-version = "2026.2.0"
+version = "2026.3.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/51/7c/f60c259dcbf4f0c47cc4ddb8f7720d2dcdc8888c8e5ad84c73ea4531cc5b/fsspec-2026.2.0.tar.gz", hash = "sha256:6544e34b16869f5aacd5b90bdf1a71acb37792ea3ddf6125ee69a22a53fb8bff", size = 313441, upload-time = "2026-02-05T21:50:53.743Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e1/cf/b50ddf667c15276a9ab15a70ef5f257564de271957933ffea49d2cdbcdfb/fsspec-2026.3.0.tar.gz", hash = "sha256:1ee6a0e28677557f8c2f994e3eea77db6392b4de9cd1f5d7a9e87a0ae9d01b41", size = 313547, upload-time = "2026-03-27T19:11:14.892Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e6/ab/fb21f4c939bb440104cc2b396d3be1d9b7a9fd3c6c2a53d98c45b3d7c954/fsspec-2026.2.0-py3-none-any.whl", hash = "sha256:98de475b5cb3bd66bedd5c4679e87b4fdfe1a3bf4d707b151b3c07e58c9a2437", size = 202505, upload-time = "2026-02-05T21:50:51.819Z" },
+    { url = "https://files.pythonhosted.org/packages/d5/1f/5f4a3cd9e4440e9d9bc78ad0a91a1c8d46b4d429d5239ebe6793c9fe5c41/fsspec-2026.3.0-py3-none-any.whl", hash = "sha256:d2ceafaad1b3457968ed14efa28798162f1638dbb5d2a6868a2db002a5ee39a4", size = 202595, upload-time = "2026-03-27T19:11:13.595Z" },
 ]
 
 [[package]]
 name = "gcsfs"
-version = "2026.2.0"
+version = "2026.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -1640,9 +1640,9 @@ dependencies = [
     { name = "google-cloud-storage-control" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8c/91/e7a2f237d51436a4fc947f30f039d2c277bb4f4ce02f86628ba0a094a3ce/gcsfs-2026.2.0.tar.gz", hash = "sha256:d58a885d9e9c6227742b86da419c7a458e1f33c1de016e826ea2909f6338ed84", size = 163376, upload-time = "2026-02-06T18:35:52.217Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/70/63/4340ba024e83315a2fe58e7085a52030d8fe41a96624df34193d6abd7a8d/gcsfs-2026.3.0.tar.gz", hash = "sha256:20008b3c0a7ba9453fff1208dc412ee1c9106efa61a0f8abf500fc7b562ec7de", size = 182664, upload-time = "2026-03-27T20:22:31.581Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9c/6b/c2f68ac51229fc94f094c7f802648fc1de3d19af36434def5e64c0caa32b/gcsfs-2026.2.0-py3-none-any.whl", hash = "sha256:407feaa2af0de81ebce44ea7e6f68598a3753e5e42257b61d6a9f8c0d6d4754e", size = 57557, upload-time = "2026-02-06T18:35:51.09Z" },
+    { url = "https://files.pythonhosted.org/packages/96/08/678f842a59b544c9f362481fb08015139414da23e01626fb516c26b9ee0a/gcsfs-2026.3.0-py3-none-any.whl", hash = "sha256:af9d271495f7730923fdb660d86b83309b9be70a7c41e7012522c3fc49033141", size = 61705, upload-time = "2026-03-27T20:22:30.576Z" },
 ]
 
 [[package]]
@@ -5628,16 +5628,16 @@ wheels = [
 
 [[package]]
 name = "s3fs"
-version = "2026.2.0"
+version = "2026.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiobotocore" },
     { name = "aiohttp" },
     { name = "fsspec" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fa/be/392c8c5e0da9bfa139e41084690dd49a5e3e931099f78f52d3f6070105c6/s3fs-2026.2.0.tar.gz", hash = "sha256:91cb2a9f76e35643b76eeac3f47a6165172bb3def671f76b9111c8dd5779a2ac", size = 84152, upload-time = "2026-02-05T21:57:57.968Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0b/93/093972862fb9c2fdc24ecf8d6d2212853df1945eddf26ba2625e8eaeee66/s3fs-2026.3.0.tar.gz", hash = "sha256:ce8b30a9dc5e01c5127c96cb7377290243a689a251ef9257336ac29d72d7b0d8", size = 85986, upload-time = "2026-03-27T19:28:20.963Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/57/e1/64c264db50b68de8a438b60ceeb921b2f22da3ebb7ad6255150225d0beac/s3fs-2026.2.0-py3-none-any.whl", hash = "sha256:65198835b86b1d5771112b0085d1da52a6ede36508b1aaa6cae2aedc765dfe10", size = 31328, upload-time = "2026-02-05T21:57:56.532Z" },
+    { url = "https://files.pythonhosted.org/packages/6a/52/5ccdc01f7a8a61357d15a66b5d8a6580aa8529cb33f32e6cbb71c52622c5/s3fs-2026.3.0-py3-none-any.whl", hash = "sha256:2fa40a64c03003cfa5ae0e352788d97aa78ae8f9e25ea98b28ce9d21ba10c1b8", size = 32399, upload-time = "2026-03-27T19:28:19.702Z" },
 ]
 
 [[package]]
