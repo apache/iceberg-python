@@ -19,7 +19,14 @@ from typing import Any
 
 import pytest
 
-from pyiceberg.io.fileformat import DataFileStatistics, FileFormatWriter
+from pyiceberg.io.fileformat import DataFileStatistics, FileFormatFactory, FileFormatModel, FileFormatWriter
+from pyiceberg.manifest import FileFormat
+
+
+def test_get_unregistered_format_raises() -> None:
+    """Getting an unregistered format should raise ValueError."""
+    with pytest.raises(ValueError, match="No writer registered for"):
+        FileFormatFactory.get(FileFormat.AVRO)
 
 
 def test_backward_compat_import() -> None:
@@ -28,6 +35,30 @@ def test_backward_compat_import() -> None:
     from pyiceberg.io.pyarrow import DataFileStatistics  # noqa: F401
 
     assert DataFileStatistics is dFS
+
+
+def test_duplicate_registration_raises() -> None:
+    """Registering the same format twice should raise ValueError."""
+
+    class _DummyModel(FileFormatModel):
+        @property
+        def format(self) -> FileFormat:
+            return FileFormat.ORC
+
+        def file_extension(self) -> str:
+            return "orc"
+
+        def create_writer(self, output_file: Any, file_schema: Any, properties: Any) -> Any:
+            raise NotImplementedError
+
+    original = dict(FileFormatFactory._registry)
+    try:
+        model = _DummyModel()
+        FileFormatFactory.register(model)
+        with pytest.raises(ValueError, match="already registered"):
+            FileFormatFactory.register(model)
+    finally:
+        FileFormatFactory._registry = original
 
 
 def test_result_before_close_raises() -> None:

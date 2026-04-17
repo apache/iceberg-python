@@ -135,7 +135,7 @@ class FileFormatWriter(ABC):
         """Exit the context manager, closing the writer and caching statistics."""
         if exc_type is not None:
             try:
-                self._result = self.close()
+                self.close()
             except Exception:
                 pass
             return
@@ -169,6 +169,11 @@ class FileFormatFactory:
 
     @classmethod
     def register(cls, model: FileFormatModel) -> None:
+        if model.format in cls._registry:
+            existing = cls._registry[model.format]
+            raise ValueError(
+                f"Cannot register {type(model).__name__}: {type(existing).__name__} is already registered for {model.format}"
+            )
         cls._registry[model.format] = model
 
     @classmethod
