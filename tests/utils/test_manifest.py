@@ -32,6 +32,7 @@ from pyiceberg.manifest import (
     ManifestEntryStatus,
     ManifestFile,
     PartitionFieldSummary,
+    _inherit_from_manifest,
     _manifest_cache,
     _manifests,
     read_manifest_list,
@@ -932,3 +933,43 @@ def test_manifest_writer_tell(format_version: TableVersion) -> None:
             after_entry_bytes = writer.tell()
 
             assert after_entry_bytes > initial_bytes, "Bytes should increase after adding entry"
+
+
+def test_inherit_from_manifest_snapshot_id() -> None:
+    entry = ManifestEntry.from_args(
+        status=ManifestEntryStatus.ADDED,
+        snapshot_id=None,
+        sequence_number=None,
+        file_sequence_number=None,
+        data_file=DataFile.from_args(
+            content=DataFileContent.DATA,
+            file_path="s3://bucket/data/file.parquet",
+            file_format="PARQUET",
+            partition={},
+            record_count=100,
+            file_size_in_bytes=1024,
+        ),
+    )
+
+    manifest = ManifestFile.from_args(
+        manifest_path="s3://bucket/metadata/manifest.avro",
+        manifest_length=1000,
+        partition_spec_id=0,
+        content=ManifestContent.DATA,
+        sequence_number=1,
+        min_sequence_number=1,
+        added_snapshot_id=3051729675574597004,
+        added_files_count=1,
+        existing_files_count=0,
+        deleted_files_count=0,
+        added_rows_count=100,
+        existing_rows_count=0,
+        deleted_rows_count=0,
+    )
+
+    result = _inherit_from_manifest(entry, manifest)
+
+    assert result.status == ManifestEntryStatus.ADDED
+    assert result.snapshot_id == 3051729675574597004
+    assert result.sequence_number == 1
+    assert result.file_sequence_number == 1
