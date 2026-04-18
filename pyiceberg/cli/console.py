@@ -236,7 +236,7 @@ def location(ctx: Context, identifier: str) -> None:
 @click.pass_context
 @catch_exception()
 def version(ctx: Context) -> None:
-    """Print the installed pyiceberg package number (deprecated, use --version instead)."""
+    """Print the installed pyiceberg package version. Deprecated: use --version instead."""
     click.echo(
         "Deprecation warning: the `version` command is deprecated and will be removed in 0.13.0. "
         "Please use `pyiceberg --version` instead.",
