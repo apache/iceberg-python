@@ -1713,7 +1713,7 @@ class TableScan(ABC):
         table_identifier: Identifier | None = None,
     ):
         self.table_metadata = table_metadata
-        self.io = io
+        self.io = load_file_io({**io.properties, **options}, self.table_metadata.location) if options else io
         self.row_filter = _parse_row_filter(row_filter)
         self.selected_fields = selected_fields
         self.case_sensitive = case_sensitive
@@ -1961,13 +1961,11 @@ class DataScan(TableScan):
         # The lambda created here is run in multiple threads.
         # So we avoid creating _EvaluatorExpression methods bound to a single
         # shared instance across multiple threads.
-        return lambda datafile: (
-            residual_evaluator_of(
-                spec=spec,
-                expr=self.row_filter,
-                case_sensitive=self.case_sensitive,
-                schema=self.table_metadata.schema(),
-            )
+        return lambda datafile: residual_evaluator_of(
+            spec=spec,
+            expr=self.row_filter,
+            case_sensitive=self.case_sensitive,
+            schema=self.table_metadata.schema(),
         )
 
     @staticmethod
