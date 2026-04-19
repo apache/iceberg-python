@@ -26,6 +26,7 @@ from pyiceberg.schema import (
     Accessor,
     Schema,
     _check_schema_compatible,
+    assign_fresh_schema_ids_for_replace,
     build_position_accessors,
     index_by_id,
     index_by_name,
@@ -1815,3 +1816,90 @@ def test_check_schema_compatible_optional_map_field_present() -> None:
     )
     # Should not raise - schemas match
     _check_schema_compatible(requested_schema, provided_schema)
+
+
+def test_assign_fresh_schema_ids_for_replace_reuses_ids() -> None:
+    """Test that field IDs are reused from the base schema by name."""
+    base_schema = Schema(
+        NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+    )
+    new_schema = Schema(
+        NestedField(field_id=10, name="id", field_type=IntegerType(), required=False),
+        NestedField(field_id=20, name="data", field_type=StringType(), required=False),
+    )
+    fresh, last_col_id = assign_fresh_schema_ids_for_replace(new_schema, base_schema, 2)
+    assert fresh.fields[0].field_id == 1  # reused from base
+    assert fresh.fields[1].field_id == 2  # reused from base
+    assert last_col_id == 2  # no new columns added
+
+
+def test_assign_fresh_schema_ids_for_replace_assigns_new_ids_for_new_fields() -> None:
+    """Test that new fields get IDs above last_column_id."""
+    base_schema = Schema(
+        NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+    )
+    new_schema = Schema(
+        NestedField(field_id=10, name="id", field_type=IntegerType(), required=False),
+        NestedField(field_id=20, name="data", field_type=StringType(), required=False),
+        NestedField(field_id=30, name="new_col", field_type=BooleanType(), required=False),
+    )
+    fresh, last_col_id = assign_fresh_schema_ids_for_replace(new_schema, base_schema, 2)
+    assert fresh.fields[0].field_id == 1  # reused
+    assert fresh.fields[1].field_id == 2  # reused
+    assert fresh.fields[2].field_id == 3  # new, starts after last_column_id=2
+    assert last_col_id == 3
+
+
+def test_assign_fresh_schema_ids_for_replace_with_nested_struct() -> None:
+    """Test that nested struct field IDs are reused by full path name."""
+    base_schema = Schema(
+        NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+        NestedField(
+            field_id=2,
+            name="location",
+            field_type=StructType(
+                NestedField(field_id=3, name="lat", field_type=FloatType(), required=False),
+                NestedField(field_id=4, name="lon", field_type=FloatType(), required=False),
+            ),
+            required=False,
+        ),
+    )
+    new_schema = Schema(
+        NestedField(field_id=10, name="id", field_type=IntegerType(), required=False),
+        NestedField(
+            field_id=20,
+            name="location",
+            field_type=StructType(
+                NestedField(field_id=30, name="lat", field_type=FloatType(), required=False),
+                NestedField(field_id=40, name="lon", field_type=FloatType(), required=False),
+                NestedField(field_id=50, name="alt", field_type=FloatType(), required=False),
+            ),
+            required=False,
+        ),
+    )
+    fresh, last_col_id = assign_fresh_schema_ids_for_replace(new_schema, base_schema, 4)
+    assert fresh.fields[0].field_id == 1  # id reused
+    assert fresh.fields[1].field_id == 2  # location reused
+    loc_fields = fresh.fields[1].field_type.fields
+    assert loc_fields[0].field_id == 3  # location.lat reused
+    assert loc_fields[1].field_id == 4  # location.lon reused
+    assert loc_fields[2].field_id == 5  # location.alt is new
+    assert last_col_id == 5
+
+
+def test_assign_fresh_schema_ids_for_replace_completely_new_schema() -> None:
+    """Test that a completely new schema gets IDs starting from last_column_id + 1."""
+    base_schema = Schema(
+        NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+    )
+    new_schema = Schema(
+        NestedField(field_id=10, name="x", field_type=IntegerType(), required=False),
+        NestedField(field_id=20, name="y", field_type=IntegerType(), required=False),
+    )
+    fresh, last_col_id = assign_fresh_schema_ids_for_replace(new_schema, base_schema, 2)
+    assert fresh.fields[0].field_id == 3  # starts after last_column_id=2
+    assert fresh.fields[1].field_id == 4
+    assert last_col_id == 4

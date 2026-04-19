@@ -67,13 +67,19 @@ from pyiceberg.io import (
     FileIO,
     load_file_io,
 )
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec, assign_fresh_partition_spec_ids
-from pyiceberg.schema import Schema, assign_fresh_schema_ids
+from pyiceberg.partitioning import (
+    UNPARTITIONED_PARTITION_SPEC,
+    PartitionSpec,
+    assign_fresh_partition_spec_ids,
+    assign_fresh_partition_spec_ids_for_replace,
+)
+from pyiceberg.schema import Schema, assign_fresh_schema_ids, assign_fresh_schema_ids_for_replace
 from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
     CreateTableTransaction,
     FileScanTask,
+    ReplaceTableTransaction,
     StagedTable,
     Table,
     TableIdentifier,
@@ -936,6 +942,77 @@ class RestCatalog(Catalog):
         )
         staged_table = self._response_to_staged_table(self.identifier_to_tuple(identifier), table_response)
         return CreateTableTransaction(staged_table)
+
+    def replace_table(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        location: str | None = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> Table:
+        txn = self.replace_table_transaction(
+            identifier=identifier,
+            schema=schema,
+            location=location,
+            partition_spec=partition_spec,
+            sort_order=sort_order,
+            properties=properties,
+        )
+        return txn.commit_transaction()
+
+    @retry(**_RETRY_ARGS)
+    def replace_table_transaction(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        location: str | None = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> ReplaceTableTransaction:
+        existing_table = self.load_table(identifier)
+        existing_metadata = existing_table.metadata
+
+        iceberg_schema = self._convert_schema_if_needed(
+            schema,
+            int(properties.get(TableProperties.FORMAT_VERSION, existing_metadata.format_version)),  # type: ignore
+        )
+
+        # Assign fresh schema IDs, reusing IDs from the existing schema by field name
+        fresh_schema, _ = assign_fresh_schema_ids_for_replace(
+            iceberg_schema, existing_metadata.schema(), existing_metadata.last_column_id
+        )
+
+        # Assign fresh partition spec IDs, reusing IDs from existing specs
+        fresh_partition_spec, _ = assign_fresh_partition_spec_ids_for_replace(
+            partition_spec, iceberg_schema, fresh_schema, existing_metadata.partition_specs, existing_metadata.last_partition_id
+        )
+
+        # Assign fresh sort order IDs
+        fresh_sort_order = assign_fresh_sort_order_ids(sort_order, iceberg_schema, fresh_schema)
+
+        # Use existing location if not specified
+        resolved_location = location.rstrip("/") if location else existing_metadata.location
+
+        # Create a StagedTable from the existing table
+        staged_table = StagedTable(
+            identifier=existing_table.name(),
+            metadata=existing_metadata,
+            metadata_location=existing_table.metadata_location,
+            io=existing_table.io,
+            catalog=self,
+        )
+
+        return ReplaceTableTransaction(
+            table=staged_table,
+            new_schema=fresh_schema,
+            new_spec=fresh_partition_spec,
+            new_sort_order=fresh_sort_order,
+            new_location=resolved_location,
+            new_properties=properties,
+        )
 
     @retry(**_RETRY_ARGS)
     def create_view(
