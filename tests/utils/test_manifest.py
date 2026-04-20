@@ -944,8 +944,8 @@ def test_inherit_from_manifest_snapshot_id() -> None:
         data_file=DataFile.from_args(
             content=DataFileContent.DATA,
             file_path="s3://bucket/data/file.parquet",
-            file_format="PARQUET",
-            partition={},
+            file_format=FileFormat.PARQUET,
+            partition=Record(),
             record_count=100,
             file_size_in_bytes=1024,
         ),
