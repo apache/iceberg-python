@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=redefined-outer-name,arguments-renamed,fixme
+from collections.abc import Callable
 from tempfile import TemporaryDirectory
 
 import fastavro
@@ -31,7 +32,9 @@ from pyiceberg.manifest import (
     ManifestEntry,
     ManifestEntryStatus,
     ManifestFile,
+    ManifestWriter,
     PartitionFieldSummary,
+    RollingManifestWriter,
     _manifest_cache,
     _manifests,
     read_manifest_list,
@@ -932,3 +935,98 @@ def test_manifest_writer_tell(format_version: TableVersion) -> None:
             after_entry_bytes = writer.tell()
 
             assert after_entry_bytes > initial_bytes, "Bytes should increase after adding entry"
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_rolling_manifest_writer_stays_in_one_file_under_target(format_version: TableVersion) -> None:
+    with TemporaryDirectory() as tmpdir:
+        supplier = _create_manifest_writer_supplier(
+            tmpdir, format_version, Schema(NestedField(1, "id", IntegerType(), required=True))
+        )
+        entries = [_create_simple_entry(i) for i in range(100)]
+
+        with RollingManifestWriter(supplier=supplier, target_file_size_in_bytes=10000) as writer:
+            for entry in entries:
+                writer.add_entry(entry)
+
+        assert len(writer.to_manifest_files()) == 1
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_rolling_manifest_writer_splits_when_over_target(format_version: TableVersion) -> None:
+    with TemporaryDirectory() as tmpdir:
+        supplier = _create_manifest_writer_supplier(
+            tmpdir, format_version, Schema(NestedField(1, "id", IntegerType(), required=True))
+        )
+        entries = [_create_simple_entry(i) for i in range(500)]
+
+        with RollingManifestWriter(supplier=supplier, target_file_size_in_bytes=1) as writer:
+            for entry in entries:
+                writer.add_entry(entry)
+
+        manifest_files = writer.to_manifest_files()
+        # writer will check size every 250 entries. Target=1 forces splits at 250 and 500.
+        assert len(manifest_files) == 2
+
+        with pytest.raises(RuntimeError, match="Cannot add entry to closed"):
+            writer.add_entry(entries[0])
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_rolling_manifest_writer_empty(format_version: TableVersion) -> None:
+    with TemporaryDirectory() as tmpdir:
+        supplier = _create_manifest_writer_supplier(
+            tmpdir, format_version, Schema(NestedField(1, "id", IntegerType(), required=True))
+        )
+
+        with RollingManifestWriter(supplier=supplier, target_file_size_in_bytes=42) as writer:
+            pass
+
+        assert writer.to_manifest_files() == []
+
+
+def _create_manifest_writer_supplier(
+    tmpdir: str,
+    format_version: TableVersion,
+    schema: Schema,
+    snapshot_id: int = 1,
+) -> Callable[[], ManifestWriter]:
+    counter = [0]
+    io = PyArrowFileIO()
+
+    def _supplier() -> ManifestWriter:
+        output_file = io.new_output(f"{tmpdir}/manifest-{counter[0]}.avro")
+        counter[0] += 1
+        return write_manifest(
+            format_version=format_version,
+            spec=UNPARTITIONED_PARTITION_SPEC,
+            schema=schema,
+            output_file=output_file,
+            snapshot_id=snapshot_id,
+            avro_compression="null",
+        )
+
+    return _supplier
+
+
+def _create_simple_entry(
+    i: int,
+    status: ManifestEntryStatus = ManifestEntryStatus.ADDED,
+    sequence_number: int | None = 1,
+) -> ManifestEntry:
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=f"data-{i}.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=1,
+        file_size_in_bytes=1000,
+    )
+    return ManifestEntry.from_args(
+        status=status,
+        snapshot_id=1,
+        sequence_number=sequence_number,
+        data_sequence_number=1,
+        file_sequence_number=1,
+        data_file=data_file,
+    )
