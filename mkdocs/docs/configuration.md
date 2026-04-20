@@ -59,6 +59,8 @@ You can tune the `manifest-cache-size` configuration in `.pyiceberg.yaml`:
 manifest-cache-size: 256
 ```
 
+Permitted values: Any `int` between `0` and `math.inf`.
+
 You can also set it with the `PYICEBERG_MANIFEST_CACHE_SIZE` environment variable:
 
 ```sh
