@@ -108,6 +108,8 @@ test: ## Run all unit tests (excluding integration)
 
 test-integration: test-integration-setup test-integration-exec test-integration-cleanup ## Run integration tests
 
+test-polaris: test-polaris-setup test-polaris-exec test-polaris-cleanup ## Run Polaris integration tests
+
 test-integration-setup: install ## Start Docker services for integration tests
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
@@ -122,6 +124,22 @@ test-integration-cleanup: ## Clean up integration test environment
 		echo "Cleaning up Docker containers..."; \
 	fi
 	$(CLEANUP_COMMAND)
+
+test-polaris-setup: install ## Start Docker services for Polaris integration tests
+	docker compose -f dev/docker-compose-polaris.yml kill
+	docker compose -f dev/docker-compose-polaris.yml rm -f
+	docker compose -f dev/docker-compose-polaris.yml up -d --build --wait
+	docker compose -f dev/docker-compose-polaris.yml exec -T polaris-setup cat /tmp/polaris_creds.env > dev/polaris_creds.env
+
+test-polaris-exec: ## Run Polaris integration tests
+	TEST_RUNNER="$(TEST_RUNNER)" sh dev/test-polaris.sh $(PYTEST_ARGS)
+
+test-polaris-cleanup: ## Clean up Polaris integration test environment
+	@if [ "${KEEP_COMPOSE}" != "1" ]; then \
+		echo "Cleaning up Polaris Docker containers..."; \
+		docker compose -f dev/docker-compose-polaris.yml down -v --remove-orphans --timeout 0 2>/dev/null || true; \
+		rm -f dev/polaris_creds.env; \
+	fi
 
 test-integration-rebuild: ## Rebuild integration Docker services from scratch
 	docker compose -f dev/docker-compose-integration.yml kill
