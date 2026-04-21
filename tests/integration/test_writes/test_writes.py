@@ -30,11 +30,13 @@ from urllib.parse import urlparse
 import fastavro
 import pandas as pd
 import pandas.testing
+import pyarrow
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import pytest
 import pytz
+from packaging import version
 from pyarrow.fs import S3FileSystem
 from pydantic_core import ValidationError
 from pyspark.sql import SparkSession
@@ -67,6 +69,11 @@ from pyiceberg.types import (
 )
 from pyiceberg.view.metadata import SQLViewRepresentation, ViewVersion
 from utils import TABLE_SCHEMA, _create_table
+
+skip_if_bloom_filter_not_supported = pytest.mark.skipif(
+    version.parse(pyarrow.__version__) < version.parse("24.0.0"),
+    reason="Requires pyarrow version >= 24.0.0",
+)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -710,6 +717,27 @@ def test_write_parquet_unsupported_properties(
     tbl = _create_table(session_catalog, identifier, properties, [])
     with pytest.warns(UserWarning, match=r"Parquet writer option.*"):
         tbl.append(arrow_table_with_null)
+
+
+@pytest.mark.integration
+@skip_if_bloom_filter_not_supported
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_write_parquet_bloom_filter_properties(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = "default.write_parquet_bloom_filter_properties"
+
+    _create_table(
+        session_catalog,
+        identifier,
+        {
+            "format-version": format_version,
+            "write.parquet.bloom-filter-enabled.column.string": "true",
+            "write.parquet.bloom-filter-fpp.column.string": "0.1",
+            "write.parquet.bloom-filter-ndv.column.string": "100",
+        },
+        [arrow_table_with_null],
+    )
 
 
 @pytest.mark.integration
