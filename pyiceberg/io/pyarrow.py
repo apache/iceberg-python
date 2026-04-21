@@ -690,7 +690,7 @@ def schema_to_pyarrow(
     metadata: dict[bytes, bytes] = EMPTY_DICT,
     include_field_ids: bool = True,
     file_format: FileFormat = FileFormat.PARQUET,
-) -> pa.schema:
+) -> pa.Schema:
     return visit(schema, _ConvertToArrowSchema(metadata, include_field_ids, file_format))
 
 
@@ -704,7 +704,7 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         self._include_field_ids = include_field_ids
         self._file_format = file_format
 
-    def schema(self, _: Schema, struct_result: pa.StructType) -> pa.schema:
+    def schema(self, _: Schema, struct_result: pa.StructType) -> pa.Schema:
         return pa.schema(list(struct_result), metadata=self._metadata)
 
     def struct(self, _: StructType, field_results: builtins.list[pa.DataType]) -> pa.DataType:
