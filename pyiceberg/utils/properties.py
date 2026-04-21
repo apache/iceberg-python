@@ -66,6 +66,41 @@ def property_as_bool(
     return default
 
 
+def properties_as_int_dict(
+    properties: dict[str, str],
+    property_prefix: str,
+) -> dict[str, int]:
+    return {
+        key.removeprefix(property_prefix + "."): value
+        for key in properties.keys()
+        if key.startswith(property_prefix)
+        if (value := property_as_int(properties, key, None)) is not None
+    }
+
+
+def properties_as_float_dict(
+    properties: dict[str, str],
+    property_prefix: str,
+) -> dict[str, float]:
+    return {
+        key.removeprefix(property_prefix + "."): value
+        for key in properties.keys()
+        if key.startswith(property_prefix)
+        if (value := property_as_float(properties, key, None)) is not None
+    }
+
+
+def properties_as_bool_dict(
+    properties: dict[str, str],
+    property_prefix: str,
+) -> dict[str, bool]:
+    return {
+        key.removeprefix(property_prefix + "."): property_as_bool(properties, key, False)
+        for key in properties.keys()
+        if key.startswith(property_prefix)
+    }
+
+
 def get_first_property_value(
     properties: Properties,
     *property_names: str,

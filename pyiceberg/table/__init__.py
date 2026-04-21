@@ -147,6 +147,10 @@ class TableProperties:
 
     PARQUET_BLOOM_FILTER_COLUMN_ENABLED_PREFIX = "write.parquet.bloom-filter-enabled.column"
 
+    PARQUET_BLOOM_FILTER_COLUMN_FPP_PREFIX = "write.parquet.bloom-filter-fpp.column"
+
+    PARQUET_BLOOM_FILTER_COLUMN_NDV_PREFIX = "write.parquet.bloom-filter-ndv.column"
+
     WRITE_TARGET_FILE_SIZE_BYTES = "write.target-file-size-bytes"
     WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT = 512 * 1024 * 1024  # 512 MB
 
