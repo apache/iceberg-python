@@ -27,6 +27,7 @@ from sqlalchemy import (
     delete,
     insert,
     select,
+    text,
     union,
     update,
 )
@@ -92,6 +93,7 @@ class IcebergTables(SqlCatalogBaseTable):
     table_name: Mapped[str] = mapped_column(String(255), nullable=False, primary_key=True)
     metadata_location: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     previous_metadata_location: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    iceberg_type: Mapped[str | None] = mapped_column(String(5), nullable=True, default="TABLE")
 
 
 class IcebergNamespaceProperties(SqlCatalogBaseTable):
@@ -133,6 +135,8 @@ class SqlCatalog(MetastoreCatalog):
         if init_catalog_tables:
             self._ensure_tables_exist()
 
+        self._update_tables_if_required()
+
     def _ensure_tables_exist(self) -> None:
         with Session(self.engine) as session:
             for table in [IcebergTables, IcebergNamespaceProperties]:
@@ -145,6 +149,15 @@ class SqlCatalog(MetastoreCatalog):
                 ):  # sqlalchemy returns OperationalError in case of sqlite and ProgrammingError with postgres.
                     self.create_tables()
                     return
+
+    def _update_tables_if_required(self) -> None:
+        with Session(self.engine) as session:
+            stmt = f"ALTER TABLE {IcebergTables.__tablename__} ADD COLUMN iceberg_type VARCHAR(5)"
+            try:
+                session.execute(text(stmt))
+                session.commit()
+            except (OperationalError, ProgrammingError):
+                session.rollback()
 
     def create_tables(self) -> None:
         SqlCatalogBaseTable.metadata.create_all(self.engine)

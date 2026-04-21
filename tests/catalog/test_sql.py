@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from sqlalchemy import Engine, create_engine, inspect
+from sqlalchemy import Engine, create_engine, inspect, text
 from sqlalchemy.exc import ArgumentError
 
 from pyiceberg.catalog import load_catalog
@@ -261,3 +261,83 @@ class TestSqlCatalogClose:
 
         # Second close should not raise an exception
         catalog_sqlite.close()
+
+
+def _create_pre_migration_schema_tables(engine: Engine) -> None:
+    with engine.connect() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE iceberg_tables ("
+                "  catalog_name VARCHAR(255) NOT NULL,"
+                "  table_namespace VARCHAR(255) NOT NULL,"
+                "  table_name VARCHAR(255) NOT NULL,"
+                "  metadata_location VARCHAR(1000),"
+                "  previous_metadata_location VARCHAR(1000),"
+                "  PRIMARY KEY (catalog_name, table_namespace, table_name)"
+                ")"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE iceberg_namespace_properties ("
+                "  catalog_name VARCHAR(255) NOT NULL,"
+                "  namespace VARCHAR(255) NOT NULL,"
+                "  property_key VARCHAR(255) NOT NULL,"
+                "  property_value VARCHAR(1000) NOT NULL,"
+                "  PRIMARY KEY (catalog_name, namespace, property_key)"
+                ")"
+            )
+        )
+        conn.commit()
+
+
+def get_columns(engine: Engine) -> set[str]:
+    return {c["name"] for c in inspect(engine).get_columns("iceberg_tables")}
+
+
+def test_adds_iceberg_type_column_to_old_schema(warehouse: Path) -> None:
+    # Create the old schema tables
+    uri = f"sqlite:////{warehouse}/test-migration-add-col"
+    engine = create_engine(uri)
+    with engine.connect() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE iceberg_tables ("
+                "  catalog_name VARCHAR(255) NOT NULL,"
+                "  table_namespace VARCHAR(255) NOT NULL,"
+                "  table_name VARCHAR(255) NOT NULL,"
+                "  metadata_location VARCHAR(1000),"
+                "  previous_metadata_location VARCHAR(1000),"
+                "  PRIMARY KEY (catalog_name, table_namespace, table_name)"
+                ")"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE iceberg_namespace_properties ("
+                "  catalog_name VARCHAR(255) NOT NULL,"
+                "  namespace VARCHAR(255) NOT NULL,"
+                "  property_key VARCHAR(255) NOT NULL,"
+                "  property_value VARCHAR(1000) NOT NULL,"
+                "  PRIMARY KEY (catalog_name, namespace, property_key)"
+                ")"
+            )
+        )
+        conn.commit()
+
+    # Verify the column does not exist in the old schema
+    assert "iceberg_type" not in get_columns(engine)
+
+    # Load the catalog and verify the column exists
+    catalog = SqlCatalog("test", uri=uri, warehouse=f"file://{warehouse}", init_catalog_tables="false")
+    assert "iceberg_type" in get_columns(catalog.engine)
+
+
+def test_idempotent_when_column_already_exists(warehouse: Path) -> None:
+    # Verify the column was created by the init_tables call
+    catalog = SqlCatalog("test", uri="sqlite:///:memory:", warehouse=f"file://{warehouse}")
+    assert "iceberg_type" in get_columns(catalog.engine)
+
+    # Verify the method is idempotent by calling it again
+    catalog._update_tables_if_required()
+    assert "iceberg_type" in get_columns(catalog.engine)
