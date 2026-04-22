@@ -641,7 +641,7 @@ class Transaction:
             self.table_metadata.properties.get(TableProperties.DELETE_MODE, TableProperties.DELETE_MODE_DEFAULT)
             == TableProperties.DELETE_MODE_MERGE_ON_READ
         ):
-            warnings.warn("Merge on read is not yet supported, falling back to copy-on-write", stacklevel=2)
+            raise NotImplementedError("Merge on read is not yet supported")
 
         if isinstance(delete_filter, str):
             delete_filter = _parse_row_filter(delete_filter)
@@ -1833,16 +1833,12 @@ class FileScanTask(ScanTask):
         Raises:
             NotImplementedError: If equality delete files are encountered.
         """
-        from pyiceberg.catalog.rest.scan_planning import RESTEqualityDeleteFile
-
         data_file = _rest_file_to_data_file(rest_task.data_file)
 
         resolved_deletes: set[DataFile] = set()
         if rest_task.delete_file_references:
             for idx in rest_task.delete_file_references:
                 delete_file = delete_files[idx]
-                if isinstance(delete_file, RESTEqualityDeleteFile):
-                    raise NotImplementedError(f"PyIceberg does not yet support equality deletes: {delete_file.file_path}")
                 resolved_deletes.add(_rest_file_to_data_file(delete_file))
 
         return FileScanTask(
@@ -2067,10 +2063,8 @@ class DataScan(TableScan):
             data_file = manifest_entry.data_file
             if data_file.content == DataFileContent.DATA:
                 data_entries.append(manifest_entry)
-            elif data_file.content == DataFileContent.POSITION_DELETES:
+            elif data_file.content in {DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES}:
                 delete_index.add_delete_file(manifest_entry, partition_key=data_file.partition)
-            elif data_file.content == DataFileContent.EQUALITY_DELETES:
-                raise ValueError("PyIceberg does not yet support equality deletes: https://github.com/apache/iceberg/issues/6568")
             else:
                 raise ValueError(f"Unknown DataFileContent ({data_file.content}): {manifest_entry}")
         return [

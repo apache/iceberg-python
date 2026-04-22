@@ -20,7 +20,7 @@ from bisect import bisect_left
 
 from pyiceberg.expressions import EqualTo
 from pyiceberg.expressions.visitors import _InclusiveMetricsEvaluator
-from pyiceberg.manifest import INITIAL_SEQUENCE_NUMBER, POSITIONAL_DELETE_SCHEMA, DataFile, ManifestEntry
+from pyiceberg.manifest import INITIAL_SEQUENCE_NUMBER, POSITIONAL_DELETE_SCHEMA, DataFile, DataFileContent, ManifestEntry
 from pyiceberg.typedef import Record
 
 PATH_FIELD_ID = 2147483546
@@ -57,6 +57,10 @@ class PositionDeletes:
     def referenced_delete_files(self) -> list[DataFile]:
         self._ensure_indexed()
         return [data_file for data_file, _ in self._files]
+
+
+class EqualityDeletes(PositionDeletes):
+    """Collects equality delete files and indexes them by sequence number."""
 
 
 def _has_path_bounds(delete_file: DataFile) -> bool:
@@ -103,26 +107,32 @@ def _partition_key(spec_id: int, partition: Record | None) -> tuple[int, Record]
 
 
 class DeleteFileIndex:
-    """Indexes position delete files by partition and by exact data file path."""
+    """Indexes position and equality delete files by partition and by exact data file path."""
 
     def __init__(self) -> None:
-        self._by_partition: dict[tuple[int, Record], PositionDeletes] = {}
-        self._by_path: dict[str, PositionDeletes] = {}
+        self._pos_by_partition: dict[tuple[int, Record], PositionDeletes] = {}
+        self._pos_by_path: dict[str, PositionDeletes] = {}
+        self._eq_by_partition: dict[tuple[int, Record], EqualityDeletes] = {}
 
     def is_empty(self) -> bool:
-        return not self._by_partition and not self._by_path
+        return not self._pos_by_partition and not self._pos_by_path and not self._eq_by_partition
 
     def add_delete_file(self, manifest_entry: ManifestEntry, partition_key: Record | None = None) -> None:
         delete_file = manifest_entry.data_file
         seq = manifest_entry.sequence_number or INITIAL_SEQUENCE_NUMBER
-        target_path = _referenced_data_file_path(delete_file)
 
-        if target_path:
-            deletes = self._by_path.setdefault(target_path, PositionDeletes())
-            deletes.add(delete_file, seq)
-        else:
+        if delete_file.content == DataFileContent.POSITION_DELETES:
+            target_path = _referenced_data_file_path(delete_file)
+            if target_path:
+                deletes = self._pos_by_path.setdefault(target_path, PositionDeletes())
+                deletes.add(delete_file, seq)
+            else:
+                key = _partition_key(delete_file.spec_id or 0, partition_key)
+                deletes = self._pos_by_partition.setdefault(key, PositionDeletes())
+                deletes.add(delete_file, seq)
+        elif delete_file.content == DataFileContent.EQUALITY_DELETES:
             key = _partition_key(delete_file.spec_id or 0, partition_key)
-            deletes = self._by_partition.setdefault(key, PositionDeletes())
+            deletes = self._eq_by_partition.setdefault(key, EqualityDeletes())
             deletes.add(delete_file, seq)
 
     def for_data_file(self, seq_num: int, data_file: DataFile, partition_key: Record | None = None) -> set[DataFile]:
@@ -131,27 +141,36 @@ class DeleteFileIndex:
 
         deletes: set[DataFile] = set()
         spec_id = data_file.spec_id or 0
-
         key = _partition_key(spec_id, partition_key)
-        partition_deletes = self._by_partition.get(key)
-        if partition_deletes:
-            for delete_file in partition_deletes.filter_by_seq(seq_num):
+
+        # Add position deletes
+        partition_pos_deletes = self._pos_by_partition.get(key)
+        if partition_pos_deletes:
+            for delete_file in partition_pos_deletes.filter_by_seq(seq_num):
                 if _applies_to_data_file(delete_file, data_file):
                     deletes.add(delete_file)
 
-        path_deletes = self._by_path.get(data_file.file_path)
-        if path_deletes:
-            deletes.update(path_deletes.filter_by_seq(seq_num))
+        path_pos_deletes = self._pos_by_path.get(data_file.file_path)
+        if path_pos_deletes:
+            deletes.update(path_pos_deletes.filter_by_seq(seq_num))
+
+        # Add equality deletes
+        partition_eq_deletes = self._eq_by_partition.get(key)
+        if partition_eq_deletes:
+            deletes.update(partition_eq_deletes.filter_by_seq(seq_num))
 
         return deletes
 
     def referenced_delete_files(self) -> list[DataFile]:
         data_files: list[DataFile] = []
 
-        for deletes in self._by_partition.values():
+        for deletes in self._pos_by_partition.values():
             data_files.extend(deletes.referenced_delete_files())
 
-        for deletes in self._by_path.values():
+        for deletes in self._pos_by_path.values():
+            data_files.extend(deletes.referenced_delete_files())
+
+        for deletes in self._eq_by_partition.values():
             data_files.extend(deletes.referenced_delete_files())
 
         return data_files
