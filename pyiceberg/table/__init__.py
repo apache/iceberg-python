@@ -367,20 +367,20 @@ class Transaction:
             A predicate matching any of the input partition records.
         """
         partition_fields = [schema.find_field(field.source_id).name for field in spec.fields]
+        if not partition_records or not partition_fields:
+            return AlwaysFalse()
 
-        expr: BooleanExpression = AlwaysFalse()
+        per_record_exprs: list[BooleanExpression] = []
         for partition_record in partition_records:
-            match_partition_expression: BooleanExpression = AlwaysTrue()
+            predicates: list[BooleanExpression] = [
+                EqualTo(Reference(partition_field), partition_record[pos])
+                if partition_record[pos] is not None
+                else IsNull(Reference(partition_field))
+                for pos, partition_field in enumerate(partition_fields)
+            ]
+            per_record_exprs.append(And(*predicates) if len(predicates) > 1 else predicates[0])
 
-            for pos, partition_field in enumerate(partition_fields):
-                predicate = (
-                    EqualTo(Reference(partition_field), partition_record[pos])
-                    if partition_record[pos] is not None
-                    else IsNull(Reference(partition_field))
-                )
-                match_partition_expression = And(match_partition_expression, predicate)
-            expr = Or(expr, match_partition_expression)
-        return expr
+        return Or(*per_record_exprs) if len(per_record_exprs) > 1 else per_record_exprs[0]
 
     def _append_snapshot_producer(
         self, snapshot_properties: dict[str, str], branch: str | None = MAIN_BRANCH
