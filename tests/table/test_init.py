@@ -32,6 +32,7 @@ from pyiceberg.expressions import (
     EqualTo,
     In,
 )
+from pyiceberg.expressions.visitors import bind
 from pyiceberg.io import PY_IO_IMPL, load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
@@ -90,6 +91,7 @@ from pyiceberg.transforms import (
     BucketTransform,
     IdentityTransform,
 )
+from pyiceberg.typedef import Record
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -786,6 +788,22 @@ def test_apply_add_schema_update(table_v2: Table) -> None:
     assert len(test_context._updates) == 2
     assert test_context._updates[1] == transaction._updates[1]  # pylint: disable=W0212
     assert test_context.is_added_schema(2)
+
+
+def test_build_partition_predicate_binds_many_partitions_without_recursion(table_v2: Table) -> None:
+    schema = Schema(NestedField(field_id=1, name="date", field_type=StringType(), required=False))
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="date"),
+    )
+    partition_records = {Record(f"2026-02-{partition_idx:04d}T00") for partition_idx in range(512)}
+
+    predicate = table_v2.transaction()._build_partition_predicate(  # pylint: disable=W0212
+        partition_records=partition_records,
+        spec=partition_spec,
+        schema=schema,
+    )
+
+    assert bind(schema, predicate, case_sensitive=True)
 
 
 def test_update_metadata_table_schema(table_v2: Table) -> None:
