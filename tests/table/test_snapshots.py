@@ -584,7 +584,7 @@ def test_block_writing_equality_deletes(table_schema_simple: Schema, catalog: Ca
             with tx.update_snapshot().fast_append() as append:
                 append.append_data_file(delete_file)
 
-    assert "PyIceberg does not support writing DataFileContent.EQUALITY_DELETES" in str(exc.value)
+    assert "PyIceberg does not support writing EQUALITY_DELETES" in str(exc.value)
 
 
 def test_delete_mode_mor_warns(table_schema_simple: Schema, catalog: Catalog) -> None:

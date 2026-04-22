@@ -282,6 +282,7 @@ def test_block_writing_equality_deletes(table_schema: Schema, catalog: Catalog) 
     identifier = "default.test_block_writing_equality_deletes"
 
     # Create table with MoR delete mode
+    catalog.create_namespace("default")
     catalog.create_table(
         identifier,
         schema=table_schema,
@@ -290,7 +291,15 @@ def test_block_writing_equality_deletes(table_schema: Schema, catalog: Catalog) 
 
     tbl = catalog.load_table(identifier)
 
-    df = pa.Table.from_pydict({"id": [1], "data": ["a"]})
+    df = pa.Table.from_pydict(
+        {"id": [1], "data": ["a"]},
+        schema=pa.schema(
+            [
+                pa.field("id", pa.int32()),
+                pa.field("data", pa.string()),
+            ]
+        ),
+    )
     tbl.append(df)
 
     # Create a Equality Delete file to force writing it.
