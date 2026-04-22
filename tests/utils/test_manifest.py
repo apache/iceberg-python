@@ -37,8 +37,6 @@ from pyiceberg.manifest import (
     ManifestFile,
     PartitionFieldSummary,
     _inherit_from_manifest,
-    _manifest_cache,
-    _get_manifest_cache,
     _manifests,
     clear_manifest_cache,
     read_manifest_list,
@@ -980,6 +978,8 @@ def test_inherit_from_manifest_snapshot_id() -> None:
     assert result.snapshot_id == 3051729675574597004
     assert result.sequence_number == 1
     assert result.file_sequence_number == 1
+
+
 def _create_test_manifest_list(module: Any, io: PyArrowFileIO, tmp_dir: str, name: str, snapshot_id: int) -> str:
     schema = Schema(NestedField(field_id=1, name="id", field_type=IntegerType(), required=True))
     spec = UNPARTITIONED_PARTITION_SPEC
