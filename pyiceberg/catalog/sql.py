@@ -613,7 +613,11 @@ class SqlCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}")
 
         namespace = Catalog.namespace_to_string(namespace)
-        stmt = select(IcebergTables).where(IcebergTables.catalog_name == self.name, IcebergTables.table_namespace == namespace)
+        stmt = select(IcebergTables).where(
+            IcebergTables.catalog_name == self.name,
+            IcebergTables.table_namespace == namespace,
+            (IcebergTables.iceberg_type == "TABLE") | (IcebergTables.iceberg_type.is_(None)),
+        )
         with Session(self.engine) as session:
             result = session.scalars(stmt)
             return [(Catalog.identifier_to_tuple(table.table_namespace) + (table.table_name,)) for table in result]
