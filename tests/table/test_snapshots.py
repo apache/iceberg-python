@@ -587,8 +587,8 @@ def test_block_writing_equality_deletes(table_schema_simple: Schema, catalog: Ca
     assert "PyIceberg does not support writing DataFileContent.EQUALITY_DELETES" in str(exc.value)
 
 
-def test_delete_mode_mor_raises_error(table_schema_simple: Schema, catalog: Catalog) -> None:
-    identifier = "default.test_delete_mode_mor_raises_error"
+def test_delete_mode_mor_warns(table_schema_simple: Schema, catalog: Catalog) -> None:
+    identifier = "default.test_delete_mode_mor_warns"
     catalog.create_namespace("default")
 
     catalog.create_table(
@@ -599,7 +599,7 @@ def test_delete_mode_mor_raises_error(table_schema_simple: Schema, catalog: Cata
 
     tbl = catalog.load_table(identifier)
 
-    with pytest.raises(NotImplementedError) as exc:
-        tbl.delete("id = 1")
+    with pytest.warns() as record:
+        tbl.delete("foo = 'a'")
 
-    assert "Merge on read is not yet supported" in str(exc.value)
+    assert any("Merge on read is not yet supported, falling back to copy-on-write" in str(w.message) for w in record)

@@ -641,7 +641,7 @@ class Transaction:
             self.table_metadata.properties.get(TableProperties.DELETE_MODE, TableProperties.DELETE_MODE_DEFAULT)
             == TableProperties.DELETE_MODE_MERGE_ON_READ
         ):
-            raise NotImplementedError("Merge on read is not yet supported")
+            warnings.warn("Merge on read is not yet supported, falling back to copy-on-write", stacklevel=2)
 
         if isinstance(delete_filter, str):
             delete_filter = _parse_row_filter(delete_filter)
@@ -1829,9 +1829,6 @@ class FileScanTask(ScanTask):
 
         Returns:
             A FileScanTask with the converted data and delete files.
-
-        Raises:
-            NotImplementedError: If equality delete files are encountered.
         """
         data_file = _rest_file_to_data_file(rest_task.data_file)
 
@@ -1850,18 +1847,28 @@ class FileScanTask(ScanTask):
 
 def _rest_file_to_data_file(rest_file: RESTContentFile) -> DataFile:
     """Convert a REST content file to a manifest DataFile."""
-    from pyiceberg.catalog.rest.scan_planning import RESTDataFile
+    from pyiceberg.catalog.rest.scan_planning import RESTDataFile, RESTEqualityDeleteFile, RESTPositionDeleteFile
+
+    column_sizes = None
+    value_counts = None
+    null_value_counts = None
+    nan_value_counts = None
+    equality_ids = None
+    referenced_data_file = None
+    content_offset = None
+    content_size_in_bytes = None
 
     if isinstance(rest_file, RESTDataFile):
         column_sizes = rest_file.column_sizes.to_dict() if rest_file.column_sizes else None
         value_counts = rest_file.value_counts.to_dict() if rest_file.value_counts else None
         null_value_counts = rest_file.null_value_counts.to_dict() if rest_file.null_value_counts else None
         nan_value_counts = rest_file.nan_value_counts.to_dict() if rest_file.nan_value_counts else None
-    else:
-        column_sizes = None
-        value_counts = None
-        null_value_counts = None
-        nan_value_counts = None
+    elif isinstance(rest_file, RESTEqualityDeleteFile):
+        equality_ids = rest_file.equality_ids
+    elif isinstance(rest_file, RESTPositionDeleteFile):
+        referenced_data_file = rest_file.referenced_data_file
+        content_offset = rest_file.content_offset
+        content_size_in_bytes = rest_file.content_size_in_bytes
 
     data_file = DataFile.from_args(
         content=DataFileContent.from_rest_type(rest_file.content),
@@ -1875,6 +1882,10 @@ def _rest_file_to_data_file(rest_file: RESTContentFile) -> DataFile:
         null_value_counts=null_value_counts,
         nan_value_counts=nan_value_counts,
         split_offsets=rest_file.split_offsets,
+        equality_ids=equality_ids,
+        referenced_data_file=referenced_data_file,
+        content_offset=content_offset,
+        content_size_in_bytes=content_size_in_bytes,
         sort_order_id=rest_file.sort_order_id,
     )
     data_file.spec_id = rest_file.spec_id
