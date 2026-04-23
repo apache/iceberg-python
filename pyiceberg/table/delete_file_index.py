@@ -62,6 +62,11 @@ class PositionDeletes:
 class EqualityDeletes(PositionDeletes):
     """Collects equality delete files and indexes them by sequence number."""
 
+    def add(self, delete_file: DataFile, seq_num: int) -> None:
+        # Equality deletes are indexed by sequence number - 1 to ensure they only
+        # apply to data files added in strictly earlier snapshots.
+        super().add(delete_file, seq_num - 1)
+
 
 def _has_path_bounds(delete_file: DataFile) -> bool:
     lower = delete_file.lower_bounds
