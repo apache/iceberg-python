@@ -3036,15 +3036,15 @@ wheels = [
 
 [[package]]
 name = "mkdocs-section-index"
-version = "0.3.11"
+version = "0.3.12"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "mkdocs" },
     { name = "properdocs" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c3/65/d35e3269bb3fa67984cc69b51cfa4e467a2a990311c1bad1fe69b5452103/mkdocs_section_index-0.3.11.tar.gz", hash = "sha256:81a5948af0e974bfb474f40b45aeddbb621024ff132eb8ace8854b9db6b41812", size = 14559, upload-time = "2026-03-16T23:28:05.862Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f1/e2/64d0f3f054ca8efe61e706006ff5f0d49ad99620c62c2e04818573391c33/mkdocs_section_index-0.3.12.tar.gz", hash = "sha256:285635bf86c643b0fc7a343053d7a818049817bff4408f52b80c4367bd5e7268", size = 14946, upload-time = "2026-04-16T19:20:00.953Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8b/ce/27b89b0d3e2297f0a41b2350438e69bc30c66155db9fba609db111f058b3/mkdocs_section_index-0.3.11-py3-none-any.whl", hash = "sha256:26f008f4860789e6c41dce868e3e1dcd1528f8cbc1db181416c5edc18f0f15a0", size = 8898, upload-time = "2026-03-16T23:28:04.744Z" },
+    { url = "https://files.pythonhosted.org/packages/b0/4d/a330cab5e055d45e924cec69da54a3d8ed37643964f8d1fa1a772b496273/mkdocs_section_index-0.3.12-py3-none-any.whl", hash = "sha256:a1100039546beb4ebef63ce6fc91f3195fb9c0c3763105d4d3d7cd31e0a046eb", size = 8932, upload-time = "2026-04-16T19:19:59.741Z" },
 ]
 
 [[package]]
@@ -4791,7 +4791,7 @@ docs = [
     { name = "mkdocs-literate-nav", specifier = "==0.6.3" },
     { name = "mkdocs-material", specifier = "==9.7.6" },
     { name = "mkdocs-material-extensions", specifier = "==1.3.1" },
-    { name = "mkdocs-section-index", specifier = "==0.3.11" },
+    { name = "mkdocs-section-index", specifier = "==0.3.12" },
     { name = "mkdocstrings", specifier = "==1.0.3" },
     { name = "mkdocstrings-python", specifier = "==2.0.3" },
 ]
