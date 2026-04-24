@@ -1693,7 +1693,12 @@ def _task_to_record_batches(
 
 def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> dict[str, list[ChunkedArray]]:
     deletes_per_file: dict[str, list[ChunkedArray]] = {}
-    unique_deletes = set(itertools.chain.from_iterable([task.delete_files for task in tasks]))
+    unique_deletes = {
+        delete_file
+        for task in tasks
+        for delete_file in task.delete_files
+        if delete_file.content == DataFileContent.POSITION_DELETES
+    }
     if len(unique_deletes) > 0:
         executor = ExecutorFactory.get_or_create()
         deletes_per_files: Iterator[dict[str, ChunkedArray]] = executor.map(
