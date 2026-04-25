@@ -33,6 +33,7 @@ import gc
 import tempfile
 import tracemalloc
 from pathlib import Path
+from typing import Any
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -66,13 +67,10 @@ def _wide_schema(num_columns: int = 30) -> tuple[Schema, pa.Schema]:
 
 def _write_files(work_dir: Path, batch_idx: int, n_files: int, arrow_schema: pa.Schema) -> list[str]:
     paths: list[str] = []
-    rows = pa.Table.from_pydict(
-        {
-            name: list(range(8)) if name == "id" else [f"v{batch_idx}-{j}" for j in range(8)]
-            for name in arrow_schema.names
-        },
-        schema=arrow_schema,
-    )
+    columns: dict[str, list[Any]] = {
+        name: list(range(8)) if name == "id" else [f"v{batch_idx}-{j}" for j in range(8)] for name in arrow_schema.names
+    }
+    rows = pa.Table.from_pydict(columns, schema=arrow_schema)
     for i in range(n_files):
         p = work_dir / f"batch_{batch_idx:03d}_file_{i:05d}.parquet"
         pq.write_table(rows, p)
