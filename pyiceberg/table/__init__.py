@@ -861,39 +861,27 @@ class Transaction:
 
         return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 
-    def _referenced_data_files(self, file_paths: list[str]) -> list[str]:
-        """Find any file_paths already referenced by data files in the current snapshot.
-
-        Streams ManifestEntries from each data manifest and short-circuits on
-        file_path equality against the candidate set. Avoids the full
-        ``inspect.data_files()`` materialization, which builds a pyarrow Table
-        with every column (including readable_metrics, lower/upper bounds,
-        partition records) for every DataFile in the snapshot — an expensive
-        cost dominated by stats decoding that is not needed for path equality.
-
-        Returns the file_paths that are already referenced; empty list if none.
-        """
+    def _find_referenced_data_files(self, file_paths: list[str]) -> list[str]:
+        """Return file_paths already referenced by data files in the current snapshot."""
         snapshot = self.table_metadata.current_snapshot()
-        if snapshot is None or not file_paths:
+        if snapshot is None:
             return []
 
         candidates = set(file_paths)
         io = self._table.io
+        data_manifests = [m for m in snapshot.manifests(io) if m.content == ManifestContent.DATA]
 
-        def _scan(manifest: ManifestFile) -> list[str]:
-            if manifest.content != ManifestContent.DATA:
-                return []
-            return [
-                entry.data_file.file_path
-                for entry in manifest.fetch_manifest_entry(io, discard_deleted=True)
-                if entry.data_file.file_path in candidates
-            ]
+        path_filter: Callable[[DataFile], bool] = lambda df: df.file_path in candidates
+        always_true: Callable[[DataFile], bool] = lambda _: True
 
         executor = ExecutorFactory.get_or_create()
-        matches: list[str] = []
-        for partial in executor.map(_scan, snapshot.manifests(io)):
-            matches.extend(partial)
-        return matches
+        entries = chain.from_iterable(
+            executor.map(
+                lambda args: _open_manifest(*args),
+                [(io, manifest, path_filter, always_true) for manifest in data_manifests],
+            )
+        )
+        return [entry.data_file.file_path for entry in entries]
 
     def add_files(
         self,
@@ -917,7 +905,7 @@ class Transaction:
             raise ValueError("File paths must be unique")
 
         if check_duplicate_files:
-            referenced_files = self._referenced_data_files(file_paths)
+            referenced_files = self._find_referenced_data_files(file_paths)
             if referenced_files:
                 raise ValueError(f"Cannot add files that are already referenced by table, files: {', '.join(referenced_files)}")
 
