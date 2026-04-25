@@ -871,14 +871,14 @@ class Transaction:
         io = self._table.io
         data_manifests = [m for m in snapshot.manifests(io) if m.content == ManifestContent.DATA]
 
-        path_filter: Callable[[DataFile], bool] = lambda df: df.file_path in candidates
-        always_true: Callable[[DataFile], bool] = lambda _: True
+        def path_filter(data_file: DataFile) -> bool:
+            return data_file.file_path in candidates
 
         executor = ExecutorFactory.get_or_create()
         entries = chain.from_iterable(
             executor.map(
                 lambda args: _open_manifest(*args),
-                [(io, manifest, path_filter, always_true) for manifest in data_manifests],
+                [(io, manifest, path_filter, lambda _: True) for manifest in data_manifests],
             )
         )
         return [entry.data_file.file_path for entry in entries]
