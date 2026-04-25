@@ -861,6 +861,40 @@ class Transaction:
 
         return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 
+    def _referenced_data_files(self, file_paths: list[str]) -> list[str]:
+        """Find any file_paths already referenced by data files in the current snapshot.
+
+        Streams ManifestEntries from each data manifest and short-circuits on
+        file_path equality against the candidate set. Avoids the full
+        ``inspect.data_files()`` materialization, which builds a pyarrow Table
+        with every column (including readable_metrics, lower/upper bounds,
+        partition records) for every DataFile in the snapshot — an expensive
+        cost dominated by stats decoding that is not needed for path equality.
+
+        Returns the file_paths that are already referenced; empty list if none.
+        """
+        snapshot = self.table_metadata.current_snapshot()
+        if snapshot is None or not file_paths:
+            return []
+
+        candidates = set(file_paths)
+        io = self._table.io
+
+        def _scan(manifest: ManifestFile) -> list[str]:
+            if manifest.content != ManifestContent.DATA:
+                return []
+            return [
+                entry.data_file.file_path
+                for entry in manifest.fetch_manifest_entry(io, discard_deleted=True)
+                if entry.data_file.file_path in candidates
+            ]
+
+        executor = ExecutorFactory.get_or_create()
+        matches: list[str] = []
+        for partial in executor.map(_scan, snapshot.manifests(io)):
+            matches.extend(partial)
+        return matches
+
     def add_files(
         self,
         file_paths: list[str],
@@ -883,11 +917,7 @@ class Transaction:
             raise ValueError("File paths must be unique")
 
         if check_duplicate_files:
-            import pyarrow.compute as pc
-
-            expr = pc.field("file_path").isin(file_paths)
-            referenced_files = [file["file_path"] for file in self._table.inspect.data_files().filter(expr).to_pylist()]
-
+            referenced_files = self._referenced_data_files(file_paths)
             if referenced_files:
                 raise ValueError(f"Cannot add files that are already referenced by table, files: {', '.join(referenced_files)}")
 
