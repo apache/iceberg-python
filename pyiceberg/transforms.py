@@ -44,6 +44,7 @@ from pyiceberg.expressions import (
     BoundNotIn,
     BoundNotStartsWith,
     BoundPredicate,
+    BoundReference,
     BoundSetPredicate,
     BoundStartsWith,
     BoundTerm,
@@ -58,6 +59,7 @@ from pyiceberg.expressions import (
     Reference,
     StartsWith,
     UnboundPredicate,
+    UnboundTerm,
 )
 from pyiceberg.expressions.literals import (
     DateLiteral,
@@ -67,7 +69,7 @@ from pyiceberg.expressions.literals import (
     TimestampLiteral,
     literal,
 )
-from pyiceberg.typedef import IcebergRootModel, L
+from pyiceberg.typedef import IcebergRootModel, L, StructProtocol
 from pyiceberg.types import (
     BinaryType,
     DateType,
@@ -91,6 +93,8 @@ from pyiceberg.utils.singleton import Singleton
 
 if TYPE_CHECKING:
     import pyarrow as pa
+
+    from pyiceberg.schema import Schema
 
     ArrayLike = TypeVar("ArrayLike", pa.Array, pa.ChunkedArray)
 
@@ -1152,3 +1156,49 @@ class BoundTransform(BoundTerm):
     def __init__(self, term: BoundTerm, transform: Transform[Any, Any]):
         self.term: BoundTerm = term
         self.transform = transform
+
+    def ref(self) -> BoundReference:
+        """Return the bound reference of the underlying term."""
+        return self.term.ref()
+
+    def eval(self, struct: StructProtocol) -> Any:
+        """Evaluate the transform on the struct value."""
+        return self.transform.transform(self.term.ref().field.field_type)(self.term.eval(struct))
+
+
+class UnboundTransform(UnboundTerm):
+    """An unbound transform expression that pairs a column reference with a transform.
+
+    When bound to a schema, validates that the transform is compatible with the
+    source column type and produces a BoundTransform.
+    """
+
+    transform: Transform[Any, Any]
+
+    def __init__(self, term: UnboundTerm, transform: Transform[Any, Any]):
+        self.term: UnboundTerm = term
+        self.transform = transform
+
+    def bind(self, schema: "Schema", case_sensitive: bool = True) -> BoundTransform:
+        """Bind this unbound transform to a schema, returning a BoundTransform."""
+        bound_term = self.term.bind(schema, case_sensitive)
+        source_type = bound_term.ref().field.field_type
+        if not self.transform.can_transform(source_type):
+            raise TypeError(f"Cannot apply {self.transform} to {source_type}")
+        return BoundTransform(bound_term, self.transform)
+
+    @property
+    def as_bound(self) -> type[BoundTransform]:
+        return BoundTransform
+
+    def __eq__(self, other: object) -> bool:
+        """Return the equality of two instances of the UnboundTransform class."""
+        return isinstance(other, UnboundTransform) and self.term == other.term and self.transform == other.transform
+
+    def __repr__(self) -> str:
+        """Return the string representation of the UnboundTransform class."""
+        return f"UnboundTransform(term={self.term}, transform={self.transform})"
+
+    def __hash__(self) -> int:
+        """Return the hash of the UnboundTransform."""
+        return hash((self.term, self.transform))
