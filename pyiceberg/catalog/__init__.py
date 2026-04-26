@@ -645,6 +645,20 @@ class Catalog(ABC):
         """
 
     @abstractmethod
+    def load_view(self, identifier: str | Identifier) -> View:
+        """Load the view's metadata and returns the view instance.
+
+        Args:
+            identifier (str | Identifier): View identifier.
+
+        Returns:
+            View: the view instance with its metadata.
+
+        Raises:
+            NoSuchViewError: If a view with the name does not exist.
+        """
+
+    @abstractmethod
     def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
         """Get properties for a namespace.
 
