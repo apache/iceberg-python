@@ -19,10 +19,11 @@ from typing import cast
 
 import pytest
 
-from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile
+from pyiceberg.catalog import Catalog
+from pyiceberg.manifest import DataFile, DataFileContent, FileFormat, ManifestContent, ManifestFile
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import Table
+from pyiceberg.table import Table, TableProperties
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
@@ -551,3 +552,54 @@ def test_latest_ancestor_before_timestamp() -> None:
 
     result = latest_ancestor_before_timestamp(metadata, 1000)
     assert result is None
+
+
+def test_block_writing_equality_deletes(table_schema_simple: Schema, catalog: Catalog) -> None:
+    identifier = "default.test_block_writing_equality_deletes"
+    catalog.create_namespace("default")
+
+    # Create table with MoR delete mode
+    catalog.create_table(
+        identifier,
+        schema=table_schema_simple,
+        properties={TableProperties.DELETE_MODE: TableProperties.DELETE_MODE_MERGE_ON_READ, "format-version": "2"},
+    )
+
+    tbl = catalog.load_table(identifier)
+
+    # Attempting to manually append an equality delete file should fail
+    delete_file = DataFile.from_args(
+        content=DataFileContent.EQUALITY_DELETES,
+        file_path="/tmp/delete.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=1,
+        file_size_in_bytes=100,
+        equality_ids=[1],
+    )
+    delete_file.spec_id = 0
+
+    with pytest.raises(NotImplementedError) as exc:
+        with tbl.transaction() as tx:
+            with tx.update_snapshot().fast_append() as append:
+                append.append_data_file(delete_file)
+
+    assert "PyIceberg does not support writing EQUALITY_DELETES" in str(exc.value)
+
+
+def test_delete_mode_mor_warns(table_schema_simple: Schema, catalog: Catalog) -> None:
+    identifier = "default.test_delete_mode_mor_warns"
+    catalog.create_namespace("default")
+
+    catalog.create_table(
+        identifier,
+        schema=table_schema_simple,
+        properties={TableProperties.DELETE_MODE: TableProperties.DELETE_MODE_MERGE_ON_READ, "format-version": "2"},
+    )
+
+    tbl = catalog.load_table(identifier)
+
+    with pytest.warns() as record:
+        tbl.delete("foo = 'a'")
+
+    assert any("Merge on read is not yet supported, falling back to copy-on-write" in str(w.message) for w in record)

@@ -3130,6 +3130,7 @@ def test_task_to_record_batches_nanos(format_version: TableVersion, tmpdir: str)
             table_schema=table_schema,
             projected_field_ids={1},
             positional_deletes=None,
+            equality_deletes=None,
             case_sensitive=True,
             format_version=format_version,
         )

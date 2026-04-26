@@ -1829,20 +1829,13 @@ class FileScanTask(ScanTask):
 
         Returns:
             A FileScanTask with the converted data and delete files.
-
-        Raises:
-            NotImplementedError: If equality delete files are encountered.
         """
-        from pyiceberg.catalog.rest.scan_planning import RESTEqualityDeleteFile
-
         data_file = _rest_file_to_data_file(rest_task.data_file)
 
         resolved_deletes: set[DataFile] = set()
         if rest_task.delete_file_references:
             for idx in rest_task.delete_file_references:
                 delete_file = delete_files[idx]
-                if isinstance(delete_file, RESTEqualityDeleteFile):
-                    raise NotImplementedError(f"PyIceberg does not yet support equality deletes: {delete_file.file_path}")
                 resolved_deletes.add(_rest_file_to_data_file(delete_file))
 
         return FileScanTask(
@@ -1854,18 +1847,28 @@ class FileScanTask(ScanTask):
 
 def _rest_file_to_data_file(rest_file: RESTContentFile) -> DataFile:
     """Convert a REST content file to a manifest DataFile."""
-    from pyiceberg.catalog.rest.scan_planning import RESTDataFile
+    from pyiceberg.catalog.rest.scan_planning import RESTDataFile, RESTEqualityDeleteFile, RESTPositionDeleteFile
+
+    column_sizes = None
+    value_counts = None
+    null_value_counts = None
+    nan_value_counts = None
+    equality_ids = None
+    referenced_data_file = None
+    content_offset = None
+    content_size_in_bytes = None
 
     if isinstance(rest_file, RESTDataFile):
         column_sizes = rest_file.column_sizes.to_dict() if rest_file.column_sizes else None
         value_counts = rest_file.value_counts.to_dict() if rest_file.value_counts else None
         null_value_counts = rest_file.null_value_counts.to_dict() if rest_file.null_value_counts else None
         nan_value_counts = rest_file.nan_value_counts.to_dict() if rest_file.nan_value_counts else None
-    else:
-        column_sizes = None
-        value_counts = None
-        null_value_counts = None
-        nan_value_counts = None
+    elif isinstance(rest_file, RESTEqualityDeleteFile):
+        equality_ids = rest_file.equality_ids
+    elif isinstance(rest_file, RESTPositionDeleteFile):
+        referenced_data_file = rest_file.referenced_data_file
+        content_offset = rest_file.content_offset
+        content_size_in_bytes = rest_file.content_size_in_bytes
 
     data_file = DataFile.from_args(
         content=DataFileContent.from_rest_type(rest_file.content),
@@ -1879,6 +1882,10 @@ def _rest_file_to_data_file(rest_file: RESTContentFile) -> DataFile:
         null_value_counts=null_value_counts,
         nan_value_counts=nan_value_counts,
         split_offsets=rest_file.split_offsets,
+        equality_ids=equality_ids,
+        referenced_data_file=referenced_data_file,
+        content_offset=content_offset,
+        content_size_in_bytes=content_size_in_bytes,
         sort_order_id=rest_file.sort_order_id,
     )
     data_file.spec_id = rest_file.spec_id
@@ -2067,10 +2074,8 @@ class DataScan(TableScan):
             data_file = manifest_entry.data_file
             if data_file.content == DataFileContent.DATA:
                 data_entries.append(manifest_entry)
-            elif data_file.content == DataFileContent.POSITION_DELETES:
+            elif data_file.content in {DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES}:
                 delete_index.add_delete_file(manifest_entry, partition_key=data_file.partition)
-            elif data_file.content == DataFileContent.EQUALITY_DELETES:
-                raise ValueError("PyIceberg does not yet support equality deletes: https://github.com/apache/iceberg/issues/6568")
             else:
                 raise ValueError(f"Unknown DataFileContent ({data_file.content}): {manifest_entry}")
         return [

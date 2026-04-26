@@ -81,6 +81,20 @@ def _create_deletion_vector(
     return ManifestEntry.from_args(status=ManifestEntryStatus.ADDED, sequence_number=sequence_number, data_file=delete_file)
 
 
+def _create_equality_delete(sequence_number: int = 1, spec_id: int = 0) -> ManifestEntry:
+    delete_file = DataFile.from_args(
+        content=DataFileContent.EQUALITY_DELETES,
+        file_path=f"s3://bucket/eq-delete-{sequence_number}.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=10,
+        file_size_in_bytes=100,
+        equality_ids=[1],
+    )
+    delete_file._spec_id = spec_id
+    return ManifestEntry.from_args(status=ManifestEntryStatus.ADDED, sequence_number=sequence_number, data_file=delete_file)
+
+
 def test_empty_index() -> None:
     index = DeleteFileIndex()
     data_file = _create_data_file()
@@ -187,3 +201,22 @@ def test_record_equality_for_partition_lookup() -> None:
 
     assert len(index.for_data_file(1, data_file, partition_b)) == 1
     assert len(index.for_data_file(1, data_file, partition_c)) == 0
+
+
+def test_equality_delete_sequence_number_filtering() -> None:
+    index = DeleteFileIndex()
+
+    # Equality delete with sequence number 2
+    index.add_delete_file(_create_equality_delete(sequence_number=2))
+
+    data_file = _create_data_file()
+
+    # Data file with sequence number 1 should be affected by equality delete with sequence number 2
+    assert len(index.for_data_file(1, data_file)) == 1
+
+    # Data file with sequence number 2 should NOT be affected by equality delete with sequence number 2
+    # Equality deletes apply only to data files added in strictly earlier snapshots (seq - 1)
+    assert len(index.for_data_file(2, data_file)) == 0
+
+    # Data file with sequence number 3 should NOT be affected
+    assert len(index.for_data_file(3, data_file)) == 0

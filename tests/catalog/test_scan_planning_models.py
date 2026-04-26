@@ -38,7 +38,7 @@ from pyiceberg.catalog.rest.scan_planning import (
     ValueMap,
 )
 from pyiceberg.expressions import AlwaysTrue, EqualTo, Reference
-from pyiceberg.manifest import FileFormat
+from pyiceberg.manifest import DataFileContent, FileFormat
 
 TEST_URI = "https://iceberg-test-catalog/"
 
@@ -545,7 +545,7 @@ def test_plan_scan_cancelled(rest_scan_catalog: RestCatalog, requests_mock: Mock
         list(rest_scan_catalog.plan_scan(("db", "tbl"), request))
 
 
-def test_plan_scan_equality_deletes_not_supported(rest_scan_catalog: RestCatalog, requests_mock: Mocker) -> None:
+def test_plan_scan_equality_deletes_supported(rest_scan_catalog: RestCatalog, requests_mock: Mocker) -> None:
     file_one = _rest_data_file(file_path="s3://bucket/tbl/data/file1.parquet")
     equality_delete = _rest_equality_delete_file(equality_ids=[1, 2])
     requests_mock.post(
@@ -566,5 +566,11 @@ def test_plan_scan_equality_deletes_not_supported(rest_scan_catalog: RestCatalog
     )
 
     request = PlanTableScanRequest()
-    with pytest.raises(NotImplementedError, match="PyIceberg does not yet support equality deletes"):
-        list(rest_scan_catalog.plan_scan(("db", "tbl"), request))
+    tasks = list(rest_scan_catalog.plan_scan(("db", "tbl"), request))
+    assert len(tasks) == 1
+    task = tasks[0]
+    assert task.file.file_path == "s3://bucket/tbl/data/file1.parquet"
+    assert len(task.delete_files) == 1
+    delete_file = list(task.delete_files)[0]
+    assert delete_file.content == DataFileContent.EQUALITY_DELETES
+    assert delete_file.equality_ids == [1, 2]

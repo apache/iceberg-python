@@ -145,6 +145,8 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         return branch
 
     def append_data_file(self, data_file: DataFile) -> _SnapshotProducer[U]:
+        if data_file.content == DataFileContent.EQUALITY_DELETES:
+            raise NotImplementedError(f"PyIceberg does not support writing {data_file.content.name}")
         self._added_data_files.append(data_file)
         return self
 
