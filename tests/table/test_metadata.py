@@ -26,6 +26,7 @@ from uuid import UUID
 import pytest
 
 from pyiceberg.exceptions import ValidationError
+from pyiceberg.io.pyarrow import get_bloom_filter_options
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromByteStream
@@ -876,3 +877,38 @@ def test_new_table_metadata_format_v2_with_v3_schema_fails(field_type: Primitive
             location="s3://some_v1_location/",
             properties={"format-version": "2"},
         )
+
+
+def test_get_bloom_filter_options() -> None:
+    schema = Schema(
+        NestedField(field_id=10, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=22, name="bar", field_type=IntegerType(), required=False),
+        NestedField(field_id=33, name="baz", field_type=BooleanType(), required=False),
+        NestedField(
+            field_id=34,
+            name="qux",
+            field_type=StructType(
+                NestedField(field_id=35, name="quux", field_type=StringType(), required=False),
+                NestedField(field_id=36, name="quuux", field_type=IntegerType(), required=False),
+            ),
+            required=False,
+        ),
+    )
+
+    table_properties = {
+        "write.parquet.bloom-filter-enabled.column.foo": "true",
+        "write.parquet.bloom-filter-fpp.column.foo": "0.01",
+        "write.parquet.bloom-filter-ndv.column.foo": "1000",
+        "write.parquet.bloom-filter-enabled.column.bar": "false",
+        "write.parquet.bloom-filter-fpp.column.bar": "0.02",
+        "write.parquet.bloom-filter-ndv.column.bar": "2000",
+        "write.parquet.bloom-filter-enabled.column.qux.quux": "true",
+        "write.parquet.bloom-filter-fpp.column.qux.quux": "0.03",
+        "write.parquet.bloom-filter-ndv.column.qux.quux": "3000",
+    }
+
+    bloom_filter_options = get_bloom_filter_options(schema, table_properties)
+    assert bloom_filter_options == {
+        "foo": {"fpp": 0.01, "ndv": 1000},
+        "qux.quux": {"fpp": 0.03, "ndv": 3000},
+    }
