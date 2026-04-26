@@ -41,6 +41,7 @@ from hive_metastore.ttypes import (
 )
 from hive_metastore.ttypes import Database as HiveDatabase
 from hive_metastore.ttypes import Table as HiveTable
+from thrift.transport import TSocket, TTransport
 
 from pyiceberg.catalog import PropertiesUpdateSummary
 from pyiceberg.catalog.hive import (
@@ -48,11 +49,13 @@ from pyiceberg.catalog.hive import (
     DO_NOT_UPDATE_STATS_DEFAULT,
     HIVE_KERBEROS_AUTH,
     HIVE_KERBEROS_SERVICE_NAME,
+    HIVE_METASTORE_AUTH,
     LOCK_CHECK_MAX_WAIT_TIME,
     LOCK_CHECK_MIN_WAIT_TIME,
     LOCK_CHECK_RETRIES,
     HiveCatalog,
     _construct_hive_storage_descriptor,
+    _DigestMD5SaslTransport,
     _HiveClient,
 )
 from pyiceberg.exceptions import (
@@ -1326,7 +1329,7 @@ def test_create_hive_client_success() -> None:
 
     with patch("pyiceberg.catalog.hive._HiveClient", return_value=MagicMock()) as mock_hive_client:
         client = HiveCatalog._create_hive_client(properties)
-        mock_hive_client.assert_called_once_with("thrift://localhost:10000", "user", False, "hive")
+        mock_hive_client.assert_called_once_with("thrift://localhost:10000", "user", False, "hive", auth_mechanism=None)
         assert client is not None
 
 
@@ -1339,7 +1342,7 @@ def test_create_hive_client_with_kerberos_success() -> None:
     }
     with patch("pyiceberg.catalog.hive._HiveClient", return_value=MagicMock()) as mock_hive_client:
         client = HiveCatalog._create_hive_client(properties)
-        mock_hive_client.assert_called_once_with("thrift://localhost:10000", "user", True, "hiveuser")
+        mock_hive_client.assert_called_once_with("thrift://localhost:10000", "user", True, "hiveuser", auth_mechanism=None)
         assert client is not None
 
 
@@ -1352,7 +1355,10 @@ def test_create_hive_client_multiple_uris() -> None:
         client = HiveCatalog._create_hive_client(properties)
         assert mock_hive_client.call_count == 2
         mock_hive_client.assert_has_calls(
-            [call("thrift://localhost:10000", "user", False, "hive"), call("thrift://localhost:10001", "user", False, "hive")]
+            [
+                call("thrift://localhost:10000", "user", False, "hive", auth_mechanism=None),
+                call("thrift://localhost:10001", "user", False, "hive", auth_mechanism=None),
+            ]
         )
         assert client is not None
 
@@ -1407,3 +1413,121 @@ def test_create_hive_client_with_kerberos_using_context_manager(
         # closing and re-opening work as expected.
         with client as open_client:
             assert open_client._iprot.trans.isOpen()
+
+
+def _fake_read_token() -> tuple[str, str]:
+    """Return a fake delegation token for tests."""
+    return ("dGVzdC1pZA==", "dGVzdC1wdw==")
+
+
+def test_auth_mechanism_none_creates_buffered_transport_explicit() -> None:
+    """When auth_mechanism is explicitly NONE, a TBufferedTransport is created."""
+    client = _HiveClient(uri="thrift://localhost:9083", auth_mechanism="NONE")
+    assert isinstance(client._transport, TTransport.TBufferedTransport)
+    assert client._auth_mechanism == "NONE"
+
+
+def test_auth_mechanism_kerberos_resolved(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When auth_mechanism is KERBEROS, _auth_mechanism is resolved correctly."""
+    # Stub TSaslClientTransport.__init__ to avoid requiring the kerberos C module
+    monkeypatch.setattr(TTransport.TSaslClientTransport, "__init__", lambda *a, **kw: None)
+    client = _HiveClient(uri="thrift://localhost:9083", auth_mechanism="KERBEROS")
+    assert client._auth_mechanism == "KERBEROS"
+    assert isinstance(client._transport, TTransport.TSaslClientTransport)
+
+
+def test_auth_mechanism_digest_md5_creates_digest_transport(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When auth_mechanism is DIGEST-MD5, a _DigestMD5SaslTransport is created."""
+    monkeypatch.setattr("pyiceberg.catalog.hive.read_hive_delegation_token", _fake_read_token)
+    client = _HiveClient(uri="thrift://localhost:9083", auth_mechanism="DIGEST-MD5")
+    assert isinstance(client._transport, _DigestMD5SaslTransport)
+
+
+def test_legacy_kerberos_auth_backward_compat(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Legacy kerberos_auth=True resolves to KERBEROS auth_mechanism."""
+    monkeypatch.setattr(TTransport.TSaslClientTransport, "__init__", lambda *a, **kw: None)
+    client = _HiveClient(uri="thrift://localhost:9083", kerberos_auth=True)
+    assert client._auth_mechanism == "KERBEROS"
+    assert isinstance(client._transport, TTransport.TSaslClientTransport)
+
+
+def test_auth_mechanism_overrides_kerberos_auth() -> None:
+    """Explicit auth_mechanism takes precedence over kerberos_auth boolean."""
+    client = _HiveClient(uri="thrift://localhost:9083", kerberos_auth=True, auth_mechanism="NONE")
+    assert isinstance(client._transport, TTransport.TBufferedTransport)
+    assert client._auth_mechanism == "NONE"
+
+
+def test_auth_mechanism_unknown_raises() -> None:
+    """Unknown auth mechanism should raise HiveAuthError, not silently fall back."""
+    from pyiceberg.exceptions import HiveAuthError
+
+    with pytest.raises(HiveAuthError, match="Unknown auth mechanism.*PLAIN"):
+        _HiveClient(uri="thrift://localhost:9083", auth_mechanism="PLAIN")
+
+
+def test_auth_mechanism_empty_string_raises() -> None:
+    """Empty string auth mechanism should raise HiveAuthError."""
+    from pyiceberg.exceptions import HiveAuthError
+
+    with pytest.raises(HiveAuthError, match="Unknown auth mechanism.*''"):
+        _HiveClient(uri="thrift://localhost:9083", auth_mechanism="")
+
+
+def test_create_hive_client_passes_kerberos_via_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """_create_hive_client passes hive.metastore.authentication=KERBEROS to _HiveClient."""
+    monkeypatch.setattr(TTransport.TSaslClientTransport, "__init__", lambda *a, **kw: None)
+    properties = {
+        "uri": "thrift://localhost:9083",
+        HIVE_METASTORE_AUTH: "KERBEROS",
+    }
+    client = HiveCatalog._create_hive_client(properties)
+    assert client._auth_mechanism == "KERBEROS"
+
+
+def test_auth_mechanism_case_insensitive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Auth mechanism should be case-insensitive."""
+    monkeypatch.setattr("pyiceberg.catalog.hive.read_hive_delegation_token", _fake_read_token)
+    client = _HiveClient(uri="thrift://localhost:9083", auth_mechanism="digest-md5")
+    assert isinstance(client._transport, _DigestMD5SaslTransport)
+
+
+def test_create_hive_client_passes_auth_mechanism(monkeypatch: pytest.MonkeyPatch) -> None:
+    """_create_hive_client passes hive.metastore.authentication to _HiveClient."""
+    monkeypatch.setattr("pyiceberg.catalog.hive.read_hive_delegation_token", _fake_read_token)
+    properties = {
+        "uri": "thrift://localhost:9083",
+        HIVE_METASTORE_AUTH: "DIGEST-MD5",
+    }
+    client = HiveCatalog._create_hive_client(properties)
+    assert client._auth_mechanism == "DIGEST-MD5"
+
+
+def test_digest_md5_transport_send_sasl_msg_coerces_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """_DigestMD5SaslTransport.send_sasl_msg coerces None body to b''."""
+    monkeypatch.setattr("pyiceberg.catalog.hive.read_hive_delegation_token", _fake_read_token)
+
+    transport = _DigestMD5SaslTransport(
+        TSocket.TSocket("localhost", 9083),
+        host="localhost",
+        service="hive",
+        mechanism="DIGEST-MD5",
+        username="dGVzdC1pZA==",
+        password="dGVzdC1wdw==",
+    )
+
+    # Capture what the parent send_sasl_msg receives
+    captured_calls: list[tuple[int, bytes | None]] = []
+
+    def capture_send(self: TTransport.TSaslClientTransport, status: int, body: bytes | None) -> None:
+        captured_calls.append((status, body))
+
+    monkeypatch.setattr(TTransport.TSaslClientTransport, "send_sasl_msg", capture_send)
+
+    # Send with None body — should be coerced to b""
+    transport.send_sasl_msg(1, None)
+    # Send with real body — should pass through unchanged
+    transport.send_sasl_msg(2, b"real-data")
+
+    assert captured_calls[0] == (1, b""), "None body should be coerced to b''"
+    assert captured_calls[1] == (2, b"real-data"), "Non-None body should pass through"

@@ -4626,6 +4626,7 @@ hf = [
     { name = "huggingface-hub" },
 ]
 hive = [
+    { name = "pure-sasl" },
     { name = "thrift" },
 ]
 hive-kerberos = [
@@ -4734,6 +4735,7 @@ requires-dist = [
     { name = "pandas", marker = "extra == 'ray'", specifier = ">=1.0.0" },
     { name = "polars", marker = "extra == 'polars'", specifier = ">=1.21.0,<2" },
     { name = "psycopg2-binary", marker = "extra == 'sql-postgres'", specifier = ">=2.9.6" },
+    { name = "pure-sasl", marker = "extra == 'hive'", specifier = ">=0.6.0,<1.0.0" },
     { name = "pyarrow", marker = "extra == 'duckdb'", specifier = ">=17.0.0" },
     { name = "pyarrow", marker = "extra == 'pandas'", specifier = ">=17.0.0" },
     { name = "pyarrow", marker = "extra == 'pyarrow'", specifier = ">=17.0.0" },

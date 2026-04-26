@@ -63,6 +63,7 @@ from pyiceberg.catalog import (
 )
 from pyiceberg.exceptions import (
     CommitFailedException,
+    HiveAuthError,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchIcebergTableError,
@@ -109,6 +110,7 @@ from pyiceberg.types import (
     UnknownType,
     UUIDType,
 )
+from pyiceberg.utils.hadoop_credentials import read_hive_delegation_token
 from pyiceberg.utils.properties import property_as_bool, property_as_float
 from pyiceberg.view import View
 from pyiceberg.view.metadata import ViewVersion
@@ -129,6 +131,9 @@ HIVE_KERBEROS_AUTH_DEFAULT = False
 HIVE_KERBEROS_SERVICE_NAME = "hive.kerberos-service-name"
 HIVE_KERBEROS_SERVICE_NAME_DEFAULT = "hive"
 
+HIVE_METASTORE_AUTH = "hive.metastore.authentication"
+HIVE_METASTORE_AUTH_DEFAULT = "NONE"
+
 LOCK_CHECK_MIN_WAIT_TIME = "lock-check-min-wait-time"
 LOCK_CHECK_MAX_WAIT_TIME = "lock-check-max-wait-time"
 LOCK_CHECK_RETRIES = "lock-check-retries"
@@ -139,6 +144,20 @@ DO_NOT_UPDATE_STATS = "DO_NOT_UPDATE_STATS"
 DO_NOT_UPDATE_STATS_DEFAULT = "true"
 
 logger = logging.getLogger(__name__)
+
+
+class _DigestMD5SaslTransport(TTransport.TSaslClientTransport):
+    """TSaslClientTransport subclass that works around THRIFT-5926.
+
+    The upstream ``TSaslClientTransport.open()`` passes the first
+    ``sasl.process()`` response directly to ``_send_sasl_message()``,
+    but for DIGEST-MD5 the initial response is ``None`` (challenge-first
+    mechanism). Sending ``None`` causes a ``TypeError``.  This subclass
+    coerces ``None`` to ``b""`` so the SASL handshake proceeds normally.
+    """
+
+    def send_sasl_msg(self, status: int, body: bytes | None) -> None:
+        super().send_sasl_msg(status, body if body is not None else b"")
 
 
 class _HiveClient:
@@ -152,21 +171,44 @@ class _HiveClient:
         uri: str,
         ugi: str | None = None,
         kerberos_auth: bool | None = HIVE_KERBEROS_AUTH_DEFAULT,
-        kerberos_service_name: str | None = HIVE_KERBEROS_SERVICE_NAME,
+        kerberos_service_name: str | None = HIVE_KERBEROS_SERVICE_NAME_DEFAULT,
+        auth_mechanism: str | None = None,
     ):
         self._uri = uri
-        self._kerberos_auth = kerberos_auth
         self._kerberos_service_name = kerberos_service_name
         self._ugi = ugi.split(":") if ugi else None
+
+        # Resolve auth mechanism: explicit auth_mechanism takes precedence,
+        # then fall back to legacy kerberos_auth boolean for backward compat.
+        if auth_mechanism is not None:
+            self._auth_mechanism = auth_mechanism.upper()
+        elif kerberos_auth:
+            self._auth_mechanism = "KERBEROS"
+        else:
+            self._auth_mechanism = HIVE_METASTORE_AUTH_DEFAULT
+
         self._transport = self._init_thrift_transport()
 
     def _init_thrift_transport(self) -> TTransport:
         url_parts = urlparse(self._uri)
         socket = TSocket.TSocket(url_parts.hostname, url_parts.port)
-        if not self._kerberos_auth:
+
+        if self._auth_mechanism == "NONE":
             return TTransport.TBufferedTransport(socket)
-        else:
+        elif self._auth_mechanism == "KERBEROS":
             return TTransport.TSaslClientTransport(socket, host=url_parts.hostname, service=self._kerberos_service_name)
+        elif self._auth_mechanism == "DIGEST-MD5":
+            identifier, password = read_hive_delegation_token()
+            return _DigestMD5SaslTransport(
+                socket,
+                host=url_parts.hostname,
+                service=self._kerberos_service_name,
+                mechanism="DIGEST-MD5",
+                username=identifier,
+                password=password,
+            )
+        else:
+            raise HiveAuthError(f"Unknown auth mechanism: {self._auth_mechanism!r}. Valid values: NONE, KERBEROS, DIGEST-MD5")
 
     def _client(self) -> Client:
         protocol = TBinaryProtocol.TBinaryProtocol(self._transport)
@@ -321,6 +363,7 @@ class HiveCatalog(MetastoreCatalog):
                     properties.get("ugi"),
                     property_as_bool(properties, HIVE_KERBEROS_AUTH, HIVE_KERBEROS_AUTH_DEFAULT),
                     properties.get(HIVE_KERBEROS_SERVICE_NAME, HIVE_KERBEROS_SERVICE_NAME_DEFAULT),
+                    auth_mechanism=properties.get(HIVE_METASTORE_AUTH),
                 )
             except BaseException as e:
                 last_exception = e
