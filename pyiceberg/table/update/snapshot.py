@@ -1025,53 +1025,70 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
 
 
 class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
-    """Expire snapshots by ID.
+    """Expire snapshots and refs.
 
     Use table.expire_snapshots().<operation>().commit() to run a specific operation.
     Use table.expire_snapshots().<operation-one>().<operation-two>().commit() to run multiple operations.
-    Pending changes are applied on commit.
+    Pending changes are applied on commit. Call order does not affect the result.
     """
 
     _updates: tuple[TableUpdate, ...]
     _requirements: tuple[TableRequirement, ...]
     _snapshot_ids_to_expire: set[int]
+    _ref_names_to_expire: set[str]
+    _expire_older_than_ms: int | None
 
     def __init__(self, transaction: Transaction) -> None:
         super().__init__(transaction)
         self._updates = ()
         self._requirements = ()
         self._snapshot_ids_to_expire = set()
+        self._ref_names_to_expire = set()
+        self._expire_older_than_ms = None
 
     def _commit(self) -> UpdatesAndRequirements:
         """
         Commit the staged updates and requirements.
 
-        This will remove the snapshots with the given IDs, but will always skip protected snapshots (branch/tag heads).
+        Applies all pending expirations: explicit snapshot IDs, age-based snapshot expiry,
+        and ref removals. Protected snapshots (branch/tag heads not being expired) are always
+        excluded.
 
         Returns:
             Tuple of updates and requirements to be committed,
             as required by the calling parent apply functions.
         """
-        # Remove any protected snapshot IDs from the set to expire, just in case
         protected_ids = self._get_protected_snapshot_ids()
-        self._snapshot_ids_to_expire -= protected_ids
-        update = RemoveSnapshotsUpdate(snapshot_ids=self._snapshot_ids_to_expire)
-        self._updates += (update,)
+
+        if self._expire_older_than_ms is not None:
+            for snapshot in self._transaction.table_metadata.snapshots:
+                if snapshot.timestamp_ms < self._expire_older_than_ms and snapshot.snapshot_id not in protected_ids:
+                    self._snapshot_ids_to_expire.add(snapshot.snapshot_id)
+
+        snapshot_ids_to_expire = self._snapshot_ids_to_expire - protected_ids
+
+        updates: list[TableUpdate] = list(self._updates)
+        for ref_name in self._ref_names_to_expire:
+            updates.append(RemoveSnapshotRefUpdate(ref_name=ref_name))
+        if snapshot_ids_to_expire:
+            updates.append(RemoveSnapshotsUpdate(snapshot_ids=snapshot_ids_to_expire))
+        self._updates = tuple(updates)
         return self._updates, self._requirements
 
     def _get_protected_snapshot_ids(self) -> set[int]:
         """
-        Get the IDs of protected snapshots.
+        Get the IDs of snapshots that must not be expired.
 
-        These are the HEAD snapshots of all branches and all tagged snapshots.  These ids are to be excluded from expiration.
+        These are the HEAD snapshots of all branches and tags that are not
+        already marked for removal via remove_expired_refs().
 
         Returns:
             Set of protected snapshot IDs to exclude from expiration.
         """
         return {
             ref.snapshot_id
-            for ref in self._transaction.table_metadata.refs.values()
-            if ref.snapshot_ref_type in [SnapshotRefType.TAG, SnapshotRefType.BRANCH]
+            for name, ref in self._transaction.table_metadata.refs.items()
+            if name not in self._ref_names_to_expire
         }
 
     def by_id(self, snapshot_id: int) -> ExpireSnapshots:
@@ -1112,7 +1129,10 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
 
     def older_than(self, dt: datetime) -> ExpireSnapshots:
         """
-        Expire all unprotected snapshots with a timestamp older than a given value.
+        Expire all unprotected snapshots with a timestamp older than the given value.
+
+        The filter is evaluated at commit time so that snapshots left without a ref
+        by remove_expired_refs() are also considered, regardless of call order.
 
         Args:
             dt (datetime): Only snapshots with datetime < this value will be expired.
@@ -1120,9 +1140,33 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         Returns:
             This for method chaining.
         """
-        protected_ids = self._get_protected_snapshot_ids()
-        expire_from = datetime_to_millis(dt)
-        for snapshot in self._transaction.table_metadata.snapshots:
-            if snapshot.timestamp_ms < expire_from and snapshot.snapshot_id not in protected_ids:
-                self._snapshot_ids_to_expire.add(snapshot.snapshot_id)
+        self._expire_older_than_ms = datetime_to_millis(dt)
+        return self
+
+    def remove_expired_refs(self, default_max_ref_age_ms: int) -> ExpireSnapshots:
+        """
+        Mark stale branches and tags for removal.
+
+        A ref is expired when the age of its snapshot exceeds its own max_ref_age_ms.
+        If a ref has no per-ref max_ref_age_ms set, default_max_ref_age_ms is used as fallback.
+        The main branch is never removed.
+
+        Snapshots left without any live ref after this call are no longer protected,
+        so a subsequent older_than() will include them in age-based expiry.
+
+        Args:
+            default_max_ref_age_ms: Fallback max age in milliseconds for refs that have no
+                per-ref max_ref_age_ms configured.
+
+        Returns:
+            This for method chaining.
+        """
+        now_ms = int(datetime.now().timestamp() * 1000)
+        for name, ref in self._transaction.table_metadata.refs.items():
+            if name == MAIN_BRANCH:
+                continue
+            effective_max_ref_age_ms = ref.max_ref_age_ms if ref.max_ref_age_ms is not None else default_max_ref_age_ms
+            snapshot = self._transaction.table_metadata.snapshot_by_id(ref.snapshot_id)
+            if snapshot is None or (now_ms - snapshot.timestamp_ms) > effective_max_ref_age_ms:
+                self._ref_names_to_expire.add(name)
         return self
