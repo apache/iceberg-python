@@ -43,3 +43,31 @@ class MaintenanceTable:
         from pyiceberg.table.update.snapshot import ExpireSnapshots
 
         return ExpireSnapshots(transaction=Transaction(self.tbl, autocommit=True))
+
+    def compact(self) -> None:
+        """Compact the table's data and delete files by reading and overwriting the entire table.
+
+        Note: This is a full-table compaction that leverages Arrow for binpacking.
+        It currently reads the entire table into memory via `.to_arrow()`.
+
+        This reads all existing data into memory and writes it back out using the
+        target file size settings (write.target-file-size-bytes), atomically
+        dropping the old files and replacing them with fewer, larger files.
+        """
+        # Read the current table state into memory
+        arrow_table = self.tbl.scan().to_arrow()
+
+        # Guard: if the table is completely empty, there's nothing to compact.
+        # Doing an overwrite with an empty table would result in deleting everything.
+        if arrow_table.num_rows == 0:
+            logger.info("Table contains no rows, skipping compaction.")
+            return
+
+        # Replace existing files with new compacted files
+        with self.tbl.transaction() as txn:
+            files_to_delete = [task.file for task in self.tbl.scan().plan_files()]
+            txn.replace(
+                df=arrow_table,
+                files_to_delete=files_to_delete,
+                snapshot_properties={"snapshot-type": "replace", "replace-operation": "compaction"},
+            )

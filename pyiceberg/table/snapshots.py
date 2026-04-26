@@ -344,7 +344,7 @@ class SnapshotSummaryCollector:
 
 
 def update_snapshot_summaries(summary: Summary, previous_summary: Mapping[str, str] | None = None) -> Summary:
-    if summary.operation not in {Operation.APPEND, Operation.OVERWRITE, Operation.DELETE}:
+    if summary.operation not in {Operation.APPEND, Operation.OVERWRITE, Operation.DELETE, Operation.REPLACE}:
         raise ValueError(f"Operation not implemented: {summary.operation}")
 
     if not previous_summary:
