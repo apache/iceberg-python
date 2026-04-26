@@ -196,6 +196,16 @@ catalog.register_table(
 )
 ```
 
+To overwrite a table using existing metadata:
+
+```python
+catalog.register_table(
+    identifier="docs_example.bids",
+    metadata_location="s3://warehouse/path/to/metadata.json",
+    overwrite=True
+)
+```
+
 ## Load a table
 
 There are two ways of reading an Iceberg table; through a catalog, and by pointing at the Iceberg metadata directly. Reading through a catalog is preferred, and directly pointing at the metadata is read-only.
