@@ -104,6 +104,7 @@ TEST_SUPPORTED_ENDPOINTS = [
     Capability.V1_REGISTER_TABLE,
     Capability.V1_LIST_VIEWS,
     Capability.V1_VIEW_EXISTS,
+    Capability.V1_REGISTER_VIEW,
     Capability.V1_DELETE_VIEW,
     Capability.V1_SUBMIT_TABLE_SCAN_PLAN,
     Capability.V1_TABLE_SCAN_PLAN_TASKS,
@@ -2120,6 +2121,47 @@ def test_table_identifier_in_commit_table_request(
         rest_mock.last_request.text
         == """{"identifier":{"namespace":["namespace"],"name":"table_name"},"requirements":[],"updates":[]}"""
     )
+
+
+def test_register_view_200(rest_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/default/register-view",
+        json=example_view_metadata_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    actual = catalog.register_view(
+        identifier=("default", "registered_view"), metadata_location="s3://warehouse/database/view/metadata.json"
+    )
+    expected = View(
+        identifier=("default", "registered_view"),
+        metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]),
+    )
+    assert actual.metadata.model_dump() == expected.metadata.model_dump()
+    assert actual.name() == expected.name()
+
+
+def test_register_view_409(rest_mock: Mocker) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/default/register-view",
+        json={
+            "error": {
+                "message": "View already exists: default.view in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
+                "type": "AlreadyExistsException",
+                "code": 409,
+            }
+        },
+        status_code=409,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(ViewAlreadyExistsError) as e:
+        catalog.register_view(
+            identifier=("default", "registered_view"), metadata_location="s3://warehouse/database/view/metadata.json"
+        )
+    assert "View already exists" in str(e.value)
 
 
 def test_drop_view_invalid_namespace(rest_mock: Mocker) -> None:

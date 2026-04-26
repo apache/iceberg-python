@@ -675,6 +675,21 @@ class Catalog(ABC):
         """
 
     @abstractmethod
+    def register_view(self, identifier: str | Identifier, metadata_location: str) -> View:
+        """Register a new view using existing metadata.
+
+        Args:
+            identifier (Union[str, Identifier]): View identifier for the view
+            metadata_location (str): The location to the metadata
+
+        Returns:
+            View: The newly registered view
+
+        Raises:
+            ViewAlreadyExistsError: If the view already exists
+        """
+
+    @abstractmethod
     def drop_view(self, identifier: str | Identifier) -> None:
         """Drop a view.
 
