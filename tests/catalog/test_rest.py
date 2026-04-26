@@ -1583,6 +1583,33 @@ def test_register_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> N
     assert "Table already exists" in str(e.value)
 
 
+def test_register_table_overwrite(
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/default/register",
+        json=example_table_metadata_no_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    actual = catalog.register_table(
+        identifier=("default", "registered_table"),
+        metadata_location="s3://warehouse/database/table/metadata.json",
+        overwrite=True,
+    )
+    expected = Table(
+        identifier=("default", "registered_table"),
+        metadata_location=example_table_metadata_no_snapshot_v1_rest_json["metadata-location"],
+        metadata=TableMetadataV1(**example_table_metadata_no_snapshot_v1_rest_json["metadata"]),
+        io=load_file_io(),
+        catalog=catalog,
+    )
+    assert actual.metadata.model_dump() == expected.metadata.model_dump()
+    assert actual.metadata_location == expected.metadata_location
+    assert actual.name() == expected.name()
+
+
 def test_delete_namespace_204(rest_mock: Mocker) -> None:
     namespace = "example"
     rest_mock.delete(

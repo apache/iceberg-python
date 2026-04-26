@@ -70,12 +70,13 @@ class NoopCatalog(Catalog):
     def table_exists(self, identifier: str | Identifier) -> bool:
         raise NotImplementedError
 
-    def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
+    def register_table(self, identifier: str | Identifier, metadata_location: str, overwrite: bool = False) -> Table:
         """Register a new table using existing metadata.
 
         Args:
             identifier (Union[str, Identifier]): Table identifier for the table
             metadata_location (str): The location to the metadata
+            overwrite (bool): Whether to overwrite the existing table, default False
 
         Returns:
             Table: The newly registered table

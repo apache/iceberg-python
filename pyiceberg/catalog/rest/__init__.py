@@ -316,6 +316,7 @@ class CreateViewRequest(IcebergBaseModel):
 class RegisterTableRequest(IcebergBaseModel):
     name: str
     metadata_location: str = Field(..., alias="metadata-location")
+    overwrite: bool
 
 
 class ConfigResponse(IcebergBaseModel):
@@ -976,12 +977,13 @@ class RestCatalog(Catalog):
         return self._response_to_view(self.identifier_to_tuple(identifier), view_response)
 
     @retry(**_RETRY_ARGS)
-    def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
+    def register_table(self, identifier: str | Identifier, metadata_location: str, overwrite: bool = False) -> Table:
         """Register a new table using existing metadata.
 
         Args:
             identifier (Union[str, Identifier]): Table identifier for the table
             metadata_location (str): The location to the metadata
+            overwrite (bool): Whether to overwrite the existing table, default False
 
         Returns:
             Table: The newly registered table
@@ -994,6 +996,7 @@ class RestCatalog(Catalog):
         request = RegisterTableRequest(
             name=self._identifier_to_validated_tuple(identifier)[-1],
             metadata_location=metadata_location,
+            overwrite=overwrite,
         )
         serialized_json = request.model_dump_json().encode(UTF8)
         response = self._session.post(
