@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from sqlalchemy import Engine, create_engine, inspect
+from sqlalchemy import Engine, create_engine, inspect, text
 from sqlalchemy.exc import ArgumentError
 
 from pyiceberg.catalog import load_catalog
@@ -261,3 +261,86 @@ class TestSqlCatalogClose:
 
         # Second close should not raise an exception
         catalog_sqlite.close()
+
+
+def get_columns(engine: Engine) -> set[str]:
+    return {c["name"] for c in inspect(engine).get_columns("iceberg_tables")}
+
+
+def test_adds_iceberg_type_column_to_old_schema(warehouse: Path) -> None:
+    # Create the old schema tables
+    uri = f"sqlite:////{warehouse}/test-migration-add-col"
+    engine = create_engine(uri)
+    with engine.connect() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE iceberg_tables ("
+                "  catalog_name VARCHAR(255) NOT NULL,"
+                "  table_namespace VARCHAR(255) NOT NULL,"
+                "  table_name VARCHAR(255) NOT NULL,"
+                "  metadata_location VARCHAR(1000),"
+                "  previous_metadata_location VARCHAR(1000),"
+                "  PRIMARY KEY (catalog_name, table_namespace, table_name)"
+                ")"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE iceberg_namespace_properties ("
+                "  catalog_name VARCHAR(255) NOT NULL,"
+                "  namespace VARCHAR(255) NOT NULL,"
+                "  property_key VARCHAR(255) NOT NULL,"
+                "  property_value VARCHAR(1000) NOT NULL,"
+                "  PRIMARY KEY (catalog_name, namespace, property_key)"
+                ")"
+            )
+        )
+        conn.commit()
+
+    # Verify the column does not exist in the old schema
+    assert "iceberg_type" not in get_columns(engine)
+
+    # Load the catalog and verify the column exists
+    catalog = SqlCatalog("test", uri=uri, warehouse=f"file://{warehouse}", init_catalog_tables="false")
+    assert "iceberg_type" in get_columns(catalog.engine)
+
+
+def test_idempotent_when_column_already_exists(warehouse: Path) -> None:
+    # Verify the column was created by the init_tables call
+    catalog = SqlCatalog("test", uri="sqlite:///:memory:", warehouse=f"file://{warehouse}")
+    assert "iceberg_type" in get_columns(catalog.engine)
+
+    # Verify the method is idempotent by calling it again
+    catalog._update_tables_if_required()
+    assert "iceberg_type" in get_columns(catalog.engine)
+
+
+def test_list_tables_filters_by_iceberg_type(warehouse: Path) -> None:
+    catalog = SqlCatalog("test", uri="sqlite:///:memory:", warehouse=f"file://{warehouse}")
+    catalog.create_namespace("ns")
+    schema = Schema(NestedField(1, "id", StringType(), required=True))
+    catalog.create_table(("ns", "table_V1"), schema)
+
+    # Insert a legac-schema row (iceberg_type IS NULL), so itshould appear in list_tables
+    with catalog.engine.connect() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO iceberg_tables "
+                "(catalog_name, table_namespace, table_name, metadata_location, previous_metadata_location, iceberg_type) "
+                "VALUES ('test', 'ns', 'table_V0', NULL, NULL, NULL)"
+            )
+        )
+        # Insert a non-TABLE row — should NOT appear in list_tables
+        conn.execute(
+            text(
+                "INSERT INTO iceberg_tables "
+                "(catalog_name, table_namespace, table_name, metadata_location, previous_metadata_location, iceberg_type) "
+                "VALUES ('test', 'ns', 'some_view', NULL, NULL, 'VIEW')"
+            )
+        )
+        conn.commit()
+
+    tables = [t[-1] for t in catalog.list_tables("ns")]
+    assert "table_V1" in tables
+    assert "table_V0" in tables
+    assert "some_view" not in tables
