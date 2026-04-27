@@ -50,6 +50,7 @@ from pyiceberg.types import (
     FloatType,
     IcebergType,
     IntegerType,
+    LongType,
     NestedField,
     PrimitiveType,
     StringType,
@@ -1463,3 +1464,46 @@ def test_strict_integer_not_in(strict_data_file_schema: Schema, strict_data_file
 
     should_read = _StrictMetricsEvaluator(strict_data_file_schema, NotIn("no_nulls", {"abc", "def"})).eval(strict_data_file_1)
     assert not should_read, "Should not match: no_nulls field does not have bounds"
+
+
+def test_inclusive_metrics_evaluator_with_type_promotion_crash() -> None:
+    # Schema defines 'id' as LongType (evolved state)
+    schema = Schema(NestedField(1, "id", LongType(), required=True))
+
+    # Historical manifest contains 4-byte integer bounds
+    data_file = DataFile.from_args(
+        file_path="file_1.parquet",
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=100,
+        file_size_in_bytes=1024,
+        lower_bounds={1: to_bytes(IntegerType(), 30)},
+        upper_bounds={1: to_bytes(IntegerType(), 79)},
+    )
+
+    # Predicate: id > 100
+    # Decodes 4-byte bounds correctly and skips the file
+    evaluator_pruning = _InclusiveMetricsEvaluator(schema, GreaterThan("id", 100))
+    assert not evaluator_pruning.eval(data_file)
+
+
+def test_inclusive_metrics_evaluator_with_float_to_double_promotion() -> None:
+    # Schema defines 'val' as DoubleType (evolved state)
+    schema = Schema(NestedField(1, "val", DoubleType(), required=True))
+
+    # Historical manifest contains 4-byte float bounds
+    data_file = DataFile.from_args(
+        file_path="file_1.parquet",
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=100,
+        file_size_in_bytes=1024,
+        lower_bounds={1: to_bytes(FloatType(), 30.0)},
+        upper_bounds={1: to_bytes(FloatType(), 79.0)},
+    )
+
+    # Predicate: val < 50.0
+    evaluator = _InclusiveMetricsEvaluator(schema, LessThan("val", 50.0))
+
+    # Should not crash and should correctly identify that the file might match
+    assert evaluator.eval(data_file)
