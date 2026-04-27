@@ -22,7 +22,12 @@ from uuid import UUID
 import pytest
 
 from pyiceberg.exceptions import ValidationError
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
+from pyiceberg.partitioning import (
+    UNPARTITIONED_PARTITION_SPEC,
+    PartitionField,
+    PartitionSpec,
+    assign_fresh_partition_spec_ids_for_replace,
+)
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import (
     BucketTransform,
@@ -298,3 +303,50 @@ def test_incompatible_transform_source_type() -> None:
         spec.check_compatible(schema)
 
     assert "Invalid source field foo with type int for transform: year" in str(exc.value)
+
+
+def test_assign_fresh_partition_spec_ids_for_replace_reuses_ids() -> None:
+    """Test that partition field IDs are reused from existing specs."""
+    old_schema = Schema(
+        NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+    )
+    fresh_schema = Schema(
+        NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+    )
+    existing_specs = [
+        PartitionSpec(
+            PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="id"),
+            spec_id=0,
+        )
+    ]
+    spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=999, transform=IdentityTransform(), name="id"),
+        spec_id=0,
+    )
+    fresh_spec, last_pid = assign_fresh_partition_spec_ids_for_replace(spec, old_schema, fresh_schema, existing_specs, 1000)
+    assert fresh_spec.fields[0].field_id == 1000  # reused from existing spec
+    assert last_pid == 1000
+
+
+def test_assign_fresh_partition_spec_ids_for_replace_new_field() -> None:
+    """Test that new partition fields get IDs above last_partition_id."""
+    old_schema = Schema(
+        NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+    )
+    fresh_schema = Schema(
+        NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+    )
+    existing_specs = [
+        PartitionSpec(spec_id=0)  # unpartitioned
+    ]
+    spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=999, transform=IdentityTransform(), name="id"),
+        spec_id=0,
+    )
+    fresh_spec, last_pid = assign_fresh_partition_spec_ids_for_replace(spec, old_schema, fresh_schema, existing_specs, 999)
+    assert fresh_spec.fields[0].field_id == 1000  # new, above last_partition_id=999
+    assert last_pid == 1000

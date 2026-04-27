@@ -1380,6 +1380,58 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
         return primitive
 
 
+class _SetFreshIDsForReplace(_SetFreshIDs):
+    """Assign fresh IDs for a replace operation, reusing IDs from the base schema by field name.
+
+    For each field in the new schema, if a field with the same full name exists in the
+    base schema, its ID is reused; otherwise a fresh ID is allocated starting from
+    last_column_id + 1.
+    """
+
+    def __init__(self, old_id_to_base_id: dict[int, int], starting_id: int) -> None:
+        self.old_id_to_new_id: dict[int, int] = {}
+        self._old_id_to_base_id = old_id_to_base_id
+        counter = itertools.count(starting_id + 1)
+        self.next_id_func = lambda: next(counter)
+
+    def _get_and_increment(self, current_id: int) -> int:
+        if current_id in self._old_id_to_base_id:
+            new_id = self._old_id_to_base_id[current_id]
+        else:
+            new_id = self.next_id_func()
+        self.old_id_to_new_id[current_id] = new_id
+        return new_id
+
+
+def assign_fresh_schema_ids_for_replace(schema: Schema, base_schema: Schema, last_column_id: int) -> tuple[Schema, int]:
+    """Assign fresh IDs to a schema for a replace operation, reusing IDs from the base schema.
+
+    For each field in the new schema, if a field with the same full path name exists
+    in the base schema, its ID is reused. New fields get IDs starting from
+    last_column_id + 1.
+
+    Args:
+        schema: The new schema to assign IDs to.
+        base_schema: The existing table's current schema (IDs are reused from here by name).
+        last_column_id: The current table's last_column_id (new IDs start above this).
+
+    Returns:
+        A tuple of (fresh_schema, new_last_column_id).
+    """
+    base_name_to_id = index_by_name(base_schema)
+    new_id_to_name = index_name_by_id(schema)
+
+    old_id_to_base_id: dict[int, int] = {}
+    for old_id, name in new_id_to_name.items():
+        if name in base_name_to_id:
+            old_id_to_base_id[old_id] = base_name_to_id[name]
+
+    visitor = _SetFreshIDsForReplace(old_id_to_base_id, last_column_id)
+    fresh_schema = pre_order_visit(schema, visitor)
+    new_last_column_id = max(fresh_schema.highest_field_id, last_column_id)
+    return fresh_schema, new_last_column_id
+
+
 # Implementation copied from Apache Iceberg repo.
 def make_compatible_name(name: str) -> str:
     """Make a field name compatible with Avro specification.
