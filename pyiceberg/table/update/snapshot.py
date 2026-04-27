@@ -652,7 +652,7 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
                 return [
                     ManifestEntry.from_args(
                         status=ManifestEntryStatus.DELETED,
-                        snapshot_id=entry.snapshot_id,
+                        snapshot_id=self._snapshot_id,
                         sequence_number=entry.sequence_number,
                         file_sequence_number=entry.file_sequence_number,
                         data_file=entry.data_file,
