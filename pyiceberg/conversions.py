@@ -350,6 +350,8 @@ def _(_: PrimitiveType, b: bytes) -> int:
 @from_bytes.register(TimestampNanoType)
 @from_bytes.register(TimestamptzNanoType)
 def _(_: PrimitiveType, b: bytes) -> int:
+    if len(b) == 4:
+        return _INT_STRUCT.unpack(b)[0]
     return _LONG_STRUCT.unpack(b)[0]
 
 
@@ -360,6 +362,8 @@ def _(_: FloatType, b: bytes) -> float:
 
 @from_bytes.register(DoubleType)
 def _(_: DoubleType, b: bytes) -> float:
+    if len(b) == 4:
+        return _FLOAT_STRUCT.unpack(b)[0]
     return _DOUBLE_STRUCT.unpack(b)[0]
 
 
