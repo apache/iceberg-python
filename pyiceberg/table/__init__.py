@@ -107,6 +107,7 @@ if TYPE_CHECKING:
 
     from pyiceberg.catalog import Catalog
     from pyiceberg.catalog.rest.scan_planning import RESTContentFile, RESTDeleteFile, RESTFileScanTask
+    from pyiceberg.encryption.manager import EncryptionManager
 
 ALWAYS_TRUE = AlwaysTrue()
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
@@ -1890,6 +1891,7 @@ def _open_manifest(
     manifest: ManifestFile,
     partition_filter: Callable[[DataFile], bool],
     metrics_evaluator: Callable[[DataFile], bool],
+    encryption_manager: EncryptionManager | None = None,
 ) -> list[ManifestEntry]:
     """Open a manifest file and return matching manifest entries.
 
@@ -1898,7 +1900,7 @@ def _open_manifest(
     """
     return [
         manifest_entry
-        for manifest_entry in manifest.fetch_manifest_entry(io, discard_deleted=True)
+        for manifest_entry in manifest.fetch_manifest_entry(io, discard_deleted=True, encryption_manager=encryption_manager)
         if partition_filter(manifest_entry.data_file) and metrics_evaluator(manifest_entry.data_file)
     ]
 
@@ -1916,6 +1918,13 @@ def _min_sequence_number(manifests: list[ManifestFile]) -> int:
 
 
 class DataScan(TableScan):
+    @cached_property
+    def _merged_properties(self) -> Properties:
+        """Catalog properties merged with table properties (table wins)."""
+        if self.catalog is not None:
+            return {**self.catalog.properties, **self.table_metadata.properties}
+        return dict(self.table_metadata.properties)
+
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
         project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id], self.case_sensitive)
         return project(self.row_filter)
@@ -1987,6 +1996,38 @@ class DataScan(TableScan):
             and (manifest.sequence_number or INITIAL_SEQUENCE_NUMBER) >= min_sequence_number
         )
 
+    @cached_property
+    def _encryption_manager(self) -> EncryptionManager | None:
+        """Create an EncryptionManager if the table has encryption configured."""
+        if self.table_metadata.format_version < 3:
+            return None
+
+        encryption_keys = self.table_metadata.encryption_keys
+        if not encryption_keys:
+            return None
+
+        from pyiceberg.encryption.kms import load_kms_client
+        from pyiceberg.encryption.manager import EncryptedKey
+        from pyiceberg.encryption.manager import EncryptionManager as EncryptionManagerClass
+
+        kms_client = load_kms_client(self._merged_properties)
+        if kms_client is None:
+            return None
+
+        enc_keys_map: dict[str, EncryptedKey] = {}
+        for ek in encryption_keys:
+            enc_keys_map[ek.key_id] = EncryptedKey(
+                key_id=ek.key_id,
+                encrypted_key_metadata=ek.encrypted_key_metadata_bytes,
+                encrypted_by_id=ek.encrypted_by_id,
+                properties=dict(ek.properties),
+            )
+
+        return EncryptionManagerClass(
+            kms_client=kms_client,
+            encryption_keys=enc_keys_map,
+        )
+
     def scan_plan_helper(self) -> Iterator[list[ManifestEntry]]:
         """Filter and return manifest entries based on partition and metrics evaluators.
 
@@ -1997,6 +2038,8 @@ class DataScan(TableScan):
         if not snapshot:
             return iter([])
 
+        encryption_manager = self._encryption_manager
+
         # step 1: filter manifests using partition summaries
         # the filter depends on the partition spec used to write the manifest file, so create a cache of filters for each spec id
 
@@ -2004,7 +2047,7 @@ class DataScan(TableScan):
 
         manifests = [
             manifest_file
-            for manifest_file in snapshot.manifests(self.io)
+            for manifest_file in snapshot.manifests(self.io, encryption_manager=encryption_manager)
             if manifest_evaluators[manifest_file.partition_spec_id](manifest_file)
         ]
 
@@ -2025,6 +2068,7 @@ class DataScan(TableScan):
                     manifest,
                     partition_evaluators[manifest.partition_spec_id],
                     self._build_metrics_evaluator(),
+                    encryption_manager,
                 )
                 for manifest in manifests
                 if self._check_sequence_number(min_sequence_number, manifest)
@@ -2113,7 +2157,13 @@ class DataScan(TableScan):
         from pyiceberg.io.pyarrow import ArrowScan
 
         return ArrowScan(
-            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
+            self.table_metadata,
+            self.io,
+            self.projection(),
+            self.row_filter,
+            self.case_sensitive,
+            self.limit,
+            encryption_manager=self._encryption_manager,
         ).to_table(self.plan_files())
 
     def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
@@ -2133,7 +2183,13 @@ class DataScan(TableScan):
 
         target_schema = schema_to_pyarrow(self.projection())
         batches = ArrowScan(
-            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
+            self.table_metadata,
+            self.io,
+            self.projection(),
+            self.row_filter,
+            self.case_sensitive,
+            self.limit,
+            encryption_manager=self._encryption_manager,
         ).to_record_batches(self.plan_files())
 
         return pa.RecordBatchReader.from_batches(
