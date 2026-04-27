@@ -349,16 +349,15 @@ def convert_type(value):
 
 ### External Tools
 
-- **DuckDB**: High-performance analytics on Iceberg data
 - **Spark**: Distributed processing with Iceberg
 - **Trino**: SQL query engine with Iceberg support
 - **Pandas**: Data analysis with Iceberg integration
 
 ### Example Notebooks
 
-- [CSV Migration Example](../notebooks/csv_migration_example.ipynb)
-- [DuckDB Integration](../notebooks/duckdb_integration_example.ipynb)
-- [Time Travel Queries](../notebooks/time_travel_example.ipynb)
+Example notebooks are available in the `notebooks/` directory of the repository:
+- `csv_migration_example.ipynb` - CSV to Iceberg migration
+- `time_travel_example.ipynb` - Time travel queries and snapshot management
 
 ## Getting Help
 
