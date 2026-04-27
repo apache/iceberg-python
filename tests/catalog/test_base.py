@@ -16,7 +16,6 @@
 #  under the License.
 # pylint:disable=redefined-outer-name
 
-
 from collections.abc import Generator
 from pathlib import PosixPath
 
