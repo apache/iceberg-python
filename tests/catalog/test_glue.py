@@ -313,6 +313,107 @@ def test_create_duplicated_table(
 
 
 @mock_aws
+def test_create_table_transaction_s3tables(
+    monkeypatch: pytest.MonkeyPatch,
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    table_schema_nested: Schema,
+    database_name: str,
+    table_name: str,
+) -> None:
+    _patch_moto_for_s3tables(monkeypatch)
+
+    identifier = (database_name, table_name)
+    test_catalog = GlueCatalog("s3tables", **{"s3.endpoint": moto_endpoint_url})
+    _create_s3tables_database(test_catalog, database_name)
+
+    with test_catalog.create_table_transaction(
+        identifier,
+        table_schema_nested,
+        properties={"test_key": "test_value"},
+    ):
+        pass
+
+    table = test_catalog.load_table(identifier)
+    assert table.name() == identifier
+    assert table.location().rstrip("/") == f"s3://{S3TABLES_WAREHOUSE_LOCATION}/{database_name}/{table_name}"
+    assert table.properties["test_key"] == "test_value"
+
+
+@mock_aws
+def test_create_table_transaction_s3tables_with_schema_evolution(
+    monkeypatch: pytest.MonkeyPatch,
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    table_schema_nested: Schema,
+    database_name: str,
+    table_name: str,
+) -> None:
+    _patch_moto_for_s3tables(monkeypatch)
+
+    identifier = (database_name, table_name)
+    test_catalog = GlueCatalog("s3tables", **{"s3.endpoint": moto_endpoint_url})
+    _create_s3tables_database(test_catalog, database_name)
+
+    with test_catalog.create_table_transaction(
+        identifier,
+        table_schema_nested,
+    ) as txn:
+        with txn.update_schema() as update_schema:
+            update_schema.add_column(path="new_col", field_type=IntegerType())
+
+    table = test_catalog.load_table(identifier)
+    assert table.schema().find_field("new_col").field_type == IntegerType()
+
+
+@mock_aws
+def test_create_table_transaction_s3tables_rejects_location(
+    monkeypatch: pytest.MonkeyPatch,
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    table_schema_nested: Schema,
+    database_name: str,
+    table_name: str,
+) -> None:
+    _patch_moto_for_s3tables(monkeypatch)
+
+    identifier = (database_name, table_name)
+    test_catalog = GlueCatalog("s3tables", **{"s3.endpoint": moto_endpoint_url})
+    _create_s3tables_database(test_catalog, database_name)
+
+    with pytest.raises(ValueError, match="Cannot specify a location for S3 Tables table"):
+        test_catalog.create_table_transaction(identifier, table_schema_nested, location="s3://some-bucket/some-path")
+
+
+@mock_aws
+def test_create_table_transaction_s3tables_cleanup_on_exception(
+    monkeypatch: pytest.MonkeyPatch,
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    table_schema_nested: Schema,
+    database_name: str,
+    table_name: str,
+) -> None:
+    """Staging table should be cleaned up if the transaction is not committed."""
+    _patch_moto_for_s3tables(monkeypatch)
+
+    identifier = (database_name, table_name)
+    test_catalog = GlueCatalog("s3tables", **{"s3.endpoint": moto_endpoint_url})
+    _create_s3tables_database(test_catalog, database_name)
+
+    with pytest.raises(RuntimeError, match="intentional"):
+        with test_catalog.create_table_transaction(
+            identifier,
+            table_schema_nested,
+        ):
+            raise RuntimeError("intentional")
+
+    # The staging table should have been cleaned up, so creating the table again should work.
+    table = test_catalog.create_table(identifier, table_schema_nested)  # type: ignore[unreachable]
+    assert table.name() == identifier
+
+
+@mock_aws
 def test_load_table(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
