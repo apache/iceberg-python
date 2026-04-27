@@ -66,7 +66,7 @@ from pyiceberg.typedef import (
     RecursiveDict,
     TableVersion,
 )
-from pyiceberg.utils.config import Config, merge_config
+from pyiceberg.utils.config import Config, get_env_config, merge_config
 from pyiceberg.utils.properties import property_as_bool
 from pyiceberg.view import View
 from pyiceberg.view.metadata import ViewVersion
@@ -75,8 +75,6 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
 logger = logging.getLogger(__name__)
-
-_ENV_CONFIG = Config()
 
 TOKEN = "token"
 TYPE = "type"
@@ -244,10 +242,11 @@ def load_catalog(name: str | None = None, **properties: str | None) -> Catalog:
         ValueError: Raises a ValueError in case properties are missing or malformed,
             or if it could not determine the catalog based on the properties.
     """
+    config = get_env_config()
     if name is None:
-        name = _ENV_CONFIG.get_default_catalog_name()
+        name = config.get_default_catalog_name()
 
-    env = _ENV_CONFIG.get_catalog_config(name)
+    env = config.get_catalog_config(name)
     conf: RecursiveDict = merge_config(env or {}, cast(RecursiveDict, properties))
 
     catalog_type: CatalogType | None
@@ -279,8 +278,8 @@ def load_catalog(name: str | None = None, **properties: str | None) -> Catalog:
     raise ValueError(f"Could not initialize catalog with the following properties: {properties}")
 
 
-def list_catalogs() -> list[str]:
-    return _ENV_CONFIG.get_known_catalogs()
+def list_catalogs(config: Config) -> list[str]:
+    return config.get_known_catalogs()
 
 
 def delete_files(io: FileIO, files_to_delete: set[str], file_type: str) -> None:
