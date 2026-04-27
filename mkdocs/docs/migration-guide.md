@@ -39,7 +39,7 @@ Migrating to Iceberg provides numerous benefits:
 
 ### 1. CSV Migration
 
-CSV is one of the most common formats to migrate from. See the [CSV Migration Example](../notebooks/csv_migration_example.ipynb) for a detailed walkthrough.
+CSV is one of the most common formats to migrate from. The CSV migration process involves reading CSV files, converting them to Iceberg's schema, and writing the data to Iceberg tables.
 
 #### Basic CSV Migration
 
