@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 import threading
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Iterator, MutableMapping
 from copy import copy
 from enum import Enum
 from types import TracebackType
@@ -51,6 +51,7 @@ from pyiceberg.types import (
     StringType,
     StructType,
 )
+from pyiceberg.utils.config import Config
 
 UNASSIGNED_SEQ = -1
 DEFAULT_BLOCK_SIZE = 67108864  # 64 * 1024 * 1024
@@ -894,10 +895,25 @@ class ManifestFile(Record):
 # Global cache for ManifestFile objects, keyed by manifest_path.
 # This deduplicates ManifestFile objects across manifest lists, which commonly
 # share manifests after append operations.
-_manifest_cache: LRUCache[str, ManifestFile] = LRUCache(maxsize=128)
+_DEFAULT_MANIFEST_CACHE_SIZE = 128
+_configured_manifest_cache_size = Config().get_int("manifest-cache-size")
+_manifest_cache_size = (
+    max(_configured_manifest_cache_size, 0) if _configured_manifest_cache_size is not None else _DEFAULT_MANIFEST_CACHE_SIZE
+)
 
 # Lock for thread-safe cache access
 _manifest_cache_lock = threading.RLock()
+_manifest_cache: MutableMapping[str, ManifestFile] = LRUCache(maxsize=_manifest_cache_size) if _manifest_cache_size > 0 else {}
+
+
+def clear_manifest_cache() -> None:
+    """Clear cached ManifestFile objects.
+
+    This is primarily useful in long-lived or memory-sensitive processes that
+    want to release cached manifest metadata between bursts of table reads.
+    """
+    with _manifest_cache_lock:
+        _manifest_cache.clear()
 
 
 def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
@@ -926,6 +942,9 @@ def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
     """
     file = io.new_input(manifest_list)
     manifest_files = list(read_manifest_list(file))
+
+    if _manifest_cache_size == 0:
+        return tuple(manifest_files)
 
     result = []
     with _manifest_cache_lock:
