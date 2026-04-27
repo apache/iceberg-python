@@ -88,6 +88,11 @@ from pyiceberg.io import (
     InputStream,
     OutputFile,
     OutputStream,
+    COS_ENDPOINT,
+    COS_REGION,
+    COS_SECRET_ID,
+    COS_SECRET_KEY,
+    COS_SESSION_TOKEN,
 )
 from pyiceberg.typedef import Properties
 from pyiceberg.types import strtobool
@@ -303,6 +308,18 @@ def _hf(properties: Properties) -> AbstractFileSystem:
         token=properties.get(HF_TOKEN),
     )
 
+def _cosn(properties: Properties) -> AbstractFileSystem:
+    from cosfs import CosFileSystem
+
+    token = properties.get(COS_SESSION_TOKEN) or None
+
+    return CosFileSystem(
+        secret_id=properties.get(COS_SECRET_ID),
+        secret_key=properties.get(COS_SECRET_KEY),
+        token=token,
+        endpoint=properties.get(COS_ENDPOINT),
+        region=properties.get(COS_REGION),
+    )
 
 SCHEME_TO_FS: dict[str, Callable[..., AbstractFileSystem]] = {
     "": _file,
@@ -315,6 +332,8 @@ SCHEME_TO_FS: dict[str, Callable[..., AbstractFileSystem]] = {
     "gs": _gs,
     "gcs": _gs,
     "hf": _hf,
+    "cosn": _cosn,
+    "cos": _cosn,
 }
 
 _ADLS_SCHEMES = frozenset({"abfs", "abfss", "wasb", "wasbs"})
