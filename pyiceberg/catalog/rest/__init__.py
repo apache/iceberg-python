@@ -539,6 +539,29 @@ class RestCatalog(Catalog):
             RuntimeError: If planning fails, is cancelled, or returns unexpected response.
             NotImplementedError: If async planning is required but not yet supported.
         """
+        tasks, _ = self._plan_scan_for_table(identifier, request)
+        return tasks
+
+    def _plan_scan_for_table(
+        self, identifier: str | Identifier, request: PlanTableScanRequest, table_location: str | None = None
+    ) -> tuple[list[FileScanTask], Properties]:
+        """Plan a table scan and return FileScanTasks along with resolved storage credentials.
+
+        Per Iceberg spec: storage-credentials in the PlanCompleted response take precedence over
+        catalog config and should be applied to the FileIO used to read data files.
+
+        Args:
+            identifier: Table identifier.
+            request: The scan plan request parameters.
+            table_location: The table's metadata location, used for credential prefix matching.
+
+        Returns:
+            Tuple of (list of FileScanTask objects, resolved credential Properties).
+
+        Raises:
+            RuntimeError: If planning fails, is cancelled, or returns unexpected response.
+            NotImplementedError: If async planning is required but not yet supported.
+        """
         response = self._plan_table_scan(identifier, request)
 
         if isinstance(response, PlanFailed):
@@ -555,6 +578,8 @@ class RestCatalog(Catalog):
         if not isinstance(response, PlanCompleted):
             raise RuntimeError(f"Invalid planStatus for response: {type(response).__name__}")
 
+        credential_config = self._resolve_storage_credentials(response.storage_credentials or [], table_location)
+
         tasks: list[FileScanTask] = []
 
         # Collect tasks from initial response
@@ -570,7 +595,7 @@ class RestCatalog(Catalog):
                 tasks.append(FileScanTask.from_rest_response(task, batch.delete_files))
             pending_tasks.extend(batch.plan_tasks)
 
-        return tasks
+        return tasks, credential_config
 
     def _create_legacy_oauth2_auth_manager(self, session: Session) -> AuthManager:
         """Create the LegacyOAuth2AuthManager by fetching required properties.
