@@ -718,6 +718,7 @@ class Transaction:
         when_matched_update_all: bool = True,
         when_not_matched_insert_all: bool = True,
         case_sensitive: bool = True,
+        null_safe_eq: bool = False,
         branch: str | None = MAIN_BRANCH,
         snapshot_properties: dict[str, str] = EMPTY_DICT,
     ) -> UpsertResult:
@@ -732,6 +733,7 @@ class Transaction:
             when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any
                 existing rows in the table
             case_sensitive: Bool indicating if the match should be case-sensitive
+            null_safe_eq: Bool indicating if the equality operator should be null-safe (<=> instead of =)
             branch: Branch Reference to run the upsert operation
             snapshot_properties: Custom properties to be added to the snapshot summary
 
@@ -824,7 +826,7 @@ class Transaction:
                 # values have actually changed. We don't want to do just a blanket overwrite for matched
                 # rows if the actual non-key column data hasn't changed.
                 # this extra step avoids unnecessary IO and writes
-                rows_to_update = upsert_util.get_rows_to_update(df, rows, join_cols)
+                rows_to_update = upsert_util.get_rows_to_update(df, rows, join_cols, null_safe_eq=null_safe_eq)
 
                 if len(rows_to_update) > 0:
                     # build the match predicate filter
@@ -1320,6 +1322,7 @@ class Table:
         when_matched_update_all: bool = True,
         when_not_matched_insert_all: bool = True,
         case_sensitive: bool = True,
+        null_safe_eq: bool = False,
         branch: str | None = MAIN_BRANCH,
         snapshot_properties: dict[str, str] = EMPTY_DICT,
     ) -> UpsertResult:
@@ -1334,6 +1337,7 @@ class Table:
             when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any
                 existing rows in the table
             case_sensitive: Bool indicating if the match should be case-sensitive
+            null_safe_eq: Bool indicating if the equality operator should be null-safe (<=> instead of =)
             branch: Branch Reference to run the upsert operation
             snapshot_properties: Custom properties to be added to the snapshot summary
 
@@ -1368,6 +1372,7 @@ class Table:
                 when_matched_update_all=when_matched_update_all,
                 when_not_matched_insert_all=when_not_matched_insert_all,
                 case_sensitive=case_sensitive,
+                null_safe_eq=null_safe_eq,
                 branch=branch,
                 snapshot_properties=snapshot_properties,
             )
