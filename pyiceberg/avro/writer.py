@@ -36,6 +36,8 @@ from pyiceberg.typedef import Record
 from pyiceberg.utils.decimal import decimal_required_bytes, decimal_to_bytes
 from pyiceberg.utils.singleton import Singleton
 
+__all__: list[str] = []
+
 
 @dataclass(frozen=True)
 class Writer(Singleton):

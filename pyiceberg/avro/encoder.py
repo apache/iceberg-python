@@ -21,6 +21,8 @@ from pyiceberg.avro import STRUCT_DOUBLE, STRUCT_FLOAT
 from pyiceberg.io import OutputStream
 from pyiceberg.typedef import UTF8
 
+__all__: list[str] = []
+
 
 class BinaryEncoder:
     """Encodes Python physical types into bytes."""
