@@ -29,6 +29,7 @@ This guide helps you migrate data from various formats and systems to Apache Ice
 ## Overview
 
 Migrating to Iceberg provides numerous benefits:
+
 - **Performance**: Columnar Parquet format with predicate pushdown
 - **Reliability**: ACID transactions with snapshot isolation
 - **Flexibility**: Schema evolution without breaking queries
@@ -66,6 +67,7 @@ table.append(csv_data)
 - **Data Validation**: Clean and validate data
 
 **Best Practices**:
+
 - Use PyArrow for efficient CSV reading
 - Handle missing values explicitly
 - Validate data ranges and types
@@ -245,7 +247,7 @@ table.append(table_data)
 3. **File size optimization**: Target appropriate Iceberg file sizes
 4. **Partitioning**: Design partition strategy based on query patterns
 
-### Validation
+### Data Quality Validation
 
 1. **Row count validation**: Ensure all rows migrated
 2. **Data sampling**: Compare sample data before and after
@@ -259,6 +261,7 @@ table.append(table_data)
 **Problem**: Source schema doesn't match Iceberg type system
 
 **Solution**:
+
 ```python
 # Explicit type conversion
 converted_schema = pa.schema([
@@ -274,6 +277,7 @@ converted_data = original_data.cast(converted_schema)
 **Problem**: Dataset too large for memory
 
 **Solution**:
+
 ```python
 # Process in batches
 batch_size = 100000
@@ -287,6 +291,7 @@ for i in range(0, len(data), batch_size):
 **Problem**: Incompatible data types between systems
 
 **Solution**:
+
 ```python
 # Custom type conversion
 def convert_type(value):
@@ -303,6 +308,7 @@ def convert_type(value):
 **Problem**: Optimal partitioning unclear
 
 **Solution**:
+
 - Analyze query patterns
 - Choose high-cardinality columns for partitioning
 - Consider date/time-based partitioning for time-series data
@@ -310,7 +316,7 @@ def convert_type(value):
 
 ## Post-Migration Steps
 
-### Validation
+### Post-Migration Validation
 
 1. **Data integrity**: Verify data accuracy
 2. **Query testing**: Test all critical queries
@@ -353,11 +359,9 @@ def convert_type(value):
 - **Trino**: SQL query engine with Iceberg support
 - **Pandas**: Data analysis with Iceberg integration
 
-### Example Notebooks
+### Additional Resources
 
-Example notebooks are available in the `notebooks/` directory of the repository:
-- `csv_migration_example.ipynb` - CSV to Iceberg migration
-- `time_travel_example.ipynb` - Time travel queries and snapshot management
+For detailed implementation examples and patterns, see the [practical examples guide](practical-examples.md).
 
 ## Getting Help
 

@@ -24,83 +24,66 @@ hide:
 
 # Practical Examples
 
-This guide provides practical, real-world examples for common PyIceberg use cases. Each example is available as a Jupyter notebook that you can run and modify for your specific needs.
+This guide provides practical guidance for common PyIceberg use cases and implementation patterns.
 
-## Available Examples
+## Common Use Cases
 
-### 1. CSV to Iceberg Migration
-**Notebook**: `csv_migration_example.ipynb`
+### CSV Migration
 
-Migrate CSV data to Iceberg with various strategies:
+Migrating CSV files to Iceberg tables involves reading CSV data, converting it to Iceberg's schema, and writing it to Iceberg tables. This is one of the most common migration scenarios.
 
-- **Simple Migration**: Direct CSV to Iceberg conversion
-- **Schema Enhancement**: Add computed columns during migration
-- **Partitioned Migration**: Organize data for better performance
-- **Data Quality**: Validate and clean data during migration
-- **Best Practices**: Production migration considerations
+**Key Steps**:
 
-**When to use**: Transitioning from CSV to modern table formats, data lakehouse migration
+1. Read CSV files using PyArrow
+2. Convert data types appropriately
+3. Create Iceberg table with proper schema
+4. Write data to Iceberg table
+5. Validate migration success
 
-**Run the example**:
-```bash
-make notebook
-# Open csv_migration_example.ipynb in Jupyter
-```
+**Best Practices**:
 
-### 2. Time Travel Queries
-**Notebook**: `time_travel_example.ipynb`
+- Use PyArrow for efficient CSV reading
+- Handle missing values explicitly
+- Validate data ranges and types
+- Consider partitioning for large datasets
 
-Explore Iceberg's time travel capabilities:
+### Time Travel Queries
 
-- **Snapshots**: Understand Iceberg's snapshot mechanism
+Iceberg's time travel feature allows you to query historical data and manage table versions through snapshots.
+
+**Key Concepts**:
+
+- **Snapshots**: Each commit creates a snapshot with unique ID and timestamp
 - **Historical Queries**: Query data as it existed at specific times
-- **Rollback**: Revert to previous table states
-- **Audit Trail**: Track complete history of table changes
-- **Real-world Use Cases**: Debugging, compliance, ML, data recovery
+- **Rollback**: Revert tables to previous states when needed
+- **Audit Trail**: Complete history of all table changes
 
-**When to use**: Data debugging, compliance requirements, analytics, disaster recovery
+**Common Patterns**:
 
-**Run the example**:
-```bash
-make notebook
-# Open time_travel_example.ipynb in Jupyter
-```
+- Query data as of a specific snapshot ID
+- Query data as of a specific timestamp
+- List table history to track changes
+- Rollback to known good states
 
-## Running the Examples
+### Data Quality Management
 
-### Prerequisites
+Implementing data quality checks during and after migration ensures data integrity.
 
-Install PyIceberg with required dependencies:
+**Validation Steps**:
 
-```bash
-pip install pyiceberg[pyarrow]
-```
+- Row count validation
+- Data sampling and comparison
+- Query validation with representative tests
+- Performance comparison
 
-### Using Make Commands
+**Common Issues**:
 
-PyIceberg provides convenient Make commands for running notebooks:
+- Schema mismatches between source and target
+- Missing or null values
+- Duplicate records
+- Data type conversion errors
 
-```bash
-# Basic PyIceberg examples (no external infrastructure)
-make notebook
-
-# Spark integration examples (requires Docker infrastructure)
-make notebook-infra
-```
-
-### Manual Setup
-
-If you prefer manual setup:
-
-```bash
-# Install Jupyter
-pip install jupyter
-
-# Start Jupyter Lab
-jupyter lab notebooks/
-```
-
-## Example Patterns
+## Implementation Patterns
 
 ### Data Migration Pattern
 
@@ -130,6 +113,51 @@ for snapshot in table.history():
     print(f"Snapshot: {snapshot.snapshot_id}, Time: {snapshot.timestamp_ms}")
 ```
 
+### Schema Evolution Pattern
+
+```python
+# Add new column to existing table
+with table.update_schema() as update_schema:
+    update_schema.add_column(
+        field_id=1000,
+        name="new_column",
+        field_type="string",
+        required=False
+    )
+```
+
+## Running Examples
+
+### Prerequisites
+
+Install PyIceberg with required dependencies:
+
+```bash
+pip install pyiceberg[pyarrow]
+```
+
+### Using Make Commands
+
+PyIceberg provides convenient Make commands:
+
+```bash
+# Basic PyIceberg examples (no external infrastructure)
+make notebook
+
+# Spark integration examples (requires Docker infrastructure)
+make notebook-infra
+```
+
+### Manual Setup
+
+```bash
+# Install Jupyter
+pip install jupyter
+
+# Start Jupyter Lab
+jupyter lab notebooks/
+```
+
 ## Best Practices
 
 ### Performance
@@ -153,30 +181,32 @@ for snapshot in table.history():
 - **Testing**: Test examples in non-production environments first
 - **Documentation**: Document your customizations and patterns
 
-## Troubleshooting
+## Common Issues
 
-### Common Issues
+### Import Errors
 
-**Import Errors**:
 ```bash
 # Ensure all dependencies are installed
 pip install pyiceberg[pyarrow,s3fs]
 ```
 
-**Permission Errors**:
+### Permission Errors
+
 ```bash
 # Check catalog credentials in .pyiceberg.yaml
 # Verify file system permissions for warehouse location
 ```
 
-**Memory Issues**:
+### Memory Issues
+
 ```bash
 # Process data in batches for large files
+# Use DuckDB for out-of-core processing
 ```
 
-### Getting Help
+## Getting Help
 
-- **Documentation**: Check the [main API documentation](api.md)
+- **Documentation**: Check the [API documentation](api.md)
 - **Community**: Join the [Apache Iceberg community](https://iceberg.apache.org/community/)
 - **Issues**: Report bugs on [GitHub Issues](https://github.com/apache/iceberg-python/issues)
 
@@ -184,17 +214,10 @@ pip install pyiceberg[pyarrow,s3fs]
 
 We welcome contributions of additional practical examples! When contributing:
 
-1. **Follow the pattern**: Use the existing notebook structure
-2. **Include cleanup**: Clean up temporary resources
+1. **Follow the pattern**: Use existing code examples as templates
+2. **Include error handling**: Add appropriate error handling
 3. **Add documentation**: Explain the use case and when to use it
-4. **Test thoroughly**: Ensure examples run successfully
+4. **Test thoroughly**: Ensure examples work correctly
 5. **Document dependencies**: List all required packages
 
 See the [contributing guide](contributing.md) for more details.
-
-## Additional Resources
-
-- **API Documentation**: Comprehensive API reference
-- **Configuration Guide**: Catalog and table configuration options
-- **Expression DSL**: Query and filter expressions
-- **Community**: Connect with other users and contributors

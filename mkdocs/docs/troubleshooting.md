@@ -33,6 +33,7 @@ This guide helps you diagnose and resolve common issues when working with PyIceb
 **Problem**: `ModuleNotFoundError: No module named 'pyiceberg'`
 
 **Solution**:
+
 ```bash
 # Install PyIceberg
 pip install pyiceberg
@@ -44,6 +45,7 @@ pip install pyiceberg[pyarrow,s3fs,adlfs]
 **Problem**: `ImportError: cannot import name 'X' from 'pyiceberg'`
 
 **Solution**:
+
 ```bash
 # Ensure you have the latest version
 pip install --upgrade pyiceberg
@@ -57,6 +59,7 @@ python -c "import pyiceberg; print(pyiceberg.__version__)"
 **Problem**: Version conflicts with other packages
 
 **Solution**:
+
 ```bash
 # Use a virtual environment
 python -m venv .venv
@@ -73,6 +76,7 @@ pip install pyiceberg==0.6.0 pyarrow==14.0.0
 **Problem**: `Connection refused` or `Timeout` when connecting to REST catalog
 
 **Solution**:
+
 ```yaml
 # Check .pyiceberg.yaml configuration
 catalog:
@@ -96,6 +100,7 @@ except Exception as e:
 **Problem**: `ThriftError` or connection issues with Hive Metastore
 
 **Solution**:
+
 ```yaml
 # Check Hive configuration
 catalog:
@@ -115,6 +120,7 @@ nc -zv hive-metastore 9083
 **Problem**: `Permission denied` or S3 authentication errors
 
 **Solution**:
+
 ```yaml
 # Check S3 configuration
 catalog:
@@ -144,6 +150,7 @@ except Exception as e:
 **Problem**: `TableAlreadyExistsError` when creating a table
 
 **Solution**:
+
 ```python
 # Check if table exists first
 from pyiceberg.exceptions import TableAlreadyExistsError
@@ -158,6 +165,7 @@ except TableAlreadyExistsError:
 **Problem**: `NoSuchNamespaceError` when creating a table
 
 **Solution**:
+
 ```python
 # Create namespace first
 catalog.create_namespace("my_namespace")
@@ -171,6 +179,7 @@ table = catalog.create_table("my_namespace.my_table", schema=schema)
 **Problem**: `Schema evolution failed` when modifying schema
 
 **Solution**:
+
 ```python
 # Use proper schema evolution API
 with table.update_schema() as update_schema:
@@ -188,6 +197,7 @@ with table.update_schema() as update_schema:
 **Problem**: `TypeError` when writing data with incompatible schema
 
 **Solution**:
+
 ```python
 # Ensure schema compatibility
 from pyiceberg.schema import Schema
@@ -210,6 +220,7 @@ if data_schema != table_schema:
 **Problem**: Queries are slower than expected
 
 **Solution**:
+
 ```python
 # Enable debug logging to identify bottlenecks
 import logging
@@ -230,6 +241,7 @@ partition_spec = PartitionSpec(
 **Problem**: Out of memory errors when processing large datasets
 
 **Solution**:
+
 ```python
 # Process data in batches
 batch_size = 10000
@@ -248,6 +260,7 @@ result = con.execute("SELECT * FROM table").fetchdf()
 **Problem**: Slow read/write operations
 
 **Solution**:
+
 ```python
 # Use appropriate file I/O implementation
 from pyiceberg.io import PyArrowFileIO
@@ -266,6 +279,7 @@ catalog = load_catalog(
 **Problem**: Unexpected null values in data
 
 **Solution**:
+
 ```python
 # Check for null values before writing
 import pyarrow.compute as pc
@@ -287,6 +301,7 @@ data = data.fillna({"column_name": "default_value"})
 **Problem**: Data type conversion errors
 
 **Solution**:
+
 ```python
 # Explicit type conversion
 converted_data = data.cast(pa.schema([
@@ -301,6 +316,7 @@ converted_data = data.cast(pa.schema([
 **Problem**: Duplicate rows in table
 
 **Solution**:
+
 ```python
 # Remove duplicates using DuckDB
 import duckdb
@@ -321,6 +337,7 @@ table.append(pa.Table.from_pandas(deduped))
 **Problem**: `NoSuchSnapshotError` when querying historical data
 
 **Solution**:
+
 ```python
 # List available snapshots
 for snapshot in table.history():
@@ -336,6 +353,7 @@ historical_data = table.scan(snapshot_id=valid_snapshot_id).to_arrow()
 **Problem**: Unable to rollback to previous snapshot
 
 **Solution**:
+
 ```python
 # Check if snapshot exists
 snapshot_ids = [s.snapshot_id for s in table.history()]
@@ -354,6 +372,7 @@ else:
 **Problem**: DuckDB cannot read Iceberg files
 
 **Solution**:
+
 ```python
 # Ensure DuckDB can access the data files
 import duckdb
@@ -373,6 +392,7 @@ print(result)
 **Problem**: Spark cannot read Iceberg tables
 
 **Solution**:
+
 ```scala
 // Configure Spark for Iceberg
 spark.conf.set("spark.sql.catalog.my_catalog", "org.apache.iceberg.spark.SparkCatalog")
@@ -388,6 +408,7 @@ spark.table("my_catalog.database.table").show()
 **Problem**: Conversion between Iceberg and pandas fails
 
 **Solution**:
+
 ```python
 # Convert Iceberg data to pandas
 import pandas as pd
@@ -410,6 +431,7 @@ pandas_df['date_column'] = pd.to_datetime(pandas_df['date_column'])  # Convert d
 **Problem**: Need more information to diagnose issues
 
 **Solution**:
+
 ```python
 # Enable debug logging
 import logging
@@ -428,6 +450,7 @@ os.environ['PYICEBERG_LOG_LEVEL'] = 'DEBUG'
 **Problem**: Unsure about current configuration
 
 **Solution**:
+
 ```python
 # Check catalog configuration
 from pyiceberg.catalog import load_catalog
@@ -446,6 +469,7 @@ print(f"Table location: {table.location()}")
 **Problem**: Suspect metadata corruption
 
 **Solution**:
+
 ```python
 # Validate table metadata
 table = catalog.load_table("my_table")
@@ -468,6 +492,7 @@ print(f"Partition spec: {table.spec()}")
 **Cause**: Table does not exist in the catalog
 
 **Solution**:
+
 ```python
 # List available tables
 tables = catalog.list_tables("namespace")
@@ -483,6 +508,7 @@ if "my_table" not in tables:
 **Cause**: Namespace does not exist
 
 **Solution**:
+
 ```python
 # List available namespaces
 namespaces = catalog.list_namespaces()
@@ -498,6 +524,7 @@ if "my_namespace" not in [ns[0] for ns in namespaces]:
 **Cause**: Concurrent modification conflict
 
 **Solution**:
+
 ```python
 # Implement retry logic
 from pyiceberg.exceptions import CommitFailedException
