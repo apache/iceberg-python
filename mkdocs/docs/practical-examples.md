@@ -28,26 +28,7 @@ This guide provides practical, real-world examples for common PyIceberg use case
 
 ## Available Examples
 
-### 1. DuckDB Integration
-**Notebook**: `duckdb_integration_example.ipynb`
-
-Learn how to integrate PyIceberg with DuckDB for high-performance analytics:
-
-- **Setup**: Connect to both PyIceberg and DuckDB
-- **Querying**: Use DuckDB SQL to query Iceberg tables
-- **Advanced Analytics**: Window functions, aggregations, filtering
-- **Performance**: Compare PyIceberg vs DuckDB query performance
-- **Data Pipeline**: Transform data with DuckDB, write back to Iceberg
-
-**When to use**: Ad-hoc analytics, data science, performance testing, ETL workflows
-
-**Run the example**:
-```bash
-make notebook
-# Open duckdb_integration_example.ipynb in Jupyter
-```
-
-### 2. CSV to Iceberg Migration
+### 1. CSV to Iceberg Migration
 **Notebook**: `csv_migration_example.ipynb`
 
 Migrate CSV data to Iceberg with various strategies:
@@ -66,7 +47,7 @@ make notebook
 # Open csv_migration_example.ipynb in Jupyter
 ```
 
-### 3. Time Travel Queries
+### 2. Time Travel Queries
 **Notebook**: `time_travel_example.ipynb`
 
 Explore Iceberg's time travel capabilities:
@@ -92,7 +73,7 @@ make notebook
 Install PyIceberg with required dependencies:
 
 ```bash
-pip install pyiceberg[pyarrow,duckdb]
+pip install pyiceberg[pyarrow]
 ```
 
 ### Using Make Commands
@@ -149,19 +130,6 @@ for snapshot in table.history():
     print(f"Snapshot: {snapshot.snapshot_id}, Time: {snapshot.timestamp_ms}")
 ```
 
-### DuckDB Integration Pattern
-
-```python
-import duckdb
-
-# Query Iceberg with DuckDB
-con = duckdb.connect()
-result = con.execute("""
-    SELECT * FROM read_parquet('table_location/data/**/*.parquet')
-    WHERE column > 100
-""").fetchdf()
-```
-
 ## Best Practices
 
 ### Performance
@@ -192,7 +160,7 @@ result = con.execute("""
 **Import Errors**:
 ```bash
 # Ensure all dependencies are installed
-pip install pyiceberg[pyarrow,duckdb,s3fs]
+pip install pyiceberg[pyarrow,s3fs]
 ```
 
 **Permission Errors**:
@@ -204,7 +172,6 @@ pip install pyiceberg[pyarrow,duckdb,s3fs]
 **Memory Issues**:
 ```bash
 # Process data in batches for large files
-# Use DuckDB for out-of-core processing
 ```
 
 ### Getting Help
