@@ -397,7 +397,8 @@ class PyArrowFileIO(FileIO):
         """
         uri = urlparse(location)
 
-        if not uri.scheme:
+        if not uri.scheme or (len(uri.scheme) == 1 and uri.scheme.isalpha()):
+            # len == 1 and alpha catches Windows drive letters like C:\ D:\
             default_scheme = properties.get("DEFAULT_SCHEME", "file")
             default_netloc = properties.get("DEFAULT_NETLOC", "")
             return default_scheme, default_netloc, os.path.abspath(location)
