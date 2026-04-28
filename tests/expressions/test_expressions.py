@@ -1354,6 +1354,13 @@ def test_deepcopy_nested_expression() -> None:
     assert copied == expr
 
 
+def test_deepcopy_then_pickle() -> None:
+    expr = And(EqualTo("x", 1), EqualTo("y", 2))
+    copied = copy.deepcopy(expr)
+    restored = pickle.loads(pickle.dumps(copied))
+    assert restored == expr
+
+
 #   __  __      ___
 #  |  \/  |_  _| _ \_  _
 #  | |\/| | || |  _/ || |
