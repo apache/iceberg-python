@@ -16,6 +16,7 @@
 # under the License.
 # pylint:disable=redefined-outer-name,eval-used
 
+import copy
 import pickle
 import uuid
 from decimal import Decimal
@@ -1290,6 +1291,55 @@ def test_bind_ambiguous_name() -> None:
             schema_id=1,
         )
     assert "Invalid schema, multiple fields for name foo.bar: 2 and 3" in str(exc_info)
+
+
+# --- deepcopy tests ---
+
+
+def test_deepcopy_and() -> None:
+    expr = And(EqualTo("x", 1), EqualTo("y", 2))
+    copied = copy.deepcopy(expr)
+    assert copied == expr
+
+
+def test_deepcopy_or() -> None:
+    expr = Or(EqualTo("x", 1), EqualTo("y", 2))
+    copied = copy.deepcopy(expr)
+    assert copied == expr
+
+
+def test_deepcopy_not() -> None:
+    expr = Not(EqualTo("x", 1))
+    copied = copy.deepcopy(expr)
+    assert copied == expr
+
+
+def test_deepcopy_equal_to() -> None:
+    expr = EqualTo("x", 1)
+    copied = copy.deepcopy(expr)
+    assert copied == expr
+
+
+def test_deepcopy_always_true() -> None:
+    copied = copy.deepcopy(AlwaysTrue())
+    assert copied is AlwaysTrue()
+
+
+def test_deepcopy_always_false() -> None:
+    copied = copy.deepcopy(AlwaysFalse())
+    assert copied is AlwaysFalse()
+
+
+def test_deepcopy_always_true_then_pickle() -> None:
+    copied = copy.deepcopy(AlwaysTrue())
+    restored = pickle.loads(pickle.dumps(copied))
+    assert restored is AlwaysTrue()
+
+
+def test_deepcopy_nested_expression() -> None:
+    expr = And(Or(EqualTo("a", 1), EqualTo("b", 2)), Not(EqualTo("c", 3)))
+    copied = copy.deepcopy(expr)
+    assert copied == expr
 
 
 #   __  __      ___
