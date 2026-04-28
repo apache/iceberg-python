@@ -2124,12 +2124,18 @@ def test_table_identifier_in_commit_table_request(
 
 
 def test_register_view_200(rest_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/default/tables/registered_view",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/default/register-view",
         json=example_view_metadata_rest_json,
         status_code=200,
         request_headers=TEST_HEADERS,
     )
+
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
     actual = catalog.register_view(
         identifier=("default", "registered_view"), metadata_location="s3://warehouse/database/view/metadata.json"
@@ -2138,11 +2144,15 @@ def test_register_view_200(rest_mock: Mocker, example_view_metadata_rest_json: d
         identifier=("default", "registered_view"),
         metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]),
     )
-    assert actual.metadata.model_dump() == expected.metadata.model_dump()
-    assert actual.name() == expected.name()
+    assert actual == expected
 
 
-def test_register_view_409(rest_mock: Mocker) -> None:
+def test_register_view_409_view(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/default/tables/registered_view",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/default/register-view",
         json={
@@ -2162,6 +2172,26 @@ def test_register_view_409(rest_mock: Mocker) -> None:
             identifier=("default", "registered_view"), metadata_location="s3://warehouse/database/view/metadata.json"
         )
     assert "View already exists" in str(e.value)
+
+
+def test_register_view_409_table(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/default/tables/registered_view",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/default/views/registered_view",
+        status_code=204,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(TableAlreadyExistsError) as e:
+        catalog.register_view(
+            identifier=("default", "registered_view"), metadata_location="s3://warehouse/database/view/metadata.json"
+        )
+    assert "Table default.registered_view already exists" in str(e.value)
 
 
 def test_drop_view_invalid_namespace(rest_mock: Mocker) -> None:

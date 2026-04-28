@@ -1322,14 +1322,16 @@ class RestCatalog(Catalog):
     @retry(**_RETRY_ARGS)
     def register_view(self, identifier: str | Identifier, metadata_location: str) -> View:
         self._check_endpoint(Capability.V1_REGISTER_VIEW)
-        namespace_and_view = self._split_identifier_for_path(identifier)
-        request = RegisterViewRequest(
-            name=self._identifier_to_validated_tuple(identifier)[-1],
-            metadata_location=metadata_location,
-        )
+        namespace_and_view = self._split_identifier_for_path(identifier, IdentifierKind.VIEW)
+        namespace = namespace_and_view["namespace"]
+        view = namespace_and_view["view"]
+        if self.table_exists(identifier):
+            raise TableAlreadyExistsError(f"Table {namespace}.{view} already exists")
+
+        request = RegisterViewRequest(name=view, metadata_location=metadata_location)
         serialized_json = request.model_dump_json().encode(UTF8)
         response = self._session.post(
-            self.url(Endpoints.register_view, namespace=namespace_and_view["namespace"]),
+            self.url(Endpoints.register_view, namespace=namespace),
             data=serialized_json,
         )
         try:
