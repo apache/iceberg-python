@@ -53,6 +53,7 @@ class BooleanExpression(IcebergBaseModel, ABC):
     """An expression that evaluates to a boolean."""
 
     def __deepcopy__(self, memo: dict[int, Any]) -> BooleanExpression:
+        """Return a deep copy of this expression."""
         if isinstance(self, Singleton):
             return self
         fields = {name: copy.deepcopy(getattr(self, name), memo) for name in type(self).model_fields}
