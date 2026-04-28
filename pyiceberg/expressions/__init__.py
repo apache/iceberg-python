@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import copy
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Sequence
 from functools import cached_property
@@ -50,6 +51,12 @@ def _to_literal(value: L | Literal[L]) -> Literal[L]:
 
 class BooleanExpression(IcebergBaseModel, ABC):
     """An expression that evaluates to a boolean."""
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> BooleanExpression:
+        if isinstance(self, Singleton):
+            return self
+        fields = {name: copy.deepcopy(getattr(self, name), memo) for name in type(self).model_fields}
+        return type(self)(**fields)
 
     @abstractmethod
     def __invert__(self) -> BooleanExpression:

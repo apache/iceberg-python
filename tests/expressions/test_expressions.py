@@ -1336,6 +1336,18 @@ def test_deepcopy_always_true_then_pickle() -> None:
     assert restored is AlwaysTrue()
 
 
+def test_deepcopy_balanced_and() -> None:
+    expr = And(EqualTo("a", 1), EqualTo("b", 2), EqualTo("c", 3), EqualTo("d", 4))
+    copied = copy.deepcopy(expr)
+    assert copied == expr
+
+
+def test_deepcopy_balanced_or() -> None:
+    expr = Or(EqualTo("a", 1), EqualTo("b", 2), EqualTo("c", 3), EqualTo("d", 4))
+    copied = copy.deepcopy(expr)
+    assert copied == expr
+
+
 def test_deepcopy_nested_expression() -> None:
     expr = And(Or(EqualTo("a", 1), EqualTo("b", 2)), Not(EqualTo("c", 3)))
     copied = copy.deepcopy(expr)
