@@ -1300,24 +1300,28 @@ def test_deepcopy_and() -> None:
     expr = And(EqualTo("x", 1), EqualTo("y", 2))
     copied = copy.deepcopy(expr)
     assert copied == expr
+    assert copied is not expr
 
 
 def test_deepcopy_or() -> None:
     expr = Or(EqualTo("x", 1), EqualTo("y", 2))
     copied = copy.deepcopy(expr)
     assert copied == expr
+    assert copied is not expr
 
 
 def test_deepcopy_not() -> None:
     expr = Not(EqualTo("x", 1))
     copied = copy.deepcopy(expr)
     assert copied == expr
+    assert copied is not expr
 
 
 def test_deepcopy_equal_to() -> None:
     expr = EqualTo("x", 1)
     copied = copy.deepcopy(expr)
     assert copied == expr
+    assert copied is not expr
 
 
 def test_deepcopy_always_true() -> None:

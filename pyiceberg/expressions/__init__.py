@@ -52,13 +52,6 @@ def _to_literal(value: L | Literal[L]) -> Literal[L]:
 class BooleanExpression(IcebergBaseModel, ABC):
     """An expression that evaluates to a boolean."""
 
-    def __deepcopy__(self, memo: dict[int, Any]) -> BooleanExpression:
-        """Return a deep copy of this expression."""
-        if isinstance(self, Singleton):
-            return self
-        fields = {name: copy.deepcopy(getattr(self, name), memo) for name in type(self).model_fields}
-        return type(self)(**fields)
-
     @abstractmethod
     def __invert__(self) -> BooleanExpression:
         """Transform the Expression into its negated version."""
@@ -347,6 +340,10 @@ class And(BooleanExpression):
         # De Morgan's law: not (A and B) = (not A) or (not B)
         return Or(~self.left, ~self.right)
 
+    def __deepcopy__(self, memo: dict[int, Any]) -> And:
+        """Return a deep copy of the And expression."""
+        return And(copy.deepcopy(self.left, memo), copy.deepcopy(self.right, memo))
+
     def __getnewargs__(self) -> tuple[BooleanExpression, BooleanExpression]:
         """Pickle the And class."""
         return (self.left, self.right)
@@ -394,6 +391,10 @@ class Or(BooleanExpression):
         # De Morgan's law: not (A or B) = (not A) and (not B)
         return And(~self.left, ~self.right)
 
+    def __deepcopy__(self, memo: dict[int, Any]) -> Or:
+        """Return a deep copy of the Or expression."""
+        return Or(copy.deepcopy(self.left, memo), copy.deepcopy(self.right, memo))
+
     def __getnewargs__(self) -> tuple[BooleanExpression, BooleanExpression]:
         """Pickle the Or class."""
         return (self.left, self.right)
@@ -435,6 +436,10 @@ class Not(BooleanExpression):
     def __invert__(self) -> BooleanExpression:
         """Transform the Expression into its negated version."""
         return self.child
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> Not:
+        """Return a deep copy of the Not expression."""
+        return Not(copy.deepcopy(self.child, memo))
 
     def __getnewargs__(self) -> tuple[BooleanExpression]:
         """Pickle the Not class."""
