@@ -48,9 +48,13 @@ from pyiceberg.catalog.hive import (
     DO_NOT_UPDATE_STATS_DEFAULT,
     HIVE_KERBEROS_AUTH,
     HIVE_KERBEROS_SERVICE_NAME,
+    HIVE_LOCK_ENABLED,
     LOCK_CHECK_MAX_WAIT_TIME,
     LOCK_CHECK_MIN_WAIT_TIME,
     LOCK_CHECK_RETRIES,
+    NO_LOCK_EXPECTED_KEY,
+    NO_LOCK_EXPECTED_VALUE,
+    PROP_METADATA_LOCATION,
     HiveCatalog,
     _construct_hive_storage_descriptor,
     _HiveClient,
@@ -1407,3 +1411,205 @@ def test_create_hive_client_with_kerberos_using_context_manager(
         # closing and re-opening work as expected.
         with client as open_client:
             assert open_client._iprot.trans.isOpen()
+
+
+def test_hive_lock_enabled_defaults_to_true() -> None:
+    """Without any lock property set, locking should be enabled (backward compatible)."""
+    assert HiveCatalog._hive_lock_enabled(table_properties={}, catalog_properties={}) is True
+
+
+def test_hive_lock_enabled_table_property_disables_lock() -> None:
+    """Table property engine.hive.lock-enabled=false disables locking."""
+    table_props = {HIVE_LOCK_ENABLED: "false"}
+    assert HiveCatalog._hive_lock_enabled(table_properties=table_props, catalog_properties={}) is False
+
+
+def test_hive_lock_enabled_catalog_property_disables_lock() -> None:
+    """Catalog property engine.hive.lock-enabled=false disables locking when table doesn't set it."""
+    catalog_props = {HIVE_LOCK_ENABLED: "false"}
+    assert HiveCatalog._hive_lock_enabled(table_properties={}, catalog_properties=catalog_props) is False
+
+
+def test_hive_lock_enabled_table_property_overrides_catalog() -> None:
+    """Table property takes precedence over catalog property."""
+    table_props = {HIVE_LOCK_ENABLED: "true"}
+    catalog_props = {HIVE_LOCK_ENABLED: "false"}
+    assert HiveCatalog._hive_lock_enabled(table_properties=table_props, catalog_properties=catalog_props) is True
+
+    table_props = {HIVE_LOCK_ENABLED: "false"}
+    catalog_props = {HIVE_LOCK_ENABLED: "true"}
+    assert HiveCatalog._hive_lock_enabled(table_properties=table_props, catalog_properties=catalog_props) is False
+
+
+def test_commit_table_skips_locking_when_table_property_disables_it() -> None:
+    """When table property engine.hive.lock-enabled=false, commit_table must not lock/unlock."""
+    prop = {"uri": HIVE_METASTORE_FAKE_URL}
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, **prop)
+    catalog._client = MagicMock()
+
+    mock_table = MagicMock()
+    mock_table.name.return_value = ("default", "my_table")
+    mock_table.properties = {HIVE_LOCK_ENABLED: "false"}
+
+    mock_do_commit = MagicMock()
+    mock_do_commit.return_value = MagicMock()
+
+    with patch.object(catalog, "_do_commit", mock_do_commit):
+        catalog.commit_table(mock_table, requirements=(), updates=())
+
+    mock_do_commit.assert_called_once()
+    _, kwargs = mock_do_commit.call_args
+    assert kwargs["lock_enabled"] is False
+    catalog._client.__enter__().lock.assert_not_called()
+    catalog._client.__enter__().check_lock.assert_not_called()
+    catalog._client.__enter__().unlock.assert_not_called()
+
+
+def test_commit_table_skips_locking_when_catalog_property_disables_it() -> None:
+    """When catalog property engine.hive.lock-enabled=false, commit_table must not lock/unlock."""
+    prop = {"uri": HIVE_METASTORE_FAKE_URL, HIVE_LOCK_ENABLED: "false"}
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, **prop)
+    catalog._client = MagicMock()
+
+    mock_table = MagicMock()
+    mock_table.name.return_value = ("default", "my_table")
+    mock_table.properties = {}
+
+    mock_do_commit = MagicMock()
+    mock_do_commit.return_value = MagicMock()
+
+    with patch.object(catalog, "_do_commit", mock_do_commit):
+        catalog.commit_table(mock_table, requirements=(), updates=())
+
+    mock_do_commit.assert_called_once()
+    catalog._client.__enter__().lock.assert_not_called()
+    catalog._client.__enter__().check_lock.assert_not_called()
+    catalog._client.__enter__().unlock.assert_not_called()
+
+
+def test_commit_table_uses_locking_by_default() -> None:
+    """When no lock property is set, commit_table must acquire and release a lock."""
+    lockid = 99999
+    prop = {"uri": HIVE_METASTORE_FAKE_URL}
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, **prop)
+
+    mock_client = MagicMock()
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+    mock_client.lock.return_value = LockResponse(lockid=lockid, state=LockState.ACQUIRED)
+    catalog._client = mock_client
+
+    mock_table = MagicMock()
+    mock_table.name.return_value = ("default", "my_table")
+    mock_table.properties = {}
+
+    mock_do_commit = MagicMock()
+    mock_do_commit.return_value = MagicMock()
+
+    with patch.object(catalog, "_do_commit", mock_do_commit):
+        catalog.commit_table(mock_table, requirements=(), updates=())
+
+    mock_client.lock.assert_called_once()
+    mock_client.unlock.assert_called_once()
+    mock_do_commit.assert_called_once()
+    _, kwargs = mock_do_commit.call_args
+    assert kwargs["lock_enabled"] is True
+
+
+def test_do_commit_env_context_includes_expected_params_when_lock_disabled() -> None:
+    """When lock_enabled=False, alter_table_with_environment_context must include
+    expected_parameter_key and expected_parameter_value for optimistic concurrency."""
+    prop = {"uri": HIVE_METASTORE_FAKE_URL}
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, **prop)
+
+    current_metadata_location = "s3://bucket/db/table/metadata/v1.metadata.json"
+
+    mock_client = MagicMock()
+    mock_hive_table = MagicMock()
+    mock_hive_table.parameters = {
+        "table_type": "ICEBERG",
+        "metadata_location": current_metadata_location,
+    }
+    mock_client.get_table.return_value = mock_hive_table
+
+    with (
+        patch.object(catalog, "_convert_hive_into_iceberg") as mock_convert,
+        patch.object(catalog, "_update_and_stage_table") as mock_stage,
+        patch.object(catalog, "_write_metadata"),
+        patch.object(catalog, "_convert_iceberg_into_hive"),
+        patch("pyiceberg.catalog.hive.CommitTableResponse"),
+    ):
+        mock_current_table = MagicMock()
+        mock_current_table.metadata_location = current_metadata_location
+        mock_current_table.metadata = MagicMock()
+        mock_current_table.properties = {}
+        mock_convert.return_value = mock_current_table
+
+        mock_staged = MagicMock()
+        mock_staged.metadata = MagicMock()
+        mock_staged.properties = {}
+        mock_stage.return_value = mock_staged
+
+        catalog._do_commit(
+            mock_client,
+            ("default", "my_table"),
+            "default",
+            "my_table",
+            requirements=(),
+            updates=(),
+            lock_enabled=False,
+        )
+
+    mock_client.alter_table_with_environment_context.assert_called_once()
+    env_ctx = mock_client.alter_table_with_environment_context.call_args[1]["environment_context"]
+    assert env_ctx.properties[NO_LOCK_EXPECTED_KEY] == PROP_METADATA_LOCATION
+    assert env_ctx.properties[NO_LOCK_EXPECTED_VALUE] == current_metadata_location
+    assert env_ctx.properties[DO_NOT_UPDATE_STATS] == DO_NOT_UPDATE_STATS_DEFAULT
+
+
+def test_do_commit_env_context_excludes_expected_params_when_lock_enabled() -> None:
+    """When lock_enabled=True (default), alter_table_with_environment_context must NOT include
+    expected_parameter_key or expected_parameter_value."""
+    prop = {"uri": HIVE_METASTORE_FAKE_URL}
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, **prop)
+
+    mock_client = MagicMock()
+    mock_hive_table = MagicMock()
+    mock_hive_table.parameters = {
+        "table_type": "ICEBERG",
+        "metadata_location": "s3://bucket/db/table/metadata/v1.metadata.json",
+    }
+    mock_client.get_table.return_value = mock_hive_table
+
+    with (
+        patch.object(catalog, "_convert_hive_into_iceberg") as mock_convert,
+        patch.object(catalog, "_update_and_stage_table") as mock_stage,
+        patch.object(catalog, "_write_metadata"),
+        patch.object(catalog, "_convert_iceberg_into_hive"),
+        patch("pyiceberg.catalog.hive.CommitTableResponse"),
+    ):
+        mock_current_table = MagicMock()
+        mock_current_table.metadata = MagicMock()
+        mock_current_table.properties = {}
+        mock_convert.return_value = mock_current_table
+
+        mock_staged = MagicMock()
+        mock_staged.metadata = MagicMock()
+        mock_staged.properties = {}
+        mock_stage.return_value = mock_staged
+
+        catalog._do_commit(
+            mock_client,
+            ("default", "my_table"),
+            "default",
+            "my_table",
+            requirements=(),
+            updates=(),
+            lock_enabled=True,
+        )
+
+    mock_client.alter_table_with_environment_context.assert_called_once()
+    env_ctx = mock_client.alter_table_with_environment_context.call_args[1]["environment_context"]
+    assert NO_LOCK_EXPECTED_KEY not in env_ctx.properties
+    assert NO_LOCK_EXPECTED_VALUE not in env_ctx.properties
+    assert env_ctx.properties[DO_NOT_UPDATE_STATS] == DO_NOT_UPDATE_STATS_DEFAULT
