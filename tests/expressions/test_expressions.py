@@ -1293,9 +1293,6 @@ def test_bind_ambiguous_name() -> None:
     assert "Invalid schema, multiple fields for name foo.bar: 2 and 3" in str(exc_info)
 
 
-# --- deepcopy tests ---
-
-
 def test_deepcopy_and() -> None:
     expr = And(EqualTo("x", 1), EqualTo("y", 2))
     copied = copy.deepcopy(expr)
