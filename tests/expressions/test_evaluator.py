@@ -41,7 +41,14 @@ from pyiceberg.expressions import (
     Or,
     StartsWith,
 )
-from pyiceberg.expressions.visitors import _InclusiveMetricsEvaluator, _StrictMetricsEvaluator
+from pyiceberg.expressions.visitors import (
+    ROWS_CANNOT_MATCH,
+    ROWS_MIGHT_MATCH,
+    ROWS_MIGHT_NOT_MATCH,
+    ROWS_MUST_MATCH,
+    _InclusiveMetricsEvaluator,
+    _StrictMetricsEvaluator,
+)
 from pyiceberg.manifest import DataFile, FileFormat
 from pyiceberg.schema import Schema
 from pyiceberg.typedef import Record
@@ -1466,44 +1473,85 @@ def test_strict_integer_not_in(strict_data_file_schema: Schema, strict_data_file
     assert not should_read, "Should not match: no_nulls field does not have bounds"
 
 
-def test_inclusive_metrics_evaluator_with_type_promotion_crash() -> None:
-    # Schema defines 'id' as LongType (evolved state)
-    schema = Schema(NestedField(1, "id", LongType(), required=True))
+@pytest.mark.parametrize(
+    "file_type, evolved_type, lower_bound, upper_bound, op, lit, expected",
+    [
+        # Int -> Long
+        (IntegerType(), LongType(), 30, 79, GreaterThan, 100, ROWS_CANNOT_MATCH),
+        (IntegerType(), LongType(), 30, 79, LessThan, 50, ROWS_MIGHT_MATCH),
+        # Float -> Double
+        (FloatType(), DoubleType(), 30.0, 79.0, GreaterThan, 100.0, ROWS_CANNOT_MATCH),
+        (FloatType(), DoubleType(), 30.0, 79.0, LessThan, 50.0, ROWS_MIGHT_MATCH),
+    ],
+)
+def test_inclusive_metrics_evaluator_with_type_promotion(
+    file_type: PrimitiveType,
+    evolved_type: PrimitiveType,
+    lower_bound: Any,
+    upper_bound: Any,
+    op: Any,
+    lit: Any,
+    expected: bool,
+) -> None:
+    # Schema defines 'col' with evolved state
+    schema = Schema(NestedField(1, "col", evolved_type, required=True))
 
-    # Historical manifest contains 4-byte integer bounds
+    # Historical manifest contains file_type bounds
     data_file = DataFile.from_args(
         file_path="file_1.parquet",
         file_format=FileFormat.PARQUET,
         partition={},
         record_count=100,
         file_size_in_bytes=1024,
-        lower_bounds={1: to_bytes(IntegerType(), 30)},
-        upper_bounds={1: to_bytes(IntegerType(), 79)},
+        lower_bounds={1: to_bytes(file_type, lower_bound)},
+        upper_bounds={1: to_bytes(file_type, upper_bound)},
     )
 
-    # Predicate: id > 100
-    # Decodes 4-byte bounds correctly and skips the file
-    evaluator_pruning = _InclusiveMetricsEvaluator(schema, GreaterThan("id", 100))
-    assert not evaluator_pruning.eval(data_file)
+    # Predicate refers to 'col'
+    evaluator = _InclusiveMetricsEvaluator(schema, op("col", lit))
+    assert evaluator.eval(data_file) == expected
 
 
-def test_inclusive_metrics_evaluator_with_float_to_double_promotion() -> None:
-    # Schema defines 'val' as DoubleType (evolved state)
-    schema = Schema(NestedField(1, "val", DoubleType(), required=True))
+@pytest.mark.parametrize(
+    "file_type, evolved_type, lower_bound, upper_bound, op, lit, expected",
+    [
+        # Int -> Long
+        (IntegerType(), LongType(), 30, 79, GreaterThan, 20, ROWS_MUST_MATCH),
+        (IntegerType(), LongType(), 30, 79, GreaterThan, 100, ROWS_MIGHT_NOT_MATCH),
+        (IntegerType(), LongType(), 30, 79, LessThan, 100, ROWS_MUST_MATCH),
+        (IntegerType(), LongType(), 30, 79, LessThan, 20, ROWS_MIGHT_NOT_MATCH),
+        # Float -> Double
+        (FloatType(), DoubleType(), 30.0, 79.0, GreaterThan, 20.0, ROWS_MUST_MATCH),
+        (FloatType(), DoubleType(), 30.0, 79.0, GreaterThan, 100.0, ROWS_MIGHT_NOT_MATCH),
+        (FloatType(), DoubleType(), 30.0, 79.0, LessThan, 100.0, ROWS_MUST_MATCH),
+        (FloatType(), DoubleType(), 30.0, 79.0, LessThan, 20.0, ROWS_MIGHT_NOT_MATCH),
+    ],
+)
+def test_strict_metrics_evaluator_with_type_promotion(
+    file_type: PrimitiveType,
+    evolved_type: PrimitiveType,
+    lower_bound: Any,
+    upper_bound: Any,
+    op: Any,
+    lit: Any,
+    expected: bool,
+) -> None:
+    # Schema defines 'col' with evolved state
+    schema = Schema(NestedField(1, "col", evolved_type, required=True))
 
-    # Historical manifest contains 4-byte float bounds
+    # Historical manifest contains file_type bounds
     data_file = DataFile.from_args(
         file_path="file_1.parquet",
         file_format=FileFormat.PARQUET,
         partition={},
         record_count=100,
         file_size_in_bytes=1024,
-        lower_bounds={1: to_bytes(FloatType(), 30.0)},
-        upper_bounds={1: to_bytes(FloatType(), 79.0)},
+        lower_bounds={1: to_bytes(file_type, lower_bound)},
+        upper_bounds={1: to_bytes(file_type, upper_bound)},
+        null_value_counts={1: 0},
+        nan_value_counts={1: 0},
     )
 
-    # Predicate: val < 50.0
-    evaluator = _InclusiveMetricsEvaluator(schema, LessThan("val", 50.0))
-
-    # Should not crash and should correctly identify that the file might match
-    assert evaluator.eval(data_file)
+    # Predicate refers to 'col'
+    evaluator = _StrictMetricsEvaluator(schema, op("col", lit))
+    assert evaluator.eval(data_file) == expected

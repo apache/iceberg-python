@@ -59,7 +59,6 @@ from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.typedef import EMPTY_DICT, L, LiteralValue, Record, StructProtocol
 from pyiceberg.types import (
-    DateType,
     DoubleType,
     FloatType,
     IcebergType,
@@ -68,7 +67,6 @@ from pyiceberg.types import (
     NestedField,
     PrimitiveType,
     StructType,
-    TimestampNanoType,
     TimestampType,
     TimestamptzType,
 )
@@ -78,13 +76,14 @@ T = TypeVar("T")
 
 
 def _from_bytes_with_promotion(field_type: PrimitiveType, b: bytes) -> Any:
+    # Integer, Float, Date are 4 bytes
+    # Long, Double, Timestamps are 8 bytes
+    # If we have 4 bytes, we may have to handle type promotion.
     if len(b) == 4:
         if isinstance(field_type, LongType):
             return from_bytes(IntegerType(), b)
         elif isinstance(field_type, DoubleType):
             return from_bytes(FloatType(), b)
-        elif isinstance(field_type, (TimestampType, TimestampNanoType)):
-            return from_bytes(DateType(), b)
     return from_bytes(field_type, b)
 
 
@@ -555,7 +554,7 @@ IN_PREDICATE_LIMIT = 200
 def _from_byte_buffer(field_type: IcebergType, val: bytes) -> Any:
     if not isinstance(field_type, PrimitiveType):
         raise ValueError(f"Expected a PrimitiveType, got: {type(field_type)}")
-    return from_bytes(field_type, val)
+    return _from_bytes_with_promotion(field_type, val)
 
 
 class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
