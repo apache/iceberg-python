@@ -45,7 +45,9 @@ from pyiceberg.types import (
     IntegerType,
     LongType,
     StringType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UUIDType,
@@ -57,10 +59,15 @@ from pyiceberg.utils.datetime import (
     days_to_date,
     micros_to_days,
     micros_to_timestamp,
+    nanos_to_days,
+    nanos_to_micros,
     time_str_to_micros,
     time_to_micros,
     timestamp_to_micros,
+    timestamp_to_nanos,
     timestamptz_to_micros,
+    timestamptz_to_nanos,
+    to_human_timestamp_ns,
 )
 from pyiceberg.utils.decimal import decimal_to_unscaled, unscaled_to_decimal
 from pyiceberg.utils.singleton import Singleton
@@ -332,6 +339,14 @@ class LongLiteral(Literal[int]):
     def _(self, _: TimestamptzType) -> Literal[int]:
         return TimestampLiteral(self.value)
 
+    @to.register(TimestampNanoType)
+    def _(self, _: TimestampNanoType) -> Literal[int]:
+        return TimestampNanoLiteral(self.value)
+
+    @to.register(TimestamptzNanoType)
+    def _(self, _: TimestamptzNanoType) -> Literal[int]:
+        return TimestampNanoLiteral(self.value)
+
     @to.register(DecimalType)
     def _(self, type_var: DecimalType) -> Literal[Decimal]:
         unscaled = Decimal(self.value)
@@ -476,9 +491,56 @@ class TimestampLiteral(Literal[int]):
     def _(self, _: TimestamptzType) -> Literal[int]:
         return self
 
+    @to.register(TimestampNanoType)
+    def _(self, _: TimestampNanoType) -> Literal[int]:
+        return TimestampNanoLiteral(self.value * 1000)
+
+    @to.register(TimestamptzNanoType)
+    def _(self, _: TimestamptzNanoType) -> Literal[int]:
+        return TimestampNanoLiteral(self.value * 1000)
+
     @to.register(DateType)
     def _(self, _: DateType) -> Literal[int]:
         return DateLiteral(micros_to_days(self.value))
+
+
+class TimestampNanoLiteral(Literal[int]):
+    def __init__(self, value: int) -> None:
+        super().__init__(value, int)
+
+    @model_serializer
+    def ser_model(self) -> str:
+        return to_human_timestamp_ns(self.root)
+
+    def increment(self) -> Literal[int]:
+        return TimestampNanoLiteral(self.value + 1)
+
+    def decrement(self) -> Literal[int]:
+        return TimestampNanoLiteral(self.value - 1)
+
+    @singledispatchmethod
+    def to(self, type_var: IcebergType) -> Literal:  # type: ignore
+        raise TypeError(f"Cannot convert TimestampNanoLiteral into {type_var}")
+
+    @to.register(TimestampNanoType)
+    def _(self, _: TimestampNanoType) -> Literal[int]:
+        return self
+
+    @to.register(TimestamptzNanoType)
+    def _(self, _: TimestamptzNanoType) -> Literal[int]:
+        return self
+
+    @to.register(TimestampType)
+    def _(self, _: TimestampType) -> Literal[int]:
+        return TimestampLiteral(nanos_to_micros(self.value))
+
+    @to.register(TimestamptzType)
+    def _(self, _: TimestamptzType) -> Literal[int]:
+        return TimestampLiteral(nanos_to_micros(self.value))
+
+    @to.register(DateType)
+    def _(self, _: DateType) -> Literal[int]:
+        return DateLiteral(nanos_to_days(self.value))
 
 
 class DecimalLiteral(Literal[Decimal]):
@@ -599,6 +661,14 @@ class StringLiteral(Literal[str]):
     @to.register(TimestamptzType)
     def _(self, _: TimestamptzType) -> Literal[int]:
         return TimestampLiteral(timestamptz_to_micros(self.value))
+
+    @to.register(TimestampNanoType)
+    def _(self, _: TimestampNanoType) -> Literal[int]:
+        return TimestampNanoLiteral(timestamp_to_nanos(self.value))
+
+    @to.register(TimestamptzNanoType)
+    def _(self, _: TimestamptzNanoType) -> Literal[int]:
+        return TimestampNanoLiteral(timestamptz_to_nanos(self.value))
 
     @to.register(UUIDType)
     def _(self, _: UUIDType) -> Literal[bytes]:

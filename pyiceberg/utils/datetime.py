@@ -218,6 +218,46 @@ def to_human_timestamp(timestamp_micros: int) -> str:
     return (EPOCH_TIMESTAMP + timedelta(microseconds=timestamp_micros)).isoformat()
 
 
+def to_human_timestamp_ns(timestamp_nanos: int) -> str:
+    """Convert a TimestampNanoType value to human string."""
+    micros = timestamp_nanos // 1000
+    nanos = timestamp_nanos % 1000
+    ts_str = (EPOCH_TIMESTAMP + timedelta(microseconds=micros)).isoformat()
+    if "." not in ts_str:
+        ts_str += ".000000"
+    return f"{ts_str}{nanos:03d}"
+
+
+def to_human_timestamptz_ns(timestamp_nanos: int) -> str:
+    """Convert a TimestamptzNanoType value to human string."""
+    micros = timestamp_nanos // 1000
+    nanos = timestamp_nanos % 1000
+    dt = EPOCH_TIMESTAMPTZ + timedelta(microseconds=micros)
+    # dt.isoformat() will look like 2023-01-01T00:00:00+00:00 or 2023-01-01T00:00:00.000000+00:00
+    ts_str = dt.isoformat()
+    if "." not in ts_str:
+        # Insert .000000 before the timezone offset
+        if "+" in ts_str:
+            parts = ts_str.split("+")
+            ts_str = f"{parts[0]}.000000{nanos:03d}+{parts[1]}"
+        else:
+            parts = ts_str.split("-")
+            # Be careful with negative years if any, but Iceberg epoch is 1970
+            # Expected format: YYYY-MM-DDTHH:MM:SS-HH:MM
+            # The last '-' is the TZ separator.
+            last_dash_idx = ts_str.rfind("-")
+            ts_str = f"{ts_str[:last_dash_idx]}.000000{nanos:03d}{ts_str[last_dash_idx:]}"
+    else:
+        # Append nanos before the timezone offset
+        if "+" in ts_str:
+            parts = ts_str.split("+")
+            ts_str = f"{parts[0]}{nanos:03d}+{parts[1]}"
+        else:
+            last_dash_idx = ts_str.rfind("-")
+            ts_str = f"{ts_str[:last_dash_idx]}{nanos:03d}{ts_str[last_dash_idx:]}"
+    return ts_str
+
+
 def micros_to_hours(micros: int) -> int:
     """Convert a timestamp in microseconds to hours from 1970-01-01T00:00."""
     return micros // 3_600_000_000
