@@ -228,8 +228,6 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
 
         # avoid copying metadata for each data file
         table_metadata = self._transaction.table_metadata
-        schema = table_metadata.schema()
-        default_spec = table_metadata.spec()
 
         partition_summary_limit = int(
             table_metadata.properties.get(
@@ -241,8 +239,8 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         for data_file in self._added_data_files:
             ssc.add_file(
                 data_file=data_file,
-                partition_spec=default_spec,
-                schema=schema,
+                partition_spec=table_metadata.spec(),
+                schema=table_metadata.schema(),
             )
 
         if len(self._deleted_data_files) > 0:
@@ -251,7 +249,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                 ssc.remove_file(
                     data_file=data_file,
                     partition_spec=specs[data_file.spec_id],
-                    schema=schema,
+                    schema=table_metadata.schema(),
                 )
 
         previous_snapshot = (
@@ -426,14 +424,12 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
                 data_file=entry.data_file,
             )
 
-        # avoid copying metadata for each evaluator
-        table_metadata = self._transaction.table_metadata
-        schema = table_metadata.schema()
-
         manifest_evaluators: dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
-        strict_metrics_evaluator = _StrictMetricsEvaluator(schema, self._predicate, case_sensitive=self._case_sensitive).eval
+        strict_metrics_evaluator = _StrictMetricsEvaluator(
+            self.schema(), self._predicate, case_sensitive=self._case_sensitive
+        ).eval
         inclusive_metrics_evaluator = _InclusiveMetricsEvaluator(
-            schema, self._predicate, case_sensitive=self._case_sensitive
+            self.schema(), self._predicate, case_sensitive=self._case_sensitive
         ).eval
 
         existing_manifests = []
@@ -445,7 +441,7 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         # Should be the current tip of the _target_branch
         parent_snapshot_id_for_delete_source = self._parent_snapshot_id
         if parent_snapshot_id_for_delete_source is not None:
-            snapshot = table_metadata.snapshot_by_id(parent_snapshot_id_for_delete_source)
+            snapshot = self._transaction.table_metadata.snapshot_by_id(parent_snapshot_id_for_delete_source)
             if snapshot:  # Ensure snapshot is found
                 for manifest_file in snapshot.manifests(io=self._io):
                     if manifest_file.content == ManifestContent.DATA:
@@ -546,19 +542,18 @@ class _MergeAppendFiles(_FastAppendFiles):
         from pyiceberg.table import TableProperties
 
         super().__init__(operation, transaction, io, commit_uuid, snapshot_properties, branch)
-        table_properties = self._transaction.table_metadata.properties
         self._target_size_bytes = property_as_int(
-            table_properties,
+            self._transaction.table_metadata.properties,
             TableProperties.MANIFEST_TARGET_SIZE_BYTES,
             TableProperties.MANIFEST_TARGET_SIZE_BYTES_DEFAULT,
         )  # type: ignore
         self._min_count_to_merge = property_as_int(
-            table_properties,
+            self._transaction.table_metadata.properties,
             TableProperties.MANIFEST_MIN_MERGE_COUNT,
             TableProperties.MANIFEST_MIN_MERGE_COUNT_DEFAULT,
         )  # type: ignore
         self._merge_enabled = property_as_bool(
-            table_properties,
+            self._transaction.table_metadata.properties,
             TableProperties.MANIFEST_MERGE_ENABLED,
             TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
         )
