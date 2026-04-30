@@ -62,8 +62,6 @@ from pyiceberg.types import (
     DoubleType,
     FloatType,
     IcebergType,
-    IntegerType,
-    LongType,
     NestedField,
     PrimitiveType,
     StructType,
@@ -73,18 +71,6 @@ from pyiceberg.types import (
 from pyiceberg.utils.datetime import micros_to_timestamp, micros_to_timestamptz
 
 T = TypeVar("T")
-
-
-def _from_bytes_with_promotion(field_type: PrimitiveType, b: bytes) -> Any:
-    # Integer, Float, Date are 4 bytes
-    # Long, Double, Timestamps are 8 bytes
-    # If we have 4 bytes, we may have to handle type promotion.
-    if len(b) == 4:
-        if isinstance(field_type, LongType):
-            return from_bytes(IntegerType(), b)
-        elif isinstance(field_type, DoubleType):
-            return from_bytes(FloatType(), b)
-    return from_bytes(field_type, b)
 
 
 class BooleanExpressionVisitor(Generic[T], ABC):
@@ -554,7 +540,7 @@ IN_PREDICATE_LIMIT = 200
 def _from_byte_buffer(field_type: IcebergType, val: bytes) -> Any:
     if not isinstance(field_type, PrimitiveType):
         raise ValueError(f"Expected a PrimitiveType, got: {type(field_type)}")
-    return _from_bytes_with_promotion(field_type, val)
+    return from_bytes(field_type, val)
 
 
 class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
@@ -1256,7 +1242,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
             raise ValueError(f"Expected PrimitiveType: {field.field_type}")
 
         if lower_bound_bytes := self.lower_bounds.get(field_id):
-            lower_bound = _from_bytes_with_promotion(field.field_type, lower_bound_bytes)
+            lower_bound = from_bytes(field.field_type, lower_bound_bytes)
 
             if self._is_nan(lower_bound):
                 # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
@@ -1278,7 +1264,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
             raise ValueError(f"Expected PrimitiveType: {field.field_type}")
 
         if lower_bound_bytes := self.lower_bounds.get(field_id):
-            lower_bound = _from_bytes_with_promotion(field.field_type, lower_bound_bytes)
+            lower_bound = from_bytes(field.field_type, lower_bound_bytes)
             if self._is_nan(lower_bound):
                 # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
                 return ROWS_MIGHT_MATCH
@@ -1299,7 +1285,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
             raise ValueError(f"Expected PrimitiveType: {field.field_type}")
 
         if upper_bound_bytes := self.upper_bounds.get(field_id):
-            upper_bound = _from_bytes_with_promotion(field.field_type, upper_bound_bytes)
+            upper_bound = from_bytes(field.field_type, upper_bound_bytes)
             if upper_bound <= literal.value:
                 if self._is_nan(upper_bound):
                     # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
@@ -1320,7 +1306,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
             raise ValueError(f"Expected PrimitiveType: {field.field_type}")
 
         if upper_bound_bytes := self.upper_bounds.get(field_id):
-            upper_bound = _from_bytes_with_promotion(field.field_type, upper_bound_bytes)
+            upper_bound = from_bytes(field.field_type, upper_bound_bytes)
             if upper_bound < literal.value:
                 if self._is_nan(upper_bound):
                     # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
@@ -1341,7 +1327,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
             raise ValueError(f"Expected PrimitiveType: {field.field_type}")
 
         if lower_bound_bytes := self.lower_bounds.get(field_id):
-            lower_bound = _from_bytes_with_promotion(field.field_type, lower_bound_bytes)
+            lower_bound = from_bytes(field.field_type, lower_bound_bytes)
             if self._is_nan(lower_bound):
                 # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
                 return ROWS_MIGHT_MATCH
@@ -1350,7 +1336,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
                 return ROWS_CANNOT_MATCH
 
         if upper_bound_bytes := self.upper_bounds.get(field_id):
-            upper_bound = _from_bytes_with_promotion(field.field_type, upper_bound_bytes)
+            upper_bound = from_bytes(field.field_type, upper_bound_bytes)
             if self._is_nan(upper_bound):
                 # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
                 return ROWS_MIGHT_MATCH
@@ -1378,22 +1364,22 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
             raise ValueError(f"Expected PrimitiveType: {field.field_type}")
 
         if lower_bound_bytes := self.lower_bounds.get(field_id):
-            lower_bound = _from_bytes_with_promotion(field.field_type, lower_bound_bytes)
+            lower_bound = from_bytes(field.field_type, lower_bound_bytes)
             if self._is_nan(lower_bound):
                 # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
                 return ROWS_MIGHT_MATCH
 
-            literals = {lit for lit in literals if lower_bound <= lit}
+            literals = {lit for lit in literals if lower_bound <= lit}  # type: ignore[operator]
             if len(literals) == 0:
                 return ROWS_CANNOT_MATCH
 
         if upper_bound_bytes := self.upper_bounds.get(field_id):
-            upper_bound = _from_bytes_with_promotion(field.field_type, upper_bound_bytes)
+            upper_bound = from_bytes(field.field_type, upper_bound_bytes)
             # this is different from Java, here NaN is always larger
             if self._is_nan(upper_bound):
                 return ROWS_MIGHT_MATCH
 
-            literals = {lit for lit in literals if upper_bound >= lit}
+            literals = {lit for lit in literals if upper_bound >= lit}  # type: ignore[operator]
             if len(literals) == 0:
                 return ROWS_CANNOT_MATCH
 
@@ -1418,14 +1404,14 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
         len_prefix = len(prefix)
 
         if lower_bound_bytes := self.lower_bounds.get(field_id):
-            lower_bound = str(_from_bytes_with_promotion(field.field_type, lower_bound_bytes))
+            lower_bound = str(from_bytes(field.field_type, lower_bound_bytes))
 
             # truncate lower bound so that its length is not greater than the length of prefix
             if lower_bound and lower_bound[:len_prefix] > prefix:
                 return ROWS_CANNOT_MATCH
 
         if upper_bound_bytes := self.upper_bounds.get(field_id):
-            upper_bound = str(_from_bytes_with_promotion(field.field_type, upper_bound_bytes))
+            upper_bound = str(from_bytes(field.field_type, upper_bound_bytes))
 
             # truncate upper bound so that its length is not greater than the length of prefix
             if upper_bound is not None and upper_bound[:len_prefix] < prefix:
@@ -1449,8 +1435,8 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
         # not_starts_with will match unless all values must start with the prefix. This happens when
         # the lower and upper bounds both start with the prefix.
         if (lower_bound_bytes := self.lower_bounds.get(field_id)) and (upper_bound_bytes := self.upper_bounds.get(field_id)):
-            lower_bound = str(_from_bytes_with_promotion(field.field_type, lower_bound_bytes))
-            upper_bound = str(_from_bytes_with_promotion(field.field_type, upper_bound_bytes))
+            lower_bound = str(from_bytes(field.field_type, lower_bound_bytes))
+            upper_bound = str(from_bytes(field.field_type, upper_bound_bytes))
 
             # if lower is shorter than the prefix then lower doesn't start with the prefix
             if len(lower_bound) < len_prefix:
