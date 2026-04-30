@@ -45,5 +45,6 @@ htmlcov
 .ipynb_checkpoints/
 
 pyiceberg/avro/decoder_fast.c
+pyiceberg/avro/encoder_fast.c
 pyiceberg/avro/*.html
 pyiceberg/avro/*.so
