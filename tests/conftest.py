@@ -3032,14 +3032,17 @@ def pyarrow_table_with_promoted_types(pyarrow_schema_with_promoted_types: "pa.Sc
 @pytest.fixture(scope="session")
 def ray_session() -> Generator[Any, None, None]:
     """Fixture to manage Ray initialization and shutdown for tests."""
+    import tempfile
+
     import ray
 
-    ray.init(
-        ignore_reinit_error=True,
-        runtime_env={"working_dir": None},  # Prevent Ray from serializing the working directory to workers
-    )
-    yield ray
-    ray.shutdown()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ray.init(
+            ignore_reinit_error=True,
+            runtime_env={"working_dir": tmpdir},
+        )
+        yield ray
+        ray.shutdown()
 
 
 # Catalog fixtures
