@@ -21,6 +21,7 @@ import uuid
 from abc import abstractmethod
 from collections import defaultdict
 from collections.abc import Callable
+from concurrent.futures import Future
 from datetime import datetime
 from functools import cached_property
 from typing import TYPE_CHECKING, Generic
@@ -176,24 +177,30 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         return manifests
 
     def _manifests(self) -> list[ManifestFile]:
-        def _write_added_manifest() -> list[ManifestFile]:
-            if self._added_data_files:
-                with self.new_manifest_writer(
-                    spec=self._transaction.table_metadata.spec(),
-                ) as writer:
-                    for data_file in self._added_data_files:
-                        writer.add(
-                            ManifestEntry.from_args(
-                                status=ManifestEntryStatus.ADDED,
-                                snapshot_id=self._snapshot_id,
-                                sequence_number=None,
-                                file_sequence_number=None,
-                                data_file=data_file,
-                            )
-                        )
-                return [writer.to_manifest_file()]
-            else:
-                return []
+        from pyiceberg.table import TableProperties
+
+        table_metadata = self._transaction.table_metadata
+        spec = table_metadata.spec()
+        target_size_bytes: int = property_as_int(
+            table_metadata.properties,
+            TableProperties.MANIFEST_TARGET_SIZE_BYTES,
+            TableProperties.MANIFEST_TARGET_SIZE_BYTES_DEFAULT,
+        )  # type: ignore
+
+        def _added_entry(data_file: DataFile) -> ManifestEntry:
+            return ManifestEntry.from_args(
+                status=ManifestEntryStatus.ADDED,
+                snapshot_id=self._snapshot_id,
+                sequence_number=None,
+                file_sequence_number=None,
+                data_file=data_file,
+            )
+
+        def _write_added_chunk(files: list[DataFile]) -> ManifestFile:
+            with self.new_manifest_writer(spec=spec) as writer:
+                for data_file in files:
+                    writer.add(_added_entry(data_file))
+            return writer.to_manifest_file()
 
         def _write_delete_manifest() -> list[ManifestFile]:
             # Check if we need to mark the files as deleted
@@ -217,11 +224,32 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
 
         executor = ExecutorFactory.get_or_create()
 
-        added_manifests = executor.submit(_write_added_manifest)
         delete_manifests = executor.submit(_write_delete_manifest)
         existing_manifests = executor.submit(self._existing_manifests)
 
-        return self._process_manifests(added_manifests.result() + delete_manifests.result() + existing_manifests.result())
+        # Roll added data files into multiple manifests sized to
+        # commit.manifest.target-size-bytes. The first manifest is written
+        # inline until it reaches the target, which yields an exact
+        # entries-per-manifest count; remaining chunks are then fanned out
+        # across the executor so one chunk's GIL-bound encode overlaps with
+        # the compress/upload of earlier chunks.
+        added_manifests: list[ManifestFile] = []
+        added_futures: list[Future[ManifestFile]] = []
+        if self._added_data_files:
+            added = self._added_data_files
+            with self.new_manifest_writer(spec=spec) as first:
+                i = 0
+                while i < len(added) and (first.tell() < target_size_bytes or i == 0):
+                    first.add(_added_entry(added[i]))
+                    i += 1
+            added_manifests.append(first.to_manifest_file())
+            chunk_size = i
+            added_futures = [
+                executor.submit(_write_added_chunk, added[j : j + chunk_size]) for j in range(i, len(added), chunk_size)
+            ]
+
+        added_manifests += [f.result() for f in added_futures]
+        return self._process_manifests(added_manifests + delete_manifests.result() + existing_manifests.result())
 
     def _summary(self, snapshot_properties: dict[str, str] = EMPTY_DICT) -> Summary:
         from pyiceberg.table import TableProperties
