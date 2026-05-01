@@ -16,38 +16,42 @@
 # under the License.
 from __future__ import annotations
 
-import io
 import struct
 import uuid
+from typing import Any
 
-from pyiceberg.avro.encoder import BinaryEncoder
+import pytest
+
+from pyiceberg.avro.decoder import new_decoder
+from pyiceberg.avro.encoder import MemoryBinaryEncoder
+
+ENCODERS: list[Any] = [MemoryBinaryEncoder]
+try:
+    from pyiceberg.avro.encoder_fast import CythonBinaryEncoder
+
+    ENCODERS.append(CythonBinaryEncoder)
+except ModuleNotFoundError:
+    pass
 
 
-def test_write() -> None:
-    output = io.BytesIO()
-    encoder = BinaryEncoder(output)
+@pytest.fixture(params=ENCODERS, ids=[c.__name__ for c in ENCODERS])
+def encoder(request: pytest.FixtureRequest) -> Any:
+    return request.param()
 
+
+def test_write(encoder: Any) -> None:
     _input = b"\x12\x34\x56"
-
     encoder.write(_input)
+    assert encoder.getvalue() == _input
 
-    assert output.getbuffer() == _input
 
-
-def test_write_boolean() -> None:
-    output = io.BytesIO()
-    encoder = BinaryEncoder(output)
-
+def test_write_boolean(encoder: Any) -> None:
     encoder.write_boolean(True)
     encoder.write_boolean(False)
+    assert encoder.getvalue() == struct.pack("??", True, False)
 
-    assert output.getbuffer() == struct.pack("??", True, False)
 
-
-def test_write_int() -> None:
-    output = io.BytesIO()
-    encoder = BinaryEncoder(output)
-
+def test_write_int(encoder: Any) -> None:
     _1byte_input = 2
     _2byte_input = 7466
     _3byte_input = 523490
@@ -66,7 +70,7 @@ def test_write_int() -> None:
     encoder.write_int(_7byte_input)
     encoder.write_int(_8byte_input)
 
-    buffer = output.getbuffer()
+    buffer = encoder.getvalue()
 
     assert buffer[0:1] == b"\x04"
     assert buffer[1:3] == b"\xd4\x74"
@@ -78,57 +82,64 @@ def test_write_int() -> None:
     assert buffer[28:36] == b"\xc4\xa0\xb2\xae\x83\xf8\xe4\x7c"
 
 
-def test_write_float() -> None:
-    output = io.BytesIO()
-    encoder = BinaryEncoder(output)
-
+def test_write_float(encoder: Any) -> None:
     _input = 3.14159265359
-
     encoder.write_float(_input)
+    assert encoder.getvalue() == struct.pack("<f", _input)
 
-    assert output.getbuffer() == struct.pack("<f", _input)
 
-
-def test_write_double() -> None:
-    output = io.BytesIO()
-    encoder = BinaryEncoder(output)
-
+def test_write_double(encoder: Any) -> None:
     _input = 3.14159265359
-
     encoder.write_double(_input)
+    assert encoder.getvalue() == struct.pack("<d", _input)
 
-    assert output.getbuffer() == struct.pack("<d", _input)
 
-
-def test_write_bytes() -> None:
-    output = io.BytesIO()
-    encoder = BinaryEncoder(output)
-
+def test_write_bytes(encoder: Any) -> None:
     _input = b"\x12\x34\x56"
-
     encoder.write_bytes(_input)
+    assert encoder.getvalue() == b"".join([b"\x06", _input])
 
-    assert output.getbuffer() == b"".join([b"\x06", _input])
 
-
-def test_write_utf8() -> None:
-    output = io.BytesIO()
-    encoder = BinaryEncoder(output)
-
+def test_write_utf8(encoder: Any) -> None:
     _input = "That, my liege, is how we know the Earth to be banana-shaped."
     bin_input = _input.encode()
     encoder.write_utf8(_input)
+    assert encoder.getvalue() == b"".join([b"\x7a", bin_input])
 
-    assert output.getbuffer() == b"".join([b"\x7a", bin_input])
 
-
-def test_write_uuid() -> None:
-    output = io.BytesIO()
-    encoder = BinaryEncoder(output)
-
+def test_write_uuid(encoder: Any) -> None:
     _input = uuid.UUID("12345678-1234-5678-1234-567812345678")
     encoder.write_uuid(_input)
-
-    buf = output.getbuffer()
+    buf = encoder.getvalue()
     assert len(buf) == 16
-    assert buf.tobytes() == b"\x124Vx\x124Vx\x124Vx\x124Vx"
+    assert buf == b"\x124Vx\x124Vx\x124Vx\x124Vx"
+
+
+@pytest.mark.parametrize(
+    "v",
+    [0, 1, -1, 63, 64, -64, -65, 127, 128, -128, 2**31 - 1, -(2**31), 2**62, -(2**62), 2**63 - 1, -(2**63)],
+)
+def test_int_round_trip(encoder: Any, v: int) -> None:
+    encoder.write_int(v)
+    decoder = new_decoder(encoder.getvalue())
+    assert decoder.read_int() == v
+
+
+def test_encoders_byte_identical() -> None:
+    """Both encoder implementations must produce identical output."""
+    if len(ENCODERS) < 2:
+        pytest.skip("Cython encoder not built")
+
+    def fill(enc: Any) -> bytes:
+        enc.write_boolean(True)
+        for v in [0, 1, -1, 7466, -523490, 2**62, -(2**62)]:
+            enc.write_int(v)
+        enc.write_float(1.5)
+        enc.write_double(3.14159265359)
+        enc.write_bytes(b"\x00\xff" * 50)
+        enc.write_utf8("hello ☃ snowman")
+        enc.write_uuid(uuid.UUID("12345678-1234-5678-1234-567812345678"))
+        return enc.getvalue()
+
+    outputs = [fill(cls()) for cls in ENCODERS]
+    assert outputs[0] == outputs[1]

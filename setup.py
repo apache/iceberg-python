@@ -59,7 +59,13 @@ try:
             [os.path.join(package_path, "avro", "decoder_fast.pyx")],
             extra_compile_args=extra_compile_args,
             language="c",
-        )
+        ),
+        Extension(
+            "pyiceberg.avro.encoder_fast",
+            [os.path.join(package_path, "avro", "encoder_fast.pyx")],
+            extra_compile_args=extra_compile_args,
+            language="c",
+        ),
     ]
 
     ext_modules = cythonize(
