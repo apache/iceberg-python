@@ -239,6 +239,38 @@ def test_equality_delete_sequence_number_filtering() -> None:
     assert len(index.for_data_file(3, data_file)) == 0
 
 
+def test_equality_delete_sequence_number_unpartitioned() -> None:
+    data_file = _create_data_file()
+
+    # Create both types of deletes at sequence number 10
+    pos_delete = _create_positional_delete(sequence_number=10)
+    eq_delete = _create_equality_delete(sequence_number=10)
+
+    index = DeleteFileIndex()
+    index.add_delete_file(pos_delete)
+    index.add_delete_file(eq_delete)
+
+    # Sequence 10
+    deletes = index.for_data_file(10, data_file)
+    assert len(deletes) == 1
+    # Position deletes will apply (applies to seq <= 10)
+    assert pos_delete.data_file in deletes
+    # Equality deletes will not (applies to seq < 10)
+    assert eq_delete.data_file not in deletes
+
+    # Sequence 9
+    # Both deletes will apply.
+    deletes = index.for_data_file(9, data_file)
+    assert len(deletes) == 2
+    assert pos_delete.data_file in deletes
+    assert eq_delete.data_file in deletes
+
+    # At sequence 111
+    # Neither should apply.
+    deletes = index.for_data_file(11, data_file)
+    assert len(deletes) == 0
+
+
 def test_global_equality_deletes() -> None:
     index = DeleteFileIndex()
 

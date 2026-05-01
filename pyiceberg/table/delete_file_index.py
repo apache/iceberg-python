@@ -153,16 +153,10 @@ class DeleteFileIndex:
         self._schema = schema
         self._by_partition: dict[tuple[int, Record], PositionDeletes] = {}
         self._by_path: dict[str, PositionDeletes] = {}
-        self._eq_by_partition: dict[tuple[int, Record], EqualityDeletes] = {}
-        self._global_eq_deletes: EqualityDeletes = EqualityDeletes()
+        self._eq_deletes: dict[tuple[int, Record] | None, EqualityDeletes] = {}
 
     def is_empty(self) -> bool:
-        return (
-            not self._by_partition
-            and not self._by_path
-            and not self._eq_by_partition
-            and not self._global_eq_deletes.referenced_delete_files()
-        )
+        return not self._by_partition and not self._by_path and not self._eq_deletes
 
     def add_delete_file(self, manifest_entry: ManifestEntry, partition_key: Record | None = None) -> None:
         delete_file = manifest_entry.data_file
@@ -178,12 +172,9 @@ class DeleteFileIndex:
                 deletes = self._by_partition.setdefault(key, PositionDeletes())
                 deletes.add(delete_file, seq)
         elif delete_file.content == DataFileContent.EQUALITY_DELETES:
-            if partition_key is None or len(partition_key) == 0:
-                self._global_eq_deletes.add(delete_file, seq)
-            else:
-                key = _partition_key(delete_file.spec_id or 0, partition_key)
-                deletes = self._eq_by_partition.setdefault(key, EqualityDeletes())
-                deletes.add(delete_file, seq)
+            eq_key = _partition_key(delete_file.spec_id or 0, partition_key) if partition_key else None
+            deletes = self._eq_deletes.setdefault(eq_key, EqualityDeletes())
+            deletes.add(delete_file, seq)
 
     def for_data_file(self, seq_num: int, data_file: DataFile, partition_key: Record | None = None) -> set[DataFile]:
         if self.is_empty():
@@ -206,11 +197,13 @@ class DeleteFileIndex:
 
         # Add equality deletes
         candidate_eq_deletes: list[DataFile] = []
-        partition_eq_deletes = self._eq_by_partition.get(key)
+        partition_eq_deletes = self._eq_deletes.get(key)
         if partition_eq_deletes:
             candidate_eq_deletes.extend(partition_eq_deletes.filter_by_seq(seq_num))
 
-        candidate_eq_deletes.extend(self._global_eq_deletes.filter_by_seq(seq_num))
+        global_eq_deletes = self._eq_deletes.get(None)
+        if global_eq_deletes:
+            candidate_eq_deletes.extend(global_eq_deletes.filter_by_seq(seq_num))
 
         for eq_delete_file in candidate_eq_deletes:
             if self._schema and not _eq_applies_to_data_file(eq_delete_file, data_file, self._schema):
@@ -228,9 +221,7 @@ class DeleteFileIndex:
         for deletes in self._by_path.values():
             data_files.extend(deletes.referenced_delete_files())
 
-        for deletes in self._eq_by_partition.values():
+        for deletes in self._eq_deletes.values():
             data_files.extend(deletes.referenced_delete_files())
-
-        data_files.extend(self._global_eq_deletes.referenced_delete_files())
 
         return data_files
