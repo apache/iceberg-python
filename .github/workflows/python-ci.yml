@@ -97,8 +97,6 @@ jobs:
       run: make install
     - name: Run integration tests with coverage
       run: COVERAGE=1 make test-integration
-      env:
-        RAY_ENABLE_UV_RUN_RUNTIME_ENV: "0"
     - name: Show debug logs
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose-integration.yml logs
