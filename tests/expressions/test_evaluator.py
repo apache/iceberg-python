@@ -1484,7 +1484,7 @@ def test_strict_integer_not_in(strict_data_file_schema: Schema, strict_data_file
         (FloatType(), DoubleType(), 30.0, 79.0, LessThan, 50.0, ROWS_MIGHT_MATCH),
     ],
 )
-def test_inclusive_metrics_evaluator_with_type_promotion(
+def test_inclusive_metrics_eval_bounds_after_promotion(
     file_type: PrimitiveType,
     evolved_type: PrimitiveType,
     lower_bound: Any,
@@ -1493,10 +1493,8 @@ def test_inclusive_metrics_evaluator_with_type_promotion(
     lit: Any,
     expected: bool,
 ) -> None:
-    # Schema defines 'col' with evolved state
     schema = Schema(NestedField(1, "col", evolved_type, required=True))
 
-    # Historical manifest contains file_type bounds
     data_file = DataFile.from_args(
         file_path="file_1.parquet",
         file_format=FileFormat.PARQUET,
@@ -1507,7 +1505,6 @@ def test_inclusive_metrics_evaluator_with_type_promotion(
         upper_bounds={1: to_bytes(file_type, upper_bound)},
     )
 
-    # Predicate refers to 'col'
     evaluator = _InclusiveMetricsEvaluator(schema, op("col", lit))
     assert evaluator.eval(data_file) == expected
 
@@ -1527,7 +1524,7 @@ def test_inclusive_metrics_evaluator_with_type_promotion(
         (FloatType(), DoubleType(), 30.0, 79.0, LessThan, 20.0, ROWS_MIGHT_NOT_MATCH),
     ],
 )
-def test_strict_metrics_evaluator_with_type_promotion(
+def test_strict_metrics_eval_bounds_after_promotion(
     file_type: PrimitiveType,
     evolved_type: PrimitiveType,
     lower_bound: Any,
@@ -1536,10 +1533,8 @@ def test_strict_metrics_evaluator_with_type_promotion(
     lit: Any,
     expected: bool,
 ) -> None:
-    # Schema defines 'col' with evolved state
     schema = Schema(NestedField(1, "col", evolved_type, required=True))
 
-    # Historical manifest contains file_type bounds
     data_file = DataFile.from_args(
         file_path="file_1.parquet",
         file_format=FileFormat.PARQUET,
@@ -1552,6 +1547,5 @@ def test_strict_metrics_evaluator_with_type_promotion(
         nan_value_counts={1: 0},
     )
 
-    # Predicate refers to 'col'
     evaluator = _StrictMetricsEvaluator(schema, op("col", lit))
     assert evaluator.eval(data_file) == expected
