@@ -115,7 +115,7 @@ test-integration-setup: install ## Start Docker services for integration tests
 	uv run $(PYTHON_ARG) python dev/provision.py
 
 test-integration-exec: ## Run integration tests (excluding provision)
-	RAY_ENABLE_UV_RUN_RUNTIME_ENV=0 $(TEST_RUNNER) pytest tests/ -m integration $(PYTEST_ARGS)
+	$(TEST_RUNNER) pytest tests/ -m integration $(PYTEST_ARGS)
 
 test-integration-cleanup: ## Clean up integration test environment
 	@if [ "${KEEP_COMPOSE}" != "1" ]; then \

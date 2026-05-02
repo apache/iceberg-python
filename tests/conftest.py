@@ -3029,6 +3029,10 @@ def pyarrow_table_with_promoted_types(pyarrow_schema_with_promoted_types: "pa.Sc
     )
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    os.environ["RAY_ENABLE_UV_RUN_RUNTIME_ENV"] = "0"
+
+
 @pytest.fixture(scope="session")
 def ray_session() -> Generator[Any, None, None]:
     """Fixture to manage Ray initialization and shutdown for tests."""
