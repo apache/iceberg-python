@@ -88,24 +88,24 @@ For full control over your environment, you can use uv commands directly. See th
 - Managing dependencies with `uv add` and `uv remove`
 - Python version management with `uv python`
 - Running commands with `uv run`
-- Lock file management with `uv.lock`
+- Lock file management with `uv lock`
 
 ### Lock File Management
 
-`uv.lock` is a cross-platform lockfile that contains exact information about the project's dependencies.
-See the [uv.lock documentation](https://docs.astral.sh/uv/guides/projects/#uvlock) for more details.
+`uv.lock` is a cross-platform lockfile that contains the exact versions of all project dependencies. See the [uv.lock documentation](https://docs.astral.sh/uv/guides/projects/#uvlock) for more details.
 
-When modifying dependencies in `pyproject.toml`, regenerate the lock file:
+**Automatic lock file management:**
+When you commit changes to `pyproject.toml` or dependencies, the [`uv-pre-commit`](https://github.com/astral-sh/uv-pre-commit) pre-commit hook will automatically update `uv.lock` if needed. If the lockfile changes, your commit will be stopped and you will be prompted to add the updated `uv.lock` to your commit.
 
-```bash
-make uv-lock
-```
-
-Separately, to verify that the lock file is up to date without modifying it:
+**Manual update:**
+If you want to update the lockfile yourself (for example, after editing `pyproject.toml`), run:
 
 ```bash
-make uv-lock-check
+uv lock
 ```
+
+**CI enforcement:**
+Our continuous integration (CI) system checks that `uv.lock` is up to date with `pyproject.toml` on every pull request or push. If they are out of sync, the CI build will fail. This ensures that dependencies are always consistent and up to date for all contributors.
 
 ## Installation from source
 

@@ -14,6 +14,13 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+.PHONY: help install install-uv check-license lint \
+        test test-integration test-integration-setup test-integration-exec test-integration-cleanup test-integration-rebuild \
+        test-s3 test-adls test-gcs test-coverage coverage-report \
+        docs-serve docs-build notebook notebook-infra \
+        clean
+
+.DEFAULT_GOAL := help
 # ========================
 # Configuration Variables
 # ========================
@@ -66,16 +73,17 @@ install-uv: ## Ensure uv is installed
 		echo "uv is already installed."; \
 	fi
 
-setup-venv: ## Create virtual environment
-	uv venv $(PYTHON_ARG)
-
-install-dependencies: setup-venv ## Install all dependencies including extras
-	uv sync $(PYTHON_ARG) --all-extras --reinstall
-
-install-hooks: ## Install pre-commit hooks
-	uv run $(PYTHON_ARG) prek install
-
-install: install-uv install-dependencies install-hooks ## Install uv, dependencies, and pre-commit hooks
+install: install-uv ## Install uv, dependencies, and pre-commit hooks
+	uv sync $(PYTHON_ARG) --all-extras
+	@# Reinstall pyiceberg if Cython extensions (.so) are missing after `make clean` (see #2869)
+	@if ! find pyiceberg -name "*.so" 2>/dev/null | grep -q .; then \
+		echo "Cython extensions not found, reinstalling pyiceberg..."; \
+		uv sync $(PYTHON_ARG) --all-extras --reinstall-package pyiceberg; \
+	fi
+	@# Install pre-commit hooks (skipped outside git repo, e.g. release tarballs)
+	@if [ -d .git ]; then \
+		uv run $(PYTHON_ARG) prek install; \
+	fi
 
 # ===============
 # Code Validation
@@ -132,8 +140,9 @@ test-gcs: ## Run tests marked with @pytest.mark.gcs
 	sh ./dev/run-gcs-server.sh
 	$(TEST_RUNNER) pytest tests/ -m gcs $(PYTEST_ARGS)
 
-test-coverage: COVERAGE=1
-test-coverage: test test-integration test-s3 test-adls test-gcs coverage-report ## Run all tests with coverage and report
+test-coverage: ## Run all tests with coverage and report
+	$(MAKE) COVERAGE=1 test test-integration test-s3 test-adls test-gcs
+	$(MAKE) coverage-report
 
 coverage-report: ## Combine and report coverage
 	uv run $(PYTHON_ARG) coverage combine
@@ -147,14 +156,11 @@ coverage-report: ## Combine and report coverage
 
 ##@ Documentation
 
-docs-install: ## Install docs dependencies (included in default groups)
-	uv sync $(PYTHON_ARG) --group docs
-
 docs-serve: ## Serve local docs preview (hot reload)
-	uv run $(PYTHON_ARG) mkdocs serve -f mkdocs/mkdocs.yml --livereload
+	uv run $(PYTHON_ARG) --group docs mkdocs serve -f mkdocs/mkdocs.yml --livereload
 
 docs-build: ## Build the static documentation site
-	uv run $(PYTHON_ARG) mkdocs build -f mkdocs/mkdocs.yml --strict
+	uv run $(PYTHON_ARG) --group docs mkdocs build -f mkdocs/mkdocs.yml --strict
 
 # ========================
 # Experimentation
@@ -162,14 +168,11 @@ docs-build: ## Build the static documentation site
 
 ##@ Experimentation
 
-notebook-install: ## Install notebook dependencies
-	uv sync $(PYTHON_ARG) --all-extras --group notebook
+notebook: ## Launch notebook for experimentation
+	uv run $(PYTHON_ARG) --all-extras --group notebook jupyter lab --notebook-dir=notebooks
 
-notebook: notebook-install ## Launch notebook for experimentation
-	uv run jupyter lab --notebook-dir=notebooks
-
-notebook-infra: notebook-install test-integration-setup ## Launch notebook with integration test infra (Spark, Iceberg Rest Catalog, object storage, etc.)
-	uv run jupyter lab --notebook-dir=notebooks
+notebook-infra: test-integration-setup ## Launch notebook with integration test infra (Spark, Iceberg Rest Catalog, object storage, etc.)
+	uv run $(PYTHON_ARG) --all-extras --group notebook jupyter lab --notebook-dir=notebooks
 
 # ===================
 # Project Maintenance
@@ -187,12 +190,6 @@ clean: ## Remove build artifacts and caches
 	@find . -name "*.pyo" -exec echo Deleting {} \; -delete
 	@echo "Cleaning up Jupyter notebook checkpoints..."
 	@find . -name ".ipynb_checkpoints" -exec echo Deleting {} \; -exec rm -rf {} +
+	@echo "Cleaning up coverage files..."
+	@rm -rf .coverage .coverage.* htmlcov/ coverage.xml
 	@echo "Cleanup complete."
-
-uv-lock: ## Regenerate uv.lock file from pyproject.toml
-	uv lock $(PYTHON_ARG)
-
-uv-lock-check: ## Verify uv.lock is up to date
-	@command -v uv >/dev/null || \
-	  (echo "uv is required. Run 'make install' or 'make install-uv' first." && exit 1)
-	uv lock --check $(PYTHON_ARG)

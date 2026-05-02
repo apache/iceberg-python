@@ -14,8 +14,10 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
+
 import json
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any
 
 from google.api_core.exceptions import NotFound
 from google.cloud.bigquery import Client, Dataset, DatasetReference, TableReference
@@ -101,7 +103,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
     def create_table(
         self,
         identifier: str | Identifier,
-        schema: Union[Schema, "pa.Schema"],
+        schema: Schema | pa.Schema,
         location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -272,7 +274,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         """Register a new table using existing metadata.
 
         Args:
-            identifier (Union[str, Identifier]): Table identifier for the table
+            identifier (str | Identifier): Table identifier for the table
             metadata_location (str): The location to the metadata
 
         Returns:

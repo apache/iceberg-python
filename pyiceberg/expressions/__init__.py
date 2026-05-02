@@ -690,12 +690,14 @@ class SetPredicate(UnboundPredicate, ABC):
     def __str__(self) -> str:
         """Return the string representation of the SetPredicate class."""
         # Sort to make it deterministic
-        return f"{str(self.__class__.__name__)}({str(self.term)}, {{{', '.join(sorted([str(literal) for literal in self.literals]))}}})"
+        literals_str = ", ".join(sorted([str(literal) for literal in self.literals]))
+        return f"{str(self.__class__.__name__)}({str(self.term)}, {{{literals_str}}})"
 
     def __repr__(self) -> str:
         """Return the string representation of the SetPredicate class."""
         # Sort to make it deterministic
-        return f"{str(self.__class__.__name__)}({repr(self.term)}, {{{', '.join(sorted([repr(literal) for literal in self.literals]))}}})"
+        literals_repr = ", ".join(sorted([repr(literal) for literal in self.literals]))
+        return f"{str(self.__class__.__name__)}({repr(self.term)}, {{{literals_repr}}})"
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the SetPredicate class."""
@@ -725,12 +727,14 @@ class BoundSetPredicate(BoundPredicate, ABC):
     def __str__(self) -> str:
         """Return the string representation of the BoundSetPredicate class."""
         # Sort to make it deterministic
-        return f"{str(self.__class__.__name__)}({str(self.term)}, {{{', '.join(sorted([str(literal) for literal in self.literals]))}}})"
+        literals_str = ", ".join(sorted([str(literal) for literal in self.literals]))
+        return f"{str(self.__class__.__name__)}({str(self.term)}, {{{literals_str}}})"
 
     def __repr__(self) -> str:
         """Return the string representation of the BoundSetPredicate class."""
         # Sort to make it deterministic
-        return f"{str(self.__class__.__name__)}({repr(self.term)}, {{{', '.join(sorted([repr(literal) for literal in self.literals]))}}})"
+        literals_repr = ", ".join(sorted([repr(literal) for literal in self.literals]))
+        return f"{str(self.__class__.__name__)}({repr(self.term)}, {{{literals_repr}}})"
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the BoundSetPredicate class."""

@@ -15,9 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from __future__ import annotations
+
 from typing import (
     TYPE_CHECKING,
-    Union,
 )
 
 from sqlalchemy import (
@@ -68,6 +69,8 @@ from pyiceberg.table.update import (
 )
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import strtobool
+from pyiceberg.view import View
+from pyiceberg.view.metadata import ViewVersion
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -109,7 +112,8 @@ class SqlCatalog(MetastoreCatalog):
     And you can have as many levels as you want, but you need at least one.  The `SqlCatalog` honors the same convention.
 
     In the `JDBCCatalog` implementation, a `TableIdentifier` is composed of an optional `Namespace` and a table name.
-    When a `Namespace` is present, the full name will be `'ns1.ns2.ns3.table'`.  A valid `TableIdentifier` could be `'name'` (no namespace).
+    When a `Namespace` is present, the full name will be `'ns1.ns2.ns3.table'`.
+    A valid `TableIdentifier` could be `'name'` (no namespace).
     The `SqlCatalog` has a different convention where a `TableIdentifier` requires a `Namespace`.
     """
 
@@ -171,7 +175,7 @@ class SqlCatalog(MetastoreCatalog):
     def create_table(
         self,
         identifier: str | Identifier,
-        schema: Union[Schema, "pa.Schema"],
+        schema: Schema | pa.Schema,
         location: str | None = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -203,7 +207,7 @@ class SqlCatalog(MetastoreCatalog):
 
         namespace_identifier = Catalog.namespace_from(identifier)
         table_name = Catalog.table_name_from(identifier)
-        if not self._namespace_exists(namespace_identifier):
+        if not self.namespace_exists(namespace_identifier):
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace_identifier}")
 
         namespace = Catalog.namespace_to_string(namespace_identifier)
@@ -250,7 +254,7 @@ class SqlCatalog(MetastoreCatalog):
         namespace_tuple = Catalog.namespace_from(identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple)
         table_name = Catalog.table_name_from(identifier)
-        if not self._namespace_exists(namespace):
+        if not self.namespace_exists(namespace):
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}")
 
         with Session(self.engine) as session:
@@ -360,7 +364,7 @@ class SqlCatalog(MetastoreCatalog):
         to_namespace_tuple = Catalog.namespace_from(to_identifier)
         to_namespace = Catalog.namespace_to_string(to_namespace_tuple)
         to_table_name = Catalog.table_name_from(to_identifier)
-        if not self._namespace_exists(to_namespace):
+        if not self.namespace_exists(to_namespace):
             raise NoSuchNamespaceError(f"Namespace does not exist: {to_namespace}")
         with Session(self.engine) as session:
             try:
@@ -494,7 +498,7 @@ class SqlCatalog(MetastoreCatalog):
             metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
         )
 
-    def _namespace_exists(self, identifier: str | Identifier) -> bool:
+    def namespace_exists(self, identifier: str | Identifier) -> bool:
         namespace_tuple = Catalog.identifier_to_tuple(identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple, NoSuchNamespaceError)
         namespace_starts_with = namespace.replace("!", "!!").replace("_", "!_").replace("%", "!%") + ".%"
@@ -536,7 +540,7 @@ class SqlCatalog(MetastoreCatalog):
         Raises:
             NamespaceAlreadyExistsError: If a namespace with the given name already exists.
         """
-        if self._namespace_exists(namespace):
+        if self.namespace_exists(namespace):
             raise NamespaceAlreadyExistsError(f"Namespace {namespace} already exists")
 
         if not properties:
@@ -564,7 +568,7 @@ class SqlCatalog(MetastoreCatalog):
             NoSuchNamespaceError: If a namespace with the given name does not exist.
             NamespaceNotEmptyError: If the namespace is not empty.
         """
-        if not self._namespace_exists(namespace):
+        if not self.namespace_exists(namespace):
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}")
 
         namespace_str = Catalog.namespace_to_string(namespace)
@@ -592,7 +596,7 @@ class SqlCatalog(MetastoreCatalog):
         Raises:
             NoSuchNamespaceError: If a namespace with the given name does not exist.
         """
-        if namespace and not self._namespace_exists(namespace):
+        if namespace and not self.namespace_exists(namespace):
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}")
 
         namespace = Catalog.namespace_to_string(namespace)
@@ -613,7 +617,7 @@ class SqlCatalog(MetastoreCatalog):
         Raises:
             NoSuchNamespaceError: If a namespace with the given name does not exist.
         """
-        if namespace and not self._namespace_exists(namespace):
+        if namespace and not self.namespace_exists(namespace):
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}")
 
         table_stmt = select(IcebergTables.table_namespace).where(IcebergTables.catalog_name == self.name)
@@ -655,7 +659,7 @@ class SqlCatalog(MetastoreCatalog):
             NoSuchNamespaceError: If a namespace with the given name does not exist.
         """
         namespace_str = Catalog.namespace_to_string(namespace)
-        if not self._namespace_exists(namespace):
+        if not self.namespace_exists(namespace):
             raise NoSuchNamespaceError(f"Namespace {namespace_str} does not exists")
 
         stmt = select(IcebergNamespaceProperties).where(
@@ -680,7 +684,7 @@ class SqlCatalog(MetastoreCatalog):
             ValueError: If removals and updates have overlapping keys.
         """
         namespace_str = Catalog.namespace_to_string(namespace)
-        if not self._namespace_exists(namespace):
+        if not self.namespace_exists(namespace):
             raise NoSuchNamespaceError(f"Namespace {namespace_str} does not exists")
 
         current_properties = self.load_namespace_properties(namespace=namespace)
@@ -720,6 +724,16 @@ class SqlCatalog(MetastoreCatalog):
                 session.execute(insert_stmt)
             session.commit()
         return properties_update_summary
+
+    def create_view(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        view_version: ViewVersion,
+        location: str | None = None,
+        properties: Properties = EMPTY_DICT,
+    ) -> View:
+        raise NotImplementedError
 
     def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         raise NotImplementedError

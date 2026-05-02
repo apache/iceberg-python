@@ -28,8 +28,7 @@ from typing import (
     Literal,
 )
 
-from cachetools import LRUCache, cached
-from cachetools.keys import hashkey
+from cachetools import LRUCache
 from pydantic_core import to_json
 
 from pyiceberg.avro.codecs import AVRO_CODEC_KEY, AvroCompressionCodec
@@ -615,7 +614,7 @@ class ManifestEntry(Record):
 
     @snapshot_id.setter
     def snapshot_id(self, value: int) -> None:
-        self._data[0] = value
+        self._data[1] = value
 
     @property
     def sequence_number(self) -> int | None:
@@ -920,11 +919,15 @@ class ManifestFile(Record):
         return hash(self.manifest_path)
 
 
-# Global cache for manifest lists
-_manifest_cache: LRUCache[Any, tuple[ManifestFile, ...]] = LRUCache(maxsize=128)
+# Global cache for ManifestFile objects, keyed by manifest_path.
+# This deduplicates ManifestFile objects across manifest lists, which commonly
+# share manifests after append operations.
+_manifest_cache: LRUCache[str, ManifestFile] = LRUCache(maxsize=128)
+
+# Lock for thread-safe cache access
+_manifest_cache_lock = threading.RLock()
 
 
-@cached(cache=_manifest_cache, key=lambda io, manifest_list: hashkey(manifest_list), lock=threading.RLock())
 def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
     """Read and cache manifests from the given manifest list, returning a tuple to prevent modification."""
     bs = io.new_input(manifest_list).open().read()
@@ -1079,6 +1082,9 @@ class ManifestWriter(ABC):
 
         self.closed = True
         self._writer.__exit__(exc_type, exc_value, traceback)
+
+    def tell(self) -> int:
+        return self._writer.tell()
 
     @abstractmethod
     def content(self) -> ManifestContent: ...
@@ -1377,7 +1383,8 @@ class ManifestListWriterV2(ManifestListWriter):
             # To validate this, check that the snapshot id matches the current commit
             if self._commit_snapshot_id != wrapped_manifest_file.added_snapshot_id:
                 raise ValueError(
-                    f"Found unassigned sequence number for a manifest from snapshot: {self._commit_snapshot_id} != {wrapped_manifest_file.added_snapshot_id}"
+                    f"Found unassigned sequence number for a manifest from snapshot: "
+                    f"{self._commit_snapshot_id} != {wrapped_manifest_file.added_snapshot_id}"
                 )
             wrapped_manifest_file.sequence_number = self._sequence_number
 

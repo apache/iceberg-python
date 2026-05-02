@@ -24,7 +24,13 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 50
+    ignore:
+      - dependency-name: "datafusion"
+    cooldown:
+      default-days: 7
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7

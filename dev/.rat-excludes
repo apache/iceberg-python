@@ -1,8 +1,8 @@
-.github/*
-.rat-excludes
-build
-.git
-.gitignore
+.github/**
+dev/.rat-excludes
 uv.lock
-mkdocs/*
-notebooks/*
+.ruff_cache/**
+.pytest_cache/**
+.mypy_cache/**
+mkdocs/**
+notebooks/**

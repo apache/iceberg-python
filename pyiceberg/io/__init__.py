@@ -41,12 +41,14 @@ from pyiceberg.typedef import EMPTY_DICT, Properties
 
 logger = logging.getLogger(__name__)
 
+AWS_PROFILE_NAME = "client.profile-name"
 AWS_REGION = "client.region"
 AWS_ACCESS_KEY_ID = "client.access-key-id"
 AWS_SECRET_ACCESS_KEY = "client.secret-access-key"
 AWS_SESSION_TOKEN = "client.session-token"
 AWS_ROLE_ARN = "client.role-arn"
 AWS_ROLE_SESSION_NAME = "client.role-session-name"
+S3_PROFILE_NAME = "s3.profile-name"
 S3_ANONYMOUS = "s3.anonymous"
 S3_ENDPOINT = "s3.endpoint"
 S3_ACCESS_KEY_ID = "s3.access-key-id"
@@ -83,6 +85,7 @@ ADLS_DFS_STORAGE_AUTHORITY = "adls.dfs-storage-authority"
 ADLS_BLOB_STORAGE_SCHEME = "adls.blob-storage-scheme"
 ADLS_DFS_STORAGE_SCHEME = "adls.dfs-storage-scheme"
 ADLS_TOKEN = "adls.token"
+ADLS_ANON = "adls.anon"
 GCS_TOKEN = "gcs.oauth2.token"
 GCS_TOKEN_EXPIRES_AT_MS = "gcs.oauth2.token-expires-at"
 GCS_PROJECT_ID = "gcs.project-id"
@@ -96,7 +99,6 @@ GCS_DEFAULT_LOCATION = "gcs.default-bucket-location"
 GCS_VERSION_AWARE = "gcs.version-aware"
 HF_ENDPOINT = "hf.endpoint"
 HF_TOKEN = "hf.token"
-PYARROW_USE_LARGE_TYPES_ON_READ = "pyarrow.use-large-types-on-read"
 
 
 @runtime_checkable
@@ -137,6 +139,9 @@ class OutputStream(Protocol):  # pragma: no cover
 
     @abstractmethod
     def write(self, b: bytes) -> int: ...
+
+    @abstractmethod
+    def tell(self) -> int: ...
 
     @abstractmethod
     def close(self) -> None: ...
@@ -368,5 +373,6 @@ def load_file_io(properties: Properties = EMPTY_DICT, location: str | None = Non
         return PyArrowFileIO(properties)
     except ModuleNotFoundError as e:
         raise ModuleNotFoundError(
-            'Could not load a FileIO, please consider installing one: pip3 install "pyiceberg[pyarrow]", for more options refer to the docs.'
+            "Could not load a FileIO, please consider installing one: "
+            'pip3 install "pyiceberg[pyarrow]", for more options refer to the docs.'
         ) from e

@@ -38,6 +38,9 @@ on:
     - '!LICENSE'
     - '!NOTICE'
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -46,23 +49,28 @@ jobs:
   lint-and-unit-test:
     runs-on: ubuntu-latest
     strategy:
+      max-parallel: 15
       fail-fast: true
       matrix:
         python: ['3.10', '3.11', '3.12', '3.13']
 
     steps:
-    - uses: actions/checkout@v6
-    - uses: actions/setup-python@v6
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
       with:
         python-version: ${{ matrix.python }}
     - name: Install UV
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098 # v7.3.1
       with:
         enable-cache: true
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
+    - name: Check uv.lock is up to date
+      run: uv lock --check
     - name: Install
-      run: make install-dependencies
+      run: make install
     - name: Run linters
       run: make lint
     - name: Run unit tests with coverage
@@ -73,12 +81,14 @@ jobs:
   integration-test:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
-    - uses: actions/setup-python@v6
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098 # v7.3.1
       with:
         enable-cache: true
     - name: Install system dependencies
@@ -91,7 +101,7 @@ jobs:
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose-integration.yml logs
     - name: Upload coverage data
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: coverage-integration
         path: .coverage*
@@ -100,12 +110,14 @@ jobs:
   integration-test-s3:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
-    - uses: actions/setup-python@v6
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098 # v7.3.1
       with:
         enable-cache: true
     - name: Install system dependencies
@@ -118,7 +130,7 @@ jobs:
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose.yml logs
     - name: Upload coverage data
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: coverage-s3
         path: .coverage*
@@ -127,12 +139,14 @@ jobs:
   integration-test-adls:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
-    - uses: actions/setup-python@v6
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098 # v7.3.1
       with:
         enable-cache: true
     - name: Install system dependencies
@@ -145,7 +159,7 @@ jobs:
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose-azurite.yml logs
     - name: Upload coverage data
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: coverage-adls
         path: .coverage*
@@ -154,12 +168,14 @@ jobs:
   integration-test-gcs:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
-    - uses: actions/setup-python@v6
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098 # v7.3.1
       with:
         enable-cache: true
     - name: Install system dependencies
@@ -172,7 +188,7 @@ jobs:
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose-gcs-server.yml logs
     - name: Upload coverage data
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: coverage-gcs
         path: .coverage*
@@ -182,20 +198,47 @@ jobs:
     runs-on: ubuntu-latest
     needs: [integration-test, integration-test-s3, integration-test-adls, integration-test-gcs]
     steps:
-    - uses: actions/checkout@v6
-    - uses: actions/setup-python@v6
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098 # v7.3.1
       with:
         enable-cache: true
     - name: Install dependencies
       run: uv sync --group dev
     - name: Download all coverage artifacts
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
       with:
         pattern: coverage-*
         merge-multiple: true
     - name: Generate coverage report (75%) # Coverage threshold should only increase over time — never decrease it!
       run: COVERAGE_FAIL_UNDER=75 make coverage-report
+
+  cibw-dev-env-smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+      with:
+        python-version: '3.12'
+    - name: Install UV
+      uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098 # v7.3.1
+      with:
+        enable-cache: true
+    # Why this exists:
+    # Catch import-time regressions (e.g., global conftest optional deps)
+    # in the same dev-only environment used by cibuildwheel wheel tests.
+    # Keep this in sync with wheel build test setup in
+    # .github/workflows/pypi-build-artifacts.yml:
+    #   CIBW_BEFORE_TEST: uv sync --directory {project} --only-group dev --no-install-project
+    #   CIBW_TEST_COMMAND: uv run --directory {project} pytest tests/avro/test_decoder.py
+    - name: Mirror wheel CIBW_BEFORE_TEST
+      run: uv sync --directory . --only-group dev --no-install-project
+    - name: Mirror wheel CIBW_TEST_COMMAND
+      run: uv run --directory . pytest tests/avro/test_decoder.py

@@ -27,6 +27,7 @@ from pydantic import (
     model_validator,
 )
 
+from pyiceberg.exceptions import ValidationError
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import IdentityTransform, Transform, parse_transform
 from pyiceberg.typedef import IcebergBaseModel
@@ -67,7 +68,8 @@ class SortField(IcebergBaseModel):
       transform (str): Transform that is used to produce values to be sorted on from the source column.
                        This is the same transform as described in partition transforms.
       direction (SortDirection): Sort direction, that can only be either asc or desc.
-      null_order (NullOrder): Null order that describes the order of null values when sorted. Can only be either nulls-first or nulls-last.
+      null_order (NullOrder): Null order that describes the order of null values when sorted.
+                              Can only be either nulls-first or nulls-last.
     """
 
     def __init__(
@@ -168,6 +170,19 @@ class SortOrder(IcebergBaseModel):
         """Return the string representation of the SortOrder class."""
         fields = f"{', '.join(repr(column) for column in self.fields)}, " if self.fields else ""
         return f"SortOrder({fields}order_id={self.order_id})"
+
+    def check_compatible(self, schema: Schema) -> None:
+        for field in self.fields:
+            source_field = schema._lazy_id_to_field.get(field.source_id)
+            if source_field is None:
+                raise ValidationError(f"Cannot find source column for sort field: {field}")
+            if not source_field.field_type.is_primitive:
+                raise ValidationError(f"Cannot sort by non-primitive source field: {source_field}")
+            if not field.transform.can_transform(source_field.field_type):
+                raise ValidationError(
+                    f"Invalid source field {source_field.name} with type {source_field.field_type} "
+                    + f"for transform: {field.transform}"
+                )
 
 
 UNSORTED_SORT_ORDER_ID = 0

@@ -26,20 +26,25 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   pypi-build-artifacts:
     name: Build artifacts for PyPi on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      max-parallel: 15
       matrix:
-        os: [ ubuntu-latest, windows-latest, macos-latest ]
+        os: [ ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-15-intel, macos-latest ]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 1
+          persist-credentials: false
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: |
             3.10
@@ -48,21 +53,22 @@ jobs:
             3.13
 
       - name: Install UV
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098 # v7.3.1
 
       - name: Set version with RC
+        shell: bash
         env:
           VERSION: ${{ inputs.VERSION }}
-        run: uv version "${{ env.VERSION }}"
+        run: uv version "$VERSION"
 
       # Publish the source distribution with the version that's in
       # the repository, otherwise the tests will fail
       - name: Compile source distribution
         run: uv build --sdist
-        if: startsWith(matrix.os, 'ubuntu')
+        if: matrix.os == 'ubuntu-latest'
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.3.1
+        uses: pypa/cibuildwheel@8d2b08b68458a16aeb24b64e68a09ab1c8e82084 # v3.4.1
         with:
           output-dir: wheelhouse
           config-file: "pyproject.toml"
@@ -70,20 +76,19 @@ jobs:
           # Ignore 32 bit architectures
           CIBW_ARCHS: "auto64"
           CIBW_PROJECT_REQUIRES_PYTHON: ">=3.10,<3.14"
+          # Keep these in sync with Python CI job `cibw-dev-env-smoke-test`
+          # in .github/workflows/python-ci.yml to catch import-time regressions early.
           CIBW_BEFORE_TEST: "uv sync --directory {project} --only-group dev --no-install-project"
           CIBW_TEST_COMMAND: "uv run --directory {project} pytest tests/avro/test_decoder.py"
-          # Ignore tests for pypy since not all dependencies are compiled for it
-          # and would require a local rust build chain
-          CIBW_TEST_SKIP: "pp*"
           # Skip free-threaded (PEP 703) builds until we evaluate decoder_fast support
           CIBW_SKIP: "cp3*t-*"
 
 
       - name: Add source distribution
-        if: startsWith(matrix.os, 'ubuntu')
+        if: matrix.os == 'ubuntu-latest'
         run: ls -lah dist/* && cp dist/* wheelhouse/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: "pypi-release-candidate-${{ matrix.os }}"
           path: ./wheelhouse/*
@@ -94,7 +99,7 @@ jobs:
       - pypi-build-artifacts
     steps:
       - name: Merge Artifacts
-        uses: actions/upload-artifact/merge@v4
+        uses: actions/upload-artifact/merge@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: "pypi-release-candidate-${{ inputs.VERSION }}"
           pattern: pypi-release-candidate*

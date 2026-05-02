@@ -317,3 +317,6 @@ class AvroOutputFile(Generic[D]):
             self.encoder.write(block_content)
 
         self.encoder.write(self.sync_bytes)
+
+    def tell(self) -> int:
+        return self.output_stream.tell()

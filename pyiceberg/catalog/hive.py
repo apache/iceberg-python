@@ -110,6 +110,8 @@ from pyiceberg.types import (
     UUIDType,
 )
 from pyiceberg.utils.properties import property_as_bool, property_as_float
+from pyiceberg.view import View
+from pyiceberg.view.metadata import ViewVersion
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -434,6 +436,16 @@ class HiveCatalog(MetastoreCatalog):
 
         return self._convert_hive_into_iceberg(hive_table)
 
+    def create_view(
+        self,
+        identifier: str | Identifier,
+        schema: Union[Schema, "pa.Schema"],
+        view_version: ViewVersion,
+        location: str | None = None,
+        properties: Properties = EMPTY_DICT,
+    ) -> View:
+        raise NotImplementedError
+
     def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
         """Register a new table using existing metadata.
 
@@ -551,23 +563,32 @@ class HiveCatalog(MetastoreCatalog):
 
                 if hive_table and current_table:
                     # Table exists, update it.
-                    new_parameters = _construct_parameters(
+
+                    # Note on table properties:
+                    # - Iceberg table properties are stored in both HMS and Iceberg metadata JSON.
+                    # - Updates are reflected in both locations
+                    # - Existing HMS table properties (set by external systems like Hive/Spark) are preserved.
+                    #
+                    # While it is possible to modify HMS table properties through this API, it is not recommended:
+                    # - Mixing HMS-specific properties in Iceberg metadata can cause confusion
+                    # - New/updated HMS table properties will also be stored in Iceberg metadata (even though it is HMS-specific)
+                    # - HMS-native properties (set outside Iceberg) cannot be deleted since they are not visible to Iceberg
+                    #   (However, if you first SET an HMS property via Iceberg, it becomes tracked in Iceberg metadata,
+                    #   and can then be deleted via Iceberg - which removes it from both Iceberg metadata and HMS)
+                    new_iceberg_properties = _construct_parameters(
                         metadata_location=updated_staged_table.metadata_location,
                         previous_metadata_location=current_table.metadata_location,
                         metadata_properties=updated_staged_table.properties,
                     )
-
                     # Detect properties that were removed from Iceberg metadata
-                    removed_keys = current_table.properties.keys() - updated_staged_table.properties.keys()
+                    deleted_iceberg_properties = current_table.properties.keys() - updated_staged_table.properties.keys()
 
-                    # Sync HMS parameters: Iceberg metadata is the source of truth, HMS parameters are
-                    # a projection of Iceberg state plus any HMS-only properties.
-                    # Start with existing HMS params, remove deleted Iceberg properties, then apply Iceberg values.
-                    merged_params = dict(hive_table.parameters or {})
-                    for key in removed_keys:
-                        merged_params.pop(key, None)
-                    merged_params.update(new_parameters)
-                    hive_table.parameters = merged_params
+                    # Merge: preserve HMS-native properties, remove deleted Iceberg properties, apply new Iceberg properties
+                    existing_hms_parameters = dict(hive_table.parameters or {})
+                    for key in deleted_iceberg_properties:
+                        existing_hms_parameters.pop(key, None)
+                    existing_hms_parameters.update(new_iceberg_properties)
+                    hive_table.parameters = existing_hms_parameters
 
                     # Update hive's schema and properties
                     hive_table.sd = _construct_hive_storage_descriptor(
@@ -720,7 +741,7 @@ class HiveCatalog(MetastoreCatalog):
                 open_client.drop_database(database_name, deleteData=False, cascade=False)
         except InvalidOperationException as e:
             raise NamespaceNotEmptyError(f"Database {database_name} is not empty") from e
-        except MetaException as e:
+        except (MetaException, NoSuchObjectException) as e:
             raise NoSuchNamespaceError(f"Database does not exists: {database_name}") from e
 
     def list_tables(self, namespace: str | Identifier) -> list[Identifier]:

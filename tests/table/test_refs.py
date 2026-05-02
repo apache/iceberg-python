@@ -31,9 +31,9 @@ def test_snapshot_with_properties_repr() -> None:
         max_ref_age_ms=10000000,
     )
 
-    assert (
-        repr(snapshot_ref)
-        == """SnapshotRef(snapshot_id=3051729675574597004, snapshot_ref_type=SnapshotRefType.TAG, min_snapshots_to_keep=None, max_snapshot_age_ms=None, max_ref_age_ms=10000000)"""
+    assert repr(snapshot_ref) == (
+        "SnapshotRef(snapshot_id=3051729675574597004, snapshot_ref_type=SnapshotRefType.TAG, "
+        "min_snapshots_to_keep=None, max_snapshot_age_ms=None, max_ref_age_ms=10000000)"
     )
     assert snapshot_ref == eval(repr(snapshot_ref))
 

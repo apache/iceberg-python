@@ -17,6 +17,7 @@
 from typing import TYPE_CHECKING
 
 import pytest
+from pytest_lazy_fixtures import lf
 
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.table.statistics import BlobMetadata, StatisticsFile
@@ -40,7 +41,7 @@ def _create_table_with_schema(catalog: "Catalog", schema: "Schema") -> "Table":
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_manage_statistics(catalog: "Catalog", arrow_table_with_null: "pa.Table") -> None:
     tbl = _create_table_with_schema(catalog, arrow_table_with_null.schema)
 

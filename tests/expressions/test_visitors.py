@@ -92,10 +92,10 @@ from pyiceberg.types import (
 
 
 class ExampleVisitor(BooleanExpressionVisitor[list[str]]):
-    """A test implementation of a BooleanExpressionVisitor
+    """A test implementation of a BooleanExpressionVisitor.
 
-    As this visitor visits each node, it appends an element to a `visit_history` list. This enables testing that a given expression is
-    visited in an expected order by the `visit` method.
+    As this visitor visits each node, it appends an element to a `visit_history` list.
+    This enables testing that a given expression is visited in an expected order by the `visit` method.
     """
 
     def __init__(self) -> None:
@@ -131,9 +131,10 @@ class ExampleVisitor(BooleanExpressionVisitor[list[str]]):
 
 
 class FooBoundBooleanExpressionVisitor(BoundBooleanExpressionVisitor[list[str]]):
-    """A test implementation of a BoundBooleanExpressionVisitor
-    As this visitor visits each node, it appends an element to a `visit_history` list. This enables testing that a given bound expression is
-    visited in an expected order by the `visit` method.
+    """A test implementation of a BoundBooleanExpressionVisitor.
+
+    As this visitor visits each node, it appends an element to a `visit_history` list.
+    This enables testing that a given bound expression is visited in an expected order by the `visit` method.
     """
 
     def __init__(self) -> None:
@@ -260,9 +261,10 @@ def test_bind_visitor_already_bound(table_schema_simple: Schema) -> None:
     with pytest.raises(TypeError) as exc_info:
         visit(bound, visitor=BindVisitor(schema=table_schema_simple, case_sensitive=True))
     assert (
-        "Found already bound predicate: BoundEqualTo(term=BoundReference(field=NestedField(field_id=1, name='foo', field_type=StringType(), required=False), accessor=Accessor(position=0,inner=None)), literal=literal('hello'))"
-        == str(exc_info.value)
-    )
+        "Found already bound predicate: BoundEqualTo(term=BoundReference("
+        "field=NestedField(field_id=1, name='foo', field_type=StringType(), required=False), "
+        "accessor=Accessor(position=0,inner=None)), literal=literal('hello'))"
+    ) == str(exc_info.value)
 
 
 def test_visit_bound_visitor_unknown_predicate() -> None:

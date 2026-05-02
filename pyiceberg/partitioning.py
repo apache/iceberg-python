@@ -32,6 +32,7 @@ from pydantic import (
     model_validator,
 )
 
+from pyiceberg.exceptions import ValidationError
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import (
     BucketTransform,
@@ -248,6 +249,39 @@ class PartitionSpec(IcebergBaseModel):
 
         path = "/".join([field_str + "=" + value_str for field_str, value_str in zip(field_strs, value_strs, strict=True)])
         return path
+
+    def check_compatible(self, schema: Schema, allow_missing_fields: bool = False) -> None:
+        # if the underlying field is dropped, we cannot check they are compatible -- continue
+        schema_fields = schema._lazy_id_to_field
+        parents = schema._lazy_id_to_parent
+
+        for field in self.fields:
+            source_field = schema_fields.get(field.source_id)
+
+            if allow_missing_fields and source_field is None:
+                continue
+
+            if isinstance(field.transform, VoidTransform):
+                continue
+
+            if not source_field:
+                raise ValidationError(f"Cannot find source column for partition field: {field}")
+
+            source_type = source_field.field_type
+            if not source_type.is_primitive:
+                raise ValidationError(f"Cannot partition by non-primitive source field: {source_field}")
+            if not field.transform.can_transform(source_type):
+                raise ValidationError(
+                    f"Invalid source field {source_field.name} with type {source_type} " + f"for transform: {field.transform}"
+                )
+
+            # The only valid parent types for a PartitionField are StructTypes. This must be checked recursively
+            parent_id = parents.get(field.source_id)
+            while parent_id:
+                parent_type = schema.find_type(parent_id)
+                if not parent_type.is_struct:
+                    raise ValidationError(f"Invalid partition field parent: {parent_type}")
+                parent_id = parents.get(parent_id)
 
 
 UNPARTITIONED_PARTITION_SPEC = PartitionSpec(spec_id=0)

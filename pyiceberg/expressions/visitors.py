@@ -139,7 +139,8 @@ def visit(obj: BooleanExpression, visitor: BooleanExpressionVisitor[T]) -> T:
 
     Args:
         obj (BooleanExpression): An instance of a BooleanExpression.
-        visitor (BooleanExpressionVisitor[T]): An instance of an implementation of the generic BooleanExpressionVisitor base class.
+        visitor (BooleanExpressionVisitor[T]): An instance of an implementation of the generic
+            BooleanExpressionVisitor base class.
 
     Raises:
         NotImplementedError: If attempting to visit an unsupported expression.

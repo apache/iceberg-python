@@ -59,6 +59,8 @@ from pyiceberg.table.update import (
 )
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.utils.properties import get_first_property_value
+from pyiceberg.view import View
+from pyiceberg.view.metadata import ViewVersion
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -536,6 +538,16 @@ class DynamoDbCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Database {database_name} does not exist") from e
 
         return properties_update_summary
+
+    def create_view(
+        self,
+        identifier: str | Identifier,
+        schema: Union[Schema, "pa.Schema"],
+        view_version: ViewVersion,
+        location: str | None = None,
+        properties: Properties = EMPTY_DICT,
+    ) -> View:
+        raise NotImplementedError
 
     def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         raise NotImplementedError

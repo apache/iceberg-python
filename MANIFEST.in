@@ -26,6 +26,7 @@ recursive-include tests *
 
 # Include development files
 include Makefile
+include uv.lock
 recursive-include dev *
 
 # Exclude build artifacts

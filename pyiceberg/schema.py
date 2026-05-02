@@ -43,6 +43,8 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IcebergType,
     IntegerType,
     ListType,
@@ -104,7 +106,8 @@ class Schema(IcebergBaseModel):
 
     def __repr__(self) -> str:
         """Return the string representation of the Schema class."""
-        return f"Schema({', '.join(repr(column) for column in self.columns)}, schema_id={self.schema_id}, identifier_field_ids={self.identifier_field_ids})"
+        columns_repr = ", ".join(repr(column) for column in self.columns)
+        return f"Schema({columns_repr}, schema_id={self.schema_id}, identifier_field_ids={self.identifier_field_ids})"
 
     def __len__(self) -> int:
         """Return the length of an instance of the Literal class."""
@@ -374,7 +377,8 @@ class Schema(IcebergBaseModel):
         for field in self._lazy_id_to_field.values():
             if format_version < field.field_type.minimum_format_version():
                 raise ValueError(
-                    f"{field.field_type} is only supported in {field.field_type.minimum_format_version()} or higher. Current format version is: {format_version}"
+                    f"{field.field_type} is only supported in {field.field_type.minimum_format_version()} or higher. "
+                    f"Current format version is: {format_version}"
                 )
 
 
@@ -553,6 +557,10 @@ class PrimitiveWithPartnerVisitor(SchemaWithPartnerVisitor[P, T]):
             return self.visit_binary(primitive, primitive_partner)
         elif isinstance(primitive, UnknownType):
             return self.visit_unknown(primitive, primitive_partner)
+        elif isinstance(primitive, GeometryType):
+            return self.visit_geometry(primitive, primitive_partner)
+        elif isinstance(primitive, GeographyType):
+            return self.visit_geography(primitive, primitive_partner)
         else:
             raise ValueError(f"Type not recognized: {primitive}")
 
@@ -623,6 +631,14 @@ class PrimitiveWithPartnerVisitor(SchemaWithPartnerVisitor[P, T]):
     @abstractmethod
     def visit_unknown(self, unknown_type: UnknownType, partner: P | None) -> T:
         """Visit a UnknownType."""
+
+    @abstractmethod
+    def visit_geometry(self, geometry_type: GeometryType, partner: P | None) -> T:
+        """Visit a GeometryType."""
+
+    @abstractmethod
+    def visit_geography(self, geography_type: GeographyType, partner: P | None) -> T:
+        """Visit a GeographyType."""
 
 
 class PartnerAccessor(Generic[P], ABC):
@@ -747,6 +763,10 @@ class SchemaVisitorPerPrimitiveType(SchemaVisitor[T], ABC):
             return self.visit_binary(primitive)
         elif isinstance(primitive, UnknownType):
             return self.visit_unknown(primitive)
+        elif isinstance(primitive, GeometryType):
+            return self.visit_geometry(primitive)
+        elif isinstance(primitive, GeographyType):
+            return self.visit_geography(primitive)
         else:
             raise ValueError(f"Type not recognized: {primitive}")
 
@@ -817,6 +837,14 @@ class SchemaVisitorPerPrimitiveType(SchemaVisitor[T], ABC):
     @abstractmethod
     def visit_unknown(self, unknown_type: UnknownType) -> T:
         """Visit a UnknownType."""
+
+    @abstractmethod
+    def visit_geometry(self, geometry_type: GeometryType) -> T:
+        """Visit a GeometryType."""
+
+    @abstractmethod
+    def visit_geography(self, geography_type: GeographyType) -> T:
+        """Visit a GeographyType."""
 
 
 @dataclass(init=True, eq=True, frozen=True)
@@ -1530,7 +1558,8 @@ class _PruneColumnsVisitor(SchemaVisitor[IcebergType | None]):
             else:
                 if not field.field_type.is_primitive:
                     raise ValueError(
-                        f"Cannot explicitly project List or Map types, {field.field_id}:{field.name} of type {field.field_type} was selected"
+                        f"Cannot explicitly project List or Map types, "
+                        f"{field.field_id}:{field.name} of type {field.field_type} was selected"
                     )
                 # Selected non-struct field
                 return field.field_type
@@ -1550,7 +1579,8 @@ class _PruneColumnsVisitor(SchemaVisitor[IcebergType | None]):
             else:
                 if not list_type.element_type.is_primitive:
                     raise ValueError(
-                        f"Cannot explicitly project List or Map types, {list_type.element_id} of type {list_type.element_type} was selected"
+                        f"Cannot explicitly project List or Map types, "
+                        f"{list_type.element_id} of type {list_type.element_type} was selected"
                     )
                 return list_type
         elif element_result is not None:
@@ -1567,7 +1597,8 @@ class _PruneColumnsVisitor(SchemaVisitor[IcebergType | None]):
                 return self._project_map(map_type, projected_struct)
             if not map_type.value_type.is_primitive:
                 raise ValueError(
-                    f"Cannot explicitly project List or Map types, Map value {map_type.value_id} of type {map_type.value_type} was selected"
+                    f"Cannot explicitly project List or Map types, "
+                    f"Map value {map_type.value_id} of type {map_type.value_type} was selected"
                 )
             return map_type
         elif value_result is not None:
@@ -1764,9 +1795,17 @@ class _SchemaCompatibilityVisitor(PreOrderSchemaVisitor[bool]):
                 # UnknownType can only be promoted to Primitive types
                 if isinstance(rhs.field_type, UnknownType):
                     if not isinstance(lhs.field_type, PrimitiveType):
-                        error_msg = f"Null type (UnknownType) cannot be promoted to non-primitive type {lhs.field_type}. UnknownType can only be promoted to primitive types (string, int, boolean, etc.) in V3+ tables."
+                        error_msg = (
+                            f"Null type (UnknownType) cannot be promoted to non-primitive type {lhs.field_type}. "
+                            "UnknownType can only be promoted to primitive types (string, int, boolean, etc.) "
+                            "in V3+ tables."
+                        )
                     else:
-                        error_msg = f"Null type (UnknownType) cannot be promoted to {lhs.field_type}. This may be due to table format version limitations (V1/V2 tables don't support UnknownType promotion)."
+                        error_msg = (
+                            f"Null type (UnknownType) cannot be promoted to {lhs.field_type}. "
+                            "This may be due to table format version limitations "
+                            "(V1/V2 tables don't support UnknownType promotion)."
+                        )
                     self.rich_table.add_row("❌", str(lhs), f"{str(rhs)} - {error_msg}")
                 else:
                     self.rich_table.add_row("❌", str(lhs), str(rhs))

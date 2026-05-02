@@ -103,7 +103,7 @@ def _(result: ParseResults) -> Reference:
     return Reference(".".join(result.column))
 
 
-boolean = one_of(["true", "false"], caseless=True).set_results_name("boolean")
+boolean = one_of(["true", "false"], caseless=True)
 string = sgl_quoted_string.set_results_name("raw_quoted_string")
 decimal = common.real().set_results_name("decimal")
 integer = common.signed_integer().set_results_name("integer")
@@ -115,7 +115,7 @@ literal_set = Group(
 
 @boolean.set_parse_action
 def _(result: ParseResults) -> Literal[bool]:
-    if strtobool(result.boolean):
+    if strtobool(result[0]):
         return BooleanLiteral(True)
     else:
         return BooleanLiteral(False)

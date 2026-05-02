@@ -25,6 +25,7 @@ import pytest
 from click.testing import CliRunner
 from pytest_mock import MockFixture
 
+from pyiceberg import __version__
 from pyiceberg.catalog.memory import InMemoryCatalog
 from pyiceberg.cli.console import run
 from pyiceberg.io import WAREHOUSE
@@ -46,6 +47,30 @@ def test_missing_uri(mocker: MockFixture, empty_home_dir_path: str) -> None:
 
     assert result.exit_code == 1
     assert result.output == "Could not initialize catalog with the following properties: {}\n"
+
+
+def test_hive_catalog_missing_uri_shows_helpful_error(mocker: MockFixture) -> None:
+    mock_env_config = mocker.MagicMock()
+    mock_env_config.get_catalog_config.return_value = {"type": "hive"}
+    mocker.patch("pyiceberg.catalog._ENV_CONFIG", mock_env_config)
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["--catalog", "my_hive_catalog", "list"])
+
+    assert result.exit_code == 1
+    assert "URI missing, please provide using --uri" in result.output
+    assert "'uri'" not in result.output
+
+
+def test_version_does_not_load_catalog(mocker: MockFixture) -> None:
+    mock_load_catalog = mocker.patch("pyiceberg.cli.console.load_catalog", side_effect=Exception("should not be called"))
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["version"])
+
+    assert result.exit_code == 0
+    assert result.output == f"{__version__}\n"
+    mock_load_catalog.assert_not_called()
 
 
 @pytest.fixture(autouse=True)
@@ -627,9 +652,10 @@ def test_json_schema(catalog: InMemoryCatalog) -> None:
     runner = CliRunner()
     result = runner.invoke(run, ["--output=json", "schema", "default.my_table"])
     assert result.exit_code == 0
-    assert (
-        result.output
-        == """{"type":"struct","fields":[{"id":1,"name":"x","type":"long","required":true},{"id":2,"name":"y","type":"long","required":true,"doc":"comment"},{"id":3,"name":"z","type":"long","required":true}],"schema-id":0,"identifier-field-ids":[]}\n"""
+    assert result.output == (
+        '{"type":"struct","fields":[{"id":1,"name":"x","type":"long","required":true},'
+        '{"id":2,"name":"y","type":"long","required":true,"doc":"comment"},'
+        '{"id":3,"name":"z","type":"long","required":true}],"schema-id":0,"identifier-field-ids":[]}\n'
     )
 
 
@@ -819,9 +845,8 @@ def test_json_properties_get_table_specific_property_that_doesnt_exist(catalog: 
     runner = CliRunner()
     result = runner.invoke(run, ["--output=json", "properties", "get", "table", "default.my_table", "doesnotexist"])
     assert result.exit_code == 1
-    assert (
-        result.output
-        == """{"type": "NoSuchPropertyException", "message": "Could not find property doesnotexist on table default.my_table"}\n"""
+    assert result.output == (
+        '{"type": "NoSuchPropertyException", "message": "Could not find property doesnotexist on table default.my_table"}\n'
     )
 
 
@@ -1029,3 +1054,20 @@ def test_log_level_cli_overrides_env(mocker: MockFixture) -> None:
     mock_basicConfig.assert_called_once()
     call_kwargs = mock_basicConfig.call_args[1]
     assert call_kwargs["level"] == logging.ERROR
+
+
+def test_warehouse_cli_option_forwarded_to_catalog(mocker: MockFixture) -> None:
+    mock_basicConfig = mocker.patch("logging.basicConfig")
+    mock_catalog = MagicMock(spec=InMemoryCatalog)
+    mock_catalog.list_tables.return_value = []
+    mock_catalog.list_namespaces.return_value = []
+    mock_load_catalog = mocker.patch("pyiceberg.cli.console.load_catalog", return_value=mock_catalog)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        run, ["--catalog", "rest", "--uri", "https://catalog.service", "--warehouse", "example-warehouse", "list"]
+    )
+
+    assert result.exit_code == 0
+    mock_basicConfig.assert_called_once()
+    mock_load_catalog.assert_called_once_with("rest", uri="https://catalog.service", warehouse="example-warehouse")

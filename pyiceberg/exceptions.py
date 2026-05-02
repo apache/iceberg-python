@@ -20,6 +20,10 @@ class TableAlreadyExistsError(Exception):
     """Raised when creating a table with a name that already exists."""
 
 
+class ViewAlreadyExistsError(Exception):
+    """Raised when creating a view with a name that already exists."""
+
+
 class NamespaceNotEmptyError(Exception):
     """Raised when a name-space being dropped is not empty."""
 
@@ -82,6 +86,10 @@ class ForbiddenError(RESTError):
 
 class AuthorizationExpiredError(RESTError):
     """When the credentials are expired when performing an action on the REST catalog."""
+
+
+class TooManyRequestsError(RESTError):
+    """Raises when too many requests error is returned by the REST catalog."""
 
 
 class OAuthError(RESTError):

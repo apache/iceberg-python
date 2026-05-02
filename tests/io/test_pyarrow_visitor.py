@@ -63,6 +63,7 @@ from pyiceberg.types import (
     NestedField,
     StringType,
     StructType,
+    TimestampNanoType,
     TimestampType,
     TimestamptzType,
     TimeType,
@@ -190,7 +191,8 @@ def test_pyarrow_timestamp_invalid_units() -> None:
     with pytest.raises(
         TypeError,
         match=re.escape(
-            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
+            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' "
+            "configuration property to automatically downcast 'ns' to 'us' on write."
         ),
     ):
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
@@ -212,7 +214,8 @@ def test_pyarrow_timestamp_tz_invalid_units() -> None:
     with pytest.raises(
         TypeError,
         match=re.escape(
-            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
+            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' "
+            "configuration property to automatically downcast 'ns' to 'us' on write."
         ),
     ):
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
@@ -222,6 +225,18 @@ def test_pyarrow_timestamp_tz_invalid_tz() -> None:
     pyarrow_type = pa.timestamp(unit="us", tz="US/Pacific")
     with pytest.raises(TypeError, match=re.escape("Unsupported type: timestamp[us, tz=US/Pacific]")):
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
+
+
+def test_pyarrow_timestamp_ns_tz_invalid_tz() -> None:
+    pyarrow_type = pa.timestamp(unit="ns", tz="US/Pacific")
+    with pytest.raises(TypeError, match=re.escape("Unsupported type: timestamp[ns, tz=US/Pacific]")):
+        visit_pyarrow(pyarrow_type, _ConvertToIceberg(format_version=3))
+
+
+def test_pyarrow_timestamp_ns_no_tz_accepted() -> None:
+    pyarrow_type = pa.timestamp(unit="ns")
+    converted = visit_pyarrow(pyarrow_type, _ConvertToIceberg(format_version=3))
+    assert converted == TimestampNanoType()
 
 
 @pytest.mark.parametrize("pyarrow_type", [pa.string(), pa.large_string(), pa.string_view()])
@@ -832,8 +847,13 @@ def test_expression_to_complementary_pyarrow(
         Not(bound_is_null_double_field),
     )
     result = _expression_to_complementary_pyarrow(bound_expr)
-    # Notice an isNan predicate on a str column is automatically converted to always false and removed from Or and thus will not appear in the pc.expr.
-    assert (
-        repr(result)
-        == """<pyarrow.compute.Expression (((invert(((((string_field == "hello") and (float_field > 100)) or ((is_nan(float_field) and (double_field == 0)) or (float_field > 100))) and invert(is_null(double_field, {nan_is_null=false})))) or is_null(float_field, {nan_is_null=false})) or is_null(string_field, {nan_is_null=false})) or is_nan(double_field))>"""
+    # Notice an isNan predicate on a str column is automatically converted to always false and removed from Or
+    # and thus will not appear in the pc.expr.
+    expected_repr = (
+        '<pyarrow.compute.Expression (((invert(((((string_field == "hello") and (float_field > 100)) '
+        "or ((is_nan(float_field) and (double_field == 0)) or (float_field > 100))) "
+        "and invert(is_null(double_field, {nan_is_null=false})))) "
+        "or is_null(float_field, {nan_is_null=false})) "
+        "or is_null(string_field, {nan_is_null=false})) or is_nan(double_field))>"
     )
+    assert repr(result) == expected_repr
