@@ -105,7 +105,7 @@ dev = [
     "pytest-checkdocs==2.14.0",
     "prek>=0.2.1,<0.4",
     "pytest-lazy-fixtures==1.4.0",
-    "fastavro==1.12.1",
+    "fastavro==1.12.2",
     "coverage[toml]>=7.4.2,<8",
     "requests-mock==1.12.1",
     "moto[server]>=5.0.2,<6",
