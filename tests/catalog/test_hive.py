@@ -234,10 +234,16 @@ class SaslServer(threading.Thread):
         return self._port
 
     def close(self) -> None:
-        self._socket.close()
+        try:
+            self._socket.close()
+        except Exception:
+            pass
         self.join(timeout=5)
         for client in self._clients:
-            client.close()
+            try:
+                client.close()
+            except Exception:
+                pass
 
 
 @pytest.fixture(scope="session")
