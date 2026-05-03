@@ -47,7 +47,6 @@ def test_commit_retry_table_properties() -> None:
 def test_isolation_level_table_properties() -> None:
     assert TableProperties.WRITE_DELETE_ISOLATION_LEVEL == "write.delete.isolation-level"
     assert TableProperties.WRITE_UPDATE_ISOLATION_LEVEL == "write.update.isolation-level"
-    assert TableProperties.WRITE_MERGE_ISOLATION_LEVEL == "write.merge.isolation-level"
     assert TableProperties.WRITE_ISOLATION_LEVEL_DEFAULT == "serializable"
 
 
@@ -484,3 +483,66 @@ def test_concurrent_partial_deletes_on_different_partitions_succeed(catalog: Cat
     result = refreshed.scan().to_arrow()
     # Original 4 rows, minus value==1 and value==3 = 2 rows remaining
     assert len(result) == 2
+
+
+def test_overwrite_uses_update_isolation_level(catalog: Catalog) -> None:
+    """Verify that overwrite() reads write.update.isolation-level, not write.delete.isolation-level."""
+    catalog.create_namespace("default")
+    schema = _test_schema()
+    catalog.create_table(
+        "default.update_iso_test",
+        schema=schema,
+        properties={
+            "write.delete.isolation-level": "serializable",
+            "write.update.isolation-level": "snapshot",
+        },
+    )
+
+    import pyarrow as pa
+
+    df = pa.table({"x": [1, 2, 3]})
+
+    tbl = catalog.load_table("default.update_iso_test")
+    tbl.append(df)
+
+    tbl1 = catalog.load_table("default.update_iso_test")
+    tbl2 = catalog.load_table("default.update_iso_test")
+
+    tbl1.append(df)
+
+    # Under write.delete.isolation-level=serializable this would raise ValidationException.
+    # But overwrite() uses write.update.isolation-level=snapshot, so it succeeds.
+    tbl2.overwrite(pa.table({"x": [10, 20, 30]}), overwrite_filter="x > 0")
+
+    refreshed = catalog.load_table("default.update_iso_test")
+    result = refreshed.scan().to_arrow()
+    # overwrite with x > 0 deletes all rows (including tbl1's append), then adds 3 new rows
+    assert len(result) == 3
+
+
+def test_overwrite_with_serializable_update_isolation_raises(catalog: Catalog) -> None:
+    """Verify that overwrite() raises ValidationException when write.update.isolation-level=serializable."""
+    catalog.create_namespace("default")
+    schema = _test_schema()
+    catalog.create_table(
+        "default.update_serial_test",
+        schema=schema,
+        properties={
+            "write.update.isolation-level": "serializable",
+        },
+    )
+
+    import pyarrow as pa
+
+    df = pa.table({"x": [1, 2, 3]})
+
+    tbl = catalog.load_table("default.update_serial_test")
+    tbl.append(df)
+
+    tbl1 = catalog.load_table("default.update_serial_test")
+    tbl2 = catalog.load_table("default.update_serial_test")
+
+    tbl1.append(df)
+
+    with pytest.raises(ValidationException):
+        tbl2.overwrite(pa.table({"x": [10, 20, 30]}), overwrite_filter="x > 0")

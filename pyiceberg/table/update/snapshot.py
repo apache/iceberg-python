@@ -141,6 +141,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         )
         self._predicate = AlwaysFalse()
         self._case_sensitive = True
+        self._isolation_level_property: str = TableProperties.WRITE_DELETE_ISOLATION_LEVEL
 
     def _validate_target_branch(self, branch: str | None) -> str | None:
         # if branch is none, write will be written into a staging snapshot
@@ -556,7 +557,7 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
             return
 
         isolation_level_str = table.metadata.properties.get(
-            TableProperties.WRITE_DELETE_ISOLATION_LEVEL, TableProperties.WRITE_ISOLATION_LEVEL_DEFAULT
+            self._isolation_level_property, TableProperties.WRITE_ISOLATION_LEVEL_DEFAULT
         )
         isolation_level = IsolationLevel(isolation_level_str)
         conflict_detection_filter = self._predicate if self._predicate != AlwaysFalse() else None
@@ -564,8 +565,9 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         if isolation_level == IsolationLevel.SERIALIZABLE:
             _validate_added_data_files(table, parent_snapshot, conflict_detection_filter, parent_snapshot)
 
-        _validate_no_new_delete_files(table, parent_snapshot, conflict_detection_filter, None, parent_snapshot)
-        _validate_deleted_data_files(table, parent_snapshot, conflict_detection_filter, parent_snapshot)
+        if conflict_detection_filter is not None:
+            _validate_no_new_delete_files(table, parent_snapshot, conflict_detection_filter, None, parent_snapshot)
+            _validate_deleted_data_files(table, parent_snapshot, conflict_detection_filter, parent_snapshot)
 
         if self._deleted_data_files:
             _validate_no_new_deletes_for_data_files(
@@ -763,7 +765,7 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
             return
 
         isolation_level_str = table.metadata.properties.get(
-            TableProperties.WRITE_DELETE_ISOLATION_LEVEL, TableProperties.WRITE_ISOLATION_LEVEL_DEFAULT
+            self._isolation_level_property, TableProperties.WRITE_ISOLATION_LEVEL_DEFAULT
         )
         isolation_level = IsolationLevel(isolation_level_str)
         conflict_detection_filter = self._predicate if self._predicate != AlwaysFalse() else None
@@ -771,8 +773,9 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
         if isolation_level == IsolationLevel.SERIALIZABLE:
             _validate_added_data_files(table, parent_snapshot, conflict_detection_filter, parent_snapshot)
 
-        _validate_no_new_delete_files(table, parent_snapshot, conflict_detection_filter, None, parent_snapshot)
-        _validate_deleted_data_files(table, parent_snapshot, conflict_detection_filter, parent_snapshot)
+        if conflict_detection_filter is not None:
+            _validate_no_new_delete_files(table, parent_snapshot, conflict_detection_filter, None, parent_snapshot)
+            _validate_deleted_data_files(table, parent_snapshot, conflict_detection_filter, parent_snapshot)
 
         if self._deleted_data_files:
             _validate_no_new_deletes_for_data_files(

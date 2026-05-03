@@ -220,7 +220,6 @@ class TableProperties:
 
     WRITE_DELETE_ISOLATION_LEVEL = "write.delete.isolation-level"
     WRITE_UPDATE_ISOLATION_LEVEL = "write.update.isolation-level"
-    WRITE_MERGE_ISOLATION_LEVEL = "write.merge.isolation-level"
     WRITE_ISOLATION_LEVEL_DEFAULT = "serializable"
 
 
@@ -569,7 +568,12 @@ class Transaction:
         delete_filter = self._build_partition_predicate(
             partition_records=partitions_to_overwrite, spec=self.table_metadata.spec(), schema=self.table_metadata.schema()
         )
-        self.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties, branch=branch)
+        self.delete(
+            delete_filter=delete_filter,
+            snapshot_properties=snapshot_properties,
+            branch=branch,
+            _isolation_level_property=TableProperties.WRITE_UPDATE_ISOLATION_LEVEL,
+        )
 
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
             append_files.commit_uuid = append_snapshot_commit_uuid
@@ -626,6 +630,7 @@ class Transaction:
                 case_sensitive=case_sensitive,
                 snapshot_properties=snapshot_properties,
                 branch=branch,
+                _isolation_level_property=TableProperties.WRITE_UPDATE_ISOLATION_LEVEL,
             )
 
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
@@ -643,6 +648,7 @@ class Transaction:
         snapshot_properties: dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
         branch: str | None = MAIN_BRANCH,
+        _isolation_level_property: str | None = None,
     ) -> None:
         """
         Shorthand for deleting record from a table.
@@ -670,6 +676,8 @@ class Transaction:
             delete_filter = _parse_row_filter(delete_filter)
 
         with self.update_snapshot(snapshot_properties=snapshot_properties, branch=branch).delete() as delete_snapshot:
+            if _isolation_level_property is not None:
+                delete_snapshot._isolation_level_property = _isolation_level_property
             delete_snapshot.delete_by_predicate(delete_filter, case_sensitive)
 
         # Check if there are any files that require an actual rewrite of a data file
@@ -725,6 +733,8 @@ class Transaction:
                 with self.update_snapshot(
                     snapshot_properties=snapshot_properties, branch=branch
                 ).overwrite() as overwrite_snapshot:
+                    if _isolation_level_property is not None:
+                        overwrite_snapshot._isolation_level_property = _isolation_level_property
                     overwrite_snapshot.commit_uuid = commit_uuid
                     overwrite_snapshot.delete_by_predicate(delete_filter, case_sensitive)
                     for original_data_file, replaced_data_files in replaced_files:
