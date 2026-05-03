@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import itertools
 import os
+import random
+import time
 import uuid
 import warnings
 from abc import ABC, abstractmethod
@@ -988,6 +990,13 @@ class Transaction:
                 properties, TableProperties.COMMIT_MAX_RETRY_WAIT_MS, TableProperties.COMMIT_MAX_RETRY_WAIT_MS_DEFAULT
             )
             max_wait_ms = max_wait_val if max_wait_val is not None else TableProperties.COMMIT_MAX_RETRY_WAIT_MS_DEFAULT
+            total_timeout_val = property_as_int(
+                properties, TableProperties.COMMIT_TOTAL_RETRY_TIME_MS, TableProperties.COMMIT_TOTAL_RETRY_TIME_MS_DEFAULT
+            )
+            total_timeout_ms = (
+                total_timeout_val if total_timeout_val is not None else TableProperties.COMMIT_TOTAL_RETRY_TIME_MS_DEFAULT
+            )
+            start_time = time.monotonic()
 
             for attempt in range(num_retries + 1):
                 try:
@@ -999,10 +1008,9 @@ class Transaction:
                     self._cleanup_uncommitted_manifests()
                     break
                 except CommitFailedException:
-                    if attempt == num_retries or not self._snapshot_producers:
+                    elapsed_ms = (time.monotonic() - start_time) * 1000
+                    if attempt == num_retries or not self._snapshot_producers or elapsed_ms >= total_timeout_ms:
                         raise
-                    import random
-                    import time
 
                     wait = min(min_wait_ms * (2**attempt), max_wait_ms)
                     jitter = random.uniform(0, 0.25 * wait)

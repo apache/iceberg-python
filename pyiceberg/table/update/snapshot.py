@@ -418,7 +418,8 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             self.delete_by_predicate(
                 self._transaction._build_partition_predicate(
                     partition_records=partition_records, schema=self.schema(), spec=self.spec(spec_id)
-                )
+                ),
+                self._case_sensitive,
             )
 
 
@@ -534,11 +535,19 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
     def _refresh_for_retry(self) -> None:
         """Reset state for a retry attempt, clearing the cached delete computation."""
         super()._refresh_for_retry()
+        # Clear @cached_property by removing it from the instance __dict__.
+        # _compute_deletes depends on _parent_snapshot_id which changes on retry.
         if "_compute_deletes" in self.__dict__:
             del self.__dict__["_compute_deletes"]
 
     def _validate_concurrency(self) -> None:
-        """Validate that concurrent changes do not conflict with this delete."""
+        """Validate that concurrent changes do not conflict with this delete.
+
+        Note: This method is intentionally duplicated in _OverwriteFiles rather than
+        extracted to the base class. While the logic is currently identical, Java Iceberg's
+        BaseOverwriteFiles and BaseRowDelta have divergent validation. Keeping them separate
+        makes it easier to add RowDelta-specific validation in the future.
+        """
         from pyiceberg.table import TableProperties
         from pyiceberg.table.snapshots import IsolationLevel
         from pyiceberg.table.update.validate import (
@@ -746,7 +755,11 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
             return []
 
     def _validate_concurrency(self) -> None:
-        """Validate that concurrent changes do not conflict with this overwrite."""
+        """Validate that concurrent changes do not conflict with this overwrite.
+
+        Note: See _DeleteFiles._validate_concurrency() for why this is intentionally
+        duplicated rather than extracted to the base class.
+        """
         from pyiceberg.table import TableProperties
         from pyiceberg.table.snapshots import IsolationLevel
         from pyiceberg.table.update.validate import (
