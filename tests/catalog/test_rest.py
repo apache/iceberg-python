@@ -2069,8 +2069,8 @@ def test_catalog_from_environment_variables(catalog_config_mock: mock.Mock, rest
 
 
 @mock.patch.dict(os.environ, EXAMPLE_ENV)
-@mock.patch("pyiceberg.catalog._ENV_CONFIG.get_catalog_config")
-def test_catalog_from_environment_variables_override(catalog_config_mock: mock.Mock, rest_mock: Mocker) -> None:
+@mock.patch("pyiceberg.catalog.get_env_config")
+def test_catalog_from_environment_variables_override(get_env_config_mock: mock.Mock, rest_mock: Mocker) -> None:
     rest_mock.get(
         "https://other-service.io/api/v1/config",
         json={"defaults": {}, "overrides": {}},
@@ -2078,7 +2078,9 @@ def test_catalog_from_environment_variables_override(catalog_config_mock: mock.M
     )
     env_config: RecursiveDict = Config._from_environment_variables({})
 
-    catalog_config_mock.return_value = cast(RecursiveDict, env_config.get("catalog")).get("production")
+    mock_env_config = mock.Mock()
+    mock_env_config.get_catalog_config.return_value = cast(RecursiveDict, env_config.get("catalog")).get("production")
+    get_env_config_mock.return_value = mock_env_config
     catalog = cast(RestCatalog, load_catalog("production", uri="https://other-service.io/api"))
     assert catalog.uri == "https://other-service.io/api"
 
