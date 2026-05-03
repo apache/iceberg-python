@@ -238,6 +238,12 @@ def test_concurrent_delete_append_retries_successfully(catalog: Catalog) -> None
         patch.object(Transaction, "_rebuild_snapshot_updates", counting_rebuild),
         patch.object(type(tbl2), "_do_commit", counting_do_commit),
     ):
+        # Verify patch target matches runtime class
+        from pyiceberg.table import Transaction as RuntimeTransaction
+
+        print(f"DEBUG Transaction is RuntimeTransaction: {Transaction is RuntimeTransaction}")
+        print(f"DEBUG id(Transaction)={id(Transaction)} id(RuntimeTransaction)={id(RuntimeTransaction)}")
+        print(f"DEBUG patched: {Transaction._rebuild_snapshot_updates is counting_rebuild}")
         tbl2.append(df)
 
     print(f"DEBUG rebuild_count={rebuild_count} commit_count={commit_count}")
