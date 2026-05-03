@@ -3030,13 +3030,19 @@ def pyarrow_table_with_promoted_types(pyarrow_schema_with_promoted_types: "pa.Sc
 
 
 @pytest.fixture(scope="session")
-def ray_session() -> Generator[Any, None, None]:
+def ray_session(tmp_path_factory: pytest.TempPathFactory) -> Generator[Any, None, None]:
     """Fixture to manage Ray initialization and shutdown for tests."""
+    os.environ["RAY_ENABLE_UV_RUN_RUNTIME_ENV"] = (
+        "0"  # Disable Ray's uv-run runtime env propagation to keep test workers isolated.
+    )
+
     import ray
+
+    working_dir = str(tmp_path_factory.mktemp("ray-working-dir"))
 
     ray.init(
         ignore_reinit_error=True,
-        runtime_env={"working_dir": None},  # Prevent Ray from serializing the working directory to workers
+        runtime_env={"working_dir": working_dir},  # Prevent Ray from serializing the working directory to workers
     )
     yield ray
     ray.shutdown()
