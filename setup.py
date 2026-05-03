@@ -16,6 +16,7 @@
 # under the License.
 
 import os
+import sysconfig
 
 from setuptools import Extension, find_packages, setup
 from setuptools.command.sdist import sdist as _sdist
@@ -62,10 +63,16 @@ try:
         )
     ]
 
+    compiler_directives = {"language_level": "3"}
+
+    # Enable free-threading support when building on free-threaded Python (PEP 703)
+    if sysconfig.get_config_var("Py_GIL_DISABLED"):
+        compiler_directives["freethreading_compatible"] = True  # type: ignore[assignment]
+
     ext_modules = cythonize(
         extensions,
         include_path=[package_path],
-        compiler_directives={"language_level": "3"},
+        compiler_directives=compiler_directives,
         annotate=True,
     )
 except Exception:

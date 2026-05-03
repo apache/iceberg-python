@@ -38,6 +38,19 @@ else
   PYTHON_ARG =
 endif
 
+# Extras that lack free-threaded (PEP 703) wheels
+FREE_THREADED_INCOMPATIBLE_EXTRAS = bodo ray sql-postgres hive-kerberos datafusion
+
+# Detect free-threaded Python (e.g. PYTHON=3.14t) and exclude incompatible extras
+ifneq ($(findstring t,$(PYTHON)),)
+  EXTRAS_ARG = --all-extras $(foreach extra,$(FREE_THREADED_INCOMPATIBLE_EXTRAS),--no-extra $(extra))
+  # Ignore test files that import excluded extras at module level
+  FREE_THREADED_PYTEST_IGNORES = --ignore=tests/table/test_datafusion.py --ignore=tests/table/test_upsert.py -k "not kerberos"
+else
+  EXTRAS_ARG = --all-extras
+  FREE_THREADED_PYTEST_IGNORES =
+endif
+
 ifeq ($(COVERAGE),1)
   TEST_RUNNER = uv run $(PYTHON_ARG) python -m coverage run --parallel-mode --source=pyiceberg -m
 else
@@ -74,11 +87,11 @@ install-uv: ## Ensure uv is installed
 	fi
 
 install: install-uv ## Install uv, dependencies, and pre-commit hooks
-	uv sync $(PYTHON_ARG) --all-extras
+	uv sync $(PYTHON_ARG) $(EXTRAS_ARG)
 	@# Reinstall pyiceberg if Cython extensions (.so) are missing after `make clean` (see #2869)
 	@if ! find pyiceberg -name "*.so" 2>/dev/null | grep -q .; then \
 		echo "Cython extensions not found, reinstalling pyiceberg..."; \
-		uv sync $(PYTHON_ARG) --all-extras --reinstall-package pyiceberg; \
+		uv sync $(PYTHON_ARG) $(EXTRAS_ARG) --reinstall-package pyiceberg; \
 	fi
 	@# Install pre-commit hooks (skipped outside git repo, e.g. release tarballs)
 	@if [ -d .git ]; then \
@@ -104,7 +117,7 @@ lint: ## Run code linters via prek (pre-commit hooks)
 ##@ Testing
 
 test: ## Run all unit tests (excluding integration)
-	$(TEST_RUNNER) pytest tests/ -m "(unmarked or parametrize) and not integration" $(PYTEST_ARGS)
+	$(TEST_RUNNER) pytest tests/ -m "(unmarked or parametrize) and not integration" $(FREE_THREADED_PYTEST_IGNORES) $(PYTEST_ARGS)
 
 test-integration: test-integration-setup test-integration-exec test-integration-cleanup ## Run integration tests
 
@@ -115,7 +128,7 @@ test-integration-setup: install ## Start Docker services for integration tests
 	uv run $(PYTHON_ARG) python dev/provision.py
 
 test-integration-exec: ## Run integration tests (excluding provision)
-	$(TEST_RUNNER) pytest tests/ -m integration $(PYTEST_ARGS)
+	$(TEST_RUNNER) pytest tests/ -m integration $(FREE_THREADED_PYTEST_IGNORES) $(PYTEST_ARGS)
 
 test-integration-cleanup: ## Clean up integration test environment
 	@if [ "${KEEP_COMPOSE}" != "1" ]; then \

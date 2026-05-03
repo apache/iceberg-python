@@ -73,8 +73,7 @@ jobs:
           CIBW_PROJECT_REQUIRES_PYTHON: ">=3.10,<3.15"
           CIBW_BEFORE_TEST: "uv sync --directory {project} --only-group dev --no-install-project"
           CIBW_TEST_COMMAND: "uv run --directory {project} pytest tests/avro/test_decoder.py"
-          # Skip free-threaded (PEP 703) builds until we evaluate decoder_fast support
-          CIBW_SKIP: "cp3*t-*"
+          CIBW_FREE_THREADED_SUPPORT: "true"
 
       - name: Add source distribution
         if: matrix.os == 'ubuntu-latest'
