@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -227,14 +228,16 @@ def test_concurrent_delete_append_retries_successfully(catalog: Catalog) -> None
     original_do_commit = type(tbl2)._do_commit
     commit_count = 0
 
-    def counting_do_commit(self, updates, requirements):
+    def counting_do_commit(self: Any, updates: Any, requirements: Any) -> None:
         nonlocal commit_count
         commit_count += 1
         print(f"DEBUG _do_commit called, count={commit_count}")
         return original_do_commit(self, updates, requirements)
 
-    with patch.object(Transaction, "_rebuild_snapshot_updates", counting_rebuild), \
-         patch.object(type(tbl2), "_do_commit", counting_do_commit):
+    with (
+        patch.object(Transaction, "_rebuild_snapshot_updates", counting_rebuild),
+        patch.object(type(tbl2), "_do_commit", counting_do_commit),
+    ):
         tbl2.append(df)
 
     print(f"DEBUG rebuild_count={rebuild_count} commit_count={commit_count}")
