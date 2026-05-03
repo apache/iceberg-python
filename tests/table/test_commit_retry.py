@@ -22,15 +22,15 @@ from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import CommitFailedException, ValidationException
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties, Transaction
-from pyiceberg.table.snapshots import IsolationLevel
+from pyiceberg.table.snapshots import IsolationLevel, Operation
 from pyiceberg.types import LongType, NestedField, StringType
 
 
 def test_isolation_level_enum() -> None:
-    assert IsolationLevel.SERIALIZABLE == "serializable"
-    assert IsolationLevel.SNAPSHOT == "snapshot"
-    assert IsolationLevel("serializable") == IsolationLevel.SERIALIZABLE
-    assert IsolationLevel("snapshot") == IsolationLevel.SNAPSHOT
+    assert IsolationLevel.SERIALIZABLE.value == "serializable"
+    assert IsolationLevel.SNAPSHOT.value == "snapshot"
+    assert IsolationLevel("serializable") is IsolationLevel.SERIALIZABLE
+    assert IsolationLevel("snapshot") is IsolationLevel.SNAPSHOT
 
 
 def test_commit_retry_table_properties() -> None:
@@ -141,7 +141,7 @@ def test_refresh_for_retry_resets_producer_state(catalog: Catalog) -> None:
 
     tx = Transaction(table, autocommit=False)
     producer = _FastAppendFiles(
-        operation="append",
+        operation=Operation.APPEND,
         transaction=tx,
         io=table.io,
     )
@@ -278,7 +278,7 @@ def test_delete_files_refresh_clears_compute_deletes_cache(catalog: Catalog) -> 
 
     tx = Transaction(table, autocommit=False)
     producer = _DeleteFiles(
-        operation="delete",
+        operation=Operation.DELETE,
         transaction=tx,
         io=table.io,
     )
