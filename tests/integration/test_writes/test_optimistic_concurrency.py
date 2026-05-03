@@ -20,7 +20,7 @@ import pytest
 from pyspark.sql import SparkSession
 
 from pyiceberg.catalog import Catalog
-from pyiceberg.exceptions import CommitFailedException
+from pyiceberg.exceptions import ValidationException
 from utils import _create_table
 
 
@@ -29,15 +29,14 @@ from utils import _create_table
 def test_conflict_delete_delete(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
-    """This test should start passing once optimistic concurrency control has been implemented."""
+    """Concurrent deletes on the same data should fail with ValidationException."""
     identifier = "default.test_conflict"
     tbl1 = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_with_null])
     tbl2 = session_catalog.load_table(identifier)
 
     tbl1.delete("string == 'z'")
 
-    with pytest.raises(CommitFailedException, match="(branch main has changed: expected id ).*"):
-        # tbl2 isn't aware of the commit by tbl1
+    with pytest.raises(ValidationException):
         tbl2.delete("string == 'z'")
 
 
@@ -46,17 +45,13 @@ def test_conflict_delete_delete(
 def test_conflict_delete_append(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
-    """This test should start passing once optimistic concurrency control has been implemented."""
+    """Append after a concurrent delete should succeed via retry."""
     identifier = "default.test_conflict"
     tbl1 = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_with_null])
     tbl2 = session_catalog.load_table(identifier)
 
-    # This is allowed
     tbl1.delete("string == 'z'")
-
-    with pytest.raises(CommitFailedException, match="(branch main has changed: expected id ).*"):
-        # tbl2 isn't aware of the commit by tbl1
-        tbl2.append(arrow_table_with_null)
+    tbl2.append(arrow_table_with_null)
 
 
 @pytest.mark.integration
@@ -64,15 +59,14 @@ def test_conflict_delete_append(
 def test_conflict_append_delete(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
-    """This test should start passing once optimistic concurrency control has been implemented."""
+    """Delete after a concurrent append fails with ValidationException under serializable isolation."""
     identifier = "default.test_conflict"
     tbl1 = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_with_null])
     tbl2 = session_catalog.load_table(identifier)
 
     tbl1.append(arrow_table_with_null)
 
-    with pytest.raises(CommitFailedException, match="(branch main has changed: expected id ).*"):
-        # tbl2 isn't aware of the commit by tbl1
+    with pytest.raises(ValidationException):
         tbl2.delete("string == 'z'")
 
 
@@ -81,13 +75,10 @@ def test_conflict_append_delete(
 def test_conflict_append_append(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
-    """This test should start passing once optimistic concurrency control has been implemented."""
+    """Concurrent appends should both succeed via retry."""
     identifier = "default.test_conflict"
     tbl1 = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_with_null])
     tbl2 = session_catalog.load_table(identifier)
 
     tbl1.append(arrow_table_with_null)
-
-    with pytest.raises(CommitFailedException, match="(branch main has changed: expected id ).*"):
-        # tbl2 isn't aware of the commit by tbl1
-        tbl2.append(arrow_table_with_null)
+    tbl2.append(arrow_table_with_null)

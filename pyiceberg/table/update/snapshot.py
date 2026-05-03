@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import itertools
+import logging
 import uuid
 from abc import abstractmethod
 from collections import defaultdict
@@ -80,6 +81,8 @@ from pyiceberg.utils.properties import property_as_bool, property_as_int
 if TYPE_CHECKING:
     from pyiceberg.table import Transaction
 
+logger = logging.getLogger(__name__)
+
 
 def _new_manifest_file_name(num: int, commit_uuid: uuid.UUID) -> str:
     return f"{commit_uuid}-m{num}.avro"
@@ -104,6 +107,8 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     _target_branch: str | None
     _predicate: BooleanExpression
     _case_sensitive: bool
+    _written_manifests: list[str]
+    _uncommitted_manifests: list[str]
 
     def __init__(
         self,
@@ -123,6 +128,8 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._deleted_data_files = set()
         self.snapshot_properties = snapshot_properties
         self._manifest_num_counter = itertools.count(0)
+        self._written_manifests = []
+        self._uncommitted_manifests = []
         from pyiceberg.table import TableProperties
 
         self._compression = self._transaction.table_metadata.properties.get(  # type: ignore
@@ -351,10 +358,38 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         location_provider = self._transaction._table.location_provider()
         file_name = _new_manifest_file_name(num=next(self._manifest_num_counter), commit_uuid=self.commit_uuid)
         file_path = location_provider.new_metadata_location(file_name)
+        self._written_manifests.append(file_path)
         return self._io.new_output(file_path)
 
     def fetch_manifest_entry(self, manifest: ManifestFile, discard_deleted: bool = True) -> list[ManifestEntry]:
         return manifest.fetch_manifest_entry(io=self._io, discard_deleted=discard_deleted)
+
+    def commit(self) -> None:
+        self._transaction._register_snapshot_producer(self)
+        self._transaction._apply(*self._commit())
+
+    def _cleanup_uncommitted(self) -> None:
+        """Delete manifest files from failed retry attempts."""
+        for path in self._uncommitted_manifests:
+            try:
+                self._io.delete(path)
+            except Exception:
+                logger.warning("Failed to delete uncommitted manifest: %s", path, exc_info=True)
+        self._uncommitted_manifests.clear()
+
+    def _refresh_for_retry(self) -> None:
+        """Reset state for a retry attempt with refreshed metadata."""
+        self._uncommitted_manifests.extend(self._written_manifests)
+        self._written_manifests.clear()
+        self._parent_snapshot_id = (
+            snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.snapshot_by_name(self._target_branch)) else None
+        )
+        self._snapshot_id = self._transaction.table_metadata.new_snapshot_id()
+        self._manifest_num_counter = itertools.count(0)
+        self.commit_uuid = uuid.uuid4()
+
+    def _validate_concurrency(self) -> None:
+        """Validate that concurrent changes do not conflict with this operation. No-op by default."""
 
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
         project = inclusive_projection(self.schema(), self.spec(spec_id), self._case_sensitive)
@@ -494,6 +529,48 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
     def files_affected(self) -> bool:
         """Indicate if any manifest-entries can be dropped."""
         return len(self._deleted_entries()) > 0
+
+    def _refresh_for_retry(self) -> None:
+        """Reset state for a retry attempt, clearing the cached delete computation."""
+        super()._refresh_for_retry()
+        if "_compute_deletes" in self.__dict__:
+            del self.__dict__["_compute_deletes"]
+
+    def _validate_concurrency(self) -> None:
+        """Validate that concurrent changes do not conflict with this delete."""
+        from pyiceberg.table import TableProperties
+        from pyiceberg.table.snapshots import IsolationLevel
+        from pyiceberg.table.update.validate import (
+            _validate_added_data_files,
+            _validate_deleted_data_files,
+            _validate_no_new_delete_files,
+            _validate_no_new_deletes_for_data_files,
+        )
+
+        if self._parent_snapshot_id is None:
+            return
+
+        table = self._transaction._table
+        parent_snapshot = table.metadata.snapshot_by_id(self._parent_snapshot_id)
+        if parent_snapshot is None:
+            return
+
+        isolation_level_str = table.metadata.properties.get(
+            TableProperties.WRITE_DELETE_ISOLATION_LEVEL, TableProperties.WRITE_ISOLATION_LEVEL_DEFAULT
+        )
+        isolation_level = IsolationLevel(isolation_level_str)
+        conflict_detection_filter = self._predicate if self._predicate != AlwaysFalse() else None
+
+        if isolation_level == IsolationLevel.SERIALIZABLE:
+            _validate_added_data_files(table, parent_snapshot, conflict_detection_filter, parent_snapshot)
+
+        _validate_no_new_delete_files(table, parent_snapshot, conflict_detection_filter, None, parent_snapshot)
+        _validate_deleted_data_files(table, parent_snapshot, conflict_detection_filter, parent_snapshot)
+
+        if self._deleted_data_files:
+            _validate_no_new_deletes_for_data_files(
+                table, parent_snapshot, conflict_detection_filter, self._deleted_data_files, parent_snapshot
+            )
 
 
 class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
@@ -665,6 +742,42 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
             return list(itertools.chain(*list_of_entries))
         else:
             return []
+
+    def _validate_concurrency(self) -> None:
+        """Validate that concurrent changes do not conflict with this overwrite."""
+        from pyiceberg.table import TableProperties
+        from pyiceberg.table.snapshots import IsolationLevel
+        from pyiceberg.table.update.validate import (
+            _validate_added_data_files,
+            _validate_deleted_data_files,
+            _validate_no_new_delete_files,
+            _validate_no_new_deletes_for_data_files,
+        )
+
+        if self._parent_snapshot_id is None:
+            return
+
+        table = self._transaction._table
+        parent_snapshot = table.metadata.snapshot_by_id(self._parent_snapshot_id)
+        if parent_snapshot is None:
+            return
+
+        isolation_level_str = table.metadata.properties.get(
+            TableProperties.WRITE_DELETE_ISOLATION_LEVEL, TableProperties.WRITE_ISOLATION_LEVEL_DEFAULT
+        )
+        isolation_level = IsolationLevel(isolation_level_str)
+        conflict_detection_filter = self._predicate if self._predicate != AlwaysFalse() else None
+
+        if isolation_level == IsolationLevel.SERIALIZABLE:
+            _validate_added_data_files(table, parent_snapshot, conflict_detection_filter, parent_snapshot)
+
+        _validate_no_new_delete_files(table, parent_snapshot, conflict_detection_filter, None, parent_snapshot)
+        _validate_deleted_data_files(table, parent_snapshot, conflict_detection_filter, parent_snapshot)
+
+        if self._deleted_data_files:
+            _validate_no_new_deletes_for_data_files(
+                table, parent_snapshot, conflict_detection_filter, self._deleted_data_files, parent_snapshot
+            )
 
 
 class UpdateSnapshot:

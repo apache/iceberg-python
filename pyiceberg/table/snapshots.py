@@ -86,6 +86,13 @@ class Operation(Enum):
         return f"Operation.{self.name}"
 
 
+class IsolationLevel(str, Enum):
+    """Transaction isolation level for concurrent write validation."""
+
+    SERIALIZABLE = "serializable"
+    SNAPSHOT = "snapshot"
+
+
 class UpdateMetrics:
     added_file_size: int
     removed_file_size: int
