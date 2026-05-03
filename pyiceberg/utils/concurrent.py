@@ -29,7 +29,7 @@ class ExecutorFactory:
     @staticmethod
     def max_workers() -> int | None:
         """Return the max number of workers configured."""
-        return Config().get_int("max-workers")
+        return Config.load().get_int("max-workers")
 
     @staticmethod
     def get_or_create() -> Executor:
