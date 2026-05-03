@@ -3029,6 +3029,15 @@ def pyarrow_table_with_promoted_types(pyarrow_schema_with_promoted_types: "pa.Sc
     )
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    # Disable Ray's automatic uv environment propagation to workers.
+    # When tests are invoked via `uv run`, Ray detects the wrapper and tries
+    # to package the working directory for remote workers, which is unnecessary
+    # and problematic in local single-node test mode
+    # See https://docs.ray.io/en/latest/_modules/ray/_private/worker.html
+    os.environ["RAY_ENABLE_UV_RUN_RUNTIME_ENV"] = "0"
+
+
 @pytest.fixture(scope="session")
 def ray_session() -> Generator[Any, None, None]:
     """Fixture to manage Ray initialization and shutdown for tests."""
@@ -3036,7 +3045,6 @@ def ray_session() -> Generator[Any, None, None]:
 
     ray.init(
         ignore_reinit_error=True,
-        runtime_env={"working_dir": None},  # Prevent Ray from serializing the working directory to workers
     )
     yield ray
     ray.shutdown()
