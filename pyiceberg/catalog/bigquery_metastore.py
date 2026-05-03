@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -66,6 +67,8 @@ ICEBERG_TABLE_TYPE_VALUE = "ICEBERG"
 HIVE_SERIALIZATION_LIBRARY = "org.apache.iceberg.mr.hive.HiveIcebergSerDe"
 HIVE_FILE_INPUT_FORMAT = "org.apache.iceberg.mr.hive.HiveIcebergInputFormat"
 HIVE_FILE_OUTPUT_FORMAT = "org.apache.iceberg.mr.hive.HiveIcebergOutputFormat"
+
+logger = logging.getLogger(__name__)
 
 
 class BigqueryCommitStatus(str, Enum):
@@ -317,6 +320,17 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
                     raise CommitStateUnknownException(
                         f"Commit state unknown for table {dataset_name}.{table_name}"
                     ) from commit_error
+                elif commit_status == BigqueryCommitStatus.FAILURE:
+                    logger.warning("Failed to commit updates to table %s", table_name)
+                    try:
+                        updated_staged_table.io.delete(updated_staged_table.metadata_location)
+                    except Exception:
+                        logger.error(
+                            "Failed to cleanup metadata file at %s for table %s",
+                            updated_staged_table.metadata_location,
+                            table_name,
+                            exc_info=logger.isEnabledFor(logging.DEBUG),
+                        )
 
         if commit_error:
             raise commit_error
