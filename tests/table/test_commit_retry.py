@@ -73,7 +73,21 @@ def test_commit_retry_on_commit_failed(catalog: Catalog) -> None:
     tbl1.append(df)
 
     # Second append should succeed via retry (append vs append never conflicts)
-    tbl2.append(df)
+    import pyiceberg.table as _table_module
+
+    RuntimeTransaction = _table_module.Transaction
+    original_rebuild = RuntimeTransaction._rebuild_snapshot_updates
+    rebuild_count = 0
+
+    def counting_rebuild(self_tx: Any) -> None:
+        nonlocal rebuild_count
+        rebuild_count += 1
+        original_rebuild(self_tx)
+
+    with patch.object(RuntimeTransaction, "_rebuild_snapshot_updates", counting_rebuild):
+        tbl2.append(df)
+
+    assert rebuild_count == 1, "Expected exactly one retry via _rebuild_snapshot_updates"
 
     # Both appends should be visible
     refreshed = catalog.load_table("default.retry_test")
@@ -209,44 +223,20 @@ def test_concurrent_delete_append_retries_successfully(catalog: Catalog) -> None
 
     tbl1.delete("x == 1")
 
-    print(f"DEBUG tbl1.metadata.current_snapshot_id={tbl1.metadata.current_snapshot_id}")
-    print(f"DEBUG tbl2.metadata.current_snapshot_id={tbl2.metadata.current_snapshot_id}")
-    print(f"DEBUG tbl1.metadata is tbl2.metadata: {tbl1.metadata is tbl2.metadata}")
-    print(f"DEBUG tbl1 is tbl2: {tbl1 is tbl2}")
-    print(f"DEBUG id(tbl1)={id(tbl1)} id(tbl2)={id(tbl2)}")
-    print(f"DEBUG id(tbl1.metadata)={id(tbl1.metadata)} id(tbl2.metadata)={id(tbl2.metadata)}")
+    import pyiceberg.table as _table_module
 
-    original_rebuild = Transaction._rebuild_snapshot_updates
+    RuntimeTransaction = _table_module.Transaction
+    original_rebuild = RuntimeTransaction._rebuild_snapshot_updates
     rebuild_count = 0
 
-    def counting_rebuild(self_tx: Transaction) -> None:
+    def counting_rebuild(self_tx: Any) -> None:
         nonlocal rebuild_count
         rebuild_count += 1
-        print(f"DEBUG _rebuild_snapshot_updates called, count={rebuild_count}")
         original_rebuild(self_tx)
 
-    original_do_commit = type(tbl2)._do_commit
-    commit_count = 0
-
-    def counting_do_commit(self: Any, updates: Any, requirements: Any) -> None:
-        nonlocal commit_count
-        commit_count += 1
-        print(f"DEBUG _do_commit called, count={commit_count}")
-        return original_do_commit(self, updates, requirements)
-
-    with (
-        patch.object(Transaction, "_rebuild_snapshot_updates", counting_rebuild),
-        patch.object(type(tbl2), "_do_commit", counting_do_commit),
-    ):
-        # Verify patch target matches runtime class
-        from pyiceberg.table import Transaction as RuntimeTransaction
-
-        print(f"DEBUG Transaction is RuntimeTransaction: {Transaction is RuntimeTransaction}")
-        print(f"DEBUG id(Transaction)={id(Transaction)} id(RuntimeTransaction)={id(RuntimeTransaction)}")
-        print(f"DEBUG patched: {Transaction._rebuild_snapshot_updates is counting_rebuild}")
+    with patch.object(RuntimeTransaction, "_rebuild_snapshot_updates", counting_rebuild):
         tbl2.append(df)
 
-    print(f"DEBUG rebuild_count={rebuild_count} commit_count={commit_count}")
     assert rebuild_count == 1
 
     refreshed = catalog.load_table("default.del_app_test")
@@ -407,16 +397,19 @@ def test_uncommitted_manifests_tracked_correctly(catalog: Catalog) -> None:
 
     tbl1.append(df)
 
-    original_rebuild = Transaction._rebuild_snapshot_updates
+    import pyiceberg.table as _table_module2
+
+    RuntimeTransaction2 = _table_module2.Transaction
+    original_rebuild = RuntimeTransaction2._rebuild_snapshot_updates
     uncommitted_count_during_rebuild = 0
 
-    def checking_rebuild(self_tx: Transaction) -> None:
+    def checking_rebuild(self_tx: Any) -> None:
         nonlocal uncommitted_count_during_rebuild
         original_rebuild(self_tx)
         for producer in self_tx._snapshot_producers:
             uncommitted_count_during_rebuild += len(producer._uncommitted_manifests)
 
-    with patch.object(Transaction, "_rebuild_snapshot_updates", checking_rebuild):
+    with patch.object(RuntimeTransaction2, "_rebuild_snapshot_updates", checking_rebuild):
         tbl2.append(df)
 
     # After rebuild, the first attempt's manifests should be in _uncommitted_manifests
