@@ -208,17 +208,36 @@ def test_concurrent_delete_append_retries_successfully(catalog: Catalog) -> None
 
     tbl1.delete("x == 1")
 
+    print(f"DEBUG tbl1.metadata.current_snapshot_id={tbl1.metadata.current_snapshot_id}")
+    print(f"DEBUG tbl2.metadata.current_snapshot_id={tbl2.metadata.current_snapshot_id}")
+    print(f"DEBUG tbl1.metadata is tbl2.metadata: {tbl1.metadata is tbl2.metadata}")
+    print(f"DEBUG tbl1 is tbl2: {tbl1 is tbl2}")
+    print(f"DEBUG id(tbl1)={id(tbl1)} id(tbl2)={id(tbl2)}")
+    print(f"DEBUG id(tbl1.metadata)={id(tbl1.metadata)} id(tbl2.metadata)={id(tbl2.metadata)}")
+
     original_rebuild = Transaction._rebuild_snapshot_updates
     rebuild_count = 0
 
     def counting_rebuild(self_tx: Transaction) -> None:
         nonlocal rebuild_count
         rebuild_count += 1
+        print(f"DEBUG _rebuild_snapshot_updates called, count={rebuild_count}")
         original_rebuild(self_tx)
 
-    with patch.object(Transaction, "_rebuild_snapshot_updates", counting_rebuild):
+    original_do_commit = type(tbl2)._do_commit
+    commit_count = 0
+
+    def counting_do_commit(self, updates, requirements):
+        nonlocal commit_count
+        commit_count += 1
+        print(f"DEBUG _do_commit called, count={commit_count}")
+        return original_do_commit(self, updates, requirements)
+
+    with patch.object(Transaction, "_rebuild_snapshot_updates", counting_rebuild), \
+         patch.object(type(tbl2), "_do_commit", counting_do_commit):
         tbl2.append(df)
 
+    print(f"DEBUG rebuild_count={rebuild_count} commit_count={commit_count}")
     assert rebuild_count == 1
 
     refreshed = catalog.load_table("default.del_app_test")
