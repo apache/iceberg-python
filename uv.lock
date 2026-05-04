@@ -1377,7 +1377,7 @@ name = "exceptiongroup"
 version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0b/9f/a65090624ecf468cdca03533906e7c69ed7588582240cfe7cc9e770b50eb/exceptiongroup-1.3.0.tar.gz", hash = "sha256:b241f5885f560bc56a59ee63ca4c6a8bfa46ae4ad651af316d4e81817bb9fd88", size = 29749, upload-time = "2025-05-10T17:42:51.123Z" }
 wheels = [
@@ -2222,10 +2222,10 @@ wheels = [
 
 [[package]]
 name = "impi-rt"
-version = "2021.17.0"
+version = "2021.18.0"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/46/55/376f8c095326b10109d89e08eb46d05600c494d813df94300d65e94e5ab6/impi_rt-2021.17.0-py2.py3-none-win_amd64.whl", hash = "sha256:34993304c1034474f1b52b94e484807029d571e246c1c842bab2dce44252c20a", size = 17439414, upload-time = "2025-10-22T17:57:07.971Z" },
+    { url = "https://files.pythonhosted.org/packages/39/06/6527fb776213f3fd1432b84f35421e3c848c1b4dc40ec9f38aafeabce7fd/impi_rt-2021.18.0-py2.py3-none-win_amd64.whl", hash = "sha256:344eb2c1ec364e6f060ca97481e51d913699e75934f52f0ceacfa87122047bb4", size = 21846717, upload-time = "2026-04-24T14:14:26.77Z" },
 ]
 
 [[package]]
@@ -3792,11 +3792,11 @@ wheels = [
 
 [[package]]
 name = "openmpi"
-version = "5.0.9"
+version = "5.0.10"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7a/ed/51c9a4c0b56a0a41e28d5282d0d1621910054266a54f36bbf0a249536c07/openmpi-5.0.9-py3-none-macosx_11_0_arm64.whl", hash = "sha256:18d38be62afa692854b0f3c575a589c191651fe30b7478c5f1333f3f2de0d3d7", size = 3145187, upload-time = "2025-11-14T16:11:59.939Z" },
-    { url = "https://files.pythonhosted.org/packages/5d/ff/b16d51f4e282c4629816f60bda56ebfed0d483a7e168f3b50576c8ab6714/openmpi-5.0.9-py3-none-macosx_11_0_x86_64.whl", hash = "sha256:a0d8c35c6ced31253c8e27c2dfb6900ba6cb89da65d7e2f56ac2d8658271b507", size = 3571687, upload-time = "2025-11-14T16:12:02.242Z" },
+    { url = "https://files.pythonhosted.org/packages/65/48/47b429693ecfb64bb97caead4ef274a09e1c960242a4239929c942c6ad46/openmpi-5.0.10-py3-none-macosx_11_0_arm64.whl", hash = "sha256:6e9cd0cb0c29abd5157449343c93d31906f4aaaabf9e84fff5da67d305d1d55b", size = 3150518, upload-time = "2026-02-25T10:48:59.563Z" },
+    { url = "https://files.pythonhosted.org/packages/87/16/5f6260bd68e8bd1ed4939ebb3e3fda89e874426ee3d62db9e2e56bc7242f/openmpi-5.0.10-py3-none-macosx_11_0_x86_64.whl", hash = "sha256:f4f524543cf443072b79b1600a71fa0019e20c2ff3291968092f4f0552a17829", size = 3527026, upload-time = "2026-02-25T10:49:01.444Z" },
 ]
 
 [[package]]
