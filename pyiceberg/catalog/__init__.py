@@ -545,6 +545,7 @@ class Catalog(ABC):
 
         Raises:
             NoSuchTableError: If a table with the name does not exist.
+            TableAlreadyExistsError: If the target table already exists.
         """
 
     @abstractmethod
