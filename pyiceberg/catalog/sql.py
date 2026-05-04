@@ -237,12 +237,13 @@ class SqlCatalog(MetastoreCatalog):
 
         return self.load_table(identifier=identifier)
 
-    def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
+    def register_table(self, identifier: str | Identifier, metadata_location: str, overwrite: bool = False) -> Table:
         """Register a new table using existing metadata.
 
         Args:
             identifier (Union[str, Identifier]): Table identifier for the table
             metadata_location (str): The location to the metadata
+            overwrite (bool): Whether to overwrite the existing table, default False
 
         Returns:
             Table: The newly registered table
@@ -251,6 +252,9 @@ class SqlCatalog(MetastoreCatalog):
             TableAlreadyExistsError: If the table already exists
             NoSuchNamespaceError: If namespace does not exist
         """
+        if overwrite:
+            raise NotImplementedError("`overwrite` isn't supported")
+
         namespace_tuple = Catalog.namespace_from(identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple)
         table_name = Catalog.table_name_from(identifier)

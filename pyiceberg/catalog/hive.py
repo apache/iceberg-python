@@ -446,12 +446,13 @@ class HiveCatalog(MetastoreCatalog):
     ) -> View:
         raise NotImplementedError
 
-    def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
+    def register_table(self, identifier: str | Identifier, metadata_location: str, overwrite: bool = False) -> Table:
         """Register a new table using existing metadata.
 
         Args:
             identifier (Union[str, Identifier]): Table identifier for the table
             metadata_location (str): The location to the metadata
+            overwrite (bool): Whether to overwrite the existing table, default False
 
         Returns:
             Table: The newly registered table
@@ -459,6 +460,9 @@ class HiveCatalog(MetastoreCatalog):
         Raises:
             TableAlreadyExistsError: If the table already exists
         """
+        if overwrite:
+            raise NotImplementedError("`overwrite` isn't supported")
+
         database_name, table_name = self.identifier_to_database_and_table(identifier)
         io = self._load_file_io(location=metadata_location)
         metadata_file = io.new_input(metadata_location)
