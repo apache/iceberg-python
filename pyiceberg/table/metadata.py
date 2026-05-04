@@ -67,6 +67,7 @@ INITIAL_SPEC_ID = 0
 DEFAULT_SCHEMA_ID = 0
 
 SUPPORTED_TABLE_FORMAT_VERSION = 2
+ONE_MINUTE_MS = 60_000
 
 
 def cleanup_snapshot_id(data: dict[str, Any]) -> dict[str, Any]:
@@ -122,6 +123,29 @@ def construct_refs(table_metadata: TableMetadata) -> TableMetadata:
             table_metadata.refs[MAIN_BRANCH] = SnapshotRef(
                 snapshot_id=table_metadata.current_snapshot_id, snapshot_ref_type=SnapshotRefType.BRANCH
             )
+    return table_metadata
+
+
+def check_snapshot_timestamps(table_metadata: TableMetadata) -> TableMetadata:
+    """Validate snapshot and snapshot-log timestamps with small clock skew tolerance."""
+    last_snapshot_log_entry: SnapshotLogEntry | None = None
+    for snapshot_log_entry in table_metadata.snapshot_log:
+        if (
+            last_snapshot_log_entry is not None
+            and snapshot_log_entry.timestamp_ms - last_snapshot_log_entry.timestamp_ms < -ONE_MINUTE_MS
+        ):
+            raise ValidationError("[BUG] Expected sorted snapshot log entries.")
+        last_snapshot_log_entry = snapshot_log_entry
+
+    if (
+        last_snapshot_log_entry is not None
+        and table_metadata.last_updated_ms - last_snapshot_log_entry.timestamp_ms < -ONE_MINUTE_MS
+    ):
+        raise ValidationError(
+            f"Invalid update timestamp {table_metadata.last_updated_ms}: "
+            f"before last snapshot log entry at {last_snapshot_log_entry.timestamp_ms}"
+        )
+
     return table_metadata
 
 
@@ -378,6 +402,10 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
     def construct_refs(self) -> TableMetadataV1:
         return construct_refs(self)
 
+    @model_validator(mode="after")
+    def check_snapshot_timestamps(self) -> TableMetadata:
+        return check_snapshot_timestamps(self)
+
     @model_validator(mode="before")
     def set_v2_compatible_defaults(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Set default values to be compatible with the format v2.
@@ -519,6 +547,10 @@ class TableMetadataV2(TableMetadataCommonFields, IcebergBaseModel):
     def construct_refs(self) -> TableMetadata:
         return construct_refs(self)
 
+    @model_validator(mode="after")
+    def check_snapshot_timestamps(self) -> TableMetadata:
+        return check_snapshot_timestamps(self)
+
     format_version: Literal[2] = Field(alias="format-version", default=2)
     """An integer version number for the format. Implementations must throw
     an exception if a table’s version is higher than the supported version."""
@@ -562,6 +594,10 @@ class TableMetadataV3(TableMetadataCommonFields, IcebergBaseModel):
     @model_validator(mode="after")
     def construct_refs(self) -> TableMetadata:
         return construct_refs(self)
+
+    @model_validator(mode="after")
+    def check_snapshot_timestamps(self) -> TableMetadata:
+        return check_snapshot_timestamps(self)
 
     format_version: Literal[3] = Field(alias="format-version", default=3)
     """An integer version number for the format. Implementations must throw
