@@ -1469,7 +1469,7 @@ def test_load_view_404(rest_mock: Mocker) -> None:
         json={
             "error": {
                 "message": "View does not exist: examples.non_existent_view in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
-                "type": "NoSuchNamespaceErrorException",
+                "type": "NoSuchViewException",
                 "code": 404,
             }
         },
