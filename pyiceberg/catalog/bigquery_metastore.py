@@ -17,6 +17,8 @@
 from __future__ import annotations
 
 import json
+import logging
+from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from google.api_core.exceptions import NotFound
@@ -28,7 +30,14 @@ from google.cloud.exceptions import Conflict
 from google.oauth2 import service_account
 
 from pyiceberg.catalog import WAREHOUSE_LOCATION, MetastoreCatalog, PropertiesUpdateSummary
-from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchNamespaceError, NoSuchTableError, TableAlreadyExistsError
+from pyiceberg.exceptions import (
+    CommitFailedException,
+    CommitStateUnknownException,
+    NamespaceAlreadyExistsError,
+    NoSuchNamespaceError,
+    NoSuchTableError,
+    TableAlreadyExistsError,
+)
 from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
@@ -58,6 +67,14 @@ ICEBERG_TABLE_TYPE_VALUE = "ICEBERG"
 HIVE_SERIALIZATION_LIBRARY = "org.apache.iceberg.mr.hive.HiveIcebergSerDe"
 HIVE_FILE_INPUT_FORMAT = "org.apache.iceberg.mr.hive.HiveIcebergInputFormat"
 HIVE_FILE_OUTPUT_FORMAT = "org.apache.iceberg.mr.hive.HiveIcebergOutputFormat"
+
+logger = logging.getLogger(__name__)
+
+
+class BigqueryCommitStatus(str, Enum):
+    SUCCESS = "SUCCESS"
+    FAILURE = "FAILURE"
+    UNKNOWN = "UNKNOWN"
 
 
 class BigQueryMetastoreCatalog(MetastoreCatalog):
@@ -231,7 +248,96 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
     def commit_table(
         self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
-        raise NotImplementedError
+        table_identifier = table.name()
+        dataset_name, table_name = self.identifier_to_database_and_table(table_identifier, NoSuchTableError)
+        table_ref = TableReference(
+            dataset_ref=DatasetReference(project=self.project_id, dataset_id=dataset_name),
+            table_id=table_name,
+        )
+
+        current_bq_table: BQTable | None
+        current_table: Table | None
+        try:
+            current_bq_table = self.client.get_table(table_ref)
+        except NotFound:
+            current_bq_table = None
+            current_table = None
+        else:
+            current_table = self._convert_bigquery_table_to_iceberg_table(table_identifier, current_bq_table)
+
+        updated_staged_table = self._update_and_stage_table(current_table, table_identifier, requirements, updates)
+        if current_table and updated_staged_table.metadata == current_table.metadata:
+            return CommitTableResponse(metadata=current_table.metadata, metadata_location=current_table.metadata_location)
+
+        self._write_metadata(
+            metadata=updated_staged_table.metadata,
+            io=updated_staged_table.io,
+            metadata_path=updated_staged_table.metadata_location,
+        )
+
+        commit_error: Exception | None = None
+        try:
+            if current_bq_table and current_table:
+                current_bq_table.external_catalog_table_options = self._create_external_catalog_table_options(
+                    updated_staged_table.metadata.location,
+                    self._create_table_parameters(
+                        metadata_file_location=updated_staged_table.metadata_location,
+                        table_metadata=updated_staged_table.metadata,
+                        previous_metadata_location=current_table.metadata_location,
+                    ),
+                )
+                self.client.update_table(current_bq_table, ["external_catalog_table_options"])
+            else:
+                self.client.create_table(
+                    self._make_new_table(
+                        updated_staged_table.metadata,
+                        updated_staged_table.metadata_location,
+                        table_ref,
+                    )
+                )
+        except NotFound as e:
+            commit_error = (
+                CommitFailedException(f"Table does not exist: {dataset_name}.{table_name}")
+                if current_table
+                else NoSuchNamespaceError(f"Namespace does not exist: {dataset_name}")
+            )
+            commit_error.__cause__ = e
+        except Conflict as e:
+            commit_error = (
+                CommitFailedException(f"Table has been updated by another process: {dataset_name}.{table_name}")
+                if current_table
+                else TableAlreadyExistsError(f"Table {table_name} already exists")
+            )
+            commit_error.__cause__ = e
+        except Exception as e:
+            commit_error = e
+        finally:
+            if commit_error:
+                commit_status = self._check_bigquery_commit_status(table_ref, updated_staged_table.metadata_location)
+                if commit_status == BigqueryCommitStatus.SUCCESS:
+                    commit_error = None
+                elif commit_status == BigqueryCommitStatus.UNKNOWN:
+                    raise CommitStateUnknownException(
+                        f"Commit state unknown for table {dataset_name}.{table_name}"
+                    ) from commit_error
+                elif commit_status == BigqueryCommitStatus.FAILURE:
+                    logger.warning("Failed to commit updates to table %s", table_name)
+                    try:
+                        updated_staged_table.io.delete(updated_staged_table.metadata_location)
+                    except Exception:
+                        logger.error(
+                            "Failed to cleanup metadata file at %s for table %s",
+                            updated_staged_table.metadata_location,
+                            table_name,
+                            exc_info=logger.isEnabledFor(logging.DEBUG),
+                        )
+
+        if commit_error:
+            raise commit_error
+
+        return CommitTableResponse(
+            metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
+        )
 
     def rename_table(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> Table:
         raise NotImplementedError
@@ -387,11 +493,20 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
             catalog=self,
         )
 
-    def _create_table_parameters(self, metadata_file_location: str, table_metadata: TableMetadata) -> dict[str, Any]:
-        parameters: dict[str, Any] = table_metadata.properties
+    def _create_table_parameters(
+        self,
+        metadata_file_location: str,
+        table_metadata: TableMetadata,
+        previous_metadata_location: str | None = None,
+    ) -> dict[str, Any]:
+        parameters: dict[str, Any] = dict(table_metadata.properties)
         if table_metadata.table_uuid:
             parameters["uuid"] = str(table_metadata.table_uuid)
         parameters[METADATA_LOCATION_PROP] = metadata_file_location
+        if previous_metadata_location:
+            parameters[PREVIOUS_METADATA_LOCATION_PROP] = previous_metadata_location
+        else:
+            parameters.pop(PREVIOUS_METADATA_LOCATION_PROP, None)
         parameters[TABLE_TYPE_PROP] = ICEBERG_TABLE_TYPE_VALUE
         parameters["EXTERNAL"] = True
 
@@ -410,6 +525,35 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
                     parameters["totalSize"] = summary.get(TOTAL_FILE_SIZE)
 
         return parameters
+
+    def _check_bigquery_commit_status(self, table_ref: TableReference, new_metadata_location: str) -> str:
+        try:
+            bq_table = self.client.get_table(table_ref)
+            parameters = (
+                bq_table.external_catalog_table_options.parameters
+                if bq_table.external_catalog_table_options and bq_table.external_catalog_table_options.parameters
+                else {}
+            )
+            current_metadata_location = parameters.get(METADATA_LOCATION_PROP)
+            if current_metadata_location == new_metadata_location:
+                return BigqueryCommitStatus.SUCCESS
+
+            if not current_metadata_location:
+                return BigqueryCommitStatus.FAILURE
+
+            io = self._load_file_io(location=current_metadata_location)
+            current_metadata = FromInputFile.table_metadata(io.new_input(current_metadata_location))
+
+            previous_metadata_locations = {log.metadata_file for log in current_metadata.metadata_log}
+            previous_metadata_location = parameters.get(PREVIOUS_METADATA_LOCATION_PROP)
+            if previous_metadata_location:
+                previous_metadata_locations.add(previous_metadata_location)
+
+            return BigqueryCommitStatus.SUCCESS if new_metadata_location in previous_metadata_locations else "FAILURE"
+        except NotFound:
+            return BigqueryCommitStatus.FAILURE
+        except Exception:
+            return BigqueryCommitStatus.UNKNOWN
 
     def _default_storage_location(self, location: str | None, dataset_ref: DatasetReference) -> str | None:
         if location:
