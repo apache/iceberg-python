@@ -186,6 +186,7 @@ from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
 
 if TYPE_CHECKING:
+    from pyiceberg.encryption.manager import EncryptionManager
     from pyiceberg.table import FileScanTask, WriteTask
 
 logger = logging.getLogger(__name__)
@@ -1107,12 +1108,47 @@ def _get_file_format(file_format: FileFormat, **kwargs: dict[str, Any]) -> ds.Fi
         raise ValueError(f"Unsupported file format: {file_format}")
 
 
-def _read_deletes(io: FileIO, data_file: DataFile) -> dict[str, pa.ChunkedArray]:
+def _get_decryption_properties(key_metadata_bytes: bytes) -> Any:
+    """Build FileDecryptionProperties from Iceberg key metadata.
+
+    Requires a custom PyArrow build with pyarrow.parquet.encryption support.
+    """
+    try:
+        import pyarrow.parquet.encryption as pe
+    except ImportError as e:
+        raise ImportError(
+            "Parquet Modular Encryption requires a PyArrow build with encryption support. "
+            "See PYARROW_ENCRYPTION_HANDOFF.md for build instructions."
+        ) from e
+
+    from pyiceberg.encryption.key_metadata import StandardKeyMetadata
+
+    key_metadata = StandardKeyMetadata.deserialize(key_metadata_bytes)
+    return pe.create_decryption_properties(
+        footer_key=key_metadata.encryption_key,
+        aad_prefix=key_metadata.aad_prefix if key_metadata.aad_prefix else None,
+    )
+
+
+def _read_deletes(
+    io: FileIO, data_file: DataFile, encryption_manager: EncryptionManager | None = None
+) -> dict[str, pa.ChunkedArray]:
     if data_file.file_format == FileFormat.PARQUET:
+        arrow_format = _get_file_format(
+            data_file.file_format, dictionary_columns=("file_path",), pre_buffer=True, buffer_size=ONE_MEGABYTE
+        )
+
+        if data_file.key_metadata is not None and encryption_manager is not None:
+            decryption_properties = _get_decryption_properties(data_file.key_metadata)
+            scan_options = ds.ParquetFragmentScanOptions(
+                decryption_properties=decryption_properties,
+                pre_buffer=True,
+                buffer_size=ONE_MEGABYTE,
+            )
+            arrow_format = ds.ParquetFileFormat(default_fragment_scan_options=scan_options)
+
         with io.new_input(data_file.file_path).open() as fi:
-            delete_fragment = _get_file_format(
-                data_file.file_format, dictionary_columns=("file_path",), pre_buffer=True, buffer_size=ONE_MEGABYTE
-            ).make_fragment(fi)
+            delete_fragment = arrow_format.make_fragment(fi)
             table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
         table = table.unify_dictionaries()
         return {
@@ -1615,8 +1651,21 @@ def _task_to_record_batches(
     partition_spec: PartitionSpec | None = None,
     format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
     downcast_ns_timestamp_to_us: bool | None = None,
+    encryption_manager: EncryptionManager | None = None,
 ) -> Iterator[pa.RecordBatch]:
     arrow_format = _get_file_format(task.file.file_format, pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
+
+    # For encrypted files, create a ParquetFileFormat with decryption properties
+    # so that make_fragment can read the encrypted metadata
+    if task.file.key_metadata is not None and encryption_manager is not None:
+        decryption_properties = _get_decryption_properties(task.file.key_metadata)
+        scan_options = ds.ParquetFragmentScanOptions(
+            decryption_properties=decryption_properties,
+            pre_buffer=True,
+            buffer_size=(ONE_MEGABYTE * 8),
+        )
+        arrow_format = ds.ParquetFileFormat(default_fragment_scan_options=scan_options)
+
     with io.new_input(task.file.file_path).open() as fin:
         fragment = arrow_format.make_fragment(fin)
         physical_schema = fragment.physical_schema
@@ -1646,14 +1695,15 @@ def _task_to_record_batches(
 
         file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
 
-        fragment_scanner = ds.Scanner.from_fragment(
-            fragment=fragment,
-            schema=physical_schema,
+        scanner_kwargs: dict[str, Any] = {
+            "fragment": fragment,
+            "schema": physical_schema,
             # This will push down the query to Arrow.
             # But in case there are positional deletes, we have to apply them first
-            filter=pyarrow_filter if not positional_deletes else None,
-            columns=[col.name for col in file_project_schema.columns],
-        )
+            "filter": pyarrow_filter if not positional_deletes else None,
+            "columns": [col.name for col in file_project_schema.columns],
+        }
+        fragment_scanner = ds.Scanner.from_fragment(**scanner_kwargs)
 
         next_index = 0
         batches = fragment_scanner.to_batches()
@@ -1692,14 +1742,16 @@ def _task_to_record_batches(
             )
 
 
-def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> dict[str, list[ChunkedArray]]:
+def _read_all_delete_files(
+    io: FileIO, tasks: Iterable[FileScanTask], encryption_manager: EncryptionManager | None = None
+) -> dict[str, list[ChunkedArray]]:
     deletes_per_file: dict[str, list[ChunkedArray]] = {}
     unique_deletes = set(itertools.chain.from_iterable([task.delete_files for task in tasks]))
     if len(unique_deletes) > 0:
         executor = ExecutorFactory.get_or_create()
         deletes_per_files: Iterator[dict[str, ChunkedArray]] = executor.map(
             lambda args: _read_deletes(*args),
-            [(io, delete_file) for delete_file in unique_deletes],
+            [(io, delete_file, encryption_manager) for delete_file in unique_deletes],
         )
         for delete in deletes_per_files:
             for file, arr in delete.items():
@@ -1719,6 +1771,7 @@ class ArrowScan:
     _case_sensitive: bool
     _limit: int | None
     _downcast_ns_timestamp_to_us: bool | None
+    _encryption_manager: EncryptionManager | None
     """Scan the Iceberg Table and create an Arrow construct.
 
     Attributes:
@@ -1728,6 +1781,7 @@ class ArrowScan:
         _bound_row_filter: Schema bound row expression to filter the data with
         _case_sensitive: Case sensitivity when looking up column names
         _limit: Limit the number of records.
+        _encryption_manager: Optional encryption manager for decrypting data files.
     """
 
     def __init__(
@@ -1738,6 +1792,7 @@ class ArrowScan:
         row_filter: BooleanExpression,
         case_sensitive: bool = True,
         limit: int | None = None,
+        encryption_manager: EncryptionManager | None = None,
     ) -> None:
         self._table_metadata = table_metadata
         self._io = io
@@ -1746,6 +1801,7 @@ class ArrowScan:
         self._case_sensitive = case_sensitive
         self._limit = limit
         self._downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE)
+        self._encryption_manager = encryption_manager
 
     @property
     def _projected_field_ids(self) -> set[int]:
@@ -1808,7 +1864,7 @@ class ArrowScan:
             ResolveError: When a required field cannot be found in the file
             ValueError: When a field type in the file cannot be projected to the schema type
         """
-        deletes_per_file = _read_all_delete_files(self._io, tasks)
+        deletes_per_file = _read_all_delete_files(self._io, tasks, self._encryption_manager)
 
         total_row_count = 0
         executor = ExecutorFactory.get_or_create()
@@ -1856,6 +1912,7 @@ class ArrowScan:
                 self._table_metadata.specs().get(task.file.spec_id),
                 self._table_metadata.format_version,
                 self._downcast_ns_timestamp_to_us,
+                encryption_manager=self._encryption_manager,
             )
             for batch in batches:
                 if self._limit is not None:
