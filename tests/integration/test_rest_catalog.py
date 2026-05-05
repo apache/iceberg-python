@@ -92,8 +92,7 @@ def test_load_view(catalog: RestCatalog, table_schema_nested: Schema, database_n
     )
     view = catalog.create_view(identifier, table_schema_nested, view_version=view_version)
     loaded_view = catalog.load_view(identifier)
-    assert view.name() == loaded_view.name()
-    assert view.metadata == loaded_view.metadata
+    assert view == loaded_view
 
 
 @pytest.mark.integration
