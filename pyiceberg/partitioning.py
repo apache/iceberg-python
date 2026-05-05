@@ -335,6 +335,73 @@ def assign_fresh_partition_spec_ids(spec: PartitionSpec, old_schema: Schema, fre
     return PartitionSpec(*partition_fields, spec_id=INITIAL_PARTITION_SPEC_ID)
 
 
+def assign_fresh_partition_spec_ids_for_replace(
+    spec: PartitionSpec,
+    old_schema: Schema,
+    fresh_schema: Schema,
+    existing_specs: list[PartitionSpec],
+    last_partition_id: int | None,
+) -> tuple[PartitionSpec, int]:
+    """Assign partition field IDs for a replace operation, reusing IDs from existing specs.
+
+    For each partition field, if a field with the same (source_id, transform) pair exists in
+    any of the existing specs, its partition field ID is reused; otherwise a fresh ID is
+    allocated starting from last_partition_id + 1.
+
+    Args:
+        spec: The new partition spec to assign IDs to.
+        old_schema: The schema that the new spec's source_ids reference.
+        fresh_schema: The schema with freshly assigned field IDs.
+        existing_specs: All partition specs from the existing table metadata.
+        last_partition_id: The current table's last_partition_id.
+
+    Returns:
+        A tuple of (fresh_spec, new_last_partition_id).
+    """
+    effective_last_partition_id = last_partition_id if last_partition_id is not None else PARTITION_FIELD_ID_START - 1
+
+    # Build (source_id, transform) → partition_field_id mapping from all existing specs
+    # Use max() for dedup when the same (source_id, transform) appears in multiple specs
+    transform_to_field_id: dict[tuple[int, str], int] = {}
+    for existing_spec in existing_specs:
+        for field in existing_spec.fields:
+            key = (field.source_id, str(field.transform))
+            if key not in transform_to_field_id or field.field_id > transform_to_field_id[key]:
+                transform_to_field_id[key] = field.field_id
+
+    next_id = effective_last_partition_id
+    partition_fields = []
+    for field in spec.fields:
+        original_column_name = old_schema.find_column_name(field.source_id)
+        if original_column_name is None:
+            raise ValueError(f"Could not find in old schema: {field}")
+        fresh_field = fresh_schema.find_field(original_column_name)
+        if fresh_field is None:
+            raise ValueError(f"Could not find field in fresh schema: {original_column_name}")
+
+        validate_partition_name(field.name, field.transform, fresh_field.field_id, fresh_schema, set())
+
+        key = (fresh_field.field_id, str(field.transform))
+        if key in transform_to_field_id:
+            partition_field_id = transform_to_field_id[key]
+        else:
+            next_id += 1
+            partition_field_id = next_id
+            transform_to_field_id[key] = partition_field_id
+
+        partition_fields.append(
+            PartitionField(
+                name=field.name,
+                source_id=fresh_field.field_id,
+                field_id=partition_field_id,
+                transform=field.transform,
+            )
+        )
+
+    new_last_partition_id = max(next_id, effective_last_partition_id)
+    return PartitionSpec(*partition_fields, spec_id=INITIAL_PARTITION_SPEC_ID), new_last_partition_id
+
+
 T = TypeVar("T")
 
 

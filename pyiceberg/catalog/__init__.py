@@ -47,6 +47,7 @@ from pyiceberg.table import (
     DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE,
     CommitTableResponse,
     CreateTableTransaction,
+    ReplaceTableTransaction,
     StagedTable,
     Table,
     TableProperties,
@@ -441,6 +442,66 @@ class Catalog(ABC):
             return self.create_table(identifier, schema, location, partition_spec, sort_order, properties)
         except TableAlreadyExistsError:
             return self.load_table(identifier)
+
+    @abstractmethod
+    def replace_table(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        location: str | None = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> Table:
+        """Atomically replace a table's schema, spec, sort order, location, and properties.
+
+        The table UUID and history (snapshots, schemas, specs, sort orders) are preserved.
+        The current snapshot is cleared (main branch ref is removed).
+
+        Args:
+            identifier (str | Identifier): Table identifier.
+            schema (Schema): New table schema.
+            location (str | None): New table location. Defaults to the existing location.
+            partition_spec (PartitionSpec): New partition spec.
+            sort_order (SortOrder): New sort order.
+            properties (Properties): New table properties (merged with existing).
+
+        Returns:
+            Table: the replaced table instance.
+
+        Raises:
+            NoSuchTableError: If the table does not exist.
+        """
+
+    @abstractmethod
+    def replace_table_transaction(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        location: str | None = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> ReplaceTableTransaction:
+        """Create a ReplaceTableTransaction.
+
+        The transaction can be used to stage additional changes (schema evolution,
+        partition evolution, etc.) before committing.
+
+        Args:
+            identifier (str | Identifier): Table identifier.
+            schema (Schema): New table schema.
+            location (str | None): New table location. Defaults to the existing location.
+            partition_spec (PartitionSpec): New partition spec.
+            sort_order (SortOrder): New sort order.
+            properties (Properties): New table properties (merged with existing).
+
+        Returns:
+            ReplaceTableTransaction: A transaction for the replace operation.
+
+        Raises:
+            NoSuchTableError: If the table does not exist.
+        """
 
     @abstractmethod
     def load_table(self, identifier: str | Identifier) -> Table:
@@ -889,6 +950,28 @@ class MetastoreCatalog(Catalog, ABC):
         return CreateTableTransaction(
             self._create_staged_table(identifier, schema, location, partition_spec, sort_order, properties)
         )
+
+    def replace_table(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        location: str | None = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> Table:
+        raise NotImplementedError("replace_table is not yet supported for this catalog type")
+
+    def replace_table_transaction(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        location: str | None = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> ReplaceTableTransaction:
+        raise NotImplementedError("replace_table_transaction is not yet supported for this catalog type")
 
     def table_exists(self, identifier: str | Identifier) -> bool:
         try:

@@ -64,7 +64,7 @@ from pyiceberg.table.metadata import TableMetadataV1
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import RecursiveDict
-from pyiceberg.types import StringType
+from pyiceberg.types import BooleanType, IntegerType, NestedField, StringType
 from pyiceberg.utils.config import Config
 from pyiceberg.view import View
 from pyiceberg.view.metadata import ViewMetadata, ViewVersion
@@ -2681,3 +2681,480 @@ def test_load_table_without_storage_credentials(
     )
     assert actual.metadata.model_dump() == expected.metadata.model_dump()
     assert actual == expected
+
+
+def test_replace_table_transaction_200(
+    rest_mock: Mocker,
+    example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any],
+    example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any],
+) -> None:
+    """Test that replace_table_transaction loads the existing table, then commits with AssertTableUUID."""
+    expected_table_uuid = example_table_metadata_with_snapshot_v1_rest_json["metadata"]["table-uuid"]
+    example_table_metadata_no_snapshot_v1_rest_json["metadata"]["table-uuid"] = expected_table_uuid
+
+    # Mock load_table (GET) to return existing table with snapshot
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # Mock commit (POST) for the replace
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_no_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    # Replace with a new schema (3 fields: id stays, data stays, new_col is new)
+    new_schema = Schema(
+        NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+        NestedField(field_id=3, name="new_col", field_type=BooleanType(), required=False),
+    )
+    txn = catalog.replace_table_transaction(
+        identifier=("fokko", "fokko2"),
+        schema=new_schema,
+    )
+    txn.commit_transaction()
+
+    actual_request = rest_mock.last_request.json()
+
+    # Verify requirements: only AssertTableUUID
+    assert actual_request["requirements"] == [
+        {"type": "assert-table-uuid", "uuid": expected_table_uuid},
+    ]
+
+    # Verify updates sequence. Since the existing table already has the same
+    # unpartitioned spec and unsorted sort order, those updates are skipped.
+    updates = actual_request["updates"]
+    actions = [u["action"] for u in updates]
+    assert actions == [
+        "remove-snapshot-ref",
+        "add-schema",
+        "set-current-schema",
+    ]
+
+    # Verify remove-snapshot-ref targets "main"
+    assert updates[0] == {"action": "remove-snapshot-ref", "ref-name": "main"}
+
+    # Verify schema has reused field IDs (id=1, data=2 reused from existing schema)
+    schema_fields = updates[1]["schema"]["fields"]
+    assert schema_fields[0]["id"] == 1
+    assert schema_fields[0]["name"] == "id"
+    assert schema_fields[1]["id"] == 2
+    assert schema_fields[1]["name"] == "data"
+    # new_col gets a fresh ID above last_column_id (which is 2), so it gets 3
+    assert schema_fields[2]["id"] == 3
+    assert schema_fields[2]["name"] == "new_col"
+
+    # set-current-schema uses -1 (meaning last added)
+    assert updates[2] == {"action": "set-current-schema", "schema-id": -1}
+
+
+def test_replace_table_transaction_preserves_uuid(
+    rest_mock: Mocker,
+    example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any],
+    example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any],
+) -> None:
+    """Test that replace preserves the table UUID."""
+    table_uuid = example_table_metadata_with_snapshot_v1_rest_json["metadata"]["table-uuid"]
+    example_table_metadata_no_snapshot_v1_rest_json["metadata"]["table-uuid"] = table_uuid
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_no_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    txn = catalog.replace_table_transaction(
+        identifier=("fokko", "fokko2"),
+        schema=Schema(
+            NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+            NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+        ),
+    )
+
+    # The staged table should have the same UUID as the existing table
+    assert str(txn.table_metadata.table_uuid) == table_uuid
+
+    result = txn.commit_transaction()
+    # After commit, the table should still have the same UUID
+    assert str(result.metadata.table_uuid) == table_uuid
+
+
+def test_replace_table_transaction_with_new_location(
+    rest_mock: Mocker,
+    example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any],
+    example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any],
+) -> None:
+    """Test that replace_table_transaction with a new location includes SetLocationUpdate."""
+    table_uuid = example_table_metadata_with_snapshot_v1_rest_json["metadata"]["table-uuid"]
+    example_table_metadata_no_snapshot_v1_rest_json["metadata"]["table-uuid"] = table_uuid
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_no_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    txn = catalog.replace_table_transaction(
+        identifier=("fokko", "fokko2"),
+        schema=Schema(
+            NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+        ),
+        location="s3://new-warehouse/database/table",
+    )
+    txn.commit_transaction()
+
+    updates = rest_mock.last_request.json()["updates"]
+    actions = [u["action"] for u in updates]
+
+    # Should include set-location since the location changed
+    assert "set-location" in actions
+    set_location_update = next(u for u in updates if u["action"] == "set-location")
+    assert set_location_update["location"] == "s3://new-warehouse/database/table"
+
+
+def test_replace_table_transaction_with_properties(
+    rest_mock: Mocker,
+    example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any],
+    example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any],
+) -> None:
+    """Test that replace merges properties via SetPropertiesUpdate."""
+    table_uuid = example_table_metadata_with_snapshot_v1_rest_json["metadata"]["table-uuid"]
+    example_table_metadata_no_snapshot_v1_rest_json["metadata"]["table-uuid"] = table_uuid
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_no_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    txn = catalog.replace_table_transaction(
+        identifier=("fokko", "fokko2"),
+        schema=Schema(
+            NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+        ),
+        properties={"new-prop": "new-value"},
+    )
+    txn.commit_transaction()
+
+    updates = rest_mock.last_request.json()["updates"]
+    actions = [u["action"] for u in updates]
+
+    assert "set-properties" in actions
+    set_props = next(u for u in updates if u["action"] == "set-properties")
+    # SetPropertiesUpdate sends the user properties; the server merges onto existing
+    assert set_props["updates"] == {"new-prop": "new-value"}
+
+
+def test_replace_table_transaction_with_partition_spec(
+    rest_mock: Mocker,
+    example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any],
+    example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any],
+) -> None:
+    """Test that replace_table_transaction with a new partition spec includes AddPartitionSpecUpdate."""
+    table_uuid = example_table_metadata_with_snapshot_v1_rest_json["metadata"]["table-uuid"]
+    example_table_metadata_no_snapshot_v1_rest_json["metadata"]["table-uuid"] = table_uuid
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_no_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    txn = catalog.replace_table_transaction(
+        identifier=("fokko", "fokko2"),
+        schema=Schema(
+            NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+            NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=3), name="id_trunc"), spec_id=1
+        ),
+    )
+    txn.commit_transaction()
+
+    updates = rest_mock.last_request.json()["updates"]
+    add_spec = next(u for u in updates if u["action"] == "add-spec")
+    spec_fields = add_spec["spec"]["fields"]
+    assert len(spec_fields) == 1
+    assert spec_fields[0]["source-id"] == 1  # id field
+    assert spec_fields[0]["transform"] == "truncate[3]"
+    assert spec_fields[0]["name"] == "id_trunc"
+
+    # set-default-spec should also be present, pointing to the newly added spec
+    actions = [u["action"] for u in updates]
+    assert "set-default-spec" in actions
+    set_default_spec = next(u for u in updates if u["action"] == "set-default-spec")
+    assert set_default_spec["spec-id"] == -1
+
+
+def test_replace_table_404(
+    rest_mock: Mocker,
+) -> None:
+    """Test that replace_table raises NoSuchTableError when the table doesn't exist."""
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/nonexistent",
+        json={
+            "error": {
+                "message": "Table does not exist: fokko.nonexistent",
+                "type": "NoSuchTableException",
+                "code": 404,
+            }
+        },
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    with pytest.raises(NoSuchTableError):
+        catalog.replace_table(
+            identifier=("fokko", "nonexistent"),
+            schema=Schema(
+                NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+            ),
+        )
+
+
+def test_replace_table_200(
+    rest_mock: Mocker,
+    example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any],
+    example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any],
+) -> None:
+    """Test that replace_table commits immediately and returns the table."""
+    table_uuid = example_table_metadata_with_snapshot_v1_rest_json["metadata"]["table-uuid"]
+    example_table_metadata_no_snapshot_v1_rest_json["metadata"]["table-uuid"] = table_uuid
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_no_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    result = catalog.replace_table(
+        identifier=("fokko", "fokko2"),
+        schema=Schema(
+            NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+        ),
+    )
+
+    assert isinstance(result, Table)
+    # The commit should have used assert-table-uuid
+    actual_request = rest_mock.last_request.json()
+    assert actual_request["requirements"] == [
+        {"type": "assert-table-uuid", "uuid": table_uuid},
+    ]
+
+
+def test_replace_table_transaction_same_location_no_set_location(
+    rest_mock: Mocker,
+    example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any],
+    example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any],
+) -> None:
+    """Test that when location is not changed, SetLocationUpdate is NOT included."""
+    table_uuid = example_table_metadata_with_snapshot_v1_rest_json["metadata"]["table-uuid"]
+    example_table_metadata_no_snapshot_v1_rest_json["metadata"]["table-uuid"] = table_uuid
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_no_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    # Replace with no location specified - should use existing location
+    txn = catalog.replace_table_transaction(
+        identifier=("fokko", "fokko2"),
+        schema=Schema(
+            NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+        ),
+    )
+    txn.commit_transaction()
+
+    updates = rest_mock.last_request.json()["updates"]
+    actions = [u["action"] for u in updates]
+    # set-location should NOT be present since location didn't change
+    assert "set-location" not in actions
+
+
+def test_replace_table_transaction_same_schema_skips_add_schema(
+    rest_mock: Mocker,
+    example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any],
+    example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any],
+) -> None:
+    """Test that replacing with the same schema skips add-schema and set-current-schema."""
+    table_uuid = example_table_metadata_with_snapshot_v1_rest_json["metadata"]["table-uuid"]
+    example_table_metadata_no_snapshot_v1_rest_json["metadata"]["table-uuid"] = table_uuid
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_no_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    # Use the exact same schema as the existing table (id: int, data: string)
+    same_schema = Schema(
+        NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+    )
+    txn = catalog.replace_table_transaction(
+        identifier=("fokko", "fokko2"),
+        schema=same_schema,
+    )
+    txn.commit_transaction()
+
+    updates = rest_mock.last_request.json()["updates"]
+    actions = [u["action"] for u in updates]
+
+    # Since the schema is unchanged, add-schema and set-current-schema should be skipped
+    assert "add-schema" not in actions
+    assert "set-current-schema" not in actions
+
+    # The only update should be remove-snapshot-ref
+    assert actions == ["remove-snapshot-ref"]
+
+
+def test_replace_table_transaction_different_schema_adds_schema(
+    rest_mock: Mocker,
+    example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any],
+    example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any],
+) -> None:
+    """Test that replacing with a genuinely new schema includes add-schema and set-current-schema."""
+    table_uuid = example_table_metadata_with_snapshot_v1_rest_json["metadata"]["table-uuid"]
+    example_table_metadata_no_snapshot_v1_rest_json["metadata"]["table-uuid"] = table_uuid
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_no_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    # A new schema with a different field (new_col instead of data)
+    new_schema = Schema(
+        NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+        NestedField(field_id=3, name="new_col", field_type=BooleanType(), required=False),
+    )
+    txn = catalog.replace_table_transaction(
+        identifier=("fokko", "fokko2"),
+        schema=new_schema,
+    )
+    txn.commit_transaction()
+
+    updates = rest_mock.last_request.json()["updates"]
+    actions = [u["action"] for u in updates]
+
+    # Since the schema is different, add-schema and set-current-schema must be present
+    assert "add-schema" in actions
+    assert "set-current-schema" in actions
+
+    # set-current-schema should reference -1 (the last added schema)
+    set_schema = next(u for u in updates if u["action"] == "set-current-schema")
+    assert set_schema["schema-id"] == -1
+
+
+def test_replace_table_transaction_with_sort_order(
+    rest_mock: Mocker,
+    example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any],
+    example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any],
+) -> None:
+    """Test that replacing with a custom sort order includes add-sort-order and set-default-sort-order."""
+    table_uuid = example_table_metadata_with_snapshot_v1_rest_json["metadata"]["table-uuid"]
+    example_table_metadata_no_snapshot_v1_rest_json["metadata"]["table-uuid"] = table_uuid
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_no_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    txn = catalog.replace_table_transaction(
+        identifier=("fokko", "fokko2"),
+        schema=Schema(
+            NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+            NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+        ),
+        sort_order=SortOrder(SortField(source_id=1, transform=IdentityTransform())),
+    )
+    txn.commit_transaction()
+
+    updates = rest_mock.last_request.json()["updates"]
+    actions = [u["action"] for u in updates]
+
+    # Should include add-sort-order and set-default-sort-order
+    assert "add-sort-order" in actions
+    assert "set-default-sort-order" in actions
