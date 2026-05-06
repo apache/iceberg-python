@@ -122,6 +122,9 @@ dev = [
     "google-cloud-bigquery>=3.33.0,<4",
     "pyarrow-stubs>=20.0.0.20251107", # Remove when pyarrow >= 23.0.0 https://github.com/apache/arrow/pull/47609
     "sqlalchemy>=2.0.18,<3",
+    "papermill>=2.6.0",
+    "nbformat>=5.10.0",
+    "ipykernel>=6.29.0",
 ]
 # for mkdocs
 docs = [
@@ -161,6 +164,7 @@ markers = [
   "integration: marks integration tests against Apache Spark",
   "gcs: marks a test as requiring access to gcs compliant storage (use with --gs.token, --gs.project, and --gs.endpoint)",
   "benchmark: collection of tests to validate read/write performance before and after a change",
+  "notebook: marks tests that execute Jupyter notebooks via papermill",
 ]
 
 # Turns a warning into an error
