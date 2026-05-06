@@ -398,8 +398,8 @@ def test_merge_snapshot_summaries_overwrite_summary() -> None:
 
 def test_invalid_operation() -> None:
     with pytest.raises(ValueError) as e:
-        update_snapshot_summaries(summary=Summary(Operation.REPLACE))
-    assert "Operation not implemented: Operation.REPLACE" in str(e.value)
+        update_snapshot_summaries(summary=Summary.model_construct(operation="unknown_operation"))
+    assert "Operation not implemented: unknown_operation" in str(e.value)
 
 
 def test_invalid_type() -> None:
