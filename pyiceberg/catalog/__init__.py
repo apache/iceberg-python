@@ -686,7 +686,8 @@ class Catalog(ABC):
             View: The newly registered view
 
         Raises:
-            ViewAlreadyExistsError: If the view already exists
+            ViewAlreadyExistsError: If the view already exists.
+            TableAlreadyExistsError: If a table with the same name already exists.
         """
 
     @abstractmethod
