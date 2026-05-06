@@ -2027,7 +2027,15 @@ def test_write_optional_list(session_catalog: Catalog) -> None:
             required=False,
         ),
     )
-    session_catalog.create_table_if_not_exists(identifier, schema)
+    # Ensure a clean slate: the test asserts exact row counts after each
+    # append, so a stale table from a previous run would accumulate rows and
+    # fail. Other tests in this module use _create_table() which does the same
+    # drop-if-exists step.
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+    session_catalog.create_table(identifier, schema)
 
     df_1 = pa.Table.from_pylist(
         [
