@@ -2666,6 +2666,18 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
 
 
 def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[list[pa.RecordBatch]]:
+    """Bin-pack ``tbl`` into groups of RecordBatches, each ~``target_file_size``.
+
+    Note:
+        ``target_file_size`` is measured in **uncompressed in-memory** Arrow bytes
+        (``Table.nbytes`` / ``RecordBatch.nbytes``), not compressed on-disk Parquet
+        bytes. The resulting Parquet file after compression (zstd by default,
+        plus dictionary/RLE encoding) is typically 3-10× smaller than
+        ``target_file_size``. This is a coarse proxy for the spec-defined
+        ``write.target-file-size-bytes`` and will be tightened to true on-disk
+        bytes once the writer is switched to a rolling-``ParquetWriter`` with
+        ``OutputStream.tell()`` (#2998).
+    """
     from pyiceberg.utils.bin_packing import PackingIterator
 
     avg_row_size_bytes = tbl.nbytes / tbl.num_rows
@@ -2679,6 +2691,41 @@ def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[list[
         largest_bin_first=False,
     )
     return bin_packed_record_batches
+
+
+def bin_pack_record_batches(batches: Iterable[pa.RecordBatch], target_file_size: int) -> Iterator[list[pa.RecordBatch]]:
+    """Microbatch a single-pass stream of RecordBatches into target-sized groups.
+
+    Unlike :func:`bin_pack_arrow_table`, this consumes ``batches`` lazily and
+    holds at most one in-flight buffer in memory, bounded by ``target_file_size``.
+    Suitable for streaming inputs (``pa.RecordBatchReader``,
+    ``Iterator[pa.RecordBatch]``) where the total size is unknown up front and
+    the caller cannot afford to materialise the full dataset.
+
+    Each yielded list of batches is intended to be written as a single Parquet
+    data file. Because this is single-pass FIFO accumulation (no lookback), the
+    last bin may be smaller than ``target_file_size``.
+
+    Note:
+        ``target_file_size`` is measured in **uncompressed in-memory** Arrow
+        bytes (``RecordBatch.nbytes``), not compressed on-disk Parquet bytes.
+        The resulting Parquet file after compression is typically 3-10×
+        smaller than ``target_file_size``. Matches the existing
+        :func:`bin_pack_arrow_table` semantics; both will be tightened to true
+        on-disk bytes once the writer is switched to a rolling-
+        ``ParquetWriter`` with ``OutputStream.tell()`` (#2998).
+    """
+    buffer: list[pa.RecordBatch] = []
+    buffer_bytes = 0
+    for batch in batches:
+        buffer.append(batch)
+        buffer_bytes += batch.nbytes
+        if buffer_bytes >= target_file_size:
+            yield buffer
+            buffer = []
+            buffer_bytes = 0
+    if buffer:
+        yield buffer
 
 
 def _check_pyarrow_schema_compatible(
@@ -2800,15 +2847,24 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> dict[str, Any]:
 
 def _dataframe_to_data_files(
     table_metadata: TableMetadata,
-    df: pa.Table,
+    df: pa.Table | pa.RecordBatchReader,
     io: FileIO,
     write_uuid: uuid.UUID | None = None,
     counter: itertools.count[int] | None = None,
 ) -> Iterable[DataFile]:
-    """Convert a PyArrow table into a DataFile.
+    """Convert a PyArrow Table or RecordBatchReader into DataFiles.
+
+    For a ``pa.Table`` the data is materialised in memory and bin-packed into
+    target-sized files (with partition splitting if the table is partitioned).
+
+    For a ``pa.RecordBatchReader`` batches are streamed and microbatched into
+    target-sized files using bounded memory (see :func:`bin_pack_record_batches`).
+    Streaming writes are currently only supported on unpartitioned tables;
+    partitioned support is tracked in
+    https://github.com/apache/iceberg-python/issues/2152.
 
     Returns:
-        An iterable that supplies datafiles that represent the table.
+        An iterable that supplies datafiles that represent the input data.
     """
     from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties, WriteTask
 
@@ -2827,6 +2883,23 @@ def _dataframe_to_data_files(
         downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
         format_version=table_metadata.format_version,
     )
+
+    if isinstance(df, pa.RecordBatchReader):
+        if not table_metadata.spec().is_unpartitioned():
+            raise NotImplementedError(
+                "Writing a pa.RecordBatchReader to a partitioned table is not yet supported. "
+                "Materialise the reader as a pa.Table first, or follow "
+                "https://github.com/apache/iceberg-python/issues/2152 for partitioned streaming support."
+            )
+        yield from write_file(
+            io=io,
+            table_metadata=table_metadata,
+            tasks=(
+                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=task_schema)
+                for batches in bin_pack_record_batches(df, target_file_size)
+            ),
+        )
+        return
 
     if table_metadata.spec().is_unpartitioned():
         yield from write_file(
