@@ -99,6 +99,7 @@ datafusion = ["datafusion>=52,<53"]
 gcp-auth = ["google-auth>=2.4.0"]
 entra-auth = ["azure-identity>=1.25.1"]
 geoarrow = ["geoarrow-pyarrow>=0.2.0"]
+cosfs = ["cosfs>=2026.3.25"]
 
 [dependency-groups]
 dev = [

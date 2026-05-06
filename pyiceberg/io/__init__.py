@@ -99,6 +99,11 @@ GCS_DEFAULT_LOCATION = "gcs.default-bucket-location"
 GCS_VERSION_AWARE = "gcs.version-aware"
 HF_ENDPOINT = "hf.endpoint"
 HF_TOKEN = "hf.token"
+COS_SECRET_ID = "cos.secret-id"
+COS_SECRET_KEY = "cos.secret-key"
+COS_SESSION_TOKEN = "cos.session-token"
+COS_REGION = "cos.region"
+COS_ENDPOINT = "cos.endpoint"
 
 
 @runtime_checkable
@@ -314,6 +319,8 @@ SCHEMA_TO_FILE_IO: dict[str, list[str]] = {
     "wasb": [FSSPEC_FILE_IO, ARROW_FILE_IO],
     "wasbs": [FSSPEC_FILE_IO, ARROW_FILE_IO],
     "hf": [FSSPEC_FILE_IO],
+    "cosn": [FSSPEC_FILE_IO],
+    "cos": [FSSPEC_FILE_IO],
 }
 
 
