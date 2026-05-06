@@ -1615,8 +1615,13 @@ def _task_to_record_batches(
     partition_spec: PartitionSpec | None = None,
     format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
     downcast_ns_timestamp_to_us: bool | None = None,
+    dictionary_columns: tuple[str, ...] | None = None,
 ) -> Iterator[pa.RecordBatch]:
-    arrow_format = _get_file_format(task.file.file_format, pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
+    # Only pass dictionary_columns for Parquet — ORC does not support this kwarg.
+    format_kwargs: dict[str, Any] = {"pre_buffer": True, "buffer_size": ONE_MEGABYTE * 8}
+    if dictionary_columns and task.file.file_format == FileFormat.PARQUET:
+        format_kwargs["dictionary_columns"] = dictionary_columns
+    arrow_format = _get_file_format(task.file.file_format, **format_kwargs)
     with io.new_input(task.file.file_path).open() as fin:
         fragment = arrow_format.make_fragment(fin)
         physical_schema = fragment.physical_schema
@@ -1719,6 +1724,7 @@ class ArrowScan:
     _case_sensitive: bool
     _limit: int | None
     _downcast_ns_timestamp_to_us: bool | None
+    _dictionary_columns: tuple[str, ...] | None
     """Scan the Iceberg Table and create an Arrow construct.
 
     Attributes:
@@ -1738,6 +1744,8 @@ class ArrowScan:
         row_filter: BooleanExpression,
         case_sensitive: bool = True,
         limit: int | None = None,
+        *,
+        dictionary_columns: tuple[str, ...] | None = None,
     ) -> None:
         self._table_metadata = table_metadata
         self._io = io
@@ -1746,6 +1754,7 @@ class ArrowScan:
         self._case_sensitive = case_sensitive
         self._limit = limit
         self._downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE)
+        self._dictionary_columns = dictionary_columns
 
     @property
     def _projected_field_ids(self) -> set[int]:
@@ -1774,6 +1783,15 @@ class ArrowScan:
             ValueError: When a field type in the file cannot be projected to the schema type
         """
         arrow_schema = schema_to_pyarrow(self._projected_schema, include_field_ids=False)
+        if self._dictionary_columns:
+            dict_cols_set = set(self._dictionary_columns)
+            arrow_schema = pa.schema(
+                [
+                    field.with_type(pa.dictionary(pa.int32(), field.type)) if field.name in dict_cols_set else field
+                    for field in arrow_schema
+                ],
+                metadata=arrow_schema.metadata,
+            )
 
         batches = self.to_record_batches(tasks)
         try:
@@ -1856,6 +1874,7 @@ class ArrowScan:
                 self._table_metadata.specs().get(task.file.spec_id),
                 self._table_metadata.format_version,
                 self._downcast_ns_timestamp_to_us,
+                dictionary_columns=self._dictionary_columns,
             )
             for batch in batches:
                 if self._limit is not None:
