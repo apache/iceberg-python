@@ -211,6 +211,7 @@ class Transaction:
     _autocommit: bool
     _updates: tuple[TableUpdate, ...]
     _requirements: tuple[TableRequirement, ...]
+    _table_metadata_cache: tuple[TableMetadata, tuple[TableUpdate, ...], TableMetadata] | None
 
     def __init__(self, table: Table, autocommit: bool = False):
         """Open a transaction to stage and commit changes to a table.
@@ -223,10 +224,21 @@ class Transaction:
         self._autocommit = autocommit
         self._updates = ()
         self._requirements = ()
+        self._table_metadata_cache = None
 
     @property
     def table_metadata(self) -> TableMetadata:
-        return update_table_metadata(self._table.metadata, self._updates)
+        base, updates = self._table.metadata, self._updates
+        # update_table_metadata replays every staged update via model_copy(deep=True);
+        # the cache is keyed on the identity of its inputs so it self-invalidates
+        # whenever _updates is reassigned (tuple += creates a new object) or the
+        # underlying table metadata is refreshed.
+        cached = self._table_metadata_cache
+        if cached is not None and cached[0] is base and cached[1] is updates:
+            return cached[2]
+        result = update_table_metadata(base, updates)
+        self._table_metadata_cache = (base, updates, result)
+        return result
 
     def __enter__(self) -> Transaction:
         """Start a transaction to update the table."""
