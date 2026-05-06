@@ -132,7 +132,6 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
 
         dataset_name, table_name = self.identifier_to_database_and_table(identifier)
 
-        dataset_ref = DatasetReference(project=self.project_id, dataset_id=dataset_name)
         location = self._resolve_table_location(location, dataset_name, table_name)
         provider = load_location_provider(table_location=location, table_properties=properties)
         metadata_location = provider.new_table_metadata_file_location()
@@ -172,9 +171,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         try:
             dataset_ref = DatasetReference(project=self.project_id, dataset_id=database_name)
             dataset = Dataset(dataset_ref=dataset_ref)
-            dataset.external_catalog_dataset_options = self._create_external_catalog_dataset_options(
-                self._get_default_warehouse_location_for_dataset(database_name), properties, dataset_ref
-            )
+            dataset.external_catalog_dataset_options = self._create_external_catalog_dataset_options(properties, dataset_ref)
             self.client.create_dataset(dataset)
         except Conflict as e:
             raise NamespaceAlreadyExistsError("Namespace {database_name} already exists") from e
@@ -195,7 +192,6 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
         """
-        database_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
         dataset_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
 
         try:
@@ -363,7 +359,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         )
 
     def _create_external_catalog_dataset_options(
-        self, default_storage_location: str, metadataParameters: dict[str, Any], dataset_ref: DatasetReference
+        self, metadataParameters: dict[str, Any], dataset_ref: DatasetReference
     ) -> ExternalCatalogDatasetOptions:
         return ExternalCatalogDatasetOptions(
             default_storage_location_uri=self._get_default_warehouse_location_for_dataset(dataset_ref.dataset_id),
