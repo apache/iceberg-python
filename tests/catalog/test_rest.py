@@ -2681,3 +2681,91 @@ def test_load_table_without_storage_credentials(
     )
     assert actual.metadata.model_dump() == expected.metadata.model_dump()
     assert actual == expected
+
+
+def test_plan_scan_with_storage_credentials(rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]) -> None:
+    metadata_location = "s3://warehouse/database/table/metadata/00001.metadata.json"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": example_table_metadata_with_snapshot_v1,
+            "config": {},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table/plan",
+        json={
+            "status": "completed",
+            "file-scan-tasks": [],
+            "delete-files": [],
+            "plan-tasks": [],
+            "storage-credentials": [
+                {
+                    "prefix": "s3://warehouse/database/table",
+                    "config": {
+                        "s3.access-key-id": "plan-vended-key",
+                        "s3.secret-access-key": "plan-vended-secret",
+                        "s3.session-token": "plan-vended-token",
+                    },
+                }
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    from pyiceberg.catalog.rest.scan_planning import PlanTableScanRequest
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{"rest-scan-planning-enabled": "true"})
+    tasks, credential_config = catalog._plan_scan_for_table(
+        ("fokko", "table"),
+        PlanTableScanRequest(),
+        table_location="s3://warehouse/database/table",
+    )
+
+    assert tasks == []
+    assert credential_config == {
+        "s3.access-key-id": "plan-vended-key",
+        "s3.secret-access-key": "plan-vended-secret",
+        "s3.session-token": "plan-vended-token",
+    }
+
+
+def test_plan_scan_without_storage_credentials(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
+) -> None:
+    metadata_location = "s3://warehouse/database/table/metadata/00001.metadata.json"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": example_table_metadata_with_snapshot_v1,
+            "config": {},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table/plan",
+        json={
+            "status": "completed",
+            "file-scan-tasks": [],
+            "delete-files": [],
+            "plan-tasks": [],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    from pyiceberg.catalog.rest.scan_planning import PlanTableScanRequest
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{"rest-scan-planning-enabled": "true"})
+    tasks, credential_config = catalog._plan_scan_for_table(
+        ("fokko", "table"),
+        PlanTableScanRequest(),
+        table_location="s3://warehouse/database/table",
+    )
+
+    assert tasks == []
+    assert credential_config == {}
