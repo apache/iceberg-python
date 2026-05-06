@@ -1529,6 +1529,17 @@ catalog = load_catalog("default")
 catalog.view_exists("default.bar")
 ```
 
+## Register a view
+
+To register a view using existing metadata:
+
+```python
+catalog.register_view(
+    identifier="docs_example.bids",
+    metadata_location="s3://warehouse/path/to/metadata.json"
+)
+```
+
 ## Table Statistics Management
 
 Manage table statistics with operations through the `Table` API:

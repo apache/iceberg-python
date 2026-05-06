@@ -132,6 +132,9 @@ class NoopCatalog(Catalog):
     def namespace_exists(self, namespace: str | Identifier) -> bool:
         raise NotImplementedError
 
+    def register_view(self, identifier: str | Identifier, metadata_location: str) -> View:
+        raise NotImplementedError
+
     def drop_view(self, identifier: str | Identifier) -> None:
         raise NotImplementedError
 

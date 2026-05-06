@@ -153,6 +153,7 @@ class Endpoints:
     rename_table: str = "tables/rename"
     list_views: str = "namespaces/{namespace}/views"
     create_view: str = "namespaces/{namespace}/views"
+    register_view: str = "namespaces/{namespace}/register-view"
     drop_view: str = "namespaces/{namespace}/views/{view}"
     view_exists: str = "namespaces/{namespace}/views/{view}"
     plan_table_scan: str = "namespaces/{namespace}/tables/{table}/plan"
@@ -181,6 +182,7 @@ class Capability:
 
     V1_LIST_VIEWS = Endpoint(http_method=HttpMethod.GET, path=f"{API_PREFIX}/{Endpoints.list_views}")
     V1_VIEW_EXISTS = Endpoint(http_method=HttpMethod.HEAD, path=f"{API_PREFIX}/{Endpoints.view_exists}")
+    V1_REGISTER_VIEW = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.register_view}")
     V1_DELETE_VIEW = Endpoint(http_method=HttpMethod.DELETE, path=f"{API_PREFIX}/{Endpoints.drop_view}")
     V1_SUBMIT_TABLE_SCAN_PLAN = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.plan_table_scan}")
     V1_TABLE_SCAN_PLAN_TASKS = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.fetch_scan_tasks}")
@@ -317,6 +319,11 @@ class RegisterTableRequest(IcebergBaseModel):
     name: str
     metadata_location: str = Field(..., alias="metadata-location")
     overwrite: bool
+
+
+class RegisterViewRequest(IcebergBaseModel):
+    name: str
+    metadata_location: str = Field(..., alias="metadata-location")
 
 
 class ConfigResponse(IcebergBaseModel):
@@ -1314,6 +1321,29 @@ class RestCatalog(Catalog):
             _handle_non_200_response(exc, {})
 
         return False
+
+    @retry(**_RETRY_ARGS)
+    def register_view(self, identifier: str | Identifier, metadata_location: str) -> View:
+        self._check_endpoint(Capability.V1_REGISTER_VIEW)
+        namespace_and_view = self._split_identifier_for_path(identifier, IdentifierKind.VIEW)
+        namespace = namespace_and_view["namespace"]
+        view = namespace_and_view["view"]
+        if self.table_exists(identifier):
+            raise TableAlreadyExistsError(f"Table {namespace}.{view} already exists")
+
+        request = RegisterViewRequest(name=view, metadata_location=metadata_location)
+        serialized_json = request.model_dump_json().encode(UTF8)
+        response = self._session.post(
+            self.url(Endpoints.register_view, namespace=namespace),
+            data=serialized_json,
+        )
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            _handle_non_200_response(exc, {409: ViewAlreadyExistsError})
+
+        view_response = ViewResponse.model_validate_json(response.text)
+        return self._response_to_view(self.identifier_to_tuple(identifier), view_response)
 
     @retry(**_RETRY_ARGS)
     def drop_view(self, identifier: str) -> None:

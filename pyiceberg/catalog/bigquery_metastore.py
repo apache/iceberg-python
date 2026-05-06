@@ -41,6 +41,7 @@ from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import TableRequirement, TableUpdate
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.utils.config import Config
+from pyiceberg.view import View
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -302,6 +303,9 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         return self.load_table(identifier=identifier)
 
     def list_views(self, namespace: str | Identifier) -> list[Identifier]:
+        raise NotImplementedError
+
+    def register_view(self, identifier: str | Identifier, metadata_location: str) -> View:
         raise NotImplementedError
 
     def drop_view(self, identifier: str | Identifier) -> None:
