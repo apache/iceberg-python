@@ -614,6 +614,54 @@ class Transaction:
                 for data_file in data_files:
                     append_files.append_data_file(data_file)
 
+    def replace(
+        self,
+        df: pa.Table,
+        files_to_delete: Iterable[DataFile],
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
+        branch: str | None = MAIN_BRANCH,
+    ) -> None:
+        """
+        Shorthand for replacing existing files.
+
+        A replace will produce a REPLACE snapshot that will ignore existing
+        files and replace them with the new files.
+
+        Args:
+            df: The Arrow dataframe that will be used to generate the new data files
+            files_to_delete: The files to delete
+            snapshot_properties: Custom properties to be added to the snapshot summary
+            branch: Branch Reference to run the replace operation
+        """
+        try:
+            import pyarrow as pa
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
+
+        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, _dataframe_to_data_files
+
+        if not isinstance(df, pa.Table):
+            raise ValueError(f"Expected PyArrow table, got: {df}")
+
+        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+        _check_pyarrow_schema_compatible(
+            self.table_metadata.schema(),
+            provided_schema=df.schema,
+            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+            format_version=self.table_metadata.format_version,
+        )
+
+        with self.update_snapshot(snapshot_properties=snapshot_properties, branch=branch).replace() as replace_snapshot:
+            for file_to_delete in files_to_delete:
+                replace_snapshot.delete_data_file(file_to_delete)
+
+            if df.shape[0] > 0:
+                data_files = _dataframe_to_data_files(
+                    table_metadata=self.table_metadata, write_uuid=replace_snapshot.commit_uuid, df=df, io=self._table.io
+                )
+                for data_file in data_files:
+                    replace_snapshot.append_data_file(data_file)
+
     def delete(
         self,
         delete_filter: str | BooleanExpression,
@@ -1429,6 +1477,33 @@ class Table:
                 df=df,
                 overwrite_filter=overwrite_filter,
                 case_sensitive=case_sensitive,
+                snapshot_properties=snapshot_properties,
+                branch=branch,
+            )
+
+    def replace(
+        self,
+        df: pa.Table,
+        files_to_delete: Iterable[DataFile],
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
+        branch: str | None = MAIN_BRANCH,
+    ) -> None:
+        """
+        Shorthand for replacing existing files.
+
+        A replace will produce a REPLACE snapshot that will ignore existing
+        files and replace them with the new files.
+
+        Args:
+            df: The Arrow dataframe that will be used to generate the new data files
+            files_to_delete: The files to delete
+            snapshot_properties: Custom properties to be added to the snapshot summary
+            branch: Branch Reference to run the replace operation
+        """
+        with self.transaction() as tx:
+            tx.replace(
+                df=df,
+                files_to_delete=files_to_delete,
                 snapshot_properties=snapshot_properties,
                 branch=branch,
             )
