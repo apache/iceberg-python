@@ -76,11 +76,15 @@ from pyiceberg.utils.datetime import (
     time_str_to_micros,
     time_to_micros,
     timestamp_to_micros,
+    timestamp_to_nanos,
     timestamptz_to_micros,
+    timestamptz_to_nanos,
     to_human_day,
     to_human_time,
     to_human_timestamp,
+    to_human_timestamp_ns,
     to_human_timestamptz,
+    to_human_timestamptz_ns,
 )
 from pyiceberg.utils.decimal import decimal_to_bytes, unscaled_to_decimal
 
@@ -449,12 +453,29 @@ def _(_: PrimitiveType, val: int | datetime) -> str:
     return to_human_timestamp(val)
 
 
+@to_json.register(TimestampNanoType)
+def _(_: TimestampNanoType, val: int | datetime) -> str:
+    """Python datetime (without timezone) or nanoseconds since epoch serializes into an ISO8601 timestamp."""
+    if isinstance(val, datetime):
+        val = datetime_to_nanos(val)
+
+    return to_human_timestamp_ns(val)
+
+
 @to_json.register(TimestamptzType)
 def _(_: TimestamptzType, val: int | datetime) -> str:
     """Python datetime (with timezone) or microseconds since epoch serializes into an ISO8601 timestamp."""
     if isinstance(val, datetime):
         val = datetime_to_micros(val)
     return to_human_timestamptz(val)
+
+
+@to_json.register(TimestamptzNanoType)
+def _(_: TimestamptzNanoType, val: int | datetime) -> str:
+    """Python datetime (with timezone) or nanoseconds since epoch serializes into an ISO8601 timestamp."""
+    if isinstance(val, datetime):
+        val = datetime_to_nanos(val)
+    return to_human_timestamptz_ns(val)
 
 
 @to_json.register(FloatType)
@@ -596,6 +617,17 @@ def _(_: PrimitiveType, val: str | int | datetime) -> datetime:
         return val
 
 
+@from_json.register(TimestampNanoType)
+def _(_: TimestampNanoType, val: str | int | datetime) -> int | datetime:
+    """JSON ISO8601 string into nanoseconds since epoch."""
+    if isinstance(val, str):
+        return timestamp_to_nanos(val)
+    elif isinstance(val, int):
+        return val
+    else:
+        return val
+
+
 @from_json.register(TimestamptzType)
 def _(_: TimestamptzType, val: str | int | datetime) -> datetime:
     """JSON ISO8601 string into Python datetime."""
@@ -603,6 +635,17 @@ def _(_: TimestamptzType, val: str | int | datetime) -> datetime:
         val = timestamptz_to_micros(val)
     if isinstance(val, int):
         return micros_to_timestamptz(val)
+    else:
+        return val
+
+
+@from_json.register(TimestamptzNanoType)
+def _(_: TimestamptzNanoType, val: str | int | datetime) -> int | datetime:
+    """JSON ISO8601 string into nanoseconds since epoch."""
+    if isinstance(val, str):
+        return timestamptz_to_nanos(val)
+    elif isinstance(val, int):
+        return val
     else:
         return val
 

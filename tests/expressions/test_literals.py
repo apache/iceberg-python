@@ -43,6 +43,7 @@ from pyiceberg.expressions.literals import (
     StringLiteral,
     TimeLiteral,
     TimestampLiteral,
+    TimestampNanoLiteral,
     literal,
 )
 from pyiceberg.types import (
@@ -57,7 +58,9 @@ from pyiceberg.types import (
     LongType,
     PrimitiveType,
     StringType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UUIDType,
@@ -86,6 +89,7 @@ def test_literal_from_nan_error() -> None:
         DateLiteral,
         TimeLiteral,
         TimestampLiteral,
+        TimestampNanoLiteral,
         DecimalLiteral,
         StringLiteral,
         FixedLiteral,
@@ -276,6 +280,47 @@ def test_timestamp_to_date() -> None:
     date_lit = epoch_lit.to(DateType())
 
     assert date_lit.value == 0
+
+
+def test_timestamp_ns_to_date() -> None:
+    epoch_lit = TimestampNanoLiteral(0)
+    date_lit = epoch_lit.to(DateType())
+
+    assert date_lit.value == 0
+
+
+def test_timestamp_to_timestamp_ns() -> None:
+    ts_lit = TimestampLiteral(1000)
+    ts_ns_lit = ts_lit.to(TimestampNanoType())
+
+    assert isinstance(ts_ns_lit, TimestampNanoLiteral)
+    assert ts_ns_lit.value == 1000000
+
+
+def test_timestamp_ns_to_timestamp() -> None:
+    ts_ns_lit = TimestampNanoLiteral(1000000)
+    ts_lit = ts_ns_lit.to(TimestampType())
+
+    assert isinstance(ts_lit, TimestampLiteral)
+    assert ts_lit.value == 1000
+
+
+def test_string_to_timestamp_ns_literal() -> None:
+    assert StringLiteral("1970-01-01T00:00:00.000000001").to(TimestampNanoType()) == TimestampNanoLiteral(1)
+    assert StringLiteral("1970-01-01T00:00:00.000000001+00:00").to(TimestamptzNanoType()) == TimestampNanoLiteral(1)
+    assert StringLiteral("1970-01-01T00:00:00.123456789").to(TimestampNanoType()) == TimestampNanoLiteral(123456789)
+    assert StringLiteral("1970-01-01T00:00:00.123456789+00:00").to(TimestamptzNanoType()) == TimestampNanoLiteral(123456789)
+
+
+def test_long_to_timestamp_ns_literal() -> None:
+    assert LongLiteral(123456789).to(TimestampNanoType()) == TimestampNanoLiteral(123456789)
+    assert LongLiteral(123456789).to(TimestamptzNanoType()) == TimestampNanoLiteral(123456789)
+
+
+def test_timestamp_ns_increment_decrement() -> None:
+    lit = TimestampNanoLiteral(123)
+    assert lit.increment() == TimestampNanoLiteral(124)
+    assert lit.decrement() == TimestampNanoLiteral(122)
 
 
 def test_string_literal() -> None:
