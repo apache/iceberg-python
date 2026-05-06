@@ -1103,6 +1103,7 @@ class Table:
         self.metadata = fresh.metadata
         self.io = fresh.io
         self.metadata_location = fresh.metadata_location
+        self.config = fresh.config
         return self
 
     def name(self) -> Identifier:
