@@ -2535,6 +2535,39 @@ def test_table_uuid_check_on_commit(rest_mock: Mocker, example_table_metadata_v2
     assert f"refreshed={different_uuid}" in str(exc_info.value)
 
 
+def test_table_refresh_updates_config(rest_mock: Mocker, example_table_metadata_v2: dict[str, Any]) -> None:
+    metadata_location = "s3://warehouse/database/table/metadata.json"
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": example_table_metadata_v2,
+            "config": {"original-key": "original-value"},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    table = catalog.load_table(("namespace", "table_name"))
+    assert table.config == {"original-key": "original-value"}
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": example_table_metadata_v2,
+            "config": {"updated-key": "updated-value"},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    table.refresh()
+    assert table.config == {"updated-key": "updated-value"}
+
+
 def test_table_uuid_check_on_refresh(rest_mock: Mocker, example_table_metadata_v2: dict[str, Any]) -> None:
     original_uuid = "9c12d441-03fe-4693-9a96-a0705ddf69c1"
     different_uuid = "550e8400-e29b-41d4-a716-446655440000"
