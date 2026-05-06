@@ -22,6 +22,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
@@ -30,6 +31,8 @@ from typing import (
     Generic,
     TypeVar,
 )
+
+from cachetools import LRUCache
 
 from pyiceberg.avro.codecs import AVRO_CODEC_KEY, CODEC_MAPPING_ICEBERG_TO_AVRO, KNOWN_CODECS
 from pyiceberg.avro.codecs.codec import Codec
@@ -68,6 +71,48 @@ META_SCHEMA = StructType(
 _SCHEMA_KEY = "avro.schema"
 
 
+# Cache for Avro-to-Iceberg schema conversion, keyed by raw schema JSON string.
+# Manifests of the same type share the same Avro schema, so this avoids
+# redundant JSON parsing and schema conversion on every manifest open.
+_schema_cache: LRUCache[str, Schema] = LRUCache(maxsize=32)
+_schema_cache_lock = threading.Lock()
+
+# Cache for resolved reader trees, keyed by object identity of (file_schema,
+# read_schema, read_types, read_enums). Reader objects are stateless — read()
+# takes a decoder and returns decoded data without mutating self, so sharing
+# cached readers across threads and calls is safe.
+_reader_cache: LRUCache[tuple[int, ...], Reader] = LRUCache(maxsize=32)
+_reader_cache_lock = threading.Lock()
+
+
+def _cached_avro_to_iceberg(avro_schema_string: str) -> Schema:
+    """Convert an Avro schema JSON string to an Iceberg Schema, with caching."""
+    with _schema_cache_lock:
+        if avro_schema_string in _schema_cache:
+            return _schema_cache[avro_schema_string]
+    schema = AvroSchemaConversion().avro_to_iceberg(json.loads(avro_schema_string))
+    with _schema_cache_lock:
+        _schema_cache[avro_schema_string] = schema
+    return schema
+
+
+def _cached_resolve_reader(
+    file_schema: Schema,
+    read_schema: Schema,
+    read_types: dict[int, Callable[..., StructProtocol]],
+    read_enums: dict[int, Callable[..., Enum]],
+) -> Reader:
+    """Resolve a reader tree for the given schema pair, with caching."""
+    key = (id(file_schema), id(read_schema), id(read_types), id(read_enums))
+    with _reader_cache_lock:
+        if key in _reader_cache:
+            return _reader_cache[key]
+    reader = resolve_reader(file_schema, read_schema, read_types, read_enums)
+    with _reader_cache_lock:
+        _reader_cache[key] = reader
+    return reader
+
+
 class AvroFileHeader(Record):
     @property
     def magic(self) -> bytes:
@@ -97,9 +142,7 @@ class AvroFileHeader(Record):
 
     def get_schema(self) -> Schema:
         if _SCHEMA_KEY in self.meta:
-            avro_schema_string = self.meta[_SCHEMA_KEY]
-            avro_schema = json.loads(avro_schema_string)
-            return AvroSchemaConversion().avro_to_iceberg(avro_schema)
+            return _cached_avro_to_iceberg(self.meta[_SCHEMA_KEY])
         else:
             raise ValueError("No schema found in Avro file headers")
 
@@ -178,7 +221,7 @@ class AvroFile(Generic[D]):
         if not self.read_schema:
             self.read_schema = self.schema
 
-        self.reader = resolve_reader(self.schema, self.read_schema, self.read_types, self.read_enums)
+        self.reader = _cached_resolve_reader(self.schema, self.read_schema, self.read_types, self.read_enums)
 
         return self
 
