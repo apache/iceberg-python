@@ -144,3 +144,6 @@ class NoopCatalog(Catalog):
         properties: Properties = EMPTY_DICT,
     ) -> View:
         raise NotImplementedError
+
+    def load_view(self, identifier: str | Identifier) -> View:
+        raise NotImplementedError

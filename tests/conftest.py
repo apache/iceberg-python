@@ -2354,6 +2354,13 @@ def table_list(table_name: str) -> list[str]:
 
 
 @pytest.fixture()
+def view_name() -> str:
+    prefix = "my_iceberg_view-"
+    random_tag = "".join(choice(string.ascii_letters) for _ in range(RANDOM_LENGTH))
+    return (prefix + random_tag).lower()
+
+
+@pytest.fixture()
 def database_name() -> str:
     prefix = "my_iceberg_database-"
     random_tag = "".join(choice(string.ascii_letters) for _ in range(RANDOM_LENGTH))
