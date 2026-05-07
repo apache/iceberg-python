@@ -2674,18 +2674,158 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
     return iter(data_files)
 
 
-def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[list[pa.RecordBatch]]:
-    """Bin-pack ``tbl`` into groups of RecordBatches, each ~``target_file_size``.
+def _record_batches_to_data_files(
+    table_metadata: TableMetadata,
+    reader: pa.RecordBatchReader,
+    io: FileIO,
+    write_uuid: uuid.UUID | None = None,
+    counter: itertools.count[int] | None = None,
+) -> Iterator[DataFile]:
+    """Stream a ``pa.RecordBatchReader`` into Parquet data files via a rolling ``pq.ParquetWriter``.
 
-    Note:
-        ``target_file_size`` is measured in **uncompressed in-memory** Arrow bytes
-        (``Table.nbytes`` / ``RecordBatch.nbytes``), not compressed on-disk Parquet
-        bytes. The resulting Parquet file after compression (zstd by default,
-        plus dictionary/RLE encoding) is typically 3-10× smaller than
-        ``target_file_size``. This is a coarse proxy for the spec-defined
-        ``write.target-file-size-bytes`` and will be tightened to true on-disk
-        bytes once the writer is switched to a rolling-``ParquetWriter`` with
-        ``OutputStream.tell()`` (#2998).
+    Each input ``RecordBatch`` is written directly via
+    ``writer.write_batch``. File rollover is driven by ``OutputStream.tell()``
+    (#2998): after each batch, if ``tell() >= write.target-file-size-bytes``
+    the current writer is closed (footer written) and a new file is opened.
+    The threshold is measured in compressed on-disk bytes — matching the
+    spec interpretation of ``write.target-file-size-bytes``.
+
+    Row groups are capped at ``write.parquet.row-group-limit`` rows (default
+    1M) via the ``row_group_size`` argument to ``write_batch``: a batch
+    larger than the cap is split into multiple row groups, each ≤ the cap;
+    a batch smaller than the cap becomes a single row group of its own
+    size. Callers control the lower bound of row group size by their
+    choice of input batch size; pyiceberg enforces the upper bound. This
+    matches the materialised ``pa.Table`` write path's treatment of the
+    same property.
+
+    Memory per writer is bounded by one input ``RecordBatch`` plus the
+    ``ParquetWriter``'s internal page buffer (~1 MiB by default). The
+    materialised ``pa.Table`` write path (``write_file``) keeps its
+    existing ``executor.map``-based file-level parallelism; streaming
+    writes are sequential — one rolling file at a time, with concurrency
+    provided by the underlying multipart upload pool.
+
+    Streaming writes to partitioned tables are not yet supported — see
+    https://github.com/apache/iceberg-python/issues/2152.
+    """
+    from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties
+
+    if not table_metadata.spec().is_unpartitioned():
+        raise NotImplementedError(
+            "Writing a pa.RecordBatchReader to a partitioned table is not yet supported. "
+            "Materialise the reader as a pa.Table first, or follow "
+            "https://github.com/apache/iceberg-python/issues/2152 for partitioned streaming support."
+        )
+
+    counter = counter or itertools.count(0)
+    write_uuid = write_uuid or uuid.uuid4()
+    target_file_size: int = property_as_int(  # type: ignore  # The property is set with non-None value.
+        properties=table_metadata.properties,
+        property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
+        default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
+    )
+    name_mapping = table_metadata.schema().name_mapping
+    downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+    task_schema = pyarrow_to_schema(
+        reader.schema,
+        name_mapping=name_mapping,
+        downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+        format_version=table_metadata.format_version,
+    )
+    table_schema = table_metadata.schema()
+    if (sanitized_schema := sanitize_column_names(table_schema)) != table_schema:
+        file_schema = sanitized_schema
+    else:
+        file_schema = table_schema
+
+    parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
+    row_group_size = property_as_int(
+        properties=table_metadata.properties,
+        property_name=TableProperties.PARQUET_ROW_GROUP_LIMIT,
+        default=TableProperties.PARQUET_ROW_GROUP_LIMIT_DEFAULT,
+    )
+    location_provider = load_location_provider(table_location=table_metadata.location, table_properties=table_metadata.properties)
+    stats_columns = compute_statistics_plan(file_schema, table_metadata.properties)
+    column_mapping = parquet_path_to_id_mapping(file_schema)
+
+    def _transform(batch: pa.RecordBatch) -> pa.RecordBatch:
+        return _to_requested_schema(
+            requested_schema=file_schema,
+            file_schema=task_schema,
+            batch=batch,
+            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+            include_field_ids=True,
+        )
+
+    def _new_data_file_path() -> str:
+        # Mirrors WriteTask.generate_data_file_filename to keep file names compatible
+        # with the materialised write path.
+        filename = f"00000-{next(counter)}-{write_uuid}.parquet"
+        return location_provider.new_data_location(data_file_name=filename)
+
+    def _build_data_file(file_path: str, output_file: OutputFile, parquet_metadata: Any) -> DataFile:
+        statistics = data_file_statistics_from_parquet_metadata(
+            parquet_metadata=parquet_metadata,
+            stats_columns=stats_columns,
+            parquet_column_mapping=column_mapping,
+        )
+        return DataFile.from_args(
+            content=DataFileContent.DATA,
+            file_path=file_path,
+            file_format=FileFormat.PARQUET,
+            partition=Record(),
+            file_size_in_bytes=len(output_file),
+            sort_order_id=None,
+            spec_id=table_metadata.default_spec_id,
+            equality_ids=None,
+            key_metadata=None,
+            **statistics.to_serialized_dict(),
+        )
+
+    batches = iter(reader)
+    while True:
+        # Pull the next batch up front. If the reader is exhausted (either at the
+        # very start or between rolled files), we're done — yield nothing further.
+        try:
+            first_batch = next(batches)
+        except StopIteration:
+            return
+
+        transformed_first = _transform(first_batch)
+        file_path = _new_data_file_path()
+        output_file = io.new_output(file_path)
+        with output_file.create(overwrite=True) as fos:
+            with pq.ParquetWriter(
+                fos,
+                schema=transformed_first.schema,
+                store_decimal_as_integer=True,
+                **parquet_writer_kwargs,
+            ) as writer:
+                writer.write_batch(transformed_first, row_group_size=row_group_size)
+                # Keep writing into this file until the on-disk byte threshold
+                # is crossed. ``tell()`` advances as ``write_batch`` flushes
+                # encoded pages to the stream — files end up close to but
+                # slightly above ``target_file_size`` (lag bounded by one
+                # Parquet data page, ~1 MiB by default).
+                while fos.tell() < target_file_size:
+                    try:
+                        batch = next(batches)
+                    except StopIteration:
+                        break
+                    writer.write_batch(_transform(batch), row_group_size=row_group_size)
+        # writer is closed (footer written) and the OutputStream is flushed.
+        # writer.writer.metadata is still readable post-close — same access
+        # pattern used by write_file().
+        yield _build_data_file(file_path, output_file, writer.writer.metadata)
+
+
+def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[list[pa.RecordBatch]]:
+    """Bin-pack ``tbl`` into groups of RecordBatches, each ~``target_file_size`` uncompressed Arrow bytes.
+
+    Used by the materialised ``pa.Table`` write path (``_dataframe_to_data_files``
+    + ``write_file``) to split a fully in-memory table into multiple Parquet
+    files written in parallel.
     """
     from pyiceberg.utils.bin_packing import PackingIterator
 
@@ -2700,41 +2840,6 @@ def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[list[
         largest_bin_first=False,
     )
     return bin_packed_record_batches
-
-
-def bin_pack_record_batches(batches: Iterable[pa.RecordBatch], target_file_size: int) -> Iterator[list[pa.RecordBatch]]:
-    """Microbatch a single-pass stream of RecordBatches into target-sized groups.
-
-    Unlike :func:`bin_pack_arrow_table`, this consumes ``batches`` lazily and
-    holds at most one in-flight buffer in memory, bounded by ``target_file_size``.
-    Suitable for streaming inputs (``pa.RecordBatchReader``,
-    ``Iterator[pa.RecordBatch]``) where the total size is unknown up front and
-    the caller cannot afford to materialise the full dataset.
-
-    Each yielded list of batches is intended to be written as a single Parquet
-    data file. Because this is single-pass FIFO accumulation (no lookback), the
-    last bin may be smaller than ``target_file_size``.
-
-    Note:
-        ``target_file_size`` is measured in **uncompressed in-memory** Arrow
-        bytes (``RecordBatch.nbytes``), not compressed on-disk Parquet bytes.
-        The resulting Parquet file after compression is typically 3-10×
-        smaller than ``target_file_size``. Matches the existing
-        :func:`bin_pack_arrow_table` semantics; both will be tightened to true
-        on-disk bytes once the writer is switched to a rolling-
-        ``ParquetWriter`` with ``OutputStream.tell()`` (#2998).
-    """
-    buffer: list[pa.RecordBatch] = []
-    buffer_bytes = 0
-    for batch in batches:
-        buffer.append(batch)
-        buffer_bytes += batch.nbytes
-        if buffer_bytes >= target_file_size:
-            yield buffer
-            buffer = []
-            buffer_bytes = 0
-    if buffer:
-        yield buffer
 
 
 def _check_pyarrow_schema_compatible(
@@ -2894,19 +2999,16 @@ def _dataframe_to_data_files(
     )
 
     if isinstance(df, pa.RecordBatchReader):
-        if not table_metadata.spec().is_unpartitioned():
-            raise NotImplementedError(
-                "Writing a pa.RecordBatchReader to a partitioned table is not yet supported. "
-                "Materialise the reader as a pa.Table first, or follow "
-                "https://github.com/apache/iceberg-python/issues/2152 for partitioned streaming support."
-            )
-        yield from write_file(
-            io=io,
+        # Streaming path: rolling ParquetWriter driven by OutputStream.tell()
+        # for constant-memory writes and on-disk-accurate file sizes.
+        # Partitioned-table support is the responsibility of
+        # _record_batches_to_data_files; the NotImplementedError is raised there.
+        yield from _record_batches_to_data_files(
             table_metadata=table_metadata,
-            tasks=(
-                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=task_schema)
-                for batches in bin_pack_record_batches(df, target_file_size)
-            ),
+            reader=df,
+            io=io,
+            write_uuid=write_uuid,
+            counter=counter,
         )
         return
 

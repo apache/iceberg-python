@@ -2575,10 +2575,11 @@ def test_v3_write_and_read_row_lineage(spark: SparkSession, session_catalog: Cat
 
 # RecordBatchReader streaming append/overwrite — see https://github.com/apache/iceberg-python/issues/2152
 #
-# These integration tests prove Spark can read tables written via the new streaming
-# path. Equivalent in-process scan coverage lives in tests/catalog/test_catalog_behaviors.py
-# but only Spark exercises the manifest stats + Parquet metadata produced by the
-# write_file → fast_append pipeline against an external reader.
+# These integration tests prove Spark can read tables written via the new
+# streaming path (rolling pq.ParquetWriter + fast_append commit). Equivalent
+# in-process scan coverage lives in tests/catalog/test_catalog_behaviors.py;
+# only Spark exercises the resulting manifest stats and Parquet metadata
+# against an external reader.
 
 
 @pytest.mark.integration
@@ -2631,14 +2632,17 @@ def test_append_record_batch_reader_multifile(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
     """Forcing a tiny target file size should produce >1 data file in a single
-    snapshot, proving the byte-budget rollover in bin_pack_record_batches fires
-    end-to-end and the resulting files are valid Iceberg data files (Spark reads
-    them all)."""
+    snapshot, proving the rolling ParquetWriter's tell()-based rollover fires
+    end-to-end and the resulting files are valid Iceberg data files (Spark
+    reads them all)."""
     identifier = f"default.streaming_append_multifile_v{format_version}"
     tbl = _create_table(
         session_catalog,
         identifier,
-        {"format-version": str(format_version), TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: "1"},
+        {
+            "format-version": str(format_version),
+            TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: "1",
+        },
     )
 
     batches = arrow_table_with_null.to_batches(max_chunksize=1) * 4

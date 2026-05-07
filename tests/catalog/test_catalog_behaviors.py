@@ -1215,8 +1215,10 @@ def test_drop_namespace_raises_error_when_namespace_not_empty(
 
 # RecordBatchReader streaming append/overwrite tests
 #
-# Streaming writes accept a pa.RecordBatchReader and microbatch it into target-sized
-# Parquet files instead of materialising the full Arrow Table in memory. Tracks
+# Streaming writes accept a pa.RecordBatchReader and write it through a rolling
+# Parquet writer (row groups flushed at write.parquet.row-group-limit, files
+# rolled at write.target-file-size-bytes via OutputStream.tell()) instead of
+# materialising the full Arrow Table in memory. Tracks
 # https://github.com/apache/iceberg-python/issues/2152.
 
 
@@ -1248,11 +1250,15 @@ def test_append_record_batch_reader(catalog: Catalog) -> None:
 
 def test_append_record_batch_reader_microbatched(catalog: Catalog) -> None:
     """A reader bigger than the per-file target produces multiple Parquet files
-    in a single snapshot — verifying the byte-budget microbatching path."""
+    in a single snapshot — verifies file rollover via ``OutputStream.tell()``.
+
+    Sets a tiny ``target-file-size-bytes`` so each batch's flush rolls a new
+    file. Each input ``RecordBatch`` is its own row group, so ``tell()``
+    advances after every ``write_batch``.
+    """
     catalog.create_namespace("default")
     identifier = f"default.append_record_batch_reader_microbatch_{catalog.name}"
     reader, total_rows = _simple_record_batch_reader(num_batches=8)
-    # Force every batch to roll a new file by setting an absurdly small target size.
     tbl = catalog.create_table(
         identifier=identifier,
         schema=reader.schema,
@@ -1267,6 +1273,114 @@ def test_append_record_batch_reader_microbatched(catalog: Catalog) -> None:
     added_files = snapshot.summary["added-data-files"]
     assert added_files is not None and int(added_files) > 1, snapshot.summary
     assert len(tbl.scan().to_arrow()) == total_rows
+
+
+def test_append_record_batch_reader_row_group_limit_is_cap(catalog: Catalog) -> None:
+    """``write.parquet.row-group-limit`` caps the maximum rows per Parquet
+    row group. A single input batch larger than the cap is split into
+    multiple row groups, each ≤ the cap. The streaming path enforces the
+    upper bound; callers control the lower bound by their choice of input
+    batch size.
+    """
+    import pyarrow.parquet as pq
+
+    catalog.create_namespace("default")
+    identifier = f"default.append_record_batch_reader_row_group_limit_cap_{catalog.name}"
+
+    row_group_cap = 250
+    total_rows = 1000  # 4× the cap
+    schema = pa.schema([("id", pa.int64())])
+    # One big batch — pyiceberg should split it into ⌈1000 / 250⌉ = 4 row groups
+    # of exactly 250 rows each.
+    big_batch = pa.RecordBatch.from_pylist(
+        [{"id": i} for i in range(total_rows)],
+        schema=schema,
+    )
+    reader = pa.RecordBatchReader.from_batches(schema, iter([big_batch]))
+
+    tbl = catalog.create_table(
+        identifier=identifier,
+        schema=schema,
+        properties={
+            TableProperties.PARQUET_ROW_GROUP_LIMIT: str(row_group_cap),
+            # Big enough that everything fits in one file; we're testing row
+            # group size, not file rollover.
+            TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: str(64 * 1024 * 1024),
+        },
+    )
+    tbl.append(reader)
+
+    assert len(tbl.scan().to_arrow()) == total_rows
+
+    files = tbl.inspect.files().select(["file_path"]).to_pylist()
+    assert len(files) == 1, files
+
+    # Read the parquet footer and check row group sizes
+    file_path = files[0]["file_path"]
+    metadata = pq.read_metadata(tbl.io.new_input(file_path).open())
+    row_group_sizes = [metadata.row_group(i).num_rows for i in range(metadata.num_row_groups)]
+
+    # Expect 4 row groups of exactly row_group_cap rows each. Without the cap
+    # passed to write_batch, the whole 1000-row batch would become one row
+    # group — the test would fail loudly.
+    assert metadata.num_row_groups == total_rows // row_group_cap, row_group_sizes
+    for rg_size in row_group_sizes:
+        assert rg_size == row_group_cap, row_group_sizes
+
+
+def test_append_record_batch_reader_target_file_size_is_on_disk_bytes(catalog: Catalog) -> None:
+    """The streaming write path interprets ``write.target-file-size-bytes`` as
+    actual on-disk compressed Parquet bytes (via ``OutputStream.tell()``), not
+    uncompressed in-memory Arrow bytes. This test sets a small file target,
+    streams several batches, and asserts each rolled file is close to the
+    target size — proving the spec-correct semantics.
+    """
+    catalog.create_namespace("default")
+    identifier = f"default.append_record_batch_reader_target_size_{catalog.name}"
+
+    target_bytes = 32 * 1024  # 32 KiB target — small so we get multiple files quickly
+    schema = pa.schema([("id", pa.int64()), ("payload", pa.large_string())])
+    # ~80 bytes per row uncompressed; with zstd ~10x compression we expect
+    # approximately 4000 rows per ~32 KiB file.
+    rows_per_batch = 1000
+    total_batches = 12
+    batches = [
+        pa.RecordBatch.from_pylist(
+            [{"id": i * rows_per_batch + j, "payload": f"row_{i * rows_per_batch + j:08d}"} for j in range(rows_per_batch)],
+            schema=schema,
+        )
+        for i in range(total_batches)
+    ]
+    reader = pa.RecordBatchReader.from_batches(schema, iter(batches))
+    expected_rows = total_batches * rows_per_batch
+
+    tbl = catalog.create_table(
+        identifier=identifier,
+        schema=schema,
+        properties={TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: str(target_bytes)},
+    )
+    tbl.append(reader)
+
+    # All rows landed
+    assert len(tbl.scan().to_arrow()) == expected_rows
+
+    # Multiple files were rolled
+    snapshot = tbl.metadata.current_snapshot()
+    assert snapshot is not None and snapshot.summary is not None
+    added_files = int(snapshot.summary["added-data-files"])  # type: ignore[arg-type]
+    assert added_files >= 2, snapshot.summary
+
+    # Per-file size: every rolled file (i.e. all but possibly the last) should be
+    # *close to* target_bytes. The lag between tell() and write_batch is bounded
+    # by one Parquet data page (~1 MiB by default), so files end up slightly
+    # above target. We assert each rolled file is between 0.5x and 5x the
+    # target — a loose bound that catches the old uncompressed-Arrow-bytes
+    # behaviour (where files would be ~3-10x SMALLER than target).
+    files = tbl.inspect.files().select(["file_path", "file_size_in_bytes"]).to_pylist()
+    rolled_files = files[:-1] if len(files) > 1 else files
+    for f in rolled_files:
+        size = f["file_size_in_bytes"]
+        assert target_bytes // 2 <= size <= target_bytes * 5, f"{f['file_path']}: {size} bytes (target {target_bytes})"
 
 
 def test_append_record_batch_reader_empty(catalog: Catalog) -> None:
