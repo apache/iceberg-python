@@ -29,6 +29,8 @@ def _create_data_file(
     spec_id: int = 0,
     lower_bounds: dict[int, bytes] | None = None,
     upper_bounds: dict[int, bytes] | None = None,
+    null_value_counts: dict[int, int] | None = None,
+    value_counts: dict[int, int] | None = None,
 ) -> DataFile:
     data_file = DataFile.from_args(
         content=DataFileContent.DATA,
@@ -39,6 +41,8 @@ def _create_data_file(
         file_size_in_bytes=1000,
         lower_bounds=lower_bounds,
         upper_bounds=upper_bounds,
+        null_value_counts=null_value_counts,
+        value_counts=value_counts,
     )
     data_file._spec_id = spec_id
     return data_file
@@ -96,6 +100,8 @@ def _create_equality_delete(
     spec_id: int = 0,
     lower_bounds: dict[int, bytes] | None = None,
     upper_bounds: dict[int, bytes] | None = None,
+    null_value_counts: dict[int, int] | None = None,
+    value_counts: dict[int, int] | None = None,
 ) -> ManifestEntry:
     delete_file = DataFile.from_args(
         content=DataFileContent.EQUALITY_DELETES,
@@ -107,6 +113,8 @@ def _create_equality_delete(
         equality_ids=[1],
         lower_bounds=lower_bounds,
         upper_bounds=upper_bounds,
+        null_value_counts=null_value_counts,
+        value_counts=value_counts,
     )
     delete_file._spec_id = spec_id
     return ManifestEntry.from_args(status=ManifestEntryStatus.ADDED, sequence_number=sequence_number, data_file=delete_file)
@@ -265,7 +273,7 @@ def test_equality_delete_sequence_number_unpartitioned() -> None:
     assert pos_delete.data_file in deletes
     assert eq_delete.data_file in deletes
 
-    # At sequence 111
+    # At sequence 11
     # Neither should apply.
     deletes = index.for_data_file(11, data_file)
     assert len(deletes) == 0
@@ -328,3 +336,45 @@ def test_equality_delete_metrics_filtering() -> None:
         upper_bounds={1: to_bytes(IntegerType(), 30)},
     )
     assert len(index.for_data_file(1, file_no_overlap_2)) == 0
+
+
+def test_equality_delete_pruned_when_delete_all_null_data_no_nulls() -> None:
+    schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    index = DeleteFileIndex(schema=schema)
+
+    # Equality delete targets only null rows for field 1.
+    eq = _create_equality_delete(
+        sequence_number=10,
+        null_value_counts={1: 10},
+        value_counts={1: 10},
+    )
+    index.add_delete_file(eq)
+
+    # Data file has zero nulls for field 1, so the delete cannot match.
+    data = _create_data_file(
+        null_value_counts={1: 0},
+        value_counts={1: 100},
+    )
+
+    assert len(index.for_data_file(1, data)) == 0
+
+
+def test_equality_delete_pruned_data_all_null_delete_no_nulls() -> None:
+    schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    index = DeleteFileIndex(schema=schema)
+
+    # Equality delete has no null rows for field 1.
+    eq = _create_equality_delete(
+        sequence_number=10,
+        null_value_counts={1: 0},
+        value_counts={1: 10},
+    )
+    index.add_delete_file(eq)
+
+    # Data file is all nulls for field 1, so the delete cannot match.
+    data = _create_data_file(
+        null_value_counts={1: 100},
+        value_counts={1: 100},
+    )
+
+    assert len(index.for_data_file(1, data)) == 0
