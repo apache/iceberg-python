@@ -712,6 +712,18 @@ class Catalog(ABC):
             ViewAlreadyExistsError: If a view with the name already exists.
         """
 
+    @abstractmethod
+    def rename_view(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> None:
+        """Rename a fully classified view name.
+
+        Args:
+            from_identifier (str | Identifier): Existing view identifier.
+            to_identifier (str | Identifier): New view identifier.
+
+        Raises:
+            NoSuchViewError: If a view with the name does not exist.
+        """
+
     @staticmethod
     def identifier_to_tuple(identifier: str | Identifier) -> Identifier:
         """Parse an identifier to a tuple.

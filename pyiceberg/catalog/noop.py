@@ -144,3 +144,6 @@ class NoopCatalog(Catalog):
         properties: Properties = EMPTY_DICT,
     ) -> View:
         raise NotImplementedError
+
+    def rename_view(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> None:
+        raise NotImplementedError
