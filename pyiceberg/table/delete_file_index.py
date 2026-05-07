@@ -90,11 +90,35 @@ def _applies_to_data_file(delete_file: DataFile, data_file: DataFile) -> bool:
     return evaluator.eval(delete_file)
 
 
+def _is_all_null(data_file: DataFile, field_id: int) -> bool:
+    null_counts = data_file.null_value_counts
+    value_counts = data_file.value_counts
+    if not null_counts or not value_counts:
+        return False
+    null_count = null_counts.get(field_id)
+    value_count = value_counts.get(field_id)
+    return null_count is not None and value_count is not None and null_count == value_count
+
+
+def _has_no_nulls(data_file: DataFile, field_id: int) -> bool:
+    null_counts = data_file.null_value_counts
+    if not null_counts:
+        return False
+    return null_counts.get(field_id) == 0
+
+
 def _eq_applies_to_data_file(eq_delete_file: DataFile, data_file: DataFile, schema: Schema) -> bool:
     if not eq_delete_file.equality_ids:
         return True
 
     for field_id in eq_delete_file.equality_ids:
+        # Data is only nulls for this field, but the delete has no null rows.
+        if _is_all_null(data_file, field_id) and _has_no_nulls(eq_delete_file, field_id):
+            return False
+        # Delete only removes null rows, but the data has none.
+        if _is_all_null(eq_delete_file, field_id) and _has_no_nulls(data_file, field_id):
+            return False
+
         if (
             eq_delete_file.lower_bounds
             and eq_delete_file.upper_bounds
