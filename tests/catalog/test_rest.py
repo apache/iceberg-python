@@ -2180,11 +2180,6 @@ def test_register_view_409_table(rest_mock: Mocker) -> None:
         status_code=200,
         request_headers=TEST_HEADERS,
     )
-    rest_mock.post(
-        f"{TEST_URI}v1/namespaces/default/views/registered_view",
-        status_code=204,
-        request_headers=TEST_HEADERS,
-    )
 
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
     with pytest.raises(TableAlreadyExistsError) as e:
