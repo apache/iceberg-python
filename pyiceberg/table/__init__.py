@@ -1378,7 +1378,7 @@ class Table:
         Shorthand API for appending a PyArrow table to the table.
 
         Args:
-            df: The Arrow dataframe that will be appended to overwrite the table
+            df: The Arrow dataframe that will be appended to the table
             snapshot_properties: Custom properties to be added to the snapshot summary
             branch: Branch Reference to run the append operation
         """
@@ -1466,6 +1466,9 @@ class Table:
 
         Args:
             file_paths: The list of full file paths to be added as data files to the table
+            snapshot_properties: Custom properties to be added to the snapshot summary
+            check_duplicate_files: Whether to check if the files are already present in the table
+            branch: Branch Reference to run the add-files operation
 
         Raises:
             FileNotFoundError: If the file does not exist.
@@ -1479,6 +1482,11 @@ class Table:
             )
 
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
+        """Create a new UpdateSpec to update the partitioning of the table.
+
+        Args:
+            case_sensitive: Whether column name matching should be case-sensitive.
+        """
         return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)
 
     def refs(self) -> dict[str, SnapshotRef]:
