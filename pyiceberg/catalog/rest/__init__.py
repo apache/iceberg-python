@@ -377,6 +377,7 @@ class ListViewResponseEntry(IcebergBaseModel):
 
 class ListTablesResponse(IcebergBaseModel):
     identifiers: list[ListTableResponseEntry] = Field()
+    next_page_token: str | None = Field(default=None, alias="next-page-token")
 
 
 class ListViewsResponse(IcebergBaseModel):
@@ -1034,12 +1035,27 @@ class RestCatalog(Catalog):
         self._check_endpoint(Capability.V1_LIST_TABLES)
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = self._encode_namespace_path(namespace_tuple)
-        response = self._session.get(self.url(Endpoints.list_tables, namespace=namespace_concat))
-        try:
-            response.raise_for_status()
-        except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchNamespaceError})
-        return [(*table.namespace, table.name) for table in ListTablesResponse.model_validate_json(response.text).identifiers]
+        url = self.url(Endpoints.list_tables, namespace=namespace_concat)
+
+        tables: list[Identifier] = []
+        page_token: str | None = None
+
+        while True:
+            params = {"pageToken": page_token} if page_token else None
+            response = self._session.get(url, params=params)
+            try:
+                response.raise_for_status()
+            except HTTPError as exc:
+                _handle_non_200_response(exc, {404: NoSuchNamespaceError})
+
+            parsed = ListTablesResponse.model_validate_json(response.text)
+            tables.extend([(*table.namespace, table.name) for table in parsed.identifiers])
+
+            if not parsed.next_page_token:
+                break
+            page_token = parsed.next_page_token
+
+        return tables
 
     @retry(**_RETRY_ARGS)
     @override
