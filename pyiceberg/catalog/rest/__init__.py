@@ -370,6 +370,7 @@ class ListTablesResponse(IcebergBaseModel):
 
 class ListViewsResponse(IcebergBaseModel):
     identifiers: list[ListViewResponseEntry] = Field()
+    next_page_token: str | None = Field(default=None, alias="next-page-token")
 
 
 _PLANNING_RESPONSE_ADAPTER = TypeAdapter(PlanningResponse)
@@ -1102,12 +1103,31 @@ class RestCatalog(Catalog):
             return []
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = self._encode_namespace_path(namespace_tuple)
-        response = self._session.get(self.url(Endpoints.list_views, namespace=namespace_concat))
-        try:
-            response.raise_for_status()
-        except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchNamespaceError})
-        return [(*view.namespace, view.name) for view in ListViewsResponse.model_validate_json(response.text).identifiers]
+
+        all_identifiers: list[Identifier] = []
+        page_token: str | None = None
+
+        while True:
+            # Build URL with pagination params
+            url = self.url(Endpoints.list_views, namespace=namespace_concat)
+            if page_token:
+                url = f"{url}?pageToken={page_token}"
+
+            response = self._session.get(url)
+            try:
+                response.raise_for_status()
+            except HTTPError as exc:
+                _handle_non_200_response(exc, {404: NoSuchNamespaceError})
+
+            parsed = ListViewsResponse.model_validate_json(response.text)
+            all_identifiers.extend([(*view.namespace, view.name) for view in parsed.identifiers])
+
+            # Check if more pages exist
+            if not parsed.next_page_token:
+                break
+            page_token = parsed.next_page_token
+
+        return all_identifiers
 
     @retry(**_RETRY_ARGS)
     def commit_table(
