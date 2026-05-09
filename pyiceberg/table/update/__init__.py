@@ -220,6 +220,11 @@ class RemovePartitionStatisticsUpdate(IcebergBaseModel):
     snapshot_id: int = Field(alias="snapshot-id")
 
 
+class SetTableMetadataLocationUpdate(IcebergBaseModel):
+    action: Literal["set-table-metadata-location"] = Field(default="set-table-metadata-location")
+    metadata_location: str = Field(alias="metadata-location")
+
+
 TableUpdate = Annotated[
     AssignUUIDUpdate
     | UpgradeFormatVersionUpdate
@@ -241,7 +246,8 @@ TableUpdate = Annotated[
     | RemovePartitionSpecsUpdate
     | RemoveSchemasUpdate
     | SetPartitionStatisticsUpdate
-    | RemovePartitionStatisticsUpdate,
+    | RemovePartitionStatisticsUpdate
+    | SetTableMetadataLocationUpdate,
     Field(discriminator="action"),
 ]
 
