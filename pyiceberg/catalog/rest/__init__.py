@@ -83,7 +83,7 @@ from pyiceberg.table import (
 from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata, new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
-from pyiceberg.table.update import SetTableMetadataLocationUpdate, TableRequirement, TableUpdate
+from pyiceberg.table.update import AssertMetadataLocation, SetTableMetadataLocationUpdate, TableRequirement, TableUpdate
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
 from pyiceberg.types import transform_dict_value_to_str
 from pyiceberg.utils.deprecated import deprecation_message
@@ -1203,6 +1203,7 @@ class RestCatalog(MetastoreCatalog):
                 io=updated_staged_table.io,
                 metadata_path=updated_staged_table.metadata_location,
             )
+            requirements = (AssertMetadataLocation(metadata_location=table.metadata_location), *requirements)
             updates = (SetTableMetadataLocationUpdate(metadata_location=updated_staged_table.metadata_location), *updates)
         table_identifier = TableIdentifier(namespace=identifier[:-1], name=identifier[-1])
         table_request = CommitTableRequest(identifier=table_identifier, requirements=requirements, updates=updates)
