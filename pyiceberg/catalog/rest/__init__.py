@@ -69,6 +69,7 @@ from pyiceberg.io import (
 )
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec, assign_fresh_partition_spec_ids
 from pyiceberg.schema import Schema, assign_fresh_schema_ids
+from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
@@ -1055,6 +1056,24 @@ class RestCatalog(MetastoreCatalog):
 
     @retry(**_RETRY_ARGS)
     def load_table(self, identifier: str | Identifier) -> Table:
+        tr = self._load_table(identifier)
+        if self.properties.get(PREFER_CLIENT_SIDE_METADATA):
+            metadata_location = tr.metadata_location
+            if not metadata_location:
+                raise ValueError("Metadata location is required for client-side metadata loading")
+            io = load_file_io(properties=self.properties, location=metadata_location)
+            file = io.new_input(metadata_location)
+            metadata = FromInputFile.table_metadata(file)
+            return Table(
+                identifier=identifier,
+                metadata=metadata,
+                metadata_location=metadata_location,
+                io=self._load_file_io(metadata.properties, metadata_location),
+                catalog=self,
+            )
+        return tr
+
+    def _load_table(self, identifier: str | Identifier) -> Table:
         self._check_endpoint(Capability.V1_LOAD_TABLE)
         params = {}
         if mode := self.properties.get(SNAPSHOT_LOADING_MODE):
