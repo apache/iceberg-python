@@ -687,6 +687,42 @@ def test_list_views_paginated_200(rest_mock: Mocker) -> None:
     ]
 
 
+def test_list_views_paginated_200_none_next_page_token(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    # First page with next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "view1"},
+                {"namespace": ["examples"], "name": "view2"},
+            ],
+            "next-page-token": "page2token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # The last page with NONE next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views?pageToken=page2token",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "view3"},
+            ],
+            "next-page-token": None,
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace)
+    assert result == [
+        ("examples", "view1"),
+        ("examples", "view2"),
+        ("examples", "view3"),
+    ]
+
+
 def test_list_views_200_sigv4(rest_mock: Mocker) -> None:
     namespace = "examples"
     rest_mock.get(
