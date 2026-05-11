@@ -553,6 +553,9 @@ class DynamoDbCatalog(MetastoreCatalog):
     def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         raise NotImplementedError
 
+    def register_view(self, identifier: str | Identifier, metadata_location: str) -> View:
+        raise NotImplementedError
+
     def drop_view(self, identifier: str | Identifier) -> None:
         raise NotImplementedError
 

@@ -745,6 +745,9 @@ class SqlCatalog(MetastoreCatalog):
     def view_exists(self, identifier: str | Identifier) -> bool:
         raise NotImplementedError
 
+    def register_view(self, identifier: str | Identifier, metadata_location: str) -> View:
+        raise NotImplementedError
+
     def drop_view(self, identifier: str | Identifier) -> None:
         raise NotImplementedError
 
