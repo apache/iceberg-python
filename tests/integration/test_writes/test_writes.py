@@ -2027,7 +2027,7 @@ def test_write_optional_list(session_catalog: Catalog) -> None:
             required=False,
         ),
     )
-    session_catalog.create_table_if_not_exists(identifier, schema)
+    _create_table(session_catalog, identifier, schema=schema)
 
     df_1 = pa.Table.from_pylist(
         [
