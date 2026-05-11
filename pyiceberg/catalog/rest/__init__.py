@@ -382,6 +382,15 @@ class ListViewsResponse(IcebergBaseModel):
     identifiers: list[ListViewResponseEntry] = Field()
 
 
+class Credential(IcebergBaseModel):
+    prefix: str = Field()
+    config: dict[str, str] = Field()
+
+
+class LoadCredentialsResponse(IcebergBaseModel):
+    credentials: list[Credential] = Field(alias="storage-credentials")
+
+
 _PLANNING_RESPONSE_ADAPTER = TypeAdapter(PlanningResponse)
 
 
@@ -469,11 +478,13 @@ class RestCatalog(Catalog):
 
         return best_match.config if best_match else {}
 
-    def _load_file_io(self, properties: Properties = EMPTY_DICT, location: str | None = None) -> FileIO:
+    def _load_file_io(
+        self, properties: Properties = EMPTY_DICT, location: str | None = None, session: Session | None = None
+    ) -> FileIO:
         merged_properties = {**self.properties, **properties}
         if self._auth_manager:
             merged_properties[AUTH_MANAGER] = self._auth_manager
-        return load_file_io(merged_properties, location)
+        return load_file_io(merged_properties, location, session)
 
     def supports_server_side_planning(self) -> bool:
         """Check if the catalog supports server-side scan planning."""
@@ -820,6 +831,7 @@ class RestCatalog(Catalog):
             io=self._load_file_io(
                 {**table_response.metadata.properties, **table_response.config, **credential_config},
                 table_response.metadata_location,
+                self._session,
             ),
             catalog=self,
             config=table_response.config,
@@ -837,6 +849,7 @@ class RestCatalog(Catalog):
             io=self._load_file_io(
                 {**table_response.metadata.properties, **table_response.config, **credential_config},
                 table_response.metadata_location,
+                self._session,
             ),
             catalog=self,
         )

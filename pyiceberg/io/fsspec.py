@@ -34,7 +34,7 @@ from urllib.parse import ParseResult, urlparse
 import requests
 from fsspec import AbstractFileSystem
 from fsspec.implementations.local import LocalFileSystem
-from requests import HTTPError
+from requests import HTTPError, Session
 
 from pyiceberg.catalog import TOKEN, URI
 from pyiceberg.catalog.rest.auth import AUTH_MANAGER
@@ -88,6 +88,7 @@ from pyiceberg.io import (
     InputStream,
     OutputFile,
     OutputStream,
+    _get_or_refresh_credentials,
 )
 from pyiceberg.typedef import Properties
 from pyiceberg.types import strtobool
@@ -165,14 +166,16 @@ def _file(_: Properties) -> LocalFileSystem:
     return LocalFileSystem(auto_mkdir=True)
 
 
-def _s3(properties: Properties) -> AbstractFileSystem:
+def _s3(properties: Properties, session: Session | None = None) -> AbstractFileSystem:
     from s3fs import S3FileSystem
+
+    creds = _get_or_refresh_credentials(properties, session)
 
     client_kwargs = {
         "endpoint_url": properties.get(S3_ENDPOINT),
-        "aws_access_key_id": get_first_property_value(properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
-        "aws_secret_access_key": get_first_property_value(properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
-        "aws_session_token": get_first_property_value(properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
+        "aws_access_key_id": get_first_property_value(creds, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+        "aws_secret_access_key": get_first_property_value(creds, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+        "aws_session_token": get_first_property_value(creds, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
         "region_name": get_first_property_value(properties, S3_REGION, AWS_REGION),
     }
     config_kwargs = {}
@@ -318,6 +321,7 @@ SCHEME_TO_FS: dict[str, Callable[..., AbstractFileSystem]] = {
 }
 
 _ADLS_SCHEMES = frozenset({"abfs", "abfss", "wasb", "wasbs"})
+_S3_SCHEMES = frozenset({"s3", "s3a", "s3n"})
 
 
 class FsspecInputFile(InputFile):
@@ -419,10 +423,10 @@ class FsspecOutputFile(OutputFile):
 class FsspecFileIO(FileIO):
     """A FileIO implementation that uses fsspec."""
 
-    def __init__(self, properties: Properties):
+    def __init__(self, properties: Properties, session: Session | None = None):
         self._scheme_to_fs: dict[str, Callable[..., AbstractFileSystem]] = dict(SCHEME_TO_FS)
         self._thread_locals = threading.local()
-        super().__init__(properties=properties)
+        super().__init__(properties=properties, session=session)
 
     def new_input(self, location: str) -> FsspecInputFile:
         """Get an FsspecInputFile instance to read bytes from the file at the given location.
@@ -487,6 +491,9 @@ class FsspecFileIO(FileIO):
 
         if scheme in _ADLS_SCHEMES:
             return _adls(self.properties, hostname)
+
+        if scheme in _S3_SCHEMES:
+            return _s3(self.properties, self.session)
 
         return self._scheme_to_fs[scheme](self.properties)
 
