@@ -382,13 +382,8 @@ class ListViewsResponse(IcebergBaseModel):
     identifiers: list[ListViewResponseEntry] = Field()
 
 
-class Credential(IcebergBaseModel):
-    prefix: str = Field()
-    config: dict[str, str] = Field()
-
-
 class LoadCredentialsResponse(IcebergBaseModel):
-    credentials: list[Credential] = Field(alias="storage-credentials")
+    credentials: list[StorageCredential] = Field(alias="storage-credentials")
 
 
 _PLANNING_RESPONSE_ADAPTER = TypeAdapter(PlanningResponse)
