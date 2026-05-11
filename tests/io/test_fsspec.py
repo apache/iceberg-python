@@ -391,6 +391,42 @@ def test_fsspec_unified_session_properties() -> None:
         )
 
 
+def test_fsspec_s3_encryption_additional_kwargs() -> None:
+    session_properties: Properties = {
+        "s3.server-side-encryption": "aws:kms",
+        "s3.sse-kms-key-id": "arn:aws:kms:us-east-1:123456789012:key/test-key",
+        **UNIFIED_AWS_SESSION_PROPERTIES,
+    }
+
+    with mock.patch("s3fs.S3FileSystem") as mock_s3fs:
+        s3_fileio = FsspecFileIO(properties=session_properties)
+        filename = str(uuid.uuid4())
+
+        s3_fileio.new_input(location=f"s3://warehouse/{filename}")
+
+        call_kwargs = mock_s3fs.call_args.kwargs
+        assert call_kwargs["s3_additional_kwargs"] == {
+            "ServerSideEncryption": "aws:kms",
+            "SSEKMSKeyId": "arn:aws:kms:us-east-1:123456789012:key/test-key",
+        }
+
+
+def test_fsspec_s3_encryption_additional_kwargs_partial() -> None:
+    session_properties: Properties = {
+        "s3.server-side-encryption": "AES256",
+        **UNIFIED_AWS_SESSION_PROPERTIES,
+    }
+
+    with mock.patch("s3fs.S3FileSystem") as mock_s3fs:
+        s3_fileio = FsspecFileIO(properties=session_properties)
+        filename = str(uuid.uuid4())
+
+        s3_fileio.new_input(location=f"s3://warehouse/{filename}")
+
+        call_kwargs = mock_s3fs.call_args.kwargs
+        assert call_kwargs["s3_additional_kwargs"] == {"ServerSideEncryption": "AES256"}
+
+
 @pytest.mark.adls
 def test_fsspec_new_input_file_adls(adls_fsspec_fileio: FsspecFileIO) -> None:
     """Test creating a new input file from an fsspec file-io"""
