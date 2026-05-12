@@ -941,6 +941,26 @@ def test_add_column_with_statement(catalog: Catalog, table_schema_simple: Schema
     assert table.schema().schema_id == 2
 
 
+def test_update_schema_with_statement_does_not_commit_on_exception(
+    catalog: Catalog, table_schema_simple: Schema, random_table_identifier: Identifier
+) -> None:
+    namespace = Catalog.namespace_from(random_table_identifier)
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(random_table_identifier, table_schema_simple)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        with table.update_schema() as tx:
+            tx.add_column(path="should_not_commit", field_type=IntegerType())
+            raise RuntimeError("boom")
+
+    assert table.schema() == table_schema_simple
+    assert table.schema().schema_id == 0
+
+    reloaded = catalog.load_table(random_table_identifier)
+    assert reloaded.schema() == table_schema_simple
+    assert reloaded.schema().schema_id == 0
+
+
 # Namespace tests
 
 
