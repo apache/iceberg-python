@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from pyiceberg.table import Table
+    from pyiceberg.table.maintenance.orphan_files import RemoveOrphanFiles
     from pyiceberg.table.update.snapshot import ExpireSnapshots
 
 
@@ -43,3 +44,13 @@ class MaintenanceTable:
         from pyiceberg.table.update.snapshot import ExpireSnapshots
 
         return ExpireSnapshots(transaction=Transaction(self.tbl, autocommit=True))
+
+    def remove_orphan_files(self) -> RemoveOrphanFiles:
+        """Return a RemoveOrphanFiles builder for removing files unreachable from the table.
+
+        Returns:
+            RemoveOrphanFiles builder for configuring and executing orphan file removal.
+        """
+        from pyiceberg.table.maintenance.orphan_files import RemoveOrphanFiles
+
+        return RemoveOrphanFiles(self.tbl)
