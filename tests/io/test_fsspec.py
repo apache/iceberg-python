@@ -20,6 +20,7 @@ import pickle
 import tempfile
 import threading
 import uuid
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -55,6 +56,19 @@ def test_fsspec_local_fs_can_create_path_without_parent_dir(fsspec_fileio: Fsspe
                 f.write(b"foo")
         except Exception:
             pytest.fail("Failed to write to file without parent directory")
+
+
+def test_fsspec_list_prefix(fsspec_fileio: FsspecFileIO, tmp_path: Path) -> None:
+    """Test recursively listing a directory using FsspecFileIO.list_prefix(...)"""
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "a.txt").write_bytes(b"foo")
+    (tmp_path / "nested" / "b.txt").write_bytes(b"barr")
+
+    entries = sorted(fsspec_fileio.list_prefix(str(tmp_path)), key=lambda entry: entry.location)
+
+    assert [Path(entry.location) for entry in entries] == [tmp_path / "a.txt", tmp_path / "nested" / "b.txt"]
+    assert [entry.size for entry in entries] == [3, 4]
+    assert all(entry.last_modified is not None for entry in entries)
 
 
 def test_fsspec_get_fs_instance_per_thread_caching(fsspec_fileio: FsspecFileIO) -> None:
