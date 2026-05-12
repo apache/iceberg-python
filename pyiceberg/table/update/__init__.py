@@ -72,9 +72,7 @@ class UpdateTableMetadata(ABC, Generic[U]):
     def commit(self) -> None:
         self._transaction._apply(*self._commit())
 
-    def __exit__(
-        self, exctype: type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None
-    ) -> None:
+    def __exit__(self, exctype: type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
         """Close and commit the change if no exceptions have been raised."""
         if exctype is None and excinst is None and exctb is None:
             self.commit()

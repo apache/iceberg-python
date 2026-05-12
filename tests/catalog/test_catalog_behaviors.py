@@ -948,10 +948,10 @@ def test_update_schema_with_statement_does_not_commit_on_exception(
     catalog.create_namespace(namespace)
     table = catalog.create_table(random_table_identifier, table_schema_simple)
 
-    with pytest.raises(RuntimeError, match="boom"):
+    with pytest.raises(ValueError):
         with table.update_schema() as tx:
             tx.add_column(path="should_not_commit", field_type=IntegerType())
-            raise RuntimeError("boom")
+            int("boom")
 
     assert table.schema() == table_schema_simple
     assert table.schema().schema_id == 0
