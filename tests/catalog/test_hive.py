@@ -1410,3 +1410,42 @@ def test_create_hive_client_with_kerberos_using_context_manager(
         # closing and re-opening work as expected.
         with client as open_client:
             assert open_client._iprot.trans.isOpen()
+
+
+def test_kerberized_client_uses_fresh_transport_per_entry(
+    kerberized_hive_metastore_fake_url: str,
+) -> None:
+    """TSaslClientTransport is single-use — each entry must create a new one.
+
+    The underlying SASL session cannot be reused after close(). Each
+    context-manager entry must therefore produce a fresh transport
+    instance rather than reopening the previous one (which would leave
+    a half-opened TCP socket and SASL handshake EOF noise on the server).
+    """
+    client = _HiveClient(
+        uri=kerberized_hive_metastore_fake_url,
+        kerberos_auth=True,
+    )
+    # No transport should exist until the context manager is entered.
+    assert client._transport is None
+    with (
+        patch(
+            "puresasl.mechanisms.kerberos.authGSSClientStep",
+            return_value=None,
+        ),
+        patch(
+            "puresasl.mechanisms.kerberos.authGSSClientResponse",
+            return_value=base64.b64encode(b"Some Response"),
+        ),
+        patch(
+            "puresasl.mechanisms.GSSAPIMechanism.complete",
+            return_value=True,
+        ),
+    ):
+        with client:
+            first_transport_id = id(client._transport)
+
+        with client:
+            second_transport_id = id(client._transport)
+
+        assert first_transport_id != second_transport_id
