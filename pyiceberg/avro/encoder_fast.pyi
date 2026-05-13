@@ -14,25 +14,18 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from typing import Any
+from uuid import UUID
 
-# Include Cython source files for building from source
-recursive-include pyiceberg *.pyx *.c
-
-# Exclude generated Cython C file
-exclude pyiceberg/avro/decoder_fast.c
-exclude pyiceberg/avro/encoder_fast.c
-
-# Include test files in sdist
-recursive-include tests *
-
-# Include development files
-include Makefile
-include uv.lock
-recursive-include dev *
-
-# Exclude build artifacts
-global-exclude */__pycache__/*
-prune .venv
-prune build
-prune dist
-prune .pytest_cache
+class CythonBinaryEncoder:
+    def __init__(self) -> None: ...
+    def getvalue(self) -> bytes: ...
+    def write(self, b: bytes) -> None: ...
+    def write_boolean(self, v: bool) -> None: ...
+    def write_int(self, v: int) -> None: ...
+    def write_float(self, v: float) -> None: ...
+    def write_double(self, v: float) -> None: ...
+    def write_bytes(self, b: bytes) -> None: ...
+    def write_utf8(self, s: str) -> None: ...
+    def write_uuid(self, uuid: UUID) -> None: ...
+    def write_unknown(self, _: Any) -> None: ...
