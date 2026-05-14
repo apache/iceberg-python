@@ -142,18 +142,11 @@ logger = logging.getLogger(__name__)
 
 
 class _HiveClient:
-    """Helper class to nicely open and close the transport.
+    """Helper class to nicely open and close the transport."""
 
-    ``TSaslClientTransport`` instances are single-use: ``close()`` disposes
-    the SASL session and the same instance cannot be reopened. The
-    transport is therefore created lazily in ``__enter__`` rather than held
-    on the class, which lets the ``_HiveClient`` itself live for the
-    duration of a ``HiveCatalog`` while still honouring the SASL transport
-    lifecycle.
-    """
-
-    _transport: "TTransport | None"
+    _transport: TTransport
     _ugi: list[str] | None
+    _was_opened: bool
 
     def __init__(
         self,
@@ -166,7 +159,8 @@ class _HiveClient:
         self._kerberos_auth = kerberos_auth
         self._kerberos_service_name = kerberos_service_name
         self._ugi = ugi.split(":") if ugi else None
-        self._transport = None
+        self._transport = self._init_thrift_transport()
+        self._was_opened = False
 
     def _init_thrift_transport(self) -> TTransport:
         url_parts = urlparse(self._uri)
@@ -177,7 +171,6 @@ class _HiveClient:
             return TTransport.TSaslClientTransport(socket, host=url_parts.hostname, service=self._kerberos_service_name)
 
     def _client(self) -> Client:
-        assert self._transport is not None  # set by __enter__
         protocol = TBinaryProtocol.TBinaryProtocol(self._transport)
         client = Client(protocol)
         if self._ugi:
@@ -185,20 +178,16 @@ class _HiveClient:
         return client
 
     def __enter__(self) -> Client:
-        """Initialize and open a fresh transport for this entry.
-
-        A new ``TSaslClientTransport`` is created on every entry because
-        the underlying SASL session cannot be reused after ``close()``.
-        Reusing a closed transport would leave a half-opened TCP socket
-        and SASL handshake EOF noise on the server.
-        """
-        self._transport = self._init_thrift_transport()
+        """Make sure the transport is initialized and open."""
+        if self._was_opened:
+            self._transport = self._init_thrift_transport()
         self._transport.open()
+        self._was_opened = True
         return self._client()
 
     def __exit__(self, exctype: type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
         """Close transport if it was opened."""
-        if self._transport is not None and self._transport.isOpen():
+        if self._transport.isOpen():
             self._transport.close()
 
 
