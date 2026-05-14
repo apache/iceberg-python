@@ -28,6 +28,7 @@ from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
     Any,
+    override,
 )
 from urllib.parse import ParseResult, urlparse
 
@@ -332,6 +333,7 @@ class FsspecInputFile(InputFile):
         self._fs = fs
         super().__init__(location=location)
 
+    @override
     def __len__(self) -> int:
         """Return the total length of the file, in bytes."""
         object_info = self._fs.info(self.location)
@@ -341,10 +343,12 @@ class FsspecInputFile(InputFile):
             return size
         raise RuntimeError(f"Cannot retrieve object info: {self.location}")
 
+    @override
     def exists(self) -> bool:
         """Check whether the location exists."""
         return self._fs.lexists(self.location)
 
+    @override
     def open(self, seekable: bool = True) -> InputStream:
         """Create an input stream for reading the contents of the file.
 
@@ -376,6 +380,7 @@ class FsspecOutputFile(OutputFile):
         self._fs = fs
         super().__init__(location=location)
 
+    @override
     def __len__(self) -> int:
         """Return the total length of the file, in bytes."""
         object_info = self._fs.info(self.location)
@@ -385,10 +390,12 @@ class FsspecOutputFile(OutputFile):
             return size
         raise RuntimeError(f"Cannot retrieve object info: {self.location}")
 
+    @override
     def exists(self) -> bool:
         """Check whether the location exists."""
         return self._fs.lexists(self.location)
 
+    @override
     def create(self, overwrite: bool = False) -> OutputStream:
         """Create an output stream for reading the contents of the file.
 
@@ -411,6 +418,7 @@ class FsspecOutputFile(OutputFile):
             raise FileExistsError(f"Cannot create file, file already exists: {self.location}")
         return self._fs.open(self.location, "wb")
 
+    @override
     def to_input_file(self) -> FsspecInputFile:
         """Return a new FsspecInputFile for the location at `self.location`."""
         return FsspecInputFile(location=self.location, fs=self._fs)
@@ -424,6 +432,7 @@ class FsspecFileIO(FileIO):
         self._thread_locals = threading.local()
         super().__init__(properties=properties)
 
+    @override
     def new_input(self, location: str) -> FsspecInputFile:
         """Get an FsspecInputFile instance to read bytes from the file at the given location.
 
@@ -437,6 +446,7 @@ class FsspecFileIO(FileIO):
         fs = self._get_fs_from_uri(uri)
         return FsspecInputFile(location=location, fs=fs)
 
+    @override
     def new_output(self, location: str) -> FsspecOutputFile:
         """Get an FsspecOutputFile instance to write bytes to the file at the given location.
 
@@ -450,6 +460,7 @@ class FsspecFileIO(FileIO):
         fs = self._get_fs_from_uri(uri)
         return FsspecOutputFile(location=location, fs=fs)
 
+    @override
     def delete(self, location: str | InputFile | OutputFile) -> None:
         """Delete the file at the given location.
 

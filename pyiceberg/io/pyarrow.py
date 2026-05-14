@@ -48,6 +48,7 @@ from typing import (
     Generic,
     TypeVar,
     cast,
+    override,
 )
 from urllib.parse import urlparse
 
@@ -300,11 +301,13 @@ class PyArrowFile(InputFile, OutputFile):
             raise FileNotFoundError(f"Cannot get file info, file not found: {self.location}")
         return file_info
 
+    @override
     def __len__(self) -> int:
         """Return the total length of the file, in bytes."""
         file_info = self._file_info()
         return file_info.size
 
+    @override
     def exists(self) -> bool:
         """Check whether the location exists."""
         try:
@@ -313,6 +316,7 @@ class PyArrowFile(InputFile, OutputFile):
         except FileNotFoundError:
             return False
 
+    @override
     def open(self, seekable: bool = True) -> InputStream:
         """Open the location using a PyArrow FileSystem inferred from the location.
 
@@ -342,6 +346,7 @@ class PyArrowFile(InputFile, OutputFile):
             raise  # pragma: no cover - If some other kind of OSError, raise the raw error
         return input_file
 
+    @override
     def create(self, overwrite: bool = False) -> OutputStream:
         """Create a writable pyarrow.lib.NativeFile for this PyArrowFile's location.
 
@@ -373,6 +378,7 @@ class PyArrowFile(InputFile, OutputFile):
             raise  # pragma: no cover - If some other kind of OSError, raise the raw error
         return output_file
 
+    @override
     def to_input_file(self) -> PyArrowFile:
         """Return a new PyArrowFile for the location of an existing PyArrowFile instance.
 
@@ -610,6 +616,7 @@ class PyArrowFileIO(FileIO):
     def _initialize_local_fs(self) -> FileSystem:
         return PyArrowLocalFileSystem()
 
+    @override
     def new_input(self, location: str) -> PyArrowFile:
         """Get a PyArrowFile instance to read bytes from the file at the given location.
 
@@ -627,6 +634,7 @@ class PyArrowFileIO(FileIO):
             buffer_size=int(self.properties.get(BUFFER_SIZE, ONE_MEGABYTE)),
         )
 
+    @override
     def new_output(self, location: str) -> PyArrowFile:
         """Get a PyArrowFile instance to write bytes to the file at the given location.
 
@@ -644,6 +652,7 @@ class PyArrowFileIO(FileIO):
             buffer_size=int(self.properties.get(BUFFER_SIZE, ONE_MEGABYTE)),
         )
 
+    @override
     def delete(self, location: str | InputFile | OutputFile) -> None:
         """Delete the file at the given location.
 
