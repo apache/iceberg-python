@@ -431,6 +431,42 @@ def ancestors_between(from_snapshot: Snapshot | None, to_snapshot: Snapshot, tab
         yield from ancestors_of(to_snapshot, table_metadata)
 
 
+def ancestors_between_ids(
+    from_snapshot_id_exclusive: int | None,
+    to_snapshot_id_inclusive: int,
+    table_metadata: TableMetadata,
+) -> Iterable[Snapshot]:
+    """Get the ancestors of and including the given "to" snapshot, up to but not including the "from" snapshot.
+
+    If ``from_snapshot_id_exclusive`` is None, all ancestors of the "to" snapshot are returned.
+
+    Raises:
+        ValueError: if ``to_snapshot_id_inclusive`` is not present in the table metadata.
+    """
+    to_snapshot = table_metadata.snapshot_by_id(to_snapshot_id_inclusive)
+    if to_snapshot is None:
+        raise ValueError(f"Cannot find snapshot: {to_snapshot_id_inclusive}")
+
+    if from_snapshot_id_exclusive is not None:
+        for snapshot in ancestors_of(to_snapshot, table_metadata):
+            if snapshot.snapshot_id == from_snapshot_id_exclusive:
+                break
+            yield snapshot
+    else:
+        yield from ancestors_of(to_snapshot, table_metadata)
+
+
+def is_parent_ancestor_of(snapshot_id: int, ancestor_parent_snapshot_id: int, table_metadata: TableMetadata) -> bool:
+    """Return whether any ancestor of ``snapshot_id`` has ``ancestor_parent_snapshot_id`` as its parent."""
+    snapshot = table_metadata.snapshot_by_id(snapshot_id)
+    if snapshot is None:
+        return False
+    for ancestor in ancestors_of(snapshot, table_metadata):
+        if ancestor.parent_snapshot_id == ancestor_parent_snapshot_id:
+            return True
+    return False
+
+
 def latest_ancestor_before_timestamp(table_metadata: TableMetadata, timestamp_ms: int) -> Snapshot | None:
     """Find the latest ancestor snapshot whose timestamp is before the provided timestamp.
 
