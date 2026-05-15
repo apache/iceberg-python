@@ -335,10 +335,10 @@ class FsspecInputFile(InputFile):
     def __len__(self) -> int:
         """Return the total length of the file, in bytes."""
         object_info = self._fs.info(self.location)
-        if size := object_info.get("Size"):
-            return size
-        elif size := object_info.get("size"):
-            return size
+        if "Size" in object_info:
+            return object_info["Size"]
+        elif "size" in object_info:
+            return object_info["size"]
         raise RuntimeError(f"Cannot retrieve object info: {self.location}")
 
     def exists(self) -> bool:
@@ -379,10 +379,10 @@ class FsspecOutputFile(OutputFile):
     def __len__(self) -> int:
         """Return the total length of the file, in bytes."""
         object_info = self._fs.info(self.location)
-        if size := object_info.get("Size"):
-            return size
-        elif size := object_info.get("size"):
-            return size
+        if "Size" in object_info:
+            return object_info["Size"]
+        elif "size" in object_info:
+            return object_info["size"]
         raise RuntimeError(f"Cannot retrieve object info: {self.location}")
 
     def exists(self) -> bool:
