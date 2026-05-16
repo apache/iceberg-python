@@ -69,8 +69,26 @@ def test_version_does_not_load_catalog(mocker: MockFixture) -> None:
     result = runner.invoke(run, ["version"])
 
     assert result.exit_code == 0
-    assert result.output == f"{__version__}\n"
+    assert result.stdout == f"{__version__}\n"
     mock_load_catalog.assert_not_called()
+
+
+def test_version_flag() -> None:
+    runner = CliRunner()
+    result = runner.invoke(run, ["--version"])
+
+    assert result.exit_code == 0
+    assert result.output == f"{__version__}\n"
+
+
+def test_version_command_emits_deprecation_warning() -> None:
+    runner = CliRunner()
+    result = runner.invoke(run, ["version"])
+
+    assert result.exit_code == 0
+    assert __version__ in result.output
+    assert "deprecated" in result.output.lower()
+    assert "pyiceberg --version" in result.output
 
 
 @pytest.fixture(autouse=True)
