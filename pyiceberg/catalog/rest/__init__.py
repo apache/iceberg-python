@@ -30,7 +30,7 @@ from tenacity import RetryCallState, retry, retry_if_exception_type, stop_after_
 from typing_extensions import override
 
 from pyiceberg import __version__
-from pyiceberg.catalog import BOTOCORE_SESSION, TOKEN, URI, WAREHOUSE_LOCATION, Catalog, PropertiesUpdateSummary
+from pyiceberg.catalog import BOTOCORE_SESSION, TOKEN, URI, WAREHOUSE_LOCATION, Catalog, MetastoreCatalog, PropertiesUpdateSummary
 from pyiceberg.catalog.rest.auth import AUTH_MANAGER, AuthManager, AuthManagerAdapter, AuthManagerFactory, LegacyOAuth2AuthManager
 from pyiceberg.catalog.rest.response import _handle_non_200_response
 from pyiceberg.catalog.rest.scan_planning import (
@@ -70,6 +70,7 @@ from pyiceberg.io import (
 )
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec, assign_fresh_partition_spec_ids
 from pyiceberg.schema import Schema, assign_fresh_schema_ids
+from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
@@ -80,12 +81,10 @@ from pyiceberg.table import (
     TableIdentifier,
     TableProperties,
 )
-from pyiceberg.table.metadata import TableMetadata
+from pyiceberg.table.locations import load_location_provider
+from pyiceberg.table.metadata import TableMetadata, new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
-from pyiceberg.table.update import (
-    TableRequirement,
-    TableUpdate,
-)
+from pyiceberg.table.update import AssertMetadataLocation, SetTableMetadataLocationUpdate, TableRequirement, TableUpdate
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
 from pyiceberg.types import transform_dict_value_to_str
 from pyiceberg.utils.deprecated import deprecation_message
@@ -386,8 +385,11 @@ class ListViewsResponse(IcebergBaseModel):
 
 _PLANNING_RESPONSE_ADAPTER = TypeAdapter(PlanningResponse)
 
+PREFER_CLIENT_SIDE_METADATA = "prefer-client-side-metadata"
+METADATA_LOCATION = "metadata-location"
 
-class RestCatalog(Catalog):
+
+class RestCatalog(MetastoreCatalog):
     uri: str
     _session: Session
     _auth_manager: AuthManager | None
@@ -888,9 +890,27 @@ class RestCatalog(Catalog):
         namespace_and_table = self._split_identifier_for_path(identifier)
         if location:
             location = location.rstrip("/")
+        if self.properties.get(PREFER_CLIENT_SIDE_METADATA):
+            namespace_identifier = Catalog.namespace_from(identifier)
+            namespace = Catalog.namespace_to_string(namespace_identifier)
+            table_name = Catalog.table_name_from(identifier)
+
+            table_location = self._resolve_table_location(location, namespace, table_name)
+            location_provider = load_location_provider(table_location=table_location, table_properties=properties)
+            metadata = new_table_metadata(
+                location=table_location,
+                schema=fresh_schema,
+                partition_spec=fresh_partition_spec,
+                sort_order=fresh_sort_order,
+                properties=properties,
+            )
+            metadata_location = location_provider.new_table_metadata_file_location()
+            io = load_file_io(properties=self.properties, location=metadata_location)
+            self._write_metadata(metadata, io, metadata_location)
+            properties = {METADATA_LOCATION: metadata_location, **properties}
         request = CreateTableRequest(
             name=self._identifier_to_validated_tuple(identifier)[-1],
-            location=location,
+            location=table_location,
             table_schema=fresh_schema,
             partition_spec=fresh_partition_spec,
             write_order=fresh_sort_order,
@@ -906,7 +926,15 @@ class RestCatalog(Catalog):
             response.raise_for_status()
         except HTTPError as exc:
             _handle_non_200_response(exc, {409: TableAlreadyExistsError, 404: NoSuchNamespaceError})
-        return TableResponse.model_validate_json(response.text)
+        tr = TableResponse.model_validate_json(response.text)
+        if self.properties.get(PREFER_CLIENT_SIDE_METADATA):
+            return TableResponse(
+                metadata_location=metadata_location,
+                metadata=metadata,
+                config=properties,
+                storage_credentials=tr.storage_credentials,
+            )
+        return tr
 
     @override
     @retry(**_RETRY_ARGS)
@@ -1044,6 +1072,24 @@ class RestCatalog(Catalog):
     @retry(**_RETRY_ARGS)
     @override
     def load_table(self, identifier: str | Identifier) -> Table:
+        tr = self._load_table(identifier)
+        if self.properties.get(PREFER_CLIENT_SIDE_METADATA):
+            metadata_location = tr.metadata_location
+            if not metadata_location:
+                raise ValueError("Metadata location is required for client-side metadata loading")
+            io = load_file_io(properties=self.properties, location=metadata_location)
+            file = io.new_input(metadata_location)
+            metadata = FromInputFile.table_metadata(file)
+            return Table(
+                identifier=identifier,
+                metadata=metadata,
+                metadata_location=metadata_location,
+                io=self._load_file_io(metadata.properties, metadata_location),
+                catalog=self,
+            )
+        return tr
+
+    def _load_table(self, identifier: str | Identifier) -> Table:
         self._check_endpoint(Capability.V1_LOAD_TABLE)
         params = {}
         if mode := self.properties.get(SNAPSHOT_LOADING_MODE):
@@ -1184,6 +1230,18 @@ class RestCatalog(Catalog):
         """
         self._check_endpoint(Capability.V1_UPDATE_TABLE)
         identifier = table.name()
+        if self.properties.get(PREFER_CLIENT_SIDE_METADATA):
+            updated_staged_table = self._update_and_stage_table(table, identifier, requirements, updates)
+            if table and updated_staged_table.metadata == table.metadata:
+                # no changes, do nothing
+                return CommitTableResponse(metadata=table.metadata, metadata_location=table.metadata_location)
+            self._write_metadata(
+                metadata=updated_staged_table.metadata,
+                io=updated_staged_table.io,
+                metadata_path=updated_staged_table.metadata_location,
+            )
+            requirements = (AssertMetadataLocation(metadata_location=table.metadata_location), *requirements)
+            updates = (SetTableMetadataLocationUpdate(metadata_location=updated_staged_table.metadata_location), *updates)
         table_identifier = TableIdentifier(namespace=identifier[:-1], name=identifier[-1])
         table_request = CommitTableRequest(identifier=table_identifier, requirements=requirements, updates=updates)
 
@@ -1207,6 +1265,12 @@ class RestCatalog(Catalog):
                     502: CommitStateUnknownException,
                     504: CommitStateUnknownException,
                 },
+            )
+
+        if self.properties.get(PREFER_CLIENT_SIDE_METADATA):
+            return CommitTableResponse(
+                metadata_location=updated_staged_table.metadata_location,
+                metadata=updated_staged_table.metadata,
             )
         return CommitTableResponse.model_validate_json(response.text)
 

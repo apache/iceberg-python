@@ -220,6 +220,11 @@ class RemovePartitionStatisticsUpdate(IcebergBaseModel):
     snapshot_id: int = Field(alias="snapshot-id")
 
 
+class SetTableMetadataLocationUpdate(IcebergBaseModel):
+    action: Literal["set-table-metadata-location"] = Field(default="set-table-metadata-location")
+    metadata_location: str = Field(alias="metadata-location")
+
+
 TableUpdate = Annotated[
     AssignUUIDUpdate
     | UpgradeFormatVersionUpdate
@@ -241,7 +246,8 @@ TableUpdate = Annotated[
     | RemovePartitionSpecsUpdate
     | RemoveSchemasUpdate
     | SetPartitionStatisticsUpdate
-    | RemovePartitionStatisticsUpdate,
+    | RemovePartitionStatisticsUpdate
+    | SetTableMetadataLocationUpdate,
     Field(discriminator="action"),
 ]
 
@@ -905,6 +911,22 @@ class AssertDefaultSortOrderId(ValidatableTableRequirement):
             )
 
 
+class AssertMetadataLocation(ValidatableTableRequirement):
+    """The table's metadata location must match the requirement's `metadata-location`."""
+
+    type: Literal["assert-table-metadata-location"] = Field(default="assert-table-metadata-location")
+    metadata_location: str = Field(..., alias="metadata-location")
+
+    def validate(self, base_metadata: TableMetadata | None) -> None:
+        if base_metadata is None:
+            raise CommitFailedException("Requirement failed: current table metadata is missing")
+        elif self.metadata_location != base_metadata.metadata_location:
+            raise CommitFailedException(
+                f"Requirement failed: metadata location has changed: "
+                f"expected {self.metadata_location}, found {base_metadata.metadata_location}"
+            )
+
+
 TableRequirement = Annotated[
     AssertCreate
     | AssertTableUUID
@@ -913,7 +935,8 @@ TableRequirement = Annotated[
     | AssertCurrentSchemaId
     | AssertLastAssignedPartitionId
     | AssertDefaultSpecId
-    | AssertDefaultSortOrderId,
+    | AssertDefaultSortOrderId
+    | AssertMetadataLocation,
     Field(discriminator="type"),
 ]
 
