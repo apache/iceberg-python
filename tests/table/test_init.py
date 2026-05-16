@@ -276,6 +276,25 @@ def test_table_scan_select(table_fixture: Table) -> None:
     assert scan.select("a", "c").select("a").selected_fields == ("a",)
 
 
+def test_table_scan_dictionary_columns_default(table_v2: Table) -> None:
+    scan = table_v2.scan()
+    assert scan.dictionary_columns is None, "dictionary_columns should default to None"
+
+
+def test_table_scan_dictionary_columns_set(table_v2: Table) -> None:
+    scan = table_v2.scan(dictionary_columns=("json_col", "other_col"))
+    assert scan.dictionary_columns == ("json_col", "other_col"), "dictionary_columns should be stored on the scan"
+
+
+def test_table_scan_dictionary_columns_preserved_on_update(table_v2: Table) -> None:
+    scan = table_v2.scan(dictionary_columns=("json_col",))
+    updated = scan.update(limit=10)
+    assert updated.dictionary_columns == ("json_col",), (
+        "dictionary_columns must survive .update() — TableScan.update() uses inspect.signature "
+        "so DataScan.__init__ must declare and store it"
+    )
+
+
 def test_table_scan_row_filter(table_v2: Table) -> None:
     scan = table_v2.scan()
     assert scan.row_filter == AlwaysTrue()
