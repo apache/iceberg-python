@@ -35,6 +35,7 @@ from pyiceberg.catalog.rest import (
     DEFAULT_ENDPOINTS,
     EMPTY_BODY_SHA256,
     OAUTH2_SERVER_URI,
+    PAGE_SIZE,
     SIGV4_MAX_RETRIES,
     SIGV4_MAX_RETRIES_DEFAULT,
     SNAPSHOT_LOADING_MODE,
@@ -808,6 +809,48 @@ def test_list_views_paginated_200_none_next_page_token(rest_mock: Mocker) -> Non
         ("examples", "view2"),
         ("examples", "view3"),
     ]
+
+
+def test_list_views_page_size(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "view1"},
+                {"namespace": ["examples"], "name": "view2"},
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "100"}).list_views(namespace)
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/examples/views?pageSize=100"
+
+    assert result == [
+        ("examples", "view1"),
+        ("examples", "view2"),
+    ]
+
+
+def test_list_views_invalid_page_size(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "view1"},
+                {"namespace": ["examples"], "name": "view2"},
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(ValueError) as e:
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "0"}).list_views(namespace)
+    assert str(e.value) == "rest-page-size must be a positive integer"
 
 
 def test_list_views_200_sigv4(rest_mock: Mocker) -> None:
