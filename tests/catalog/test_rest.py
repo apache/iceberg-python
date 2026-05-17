@@ -684,6 +684,59 @@ def test_sigv4_canonical_request_uses_hex_payload(rest_mock: Mocker) -> None:
     assert prepared.headers["x-amz-content-sha256"] == base64.b64encode(hashlib.sha256(body_content).digest()).decode()
 
 
+def test_sigv4_content_sha256_matches_iceberg_java_reference(rest_mock: Mocker) -> None:
+    """Pin byte-for-byte equivalence with Iceberg Java TestRESTSigV4AuthSession (L121, L177)."""
+    java_reference_body = b'{"namespace":["ns"],"properties":{}}'
+    java_reference_base64 = "yc5oAKPWjHY4sW8XQq0l/3aNrrXJKBycVFNnDEGMfww="
+    java_reference_empty_hex = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-east-1",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+        },
+    )
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+
+    # Non-empty body: must match Java's base64 reference value exactly
+    prepared_with_body = catalog._session.prepare_request(Request("POST", f"{TEST_URI}v1/namespaces", data=java_reference_body))
+    adapter.add_headers(prepared_with_body)
+    assert prepared_with_body.headers["x-amz-content-sha256"] == java_reference_base64
+
+    # Empty body: must match Java's hex reference value exactly
+    prepared_empty = catalog._session.prepare_request(Request("GET", f"{TEST_URI}v1/config"))
+    adapter.add_headers(prepared_empty)
+    assert prepared_empty.headers["x-amz-content-sha256"] == java_reference_empty_hex
+
+
+def test_sigv4_unsupported_body_type_raises(rest_mock: Mocker) -> None:
+    """Unsupported body types (e.g. file-like) raise a clear error rather than crashing in hashlib."""
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-east-1",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+        },
+    )
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+
+    prepared = catalog._session.prepare_request(Request("POST", f"{TEST_URI}v1/namespaces"))
+    # Inject an unsupported body type (a list — not str/bytes)
+    prepared.body = ["not", "a", "valid", "body"]  # type: ignore[assignment]
+
+    with pytest.raises(TypeError, match="Unsupported request body type for SigV4 signing"):
+        adapter.add_headers(prepared)
+
+
 def test_sigv4_adapter_default_retry_config(rest_mock: Mocker) -> None:
     catalog = RestCatalog(
         "rest",
