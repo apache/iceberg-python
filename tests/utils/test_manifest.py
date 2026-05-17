@@ -15,11 +15,15 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=redefined-outer-name,arguments-renamed,fixme
+import importlib
+from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Any
 
 import fastavro
 import pytest
 
+import pyiceberg.manifest as manifest_module
 from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.io import load_file_io
 from pyiceberg.io.pyarrow import PyArrowFileIO
@@ -33,8 +37,8 @@ from pyiceberg.manifest import (
     ManifestFile,
     PartitionFieldSummary,
     _inherit_from_manifest,
-    _manifest_cache,
     _manifests,
+    clear_manifest_cache,
     read_manifest_list,
     write_manifest,
     write_manifest_list,
@@ -47,9 +51,8 @@ from pyiceberg.types import IntegerType, NestedField
 
 
 @pytest.fixture(autouse=True)
-def clear_global_manifests_cache() -> None:
-    # Clear the global cache before each test
-    _manifest_cache.clear()
+def reset_global_manifests_cache() -> None:
+    clear_manifest_cache()
 
 
 def _verify_metadata_with_fastavro(avro_file: str, expected_metadata: dict[str, str]) -> None:
@@ -805,9 +808,9 @@ def test_manifest_cache_deduplicates_manifest_files() -> None:
 
         # Verify cache size - should only have 3 unique ManifestFile objects
         # instead of 1 + 2 + 3 = 6 objects as with the old approach
-        assert len(_manifest_cache) == 3, (
-            f"Cache should contain exactly 3 unique ManifestFile objects, but has {len(_manifest_cache)}"
-        )
+        cache = manifest_module._manifest_cache
+        assert cache is not None, "Manifest cache should be enabled for this test"
+        assert len(cache) == 3, f"Cache should contain exactly 3 unique ManifestFile objects, but has {len(cache)}"
 
 
 def test_manifest_cache_efficiency_with_many_overlapping_lists() -> None:
@@ -880,9 +883,11 @@ def test_manifest_cache_efficiency_with_many_overlapping_lists() -> None:
         # With the new approach, we should have exactly N objects
 
         # Verify cache has exactly N unique entries
-        assert len(_manifest_cache) == num_manifests, (
+        cache = manifest_module._manifest_cache
+        assert cache is not None, "Manifest cache should be enabled for this test"
+        assert len(cache) == num_manifests, (
             f"Cache should contain exactly {num_manifests} ManifestFile objects, "
-            f"but has {len(_manifest_cache)}. "
+            f"but has {len(cache)}. "
             f"Old approach would have {num_manifests * (num_manifests + 1) // 2} objects."
         )
 
@@ -973,3 +978,166 @@ def test_inherit_from_manifest_snapshot_id() -> None:
     assert result.snapshot_id == 3051729675574597004
     assert result.sequence_number == 1
     assert result.file_sequence_number == 1
+
+
+def _create_test_manifest_list(module: Any, io: PyArrowFileIO, tmp_dir: str, name: str, snapshot_id: int) -> str:
+    schema = Schema(NestedField(field_id=1, name="id", field_type=IntegerType(), required=True))
+    spec = UNPARTITIONED_PARTITION_SPEC
+
+    manifest_path = f"{tmp_dir}/manifest-{name}.avro"
+    with module.write_manifest(
+        format_version=2,
+        spec=spec,
+        schema=schema,
+        output_file=io.new_output(manifest_path),
+        snapshot_id=snapshot_id,
+        avro_compression="zstandard",
+    ) as writer:
+        data_file = module.DataFile.from_args(
+            content=module.DataFileContent.DATA,
+            file_path=f"{tmp_dir}/data-{name}.parquet",
+            file_format=module.FileFormat.PARQUET,
+            partition=Record(),
+            record_count=100,
+            file_size_in_bytes=1000,
+        )
+        writer.add_entry(
+            module.ManifestEntry.from_args(
+                status=module.ManifestEntryStatus.ADDED,
+                snapshot_id=snapshot_id,
+                data_file=data_file,
+            )
+        )
+    manifest_file = writer.to_manifest_file()
+
+    list_path = f"{tmp_dir}/manifest-list-{name}.avro"
+    with module.write_manifest_list(
+        format_version=2,
+        output_file=io.new_output(list_path),
+        snapshot_id=snapshot_id,
+        parent_snapshot_id=snapshot_id - 1 if snapshot_id > 1 else None,
+        sequence_number=snapshot_id,
+        avro_compression="zstandard",
+    ) as list_writer:
+        list_writer.add_manifests([manifest_file])
+
+    return list_path
+
+
+def test_clear_manifest_cache() -> None:
+    """Test that clear_manifest_cache() clears cache entries while keeping cache enabled."""
+    io = PyArrowFileIO()
+
+    with TemporaryDirectory() as tmp_dir:
+        list_path = _create_test_manifest_list(manifest_module, io, tmp_dir, name="clear", snapshot_id=1)
+
+        # Populate the cache
+        _manifests(io, list_path)
+
+        # Verify cache has entries
+        cache = manifest_module._manifest_cache
+        assert cache is not None, "Cache should be enabled"
+        assert len(cache) > 0, "Cache should have entries after reading manifests"
+
+        # Clear the cache
+        clear_manifest_cache()
+
+        # Verify cache is empty but still enabled
+        cache_after = manifest_module._manifest_cache
+        assert cache_after is not None, "Cache should still be enabled after clear"
+        assert len(cache_after) == 0, "Cache should be empty after clear"
+
+
+@pytest.mark.parametrize("cache_size", ["0", "-1"])
+def test_manifest_cache_can_be_disabled_with_non_positive_size(monkeypatch: pytest.MonkeyPatch, cache_size: str) -> None:
+    """Test that non-positive manifest-cache-size values disable caching."""
+    monkeypatch.setenv("PYICEBERG_MANIFEST_CACHE_SIZE", cache_size)
+    importlib.reload(manifest_module)
+
+    try:
+        assert manifest_module._manifest_cache_size == 0
+        assert len(manifest_module._manifest_cache) == 0
+
+        io = PyArrowFileIO()
+
+        with TemporaryDirectory() as tmp_dir:
+            list_path = _create_test_manifest_list(manifest_module, io, tmp_dir, name="disabled", snapshot_id=1)
+
+            manifests_first_call = manifest_module._manifests(io, list_path)
+            manifests_second_call = manifest_module._manifests(io, list_path)
+
+            assert len(manifest_module._manifest_cache) == 0
+            assert manifests_first_call[0] is not manifests_second_call[0]
+    finally:
+        monkeypatch.delenv("PYICEBERG_MANIFEST_CACHE_SIZE", raising=False)
+        importlib.reload(manifest_module)
+
+
+def test_manifest_cache_respects_positive_env_size(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that a positive manifest-cache-size enables a bounded cache."""
+    monkeypatch.setenv("PYICEBERG_MANIFEST_CACHE_SIZE", "1")
+    importlib.reload(manifest_module)
+
+    try:
+        assert manifest_module._manifest_cache_size == 1
+
+        io = PyArrowFileIO()
+
+        with TemporaryDirectory() as tmp_dir:
+            first_list_path = _create_test_manifest_list(manifest_module, io, tmp_dir, name="first", snapshot_id=1)
+            second_list_path = _create_test_manifest_list(manifest_module, io, tmp_dir, name="second", snapshot_id=2)
+
+            manifests_first_call = manifest_module._manifests(io, first_list_path)
+            manifests_second_call = manifest_module._manifests(io, first_list_path)
+
+            assert manifests_first_call[0] is manifests_second_call[0]
+            assert len(manifest_module._manifest_cache) == 1
+
+            manifest_module._manifests(io, second_list_path)
+
+            assert len(manifest_module._manifest_cache) == 1
+    finally:
+        monkeypatch.delenv("PYICEBERG_MANIFEST_CACHE_SIZE", raising=False)
+        importlib.reload(manifest_module)
+
+
+def test_manifest_cache_reads_size_from_configuration_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Test that manifest-cache-size can be loaded from .pyiceberg.yaml."""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / ".pyiceberg.yaml").write_text("manifest-cache-size: 2\n", encoding="utf-8")
+
+    monkeypatch.delenv("PYICEBERG_MANIFEST_CACHE_SIZE", raising=False)
+    monkeypatch.setenv("PYICEBERG_HOME", str(config_dir))
+    importlib.reload(manifest_module)
+
+    try:
+        assert manifest_module._manifest_cache_size == 2
+
+        io = PyArrowFileIO()
+
+        with TemporaryDirectory() as tmp_dir:
+            first_list_path = _create_test_manifest_list(manifest_module, io, tmp_dir, name="first", snapshot_id=1)
+            second_list_path = _create_test_manifest_list(manifest_module, io, tmp_dir, name="second", snapshot_id=2)
+            third_list_path = _create_test_manifest_list(manifest_module, io, tmp_dir, name="third", snapshot_id=3)
+
+            manifest_module._manifests(io, first_list_path)
+            manifest_module._manifests(io, second_list_path)
+            manifest_module._manifests(io, third_list_path)
+
+            assert len(manifest_module._manifest_cache) == 2
+    finally:
+        monkeypatch.delenv("PYICEBERG_HOME", raising=False)
+        importlib.reload(manifest_module)
+
+
+def test_invalid_manifest_cache_size_raises_value_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that invalid manifest-cache-size values raise a helpful error."""
+    monkeypatch.setenv("PYICEBERG_MANIFEST_CACHE_SIZE", "not-an-int")
+
+    try:
+        with pytest.raises(ValueError, match="manifest-cache-size should be an integer or left unset"):
+            importlib.reload(manifest_module)
+    finally:
+        monkeypatch.delenv("PYICEBERG_MANIFEST_CACHE_SIZE", raising=False)
+        importlib.reload(manifest_module)
