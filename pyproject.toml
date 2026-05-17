@@ -91,7 +91,7 @@ sql-postgres = [
 ]
 sql-sqlite = ["sqlalchemy>=2.0.18,<3"]
 gcsfs = ["gcsfs>=2023.1.0"]
-rest-sigv4 = ["boto3>=1.24.59"]
+rest-sigv4 = ["boto3>=1.24.59", "botocore<2"]
 hf = ["huggingface-hub>=0.24.0"]
 pyiceberg-core = ["pyiceberg-core>=0.5.1,<0.10.0"]
 datafusion = ["datafusion>=52,<53"]
