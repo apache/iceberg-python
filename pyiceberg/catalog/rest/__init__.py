@@ -779,12 +779,11 @@ class RestCatalog(Catalog):
         from requests.adapters import HTTPAdapter
 
         class _IcebergSigV4Auth(SigV4Auth):
-            def canonical_request(self, request: Any) -> str:
-                # Reuses the logic from botocore's SigV4Auth.canonical_request
-                # (https://github.com/boto/botocore/blob/develop/botocore/auth.py)
-                # but always uses self.payload(request) for the body checksum.
-                # Validated against botocore <= 1.42.x
-                # (https://github.com/boto/botocore/blob/1.42.85/botocore/auth.py#L622-L637)
+            def canonical_request(self, request: AWSRequest) -> str:
+                # Override forces hex payload hash in the canonical request even when
+                # x-amz-content-sha256 header is base64 (see body-hash block below).
+                # Mirrors botocore <=1.42.x SigV4Auth.canonical_request layout:
+                # https://github.com/boto/botocore/blob/1.42.85/botocore/auth.py#L622-L637
                 cr = [request.method.upper()]
                 path = self._normalize_url_path(parse.urlsplit(request.url).path)
                 cr.append(path)
@@ -792,8 +791,6 @@ class RestCatalog(Catalog):
                 headers_to_sign = self.headers_to_sign(request)
                 cr.append(self.canonical_headers(headers_to_sign) + "\n")
                 cr.append(self.signed_headers(headers_to_sign))
-                # Always use hex-encoded payload hash per SigV4 spec,
-                # regardless of the x-amz-content-sha256 header value (which may be base64).
                 cr.append(self.payload(request))
                 return "\n".join(cr)
 
@@ -824,11 +821,20 @@ class RestCatalog(Catalog):
                 if "connection" in request.headers:
                     del request.headers["connection"]
 
-                # Compute the x-amz-content-sha256 header to match Iceberg Java SDK:
-                #   - empty body → hex (EMPTY_BODY_SHA256)
-                #   - non-empty body → base64
+                # Match Iceberg Java's AWS SDK v2 flexible-checksum signing:
+                # x-amz-content-sha256 header is base64 for non-empty bodies, hex for empty.
+                # The SigV4 canonical request still uses hex (enforced in _IcebergSigV4Auth above).
+                # Ref: https://github.com/apache/iceberg/blob/main/aws/src/main/java/org/apache/iceberg/aws/RESTSigV4AuthSession.java
                 if request.body:
-                    body_bytes = request.body.encode("utf-8") if isinstance(request.body, str) else request.body
+                    if isinstance(request.body, str):
+                        body_bytes = request.body.encode("utf-8")
+                    elif isinstance(request.body, (bytes, bytearray)):
+                        body_bytes = request.body
+                    else:
+                        raise TypeError(
+                            f"Unsupported request body type for SigV4 signing: "
+                            f"{type(request.body).__name__}; expected str or bytes."
+                        )
                     content_sha256_header = base64.b64encode(hashlib.sha256(body_bytes).digest()).decode()
                 else:
                     content_sha256_header = EMPTY_BODY_SHA256
