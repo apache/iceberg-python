@@ -1095,7 +1095,9 @@ def _create_table_with_expirable_snapshot(catalog: InMemoryCatalog) -> int:
     )
     table.append(pa.Table.from_pylist([{"x": 1, "y": 2, "z": 3}], schema=arrow_schema))
     table.refresh()
-    older_snapshot_id = table.current_snapshot().snapshot_id
+    older_snapshot = table.current_snapshot()
+    assert older_snapshot is not None
+    older_snapshot_id = older_snapshot.snapshot_id
     table.append(pa.Table.from_pylist([{"x": 4, "y": 5, "z": 6}], schema=arrow_schema))
     return older_snapshot_id
 
@@ -1109,17 +1111,15 @@ def test_expire_snapshots_requires_option(catalog: InMemoryCatalog) -> None:
     )
 
     runner = CliRunner()
-    result = runner.invoke(run, ["maintenance", "expire-snapshots", "default.my_table"])
+    result = runner.invoke(run, ["expire-snapshots", "default.my_table"])
 
     assert result.exit_code == 1
     assert "Must provide at least one of --snapshot-id or --older-than." in result.output
 
 
 def test_expire_snapshots_table_does_not_exists(catalog: InMemoryCatalog) -> None:
-    # pylint: disable=unused-argument
-
     runner = CliRunner()
-    result = runner.invoke(run, ["maintenance", "expire-snapshots", "default.doesnotexist", "--snapshot-id", "1"])
+    result = runner.invoke(run, ["expire-snapshots", "default.doesnotexist", "--snapshot-id", "1"])
 
     assert result.exit_code == 1
     assert result.output == "Table does not exist: default.doesnotexist\n"
@@ -1129,7 +1129,7 @@ def test_expire_snapshots_by_id(catalog: InMemoryCatalog) -> None:
     snapshot_id = _create_table_with_expirable_snapshot(catalog)
 
     runner = CliRunner()
-    result = runner.invoke(run, ["maintenance", "expire-snapshots", "default.my_table", "--snapshot-id", str(snapshot_id)])
+    result = runner.invoke(run, ["expire-snapshots", "default.my_table", "--snapshot-id", str(snapshot_id)])
 
     assert result.exit_code == 0
     assert result.output == "Expired snapshots on default.my_table\n"
@@ -1146,7 +1146,6 @@ def test_expire_snapshots_older_than(catalog: InMemoryCatalog) -> None:
     result = runner.invoke(
         run,
         [
-            "maintenance",
             "expire-snapshots",
             "default.my_table",
             "--older-than",
@@ -1170,7 +1169,7 @@ def test_expire_snapshots_unknown_snapshot_id(catalog: InMemoryCatalog) -> None:
     )
 
     runner = CliRunner()
-    result = runner.invoke(run, ["maintenance", "expire-snapshots", "default.my_table", "--snapshot-id", "999"])
+    result = runner.invoke(run, ["expire-snapshots", "default.my_table", "--snapshot-id", "999"])
 
     assert result.exit_code == 1
     assert "Snapshot with ID 999 does not exist." in result.output
@@ -1182,7 +1181,7 @@ def test_json_expire_snapshots_by_id(catalog: InMemoryCatalog) -> None:
     runner = CliRunner()
     result = runner.invoke(
         run,
-        ["--output=json", "maintenance", "expire-snapshots", "default.my_table", "--snapshot-id", str(snapshot_id)],
+        ["--output=json", "expire-snapshots", "default.my_table", "--snapshot-id", str(snapshot_id)],
     )
 
     assert result.exit_code == 0

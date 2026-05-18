@@ -481,12 +481,7 @@ def _retention_properties(ref: SnapshotRef, table_properties: dict[str, str]) ->
     return retention_properties
 
 
-@run.group()
-def maintenance() -> None:
-    """Run maintenance operations on a table."""
-
-
-@maintenance.command("expire-snapshots")
+@run.command("expire-snapshots")
 @click.argument("identifier")
 @click.option(
     "--snapshot-id",
