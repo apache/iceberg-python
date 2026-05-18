@@ -1788,8 +1788,44 @@ class BaseScan(ABC):
     @abstractmethod
     def plan_files(self) -> Iterable[ScanTask]: ...
 
-    @abstractmethod
-    def to_arrow(self) -> pa.Table: ...
+    def to_arrow(self) -> pa.Table:
+        """Read an Arrow table eagerly from this scan.
+
+        All rows will be loaded into memory at once.
+
+        Returns:
+            pa.Table: Materialized Arrow Table from the Iceberg table scan.
+        """
+        from pyiceberg.io.pyarrow import ArrowScan
+
+        return ArrowScan(
+            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
+        ).to_table(self.plan_files())
+
+    def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
+        """Return an Arrow RecordBatchReader from this scan.
+
+        For large results, using a RecordBatchReader requires less memory than
+        loading an Arrow Table for the same scan, because a RecordBatch is read
+        one at a time.
+
+        Returns:
+            pa.RecordBatchReader: Arrow RecordBatchReader from the Iceberg table scan,
+            which can be used to read a stream of record batches one by one.
+        """
+        import pyarrow as pa
+
+        from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
+
+        target_schema = schema_to_pyarrow(self.projection())
+        batches = ArrowScan(
+            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
+        ).to_record_batches(self.plan_files())
+
+        return pa.RecordBatchReader.from_batches(
+            target_schema,
+            batches,
+        ).cast(target_schema)
 
     def update(self: A, **overrides: Any) -> A:
         """Create a copy of this table scan with updated fields."""
@@ -2153,45 +2189,6 @@ class DataScan(TableScan):
             return self._plan_files_server_side()
         return self._plan_files_local()
 
-    def to_arrow(self) -> pa.Table:
-        """Read an Arrow table eagerly from this DataScan.
-
-        All rows will be loaded into memory at once.
-
-        Returns:
-            pa.Table: Materialized Arrow Table from the Iceberg table's DataScan
-        """
-        from pyiceberg.io.pyarrow import ArrowScan
-
-        return ArrowScan(
-            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
-        ).to_table(self.plan_files())
-
-    def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
-        """Return an Arrow RecordBatchReader from this DataScan.
-
-        For large results, using a RecordBatchReader requires less memory than
-        loading an Arrow Table for the same DataScan, because a RecordBatch
-        is read one at a time.
-
-        Returns:
-            pa.RecordBatchReader: Arrow RecordBatchReader from the Iceberg table's DataScan
-                which can be used to read a stream of record batches one by one.
-        """
-        import pyarrow as pa
-
-        from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
-
-        target_schema = schema_to_pyarrow(self.projection())
-        batches = ArrowScan(
-            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
-        ).to_record_batches(self.plan_files())
-
-        return pa.RecordBatchReader.from_batches(
-            target_schema,
-            batches,
-        ).cast(target_schema)
-
     def count(self) -> int:
         from pyiceberg.io.pyarrow import ArrowScan
 
@@ -2344,45 +2341,6 @@ class IncrementalAppendScan(BaseScan):
             manifest_entry_filter=lambda manifest_entry: manifest_entry.snapshot_id in append_snapshot_ids
             and manifest_entry.status == ManifestEntryStatus.ADDED,
         )
-
-    def to_arrow(self) -> pa.Table:
-        """Read an Arrow table eagerly from this IncrementalAppendScan.
-
-        All rows will be loaded into memory at once.
-
-        Returns:
-            pa.Table: Materialized Arrow Table from the Iceberg table's IncrementalAppendScan
-        """
-        from pyiceberg.io.pyarrow import ArrowScan
-
-        return ArrowScan(
-            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
-        ).to_table(self.plan_files())
-
-    def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
-        """Return an Arrow RecordBatchReader from this IncrementalAppendScan.
-
-        For large results, using a RecordBatchReader requires less memory than
-        loading an Arrow Table for the same IncrementalAppendScan, because a RecordBatch
-        is read one at a time.
-
-        Returns:
-            pa.RecordBatchReader: Arrow RecordBatchReader from the Iceberg table's IncrementalAppendScan
-            which can be used to read a stream of record batches one by one.
-        """
-        import pyarrow as pa
-
-        from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
-
-        target_schema = schema_to_pyarrow(self.projection())
-        batches = ArrowScan(
-            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
-        ).to_record_batches(self.plan_files())
-
-        return pa.RecordBatchReader.from_batches(
-            target_schema,
-            batches,
-        ).cast(target_schema)
 
     def _validate_and_resolve_snapshots(self) -> tuple[int, int]:
         if self.from_snapshot_id_exclusive is None:
