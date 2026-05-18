@@ -39,6 +39,7 @@ from pyiceberg.catalog import (
     TABLE_TYPE,
     MetastoreCatalog,
     PropertiesUpdateSummary,
+    _raise_if_view_exists,
 )
 from pyiceberg.exceptions import (
     CommitFailedException,
@@ -571,6 +572,7 @@ class GlueCatalog(MetastoreCatalog):
 
         """
         database_name, table_name = self.identifier_to_database_and_table(identifier)
+        _raise_if_view_exists(self, identifier)
 
         if self._is_s3tables_database(database_name):
             return self._create_table_s3tables(
@@ -621,6 +623,7 @@ class GlueCatalog(MetastoreCatalog):
         if overwrite:
             raise NotImplementedError("`overwrite` isn't supported")
 
+        _raise_if_view_exists(self, identifier)
         database_name, table_name = self.identifier_to_database_and_table(identifier)
         properties = EMPTY_DICT
         io = self._load_file_io(location=metadata_location)
@@ -772,6 +775,7 @@ class GlueCatalog(MetastoreCatalog):
         """
         from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier, NoSuchTableError)
         to_database_name, to_table_name = self.identifier_to_database_and_table(to_identifier)
+        _raise_if_view_exists(self, to_identifier)
         try:
             get_table_response = self.glue.get_table(DatabaseName=from_database_name, Name=from_table_name)
         except self.glue.exceptions.EntityNotFoundException as e:

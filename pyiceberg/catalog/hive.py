@@ -61,6 +61,7 @@ from pyiceberg.catalog import (
     URI,
     MetastoreCatalog,
     PropertiesUpdateSummary,
+    _raise_if_view_exists,
 )
 from pyiceberg.exceptions import (
     CommitFailedException,
@@ -413,6 +414,7 @@ class HiveCatalog(MetastoreCatalog):
             ValueError: If the identifier is invalid.
         """
         properties = {**DEFAULT_PROPERTIES, **properties}
+        _raise_if_view_exists(self, identifier)
         staged_table = self._create_staged_table(
             identifier=identifier,
             schema=schema,
@@ -461,6 +463,7 @@ class HiveCatalog(MetastoreCatalog):
         if overwrite:
             raise NotImplementedError("`overwrite` isn't supported")
 
+        _raise_if_view_exists(self, identifier)
         database_name, table_name = self.identifier_to_database_and_table(identifier)
         io = self._load_file_io(location=metadata_location)
         metadata_file = io.new_input(metadata_location)
@@ -700,6 +703,7 @@ class HiveCatalog(MetastoreCatalog):
 
         if self.table_exists(to_identifier):
             raise TableAlreadyExistsError(f"Table already exists: {to_table_name}")
+        _raise_if_view_exists(self, to_identifier)
 
         try:
             with self._client as open_client:

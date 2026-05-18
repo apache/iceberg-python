@@ -461,6 +461,77 @@ def test_rename_table_to_missing_namespace(
         catalog.rename_table(test_table_identifier, another_table_identifier)
 
 
+# View-collision tests
+#
+# InMemoryCatalog and SqlCatalog don't support views (`view_exists` raises
+# `NotImplementedError`), so we monkeypatch it to assert the call sites invoke
+# the helper that maps a view at the target identifier to `TableAlreadyExistsError`.
+
+
+def test_create_table_raises_when_view_exists_at_identifier(
+    catalog: Catalog,
+    test_table_identifier: Identifier,
+    table_schema_simple: Schema,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    namespace = Catalog.namespace_from(test_table_identifier)
+    catalog.create_namespace(namespace)
+    monkeypatch.setattr(
+        catalog, "view_exists", lambda identifier: Catalog.identifier_to_tuple(identifier) == test_table_identifier
+    )
+    with pytest.raises(TableAlreadyExistsError, match="View with same name already exists"):
+        catalog.create_table(test_table_identifier, table_schema_simple)
+
+
+def test_create_table_transaction_raises_when_view_exists_at_identifier(
+    catalog: Catalog,
+    test_table_identifier: Identifier,
+    table_schema_simple: Schema,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    namespace = Catalog.namespace_from(test_table_identifier)
+    catalog.create_namespace(namespace)
+    monkeypatch.setattr(
+        catalog, "view_exists", lambda identifier: Catalog.identifier_to_tuple(identifier) == test_table_identifier
+    )
+    with pytest.raises(TableAlreadyExistsError, match="View with same name already exists"):
+        catalog.create_table_transaction(test_table_identifier, table_schema_simple)
+
+
+def test_register_table_raises_when_view_exists_at_identifier(
+    catalog: Catalog,
+    test_table_identifier: Identifier,
+    metadata_location: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    namespace = Catalog.namespace_from(test_table_identifier)
+    catalog.create_namespace(namespace)
+    monkeypatch.setattr(
+        catalog, "view_exists", lambda identifier: Catalog.identifier_to_tuple(identifier) == test_table_identifier
+    )
+    with pytest.raises(TableAlreadyExistsError, match="View with same name already exists"):
+        catalog.register_table(test_table_identifier, metadata_location)
+
+
+def test_rename_table_raises_when_view_exists_at_destination(
+    catalog: Catalog,
+    table_schema_simple: Schema,
+    test_table_identifier: Identifier,
+    another_table_identifier: Identifier,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from_namespace = Catalog.namespace_from(test_table_identifier)
+    to_namespace = Catalog.namespace_from(another_table_identifier)
+    catalog.create_namespace(from_namespace)
+    catalog.create_namespace(to_namespace)
+    catalog.create_table(test_table_identifier, table_schema_simple)
+    monkeypatch.setattr(
+        catalog, "view_exists", lambda identifier: Catalog.identifier_to_tuple(identifier) == another_table_identifier
+    )
+    with pytest.raises(TableAlreadyExistsError, match="View with same name already exists"):
+        catalog.rename_table(test_table_identifier, another_table_identifier)
+
+
 # Drop table tests
 
 

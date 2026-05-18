@@ -28,7 +28,7 @@ from google.cloud.exceptions import Conflict
 from google.oauth2 import service_account
 from typing_extensions import override
 
-from pyiceberg.catalog import WAREHOUSE_LOCATION, MetastoreCatalog, PropertiesUpdateSummary
+from pyiceberg.catalog import WAREHOUSE_LOCATION, MetastoreCatalog, PropertiesUpdateSummary, _raise_if_view_exists
 from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchNamespaceError, NoSuchTableError, TableAlreadyExistsError
 from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
@@ -134,6 +134,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
 
         dataset_name, table_name = self.identifier_to_database_and_table(identifier)
+        _raise_if_view_exists(self, identifier)
 
         location = self._resolve_table_location(location, dataset_name, table_name)
         provider = load_location_provider(table_location=location, table_properties=properties)
@@ -295,6 +296,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         if overwrite:
             raise NotImplementedError("`overwrite` isn't supported")
 
+        _raise_if_view_exists(self, identifier)
         dataset_name, table_name = self.identifier_to_database_and_table(identifier)
 
         dataset_ref = DatasetReference(project=self.project_id, dataset_id=dataset_name)

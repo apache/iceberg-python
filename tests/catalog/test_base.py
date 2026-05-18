@@ -22,8 +22,9 @@ from pathlib import PosixPath
 
 import pytest
 
-from pyiceberg.catalog import Catalog, load_catalog
+from pyiceberg.catalog import Catalog, _raise_if_view_exists, load_catalog
 from pyiceberg.catalog.memory import InMemoryCatalog
+from pyiceberg.exceptions import TableAlreadyExistsError
 from pyiceberg.io import WAREHOUSE
 from pyiceberg.schema import Schema
 from pyiceberg.types import NestedField, StringType
@@ -67,6 +68,38 @@ def test_load_catalog_has_type_and_impl() -> None:
 def test_catalog_repr(catalog: InMemoryCatalog) -> None:
     s = repr(catalog)
     assert s == "test.in_memory.catalog (<class 'pyiceberg.catalog.memory.InMemoryCatalog'>)"
+
+
+class _StubCatalog:
+    def __init__(self, *, returns: bool | None = None, raises: type[Exception] | None = None) -> None:
+        self._returns = returns
+        self._raises = raises
+        self.calls: list[object] = []
+
+    def view_exists(self, identifier: object) -> bool:
+        self.calls.append(identifier)
+        if self._raises is not None:
+            raise self._raises
+        assert self._returns is not None
+        return self._returns
+
+
+class TestRaiseIfViewExists:
+    def test_raises_when_view_exists(self) -> None:
+        stub = _StubCatalog(returns=True)
+        with pytest.raises(TableAlreadyExistsError, match="View with same name already exists: ns.t"):
+            _raise_if_view_exists(stub, "ns.t")  # type: ignore[arg-type]
+        assert stub.calls == ["ns.t"]
+
+    def test_no_raise_when_view_absent(self) -> None:
+        stub = _StubCatalog(returns=False)
+        _raise_if_view_exists(stub, ("ns", "t"))  # type: ignore[arg-type]
+        assert stub.calls == [("ns", "t")]
+
+    def test_not_implemented_treated_as_no_view(self) -> None:
+        stub = _StubCatalog(raises=NotImplementedError)
+        _raise_if_view_exists(stub, "ns.t")  # type: ignore[arg-type]
+        assert stub.calls == ["ns.t"]
 
 
 class TestCatalogClose:

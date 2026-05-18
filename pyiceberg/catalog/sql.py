@@ -46,6 +46,7 @@ from pyiceberg.catalog import (
     Catalog,
     MetastoreCatalog,
     PropertiesUpdateSummary,
+    _raise_if_view_exists,
 )
 from pyiceberg.exceptions import (
     CommitFailedException,
@@ -211,6 +212,7 @@ class SqlCatalog(MetastoreCatalog):
         table_name = Catalog.table_name_from(identifier)
         if not self.namespace_exists(namespace_identifier):
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace_identifier}")
+        _raise_if_view_exists(self, identifier)
 
         namespace = Catalog.namespace_to_string(namespace_identifier)
         location = self._resolve_table_location(location, namespace, table_name)
@@ -263,6 +265,7 @@ class SqlCatalog(MetastoreCatalog):
         table_name = Catalog.table_name_from(identifier)
         if not self.namespace_exists(namespace):
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}")
+        _raise_if_view_exists(self, identifier)
 
         with Session(self.engine) as session:
             try:
@@ -376,6 +379,7 @@ class SqlCatalog(MetastoreCatalog):
         to_table_name = Catalog.table_name_from(to_identifier)
         if not self.namespace_exists(to_namespace):
             raise NoSuchNamespaceError(f"Namespace does not exist: {to_namespace}")
+        _raise_if_view_exists(self, to_identifier)
         with Session(self.engine) as session:
             try:
                 if self.engine.dialect.supports_sane_rowcount:

@@ -34,6 +34,7 @@ from pyiceberg.catalog import (
     TABLE_TYPE,
     MetastoreCatalog,
     PropertiesUpdateSummary,
+    _raise_if_view_exists,
 )
 from pyiceberg.exceptions import (
     ConditionalCheckFailedException,
@@ -187,6 +188,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         )
 
         database_name, table_name = self.identifier_to_database_and_table(identifier)
+        _raise_if_view_exists(self, identifier)
 
         location = self._resolve_table_location(location, database_name, table_name)
         provider = load_location_provider(table_location=location, table_properties=properties)
@@ -313,6 +315,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         """
         from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier, NoSuchTableError)
         to_database_name, to_table_name = self.identifier_to_database_and_table(to_identifier)
+        _raise_if_view_exists(self, to_identifier)
 
         from_table_item = self._get_iceberg_table_item(database_name=from_database_name, table_name=from_table_name)
 

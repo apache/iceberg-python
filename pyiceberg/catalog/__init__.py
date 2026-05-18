@@ -323,6 +323,20 @@ def delete_data_files(io: FileIO, manifests_to_delete: list[ManifestFile]) -> No
                 deleted_files[path] = True
 
 
+def _raise_if_view_exists(catalog: Catalog, identifier: str | Identifier) -> None:
+    """Raise `TableAlreadyExistsError` if a view exists at the given identifier.
+
+    Catalogs that don't support views raise `NotImplementedError` from `view_exists` —
+    treat that as "no view at this identifier".
+    """
+    try:
+        view_collision = catalog.view_exists(identifier)
+    except NotImplementedError:
+        view_collision = False
+    if view_collision:
+        raise TableAlreadyExistsError(f"View with same name already exists: {identifier}")
+
+
 def _import_catalog(name: str, catalog_impl: str, properties: Properties) -> Catalog | None:
     try:
         path_parts = catalog_impl.split(".")
@@ -920,6 +934,7 @@ class MetastoreCatalog(Catalog, ABC):
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
     ) -> CreateTableTransaction:
+        _raise_if_view_exists(self, identifier)
         return CreateTableTransaction(
             self._create_staged_table(identifier, schema, location, partition_spec, sort_order, properties)
         )
