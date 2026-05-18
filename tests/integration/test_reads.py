@@ -1311,6 +1311,20 @@ def test_incremental_append_scan_ignores_non_append_snapshots(catalog: Catalog) 
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_empty_range(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # snapshots[3] is the only snapshot in the range and is a delete; the scan must return empty.
+    scan = test_table.incremental_append_scan(
+        from_snapshot_id_exclusive=test_table.snapshots()[2].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[3].snapshot_id,
+    )
+    assert list(scan.plan_files()) == []
+    assert len(scan.to_arrow()) == 0
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_incremental_append_scan_schema_evolution_within_range(catalog: Catalog) -> None:
     test_table = catalog.load_table("default.test_incremental_read")
 

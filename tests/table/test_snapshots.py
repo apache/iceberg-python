@@ -490,6 +490,9 @@ def test_is_parent_ancestor_of(table_v2: Table) -> None:
     assert not is_parent_ancestor_of(ancestor_snapshot_id, snapshot_id, table_v2.metadata)
     # An ID not referenced anywhere in the chain is not a parent ancestor.
     assert not is_parent_ancestor_of(snapshot_id, 42, table_v2.metadata)
+    # Raises when the start snapshot ID is missing from metadata.
+    with pytest.raises(ValueError, match="Cannot find snapshot: 42"):
+        is_parent_ancestor_of(42, snapshot_id, table_v2.metadata)
 
 
 def test_ancestors_between_ids(table_v2: Table) -> None:

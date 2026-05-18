@@ -457,10 +457,14 @@ def ancestors_between_ids(
 
 
 def is_parent_ancestor_of(snapshot_id: int, ancestor_parent_snapshot_id: int, table_metadata: TableMetadata) -> bool:
-    """Return whether any ancestor of ``snapshot_id`` has ``ancestor_parent_snapshot_id`` as its parent."""
+    """Return whether any ancestor of ``snapshot_id`` has ``ancestor_parent_snapshot_id`` as its parent.
+
+    Raises:
+        ValueError: if ``snapshot_id`` is not present in the table metadata.
+    """
     snapshot = table_metadata.snapshot_by_id(snapshot_id)
     if snapshot is None:
-        return False
+        raise ValueError(f"Cannot find snapshot: {snapshot_id}")
     for ancestor in ancestors_of(snapshot, table_metadata):
         if ancestor.parent_snapshot_id == ancestor_parent_snapshot_id:
             return True
