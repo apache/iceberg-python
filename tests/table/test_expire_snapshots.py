@@ -22,7 +22,8 @@ from uuid import uuid4
 import pytest
 
 from pyiceberg.table import CommitTableResponse, Table
-from pyiceberg.table.update import RemoveSnapshotsUpdate, update_table_metadata
+from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
+from pyiceberg.table.update import RemoveSnapshotRefUpdate, RemoveSnapshotsUpdate, update_table_metadata
 from pyiceberg.table.update.snapshot import ExpireSnapshots
 
 
@@ -92,8 +93,8 @@ def test_expire_unprotected_snapshot(table_v2: Table) -> None:
     table_v2.metadata = table_v2.metadata.model_copy(
         update={
             "refs": {
-                "main": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="branch"),
-                "tag1": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="tag"),
+                "main": SnapshotRef(**{"snapshot-id": KEEP_SNAPSHOT, "type": SnapshotRefType.BRANCH}),
+                "tag1": SnapshotRef(**{"snapshot-id": KEEP_SNAPSHOT, "type": SnapshotRefType.TAG}),
             }
         }
     )
@@ -134,8 +135,8 @@ def test_expire_snapshots_by_timestamp_skips_protected(table_v2: Table) -> None:
     table_v2.metadata = table_v2.metadata.model_copy(
         update={
             "refs": {
-                "main": MagicMock(snapshot_id=HEAD_SNAPSHOT, snapshot_ref_type="branch"),
-                "mytag": MagicMock(snapshot_id=TAGGED_SNAPSHOT, snapshot_ref_type="tag"),
+                "main": SnapshotRef(**{"snapshot-id": HEAD_SNAPSHOT, "type": SnapshotRefType.BRANCH}),
+                "mytag": SnapshotRef(**{"snapshot-id": TAGGED_SNAPSHOT, "type": SnapshotRefType.TAG}),
             },
             "snapshots": [
                 SimpleNamespace(snapshot_id=HEAD_SNAPSHOT, timestamp_ms=1, parent_snapshot_id=None),
@@ -165,13 +166,8 @@ def test_expire_snapshots_by_timestamp_skips_protected(table_v2: Table) -> None:
     assert HEAD_SNAPSHOT in remaining_ids
     assert TAGGED_SNAPSHOT in remaining_ids
 
-    # No snapshots should have been expired (commit_table called, but with empty snapshot_ids)
-    args, kwargs = table_v2.catalog.commit_table.call_args
-    updates = args[2] if len(args) > 2 else ()
-    # Find RemoveSnapshotsUpdate in updates
-    remove_update = next((u for u in updates if getattr(u, "action", None) == "remove-snapshots"), None)
-    assert remove_update is not None
-    assert remove_update.snapshot_ids == []
+    # No snapshots expired and no refs expired — commit_table should not be called at all
+    table_v2.catalog.commit_table.assert_not_called()
 
 
 def test_expire_snapshots_by_ids(table_v2: Table) -> None:
@@ -188,24 +184,14 @@ def test_expire_snapshots_by_ids(table_v2: Table) -> None:
     table_v2.catalog = MagicMock()
     table_v2.catalog.commit_table.return_value = mock_response
 
-    # Remove any refs that protect the snapshots to be expired
-    table_v2.metadata = table_v2.metadata.model_copy(
-        update={
-            "refs": {
-                "main": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="branch"),
-                "tag1": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="tag"),
-            }
-        }
-    )
-
     # Add snapshots to metadata for multi-id test
     from types import SimpleNamespace
 
     table_v2.metadata = table_v2.metadata.model_copy(
         update={
             "refs": {
-                "main": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="branch"),
-                "tag1": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="tag"),
+                "main": SnapshotRef(**{"snapshot-id": KEEP_SNAPSHOT, "type": SnapshotRefType.BRANCH}),
+                "tag1": SnapshotRef(**{"snapshot-id": KEEP_SNAPSHOT, "type": SnapshotRefType.TAG}),
             },
             "snapshots": [
                 SimpleNamespace(snapshot_id=EXPIRE_SNAPSHOT_1, timestamp_ms=1, parent_snapshot_id=None),
@@ -316,3 +302,116 @@ def test_update_remove_snapshots_with_statistics(table_v2_with_statistics: Table
     assert not any(stat.snapshot_id == REMOVE_SNAPSHOT for stat in new_metadata.statistics), (
         "Statistics for removed snapshot should be gone"
     )
+
+
+def _make_commit_response(table: Table) -> CommitTableResponse:
+    return CommitTableResponse(
+        metadata=table.metadata,
+        metadata_location="mock://metadata/location",
+        uuid=uuid4(),
+    )
+
+
+def test_ref_expiration_removes_old_tag_and_snapshot(table_v2: Table) -> None:
+    """A tag whose snapshot age exceeds max_ref_age_ms is removed; its orphaned snapshot
+    is also expired when older_than() is combined."""
+    OLD_SNAPSHOT = 3051729675574597004
+
+    table_v2.catalog = MagicMock()
+    table_v2.catalog.commit_table.return_value = _make_commit_response(table_v2)
+
+    # "test" tag (fixture) points to OLD_SNAPSHOT with max-ref-age-ms=10000000 (~2.7 h).
+    # OLD_SNAPSHOT timestamp is from 2018 — definitely older than 2.7 h.
+    assert "test" in table_v2.metadata.refs
+    assert table_v2.metadata.refs["test"].snapshot_id == OLD_SNAPSHOT
+
+    future = datetime.now() + timedelta(days=1)
+    table_v2.maintenance.expire_snapshots().remove_expired_refs(default_max_ref_age_ms=1).older_than(future).commit()
+
+    args, _ = table_v2.catalog.commit_table.call_args
+    updates = args[2]
+
+    ref_updates = [u for u in updates if isinstance(u, RemoveSnapshotRefUpdate)]
+    snap_updates = [u for u in updates if isinstance(u, RemoveSnapshotsUpdate)]
+
+    assert any(u.ref_name == "test" for u in ref_updates), "Expected 'test' tag to be removed"
+    assert any(OLD_SNAPSHOT in u.snapshot_ids for u in snap_updates), (
+        "Expected OLD_SNAPSHOT to be removed since it is no longer referenced"
+    )
+
+
+def test_ref_expiration_removes_old_branch(table_v2: Table) -> None:
+    """A non-main branch whose snapshot age exceeds max_ref_age_ms is removed."""
+    OLD_SNAPSHOT = 3051729675574597004
+    CURRENT_SNAPSHOT = 3055729675574597004
+
+    table_v2.catalog = MagicMock()
+    table_v2.catalog.commit_table.return_value = _make_commit_response(table_v2)
+
+    table_v2.metadata = table_v2.metadata.model_copy(
+        update={
+            "refs": {
+                "main": SnapshotRef(**{"snapshot-id": CURRENT_SNAPSHOT, "type": SnapshotRefType.BRANCH}),
+                "stale-branch": SnapshotRef(**{"snapshot-id": OLD_SNAPSHOT, "type": SnapshotRefType.BRANCH, "max-ref-age-ms": 1}),
+            }
+        }
+    )
+
+    table_v2.maintenance.expire_snapshots().remove_expired_refs(default_max_ref_age_ms=1).commit()
+
+    args, _ = table_v2.catalog.commit_table.call_args
+    updates = args[2]
+    ref_updates = [u for u in updates if isinstance(u, RemoveSnapshotRefUpdate)]
+    assert any(u.ref_name == "stale-branch" for u in ref_updates)
+    assert not any(u.ref_name == "main" for u in ref_updates)
+
+
+def test_main_branch_never_expires(table_v2: Table) -> None:
+    """main branch is never removed regardless of age or max_ref_age_ms."""
+    CURRENT_SNAPSHOT = 3055729675574597004
+
+    table_v2.catalog = MagicMock()
+
+    table_v2.metadata = table_v2.metadata.model_copy(
+        update={
+            "refs": {
+                "main": SnapshotRef(**{"snapshot-id": CURRENT_SNAPSHOT, "type": SnapshotRefType.BRANCH, "max-ref-age-ms": 1}),
+            }
+        }
+    )
+
+    table_v2.maintenance.expire_snapshots().remove_expired_refs(default_max_ref_age_ms=1).commit()
+
+    table_v2.catalog.commit_table.assert_not_called()
+
+
+def test_young_ref_is_retained(table_v2: Table) -> None:
+    """A ref whose snapshot is within max_ref_age_ms is not removed."""
+    OLD_SNAPSHOT = 3051729675574597004
+    CURRENT_SNAPSHOT = 3055729675574597004
+
+    table_v2.catalog = MagicMock()
+    table_v2.catalog.commit_table.return_value = _make_commit_response(table_v2)
+
+    # fresh-tag has a huge max_ref_age_ms — it should never expire
+    # stale-tag has max_ref_age_ms=1 — it will be expired (triggers a commit)
+    table_v2.metadata = table_v2.metadata.model_copy(
+        update={
+            "refs": {
+                "main": SnapshotRef(**{"snapshot-id": CURRENT_SNAPSHOT, "type": SnapshotRefType.BRANCH}),
+                "fresh-tag": SnapshotRef(
+                    **{"snapshot-id": OLD_SNAPSHOT, "type": SnapshotRefType.TAG, "max-ref-age-ms": 9999999999999}
+                ),
+                "stale-tag": SnapshotRef(**{"snapshot-id": OLD_SNAPSHOT, "type": SnapshotRefType.TAG, "max-ref-age-ms": 1}),
+            }
+        }
+    )
+
+    table_v2.maintenance.expire_snapshots().remove_expired_refs(default_max_ref_age_ms=1).commit()
+
+    table_v2.catalog.commit_table.assert_called_once()
+    args, _ = table_v2.catalog.commit_table.call_args
+    updates = args[2]
+    ref_updates = [u for u in updates if isinstance(u, RemoveSnapshotRefUpdate)]
+    assert any(u.ref_name == "stale-tag" for u in ref_updates), "stale-tag should be expired"
+    assert not any(u.ref_name == "fresh-tag" for u in ref_updates), "fresh-tag must not be expired"
