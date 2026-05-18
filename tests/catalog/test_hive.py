@@ -1410,3 +1410,34 @@ def test_create_hive_client_with_kerberos_using_context_manager(
         # closing and re-opening work as expected.
         with client as open_client:
             assert open_client._iprot.trans.isOpen()
+
+
+def test_kerberized_client_uses_fresh_transport_on_reuse(
+    kerberized_hive_metastore_fake_url: str,
+) -> None:
+    """Reusing the context manager must reinitialize the transport."""
+    client = _HiveClient(
+        uri=kerberized_hive_metastore_fake_url,
+        kerberos_auth=True,
+    )
+    with (
+        patch(
+            "puresasl.mechanisms.kerberos.authGSSClientStep",
+            return_value=None,
+        ),
+        patch(
+            "puresasl.mechanisms.kerberos.authGSSClientResponse",
+            return_value=base64.b64encode(b"Some Response"),
+        ),
+        patch(
+            "puresasl.mechanisms.GSSAPIMechanism.complete",
+            return_value=True,
+        ),
+    ):
+        with client:
+            first_transport_id = id(client._transport)
+
+        with client:
+            second_transport_id = id(client._transport)
+
+        assert first_transport_id != second_transport_id

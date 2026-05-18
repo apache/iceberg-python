@@ -147,6 +147,7 @@ class _HiveClient:
 
     _transport: TTransport
     _ugi: list[str] | None
+    _was_opened: bool
 
     def __init__(
         self,
@@ -160,6 +161,7 @@ class _HiveClient:
         self._kerberos_service_name = kerberos_service_name
         self._ugi = ugi.split(":") if ugi else None
         self._transport = self._init_thrift_transport()
+        self._was_opened = False
 
     def _init_thrift_transport(self) -> TTransport:
         url_parts = urlparse(self._uri)
@@ -178,19 +180,11 @@ class _HiveClient:
 
     def __enter__(self) -> Client:
         """Make sure the transport is initialized and open."""
-        if not self._transport.isOpen():
-            try:
-                self._transport.open()
-            except (TypeError, TTransport.TTransportException):
-                # Close the old transport before reinitializing to prevent resource leaks
-                try:
-                    self._transport.close()
-                except Exception:
-                    pass
-                # reinitialize _transport
-                self._transport = self._init_thrift_transport()
-                self._transport.open()
-        return self._client()  # recreate the client
+        if self._was_opened:
+            self._transport = self._init_thrift_transport()
+        self._transport.open()
+        self._was_opened = True
+        return self._client()
 
     def __exit__(self, exctype: type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
         """Close transport if it was opened."""
