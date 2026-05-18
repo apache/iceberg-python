@@ -28,6 +28,7 @@ from uuid import uuid4
 
 import pyarrow
 import pyarrow as pa
+import pyarrow.dataset as ds
 import pyarrow.orc as orc
 import pyarrow.parquet as pq
 import pytest
@@ -86,7 +87,7 @@ from pyiceberg.io.pyarrow import (
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema, make_compatible_name, visit
-from pyiceberg.table import FileScanTask, TableProperties
+from pyiceberg.table import FileScanTask, TableProperties, WriteTask
 from pyiceberg.table.metadata import TableMetadataV2
 from pyiceberg.table.name_mapping import create_mapping_from_schema
 from pyiceberg.transforms import HourTransform, IdentityTransform
@@ -2928,6 +2929,61 @@ def test_write_file_rejects_timestamptz_to_timestamp(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="Unsupported schema projection"):
         list(write_file(io=PyArrowFileIO(), table_metadata=table_metadata, tasks=iter([task])))
+
+
+def _simple_write_task_and_metadata(
+    tmp_path: Path, table_schema_simple: Schema, properties: dict[str, str]
+) -> tuple[TableMetadataV2, WriteTask]:
+    """Build a TableMetadataV2 and a 3-row WriteTask matching table_schema_simple."""
+    arrow_data = pa.table(
+        {
+            "foo": ["a", "b", "c"],
+            "bar": pa.array([1, 2, 3], type=pa.int32()),
+            "baz": [True, False, True],
+        }
+    )
+    table_metadata = TableMetadataV2(
+        location=f"file://{tmp_path}",
+        last_column_id=3,
+        current_schema_id=1,
+        format_version=2,
+        schemas=[table_schema_simple],
+        partition_specs=[PartitionSpec()],
+        properties=properties,
+    )
+    task = WriteTask(
+        write_uuid=uuid.uuid4(),
+        task_id=0,
+        record_batches=arrow_data.to_batches(),
+        schema=table_schema_simple,
+    )
+    return table_metadata, task
+
+
+def test_write_file_dispatches_on_write_format_default(tmp_path: Path, table_schema_simple: Schema) -> None:
+    """write_file() reads write.format.default and raises if the format is not registered."""
+    table_metadata, task = _simple_write_task_and_metadata(tmp_path, table_schema_simple, {"write.format.default": "orc"})
+
+    with pytest.raises(ValueError, match="No writer registered for"):
+        list(write_file(io=PyArrowFileIO(), table_metadata=table_metadata, tasks=iter([task])))
+
+
+def test_write_file_parquet_round_trip(tmp_path: Path, table_schema_simple: Schema) -> None:
+    """write_file() with write.format.default=parquet writes a readable Parquet file with correct DataFile metadata."""
+    table_metadata, task = _simple_write_task_and_metadata(tmp_path, table_schema_simple, {"write.format.default": "parquet"})
+
+    data_files = list(write_file(io=PyArrowFileIO(), table_metadata=table_metadata, tasks=iter([task])))
+
+    assert len(data_files) == 1
+    data_file = data_files[0]
+    assert data_file.file_format == FileFormat.PARQUET
+    assert data_file.record_count == 3
+    assert data_file.file_path.endswith(".parquet")
+    assert data_file.file_size_in_bytes > 0
+
+    result = ds.dataset(data_file.file_path.replace("file://", "")).to_table()
+    assert result.num_rows == 3
+    assert result.column_names == ["foo", "bar", "baz"]
 
 
 def test__to_requested_schema_timestamps(
