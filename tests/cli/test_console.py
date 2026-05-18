@@ -21,6 +21,7 @@ from pathlib import PosixPath
 from unittest import mock
 from unittest.mock import MagicMock
 
+import pyarrow as pa
 import pytest
 from click.testing import CliRunner
 from pytest_mock import MockFixture
@@ -1071,3 +1072,118 @@ def test_warehouse_cli_option_forwarded_to_catalog(mocker: MockFixture) -> None:
     assert result.exit_code == 0
     mock_basicConfig.assert_called_once()
     mock_load_catalog.assert_called_once_with("rest", uri="https://catalog.service", warehouse="example-warehouse")
+
+
+def _create_table_with_expirable_snapshot(catalog: InMemoryCatalog) -> int:
+    """Create a table with two snapshots and return the older (non-HEAD) one.
+
+    The HEAD snapshot of a branch is protected from expiration, so to test the
+    expire-snapshots command we need a snapshot that has been superseded.
+    """
+    catalog.create_namespace(TEST_TABLE_NAMESPACE)
+    table = catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=TEST_TABLE_SCHEMA,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+    )
+    arrow_schema = pa.schema(
+        [
+            pa.field("x", pa.int64(), nullable=False),
+            pa.field("y", pa.int64(), nullable=False),
+            pa.field("z", pa.int64(), nullable=False),
+        ]
+    )
+    table.append(pa.Table.from_pylist([{"x": 1, "y": 2, "z": 3}], schema=arrow_schema))
+    table.refresh()
+    older_snapshot_id = table.current_snapshot().snapshot_id
+    table.append(pa.Table.from_pylist([{"x": 4, "y": 5, "z": 6}], schema=arrow_schema))
+    return older_snapshot_id
+
+
+def test_expire_snapshots_requires_option(catalog: InMemoryCatalog) -> None:
+    catalog.create_namespace(TEST_TABLE_NAMESPACE)
+    catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=TEST_TABLE_SCHEMA,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["maintenance", "expire-snapshots", "default.my_table"])
+
+    assert result.exit_code == 1
+    assert "Must provide at least one of --snapshot-id or --older-than." in result.output
+
+
+def test_expire_snapshots_table_does_not_exists(catalog: InMemoryCatalog) -> None:
+    # pylint: disable=unused-argument
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["maintenance", "expire-snapshots", "default.doesnotexist", "--snapshot-id", "1"])
+
+    assert result.exit_code == 1
+    assert result.output == "Table does not exist: default.doesnotexist\n"
+
+
+def test_expire_snapshots_by_id(catalog: InMemoryCatalog) -> None:
+    snapshot_id = _create_table_with_expirable_snapshot(catalog)
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["maintenance", "expire-snapshots", "default.my_table", "--snapshot-id", str(snapshot_id)])
+
+    assert result.exit_code == 0
+    assert result.output == "Expired snapshots on default.my_table\n"
+
+    refreshed = catalog.load_table(TEST_TABLE_IDENTIFIER)
+    assert refreshed.metadata.snapshot_by_id(snapshot_id) is None
+
+
+def test_expire_snapshots_older_than(catalog: InMemoryCatalog) -> None:
+    snapshot_id = _create_table_with_expirable_snapshot(catalog)
+    cutoff = datetime.datetime.now() + datetime.timedelta(days=1)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        run,
+        [
+            "maintenance",
+            "expire-snapshots",
+            "default.my_table",
+            "--older-than",
+            cutoff.strftime("%Y-%m-%dT%H:%M:%S"),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert result.output == "Expired snapshots on default.my_table\n"
+
+    refreshed = catalog.load_table(TEST_TABLE_IDENTIFIER)
+    assert refreshed.metadata.snapshot_by_id(snapshot_id) is None
+
+
+def test_expire_snapshots_unknown_snapshot_id(catalog: InMemoryCatalog) -> None:
+    catalog.create_namespace(TEST_TABLE_NAMESPACE)
+    catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=TEST_TABLE_SCHEMA,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["maintenance", "expire-snapshots", "default.my_table", "--snapshot-id", "999"])
+
+    assert result.exit_code == 1
+    assert "Snapshot with ID 999 does not exist." in result.output
+
+
+def test_json_expire_snapshots_by_id(catalog: InMemoryCatalog) -> None:
+    snapshot_id = _create_table_with_expirable_snapshot(catalog)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        run,
+        ["--output=json", "maintenance", "expire-snapshots", "default.my_table", "--snapshot-id", str(snapshot_id)],
+    )
+
+    assert result.exit_code == 0
+    assert result.output == '"Expired snapshots on default.my_table"\n'

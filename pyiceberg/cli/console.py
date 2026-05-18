@@ -17,6 +17,7 @@
 # pylint: disable=broad-except,redefined-builtin,redefined-outer-name
 import logging
 from collections.abc import Callable
+from datetime import datetime
 from functools import wraps
 from typing import (
     Any,
@@ -478,3 +479,48 @@ def _retention_properties(ref: SnapshotRef, table_properties: dict[str, str]) ->
     retention_properties["max_ref_age_ms"] = str(ref.max_ref_age_ms) if ref.max_ref_age_ms else "forever"
 
     return retention_properties
+
+
+@run.group()
+def maintenance() -> None:
+    """Run maintenance operations on a table."""
+
+
+@maintenance.command("expire-snapshots")
+@click.argument("identifier")
+@click.option(
+    "--snapshot-id",
+    "snapshot_ids",
+    type=int,
+    multiple=True,
+    help="Snapshot ID to expire. May be passed multiple times.",
+)
+@click.option(
+    "--older-than",
+    "older_than",
+    type=click.DateTime(),
+    help="Expire all unprotected snapshots with a timestamp older than this ISO datetime.",
+)
+@click.pass_context
+@catch_exception()
+def expire_snapshots(
+    ctx: Context,
+    identifier: str,
+    snapshot_ids: tuple[int, ...],
+    older_than: datetime | None,
+) -> None:
+    """Expire snapshots from a table by ID or age."""
+    catalog, output = _catalog_and_output(ctx)
+
+    if not snapshot_ids and older_than is None:
+        raise click.UsageError("Must provide at least one of --snapshot-id or --older-than.")
+
+    table = catalog.load_table(identifier)
+    builder = table.maintenance.expire_snapshots()
+    if snapshot_ids:
+        builder = builder.by_ids([*snapshot_ids])
+    if older_than is not None:
+        builder = builder.older_than(older_than)
+    builder.commit()
+
+    output.text(f"Expired snapshots on {identifier}")
