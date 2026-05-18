@@ -396,17 +396,12 @@ for catalog_name, catalog in catalogs.items():
     spark.sql(f"ALTER TABLE {catalog_name}.default.test_empty_scan_ordered_str WRITE ORDERED BY id")
     spark.sql(f"INSERT INTO {catalog_name}.default.test_empty_scan_ordered_str VALUES 'a', 'c'")
 
-    # Fixture for IncrementalAppendScan. Partitioning by `letter` makes the file layout
-    # deterministic (one file per partition per insert). The schema is evolved mid-fixture
-    # to exercise scans that span the change, and ends with a REPLACE TABLE to break
-    # snapshot lineage for the disconnected-snapshots test.
-    #
-    # Snapshots written:
+    # Append scan fixture. Snapshots written:
     #   0: append (1, 'a')
     #   1: append (2, 'b')
     #   2: append (3, 'c'), (4, 'b')
     #   3: delete number=2
-    #   4: append (5, 'd', 100) -- on the evolved schema
+    #   4: append (5, 'd', 100) -- on evolved schema
     #   5: replace table -- lineage break
     spark.sql(
         f"""
