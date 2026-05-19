@@ -666,7 +666,7 @@ def test_upsert_with_struct_field_as_join_key(catalog: Catalog) -> None:
     )
 
     with pytest.raises(
-        pa.lib.ArrowNotImplementedError, match="Keys of type struct<sub1: large_string not null, sub2: large_string not null>"
+        ValueError, match="Nested column 'nested_type' of type 'struct<sub1: large_string not null, sub2: large_string not null>' cannot be used as a join key in upsert"
     ):
         _ = tbl.upsert(update_data, join_cols=["nested_type"])
 
@@ -888,3 +888,38 @@ def test_upsert_snapshot_properties(catalog: Catalog) -> None:
     for snapshot in snapshots[initial_snapshot_count:]:
         assert snapshot.summary is not None
         assert snapshot.summary.additional_properties.get("test_prop") == "test_value"
+
+@pytest.mark.parametrize(
+    "arrow_type, expected_error, match",
+    [
+        (pa.float32(), ValueError, "Floating point column 'k' cannot be used as a join key in upsert"),
+        (pa.float64(), ValueError, "Floating point column 'k' cannot be used as a join key in upsert"),
+        (pa.struct([("a", pa.int32())]), ValueError, "Nested column 'k' of type 'struct<a: int32>' cannot be used as a join key in upsert"),
+        (pa.list_(pa.int32()), ValueError, "Nested column 'k' of type 'list<item: int32>' cannot be used as a join key in upsert"),
+        (pa.dictionary(pa.int32(), pa.string()), NotImplementedError, "Dictionary-encoded column 'k' is not currently supported as a join key in upsert"),
+        (pa.null(), ValueError, "Null-type column 'k' cannot be used as a join key in upsert"),
+        (pa.uuid(), NotImplementedError, "is not currently supported as a join key in upsert"),
+    ],
+    ids=["float32", "float64", "struct", "list", "dictionary", "null", "uuid"],
+)
+def test_upsert_unsupported_join_column_types(
+    catalog: Catalog, arrow_type: pa.DataType, expected_error: type[Exception], match: str
+) -> None:
+    """Upsert must clearly reject types that are unreliable (floats) or unsupported (extensions/complex) as join keys."""
+    identifier = "default.test_upsert_unsupported_join_column_types"
+    try:
+        catalog.drop_table(identifier)
+    except NoSuchTableError:
+        pass
+    
+    # Create a simple table with a valid schema
+    table = catalog.create_table(identifier, pa.schema([("id", pa.int32()), ("payload", pa.string())]))
+
+    # Source has the "bad" type
+    source = pa.Table.from_pylist(
+        [{"k": None, "payload": "val"}],
+        schema=pa.schema([("k", arrow_type), ("payload", pa.string())]),
+    )
+    
+    with pytest.raises(expected_error, match=match):
+        table.upsert(source, join_cols=["k"])
