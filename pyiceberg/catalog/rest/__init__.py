@@ -225,6 +225,11 @@ class IdentifierKind(Enum):
     VIEW = "view"
 
 
+class ScanPlanningMode(Enum):
+    CLIENT = "client"
+    SERVER = "server"
+
+
 ACCESS_DELEGATION_DEFAULT = "vended-credentials"
 AUTHORIZATION_HEADER = "Authorization"
 BEARER_PREFIX = "Bearer"
@@ -255,8 +260,8 @@ OAUTH2_SERVER_URI = "oauth2-server-uri"
 SNAPSHOT_LOADING_MODE = "snapshot-loading-mode"
 AUTH = "auth"
 CUSTOM = "custom"
-REST_SCAN_PLANNING_ENABLED = "rest-scan-planning-enabled"
-REST_SCAN_PLANNING_ENABLED_DEFAULT = False
+SCAN_PLANNING_MODE = "scan-planning-mode"
+SCAN_PLANNING_MODE_DEFAULT = ScanPlanningMode.CLIENT.value
 # for backwards compatibility with older REST servers where it can be assumed that a particular
 # server supports view endpoints but doesn't send the "endpoints" field in the ConfigResponse
 VIEW_ENDPOINTS_SUPPORTED = "view-endpoints-supported"
@@ -480,9 +485,8 @@ class RestCatalog(Catalog):
     @override
     def supports_server_side_planning(self) -> bool:
         """Check if the catalog supports server-side scan planning."""
-        return Capability.V1_SUBMIT_TABLE_SCAN_PLAN in self._supported_endpoints and property_as_bool(
-            self.properties, REST_SCAN_PLANNING_ENABLED, REST_SCAN_PLANNING_ENABLED_DEFAULT
-        )
+        scan_planning_mode = ScanPlanningMode(self.properties.get(SCAN_PLANNING_MODE, SCAN_PLANNING_MODE_DEFAULT))
+        return Capability.V1_SUBMIT_TABLE_SCAN_PLAN in self._supported_endpoints and scan_planning_mode == ScanPlanningMode.SERVER
 
     @retry(**_RETRY_ARGS)
     def _plan_table_scan(self, identifier: str | Identifier, request: PlanTableScanRequest) -> PlanningResponse:

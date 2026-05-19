@@ -42,6 +42,7 @@ from pyiceberg.catalog.rest import (
     Endpoint,
     HttpMethod,
     RestCatalog,
+    ScanPlanningMode,
 )
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
@@ -2546,7 +2547,7 @@ class TestRestCatalogClose:
             "rest",
             uri=TEST_URI,
             token=TEST_TOKEN,
-            **{"rest-scan-planning-enabled": "true"},
+            **{"scan-planning-mode": ScanPlanningMode.SERVER.value},
         )
 
         assert catalog.supports_server_side_planning() is True
@@ -2562,7 +2563,7 @@ class TestRestCatalogClose:
             "rest",
             uri=TEST_URI,
             token=TEST_TOKEN,
-            **{"rest-scan-planning-enabled": "true"},
+            **{"scan-planning-mode": ScanPlanningMode.SERVER.value},
         )
 
         assert catalog.supports_server_side_planning() is False
@@ -2572,7 +2573,7 @@ class TestRestCatalogClose:
             "rest",
             uri=TEST_URI,
             token=TEST_TOKEN,
-            **{"rest-scan-planning-enabled": "false"},
+            **{"scan-planning-mode": ScanPlanningMode.CLIENT.value},
         )
 
         assert catalog.supports_server_side_planning() is False
@@ -2581,7 +2582,7 @@ class TestRestCatalogClose:
         rest_mock.get(
             f"{TEST_URI}v1/config",
             json={
-                "defaults": {"rest-scan-planning-enabled": "true"},
+                "defaults": {"scan-planning-mode": "server"},
                 "overrides": {},
                 "endpoints": ["POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan"],
             },
