@@ -28,6 +28,7 @@ return it.
 More information on metaclasses: https://docs.python.org/3/reference/datamodel.html#metaclasses
 """
 
+import threading
 from typing import Any, ClassVar
 
 
@@ -41,11 +42,14 @@ def _convert_to_hashable_type(element: Any) -> Any:
 
 class Singleton:
     _instances: ClassVar[dict] = {}  # type: ignore
+    _lock: ClassVar[threading.Lock] = threading.Lock()
 
     def __new__(cls, *args, **kwargs):  # type: ignore
         key = (cls, tuple(args), _convert_to_hashable_type(kwargs))
         if key not in cls._instances:
-            cls._instances[key] = super().__new__(cls)
+            with cls._lock:
+                if key not in cls._instances:
+                    cls._instances[key] = super().__new__(cls)
         return cls._instances[key]
 
     def __deepcopy__(self, memo: dict[int, Any]) -> Any:

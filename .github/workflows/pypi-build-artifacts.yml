@@ -81,8 +81,7 @@ jobs:
           # in .github/workflows/python-ci.yml to catch import-time regressions early.
           CIBW_BEFORE_TEST: "uv sync --directory {project} --only-group dev --no-install-project"
           CIBW_TEST_COMMAND: "uv run --directory {project} pytest tests/avro/test_decoder.py"
-          # Skip free-threaded (PEP 703) builds until we evaluate decoder_fast support
-          CIBW_SKIP: "cp3*t-*"
+          CIBW_FREE_THREADED_SUPPORT: "true"
 
 
       - name: Add source distribution
