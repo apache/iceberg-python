@@ -823,6 +823,7 @@ class Transaction:
                     f"Extension type '{arr.type}' for column '{col}' is not currently supported as a join key in upsert."
                 )
 
+        # Validate uniqueness after type checks to avoid comparing/hashing unsupported types.
         if upsert_util.has_duplicate_rows(df, join_cols):
             raise ValueError("Duplicate rows found in source dataset based on the key columns. No upsert executed")
 
