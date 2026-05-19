@@ -267,6 +267,8 @@ SCAN_PLANNING_MODE_DEFAULT = ScanPlanningMode.CLIENT.value
 VIEW_ENDPOINTS_SUPPORTED = "view-endpoints-supported"
 VIEW_ENDPOINTS_SUPPORTED_DEFAULT = False
 
+PAGE_SIZE = "rest-page-size"
+
 NAMESPACE_SEPARATOR_PROPERTY = "namespace-separator"
 DEFAULT_NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
 
@@ -1130,12 +1132,20 @@ class RestCatalog(Catalog):
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = self._encode_namespace_path(namespace_tuple)
         url = self.url(Endpoints.list_views, namespace=namespace_concat)
+        params = {}
+        page_size = property_as_int(self.properties, PAGE_SIZE, None)
+        if page_size is not None:
+            if page_size <= 0:
+                raise ValueError(f"{PAGE_SIZE} must be a positive integer")
+            params["pageSize"] = str(page_size)
 
         views: list[Identifier] = []
         page_token: str | None = None
 
         while True:
-            params = {"pageToken": page_token} if page_token else None
+            if page_token:
+                params["pageToken"] = page_token
+
             response = self._session.get(url, params=params)
             try:
                 response.raise_for_status()
