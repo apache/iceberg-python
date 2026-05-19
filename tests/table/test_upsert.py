@@ -323,7 +323,7 @@ def test_key_cols_misaligned(catalog: Catalog) -> None:
 
     df_src = ctx.sql("select 1 as item_id, date '2021-05-01' as order_date, 'B' as order_type").to_arrow_table()
 
-    with pytest.raises(Exception, match=r"""Field ".*" does not exist in schema"""):
+    with pytest.raises(ValueError, match="PyArrow table contains more columns: item_id"):
         table.upsert(df=df_src, join_cols=["order_id"])
 
 
@@ -912,14 +912,21 @@ def test_upsert_unsupported_join_column_types(
     except NoSuchTableError:
         pass
     
-    # Create a simple table with a valid schema
-    table = catalog.create_table(identifier, pa.schema([("id", pa.int32()), ("payload", pa.string())]))
+    # Define the table schema to be compatible with the arrow_type but still trigger our check
+    if pa.types.is_dictionary(arrow_type):
+        table_type = pa.string()
+    elif pa.types.is_null(arrow_type):
+        table_type = pa.int32()
+    else:
+        table_type = arrow_type
+
+    table = catalog.create_table(identifier, pa.schema([("k", table_type), ("payload", pa.string())]))
 
     # Source has the "bad" type
     source = pa.Table.from_pylist(
         [{"k": None, "payload": "val"}],
         schema=pa.schema([("k", arrow_type), ("payload", pa.string())]),
     )
-    
+
     with pytest.raises(expected_error, match=match):
         table.upsert(source, join_cols=["k"])
