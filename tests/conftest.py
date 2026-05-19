@@ -1175,6 +1175,43 @@ def example_view_metadata_v1() -> dict[str, Any]:
 
 
 @pytest.fixture
+def example_view_metadata_v1_multiple_versions() -> dict[str, Any]:
+    return {
+        "view-uuid": "a20125c8-7284-442c-9aea-15fee620737c",
+        "format-version": 1,
+        "location": "s3://bucket/test/location/test_view",
+        "current-version-id": 2,
+        "versions": [
+            {
+                "version-id": 1,
+                "timestamp-ms": 1602638573874,
+                "schema-id": 1,
+                "summary": {},
+                "representations": [{"type": "sql", "sql": "SELECT 1", "dialect": "spark"}],
+                "default-namespace": ["default"],
+            },
+            {
+                "version-id": 2,
+                "timestamp-ms": 1602638573875,
+                "schema-id": 2,
+                "summary": {},
+                "representations": [{"type": "sql", "sql": "SELECT 2", "dialect": "spark"}],
+                "default-namespace": ["default"],
+            },
+        ],
+        "schemas": [
+            {"type": "struct", "schema-id": 1, "fields": [{"id": 1, "name": "a", "required": True, "type": "long"}]},
+            {"type": "struct", "schema-id": 2, "fields": [{"id": 2, "name": "b", "required": True, "type": "string"}]},
+        ],
+        "version-log": [
+            {"timestamp-ms": 1602638573874, "version-id": 1},
+            {"timestamp-ms": 1602638573875, "version-id": 2},
+        ],
+        "properties": {},
+    }
+
+
+@pytest.fixture
 def example_table_metadata_v3() -> dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_V3
 
