@@ -666,7 +666,11 @@ def test_upsert_with_struct_field_as_join_key(catalog: Catalog) -> None:
     )
 
     with pytest.raises(
-        ValueError, match="Nested column 'nested_type' of type 'struct<sub1: large_string not null, sub2: large_string not null>' cannot be used as a join key in upsert"
+        ValueError,
+        match=(
+            "Nested column 'nested_type' of type 'struct<sub1: large_string not null, sub2: large_string not null>' "
+            "cannot be used as a join key in upsert"
+        ),
     ):
         _ = tbl.upsert(update_data, join_cols=["nested_type"])
 
@@ -889,14 +893,27 @@ def test_upsert_snapshot_properties(catalog: Catalog) -> None:
         assert snapshot.summary is not None
         assert snapshot.summary.additional_properties.get("test_prop") == "test_value"
 
+
 @pytest.mark.parametrize(
     "arrow_type, expected_error, match",
     [
         (pa.float32(), ValueError, "Floating point column 'k' cannot be used as a join key in upsert"),
         (pa.float64(), ValueError, "Floating point column 'k' cannot be used as a join key in upsert"),
-        (pa.struct([("a", pa.int32())]), ValueError, "Nested column 'k' of type 'struct<a: int32>' cannot be used as a join key in upsert"),
-        (pa.list_(pa.int32()), ValueError, "Nested column 'k' of type 'list<item: int32>' cannot be used as a join key in upsert"),
-        (pa.dictionary(pa.int32(), pa.string()), NotImplementedError, "Dictionary-encoded column 'k' is not currently supported as a join key in upsert"),
+        (
+            pa.struct([("a", pa.int32())]),
+            ValueError,
+            "Nested column 'k' of type 'struct<a: int32>' cannot be used as a join key in upsert",
+        ),
+        (
+            pa.list_(pa.int32()),
+            ValueError,
+            "Nested column 'k' of type 'list<item: int32>' cannot be used as a join key in upsert",
+        ),
+        (
+            pa.dictionary(pa.int32(), pa.string()),
+            NotImplementedError,
+            "Dictionary-encoded column 'k' is not currently supported as a join key in upsert",
+        ),
         (pa.null(), ValueError, "Null-type column 'k' cannot be used as a join key in upsert"),
         (pa.uuid(), NotImplementedError, "is not currently supported as a join key in upsert"),
     ],
@@ -911,7 +928,7 @@ def test_upsert_unsupported_join_column_types(
         catalog.drop_table(identifier)
     except NoSuchTableError:
         pass
-    
+
     # Define the table schema to be compatible with the arrow_type but still trigger our check
     if pa.types.is_dictionary(arrow_type):
         table_type = pa.string()

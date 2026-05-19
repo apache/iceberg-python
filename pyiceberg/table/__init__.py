@@ -796,7 +796,7 @@ class Transaction:
 
         for col in join_cols:
             table_field = table_arrow_schema.field(col)
-            # Table-level rejections: These types are fundamentally unreliable or 
+            # Table-level rejections: These types are fundamentally unreliable or
             # unsupported as join keys regardless of the input data format.
             if pa.types.is_floating(table_field.type):
                 raise ValueError(
@@ -809,7 +809,7 @@ class Transaction:
                     "Only primitive types are supported."
                 )
 
-            # Dataframe-level rejections: These implementation-specific formats (e.g., 
+            # Dataframe-level rejections: These implementation-specific formats (e.g.,
             # dictionary encoding) are not yet supported by the PyArrow join engine.
             arr = df.column(col)
             if pa.types.is_dictionary(arr.type):
