@@ -41,7 +41,7 @@ from pyiceberg.expressions.visitors import (
     manifest_evaluator,
 )
 from pyiceberg.io import FileIO, load_file_io
-from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestEntry, ManifestFile
+from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestEntry, ManifestEntryStatus, ManifestFile
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, UNPARTITIONED_PARTITION_SPEC, PartitionKey, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.delete_file_index import DeleteFileIndex
@@ -51,7 +51,7 @@ from pyiceberg.table.maintenance import MaintenanceTable
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadata
 from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
-from pyiceberg.table.snapshots import Snapshot, SnapshotLogEntry
+from pyiceberg.table.snapshots import Operation, Snapshot, SnapshotLogEntry, ancestors_between_ids, is_parent_ancestor_of
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import (
     AddPartitionSpecUpdate,
@@ -1244,6 +1244,59 @@ class Table:
             table_identifier=self._identifier,
         )
 
+    def incremental_append_scan(
+        self,
+        row_filter: str | BooleanExpression = ALWAYS_TRUE,
+        selected_fields: tuple[str, ...] = ("*",),
+        case_sensitive: bool = True,
+        from_snapshot_id_exclusive: int | None = None,
+        to_snapshot_id_inclusive: int | None = None,
+        options: Properties = EMPTY_DICT,
+        limit: int | None = None,
+    ) -> IncrementalAppendScan:
+        """Fetch an IncrementalAppendScan based on the table's current metadata.
+
+        The incremental append scan returns the rows added by append snapshots in a snapshot
+        range that match the provided row_filter, projected onto the table's current schema.
+
+        Args:
+            row_filter:
+                A string or BooleanExpression that describes the
+                desired rows.
+            selected_fields:
+                A tuple of strings representing the column names
+                to return in the output dataframe.
+            case_sensitive:
+                If True column matching is case sensitive.
+            from_snapshot_id_exclusive:
+                Optional ID of the "from" snapshot, to start the incremental scan from, exclusively. This can be set
+                on the IncrementalAppendScan object returned, but ultimately must not be None.
+            to_snapshot_id_inclusive:
+                Optional ID of the "to" snapshot, to end the incremental scan at, inclusively. This can be set on the
+                IncrementalAppendScan object returned. If not set, it defaults to the table's current snapshot.
+            options:
+                Additional Table properties as a dictionary of
+                string key value pairs to use for this scan.
+            limit:
+                An integer representing the number of rows to
+                return in the scan result. If None, fetches all
+                matching rows.
+
+        Returns:
+            An IncrementalAppendScan based on the table's current metadata and provided parameters.
+        """
+        return IncrementalAppendScan(
+            table_metadata=self.metadata,
+            io=self.io,
+            row_filter=row_filter,
+            selected_fields=selected_fields,
+            case_sensitive=case_sensitive,
+            from_snapshot_id_exclusive=from_snapshot_id_exclusive,
+            to_snapshot_id_inclusive=to_snapshot_id_inclusive,
+            options=options,
+            limit=limit,
+        )
+
     @property
     def format_version(self) -> TableVersion:
         return self.metadata.format_version
@@ -1760,6 +1813,18 @@ class StagedTable(Table):
     ) -> DataScan:
         raise ValueError("Cannot scan a staged table")
 
+    def incremental_append_scan(
+        self,
+        row_filter: str | BooleanExpression = ALWAYS_TRUE,
+        selected_fields: tuple[str, ...] = ("*",),
+        case_sensitive: bool = True,
+        from_snapshot_id_exclusive: int | None = None,
+        to_snapshot_id_inclusive: int | None = None,
+        options: Properties = EMPTY_DICT,
+        limit: int | None = None,
+    ) -> IncrementalAppendScan:
+        raise ValueError("Cannot scan a staged table")
+
     def to_daft(self) -> daft.DataFrame:
         raise ValueError("Cannot convert a staged table to a Daft DataFrame")
 
@@ -1777,18 +1842,125 @@ def _parse_row_filter(expr: str | BooleanExpression) -> BooleanExpression:
     return parser.parse(expr) if isinstance(expr, str) else expr
 
 
-S = TypeVar("S", bound="TableScan", covariant=True)
+A = TypeVar("A", bound="BaseScan", covariant=True)
 
 
-class TableScan(ABC):
+class BaseScan(ABC):
+    """A base class for all table scans."""
+
     table_metadata: TableMetadata
     io: FileIO
     row_filter: BooleanExpression
     selected_fields: tuple[str, ...]
     case_sensitive: bool
-    snapshot_id: int | None
     options: Properties
     limit: int | None
+
+    def __init__(
+        self,
+        table_metadata: TableMetadata,
+        io: FileIO,
+        row_filter: str | BooleanExpression = ALWAYS_TRUE,
+        selected_fields: tuple[str, ...] = ("*",),
+        case_sensitive: bool = True,
+        options: Properties = EMPTY_DICT,
+        limit: int | None = None,
+    ):
+        self.table_metadata = table_metadata
+        self.io = io
+        self.row_filter = _parse_row_filter(row_filter)
+        self.selected_fields = selected_fields
+        self.case_sensitive = case_sensitive
+        self.options = options
+        self.limit = limit
+
+    @abstractmethod
+    def projection(self) -> Schema: ...
+
+    @abstractmethod
+    def plan_files(self) -> Iterable[ScanTask]: ...
+
+    @abstractmethod
+    def to_arrow(self) -> pa.Table: ...
+
+    @abstractmethod
+    def to_arrow_batch_reader(self) -> pa.RecordBatchReader: ...
+
+    def update(self: A, **overrides: Any) -> A:
+        """Create a copy of this table scan with updated fields."""
+        from inspect import signature
+
+        # Extract those attributes that are constructor parameters. We don't use self.__dict__ as the kwargs to the
+        # constructors because it may contain additional attributes that are not part of the constructor signature.
+        params = signature(type(self).__init__).parameters.keys() - {"self"}  # Skip "self" parameter
+        kwargs = {param: getattr(self, param) for param in params}  # Assume parameters are attributes
+
+        return type(self)(**{**kwargs, **overrides})
+
+    def select(self: A, *field_names: str) -> A:
+        if "*" in self.selected_fields:
+            return self.update(selected_fields=field_names)
+        return self.update(selected_fields=tuple(set(self.selected_fields).intersection(set(field_names))))
+
+    def filter(self: A, expr: str | BooleanExpression) -> A:
+        return self.update(row_filter=And(self.row_filter, _parse_row_filter(expr)))
+
+    def with_case_sensitive(self: A, case_sensitive: bool = True) -> A:
+        return self.update(case_sensitive=case_sensitive)
+
+    def to_pandas(self, **kwargs: Any) -> pd.DataFrame:
+        """Read a Pandas DataFrame eagerly from this Iceberg table scan.
+
+        Returns:
+            pd.DataFrame: Materialized Pandas Dataframe from the Iceberg table scan
+        """
+        return self.to_arrow().to_pandas(**kwargs)
+
+    def to_duckdb(self, table_name: str, connection: DuckDBPyConnection | None = None) -> DuckDBPyConnection:
+        """Shorthand for loading this table scan in DuckDB.
+
+        Returns:
+            DuckDBPyConnection: In memory DuckDB connection with the Iceberg table scan.
+        """
+        import duckdb
+
+        con = connection or duckdb.connect(database=":memory:")
+        con.register(table_name, self.to_arrow())
+
+        return con
+
+    def to_ray(self) -> ray.data.dataset.Dataset:
+        """Read a Ray Dataset eagerly from this Iceberg table scan.
+
+        Returns:
+            ray.data.dataset.Dataset: Materialized Ray Dataset from the Iceberg table scan
+        """
+        import ray
+
+        return ray.data.from_arrow(self.to_arrow())
+
+    def to_polars(self) -> pl.DataFrame:
+        """Read a Polars DataFrame from this Iceberg table scan.
+
+        Returns:
+            pl.DataFrame: Materialized Polars Dataframe from the Iceberg table scan
+        """
+        import polars as pl
+
+        result = pl.from_arrow(self.to_arrow())
+        if isinstance(result, pl.Series):
+            result = result.to_frame()
+
+        return result
+
+
+S = TypeVar("S", bound="TableScan", covariant=True)
+
+
+class TableScan(BaseScan, ABC):
+    """A base class for table scans targeting a single snapshot."""
+
+    snapshot_id: int | None
     catalog: Catalog | None
     table_identifier: Identifier | None
 
@@ -1805,14 +1977,16 @@ class TableScan(ABC):
         catalog: Catalog | None = None,
         table_identifier: Identifier | None = None,
     ):
-        self.table_metadata = table_metadata
-        self.io = io
-        self.row_filter = _parse_row_filter(row_filter)
-        self.selected_fields = selected_fields
-        self.case_sensitive = case_sensitive
+        super().__init__(
+            table_metadata=table_metadata,
+            io=io,
+            row_filter=row_filter,
+            selected_fields=selected_fields,
+            case_sensitive=case_sensitive,
+            options=options,
+            limit=limit,
+        )
         self.snapshot_id = snapshot_id
-        self.options = options
-        self.limit = limit
         self.catalog = catalog
         self.table_identifier = table_identifier
 
@@ -1841,29 +2015,6 @@ class TableScan(ABC):
 
         return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
 
-    @abstractmethod
-    def plan_files(self) -> Iterable[ScanTask]: ...
-
-    @abstractmethod
-    def to_arrow(self) -> pa.Table: ...
-
-    @abstractmethod
-    def to_pandas(self, **kwargs: Any) -> pd.DataFrame: ...
-
-    @abstractmethod
-    def to_polars(self) -> pl.DataFrame: ...
-
-    def update(self: S, **overrides: Any) -> S:
-        """Create a copy of this table scan with updated fields."""
-        from inspect import signature
-
-        # Extract those attributes that are constructor parameters. We don't use self.__dict__ as the kwargs to the
-        # constructors because it may contain additional attributes that are not part of the constructor signature.
-        params = signature(type(self).__init__).parameters.keys() - {"self"}  # Skip "self" parameter
-        kwargs = {param: getattr(self, param) for param in params}  # Assume parameters are attributes
-
-        return type(self)(**{**kwargs, **overrides})
-
     def use_ref(self: S, name: str) -> S:
         if self.snapshot_id:
             raise ValueError(f"Cannot override ref, already set snapshot id={self.snapshot_id}")
@@ -1871,17 +2022,6 @@ class TableScan(ABC):
             return self.update(snapshot_id=snapshot.snapshot_id)
 
         raise ValueError(f"Cannot scan unknown ref={name}")
-
-    def select(self: S, *field_names: str) -> S:
-        if "*" in self.selected_fields:
-            return self.update(selected_fields=field_names)
-        return self.update(selected_fields=tuple(set(self.selected_fields).intersection(set(field_names))))
-
-    def filter(self: S, expr: str | BooleanExpression) -> S:
-        return self.update(row_filter=And(self.row_filter, _parse_row_filter(expr)))
-
-    def with_case_sensitive(self: S, case_sensitive: bool = True) -> S:
-        return self.update(case_sensitive=case_sensitive)
 
     @abstractmethod
     def count(self) -> int: ...
@@ -2008,14 +2148,428 @@ def _min_sequence_number(manifests: list[ManifestFile]) -> int:
         return INITIAL_SEQUENCE_NUMBER
 
 
+def _to_arrow_via_file_scan_tasks(scan: BaseScan, tasks: Iterable[FileScanTask]) -> pa.Table:
+    """Materialize a scan into an Arrow table given its planned ``FileScanTask``s."""
+    from pyiceberg.io.pyarrow import ArrowScan
+
+    return ArrowScan(scan.table_metadata, scan.io, scan.projection(), scan.row_filter, scan.case_sensitive, scan.limit).to_table(
+        tasks
+    )
+
+
+def _to_arrow_batch_reader_via_file_scan_tasks(scan: BaseScan, tasks: Iterable[FileScanTask]) -> pa.RecordBatchReader:
+    """Stream a scan into an Arrow ``RecordBatchReader`` given its planned ``FileScanTask``s."""
+    import pyarrow as pa
+
+    from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
+
+    target_schema = schema_to_pyarrow(scan.projection())
+    batches = ArrowScan(
+        scan.table_metadata, scan.io, scan.projection(), scan.row_filter, scan.case_sensitive, scan.limit
+    ).to_record_batches(tasks)
+
+    return pa.RecordBatchReader.from_batches(target_schema, batches).cast(target_schema)
+
+
 class DataScan(TableScan):
-    def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
-        project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id], self.case_sensitive)
-        return project(self.row_filter)
+    @cached_property
+    def _manifest_planner(self) -> ManifestGroupPlanner:
+        return ManifestGroupPlanner(
+            table_metadata=self.table_metadata,
+            io=self.io,
+            row_filter=self.row_filter,
+            case_sensitive=self.case_sensitive,
+            options=self.options,
+        )
+
+    @property
+    def partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
+        return self._manifest_planner.partition_filters
+
+    def scan_plan_helper(self) -> Iterator[list[ManifestEntry]]:
+        """Filter and return manifest entries based on partition and metrics evaluators.
+
+        Returns:
+            Iterator of ManifestEntry objects that match the scan's partition filter.
+        """
+        snapshot = self.snapshot()
+        if not snapshot:
+            return iter([])
+
+        return self._manifest_planner.plan_manifest_entries(snapshot.manifests(self.io))
+
+    def _should_use_server_side_planning(self) -> bool:
+        """Check if server-side scan planning should be used for this scan."""
+        if not self.catalog:
+            return False
+        return self.catalog.supports_server_side_planning()
+
+    def _plan_files_server_side(self) -> Iterable[FileScanTask]:
+        """Plan files using REST server-side scan planning."""
+        from pyiceberg.catalog.rest import RestCatalog
+        from pyiceberg.catalog.rest.scan_planning import PlanTableScanRequest
+
+        if not isinstance(self.catalog, RestCatalog):
+            raise TypeError("REST scan planning requires a RestCatalog")
+        if self.table_identifier is None:
+            raise ValueError("REST scan planning requires a table identifier")
+
+        request = PlanTableScanRequest(
+            snapshot_id=self.snapshot_id,
+            select=list(self.selected_fields) if self.selected_fields != ("*",) else None,
+            filter=self.row_filter if self.row_filter != ALWAYS_TRUE else None,
+            case_sensitive=self.case_sensitive,
+        )
+
+        return self.catalog.plan_scan(self.table_identifier, request)
+
+    def _plan_files_local(self) -> Iterable[FileScanTask]:
+        """Plan files locally by reading manifests."""
+        data_entries: list[ManifestEntry] = []
+        delete_index = DeleteFileIndex()
+
+        residual_evaluators: dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(
+            self._manifest_planner._build_residual_evaluator
+        )
+
+        for manifest_entry in chain.from_iterable(self.scan_plan_helper()):
+            data_file = manifest_entry.data_file
+            if data_file.content == DataFileContent.DATA:
+                data_entries.append(manifest_entry)
+            elif data_file.content == DataFileContent.POSITION_DELETES:
+                delete_index.add_delete_file(manifest_entry, partition_key=data_file.partition)
+            elif data_file.content == DataFileContent.EQUALITY_DELETES:
+                raise ValueError("PyIceberg does not yet support equality deletes: https://github.com/apache/iceberg/issues/6568")
+            else:
+                raise ValueError(f"Unknown DataFileContent ({data_file.content}): {manifest_entry}")
+        return [
+            FileScanTask(
+                data_entry.data_file,
+                delete_files=delete_index.for_data_file(
+                    data_entry.sequence_number or INITIAL_SEQUENCE_NUMBER,
+                    data_entry.data_file,
+                    partition_key=data_entry.data_file.partition,
+                ),
+                residual=residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(
+                    data_entry.data_file.partition
+                ),
+            )
+            for data_entry in data_entries
+        ]
+
+    def plan_files(self) -> Iterable[FileScanTask]:
+        """Plans the relevant files by filtering on the PartitionSpecs.
+
+        If the table comes from a REST catalog with scan planning enabled,
+        this will use server-side scan planning. Otherwise, it falls back
+        to local planning.
+
+        Returns:
+            List of FileScanTasks that contain both data and delete files.
+        """
+        if self._should_use_server_side_planning():
+            return self._plan_files_server_side()
+        return self._plan_files_local()
+
+    def to_arrow(self) -> pa.Table:
+        return _to_arrow_via_file_scan_tasks(self, self.plan_files())
+
+    def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
+        return _to_arrow_batch_reader_via_file_scan_tasks(self, self.plan_files())
+
+    def count(self) -> int:
+        from pyiceberg.io.pyarrow import ArrowScan
+
+        # Usage: Calculates the total number of records in a Scan that haven't had positional deletes.
+        res = 0
+        # every task is a FileScanTask
+        tasks = self.plan_files()
+
+        for task in tasks:
+            # task.residual is a Boolean Expression if the filter condition is fully satisfied by the
+            # partition value and task.delete_files represents that positional delete haven't been merged yet
+            # hence those files have to read as a pyarrow table applying the filter and deletes
+            if task.residual == AlwaysTrue() and len(task.delete_files) == 0:
+                # Every File has a metadata stat that stores the file record count
+                res += task.file.record_count
+            else:
+                arrow_scan = ArrowScan(
+                    table_metadata=self.table_metadata,
+                    io=self.io,
+                    projected_schema=self.projection(),
+                    row_filter=self.row_filter,
+                    case_sensitive=self.case_sensitive,
+                )
+                tbl = arrow_scan.to_table([task])
+                res += len(tbl)
+        return res
+
+
+IAS = TypeVar("IAS", bound="IncrementalAppendScan", covariant=True)
+
+
+class IncrementalAppendScan(BaseScan):
+    """An incremental scan of a table's data that accumulates appended data between two snapshots.
+
+    Args:
+        row_filter:
+            A string or BooleanExpression that describes the
+            desired rows
+        selected_fields:
+            A tuple of strings representing the column names
+            to return in the output dataframe.
+        case_sensitive:
+            If True column matching is case sensitive
+        options:
+            Additional Table properties as a dictionary of
+            string key value pairs to use for this scan.
+        limit:
+            An integer representing the number of rows to
+            return in the scan result. If None, fetches all
+            matching rows.
+        from_snapshot_id_exclusive:
+            Optional ID of the "from" snapshot, to start the incremental scan from, exclusively. When the scan is
+            ultimately planned, this must not be None. The snapshot does not need to be present in the table metadata
+            (it may have been expired), as long as it is the parent of some ancestor of the "to" snapshot.
+        to_snapshot_id_inclusive:
+            Optional ID of the "to" snapshot, to end the incremental scan at, inclusively.
+            Omitting it will default to the table's current snapshot.
+    """
+
+    from_snapshot_id_exclusive: int | None
+    to_snapshot_id_inclusive: int | None
+
+    def __init__(
+        self,
+        table_metadata: TableMetadata,
+        io: FileIO,
+        row_filter: str | BooleanExpression = ALWAYS_TRUE,
+        selected_fields: tuple[str, ...] = ("*",),
+        case_sensitive: bool = True,
+        options: Properties = EMPTY_DICT,
+        limit: int | None = None,
+        from_snapshot_id_exclusive: int | None = None,
+        to_snapshot_id_inclusive: int | None = None,
+    ):
+        super().__init__(
+            table_metadata=table_metadata,
+            io=io,
+            row_filter=row_filter,
+            selected_fields=selected_fields,
+            case_sensitive=case_sensitive,
+            options=options,
+            limit=limit,
+        )
+        self.from_snapshot_id_exclusive = from_snapshot_id_exclusive
+        self.to_snapshot_id_inclusive = to_snapshot_id_inclusive
+
+    def from_snapshot_exclusive(self: IAS, from_snapshot_id_exclusive: int | None) -> IAS:
+        """Instructs this scan to look for changes starting from a particular snapshot (exclusive).
+
+        Args:
+            from_snapshot_id_exclusive: the start snapshot ID (exclusive)
+
+        Returns:
+            this for method chaining
+        """
+        return self.update(from_snapshot_id_exclusive=from_snapshot_id_exclusive)
+
+    def to_snapshot_inclusive(self: IAS, to_snapshot_id_inclusive: int | None) -> IAS:
+        """Instructs this scan to look for changes up to a particular snapshot (inclusive).
+
+        Args:
+            to_snapshot_id_inclusive: the end snapshot ID (inclusive)
+
+        Returns:
+            this for method chaining
+        """
+        return self.update(to_snapshot_id_inclusive=to_snapshot_id_inclusive)
+
+    def projection(self) -> Schema:
+        current_schema = self.table_metadata.schema()
+        if "*" in self.selected_fields:
+            return current_schema
+        return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
+
+    def plan_files(self) -> Iterable[FileScanTask]:
+        """Plans the relevant files added between the specified snapshots."""
+        from_snapshot_id, to_snapshot_id = self._validate_and_resolve_snapshots()
+
+        append_snapshots = [
+            snapshot
+            for snapshot in ancestors_between_ids(
+                from_snapshot_id_exclusive=from_snapshot_id,
+                to_snapshot_id_inclusive=to_snapshot_id,
+                table_metadata=self.table_metadata,
+            )
+            if snapshot.summary is not None and snapshot.summary.operation == Operation.APPEND
+        ]
+        if len(append_snapshots) == 0:
+            return iter([])
+
+        append_snapshot_ids = {snapshot.snapshot_id for snapshot in append_snapshots}
+
+        manifests = list(
+            {
+                manifest_file
+                for snapshot in append_snapshots
+                for manifest_file in snapshot.manifests(self.io)
+                if manifest_file.content == ManifestContent.DATA and manifest_file.added_snapshot_id in append_snapshot_ids
+            }
+        )
+
+        return ManifestGroupPlanner(
+            table_metadata=self.table_metadata,
+            io=self.io,
+            row_filter=self.row_filter,
+            case_sensitive=self.case_sensitive,
+            options=self.options,
+        ).plan_files(
+            manifests=manifests,
+            manifest_entry_filter=lambda manifest_entry: manifest_entry.snapshot_id in append_snapshot_ids
+            and manifest_entry.status == ManifestEntryStatus.ADDED,
+        )
+
+    def to_arrow(self) -> pa.Table:
+        return _to_arrow_via_file_scan_tasks(self, self.plan_files())
+
+    def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
+        return _to_arrow_batch_reader_via_file_scan_tasks(self, self.plan_files())
+
+    def _validate_and_resolve_snapshots(self) -> tuple[int, int]:
+        if self.from_snapshot_id_exclusive is None:
+            raise ValueError("Start snapshot is not set, please set from_snapshot_id_exclusive")
+
+        if self.to_snapshot_id_inclusive is None:
+            current_snapshot = self.table_metadata.current_snapshot()
+            if current_snapshot is None:
+                raise ValueError("End snapshot is not set and table has no current snapshot")
+            to_snapshot_id = current_snapshot.snapshot_id
+        else:
+            if self.table_metadata.snapshot_by_id(self.to_snapshot_id_inclusive) is None:
+                raise ValueError(f"End snapshot not found in table metadata: {self.to_snapshot_id_inclusive}")
+            to_snapshot_id = self.to_snapshot_id_inclusive
+
+        # The start snapshot is exclusive, so it does not need to be present in the table metadata
+        # (it may have been expired). It is valid as long as it is the parent of some ancestor of
+        # the end snapshot.
+        if not is_parent_ancestor_of(to_snapshot_id, self.from_snapshot_id_exclusive, self.table_metadata):
+            raise ValueError(
+                f"Starting snapshot (exclusive) {self.from_snapshot_id_exclusive} is not a parent "
+                f"ancestor of end snapshot {to_snapshot_id}"
+            )
+
+        return self.from_snapshot_id_exclusive, to_snapshot_id
+
+
+class ManifestGroupPlanner:
+    """Plans the scan tasks for a group of manifests."""
+
+    table_metadata: TableMetadata
+    io: FileIO
+    row_filter: BooleanExpression
+    case_sensitive: bool
+    options: Properties
+
+    def __init__(
+        self,
+        table_metadata: TableMetadata,
+        io: FileIO,
+        row_filter: str | BooleanExpression = ALWAYS_TRUE,
+        case_sensitive: bool = True,
+        options: Properties = EMPTY_DICT,
+    ):
+        self.table_metadata = table_metadata
+        self.io = io
+        self.row_filter = _parse_row_filter(row_filter)
+        self.case_sensitive = case_sensitive
+        self.options = options
 
     @cached_property
     def partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
         return KeyDefaultDict(self._build_partition_projection)
+
+    def plan_manifest_entries(self, manifests: Iterable[ManifestFile]) -> Iterator[list[ManifestEntry]]:
+        """Filter the given manifests using partition summaries and read the matching manifest entries.
+
+        For each manifest that passes the partition-summary filter, returns a list of its
+        manifest entries that match the partition and metrics evaluators. The returned iterator
+        yields one list per manifest (in parallel).
+        """
+        # step 1: filter manifests using partition summaries
+        # the filter depends on the partition spec used to write the manifest file, so create a cache of filters for each spec id
+        manifest_evaluators: dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
+        manifests = [
+            manifest_file for manifest_file in manifests if manifest_evaluators[manifest_file.partition_spec_id](manifest_file)
+        ]
+
+        # step 2: filter the data files in each manifest
+        # this filter depends on the partition spec used to write the manifest file
+        partition_evaluators: dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._build_partition_evaluator)
+        min_sequence_number = _min_sequence_number(manifests)
+
+        executor = ExecutorFactory.get_or_create()
+        return executor.map(
+            lambda args: _open_manifest(*args),
+            [
+                (
+                    self.io,
+                    manifest,
+                    partition_evaluators[manifest.partition_spec_id],
+                    self._build_metrics_evaluator(),
+                )
+                for manifest in manifests
+                if self._check_sequence_number(min_sequence_number, manifest)
+            ],
+        )
+
+    def plan_files(
+        self,
+        manifests: Iterable[ManifestFile],
+        manifest_entry_filter: Callable[[ManifestEntry], bool] = lambda _: True,
+    ) -> Iterable[FileScanTask]:
+        """Plan the file scan tasks for the given manifests.
+
+        ``manifest_entry_filter`` is an additional predicate applied after the partition
+        evaluator; entries for which it returns False are excluded from the result.
+        """
+        residual_evaluators: dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
+
+        data_entries: list[ManifestEntry] = []
+        delete_index = DeleteFileIndex()
+
+        for manifest_entry in chain.from_iterable(self.plan_manifest_entries(manifests)):
+            if not manifest_entry_filter(manifest_entry):
+                continue
+
+            data_file = manifest_entry.data_file
+            if data_file.content == DataFileContent.DATA:
+                data_entries.append(manifest_entry)
+            elif data_file.content == DataFileContent.POSITION_DELETES:
+                delete_index.add_delete_file(manifest_entry, partition_key=data_file.partition)
+            elif data_file.content == DataFileContent.EQUALITY_DELETES:
+                raise ValueError("PyIceberg does not yet support equality deletes: https://github.com/apache/iceberg/issues/6568")
+            else:
+                raise ValueError(f"Unknown DataFileContent ({data_file.content}): {manifest_entry}")
+
+        return [
+            FileScanTask(
+                data_entry.data_file,
+                delete_files=delete_index.for_data_file(
+                    data_entry.sequence_number or INITIAL_SEQUENCE_NUMBER,
+                    data_entry.data_file,
+                    partition_key=data_entry.data_file.partition,
+                ),
+                residual=residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(
+                    data_entry.data_file.partition
+                ),
+            )
+            for data_entry in data_entries
+        ]
+
+    def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
+        project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id], self.case_sensitive)
+        return project(self.row_filter)
 
     def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
         spec = self.table_metadata.specs()[spec_id]
@@ -2065,246 +2619,10 @@ class DataScan(TableScan):
 
     @staticmethod
     def _check_sequence_number(min_sequence_number: int, manifest: ManifestFile) -> bool:
-        """Ensure that no manifests are loaded that contain deletes that are older than the data.
-
-        Args:
-            min_sequence_number (int): The minimal sequence number.
-            manifest (ManifestFile): A ManifestFile that can be either data or deletes.
-
-        Returns:
-            Boolean indicating if it is either a data file, or a relevant delete file.
-        """
         return manifest.content == ManifestContent.DATA or (
-            # Not interested in deletes that are older than the data
             manifest.content == ManifestContent.DELETES
             and (manifest.sequence_number or INITIAL_SEQUENCE_NUMBER) >= min_sequence_number
         )
-
-    def scan_plan_helper(self) -> Iterator[list[ManifestEntry]]:
-        """Filter and return manifest entries based on partition and metrics evaluators.
-
-        Returns:
-            Iterator of ManifestEntry objects that match the scan's partition filter.
-        """
-        snapshot = self.snapshot()
-        if not snapshot:
-            return iter([])
-
-        # step 1: filter manifests using partition summaries
-        # the filter depends on the partition spec used to write the manifest file, so create a cache of filters for each spec id
-
-        manifest_evaluators: dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
-
-        manifests = [
-            manifest_file
-            for manifest_file in snapshot.manifests(self.io)
-            if manifest_evaluators[manifest_file.partition_spec_id](manifest_file)
-        ]
-
-        # step 2: filter the data files in each manifest
-        # this filter depends on the partition spec used to write the manifest file
-
-        partition_evaluators: dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._build_partition_evaluator)
-
-        min_sequence_number = _min_sequence_number(manifests)
-
-        executor = ExecutorFactory.get_or_create()
-
-        return executor.map(
-            lambda args: _open_manifest(*args),
-            [
-                (
-                    self.io,
-                    manifest,
-                    partition_evaluators[manifest.partition_spec_id],
-                    self._build_metrics_evaluator(),
-                )
-                for manifest in manifests
-                if self._check_sequence_number(min_sequence_number, manifest)
-            ],
-        )
-
-    def _should_use_server_side_planning(self) -> bool:
-        """Check if server-side scan planning should be used for this scan."""
-        if not self.catalog:
-            return False
-        return self.catalog.supports_server_side_planning()
-
-    def _plan_files_server_side(self) -> Iterable[FileScanTask]:
-        """Plan files using REST server-side scan planning."""
-        from pyiceberg.catalog.rest import RestCatalog
-        from pyiceberg.catalog.rest.scan_planning import PlanTableScanRequest
-
-        if not isinstance(self.catalog, RestCatalog):
-            raise TypeError("REST scan planning requires a RestCatalog")
-        if self.table_identifier is None:
-            raise ValueError("REST scan planning requires a table identifier")
-
-        request = PlanTableScanRequest(
-            snapshot_id=self.snapshot_id,
-            select=list(self.selected_fields) if self.selected_fields != ("*",) else None,
-            filter=self.row_filter if self.row_filter != ALWAYS_TRUE else None,
-            case_sensitive=self.case_sensitive,
-        )
-
-        return self.catalog.plan_scan(self.table_identifier, request)
-
-    def _plan_files_local(self) -> Iterable[FileScanTask]:
-        """Plan files locally by reading manifests."""
-        data_entries: list[ManifestEntry] = []
-        delete_index = DeleteFileIndex()
-
-        residual_evaluators: dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
-
-        for manifest_entry in chain.from_iterable(self.scan_plan_helper()):
-            data_file = manifest_entry.data_file
-            if data_file.content == DataFileContent.DATA:
-                data_entries.append(manifest_entry)
-            elif data_file.content == DataFileContent.POSITION_DELETES:
-                delete_index.add_delete_file(manifest_entry, partition_key=data_file.partition)
-            elif data_file.content == DataFileContent.EQUALITY_DELETES:
-                raise ValueError("PyIceberg does not yet support equality deletes: https://github.com/apache/iceberg/issues/6568")
-            else:
-                raise ValueError(f"Unknown DataFileContent ({data_file.content}): {manifest_entry}")
-        return [
-            FileScanTask(
-                data_entry.data_file,
-                delete_files=delete_index.for_data_file(
-                    data_entry.sequence_number or INITIAL_SEQUENCE_NUMBER,
-                    data_entry.data_file,
-                    partition_key=data_entry.data_file.partition,
-                ),
-                residual=residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(
-                    data_entry.data_file.partition
-                ),
-            )
-            for data_entry in data_entries
-        ]
-
-    def plan_files(self) -> Iterable[FileScanTask]:
-        """Plans the relevant files by filtering on the PartitionSpecs.
-
-        If the table comes from a REST catalog with scan planning enabled,
-        this will use server-side scan planning. Otherwise, it falls back
-        to local planning.
-
-        Returns:
-            List of FileScanTasks that contain both data and delete files.
-        """
-        if self._should_use_server_side_planning():
-            return self._plan_files_server_side()
-        return self._plan_files_local()
-
-    def to_arrow(self) -> pa.Table:
-        """Read an Arrow table eagerly from this DataScan.
-
-        All rows will be loaded into memory at once.
-
-        Returns:
-            pa.Table: Materialized Arrow Table from the Iceberg table's DataScan
-        """
-        from pyiceberg.io.pyarrow import ArrowScan
-
-        return ArrowScan(
-            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
-        ).to_table(self.plan_files())
-
-    def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
-        """Return an Arrow RecordBatchReader from this DataScan.
-
-        For large results, using a RecordBatchReader requires less memory than
-        loading an Arrow Table for the same DataScan, because a RecordBatch
-        is read one at a time.
-
-        Returns:
-            pa.RecordBatchReader: Arrow RecordBatchReader from the Iceberg table's DataScan
-                which can be used to read a stream of record batches one by one.
-        """
-        import pyarrow as pa
-
-        from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
-
-        target_schema = schema_to_pyarrow(self.projection())
-        batches = ArrowScan(
-            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
-        ).to_record_batches(self.plan_files())
-
-        return pa.RecordBatchReader.from_batches(
-            target_schema,
-            batches,
-        ).cast(target_schema)
-
-    def to_pandas(self, **kwargs: Any) -> pd.DataFrame:
-        """Read a Pandas DataFrame eagerly from this Iceberg table.
-
-        Returns:
-            pd.DataFrame: Materialized Pandas Dataframe from the Iceberg table
-        """
-        return self.to_arrow().to_pandas(**kwargs)
-
-    def to_duckdb(self, table_name: str, connection: DuckDBPyConnection | None = None) -> DuckDBPyConnection:
-        """Shorthand for loading the Iceberg Table in DuckDB.
-
-        Returns:
-            DuckDBPyConnection: In memory DuckDB connection with the Iceberg table.
-        """
-        import duckdb
-
-        con = connection or duckdb.connect(database=":memory:")
-        con.register(table_name, self.to_arrow())
-
-        return con
-
-    def to_ray(self) -> ray.data.dataset.Dataset:
-        """Read a Ray Dataset eagerly from this Iceberg table.
-
-        Returns:
-            ray.data.dataset.Dataset: Materialized Ray Dataset from the Iceberg table
-        """
-        import ray
-
-        return ray.data.from_arrow(self.to_arrow())
-
-    def to_polars(self) -> pl.DataFrame:
-        """Read a Polars DataFrame from this Iceberg table.
-
-        Returns:
-            pl.DataFrame: Materialized Polars Dataframe from the Iceberg table
-        """
-        import polars as pl
-
-        result = pl.from_arrow(self.to_arrow())
-        if isinstance(result, pl.Series):
-            result = result.to_frame()
-
-        return result
-
-    def count(self) -> int:
-        from pyiceberg.io.pyarrow import ArrowScan
-
-        # Usage: Calculates the total number of records in a Scan that haven't had positional deletes.
-        res = 0
-        # every task is a FileScanTask
-        tasks = self.plan_files()
-
-        for task in tasks:
-            # task.residual is a Boolean Expression if the filter condition is fully satisfied by the
-            # partition value and task.delete_files represents that positional delete haven't been merged yet
-            # hence those files have to read as a pyarrow table applying the filter and deletes
-            if task.residual == AlwaysTrue() and len(task.delete_files) == 0:
-                # Every File has a metadata stat that stores the file record count
-                res += task.file.record_count
-            else:
-                arrow_scan = ArrowScan(
-                    table_metadata=self.table_metadata,
-                    io=self.io,
-                    projected_schema=self.projection(),
-                    row_filter=self.row_filter,
-                    case_sensitive=self.case_sensitive,
-                )
-                tbl = arrow_scan.to_table([task])
-                res += len(tbl)
-        return res
 
 
 @dataclass(frozen=True)
