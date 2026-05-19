@@ -43,6 +43,7 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, singledispatch
 from typing import (
+    IO,
     TYPE_CHECKING,
     Any,
     Generic,
@@ -122,6 +123,7 @@ from pyiceberg.io import (
     OutputStream,
 )
 from pyiceberg.io.fileformat import DataFileStatistics as DataFileStatistics
+from pyiceberg.io.fileformat import FileFormatFactory, FileFormatModel, FileFormatWriter
 from pyiceberg.manifest import (
     DataFile,
     DataFileContent,
@@ -1884,6 +1886,7 @@ def _to_requested_schema(
     include_field_ids: bool = False,
     projected_missing_fields: dict[int, Any] = EMPTY_DICT,
     allow_timestamp_tz_mismatch: bool = False,
+    file_format: FileFormat = FileFormat.PARQUET,
 ) -> pa.RecordBatch:
     # We could reuse some of these visitors
     struct_array = visit_with_partner(
@@ -1895,6 +1898,7 @@ def _to_requested_schema(
             include_field_ids,
             projected_missing_fields=projected_missing_fields,
             allow_timestamp_tz_mismatch=allow_timestamp_tz_mismatch,
+            file_format=file_format,
         ),
         ArrowAccessor(file_schema),
     )
@@ -1907,6 +1911,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
     _downcast_ns_timestamp_to_us: bool
     _projected_missing_fields: dict[int, Any]
     _allow_timestamp_tz_mismatch: bool
+    _file_format: FileFormat
 
     def __init__(
         self,
@@ -1915,6 +1920,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
         include_field_ids: bool = False,
         projected_missing_fields: dict[int, Any] = EMPTY_DICT,
         allow_timestamp_tz_mismatch: bool = False,
+        file_format: FileFormat = FileFormat.PARQUET,
     ) -> None:
         self._file_schema = file_schema
         self._include_field_ids = include_field_ids
@@ -1923,6 +1929,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
         # When True, allows projecting timestamptz (UTC) to timestamp (no tz).
         # Allowed for reading (aligns with Spark); disallowed for writing to enforce Iceberg spec's strict typing.
         self._allow_timestamp_tz_mismatch = allow_timestamp_tz_mismatch
+        self._file_format = file_format
 
     def _cast_if_needed(self, field: NestedField, values: pa.Array) -> pa.Array:
         file_field = self._file_schema.find_field(field.field_id)
@@ -1981,9 +1988,12 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
         if field.doc:
             metadata[PYARROW_FIELD_DOC_KEY] = field.doc
         if self._include_field_ids:
-            # For projection visitor, we don't know the file format, so default to Parquet
-            # This is used for schema conversion during reads, not writes
-            metadata[PYARROW_PARQUET_FIELD_ID_KEY] = str(field.field_id)
+            if self._file_format == FileFormat.ORC:
+                metadata[ORC_FIELD_ID_KEY] = str(field.field_id)
+            else:
+                metadata[PYARROW_PARQUET_FIELD_ID_KEY] = str(field.field_id)
+        if self._file_format == FileFormat.ORC:
+            metadata[ORC_FIELD_REQUIRED_KEY] = str(field.required).lower()
 
         return pa.field(
             name=field.name,
@@ -2602,21 +2612,87 @@ def data_file_statistics_from_parquet_metadata(
     )
 
 
+class ParquetFormatWriter(FileFormatWriter):
+    """Writes Arrow tables to a Parquet file."""
+
+    def __init__(self, output_file: OutputFile, file_schema: Schema, properties: Properties) -> None:
+        self._output_file = output_file
+        self._file_schema = file_schema
+        self._properties = properties
+        self._writer: pq.ParquetWriter | None = None
+        self._fos: OutputStream | None = None
+        self._parquet_writer_kwargs = _get_parquet_writer_kwargs(properties)
+        self._row_group_size = property_as_int(
+            properties=properties,
+            property_name=TableProperties.PARQUET_ROW_GROUP_LIMIT,
+            default=TableProperties.PARQUET_ROW_GROUP_LIMIT_DEFAULT,
+        )
+
+    def write(self, table: pa.Table) -> None:
+        if self._writer is None:
+            self._fos = self._output_file.create(overwrite=True)
+            self._writer = pq.ParquetWriter(
+                cast(IO[Any], self._fos),
+                schema=table.schema,
+                store_decimal_as_integer=True,
+                **self._parquet_writer_kwargs,
+            )
+        self._writer.write(table, row_group_size=self._row_group_size)
+
+    def close(self) -> DataFileStatistics:
+        if self._result is not None:
+            return self._result
+        try:
+            if self._writer is None:
+                raise ValueError("Cannot close a writer that was never written to")
+            self._writer.close()
+            self._result = data_file_statistics_from_parquet_metadata(
+                parquet_metadata=self._writer.writer.metadata,
+                stats_columns=compute_statistics_plan(self._file_schema, self._properties),
+                parquet_column_mapping=parquet_path_to_id_mapping(self._file_schema),
+            )
+            return self._result
+        finally:
+            if self._fos is not None:
+                self._fos.close()
+
+
+class ParquetFormatModel(FileFormatModel):
+    """Format model for Apache Parquet."""
+
+    @property
+    def format(self) -> FileFormat:
+        return FileFormat.PARQUET
+
+    def file_extension(self) -> str:
+        return "parquet"
+
+    def create_writer(
+        self,
+        output_file: OutputFile,
+        file_schema: Schema,
+        properties: Properties,
+    ) -> ParquetFormatWriter:
+        return ParquetFormatWriter(output_file, file_schema, properties)
+
+
+FileFormatFactory.register(ParquetFormatModel())
+
+
 def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties
 
-    parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
-    row_group_size = property_as_int(
-        properties=table_metadata.properties,
-        property_name=TableProperties.PARQUET_ROW_GROUP_LIMIT,
-        default=TableProperties.PARQUET_ROW_GROUP_LIMIT_DEFAULT,
+    file_format = FileFormat(
+        table_metadata.properties.get(
+            TableProperties.WRITE_FILE_FORMAT,
+            TableProperties.WRITE_FILE_FORMAT_DEFAULT,
+        )
     )
+    format_model = FileFormatFactory.get(file_format)
     location_provider = load_location_provider(table_location=table_metadata.location, table_properties=table_metadata.properties)
 
-    def write_parquet(task: WriteTask) -> DataFile:
+    def write_data_file(task: WriteTask) -> DataFile:
         table_schema = table_metadata.schema()
-        # if schema needs to be transformed, use the transformed schema and adjust the arrow table accordingly
-        # otherwise use the original schema
         if (sanitized_schema := sanitize_column_names(table_schema)) != table_schema:
             file_schema = sanitized_schema
         else:
@@ -2630,29 +2706,25 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
                 batch=batch,
                 downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
                 include_field_ids=True,
+                file_format=file_format,
             )
             for batch in task.record_batches
         ]
         arrow_table = pa.Table.from_batches(batches)
         file_path = location_provider.new_data_location(
-            data_file_name=task.generate_data_file_filename("parquet"),
+            data_file_name=task.generate_data_file_filename(format_model.file_extension()),
             partition_key=task.partition_key,
         )
         fo = io.new_output(file_path)
-        with fo.create(overwrite=True) as fos:
-            with pq.ParquetWriter(
-                fos, schema=arrow_table.schema, store_decimal_as_integer=True, **parquet_writer_kwargs
-            ) as writer:
-                writer.write(arrow_table, row_group_size=row_group_size)
-        statistics = data_file_statistics_from_parquet_metadata(
-            parquet_metadata=writer.writer.metadata,
-            stats_columns=compute_statistics_plan(file_schema, table_metadata.properties),
-            parquet_column_mapping=parquet_path_to_id_mapping(file_schema),
-        )
-        data_file = DataFile.from_args(
+        writer = format_model.create_writer(fo, file_schema, table_metadata.properties)
+        with writer:
+            writer.write(arrow_table)
+        statistics = writer.result()
+
+        return DataFile.from_args(
             content=DataFileContent.DATA,
             file_path=file_path,
-            file_format=FileFormat.PARQUET,
+            file_format=file_format,
             partition=task.partition_key.partition if task.partition_key else Record(),
             file_size_in_bytes=len(fo),
             # After this has been fixed:
@@ -2666,10 +2738,8 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             **statistics.to_serialized_dict(),
         )
 
-        return data_file
-
     executor = ExecutorFactory.get_or_create()
-    data_files = executor.map(write_parquet, tasks)
+    data_files = executor.map(write_data_file, tasks)
 
     return iter(data_files)
 
