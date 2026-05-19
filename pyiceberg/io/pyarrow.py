@@ -63,6 +63,7 @@ from pyarrow.fs import (
     FileSystem,
     FileType,
 )
+from requests import Session
 from typing_extensions import override
 
 from pyiceberg.conversions import to_bytes
@@ -120,6 +121,7 @@ from pyiceberg.io import (
     InputStream,
     OutputFile,
     OutputStream,
+    _get_or_refresh_credentials,
 )
 from pyiceberg.io.fileformat import DataFileStatistics as DataFileStatistics
 from pyiceberg.manifest import (
@@ -392,9 +394,9 @@ class PyArrowFile(InputFile, OutputFile):
 class PyArrowFileIO(FileIO):
     fs_by_scheme: Callable[[str, str | None], FileSystem]
 
-    def __init__(self, properties: Properties = EMPTY_DICT):
+    def __init__(self, properties: Properties = EMPTY_DICT, session: Session | None = None):
         self.fs_by_scheme: Callable[[str, str | None], FileSystem] = lru_cache(self._initialize_fs)
-        super().__init__(properties=properties)
+        super().__init__(properties=properties, session=session)
 
     @staticmethod
     def parse_location(location: str, properties: Properties = EMPTY_DICT) -> tuple[str, str, str]:
@@ -439,11 +441,13 @@ class PyArrowFileIO(FileIO):
     def _initialize_oss_fs(self) -> FileSystem:
         from pyarrow.fs import S3FileSystem
 
+        creds = _get_or_refresh_credentials(self.properties, self.session)
+
         client_kwargs: dict[str, Any] = {
             "endpoint_override": self.properties.get(S3_ENDPOINT),
-            "access_key": get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
-            "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
-            "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
+            "access_key": get_first_property_value(creds, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+            "secret_key": get_first_property_value(creds, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+            "session_token": get_first_property_value(creds, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
             "region": get_first_property_value(self.properties, S3_REGION, AWS_REGION),
             "force_virtual_addressing": property_as_bool(self.properties, S3_FORCE_VIRTUAL_ADDRESSING, True),
         }
@@ -486,11 +490,13 @@ class PyArrowFileIO(FileIO):
         else:
             bucket_region = provided_region
 
+        creds = _get_or_refresh_credentials(self.properties, self.session)
+
         client_kwargs: dict[str, Any] = {
             "endpoint_override": self.properties.get(S3_ENDPOINT),
-            "access_key": get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
-            "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
-            "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
+            "access_key": get_first_property_value(creds, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+            "secret_key": get_first_property_value(creds, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+            "session_token": get_first_property_value(creds, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
             "region": bucket_region,
         }
 

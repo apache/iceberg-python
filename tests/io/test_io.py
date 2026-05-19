@@ -15,21 +15,38 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import json
 import os
 import pickle
 import tempfile
+from datetime import datetime, timedelta
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
+from requests import HTTPError
+from requests.models import Response
 
+from pyiceberg.exceptions import ServerError, ValidationException
 from pyiceberg.io import (
     ARROW_FILE_IO,
+    CATALOG_URI,
+    CREDENTIALS_ENDPOINT,
     PY_IO_IMPL,
+    REFRESH_CREDENTIALS_ENABLED,
+    S3_ACCESS_KEY_ID,
+    S3_SECRET_ACCESS_KEY,
+    S3_SESSION_TOKEN,
+    S3_SESSION_TOKEN_EXPIRES_AT_MS,
+    _credential_from_properties,
+    _credential_refresh_endpoint,
+    _get_or_refresh_credentials,
     _import_file_io,
     _infer_file_io_from_scheme,
     load_file_io,
 )
 from pyiceberg.io.pyarrow import PyArrowFileIO
+from pyiceberg.typedef import Properties
 
 
 def test_custom_local_input_file() -> None:
@@ -339,3 +356,203 @@ def test_infer_file_io_from_schema_unknown() -> None:
         _infer_file_io_from_scheme("unknown://bucket/path/", {})
 
     assert str(w[0].message) == "No preferred file implementation for scheme: unknown"
+
+
+def _expiry_ms(delta_seconds: int) -> int:
+    return int((datetime.now() + timedelta(seconds=delta_seconds)).timestamp() * 1000)
+
+
+def _full_cred_props(expiry_ms: int) -> Properties:
+    return {
+        S3_ACCESS_KEY_ID: "AKID",
+        S3_SECRET_ACCESS_KEY: "SECRET",
+        S3_SESSION_TOKEN: "TOKEN",
+        S3_SESSION_TOKEN_EXPIRES_AT_MS: str(expiry_ms),
+        CATALOG_URI: "https://catalog.example.com",
+        CREDENTIALS_ENDPOINT: "v1/credentials",
+        REFRESH_CREDENTIALS_ENABLED: "true",
+    }
+
+
+def _make_session(response_body: Properties | None = None, status_code: int = 200) -> MagicMock:
+    session = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.text = json.dumps(response_body or {})
+    mock_resp.raise_for_status.return_value = None
+    session.get.return_value = mock_resp
+    return session
+
+
+def _make_http_error(status_code: int) -> HTTPError:
+    response = Response()
+    response.status_code = status_code
+    response._content = b'{"error": {"message": "server error", "type": "ServerError", "code": 500}}'
+    exc = HTTPError(response=response)
+    return exc
+
+
+def test_credential_from_properties_missing_access_key() -> None:
+    props = {S3_SECRET_ACCESS_KEY: "SECRET", S3_SESSION_TOKEN: "TOKEN", S3_SESSION_TOKEN_EXPIRES_AT_MS: str(_expiry_ms(200))}
+    assert _credential_from_properties(props) == {}
+
+
+def test_credential_from_properties_missing_secret_key() -> None:
+    props = {S3_ACCESS_KEY_ID: "AKID", S3_SESSION_TOKEN: "TOKEN", S3_SESSION_TOKEN_EXPIRES_AT_MS: str(_expiry_ms(200))}
+    assert _credential_from_properties(props) == {}
+
+
+def test_credential_from_properties_missing_session_token() -> None:
+    props = {S3_ACCESS_KEY_ID: "AKID", S3_SECRET_ACCESS_KEY: "SECRET", S3_SESSION_TOKEN_EXPIRES_AT_MS: str(_expiry_ms(200))}
+    assert _credential_from_properties(props) == {}
+
+
+def test_credential_from_properties_missing_expiry() -> None:
+    props = {S3_ACCESS_KEY_ID: "AKID", S3_SECRET_ACCESS_KEY: "SECRET", S3_SESSION_TOKEN: "TOKEN"}
+    assert _credential_from_properties(props) == {}
+
+
+def test_credential_from_properties_not_expiring_soon() -> None:
+    props = {
+        S3_ACCESS_KEY_ID: "AKID",
+        S3_SECRET_ACCESS_KEY: "SECRET",
+        S3_SESSION_TOKEN: "TOKEN",
+        S3_SESSION_TOKEN_EXPIRES_AT_MS: str(_expiry_ms(600)),
+    }
+    assert _credential_from_properties(props) == {}
+
+
+def test_credential_from_properties_expiring_soon() -> None:
+    expiry = _expiry_ms(200)
+    props = {
+        S3_ACCESS_KEY_ID: "AKID",
+        S3_SECRET_ACCESS_KEY: "SECRET",
+        S3_SESSION_TOKEN: "TOKEN",
+        S3_SESSION_TOKEN_EXPIRES_AT_MS: str(expiry),
+    }
+    result = _credential_from_properties(props)
+    assert result[S3_ACCESS_KEY_ID] == "AKID"
+    assert result[S3_SECRET_ACCESS_KEY] == "SECRET"
+    assert result[S3_SESSION_TOKEN] == "TOKEN"
+    assert result[S3_SESSION_TOKEN_EXPIRES_AT_MS] == expiry
+
+
+def test_credential_from_properties_already_expired() -> None:
+    expiry = _expiry_ms(-60)
+    props = {
+        S3_ACCESS_KEY_ID: "AKID",
+        S3_SECRET_ACCESS_KEY: "SECRET",
+        S3_SESSION_TOKEN: "TOKEN",
+        S3_SESSION_TOKEN_EXPIRES_AT_MS: str(expiry),
+    }
+    result = _credential_from_properties(props)
+    assert result[S3_ACCESS_KEY_ID] == "AKID"
+
+
+def test_credential_refresh_endpoint_missing_uri() -> None:
+    with pytest.raises(ValidationException, match="Invalid catalog endpoint"):
+        _credential_refresh_endpoint({CREDENTIALS_ENDPOINT: "v1/creds"})
+
+
+def test_credential_refresh_endpoint_missing_path() -> None:
+    with pytest.raises(ValidationException, match="Invalid credentials endpoint"):
+        _credential_refresh_endpoint({CATALOG_URI: "https://catalog.example.com"})
+
+
+def test_credential_refresh_endpoint_trailing_slash_handling() -> None:
+    props = {CATALOG_URI: "https://catalog.example.com/", CREDENTIALS_ENDPOINT: "/v1/creds"}
+    assert _credential_refresh_endpoint(props) == "https://catalog.example.com/v1/creds"
+
+
+def test_credential_refresh_endpoint_no_slash() -> None:
+    props = {CATALOG_URI: "https://catalog.example.com", CREDENTIALS_ENDPOINT: "v1/creds"}
+    assert _credential_refresh_endpoint(props) == "https://catalog.example.com/v1/creds"
+
+
+def _expected_s3_creds(expiry_ms: int) -> Properties:
+    return {
+        S3_ACCESS_KEY_ID: "AKID",
+        S3_SECRET_ACCESS_KEY: "SECRET",
+        S3_SESSION_TOKEN: "TOKEN",
+        S3_SESSION_TOKEN_EXPIRES_AT_MS: str(expiry_ms),
+    }
+
+
+def test_get_or_refresh_credentials_disabled() -> None:
+    expiry = _expiry_ms(200)
+    props = _full_cred_props(expiry)
+    props[REFRESH_CREDENTIALS_ENABLED] = "false"
+    assert _get_or_refresh_credentials(props, MagicMock()) == _expected_s3_creds(expiry)
+
+
+def test_get_or_refresh_credentials_no_session() -> None:
+    expiry = _expiry_ms(200)
+    props = _full_cred_props(expiry)
+    assert _get_or_refresh_credentials(props, None) == _expected_s3_creds(expiry)
+
+
+def test_get_or_refresh_credentials_not_expiring() -> None:
+    expiry = _expiry_ms(600)
+    props = _full_cred_props(expiry)
+    session = MagicMock()
+    assert _get_or_refresh_credentials(props, session) == _expected_s3_creds(expiry)
+    session.get.assert_not_called()
+
+
+def test_get_or_refresh_credentials_success() -> None:
+    new_expiry = _expiry_ms(3600)
+    response_body = {
+        "storage-credentials": [
+            {
+                "prefix": "s3://",
+                "config": {
+                    S3_ACCESS_KEY_ID: "NEW_AKID",
+                    S3_SECRET_ACCESS_KEY: "NEW_SECRET",
+                    S3_SESSION_TOKEN: "NEW_TOKEN",
+                    S3_SESSION_TOKEN_EXPIRES_AT_MS: str(new_expiry),
+                },
+            }
+        ]
+    }
+    props = _full_cred_props(_expiry_ms(200))
+    session = _make_session(response_body)
+
+    result = _get_or_refresh_credentials(props, session)
+
+    assert result[S3_ACCESS_KEY_ID] == "NEW_AKID"
+    assert result[S3_SECRET_ACCESS_KEY] == "NEW_SECRET"
+    assert result[S3_SESSION_TOKEN] == "NEW_TOKEN"
+    assert result[S3_SESSION_TOKEN_EXPIRES_AT_MS] == str(new_expiry)
+
+
+def test_get_or_refresh_credentials_http_error() -> None:
+    props = _full_cred_props(_expiry_ms(200))
+    session = MagicMock()
+    session.get.return_value.raise_for_status.side_effect = _make_http_error(500)
+
+    with pytest.raises(ServerError):
+        _get_or_refresh_credentials(props, session)
+
+
+def test_get_or_refresh_credentials_empty_credentials() -> None:
+    props = _full_cred_props(_expiry_ms(200))
+    session = _make_session({"storage-credentials": []})
+
+    with pytest.raises(ValueError, match="Invalid S3 Credentials: empty"):
+        _get_or_refresh_credentials(props, session)
+
+
+def test_get_or_refresh_credentials_multiple_credentials() -> None:
+    credential = {
+        "prefix": "s3://",
+        "config": {
+            S3_ACCESS_KEY_ID: "A",
+            S3_SECRET_ACCESS_KEY: "B",
+            S3_SESSION_TOKEN: "C",
+            S3_SESSION_TOKEN_EXPIRES_AT_MS: "123",
+        },
+    }
+    props = _full_cred_props(_expiry_ms(200))
+    session = _make_session({"storage-credentials": [credential, credential]})
+
+    with pytest.raises(ValueError, match="only one S3 credential should exist"):
+        _get_or_refresh_credentials(props, session)

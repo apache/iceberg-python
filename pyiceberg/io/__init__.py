@@ -29,6 +29,7 @@ import importlib
 import logging
 import warnings
 from abc import ABC, abstractmethod
+from datetime import datetime
 from io import SEEK_SET
 from types import TracebackType
 from typing import (
@@ -37,7 +38,11 @@ from typing import (
 )
 from urllib.parse import urlparse
 
+from requests import HTTPError, Session
+
+from pyiceberg.exceptions import ValidationException
 from pyiceberg.typedef import EMPTY_DICT, Properties
+from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +72,7 @@ S3_ROLE_ARN = "s3.role-arn"
 S3_ROLE_SESSION_NAME = "s3.role-session-name"
 S3_FORCE_VIRTUAL_ADDRESSING = "s3.force-virtual-addressing"
 S3_RETRY_STRATEGY_IMPL = "s3.retry-strategy-impl"
+S3_SESSION_TOKEN_EXPIRES_AT_MS = "s3.session-token-expires-at-ms"
 HDFS_HOST = "hdfs.host"
 HDFS_PORT = "hdfs.port"
 HDFS_USER = "hdfs.user"
@@ -99,6 +105,9 @@ GCS_DEFAULT_LOCATION = "gcs.default-bucket-location"
 GCS_VERSION_AWARE = "gcs.version-aware"
 HF_ENDPOINT = "hf.endpoint"
 HF_TOKEN = "hf.token"
+CREDENTIALS_ENDPOINT = "client.refresh-credentials-endpoint"
+REFRESH_CREDENTIALS_ENABLED = "client.refresh-credentials-enabled"
+CATALOG_URI = "uri"
 
 
 @runtime_checkable
@@ -258,9 +267,11 @@ class FileIO(ABC):
     """A base class for FileIO implementations."""
 
     properties: Properties
+    session: Session | None
 
-    def __init__(self, properties: Properties = EMPTY_DICT):
+    def __init__(self, properties: Properties = EMPTY_DICT, session: Session | None = None):
         self.properties = properties
+        self.session = session
 
     @abstractmethod
     def new_input(self, location: str) -> InputFile:
@@ -317,7 +328,7 @@ SCHEMA_TO_FILE_IO: dict[str, list[str]] = {
 }
 
 
-def _import_file_io(io_impl: str, properties: Properties) -> FileIO | None:
+def _import_file_io(io_impl: str, properties: Properties, session: Session | None = None) -> FileIO | None:
     try:
         path_parts = io_impl.split(".")
         if len(path_parts) < 2:
@@ -325,7 +336,7 @@ def _import_file_io(io_impl: str, properties: Properties) -> FileIO | None:
         module_name, class_name = ".".join(path_parts[:-1]), path_parts[-1]
         module = importlib.import_module(module_name)
         class_ = getattr(module, class_name)
-        return class_(properties)
+        return class_(properties, session)
     except ModuleNotFoundError:
         logger.warning(f"Could not initialize FileIO: {io_impl}", exc_info=logger.isEnabledFor(logging.DEBUG))
         return None
@@ -334,22 +345,22 @@ def _import_file_io(io_impl: str, properties: Properties) -> FileIO | None:
 PY_IO_IMPL = "py-io-impl"
 
 
-def _infer_file_io_from_scheme(path: str, properties: Properties) -> FileIO | None:
+def _infer_file_io_from_scheme(path: str, properties: Properties, session: Session | None = None) -> FileIO | None:
     parsed_url = urlparse(path)
     if parsed_url.scheme:
         if file_ios := SCHEMA_TO_FILE_IO.get(parsed_url.scheme):
             for file_io_path in file_ios:
-                if file_io := _import_file_io(file_io_path, properties):
+                if file_io := _import_file_io(file_io_path, properties, session):
                     return file_io
         else:
             warnings.warn(f"No preferred file implementation for scheme: {parsed_url.scheme}", stacklevel=2)
     return None
 
 
-def load_file_io(properties: Properties = EMPTY_DICT, location: str | None = None) -> FileIO:
+def load_file_io(properties: Properties = EMPTY_DICT, location: str | None = None, session: Session | None = None) -> FileIO:
     # First look for the py-io-impl property to directly load the class
     if io_impl := properties.get(PY_IO_IMPL):
-        if file_io := _import_file_io(io_impl, properties):
+        if file_io := _import_file_io(io_impl, properties, session):
             logger.info("Loaded FileIO: %s", io_impl)
             return file_io
         else:
@@ -357,12 +368,12 @@ def load_file_io(properties: Properties = EMPTY_DICT, location: str | None = Non
 
     # Check the table location
     if location:
-        if file_io := _infer_file_io_from_scheme(location, properties):
+        if file_io := _infer_file_io_from_scheme(location, properties, session):
             return file_io
 
     # Look at the schema of the warehouse
     if warehouse_location := properties.get(WAREHOUSE):
-        if file_io := _infer_file_io_from_scheme(warehouse_location, properties):
+        if file_io := _infer_file_io_from_scheme(warehouse_location, properties, session):
             return file_io
 
     try:
@@ -370,9 +381,98 @@ def load_file_io(properties: Properties = EMPTY_DICT, location: str | None = Non
         logger.info("Defaulting to PyArrow FileIO")
         from pyiceberg.io.pyarrow import PyArrowFileIO
 
-        return PyArrowFileIO(properties)
+        return PyArrowFileIO(properties, session)
     except ModuleNotFoundError as e:
         raise ModuleNotFoundError(
             "Could not load a FileIO, please consider installing one: "
             'pip3 install "pyiceberg[pyarrow]", for more options refer to the docs.'
         ) from e
+
+
+def _extract_s3_credentials(properties: Properties) -> Properties:
+    """Extract only S3 credential keys from properties, normalizing AWS_ prefixes to S3_."""
+    creds: Properties = {}
+    if access_key := get_first_property_value(properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID):
+        creds[S3_ACCESS_KEY_ID] = access_key
+    if secret_key := get_first_property_value(properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY):
+        creds[S3_SECRET_ACCESS_KEY] = secret_key
+    if session_token := get_first_property_value(properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN):
+        creds[S3_SESSION_TOKEN] = session_token
+    if expiry := get_first_property_value(properties, S3_SESSION_TOKEN_EXPIRES_AT_MS):
+        creds[S3_SESSION_TOKEN_EXPIRES_AT_MS] = expiry
+    return creds
+
+
+def _credential_from_properties(properties: Properties) -> Properties:
+    """Retrieve current S3 credentials from properties returns empty if expired."""
+    access_key = get_first_property_value(properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID)
+    secret_access_key = get_first_property_value(properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY)
+    session_token = get_first_property_value(properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN)
+    expiration_ms = property_as_int(properties, S3_SESSION_TOKEN_EXPIRES_AT_MS)
+
+    if not access_key or not secret_access_key or not session_token or not expiration_ms:
+        return EMPTY_DICT
+
+    expiresAt = datetime.fromtimestamp(expiration_ms / 1000)
+    prefetchAt = (expiresAt - datetime.now()).total_seconds()
+
+    if prefetchAt > 300:
+        return EMPTY_DICT
+
+    return {
+        S3_ACCESS_KEY_ID: access_key,
+        S3_SECRET_ACCESS_KEY: secret_access_key,
+        S3_SESSION_TOKEN: session_token,
+        S3_SESSION_TOKEN_EXPIRES_AT_MS: expiration_ms,
+    }
+
+
+def _credential_refresh_endpoint(properties: Properties) -> str:
+    """Build credential refresh endpoint from properties."""
+    catalog_uri = get_first_property_value(properties, CATALOG_URI)
+    credentials_path = get_first_property_value(properties, CREDENTIALS_ENDPOINT)
+
+    if catalog_uri is None:
+        raise ValidationException("Invalid catalog endpoint: None")
+
+    if credentials_path is None:
+        raise ValidationException("Invalid credentials endpoint: None")
+
+    return str(catalog_uri).rstrip("/") + "/" + str(credentials_path).lstrip("/")
+
+
+def _get_or_refresh_credentials(properties: Properties, session: Session | None) -> Properties:
+    """Retrieve current S3 credentials from properties, refreshing them if they are close to expiration."""
+    refresh_enabled = property_as_bool(properties, REFRESH_CREDENTIALS_ENABLED, False)
+    if not refresh_enabled or session is None:
+        return _extract_s3_credentials(properties)
+
+    # Returns empty if credentials missing or not yet expiring
+    creds = _credential_from_properties(properties)
+
+    if not creds:
+        return _extract_s3_credentials(properties)
+
+    from pyiceberg.catalog.rest import LoadCredentialsResponse
+    from pyiceberg.catalog.rest.response import _handle_non_200_response
+
+    load_response: LoadCredentialsResponse | None = None
+
+    try:
+        http_response = session.get(_credential_refresh_endpoint(properties))
+        http_response.raise_for_status()
+        load_response = LoadCredentialsResponse.model_validate_json(http_response.text)
+    except HTTPError as exc:
+        _handle_non_200_response(exc, {})
+
+    if load_response is None:
+        raise ValidationException("Load credential response is None")
+
+    if not load_response.credentials:
+        raise ValueError("Invalid S3 Credentials: empty")
+
+    if len(load_response.credentials) > 1:
+        raise ValueError("Invalid S3 Credentials: only one S3 credential should exist")
+
+    credentials = load_response.credentials[0].config
+    return _extract_s3_credentials(credentials)

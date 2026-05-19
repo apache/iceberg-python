@@ -384,6 +384,10 @@ class ListViewsResponse(IcebergBaseModel):
     next_page_token: str | None = Field(default=None, alias="next-page-token")
 
 
+class LoadCredentialsResponse(IcebergBaseModel):
+    credentials: list[StorageCredential] = Field(alias="storage-credentials")
+
+
 _PLANNING_RESPONSE_ADAPTER = TypeAdapter(PlanningResponse)
 
 
@@ -471,11 +475,13 @@ class RestCatalog(Catalog):
 
         return best_match.config if best_match else {}
 
-    def _load_file_io(self, properties: Properties = EMPTY_DICT, location: str | None = None) -> FileIO:
+    def _load_file_io(
+        self, properties: Properties = EMPTY_DICT, location: str | None = None, session: Session | None = None
+    ) -> FileIO:
         merged_properties = {**self.properties, **properties}
         if self._auth_manager:
             merged_properties[AUTH_MANAGER] = self._auth_manager
-        return load_file_io(merged_properties, location)
+        return load_file_io(merged_properties, location, session)
 
     @override
     def supports_server_side_planning(self) -> bool:
@@ -823,6 +829,7 @@ class RestCatalog(Catalog):
             io=self._load_file_io(
                 {**table_response.metadata.properties, **table_response.config, **credential_config},
                 table_response.metadata_location,
+                self._session,
             ),
             catalog=self,
             config=table_response.config,
@@ -840,6 +847,7 @@ class RestCatalog(Catalog):
             io=self._load_file_io(
                 {**table_response.metadata.properties, **table_response.config, **credential_config},
                 table_response.metadata_location,
+                self._session,
             ),
             catalog=self,
         )
