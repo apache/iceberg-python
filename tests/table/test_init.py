@@ -1766,3 +1766,29 @@ def test_build_large_partition_predicate(table_v2: Table) -> None:
         )
 
     bind(table_v2.metadata.schema(), expr, case_sensitive=True)
+
+
+def test_transaction_table_metadata_cached(table_v2: Table) -> None:
+    """Transaction.table_metadata should not recompute (replay updates via model_copy)
+    on every access while the underlying inputs are unchanged, and must recompute once
+    new updates are staged.
+    """
+    from unittest import mock
+
+    from pyiceberg.table.update import SetPropertiesUpdate, update_table_metadata
+
+    with mock.patch("pyiceberg.table.update_table_metadata", wraps=update_table_metadata) as spy:
+        txn = table_v2.transaction()
+
+        first = txn.table_metadata
+        for _ in range(10):
+            assert txn.table_metadata is first
+        assert spy.call_count == 1, f"expected 1 recompute for repeated reads, got {spy.call_count}"
+
+        txn._stage((SetPropertiesUpdate(updates={"k": "v"}),))
+        second = txn.table_metadata
+        assert second is not first
+        assert second.properties["k"] == "v"
+        for _ in range(10):
+            assert txn.table_metadata is second
+        assert spy.call_count == 2, f"expected 2 recomputes after one staged update, got {spy.call_count}"
