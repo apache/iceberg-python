@@ -841,6 +841,50 @@ def test_list_namespace_with_parent_404(rest_mock: Mocker) -> None:
         RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces(("some_namespace",))
 
 
+def test_list_namespaces_paginated_200(rest_mock: Mocker) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={"namespaces": [["default"], ["examples"]], "next-page-token": "page2token"},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces?pageToken=page2token",
+        json={"namespaces": [["fokko"], ["system"]]},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces() == [
+        ("default",),
+        ("examples",),
+        ("fokko",),
+        ("system",),
+    ]
+
+
+def test_list_namespaces_paginated_200_none_next_page_token(rest_mock: Mocker) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={"namespaces": [["default"], ["examples"]], "next-page-token": "page2token"},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces?pageToken=page2token",
+        json={"namespaces": [["fokko"], ["system"]], "next-page-token": None},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces() == [
+        ("default",),
+        ("examples",),
+        ("fokko",),
+        ("system",),
+    ]
+
+
 @pytest.mark.filterwarnings(
     "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. "
     "Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
