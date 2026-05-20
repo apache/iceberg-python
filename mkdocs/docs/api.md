@@ -1527,6 +1527,28 @@ def cleanup_old_snapshots(table_name: str, snapshot_ids: list[int]):
 cleanup_old_snapshots("analytics.user_events", [12345, 67890, 11111])
 ```
 
+### Remove Orphan Files
+
+Remove files in the table's storage location that are not reachable from any valid snapshot or metadata file. This typically happens after failed writes or aborted compactions leave residual data files behind. Table property `gc.enabled` must be set.
+
+!!! warning
+    Removing orphan files is destructive and irreversible. Always start with `dry_run()` to inspect the candidates, and make sure no other table or in-flight writer is reading from the same storage location.
+
+```python
+from datetime import datetime, timedelta, timezone
+
+# Dry run — list orphans without deleting
+result = table.maintenance.remove_orphan_files() \
+    .older_than(timedelta(days=7)) \
+    .dry_run() \
+    .execute()
+
+# Actually delete
+table.maintenance.remove_orphan_files() \
+    .older_than(datetime.now(tz=timezone.utc) - timedelta(days=7)) \
+    .execute()
+```
+
 ## Views
 
 PyIceberg supports view operations.

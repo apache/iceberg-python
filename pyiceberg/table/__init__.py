@@ -205,6 +205,9 @@ class TableProperties:
     MIN_SNAPSHOTS_TO_KEEP = "history.expire.min-snapshots-to-keep"
     MIN_SNAPSHOTS_TO_KEEP_DEFAULT = 1
 
+    GC_ENABLED = "gc.enabled"
+    GC_ENABLED_DEFAULT = True
+
 
 class Transaction:
     _table: Table
