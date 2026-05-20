@@ -22,7 +22,12 @@ from uuid import UUID
 import pytest
 
 from pyiceberg.exceptions import ValidationError
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
+from pyiceberg.partitioning import (
+    UNPARTITIONED_PARTITION_SPEC,
+    PartitionField,
+    PartitionSpec,
+    assign_fresh_partition_spec_ids_for_replace,
+)
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import (
     BucketTransform,
@@ -31,6 +36,7 @@ from pyiceberg.transforms import (
     IdentityTransform,
     MonthTransform,
     TruncateTransform,
+    VoidTransform,
     YearTransform,
 )
 from pyiceberg.typedef import Record
@@ -298,3 +304,178 @@ def test_incompatible_transform_source_type() -> None:
         spec.check_compatible(schema)
 
     assert "Invalid source field foo with type int for transform: year" in str(exc.value)
+
+
+_REPLACE_SCHEMA_FOR_PARTITION = Schema(
+    NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+    NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+)
+
+
+@pytest.mark.parametrize(
+    "new_spec, existing_specs, last_partition_id, expected_field_id, expected_last_partition_id",
+    [
+        # Reuse-by-identity: same (source_id, IdentityTransform) already in an existing spec.
+        pytest.param(
+            PartitionSpec(PartitionField(source_id=1, field_id=999, transform=IdentityTransform(), name="id")),
+            [PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="id"), spec_id=0)],
+            1000,
+            1000,
+            1000,
+            id="reuse-identity",
+        ),
+        # Reuse-by-(source,bucket): same source_id + same BucketTransform, even under a renamed field.
+        pytest.param(
+            PartitionSpec(PartitionField(source_id=1, field_id=999, transform=BucketTransform(8), name="id_bucket_renamed")),
+            [
+                PartitionSpec(
+                    PartitionField(source_id=1, field_id=1042, transform=BucketTransform(8), name="id_bucket"), spec_id=0
+                )
+            ],
+            1042,
+            1042,
+            1042,
+            id="reuse-bucket-under-rename",
+        ),
+        # No match: fresh id above last_partition_id.
+        pytest.param(
+            PartitionSpec(PartitionField(source_id=1, field_id=999, transform=IdentityTransform(), name="id")),
+            [PartitionSpec(spec_id=0)],
+            999,
+            1000,
+            1000,
+            id="new-field-above-last-partition-id",
+        ),
+    ],
+)
+def test_assign_fresh_partition_spec_ids_for_replace_v2(
+    new_spec: PartitionSpec,
+    existing_specs: list[PartitionSpec],
+    last_partition_id: int,
+    expected_field_id: int,
+    expected_last_partition_id: int,
+) -> None:
+    fresh_spec, new_last_pid = assign_fresh_partition_spec_ids_for_replace(
+        new_spec, _REPLACE_SCHEMA_FOR_PARTITION, _REPLACE_SCHEMA_FOR_PARTITION, existing_specs, last_partition_id
+    )
+    assert fresh_spec.fields[0].field_id == expected_field_id
+    assert new_last_pid == expected_last_partition_id
+
+
+def test_assign_fresh_partition_spec_ids_for_replace_v1_carries_forward_as_void() -> None:
+    """v1 specs are append-only: a field absent from the new spec is carried forward as void."""
+    current_spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="id"), spec_id=0)
+    # New spec drops "id" entirely, partitioned by "data" instead.
+    new_spec = PartitionSpec(PartitionField(source_id=2, field_id=999, transform=IdentityTransform(), name="data"))
+    fresh_spec, new_last_pid = assign_fresh_partition_spec_ids_for_replace(
+        new_spec,
+        _REPLACE_SCHEMA_FOR_PARTITION,
+        _REPLACE_SCHEMA_FOR_PARTITION,
+        existing_specs=[current_spec],
+        last_partition_id=1000,
+        format_version=1,
+        current_spec=current_spec,
+    )
+    # Two fields: the carried-forward void at field_id=1000, and the new "data" field above it.
+    fields_by_id = {f.field_id: f for f in fresh_spec.fields}
+    assert isinstance(fields_by_id[1000].transform, VoidTransform)
+    assert fields_by_id[1000].name == "id"
+    assert fields_by_id[1001].name == "data"
+    assert isinstance(fields_by_id[1001].transform, IdentityTransform)
+    assert new_last_pid == 1001
+
+
+def test_assign_fresh_partition_spec_ids_for_replace_v1_renames_void_on_name_collision() -> None:
+    """When a void field's name collides with a new field's name, a unique suffix is added."""
+    current_spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="data"), spec_id=0
+    )
+    # New spec partitions "data" by a different transform — the OLD "data" must be voided
+    # under a different name to avoid collision with the NEW "data" partition.
+    new_spec = PartitionSpec(PartitionField(source_id=2, field_id=999, transform=IdentityTransform(), name="data"))
+    fresh_spec, _ = assign_fresh_partition_spec_ids_for_replace(
+        new_spec,
+        _REPLACE_SCHEMA_FOR_PARTITION,
+        _REPLACE_SCHEMA_FOR_PARTITION,
+        existing_specs=[current_spec],
+        last_partition_id=1000,
+        format_version=1,
+        current_spec=current_spec,
+    )
+    void_field = next(f for f in fresh_spec.fields if isinstance(f.transform, VoidTransform))
+    assert void_field.name != "data", "void name must not collide with active partition name"
+    assert void_field.name == "data_1000"
+
+
+def test_assign_fresh_partition_spec_ids_for_replace_v1_keeps_field_preserves_id() -> None:
+    """v1 carry-forward: when a current-spec field is also in the new spec, its field_id is preserved."""
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+    )
+    current_spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="id"), spec_id=0)
+    # New spec keeps the same (source, transform) on "id" — should reuse field_id=1000, no void emitted.
+    new_spec = PartitionSpec(PartitionField(source_id=1, field_id=999, transform=IdentityTransform(), name="id"))
+    fresh_spec, new_last_pid = assign_fresh_partition_spec_ids_for_replace(
+        new_spec,
+        schema,
+        schema,
+        existing_specs=[current_spec],
+        last_partition_id=1000,
+        format_version=1,
+        current_spec=current_spec,
+    )
+    assert [f.field_id for f in fresh_spec.fields] == [1000]
+    assert fresh_spec.fields[0].name == "id"
+    assert isinstance(fresh_spec.fields[0].transform, IdentityTransform)
+    assert not any(isinstance(f.transform, VoidTransform) for f in fresh_spec.fields)
+    assert new_last_pid == 1000
+
+
+def test_assign_fresh_partition_spec_ids_for_replace_v1_void_name_uses_multi_suffix_loop() -> None:
+    """When `name` and `name_<field_id>` are both already used, append `_2`, `_3`, ... until unique."""
+    # Three columns, one role each: source for the current (about-to-be-voided) partition,
+    # source for the new partition that collides on the void's preferred name, and source for
+    # the new partition that collides on the void's first fallback name.
+    schema = Schema(
+        NestedField(field_id=1, name="current_source", field_type=IntegerType(), required=False),
+        NestedField(field_id=2, name="collide_on_name", field_type=IntegerType(), required=False),
+        NestedField(field_id=3, name="collide_on_fallback", field_type=IntegerType(), required=False),
+    )
+    # Current v1 spec partitions source=1 by bucket(4) at field_id=1000, named "p" — for
+    # non-identity transforms the partition NAME doesn't have to match the source column name.
+    current_spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=BucketTransform(4), name="p"), spec_id=0)
+    # New spec has two partition fields named "p" and "p_1000" — colliding with both the
+    # void's preferred name and its first fallback. Both are on different sources, so they
+    # do not match the current (source=1, bucket[4]) key and the current field becomes void.
+    new_spec = PartitionSpec(
+        PartitionField(source_id=2, field_id=997, transform=BucketTransform(4), name="p"),
+        PartitionField(source_id=3, field_id=998, transform=BucketTransform(4), name="p_1000"),
+    )
+    fresh_spec, _ = assign_fresh_partition_spec_ids_for_replace(
+        new_spec,
+        schema,
+        schema,
+        existing_specs=[current_spec],
+        last_partition_id=1000,
+        format_version=1,
+        current_spec=current_spec,
+    )
+    void_field = next(f for f in fresh_spec.fields if isinstance(f.transform, VoidTransform))
+    assert void_field.name == "p_1000_2"
+
+
+def test_assign_fresh_partition_spec_ids_for_replace_v2_prefers_highest_field_id_for_repeated_key() -> None:
+    """v2: when the same (source_id, transform) appears across multiple specs, the highest field_id wins."""
+    # Two historical specs both partition by (source_id=1, IdentityTransform), with different field_ids.
+    existing_specs = [
+        PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="id"), spec_id=0),
+        PartitionSpec(PartitionField(source_id=1, field_id=1002, transform=IdentityTransform(), name="id_v2"), spec_id=1),
+    ]
+    # New spec uses the same (source, transform) — should reuse the highest historical field_id (1002).
+    new_spec = PartitionSpec(PartitionField(source_id=1, field_id=999, transform=IdentityTransform(), name="id"))
+    fresh_spec, new_last_pid = assign_fresh_partition_spec_ids_for_replace(
+        new_spec, _REPLACE_SCHEMA_FOR_PARTITION, _REPLACE_SCHEMA_FOR_PARTITION, existing_specs, last_partition_id=1002
+    )
+    assert fresh_spec.fields[0].field_id == 1002
+    assert new_last_pid == 1002

@@ -335,6 +335,175 @@ def assign_fresh_partition_spec_ids(spec: PartitionSpec, old_schema: Schema, fre
     return PartitionSpec(*partition_fields, spec_id=INITIAL_PARTITION_SPEC_ID)
 
 
+def assign_fresh_partition_spec_ids_for_replace(
+    spec: PartitionSpec,
+    old_schema: Schema,
+    fresh_schema: Schema,
+    existing_specs: list[PartitionSpec],
+    last_partition_id: int | None,
+    format_version: int = 2,
+    current_spec: PartitionSpec | None = None,
+) -> tuple[PartitionSpec, int]:
+    """Assign partition field IDs for a replace operation, reusing IDs from existing specs.
+
+    - For v2+, reuse partition field IDs by `(source_id, transform)` across all existing specs.
+      New fields get IDs starting from `last_partition_id + 1`.
+    - For v1, the current spec's fields must be preserved (v1 specs are append-only). Fields
+      absent from the new spec are carried forward with a `VoidTransform`. Matching new fields
+      reuse the existing partition field ID; remaining new fields are appended with fresh IDs.
+
+    Args:
+        spec: The new partition spec to assign IDs to. Its `source_id`s reference `old_schema`.
+        old_schema: The schema that the new spec's `source_id`s reference.
+        fresh_schema: The schema with freshly assigned field IDs.
+        existing_specs: All partition specs from the existing table metadata.
+        last_partition_id: The current table's `last_partition_id`.
+        format_version: Table format version. Required to be set to 1 for v1 carry-forward.
+        current_spec: The current default partition spec. Required when `format_version <= 1`.
+
+    Returns:
+        A tuple of `(fresh_spec, new_last_partition_id)`.
+    """
+    effective_last_partition_id = last_partition_id if last_partition_id is not None else PARTITION_FIELD_ID_START - 1
+
+    if format_version <= 1:
+        if current_spec is None:
+            raise ValueError("current_spec is required for v1 replace_table")
+        return _assign_fresh_partition_spec_ids_for_replace_v1(
+            spec, old_schema, fresh_schema, current_spec, effective_last_partition_id
+        )
+
+    # v2+: reuse field IDs by (source_id, transform) across all specs. When the same
+    # (source_id, transform) appears in multiple specs, prefer the highest field_id.
+    transform_to_field_id: dict[tuple[int, str], int] = {}
+    for existing_spec in existing_specs:
+        for field in existing_spec.fields:
+            key = (field.source_id, str(field.transform))
+            if key not in transform_to_field_id or field.field_id > transform_to_field_id[key]:
+                transform_to_field_id[key] = field.field_id
+
+    next_id = effective_last_partition_id
+    partition_fields = []
+    for field in spec.fields:
+        original_column_name = old_schema.find_column_name(field.source_id)
+        if original_column_name is None:
+            raise ValueError(f"Could not find in old schema: {field}")
+        fresh_field = fresh_schema.find_field(original_column_name)
+        if fresh_field is None:
+            raise ValueError(f"Could not find field in fresh schema: {original_column_name}")
+
+        validate_partition_name(field.name, field.transform, fresh_field.field_id, fresh_schema, set())
+
+        key = (fresh_field.field_id, str(field.transform))
+        if key in transform_to_field_id:
+            partition_field_id = transform_to_field_id[key]
+        else:
+            next_id += 1
+            partition_field_id = next_id
+            transform_to_field_id[key] = partition_field_id
+
+        partition_fields.append(
+            PartitionField(
+                name=field.name,
+                source_id=fresh_field.field_id,
+                field_id=partition_field_id,
+                transform=field.transform,
+            )
+        )
+
+    # `next_id` starts at `effective_last_partition_id` and only increments, so it is the
+    # new last partition id.
+    return PartitionSpec(*partition_fields, spec_id=INITIAL_PARTITION_SPEC_ID), next_id
+
+
+def _assign_fresh_partition_spec_ids_for_replace_v1(
+    spec: PartitionSpec,
+    old_schema: Schema,
+    fresh_schema: Schema,
+    current_spec: PartitionSpec,
+    effective_last_partition_id: int,
+) -> tuple[PartitionSpec, int]:
+    """v1 branch of `assign_fresh_partition_spec_ids_for_replace`. See parent docstring."""
+    # Build (fresh_source_id, transform) → (new_field, fresh_source_id) for the new spec,
+    # in insertion order so leftover fields keep their declared order on append.
+    new_field_by_key: dict[tuple[int, str], tuple[PartitionField, int]] = {}
+    new_field_names: list[str] = []
+    for new_field in spec.fields:
+        col_name = old_schema.find_column_name(new_field.source_id)
+        if col_name is None:
+            raise ValueError(f"Could not find in old schema: {new_field}")
+        fresh_field = fresh_schema.find_field(col_name)
+        if fresh_field is None:
+            raise ValueError(f"Could not find field in fresh schema: {col_name}")
+        validate_partition_name(new_field.name, new_field.transform, fresh_field.field_id, fresh_schema, set())
+        key = (fresh_field.field_id, str(new_field.transform))
+        new_field_by_key[key] = (new_field, fresh_field.field_id)
+        new_field_names.append(new_field.name)
+
+    # Walk current spec, carrying forward each field. Matching new fields consume their key;
+    # missing fields become void transforms.
+    used_names: set[str] = set(new_field_names)
+    partition_fields = []
+    for cur_field in current_spec.fields:
+        key = (cur_field.source_id, str(cur_field.transform))
+        match = new_field_by_key.pop(key, None)
+        if match is not None:
+            new_field, fresh_source_id = match
+            partition_fields.append(
+                PartitionField(
+                    name=new_field.name,
+                    source_id=fresh_source_id,
+                    field_id=cur_field.field_id,
+                    transform=new_field.transform,
+                )
+            )
+            used_names.add(new_field.name)
+        else:
+            void_name = _unique_void_name(cur_field.name, cur_field.field_id, used_names)
+            used_names.add(void_name)
+            partition_fields.append(
+                PartitionField(
+                    name=void_name,
+                    source_id=cur_field.source_id,
+                    field_id=cur_field.field_id,
+                    transform=VoidTransform(),
+                )
+            )
+
+    # Append remaining new fields at the end with fresh partition IDs.
+    next_id = effective_last_partition_id
+    for new_field, fresh_source_id in new_field_by_key.values():
+        next_id += 1
+        partition_fields.append(
+            PartitionField(
+                name=new_field.name,
+                source_id=fresh_source_id,
+                field_id=next_id,
+                transform=new_field.transform,
+            )
+        )
+
+    # `next_id` starts at `effective_last_partition_id` and only increments, so it is the
+    # new last partition id.
+    return PartitionSpec(*partition_fields, spec_id=INITIAL_PARTITION_SPEC_ID), next_id
+
+
+def _unique_void_name(base_name: str, field_id: int, used_names: set[str]) -> str:
+    """Pick a void-transform name that does not collide with already-used names.
+
+    First tries `base_name`; if taken, tries `base_name_{field_id}`; if still taken,
+    appends `_2`, `_3`, ... until unique.
+    """
+    if base_name not in used_names:
+        return base_name
+    candidate = f"{base_name}_{field_id}"
+    suffix = 2
+    while candidate in used_names:
+        candidate = f"{base_name}_{field_id}_{suffix}"
+        suffix += 1
+    return candidate
+
+
 T = TypeVar("T")
 
 
