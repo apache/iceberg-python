@@ -65,7 +65,7 @@ from pyiceberg.table.metadata import TableMetadataV1
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import RecursiveDict
-from pyiceberg.types import StringType
+from pyiceberg.types import BooleanType, IntegerType, NestedField, StringType
 from pyiceberg.utils.config import Config
 from pyiceberg.view import View
 from pyiceberg.view.metadata import ViewMetadata, ViewVersion
@@ -2899,3 +2899,91 @@ def test_load_table_without_storage_credentials(
     )
     assert actual.metadata.model_dump() == expected.metadata.model_dump()
     assert actual == expected
+
+
+def _mock_replace_endpoints(
+    rest_mock: Mocker,
+    namespace: str,
+    table: str,
+    load_response: dict[str, Any],
+    commit_response: dict[str, Any],
+) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables/{table}",
+        json=load_response,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables/{table}",
+        json=commit_response,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+
+def test_replace_table_transaction_wire_payload(
+    rest_mock: Mocker,
+    example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any],
+    example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any],
+) -> None:
+    table_uuid = example_table_metadata_with_snapshot_v1_rest_json["metadata"]["table-uuid"]
+    example_table_metadata_no_snapshot_v1_rest_json["metadata"]["table-uuid"] = table_uuid
+    _mock_replace_endpoints(
+        rest_mock,
+        "fokko",
+        "fokko2",
+        example_table_metadata_with_snapshot_v1_rest_json,
+        example_table_metadata_no_snapshot_v1_rest_json,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    new_schema = Schema(
+        NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+        NestedField(field_id=3, name="new_col", field_type=BooleanType(), required=False),
+    )
+    catalog.replace_table_transaction(identifier=("fokko", "fokko2"), schema=new_schema).commit_transaction()
+    request = rest_mock.last_request.json()
+
+    fixture_metadata = example_table_metadata_with_snapshot_v1_rest_json["metadata"]
+    assert request["requirements"] == [
+        {"type": "assert-table-uuid", "uuid": table_uuid},
+        {"type": "assert-last-assigned-field-id", "last-assigned-field-id": fixture_metadata["last-column-id"]},
+        {"type": "assert-last-assigned-partition-id", "last-assigned-partition-id": fixture_metadata["last-partition-id"]},
+    ]
+
+    actions = [u["action"] for u in request["updates"]]
+    assert sorted(actions) == [
+        "add-schema",
+        "remove-snapshot-ref",
+        "set-current-schema",
+        "set-default-sort-order",
+        "set-default-spec",
+    ]
+    updates_by_action = {u["action"]: u for u in request["updates"]}
+
+    assert updates_by_action["remove-snapshot-ref"] == {"action": "remove-snapshot-ref", "ref-name": "main"}
+    added_schema = updates_by_action["add-schema"]["schema"]
+    assert {f["name"]: f["id"] for f in added_schema["fields"]} == {"id": 1, "data": 2, "new_col": 3}
+    # schema-id=-1 is the wire sentinel meaning "the schema we just added in this commit".
+    assert updates_by_action["set-current-schema"]["schema-id"] == -1
+    assert updates_by_action["set-default-spec"]["spec-id"] == fixture_metadata["default-spec-id"]
+    assert updates_by_action["set-default-sort-order"]["sort-order-id"] == fixture_metadata["default-sort-order-id"]
+
+
+def test_replace_table_transaction_404_raises(
+    rest_mock: Mocker,
+) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/missing",
+        json={"error": {"message": "Table not found", "type": "NoSuchTableException", "code": 404}},
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(NoSuchTableError):
+        catalog.replace_table_transaction(
+            identifier=("fokko", "missing"),
+            schema=Schema(NestedField(field_id=1, name="id", field_type=IntegerType(), required=False)),
+        )
