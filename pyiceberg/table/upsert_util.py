@@ -23,11 +23,16 @@ from pyarrow import compute as pc
 
 from pyiceberg.expressions import (
     AlwaysFalse,
+    And,
     BooleanExpression,
     EqualTo,
+    GreaterThanOrEqual,
     In,
+    LessThanOrEqual,
     Or,
 )
+from pyiceberg.partitioning import PartitionSpec
+from pyiceberg.schema import Schema
 
 
 def create_match_filter(df: pyarrow_table, join_cols: list[str]) -> BooleanExpression:
@@ -51,6 +56,104 @@ def create_match_filter(df: pyarrow_table, join_cols: list[str]) -> BooleanExpre
 def has_duplicate_rows(df: pyarrow_table, join_cols: list[str]) -> bool:
     """Check for duplicate rows in a PyArrow table based on the join columns."""
     return len(df.select(join_cols).group_by(join_cols).aggregate([([], "count_all")]).filter(pc.field("count_all") > 1)) > 0
+
+
+def augment_filter_with_partition_ranges(
+    matched_predicate: BooleanExpression,
+    df: pyarrow_table,
+    schema: Schema,
+    spec: PartitionSpec,
+) -> BooleanExpression:
+    """Return *matched_predicate* AND'd with ``[min, max]`` predicates on partition source columns.
+
+    Iceberg's ``inclusive_projection`` projects each range through the
+    partition transform (``hours``, ``days``, ``months``, ``years``,
+    ``identity``, ``truncate``) when planning the scan, so
+    ``DataScan.plan_files`` can prune manifests and data files that
+    don't overlap the source's value range. Without this augmentation,
+    tables whose partition spec sources from columns NOT in
+    ``join_cols`` (a common pattern for append-only event logs
+    partitioned by time but keyed by composite IDs) fall through to a
+    full table scan on every upsert because the row filter built from
+    ``join_cols`` alone projects to ``AlwaysTrue`` against the
+    partition spec.
+
+    Bucket and other non-monotonic transforms return ``None`` from
+    their ``project`` method for inequalities, so the augmentation is
+    safe — it either prunes or contributes ``AlwaysTrue`` (no harm).
+
+    A partition source column is skipped from augmentation when:
+
+    - It isn't present on ``df`` (no source value to bound).
+    - It is entirely null in ``df`` (no meaningful min/max).
+    - It contains any null in ``df`` (preserving correctness: a
+      ``GreaterThanOrEqual(col, non_null_min)`` predicate would
+      exclude destination rows whose partition value is ``NULL``,
+      potentially missing a key match. Without partition pruning
+      those NULL-partition rows are scanned normally.)
+
+    When ``min == max`` for a column, an ``EqualTo`` predicate is
+    emitted instead of the range pair — tighter, and lets exact
+    partition pruning fire.
+
+    Args:
+        matched_predicate: The row filter built from ``join_cols``.
+        df: Source data frame whose values bound the augmentation.
+        schema: Iceberg schema, used to resolve partition source ids
+            to column names.
+        spec: Active partition spec.
+
+    Returns:
+        The augmented predicate, or *matched_predicate* unchanged
+        when no partition source column qualifies.
+    """
+    if spec.is_unpartitioned():
+        return matched_predicate
+
+    df_columns = set(df.column_names)
+    augmentations: list[BooleanExpression] = []
+
+    # Iterate distinct source columns rather than partition fields —
+    # multiple partition fields can share a source column (e.g.
+    # ``bucket(8, id), truncate(4, id)``) but we only need to add the
+    # source-column range once; ``inclusive_projection`` projects
+    # through each partition field independently.
+    seen_source_ids: set[int] = set()
+    for field in spec.fields:
+        if field.source_id in seen_source_ids:
+            continue
+        seen_source_ids.add(field.source_id)
+
+        col_name = schema.find_field(field.source_id).name
+        if col_name not in df_columns:
+            continue
+
+        col = df[col_name]
+        if col.null_count > 0:
+            # Mixing null with a bounded predicate would exclude
+            # destination rows whose partition value is null,
+            # potentially missing key matches. Skip pruning rather
+            # than risk a correctness regression.
+            continue
+
+        col_min = pc.min(col).as_py()
+        col_max = pc.max(col).as_py()
+        if col_min is None or col_max is None:
+            # Defensive — ``null_count == 0`` should imply both bounds
+            # are non-null, but pyarrow's min/max can still return None
+            # on empty columns.
+            continue
+
+        if col_min == col_max:
+            augmentations.append(EqualTo(col_name, col_min))
+        else:
+            augmentations.append(GreaterThanOrEqual(col_name, col_min))
+            augmentations.append(LessThanOrEqual(col_name, col_max))
+
+    if not augmentations:
+        return matched_predicate
+
+    return functools.reduce(And, [matched_predicate, *augmentations])
 
 
 def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols: list[str]) -> pa.Table:

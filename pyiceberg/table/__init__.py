@@ -877,12 +877,35 @@ class Transaction:
         # get list of rows that exist so we don't have to load the entire target table
         matched_predicate = upsert_util.create_match_filter(df, join_cols)
 
+        # Augment the row filter with [min, max] predicates on any
+        # partition source column present in ``df``. ``inclusive_projection``
+        # projects the range through monotonic partition transforms when
+        # planning the scan, so ``DataScan.plan_files`` can prune the
+        # destination at the manifest + file level.
+        matched_predicate = upsert_util.augment_filter_with_partition_ranges(
+            matched_predicate,
+            df,
+            self.table_metadata.schema(),
+            self.table_metadata.spec(),
+        )
+
+        # When ``when_matched_update_all=False`` the consumer loop below
+        # only ever reads ``join_cols`` off each destination batch (to
+        # build the per-batch match filter via
+        # ``upsert_util.create_match_filter``). Project ``join_cols``
+        # only so the parquet reader can prune wide non-key columns.
+        #
+        # ``when_matched_update_all=True`` falls back to the legacy
+        # ``("*",)`` projection.
+        selected_fields: tuple[str, ...] = ("*",) if when_matched_update_all else tuple(join_cols)
+
         # We must use Transaction.table_metadata for the scan. This includes all uncommitted - but relevant - changes.
 
         matched_iceberg_record_batches_scan = DataScan(
             table_metadata=self.table_metadata,
             io=self._table.io,
             row_filter=matched_predicate,
+            selected_fields=selected_fields,
             case_sensitive=case_sensitive,
         )
 
@@ -2072,13 +2095,11 @@ class DataScan(TableScan):
         # The lambda created here is run in multiple threads.
         # So we avoid creating _EvaluatorExpression methods bound to a single
         # shared instance across multiple threads.
-        return lambda datafile: (
-            residual_evaluator_of(
-                spec=spec,
-                expr=self.row_filter,
-                case_sensitive=self.case_sensitive,
-                schema=self.table_metadata.schema(),
-            )
+        return lambda datafile: residual_evaluator_of(
+            spec=spec,
+            expr=self.row_filter,
+            case_sensitive=self.case_sensitive,
+            schema=self.table_metadata.schema(),
         )
 
     @staticmethod
