@@ -338,6 +338,25 @@ def test_table_scan_projection_unknown_column(table_v2: Table) -> None:
     assert "Could not find column: 'a'" in str(exc_info.value)
 
 
+def test_table_scan_options_merged_with_existing_io_properties(table_v2: Table) -> None:
+    table = Table(
+        identifier=table_v2._identifier,
+        metadata=table_v2.metadata,
+        metadata_location=table_v2.metadata_location,
+        io=load_file_io({"s3.region": "us-east-1", "s3.connect-timeout": "10"}),
+        catalog=table_v2.catalog,
+    )
+    scan = table.scan(options={"s3.connect-timeout": "60", "s3.endpoint": "https://custom.endpoint"})
+    assert scan.io.properties["s3.region"] == "us-east-1"
+    assert scan.io.properties["s3.connect-timeout"] == "60"
+    assert scan.io.properties["s3.endpoint"] == "https://custom.endpoint"
+
+
+def test_table_scan_empty_options_reuses_file_io(table_v2: Table) -> None:
+    scan = table_v2.scan()
+    assert scan.io is table_v2.io
+
+
 def test_static_table_same_as_table(table_v2: Table, metadata_location: str) -> None:
     static_table = StaticTable.from_metadata(metadata_location)
     assert isinstance(static_table, Table)
