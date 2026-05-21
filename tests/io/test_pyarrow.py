@@ -20,7 +20,6 @@ import os
 import tempfile
 import uuid
 import warnings
-from collections.abc import Iterator
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -77,7 +76,6 @@ from pyiceberg.io.pyarrow import (
     _task_to_record_batches,
     _to_requested_schema,
     bin_pack_arrow_table,
-    bin_pack_record_batches,
     compute_statistics_plan,
     data_file_statistics_from_parquet_metadata,
     expression_to_pyarrow,
@@ -2364,50 +2362,6 @@ def test_bin_pack_arrow_table_target_size_smaller_than_row(arrow_table_with_null
     bin_packed = list(bin_pack_arrow_table(arrow_table_with_null, target_file_size=1))
     assert len(bin_packed) == arrow_table_with_null.num_rows
     assert sum(batch.num_rows for bin_ in bin_packed for batch in bin_) == arrow_table_with_null.num_rows
-
-
-def test_bin_pack_record_batches_single_bin(arrow_table_with_null: pa.Table) -> None:
-    batches = arrow_table_with_null.to_batches()
-    bins = list(bin_pack_record_batches(iter(batches), target_file_size=arrow_table_with_null.nbytes * 10))
-    # everything fits in one bin
-    assert len(bins) == 1
-    assert sum(b.num_rows for b in bins[0]) == arrow_table_with_null.num_rows
-
-
-def test_bin_pack_record_batches_microbatched(arrow_table_with_null: pa.Table) -> None:
-    # repeat the per-row batches so we have many small inputs to pack
-    batches = list(arrow_table_with_null.to_batches(max_chunksize=1)) * 5
-    bin_size = arrow_table_with_null.nbytes // 2  # forces multiple bins
-    bins = list(bin_pack_record_batches(iter(batches), target_file_size=bin_size))
-    assert len(bins) > 1
-    assert sum(b.num_rows for bin_ in bins for b in bin_) == arrow_table_with_null.num_rows * 5
-    # All but the last bin should have crossed the size threshold.
-    for bin_ in bins[:-1]:
-        assert sum(b.nbytes for b in bin_) >= bin_size
-
-
-def test_bin_pack_record_batches_empty() -> None:
-    assert list(bin_pack_record_batches(iter([]), target_file_size=1024)) == []
-
-
-def test_bin_pack_record_batches_is_lazy(arrow_table_with_null: pa.Table) -> None:
-    # Streams are single-pass: confirm the helper consumes its input batch-by-batch
-    # rather than materialising the whole iterator before yielding the first bin.
-    consumed: list[int] = []
-
-    def tracking_iter() -> Iterator[pa.RecordBatch]:
-        for i, batch in enumerate(arrow_table_with_null.to_batches(max_chunksize=1)):
-            consumed.append(i)
-            yield batch
-
-    target = max(1, arrow_table_with_null.nbytes // 4)
-    bins_iter = bin_pack_record_batches(tracking_iter(), target_file_size=target)
-    first_bin = next(bins_iter)
-    assert len(first_bin) >= 1
-    # Generator should not have walked the entire input upon yielding the first bin
-    assert len(consumed) < arrow_table_with_null.num_rows
-    list(bins_iter)
-    assert len(consumed) == arrow_table_with_null.num_rows
 
 
 def test_schema_mismatch_type(table_schema_simple: Schema) -> None:
