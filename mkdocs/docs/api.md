@@ -365,6 +365,17 @@ for buf in tbl.scan().to_arrow_batch_reader():
     print(f"Buffer contains {len(buf)} rows")
 ```
 
+### Streaming writes from a `RecordBatchReader`
+
+`tbl.append()` and `tbl.overwrite()` also accept a `pyarrow.RecordBatchReader` directly, which lets you write datasets that don't fit in memory without materialising them as a `pa.Table` first. PyIceberg consumes the reader once and microbatches it into Parquet files of approximately `write.target-file-size-bytes` (default 512 MiB), keeping memory usage bounded by the target size. All files are committed in a single snapshot.
+
+```python
+reader = pa.RecordBatchReader.from_batches(schema, batch_iter)
+tbl.append(reader)
+```
+
+Streaming writes are currently only supported on **unpartitioned** tables. For a partitioned table, materialise the reader as a `pa.Table` first, or follow [#2152](https://github.com/apache/iceberg-python/issues/2152) for the partitioned support tracked as a follow-up.
+
 To avoid any type inconsistencies during writing, you can convert the Iceberg table schema to Arrow:
 
 ```python
