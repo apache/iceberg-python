@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import os
 from collections.abc import Callable
 from typing import Any, cast
@@ -515,9 +516,16 @@ def test_sigv4_sign_request_without_body(rest_mock: Mocker) -> None:
     assert isinstance(adapter, HTTPAdapter)
     adapter.add_headers(prepared)
 
-    assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256")
+    auth_header = prepared.headers["Authorization"]
+    assert auth_header.startswith("AWS4-HMAC-SHA256 Credential=")
     assert prepared.headers["Original-Authorization"] == f"Bearer {existing_token}"
     assert prepared.headers["x-amz-content-sha256"] == EMPTY_BODY_SHA256
+    # Verify the signature format: Credential, SignedHeaders, Signature
+    assert "Credential=" in auth_header
+    assert "SignedHeaders=" in auth_header
+    assert "Signature=" in auth_header
+    # x-amz-content-sha256 should be in signed headers
+    assert "x-amz-content-sha256" in auth_header
 
 
 def test_sigv4_sign_request_with_body(rest_mock: Mocker) -> None:
@@ -546,9 +554,188 @@ def test_sigv4_sign_request_with_body(rest_mock: Mocker) -> None:
     assert isinstance(adapter, HTTPAdapter)
     adapter.add_headers(prepared)
 
-    assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256")
+    auth_header = prepared.headers["Authorization"]
+    assert auth_header.startswith("AWS4-HMAC-SHA256 Credential=")
+    assert "SignedHeaders=" in auth_header
+    # Conflicting Authorization header is relocated
     assert prepared.headers["Original-Authorization"] == f"Bearer {existing_token}"
-    assert prepared.headers.get("x-amz-content-sha256") != EMPTY_BODY_SHA256
+    # Non-empty body should have base64-encoded SHA256
+    content_sha256 = prepared.headers["x-amz-content-sha256"]
+    assert prepared.body is not None
+    body_bytes = prepared.body.encode("utf-8") if isinstance(prepared.body, str) else prepared.body
+    expected_sha256 = base64.b64encode(hashlib.sha256(body_bytes).digest()).decode()
+    assert content_sha256 == expected_sha256
+    # x-amz-content-sha256 should be in signed headers
+    assert "x-amz-content-sha256" in auth_header
+
+
+def test_sigv4_content_sha256_with_bytes_body(rest_mock: Mocker) -> None:
+    existing_token = "existing_token"
+
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "token": existing_token,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-west-2",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+        },
+    )
+
+    body_content = b'{"namespace": "test_namespace"}'
+    prepared = catalog._session.prepare_request(
+        Request(
+            "POST",
+            f"{TEST_URI}v1/namespaces",
+            data=body_content,
+        )
+    )
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+    adapter.add_headers(prepared)
+
+    assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256 Credential=")
+    assert "SignedHeaders=" in prepared.headers["Authorization"]
+    content_sha256 = prepared.headers["x-amz-content-sha256"]
+    expected_sha256 = base64.b64encode(hashlib.sha256(body_content).digest()).decode()
+    assert content_sha256 == expected_sha256
+
+
+def test_sigv4_conflicting_sigv4_headers(rest_mock: Mocker) -> None:
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-west-2",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+        },
+    )
+
+    prepared = catalog._session.prepare_request(Request("GET", f"{TEST_URI}v1/config"))
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+
+    # Inject conflicting SigV4 headers before signing
+    prepared.headers["x-amz-content-sha256"] = "fake"
+    prepared.headers["X-Amz-Date"] = "fake"
+
+    adapter.add_headers(prepared)
+
+    # Matching Java SDK: conflicting headers are relocated with "Original-" prefix
+    assert prepared.headers.get("Original-x-amz-content-sha256") == "fake"
+    assert prepared.headers.get("Original-X-Amz-Date") == "fake"
+    # SigV4 headers are set correctly after signing
+    assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256 Credential=")
+    assert prepared.headers["x-amz-content-sha256"] == EMPTY_BODY_SHA256
+    assert "X-Amz-Date" in prepared.headers
+
+
+def test_sigv4_canonical_request_uses_hex_payload(rest_mock: Mocker) -> None:
+    """Verify that the canonical request uses hex-encoded payload hash, not the base64 header value."""
+    from unittest.mock import patch
+
+    from botocore.auth import SigV4Auth
+
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "token": "token",
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-west-2",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+        },
+    )
+
+    body_content = b'{"namespace": "test"}'
+    prepared = catalog._session.prepare_request(
+        Request(
+            "POST",
+            f"{TEST_URI}v1/namespaces",
+            data=body_content,
+        )
+    )
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+
+    # Capture the canonical request string during signing
+    captured_canonical = []
+    original_add_auth = SigV4Auth.add_auth
+
+    def capturing_add_auth(self: Any, request: Any) -> None:
+        captured_canonical.append(self.canonical_request(request))
+        original_add_auth(self, request)
+
+    with patch.object(SigV4Auth, "add_auth", capturing_add_auth):
+        adapter.add_headers(prepared)
+
+    assert len(captured_canonical) == 1
+    canonical_lines = captured_canonical[0].split("\n")
+    # Last line of canonical request is the payload hash
+    payload_hash = canonical_lines[-1]
+    # Must be hex-encoded (64 hex chars), not base64
+    assert len(payload_hash) == 64
+    assert payload_hash == hashlib.sha256(body_content).hexdigest()
+    # Meanwhile the header is base64-encoded
+    assert prepared.headers["x-amz-content-sha256"] == base64.b64encode(hashlib.sha256(body_content).digest()).decode()
+
+
+def test_sigv4_content_sha256_matches_iceberg_java_reference(rest_mock: Mocker) -> None:
+    """Pin byte-for-byte equivalence with Iceberg Java TestRESTSigV4AuthSession (L121, L177)."""
+    java_reference_body = b'{"namespace":["ns"],"properties":{}}'
+    java_reference_base64 = "yc5oAKPWjHY4sW8XQq0l/3aNrrXJKBycVFNnDEGMfww="
+    java_reference_empty_hex = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-east-1",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+        },
+    )
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+
+    # Non-empty body: must match Java's base64 reference value exactly
+    prepared_with_body = catalog._session.prepare_request(Request("POST", f"{TEST_URI}v1/namespaces", data=java_reference_body))
+    adapter.add_headers(prepared_with_body)
+    assert prepared_with_body.headers["x-amz-content-sha256"] == java_reference_base64
+
+    # Empty body: must match Java's hex reference value exactly
+    prepared_empty = catalog._session.prepare_request(Request("GET", f"{TEST_URI}v1/config"))
+    adapter.add_headers(prepared_empty)
+    assert prepared_empty.headers["x-amz-content-sha256"] == java_reference_empty_hex
+
+
+def test_sigv4_unsupported_body_type_raises(rest_mock: Mocker) -> None:
+    """Unsupported body types (e.g. file-like) raise a clear error rather than crashing in hashlib."""
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-east-1",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+        },
+    )
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+
+    prepared = catalog._session.prepare_request(Request("POST", f"{TEST_URI}v1/namespaces"))
+    # Inject an unsupported body type (a list — not str/bytes)
+    prepared.body = ["not", "a", "valid", "body"]  # type: ignore[assignment]
+
+    with pytest.raises(TypeError, match="Unsupported request body type for SigV4 signing"):
+        adapter.add_headers(prepared)
 
 
 def test_sigv4_adapter_default_retry_config(rest_mock: Mocker) -> None:
