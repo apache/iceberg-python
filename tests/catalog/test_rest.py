@@ -3112,7 +3112,6 @@ def test_resolve_storage_credentials_empty() -> None:
 def test_resolve_storage_credentials_skips_hadoop_only() -> None:
     from pyiceberg.catalog.rest.scan_planning import StorageCredential
 
-    # The longer fs.* prefix would win a blind longest-match; the filter drops it.
     credentials = [
         StorageCredential(prefix="s3://warehouse/jindo", config={"fs.s3.access-key": "hadoop-k"}),
         StorageCredential(prefix="s3://warehouse", config={"s3.access-key-id": "native-k"}),
@@ -3141,10 +3140,20 @@ def test_resolve_storage_credentials_all_hadoop_only_returns_empty() -> None:
     assert RestCatalog._resolve_storage_credentials(credentials, "custom://bucket/path") == {}
 
 
-def test_resolve_storage_credentials_root_prefix_fallback_for_s3_compatible_scheme() -> None:
+def test_resolve_storage_credentials_s3a_s3n_match_root_prefix_directly() -> None:
     from pyiceberg.catalog.rest.scan_planning import StorageCredential
 
-    # oss:// is routed through pyarrow's S3FileSystem, so ROOT_PREFIX "s3" applies.
+    credentials = [
+        StorageCredential(prefix="s3", config={"s3.access-key-id": "native-k"}),
+    ]
+    for scheme in ("s3a", "s3n"):
+        result = RestCatalog._resolve_storage_credentials(credentials, f"{scheme}://bucket/path")
+        assert result == {"s3.access-key-id": "native-k"}, f"{scheme}:// should match prefix='s3' directly"
+
+
+def test_resolve_storage_credentials_root_prefix_fallback_for_oss() -> None:
+    from pyiceberg.catalog.rest.scan_planning import StorageCredential
+
     credentials = [
         StorageCredential(prefix="s3", config={"s3.access-key-id": "native-k"}),
     ]

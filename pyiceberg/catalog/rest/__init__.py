@@ -396,7 +396,7 @@ class ListViewsResponse(IcebergBaseModel):
 _PLANNING_RESPONSE_ADAPTER = TypeAdapter(PlanningResponse)
 
 
-def _is_hadoop_only_config(config: Properties) -> bool:
+def _is_hadoop_only_config(config: dict[str, str]) -> bool:
     """Return True if every key is a Hadoop ``fs.*`` key — pyiceberg has no HadoopFileIO to consume them."""
     return bool(config) and all(k.startswith("fs.") for k in config)
 
@@ -487,10 +487,9 @@ class RestCatalog(Catalog):
                 if best_match is None or len(cred.prefix) > len(best_match.prefix):
                     best_match = cred
 
-        # Java S3FileIO falls back to the "s3" ROOT_PREFIX credential; scope it to
-        # schemes pyarrow's S3FileSystem handles so non-S3 schemes (gs://, abfs://,
-        # etc.) don't get handed s3.* keys.
-        if best_match is None and location.startswith(("s3://", "s3a://", "s3n://", "oss://")):
+        # Java S3FileIO ROOT_PREFIX fallback. Only oss:// needs it — s3/s3a/s3n
+        # already match the "s3" credential via startswith in the loop above.
+        if best_match is None and location.startswith("oss://"):
             best_match = next((c for c in consumable if c.prefix == "s3"), None)
 
         return best_match.config if best_match else {}
