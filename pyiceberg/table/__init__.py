@@ -784,15 +784,8 @@ class Transaction:
 
         from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, schema_to_pyarrow
 
-        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
-        _check_pyarrow_schema_compatible(
-            self.table_metadata.schema(),
-            provided_schema=df.schema,
-            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
-            format_version=self.table_metadata.format_version,
-        )
-
         table_arrow_schema = schema_to_pyarrow(self.table_metadata.schema(), include_field_ids=False)
+        df_column_names = set(df.schema.names)
 
         for col in join_cols:
             table_field = table_arrow_schema.field(col)
@@ -809,8 +802,10 @@ class Transaction:
                     "Only primitive types are supported."
                 )
 
-            # Dataframe-level rejections: These implementation-specific formats (e.g.,
-            # dictionary encoding) are not yet supported by the PyArrow join engine.
+            # Dataframe-level rejections: only validate when the column is present in the
+            # source; missing columns are surfaced by _check_pyarrow_schema_compatible below.
+            if col not in df_column_names:
+                continue
             arr = df.column(col)
             if pa.types.is_dictionary(arr.type):
                 raise NotImplementedError(
@@ -822,6 +817,14 @@ class Transaction:
                 raise NotImplementedError(
                     f"Extension type '{arr.type}' for column '{col}' is not currently supported as a join key in upsert."
                 )
+
+        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+        _check_pyarrow_schema_compatible(
+            self.table_metadata.schema(),
+            provided_schema=df.schema,
+            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+            format_version=self.table_metadata.format_version,
+        )
 
         # Validate uniqueness after type checks to avoid comparing/hashing unsupported types.
         if upsert_util.has_duplicate_rows(df, join_cols):
