@@ -28,6 +28,7 @@ from pyiceberg.manifest import FileFormat
 from pyiceberg.partitioning import PartitionField, PartitionSpec, partition_record_value
 from pyiceberg.schema import Schema
 from pyiceberg.typedef import Properties, Record
+from pyiceberg.types import NestedField
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -160,6 +161,10 @@ class FileFormatModel(ABC):
         file_schema: Schema,
         properties: Properties,
     ) -> FileFormatWriter: ...
+
+    @abstractmethod
+    def add_field_metadata(self, field: NestedField, metadata: dict[bytes, bytes], include_field_ids: bool) -> None:
+        """Add format-specific Arrow field metadata."""
 
 
 class FileFormatFactory:

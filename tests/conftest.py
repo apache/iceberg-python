@@ -173,6 +173,20 @@ def table_schema_simple() -> Schema:
 
 
 @pytest.fixture(scope="session")
+def arrow_table_simple() -> "pa.Table":
+    """Pyarrow table that pairs with `table_schema_simple` (3 rows, no nulls)."""
+    import pyarrow as pa
+
+    return pa.table(
+        {
+            "foo": ["a", "b", "c"],
+            "bar": pa.array([1, 2, 3], type=pa.int32()),
+            "baz": [True, False, True],
+        }
+    )
+
+
+@pytest.fixture(scope="session")
 def table_schema_with_full_nested_fields() -> Schema:
     return Schema(
         NestedField(

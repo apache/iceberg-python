@@ -35,17 +35,6 @@ def format_model(request: pytest.FixtureRequest) -> FileFormatModel:
     return FileFormatFactory.get(request.param)
 
 
-@pytest.fixture
-def simple_table() -> pa.Table:
-    return pa.table(
-        {
-            "foo": ["a", "b", "c"],
-            "bar": pa.array([1, 2, 3], type=pa.int32()),
-            "baz": [True, False, True],
-        }
-    )
-
-
 def test_parquet_registered() -> None:
     """ParquetFormatModel is registered in the factory."""
     model = FileFormatFactory.get(FileFormat.PARQUET)
@@ -53,31 +42,18 @@ def test_parquet_registered() -> None:
     assert model.file_extension() == "parquet"
 
 
-def test_round_trip(format_model: FileFormatModel, table_schema_simple: Schema, simple_table: pa.Table, tmp_path: Path) -> None:
+def test_round_trip(
+    format_model: FileFormatModel, table_schema_simple: Schema, arrow_table_simple: pa.Table, tmp_path: Path
+) -> None:
     """Write a table and read it back, to verify equality and record count."""
     file_path = str(tmp_path / f"test.{format_model.file_extension()}")
     writer = format_model.create_writer(PyArrowFileIO().new_output(file_path), table_schema_simple, {})
-    writer.write(simple_table)
+    writer.write(arrow_table_simple)
     statistics = writer.close()
 
     result = ds.dataset(file_path).to_table()
-    assert result.equals(simple_table)
+    assert result.equals(arrow_table_simple)
     assert statistics.record_count == 3
-
-
-def test_statistics_record_count(format_model: FileFormatModel, table_schema_simple: Schema, tmp_path: Path) -> None:
-    """close() returns DataFileStatistics with correct record count."""
-    table = pa.table(
-        {
-            "foo": ["a", "b", "c", "d", "e"],
-            "bar": pa.array([10, 20, 30, 40, 50], type=pa.int32()),
-            "baz": [True] * 5,
-        }
-    )
-    file_path = str(tmp_path / f"test.{format_model.file_extension()}")
-    writer = format_model.create_writer(PyArrowFileIO().new_output(file_path), table_schema_simple, {})
-    writer.write(table)
-    assert writer.close().record_count == 5
 
 
 def test_null_handling(format_model: FileFormatModel, table_schema_simple: Schema, tmp_path: Path) -> None:
@@ -98,23 +74,23 @@ def test_null_handling(format_model: FileFormatModel, table_schema_simple: Schem
 
 
 def test_context_manager_caches_result(
-    format_model: FileFormatModel, table_schema_simple: Schema, simple_table: pa.Table, tmp_path: Path
+    format_model: FileFormatModel, table_schema_simple: Schema, arrow_table_simple: pa.Table, tmp_path: Path
 ) -> None:
     """writer.result() returns cached statistics after context manager exit."""
     file_path = str(tmp_path / f"test.{format_model.file_extension()}")
     writer = format_model.create_writer(PyArrowFileIO().new_output(file_path), table_schema_simple, {})
     with writer:
-        writer.write(simple_table)
+        writer.write(arrow_table_simple)
     assert writer.result().record_count == 3
 
 
 def test_close_is_idempotent(
-    format_model: FileFormatModel, table_schema_simple: Schema, simple_table: pa.Table, tmp_path: Path
+    format_model: FileFormatModel, table_schema_simple: Schema, arrow_table_simple: pa.Table, tmp_path: Path
 ) -> None:
     """Calling close() twice returns the same cached statistics object."""
     file_path = str(tmp_path / f"test.{format_model.file_extension()}")
     writer = format_model.create_writer(PyArrowFileIO().new_output(file_path), table_schema_simple, {})
-    writer.write(simple_table)
+    writer.write(arrow_table_simple)
     stats1 = writer.close()
     stats2 = writer.close()
     assert stats1 is stats2
@@ -128,28 +104,16 @@ def test_close_without_write_raises(format_model: FileFormatModel, table_schema_
         writer.close()
 
 
-def test_construct_field_uses_orc_field_id_key() -> None:
-    """ArrowProjectionVisitor uses ORC field ID and required keys when file_format is ORC."""
-    from pyiceberg.io.pyarrow import (
-        ORC_FIELD_ID_KEY,
-        ORC_FIELD_REQUIRED_KEY,
-        PYARROW_PARQUET_FIELD_ID_KEY,
-        ArrowProjectionVisitor,
-    )
+def test_parquet_format_model_adds_field_id_metadata() -> None:
+    """ParquetFormatModel.add_field_metadata writes the Parquet field-id key when requested."""
+    from pyiceberg.io.pyarrow import PYARROW_PARQUET_FIELD_ID_KEY, ParquetFormatModel
 
-    schema = Schema(NestedField(field_id=1, name="x", field_type=LongType(), required=True))
+    field = NestedField(field_id=1, name="x", field_type=LongType(), required=True)
 
-    visitor = ArrowProjectionVisitor(schema, include_field_ids=True, file_format=FileFormat.ORC)
-    field = visitor._construct_field(schema.find_field(1), pa.int64())
-    assert field.metadata is not None
-    assert ORC_FIELD_ID_KEY in field.metadata
-    assert ORC_FIELD_REQUIRED_KEY in field.metadata
-    assert field.metadata[ORC_FIELD_REQUIRED_KEY] == b"true"
-    assert PYARROW_PARQUET_FIELD_ID_KEY not in field.metadata
+    metadata: dict[bytes, bytes] = {}
+    ParquetFormatModel().add_field_metadata(field, metadata, include_field_ids=True)
+    assert metadata == {PYARROW_PARQUET_FIELD_ID_KEY: b"1"}
 
-    visitor_pq = ArrowProjectionVisitor(schema, include_field_ids=True, file_format=FileFormat.PARQUET)
-    field_pq = visitor_pq._construct_field(schema.find_field(1), pa.int64())
-    assert field_pq.metadata is not None
-    assert PYARROW_PARQUET_FIELD_ID_KEY in field_pq.metadata
-    assert ORC_FIELD_ID_KEY not in field_pq.metadata
-    assert ORC_FIELD_REQUIRED_KEY not in field_pq.metadata
+    metadata_no_ids: dict[bytes, bytes] = {}
+    ParquetFormatModel().add_field_metadata(field, metadata_no_ids, include_field_ids=False)
+    assert metadata_no_ids == {}

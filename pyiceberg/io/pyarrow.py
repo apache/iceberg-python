@@ -1886,7 +1886,7 @@ def _to_requested_schema(
     include_field_ids: bool = False,
     projected_missing_fields: dict[int, Any] = EMPTY_DICT,
     allow_timestamp_tz_mismatch: bool = False,
-    file_format: FileFormat = FileFormat.PARQUET,
+    format_model: FileFormatModel | None = None,
 ) -> pa.RecordBatch:
     # We could reuse some of these visitors
     struct_array = visit_with_partner(
@@ -1898,7 +1898,7 @@ def _to_requested_schema(
             include_field_ids,
             projected_missing_fields=projected_missing_fields,
             allow_timestamp_tz_mismatch=allow_timestamp_tz_mismatch,
-            file_format=file_format,
+            format_model=format_model,
         ),
         ArrowAccessor(file_schema),
     )
@@ -1911,7 +1911,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
     _downcast_ns_timestamp_to_us: bool
     _projected_missing_fields: dict[int, Any]
     _allow_timestamp_tz_mismatch: bool
-    _file_format: FileFormat
+    _format_model: FileFormatModel | None
 
     def __init__(
         self,
@@ -1920,8 +1920,10 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
         include_field_ids: bool = False,
         projected_missing_fields: dict[int, Any] = EMPTY_DICT,
         allow_timestamp_tz_mismatch: bool = False,
-        file_format: FileFormat = FileFormat.PARQUET,
+        format_model: FileFormatModel | None = None,
     ) -> None:
+        if include_field_ids and format_model is None:
+            raise ValueError("format_model is required when include_field_ids=True")
         self._file_schema = file_schema
         self._include_field_ids = include_field_ids
         self._downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
@@ -1929,7 +1931,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
         # When True, allows projecting timestamptz (UTC) to timestamp (no tz).
         # Allowed for reading (aligns with Spark); disallowed for writing to enforce Iceberg spec's strict typing.
         self._allow_timestamp_tz_mismatch = allow_timestamp_tz_mismatch
-        self._file_format = file_format
+        self._format_model = format_model
 
     def _cast_if_needed(self, field: NestedField, values: pa.Array) -> pa.Array:
         file_field = self._file_schema.find_field(field.field_id)
@@ -1984,16 +1986,11 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
         return values
 
     def _construct_field(self, field: NestedField, arrow_type: pa.DataType) -> pa.Field:
-        metadata = {}
+        metadata: dict[bytes, bytes] = {}
         if field.doc:
-            metadata[PYARROW_FIELD_DOC_KEY] = field.doc
-        if self._include_field_ids:
-            if self._file_format == FileFormat.ORC:
-                metadata[ORC_FIELD_ID_KEY] = str(field.field_id)
-            else:
-                metadata[PYARROW_PARQUET_FIELD_ID_KEY] = str(field.field_id)
-        if self._file_format == FileFormat.ORC:
-            metadata[ORC_FIELD_REQUIRED_KEY] = str(field.required).lower()
+            metadata[PYARROW_FIELD_DOC_KEY] = field.doc.encode()
+        if self._format_model is not None:
+            self._format_model.add_field_metadata(field, metadata, self._include_field_ids)
 
         return pa.field(
             name=field.name,
@@ -2675,6 +2672,10 @@ class ParquetFormatModel(FileFormatModel):
     ) -> ParquetFormatWriter:
         return ParquetFormatWriter(output_file, file_schema, properties)
 
+    def add_field_metadata(self, field: NestedField, metadata: dict[bytes, bytes], include_field_ids: bool) -> None:
+        if include_field_ids:
+            metadata[PYARROW_PARQUET_FIELD_ID_KEY] = str(field.field_id).encode()
+
 
 FileFormatFactory.register(ParquetFormatModel())
 
@@ -2706,7 +2707,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
                 batch=batch,
                 downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
                 include_field_ids=True,
-                file_format=file_format,
+                format_model=format_model,
             )
             for batch in task.record_batches
         ]
