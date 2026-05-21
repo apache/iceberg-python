@@ -907,7 +907,7 @@ def test_upsert_snapshot_properties(catalog: Catalog) -> None:
         (
             pa.list_(pa.int32()),
             ValueError,
-            "Nested column 'k' of type 'list<item: int32>' cannot be used as a join key in upsert",
+            "Nested column 'k' of type 'large_list<element: int32>' cannot be used as a join key in upsert",
         ),
         (
             pa.dictionary(pa.int32(), pa.string()),
