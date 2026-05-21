@@ -44,6 +44,7 @@ from pyiceberg.table.metadata import INITIAL_SPEC_ID
 from pyiceberg.table.sorting import INITIAL_SORT_ORDER_ID, SortField, SortOrder
 from pyiceberg.transforms import BucketTransform, DayTransform, IdentityTransform
 from pyiceberg.types import IntegerType, LongType, NestedField, TimestampType, UUIDType
+from pyiceberg.view.metadata import SQLViewRepresentation, ViewVersion
 from tests.conftest import (
     clean_up,
     does_support_atomic_concurrent_updates,
@@ -615,6 +616,36 @@ def test_register_table_existing(test_catalog: Catalog, table_schema_nested: Sch
     # Assert that registering the table again raises TableAlreadyExistsError
     with pytest.raises(TableAlreadyExistsError):
         test_catalog.register_table(identifier, metadata_location=table.metadata_location)
+
+
+@pytest.mark.integration
+def test_rest_register_view(rest_catalog: RestCatalog, table_schema_simple: Schema, database_name: str, view_name: str) -> None:
+    identifier = (database_name, view_name)
+
+    rest_catalog.create_namespace_if_not_exists(database_name)
+
+    view_version = ViewVersion(
+        version_id=1,
+        schema_id=1,
+        timestamp_ms=1,
+        summary={},
+        representations=[
+            SQLViewRepresentation(
+                type="sql",
+                sql="SELECT 1 as some_col",
+                dialect="spark",
+            )
+        ],
+        default_namespace=["default"],
+    )
+
+    view = rest_catalog.create_view(identifier, table_schema_simple, view_version)
+    assert rest_catalog.view_exists(identifier)
+
+    register_identifier = (database_name, "register_identifier")
+    assert not rest_catalog.view_exists(register_identifier)
+    rest_catalog.register_view(register_identifier, view.metadata_location)
+    assert rest_catalog.view_exists(register_identifier)
 
 
 @pytest.mark.integration

@@ -851,6 +851,7 @@ class RestCatalog(Catalog):
     def _response_to_view(self, identifier_tuple: tuple[str, ...], view_response: ViewResponse) -> View:
         return View(
             identifier=identifier_tuple,
+            metadata_location=view_response.metadata_location,
             metadata=view_response.metadata,
         )
 

@@ -29,14 +29,17 @@ class View:
 
     _identifier: Identifier
     metadata: ViewMetadata
+    metadata_location: str | None
 
     def __init__(
         self,
         identifier: Identifier,
         metadata: ViewMetadata,
+        metadata_location: str | None = None,
     ) -> None:
         self._identifier = identifier
         self.metadata = metadata
+        self.metadata_location = metadata_location
 
     def name(self) -> Identifier:
         """Return the identifier of this view."""
