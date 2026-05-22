@@ -24,7 +24,7 @@ from __future__ import annotations
 import struct
 from abc import ABC, abstractmethod
 from datetime import date, datetime, time
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 from functools import singledispatchmethod
 from math import isnan
 from typing import Any, Generic
@@ -555,27 +555,27 @@ class StringLiteral(Literal[str]):
     @to.register(IntegerType)
     def _(self, type_var: IntegerType) -> Literal[int]:
         try:
-            number = int(float(self.value))
+            number = int(Decimal(self.value).to_integral_value(rounding=ROUND_DOWN))
 
             if IntegerType.max < number:
                 return IntAboveMax()
             elif IntegerType.min > number:
                 return IntBelowMin()
             return LongLiteral(number)
-        except ValueError as e:
+        except (ArithmeticError, OverflowError, ValueError) as e:
             raise ValueError(f"Could not convert {self.value} into a {type_var}") from e
 
     @to.register(LongType)
     def _(self, type_var: LongType) -> Literal[int]:
         try:
-            long_value = int(float(self.value))
+            long_value = int(Decimal(self.value).to_integral_value(rounding=ROUND_DOWN))
             if LongType.max < long_value:
                 return LongAboveMax()
             elif LongType.min > long_value:
                 return LongBelowMin()
             else:
                 return LongLiteral(long_value)
-        except (TypeError, ValueError) as e:
+        except (ArithmeticError, OverflowError, TypeError, ValueError) as e:
             raise ValueError(f"Could not convert {self.value} into a {type_var}") from e
 
     @to.register(DateType)

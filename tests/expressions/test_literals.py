@@ -845,6 +845,14 @@ def test_string_to_int_min_value() -> None:
     assert isinstance(literal(str(IntegerType.min - 1)).to(IntegerType()), IntBelowMin)
 
 
+def test_string_to_long_max_value_without_precision_loss() -> None:
+    assert literal(str(LongType.max)).to(LongType()) == literal(LongType.max)
+
+
+def test_string_to_long_large_integer_without_precision_loss() -> None:
+    assert literal("9007199254740993").to(LongType()) == literal(9007199254740993)
+
+
 def test_string_to_integer_type_invalid_value() -> None:
     with pytest.raises(ValueError) as e:
         _ = literal("abc").to(IntegerType())
