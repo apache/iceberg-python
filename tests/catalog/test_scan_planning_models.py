@@ -48,7 +48,7 @@ def rest_scan_catalog(requests_mock: Mocker) -> RestCatalog:
     requests_mock.get(
         f"{TEST_URI}v1/config",
         json={
-            "defaults": {"rest-scan-planning-enabled": "true"},
+            "defaults": {"scan-planning-mode": "server"},
             "overrides": {},
             "endpoints": [
                 "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan",
@@ -61,7 +61,7 @@ def rest_scan_catalog(requests_mock: Mocker) -> RestCatalog:
     return RestCatalog(
         "test",
         uri=TEST_URI,
-        **{"rest-scan-planning-enabled": "true"},
+        **{"scan-planning-mode": "server"},
     )
 
 
