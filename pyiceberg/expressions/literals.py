@@ -24,7 +24,7 @@ from __future__ import annotations
 import struct
 from abc import ABC, abstractmethod
 from datetime import date, datetime, time
-from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from functools import singledispatchmethod
 from math import isnan
 from typing import Any, Generic
@@ -555,7 +555,8 @@ class StringLiteral(Literal[str]):
     @to.register(IntegerType)
     def _(self, type_var: IntegerType) -> Literal[int]:
         try:
-            number = int(Decimal(self.value).to_integral_value(rounding=ROUND_DOWN))
+            dec = Decimal(self.value)
+            number = int(self.value) if dec.as_tuple().exponent == 0 else int(float(self.value))
 
             if IntegerType.max < number:
                 return IntAboveMax()
@@ -568,7 +569,8 @@ class StringLiteral(Literal[str]):
     @to.register(LongType)
     def _(self, type_var: LongType) -> Literal[int]:
         try:
-            long_value = int(Decimal(self.value).to_integral_value(rounding=ROUND_DOWN))
+            dec = Decimal(self.value)
+            long_value = int(self.value) if dec.as_tuple().exponent == 0 else int(float(self.value))
             if LongType.max < long_value:
                 return LongAboveMax()
             elif LongType.min > long_value:
