@@ -1041,7 +1041,9 @@ class RestCatalog(Catalog):
         page_token: str | None = None
 
         while True:
-            params = {"pageToken": page_token} if page_token else None
+            params: dict[str, str] = {}
+            if page_token:
+                params["pageToken"] = page_token
             response = self._session.get(url, params=params)
             try:
                 response.raise_for_status()
