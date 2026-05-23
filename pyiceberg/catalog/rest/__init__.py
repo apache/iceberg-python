@@ -1183,18 +1183,18 @@ class RestCatalog(Catalog):
     def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
         self._check_endpoint(Capability.V1_LIST_NAMESPACES)
         namespace_tuple = self.identifier_to_tuple(namespace)
-        url = (
-            f"{Endpoints.list_namespaces}?parent={self._encode_namespace_path(namespace_tuple)}"
-            if namespace_tuple
-            else Endpoints.list_namespaces
-        )
 
         namespaces: list[Identifier] = []
         page_token: str | None = None
 
         while True:
-            params = {"pageToken": page_token} if page_token else None
-            response = self._session.get(self.url(url), params=params)
+            params: dict[str, str] = {}
+            if namespace_tuple:
+                params["parent"] = self._encode_namespace_path(namespace_tuple)
+            if page_token:
+                params["pageToken"] = page_token
+            response = self._session.get(self.url(Endpoints.list_namespaces), params=params)
+
             try:
                 response.raise_for_status()
             except HTTPError as exc:
