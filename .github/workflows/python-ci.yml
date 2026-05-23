@@ -101,7 +101,7 @@ jobs:
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose-integration.yml logs
     - name: Upload coverage data
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: coverage-integration
         path: .coverage*
@@ -130,7 +130,7 @@ jobs:
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose.yml logs
     - name: Upload coverage data
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: coverage-s3
         path: .coverage*
@@ -159,7 +159,7 @@ jobs:
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose-azurite.yml logs
     - name: Upload coverage data
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: coverage-adls
         path: .coverage*
@@ -188,7 +188,7 @@ jobs:
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose-gcs-server.yml logs
     - name: Upload coverage data
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: coverage-gcs
         path: .coverage*
