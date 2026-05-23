@@ -350,6 +350,7 @@ class ConfigResponse(IcebergBaseModel):
 
 class ListNamespaceResponse(IcebergBaseModel):
     namespaces: list[Identifier] = Field()
+    next_page_token: str | None = Field(default=None, alias="next-page-token")
 
 
 class NamespaceResponse(IcebergBaseModel):
@@ -1243,19 +1244,31 @@ class RestCatalog(Catalog):
     def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
         self._check_endpoint(Capability.V1_LIST_NAMESPACES)
         namespace_tuple = self.identifier_to_tuple(namespace)
-        response = self._session.get(
-            self.url(
-                f"{Endpoints.list_namespaces}?parent={self._encode_namespace_path(namespace_tuple)}"
-                if namespace_tuple
-                else Endpoints.list_namespaces
-            ),
-        )
-        try:
-            response.raise_for_status()
-        except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchNamespaceError})
 
-        return ListNamespaceResponse.model_validate_json(response.text).namespaces
+        namespaces: list[Identifier] = []
+        page_token: str | None = None
+
+        while True:
+            params: dict[str, str] = {}
+            if namespace_tuple:
+                params["parent"] = self._encode_namespace_path(namespace_tuple)
+            if page_token:
+                params["pageToken"] = page_token
+            response = self._session.get(self.url(Endpoints.list_namespaces), params=params)
+
+            try:
+                response.raise_for_status()
+            except HTTPError as exc:
+                _handle_non_200_response(exc, {404: NoSuchNamespaceError})
+
+            parsed = ListNamespaceResponse.model_validate_json(response.text)
+            namespaces.extend(parsed.namespaces)
+
+            if not parsed.next_page_token:
+                break
+            page_token = parsed.next_page_token
+
+        return namespaces
 
     @retry(**_RETRY_ARGS)
     @override

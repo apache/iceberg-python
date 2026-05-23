@@ -823,6 +823,105 @@ def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
     ]
 
 
+def test_list_namespaces_paginated_200(rest_mock: Mocker) -> None:
+    # First page with next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={
+            "namespaces": [["ns1"], ["ns2"]],
+            "next-page-token": "page2token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # Second page with next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces?pageToken=page2token",
+        json={
+            "namespaces": [["ns3"], ["ns4"]],
+            "next-page-token": "page3token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # Third page without next-page-token (last page)
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces?pageToken=page3token",
+        json={
+            "namespaces": [["ns5"]],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces()
+    assert result == [
+        ("ns1",),
+        ("ns2",),
+        ("ns3",),
+        ("ns4",),
+        ("ns5",),
+    ]
+
+
+def test_list_namespaces_with_parent_paginated_200(rest_mock: Mocker) -> None:
+    # First page
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces?parent=accounting",
+        json={
+            "namespaces": [["accounting", "tax"]],
+            "next-page-token": "page2",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # Second page (last)
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces?parent=accounting&pageToken=page2",
+        json={
+            "namespaces": [["accounting", "payroll"]],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces(("accounting",))
+    assert result == [
+        ("accounting", "tax"),
+        ("accounting", "payroll"),
+    ]
+
+
+def test_list_namespaces_paginated_200_none_next_page_token(rest_mock: Mocker) -> None:
+    # First page with next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={
+            "namespaces": [["ns1"], ["ns2"]],
+            "next-page-token": "page2token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # The last page with None next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces?pageToken=page2token",
+        json={
+            "namespaces": [["ns3"]],
+            "next-page-token": None,
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces()
+    assert result == [
+        ("ns1",),
+        ("ns2",),
+        ("ns3",),
+    ]
+
+
 def test_list_namespace_with_parent_404(rest_mock: Mocker) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces?parent=some_namespace",
