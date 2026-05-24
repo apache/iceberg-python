@@ -565,6 +565,29 @@ def test_list_tables_paginated_200_none_next_page_token(rest_mock: Mocker) -> No
     ]
 
 
+def test_list_tables_page_size(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "table1"},
+                {"namespace": ["examples"], "name": "table2"},
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "100"}).list_tables(namespace)
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/examples/tables?pageSize=100"
+
+    assert result == [
+        ("examples", "table1"),
+        ("examples", "table2"),
+    ]
+
+
 def test_list_tables_200_sigv4(rest_mock: Mocker) -> None:
     namespace = "examples"
     rest_mock.get(
@@ -1046,6 +1069,25 @@ def test_list_namespaces_paginated_200_none_next_page_token(rest_mock: Mocker) -
         ("ns1",),
         ("ns2",),
         ("ns3",),
+    ]
+
+
+def test_list_namespaces_page_size(rest_mock: Mocker) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={
+            "namespaces": [["ns1"], ["ns2"]],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "100"}).list_namespaces()
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces?pageSize=100"
+
+    assert result == [
+        ("ns1",),
+        ("ns2",),
     ]
 
 

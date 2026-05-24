@@ -1044,11 +1044,17 @@ class RestCatalog(Catalog):
         namespace_concat = self._encode_namespace_path(namespace_tuple)
         url = self.url(Endpoints.list_tables, namespace=namespace_concat)
 
+        params: dict[str, str] = {}
+        page_size = property_as_int(self.properties, PAGE_SIZE, None)
+        if page_size is not None:
+            if page_size <= 0:
+                raise ValueError(f"{PAGE_SIZE} must be a positive integer")
+            params["pageSize"] = str(page_size)
+
         tables: list[Identifier] = []
         page_token: str | None = None
 
         while True:
-            params: dict[str, str] = {}
             if page_token:
                 params["pageToken"] = page_token
             response = self._session.get(url, params=params)
@@ -1151,7 +1157,8 @@ class RestCatalog(Catalog):
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = self._encode_namespace_path(namespace_tuple)
         url = self.url(Endpoints.list_views, namespace=namespace_concat)
-        params = {}
+
+        params: dict[str, str] = {}
         page_size = property_as_int(self.properties, PAGE_SIZE, None)
         if page_size is not None:
             if page_size <= 0:
@@ -1273,11 +1280,17 @@ class RestCatalog(Catalog):
         self._check_endpoint(Capability.V1_LIST_NAMESPACES)
         namespace_tuple = self.identifier_to_tuple(namespace)
 
+        params: dict[str, str] = {}
+        page_size = property_as_int(self.properties, PAGE_SIZE, None)
+        if page_size is not None:
+            if page_size <= 0:
+                raise ValueError(f"{PAGE_SIZE} must be a positive integer")
+            params["pageSize"] = str(page_size)
+
         namespaces: list[Identifier] = []
         page_token: str | None = None
 
         while True:
-            params: dict[str, str] = {}
             if namespace_tuple:
                 params["parent"] = self._encode_namespace_path(namespace_tuple)
             if page_token:
