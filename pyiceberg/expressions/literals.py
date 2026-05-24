@@ -68,8 +68,11 @@ from pyiceberg.utils.singleton import Singleton
 UUID_BYTES_LENGTH = 16
 
 
-def _truncate_numeric_string_to_int(value: str) -> int:
-    return int(Decimal(value))
+def _parse_numeric_string(value: str) -> Decimal:
+    number = Decimal(value)
+    if not number.is_finite():
+        raise ValueError(f"Cannot convert non-finite numeric string: {value}")
+    return number
 
 
 class Literal(IcebergRootModel[L], Generic[L], ABC):  # type: ignore
@@ -559,26 +562,26 @@ class StringLiteral(Literal[str]):
     @to.register(IntegerType)
     def _(self, type_var: IntegerType) -> Literal[int]:
         try:
-            number = _truncate_numeric_string_to_int(self.value)
+            number = _parse_numeric_string(self.value)
 
             if IntegerType.max < number:
                 return IntAboveMax()
             elif IntegerType.min > number:
                 return IntBelowMin()
-            return LongLiteral(number)
+            return LongLiteral(int(number))
         except (ArithmeticError, OverflowError, ValueError) as e:
             raise ValueError(f"Could not convert {self.value} into a {type_var}") from e
 
     @to.register(LongType)
     def _(self, type_var: LongType) -> Literal[int]:
         try:
-            long_value = _truncate_numeric_string_to_int(self.value)
+            long_value = _parse_numeric_string(self.value)
             if LongType.max < long_value:
                 return LongAboveMax()
             elif LongType.min > long_value:
                 return LongBelowMin()
             else:
-                return LongLiteral(long_value)
+                return LongLiteral(int(long_value))
         except (ArithmeticError, OverflowError, TypeError, ValueError) as e:
             raise ValueError(f"Could not convert {self.value} into a {type_var}") from e
 

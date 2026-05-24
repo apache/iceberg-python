@@ -39,6 +39,7 @@ from pyiceberg.expressions.literals import (
     IntAboveMax,
     IntBelowMin,
     Literal,
+    LongAboveMax,
     LongLiteral,
     StringLiteral,
     TimeLiteral,
@@ -867,6 +868,14 @@ def test_string_to_long_max_decimal_like_integer_without_precision_loss() -> Non
 
 def test_string_to_integer_scientific_notation_without_regression() -> None:
     assert literal("1e3").to(IntegerType()) == literal(1000)
+
+
+def test_string_to_integer_large_scientific_notation_above_max() -> None:
+    assert isinstance(literal("1e1000000").to(IntegerType()), IntAboveMax)
+
+
+def test_string_to_long_large_scientific_notation_above_max() -> None:
+    assert isinstance(literal("1e1000000").to(LongType()), LongAboveMax)
 
 
 def test_string_to_integer_type_invalid_value() -> None:
