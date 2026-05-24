@@ -2510,6 +2510,11 @@ def clean_up(test_catalog: Catalog) -> None:
         if "my_iceberg_database-" in database_name:
             for identifier in test_catalog.list_tables(database_name):
                 test_catalog.drop_table(identifier)
+            try:
+                for identifier in test_catalog.list_views(database_name):
+                    test_catalog.drop_view(identifier)
+            except NotImplementedError:
+                pass
             test_catalog.drop_namespace(database_name)
 
 
