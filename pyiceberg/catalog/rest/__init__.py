@@ -1438,7 +1438,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     @override
-    def drop_view(self, identifier: str) -> None:
+    def drop_view(self, identifier: str | Identifier) -> None:
         self._check_endpoint(Capability.V1_DELETE_VIEW)
         response = self._session.delete(
             self.url(Endpoints.drop_view, prefixed=True, **self._split_identifier_for_path(identifier, IdentifierKind.VIEW)),
