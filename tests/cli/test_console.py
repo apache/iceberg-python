@@ -86,9 +86,9 @@ def test_version_command_emits_deprecation_warning() -> None:
     result = runner.invoke(run, ["version"])
 
     assert result.exit_code == 0
-    assert __version__ in result.output
-    assert "deprecated" in result.output.lower()
-    assert "pyiceberg --version" in result.output
+    assert result.stdout == f"{__version__}\n"
+    assert "deprecated" in result.stderr.lower()
+    assert "pyiceberg --version" in result.stderr
 
 
 @pytest.fixture(autouse=True)
