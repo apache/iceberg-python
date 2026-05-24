@@ -900,6 +900,46 @@ def test_string_starts_with(
     # assert not should_read, "Should not read: range doesn't match"
 
 
+def test_inclusive_metrics_evaluator_uses_empty_byte_lower_bound() -> None:
+    schema = Schema(NestedField(1, "empty_string", StringType(), required=True))
+    data_file = DataFile.from_args(
+        file_path="file.parquet",
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=10,
+        file_size_in_bytes=1,
+        value_counts={1: 10},
+        null_value_counts={1: 0},
+        nan_value_counts=None,
+        lower_bounds={1: to_bytes(StringType(), "")},
+        upper_bounds={1: to_bytes(StringType(), "")},
+    )
+
+    should_read = _InclusiveMetricsEvaluator(schema, LessThan("empty_string", "")).eval(data_file)
+
+    assert not should_read, "Should not read: lower bound is present and equal to the literal"
+
+
+def test_strict_metrics_evaluator_uses_empty_byte_bounds() -> None:
+    schema = Schema(NestedField(1, "empty_string", StringType(), required=True))
+    data_file = DataFile.from_args(
+        file_path="file.parquet",
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=10,
+        file_size_in_bytes=1,
+        value_counts={1: 10},
+        null_value_counts={1: 0},
+        nan_value_counts=None,
+        lower_bounds={1: to_bytes(StringType(), "")},
+        upper_bounds={1: to_bytes(StringType(), "")},
+    )
+
+    should_read = _StrictMetricsEvaluator(schema, EqualTo("empty_string", "")).eval(data_file)
+
+    assert should_read, "Should match: lower and upper bounds are present and equal to the literal"
+
+
 def test_string_not_starts_with(
     schema_data_file: Schema, data_file: DataFile, data_file_2: DataFile, data_file_3: DataFile, data_file_4: DataFile
 ) -> None:
