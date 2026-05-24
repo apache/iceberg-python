@@ -68,6 +68,10 @@ from pyiceberg.utils.singleton import Singleton
 UUID_BYTES_LENGTH = 16
 
 
+def _truncate_numeric_string_to_int(value: str) -> int:
+    return int(Decimal(value))
+
+
 class Literal(IcebergRootModel[L], Generic[L], ABC):  # type: ignore
     """Literal which has a value and can be converted between types."""
 
@@ -555,8 +559,7 @@ class StringLiteral(Literal[str]):
     @to.register(IntegerType)
     def _(self, type_var: IntegerType) -> Literal[int]:
         try:
-            dec = Decimal(self.value)
-            number = int(self.value) if dec.as_tuple().exponent == 0 else int(float(self.value))
+            number = _truncate_numeric_string_to_int(self.value)
 
             if IntegerType.max < number:
                 return IntAboveMax()
@@ -569,8 +572,7 @@ class StringLiteral(Literal[str]):
     @to.register(LongType)
     def _(self, type_var: LongType) -> Literal[int]:
         try:
-            dec = Decimal(self.value)
-            long_value = int(self.value) if dec.as_tuple().exponent == 0 else int(float(self.value))
+            long_value = _truncate_numeric_string_to_int(self.value)
             if LongType.max < long_value:
                 return LongAboveMax()
             elif LongType.min > long_value:
