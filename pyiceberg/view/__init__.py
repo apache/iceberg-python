@@ -80,9 +80,12 @@ class View:
         """Return the view's UUID."""
         return UUID(self.metadata.view_uuid)
 
-    def sql_for(self, dialect: str) -> SQLViewRepresentation:
-        """Return the view representation for the sql dialect."""
-        return next(repr.root for repr in self.current_version().representations if repr.root.dialect == dialect)
+    def sql_for(self, dialect: str) -> SQLViewRepresentation | None:
+        """Return the view representation for the sql dialect, or None if no representation could be resolved."""
+        return next(
+            (repr.root for repr in self.current_version().representations if repr.root.dialect.casefold() == dialect.casefold()),
+            None,
+        )
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the View class."""
