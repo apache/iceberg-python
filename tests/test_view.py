@@ -96,6 +96,13 @@ def test_view_sql_for_dialect(view: View) -> None:
     assert repr.sql == "SELECT * FROM prod.db.table"
 
 
+def test_view_sql_for_dialect_ignore_case(view: View) -> None:
+    repr = view.sql_for("Spark")
+    assert isinstance(repr, SQLViewRepresentation)
+    assert repr.dialect == "spark"
+    assert repr.sql == "SELECT * FROM prod.db.table"
+
+
 def test_view_schemas_multiple(example_view_metadata_v1_multiple_versions: dict[str, Any]) -> None:
     view = View(("default", "test_view"), ViewMetadata.model_validate(example_view_metadata_v1_multiple_versions))
     schemas = view.schemas()
@@ -117,5 +124,4 @@ def test_view_version_unknown_id(view: View) -> None:
 
 
 def test_view_sql_for_unknown_dialect(view: View) -> None:
-    with pytest.raises(StopIteration):
-        view.sql_for("trino")
+    assert not view.sql_for("trino")
