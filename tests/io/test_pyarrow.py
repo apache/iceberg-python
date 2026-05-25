@@ -1371,6 +1371,75 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
     assert len(table.scan(row_filter="partition_id = -1").to_arrow()) == 0
 
 
+@pytest.mark.parametrize(
+    "partition_field_type, arrow_partition_type, partition_value",
+    [
+        (IntegerType(), pa.int32(), 0),
+        (StringType(), pa.large_string(), ""),
+        (IntegerType(), pa.int32(), None),
+    ],
+)
+def test_identity_transform_column_projection_with_falsy_value(
+    tmp_path: str,
+    catalog: InMemoryCatalog,
+    partition_field_type: PrimitiveType,
+    arrow_partition_type: pa.DataType,
+    partition_value: Any,
+) -> None:
+    """Partition value projection must preserve falsy values (0, "") and still render None as null."""
+    schema = Schema(
+        NestedField(1, "other_field", StringType(), required=False),
+        NestedField(2, "partition_col", partition_field_type, required=False),
+    )
+    partition_spec = PartitionSpec(
+        PartitionField(2, 1000, IdentityTransform(), "partition_col"),
+    )
+
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        f"default.test_projection_partition_{partition_value!r}",
+        schema=schema,
+        partition_spec=partition_spec,
+        properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
+    )
+
+    file_data = pa.array(["foo", "bar"], type=pa.string())
+    file_loc = f"{tmp_path}/test.parquet"
+    pq.write_table(pa.table([file_data], names=["other_field"]), file_loc)
+
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=pq.read_metadata(file_loc),
+        stats_columns=compute_statistics_plan(table.schema(), table.metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
+    )
+
+    unpartitioned_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=file_loc,
+        file_format=FileFormat.PARQUET,
+        partition=Record(partition_value),
+        file_size_in_bytes=os.path.getsize(file_loc),
+        sort_order_id=None,
+        spec_id=table.metadata.default_spec_id,
+        equality_ids=None,
+        key_metadata=None,
+        **statistics.to_serialized_dict(),
+    )
+
+    with table.transaction() as transaction:
+        with transaction.update_snapshot().overwrite() as update:
+            update.append_data_file(unpartitioned_file)
+
+    expected_schema = pa.schema([("other_field", pa.string()), ("partition_col", arrow_partition_type)])
+    assert table.scan().to_arrow() == pa.table(
+        {
+            "other_field": ["foo", "bar"],
+            "partition_col": [partition_value, partition_value],
+        },
+        schema=expected_schema,
+    )
+
+
 def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryCatalog) -> None:
     # Test by adding a non-partitioned data file to a multi-partitioned table, verifying partition value
     # projection from manifest metadata.

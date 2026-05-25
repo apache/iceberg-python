@@ -1605,7 +1605,8 @@ def _get_column_projection_values(
     for field_id in project_schema_diff:
         for partition_field in partition_spec.fields_by_source_id(field_id):
             if isinstance(partition_field.transform, IdentityTransform):
-                if partition_value := accessors[partition_field.field_id].get(file.partition):
+                partition_value = accessors[partition_field.field_id].get(file.partition)
+                if partition_value is not None:
                     projected_missing_fields[field_id] = partition_value
 
     return projected_missing_fields
@@ -2010,7 +2011,8 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
             elif field.optional or field.initial_default is not None:
                 # When an optional field is added, or when a required field with a non-null initial default is added
                 arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)
-                if projected_value := self._projected_missing_fields.get(field.field_id):
+                projected_value = self._projected_missing_fields.get(field.field_id)
+                if projected_value is not None:
                     field_arrays.append(pa.repeat(pa.scalar(projected_value, type=arrow_type), len(struct_array)))
                 elif field.initial_default is None:
                     field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))
