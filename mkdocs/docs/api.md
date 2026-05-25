@@ -1527,17 +1527,40 @@ def cleanup_old_snapshots(table_name: str, snapshot_ids: list[int]):
 cleanup_old_snapshots("analytics.user_events", [12345, 67890, 11111])
 ```
 
-## Views
+## Create a view
 
-PyIceberg supports view operations.
-
-### Check if a view exists
+To create a view from a catalog:
 
 ```python
+import time
+import pyarrow as pa
 from pyiceberg.catalog import load_catalog
+from pyiceberg.view import SQLViewRepresentation, ViewVersion
 
 catalog = load_catalog("default")
-catalog.view_exists("default.bar")
+
+identifier = "default.some_view"
+schema = pa.schema([pa.field("some_col", pa.int32())])
+view_version = ViewVersion(
+    version_id=1,
+    schema_id=1,
+    timestamp_ms=int(time.time() * 1000),
+    summary={},
+    representations=[
+        SQLViewRepresentation(
+            type="sql",
+            sql="SELECT 1 as some_col",
+            dialect="spark",
+        )
+    ],
+    default_namespace=["default"],
+)
+
+catalog.create_view(
+    identifier=identifier,
+    schema=schema,
+    view_version=view_version,
+)
 ```
 
 ## Register a view
@@ -1549,6 +1572,48 @@ catalog.register_view(
     identifier="docs_example.bids",
     metadata_location="s3://warehouse/path/to/metadata.json"
 )
+```
+
+## Load a view
+
+Loading the `some_view` view:
+
+```python
+view = catalog.load_view("default.some_view")
+# Equivalent to:
+view = catalog.load_view(("default", "some_view"))
+# The tuple syntax can be used if the namespace or view contains a dot.
+```
+
+This returns a `View` that represents an Iceberg view. You can access the SQL representation for a specific dialect:
+
+```python
+sql_representation = view.sql_for("spark")
+print(sql_representation.sql)
+```
+
+## Check if a view exists
+
+To check whether the `some_view` view exists:
+
+```python
+catalog.view_exists("default.some_view")
+```
+
+## List views
+
+To list views in the `default` namespace:
+
+```python
+catalog.list_views("default")
+```
+
+## Drop a view
+
+To drop a view:
+
+```python
+catalog.drop_view("default.some_view")
 ```
 
 ## Table Statistics Management
