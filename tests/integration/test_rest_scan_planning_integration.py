@@ -76,7 +76,7 @@ def scan_catalog() -> Catalog:
             "s3.endpoint": "http://localhost:9000",
             "s3.access-key-id": "admin",
             "s3.secret-access-key": "password",
-            "rest-scan-planning-enabled": "true",
+            "scan-planning-mode": "server",
         },
     )
     catalog.create_namespace_if_not_exists("default")

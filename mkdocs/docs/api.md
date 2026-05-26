@@ -365,6 +365,17 @@ for buf in tbl.scan().to_arrow_batch_reader():
     print(f"Buffer contains {len(buf)} rows")
 ```
 
+### Streaming writes from a `RecordBatchReader`
+
+`tbl.append()` and `tbl.overwrite()` also accept a `pyarrow.RecordBatchReader` directly, which lets you write datasets that don't fit in memory without materialising them as a `pa.Table` first. PyIceberg consumes the reader once and microbatches it into Parquet files of approximately `write.target-file-size-bytes` (default 512 MiB), keeping memory usage bounded by the target size. All files are committed in a single snapshot.
+
+```python
+reader = pa.RecordBatchReader.from_batches(schema, batch_iter)
+tbl.append(reader)
+```
+
+Streaming writes are currently only supported on **unpartitioned** tables. For a partitioned table, materialise the reader as a `pa.Table` first, or follow [#2152](https://github.com/apache/iceberg-python/issues/2152) for the partitioned support tracked as a follow-up.
+
 To avoid any type inconsistencies during writing, you can convert the Iceberg table schema to Arrow:
 
 ```python
@@ -425,7 +436,7 @@ You can overwrite the record of `Paris` with a record of `New York`:
 from pyiceberg.expressions import EqualTo
 df = pa.Table.from_pylist(
     [
-        {"city": "New York", "lat": 40.7128, "long": 74.0060},
+        {"city": "New York", "lat": 40.7128, "long": -74.0060},
     ]
 )
 tbl.overwrite(df, overwrite_filter=EqualTo('city', "Paris"))
@@ -441,7 +452,7 @@ long: double
 ----
 city: [["New York"],["Amsterdam","San Francisco","Drachten"]]
 lat: [[40.7128],[52.371807,37.773972,53.11254]]
-long: [[74.006],[4.896029,-122.431297,6.0989]]
+long: [[-74.006],[4.896029,-122.431297,6.0989]]
 ```
 
 If the PyIceberg table is partitioned, you can use `tbl.dynamic_partition_overwrite(df)` to replace the existing partitions with new ones provided in the dataframe. The partitions to be replaced are detected automatically from the provided arrow table.
@@ -1527,6 +1538,17 @@ from pyiceberg.catalog import load_catalog
 
 catalog = load_catalog("default")
 catalog.view_exists("default.bar")
+```
+
+## Register a view
+
+To register a view using existing metadata:
+
+```python
+catalog.register_view(
+    identifier="docs_example.bids",
+    metadata_location="s3://warehouse/path/to/metadata.json"
+)
 ```
 
 ## Table Statistics Management

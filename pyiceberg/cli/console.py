@@ -54,6 +54,7 @@ def catch_exception() -> Callable:  # type: ignore
 
 
 @click.group()
+@click.version_option(__version__, message="%(version)s")
 @click.option("--catalog")
 @click.option("--verbose", type=click.BOOL)
 @click.option("--output", type=click.Choice(["text", "json"]), default="text")
@@ -235,7 +236,12 @@ def location(ctx: Context, identifier: str) -> None:
 @click.pass_context
 @catch_exception()
 def version(ctx: Context) -> None:
-    """Print pyiceberg version."""
+    """Print the installed pyiceberg package version. Deprecated: use --version instead."""
+    click.echo(
+        "Deprecation warning: the `version` command is deprecated and will be removed in 0.13.0. "
+        "Please use `pyiceberg --version` instead.",
+        err=True,
+    )
     ctx.obj["output"].version(__version__)
 
 

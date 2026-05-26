@@ -63,6 +63,7 @@ from pyarrow.fs import (
     FileSystem,
     FileType,
 )
+from typing_extensions import override
 
 from pyiceberg.conversions import to_bytes
 from pyiceberg.exceptions import ResolveError
@@ -300,11 +301,13 @@ class PyArrowFile(InputFile, OutputFile):
             raise FileNotFoundError(f"Cannot get file info, file not found: {self.location}")
         return file_info
 
+    @override
     def __len__(self) -> int:
         """Return the total length of the file, in bytes."""
         file_info = self._file_info()
         return file_info.size
 
+    @override
     def exists(self) -> bool:
         """Check whether the location exists."""
         try:
@@ -313,6 +316,7 @@ class PyArrowFile(InputFile, OutputFile):
         except FileNotFoundError:
             return False
 
+    @override
     def open(self, seekable: bool = True) -> InputStream:
         """Open the location using a PyArrow FileSystem inferred from the location.
 
@@ -342,6 +346,7 @@ class PyArrowFile(InputFile, OutputFile):
             raise  # pragma: no cover - If some other kind of OSError, raise the raw error
         return input_file
 
+    @override
     def create(self, overwrite: bool = False) -> OutputStream:
         """Create a writable pyarrow.lib.NativeFile for this PyArrowFile's location.
 
@@ -373,6 +378,7 @@ class PyArrowFile(InputFile, OutputFile):
             raise  # pragma: no cover - If some other kind of OSError, raise the raw error
         return output_file
 
+    @override
     def to_input_file(self) -> PyArrowFile:
         """Return a new PyArrowFile for the location of an existing PyArrowFile instance.
 
@@ -610,6 +616,7 @@ class PyArrowFileIO(FileIO):
     def _initialize_local_fs(self) -> FileSystem:
         return PyArrowLocalFileSystem()
 
+    @override
     def new_input(self, location: str) -> PyArrowFile:
         """Get a PyArrowFile instance to read bytes from the file at the given location.
 
@@ -627,6 +634,7 @@ class PyArrowFileIO(FileIO):
             buffer_size=int(self.properties.get(BUFFER_SIZE, ONE_MEGABYTE)),
         )
 
+    @override
     def new_output(self, location: str) -> PyArrowFile:
         """Get a PyArrowFile instance to write bytes to the file at the given location.
 
@@ -644,6 +652,7 @@ class PyArrowFileIO(FileIO):
             buffer_size=int(self.properties.get(BUFFER_SIZE, ONE_MEGABYTE)),
         )
 
+    @override
     def delete(self, location: str | InputFile | OutputFile) -> None:
         """Delete the file at the given location.
 
@@ -1596,7 +1605,8 @@ def _get_column_projection_values(
     for field_id in project_schema_diff:
         for partition_field in partition_spec.fields_by_source_id(field_id):
             if isinstance(partition_field.transform, IdentityTransform):
-                if partition_value := accessors[partition_field.field_id].get(file.partition):
+                partition_value = accessors[partition_field.field_id].get(file.partition)
+                if partition_value is not None:
                     projected_missing_fields[field_id] = partition_value
 
     return projected_missing_fields
@@ -2001,7 +2011,8 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
             elif field.optional or field.initial_default is not None:
                 # When an optional field is added, or when a required field with a non-null initial default is added
                 arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)
-                if projected_value := self._projected_missing_fields.get(field.field_id):
+                projected_value = self._projected_missing_fields.get(field.field_id)
+                if projected_value is not None:
                     field_arrays.append(pa.repeat(pa.scalar(projected_value, type=arrow_type), len(struct_array)))
                 elif field.initial_default is None:
                     field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))
@@ -2666,6 +2677,18 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
 
 
 def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[list[pa.RecordBatch]]:
+    """Bin-pack ``tbl`` into groups of RecordBatches, each ~``target_file_size``.
+
+    Note:
+        ``target_file_size`` is measured in **uncompressed in-memory** Arrow bytes
+        (``Table.nbytes`` / ``RecordBatch.nbytes``), not compressed on-disk Parquet
+        bytes. The resulting Parquet file after compression (zstd by default,
+        plus dictionary/RLE encoding) is typically 3-10× smaller than
+        ``target_file_size``. This is a coarse proxy for the spec-defined
+        ``write.target-file-size-bytes`` and will be tightened to true on-disk
+        bytes once the writer is switched to a rolling-``ParquetWriter`` with
+        ``OutputStream.tell()`` (#2998).
+    """
     from pyiceberg.utils.bin_packing import PackingIterator
 
     avg_row_size_bytes = tbl.nbytes / tbl.num_rows
@@ -2679,6 +2702,41 @@ def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[list[
         largest_bin_first=False,
     )
     return bin_packed_record_batches
+
+
+def bin_pack_record_batches(batches: Iterable[pa.RecordBatch], target_file_size: int) -> Iterator[list[pa.RecordBatch]]:
+    """Microbatch a single-pass stream of RecordBatches into target-sized groups.
+
+    Unlike :func:`bin_pack_arrow_table`, this consumes ``batches`` lazily and
+    holds at most one in-flight buffer in memory, bounded by ``target_file_size``.
+    Suitable for streaming inputs (``pa.RecordBatchReader``,
+    ``Iterator[pa.RecordBatch]``) where the total size is unknown up front and
+    the caller cannot afford to materialise the full dataset.
+
+    Each yielded list of batches is intended to be written as a single Parquet
+    data file. Because this is single-pass FIFO accumulation (no lookback), the
+    last bin may be smaller than ``target_file_size``.
+
+    Note:
+        ``target_file_size`` is measured in **uncompressed in-memory** Arrow
+        bytes (``RecordBatch.nbytes``), not compressed on-disk Parquet bytes.
+        The resulting Parquet file after compression is typically 3-10×
+        smaller than ``target_file_size``. Matches the existing
+        :func:`bin_pack_arrow_table` semantics; both will be tightened to true
+        on-disk bytes once the writer is switched to a rolling-
+        ``ParquetWriter`` with ``OutputStream.tell()`` (#2998).
+    """
+    buffer: list[pa.RecordBatch] = []
+    buffer_bytes = 0
+    for batch in batches:
+        buffer.append(batch)
+        buffer_bytes += batch.nbytes
+        if buffer_bytes >= target_file_size:
+            yield buffer
+            buffer = []
+            buffer_bytes = 0
+    if buffer:
+        yield buffer
 
 
 def _check_pyarrow_schema_compatible(
@@ -2800,15 +2858,24 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> dict[str, Any]:
 
 def _dataframe_to_data_files(
     table_metadata: TableMetadata,
-    df: pa.Table,
+    df: pa.Table | pa.RecordBatchReader,
     io: FileIO,
     write_uuid: uuid.UUID | None = None,
     counter: itertools.count[int] | None = None,
 ) -> Iterable[DataFile]:
-    """Convert a PyArrow table into a DataFile.
+    """Convert a PyArrow Table or RecordBatchReader into DataFiles.
+
+    For a ``pa.Table`` the data is materialised in memory and bin-packed into
+    target-sized files (with partition splitting if the table is partitioned).
+
+    For a ``pa.RecordBatchReader`` batches are streamed and microbatched into
+    target-sized files using bounded memory (see :func:`bin_pack_record_batches`).
+    Streaming writes are currently only supported on unpartitioned tables;
+    partitioned support is tracked in
+    https://github.com/apache/iceberg-python/issues/2152.
 
     Returns:
-        An iterable that supplies datafiles that represent the table.
+        An iterable that supplies datafiles that represent the input data.
     """
     from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties, WriteTask
 
@@ -2827,6 +2894,23 @@ def _dataframe_to_data_files(
         downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
         format_version=table_metadata.format_version,
     )
+
+    if isinstance(df, pa.RecordBatchReader):
+        if not table_metadata.spec().is_unpartitioned():
+            raise NotImplementedError(
+                "Writing a pa.RecordBatchReader to a partitioned table is not yet supported. "
+                "Materialise the reader as a pa.Table first, or follow "
+                "https://github.com/apache/iceberg-python/issues/2152 for partitioned streaming support."
+            )
+        yield from write_file(
+            io=io,
+            table_metadata=table_metadata,
+            tasks=(
+                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=task_schema)
+                for batches in bin_pack_record_batches(df, target_file_size)
+            ),
+        )
+        return
 
     if table_metadata.spec().is_unpartitioned():
         yield from write_file(
