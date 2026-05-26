@@ -32,6 +32,9 @@ from requests_mock import Mocker
 import pyiceberg
 from pyiceberg.catalog import PropertiesUpdateSummary, load_catalog
 from pyiceberg.catalog.rest import (
+    CONNECTION,
+    CONNECTION_RETRY,
+    CONNECTION_TIMEOUT,
     DEFAULT_ENDPOINTS,
     EMPTY_BODY_SHA256,
     OAUTH2_SERVER_URI,
@@ -43,6 +46,7 @@ from pyiceberg.catalog.rest import (
     HttpMethod,
     RestCatalog,
     ScanPlanningMode,
+    _RetryTimeoutHTTPAdapter,
 )
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
@@ -2017,6 +2021,71 @@ def test_request_session_with_ssl_client_cert() -> None:
         # Missing namespace
         RestCatalog("rest", **catalog_properties)  # type: ignore
     assert "Could not find the TLS certificate file, invalid path: path_to_client_cert" in str(e.value)
+
+
+def test_session_without_connection_config_uses_default_adapter(rest_mock: Mocker) -> None:
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    for adapter in catalog._session.adapters.values():
+        assert not isinstance(adapter, _RetryTimeoutHTTPAdapter)
+
+
+def test_session_with_connection_timeout_and_retry(rest_mock: Mocker) -> None:
+    catalog_properties = {
+        "uri": TEST_URI,
+        "token": TEST_TOKEN,
+        CONNECTION: {
+            CONNECTION_TIMEOUT: 60,
+            CONNECTION_RETRY: {
+                "total": 5,
+                "backoff_factor": 1.0,
+                "status_forcelist": [429, 500, 502, 503, 504],
+                "allowed_methods": ["GET", "HEAD", "OPTIONS"],
+            },
+        },
+    }
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+
+    https_adapter = catalog._session.adapters["https://"]
+    http_adapter = catalog._session.adapters["http://"]
+    assert isinstance(https_adapter, _RetryTimeoutHTTPAdapter)
+    assert https_adapter is http_adapter
+    assert https_adapter._timeout == 60.0
+    assert https_adapter.max_retries.total == 5
+    assert https_adapter.max_retries.backoff_factor == 1.0
+    assert https_adapter.max_retries.status_forcelist == [429, 500, 502, 503, 504]
+    assert set(https_adapter.max_retries.allowed_methods) == {"GET", "HEAD", "OPTIONS"}
+
+
+def test_session_with_connection_timeout_only(rest_mock: Mocker) -> None:
+    catalog_properties = {
+        "uri": TEST_URI,
+        "token": TEST_TOKEN,
+        CONNECTION: {CONNECTION_TIMEOUT: "30"},
+    }
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    adapter = catalog._session.adapters["https://"]
+    assert isinstance(adapter, _RetryTimeoutHTTPAdapter)
+    assert adapter._timeout == 30.0
+
+
+def test_session_with_invalid_connection_timeout_raises(rest_mock: Mocker) -> None:
+    catalog_properties = {
+        "uri": TEST_URI,
+        "token": TEST_TOKEN,
+        CONNECTION: {CONNECTION_TIMEOUT: -1},
+    }
+    with pytest.raises(ValueError, match="`connection.timeout` must be a positive number"):
+        RestCatalog("rest", **catalog_properties)  # type: ignore
+
+
+def test_session_with_invalid_connection_retry_kwarg_raises(rest_mock: Mocker) -> None:
+    catalog_properties = {
+        "uri": TEST_URI,
+        "token": TEST_TOKEN,
+        CONNECTION: {CONNECTION_RETRY: {"bogus_kwarg": 1}},
+    }
+    with pytest.raises(ValueError, match="Invalid `connection.retry` configuration"):
+        RestCatalog("rest", **catalog_properties)  # type: ignore
 
 
 def test_rest_catalog_with_basic_auth_type(rest_mock: Mocker) -> None:

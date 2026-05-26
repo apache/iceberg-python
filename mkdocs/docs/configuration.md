@@ -348,6 +348,31 @@ catalog:
 | snapshot-loading-mode | refs                           | The snapshots to return in the body of the metadata. Setting the value to `all` would return the full set of snapshots currently valid for the table. Setting the value to `refs` would load all snapshots referenced by branches or tags. |
 | `header.X-Iceberg-Access-Delegation` | `vended-credentials` | Signal to the server that the client supports delegated access via a comma-separated list of access mechanisms. The server may choose to supply access via any or none of the requested mechanisms. When using `vended-credentials`, the server provides temporary credentials to the client. When using `remote-signing`, the server signs requests on behalf of the client. (default: `vended-credentials`) |
 
+#### Retry and timeout
+
+The REST Catalog uses `requests` with no retries and no timeout by default, so transient
+5xx/network failures bubble up immediately and slow servers can hang the client indefinitely.
+Set a `connection:` block on the catalog to opt in to a per-request timeout and a retry policy.
+Both keys are optional; when neither is set, the default `requests` behavior is preserved.
+
+```yaml
+catalog:
+  default:
+    uri: http://rest-catalog/ws/
+    connection:
+      timeout: 60                     # seconds, applied to every HTTP call
+      retry:
+        total: 5
+        backoff_factor: 1.0
+        status_forcelist: [429, 500, 502, 503, 504]
+        allowed_methods: [GET, HEAD, OPTIONS]
+```
+
+| Key                          | Example                              | Description                                                                                            |
+| ---------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| connection.timeout           | 60                                   | Per-request timeout in seconds. Must be a positive number.                                             |
+| connection.retry             | `{total: 5, backoff_factor: 1.0}`    | Mapping passed verbatim as kwargs to [`urllib3.util.retry.Retry`](https://urllib3.readthedocs.io/en/latest/reference/urllib3.util.html#urllib3.util.Retry). |
+
 #### Headers in REST Catalog
 
 To configure custom headers in REST Catalog, include them in the catalog properties with `header.<Header-Name>`. This

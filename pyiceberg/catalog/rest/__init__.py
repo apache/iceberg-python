@@ -25,9 +25,11 @@ from typing import (
 from urllib.parse import quote, unquote
 
 from pydantic import ConfigDict, Field, TypeAdapter, field_validator
-from requests import HTTPError, Session
+from requests import HTTPError, PreparedRequest, Response, Session
+from requests.adapters import HTTPAdapter
 from tenacity import RetryCallState, retry, retry_if_exception_type, stop_after_attempt
 from typing_extensions import override
+from urllib3.util.retry import Retry
 
 from pyiceberg import __version__
 from pyiceberg.catalog import BOTOCORE_SESSION, TOKEN, URI, WAREHOUSE_LOCATION, Catalog, PropertiesUpdateSummary
@@ -255,6 +257,9 @@ SIGV4_REGION = "rest.signing-region"
 SIGV4_SERVICE = "rest.signing-name"
 SIGV4_MAX_RETRIES = "rest.sigv4.max-retries"
 SIGV4_MAX_RETRIES_DEFAULT = 10
+CONNECTION = "connection"
+CONNECTION_TIMEOUT = "timeout"
+CONNECTION_RETRY = "retry"
 EMPTY_BODY_SHA256: str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 OAUTH2_SERVER_URI = "oauth2-server-uri"
 SNAPSHOT_LOADING_MODE = "snapshot-loading-mode"
@@ -392,6 +397,63 @@ class ListViewsResponse(IcebergBaseModel):
 _PLANNING_RESPONSE_ADAPTER = TypeAdapter(PlanningResponse)
 
 
+class _RetryTimeoutHTTPAdapter(HTTPAdapter):
+    """HTTPAdapter that applies a default per-request timeout.
+
+    requests does not provide a way to set a default timeout on a Session;
+    without this adapter, every call would have to thread `timeout=` through.
+    The adapter applies `self._timeout` whenever a per-call timeout is not set.
+    """
+
+    def __init__(self, timeout: float | None = None, max_retries: Retry | int | None = None) -> None:
+        self._timeout = timeout
+        if max_retries is not None:
+            super().__init__(max_retries=max_retries)
+        else:
+            super().__init__()
+
+    def send(self, request: PreparedRequest, **kwargs: Any) -> Response:
+        if kwargs.get("timeout") is None and self._timeout is not None:
+            kwargs["timeout"] = self._timeout
+        return super().send(request, **kwargs)
+
+
+def _create_connection_adapter(properties: Properties) -> _RetryTimeoutHTTPAdapter | None:
+    """Build a connection adapter from the optional `connection.*` properties.
+
+    Returns None when no `connection` block is supplied, leaving the default
+    Session behavior unchanged. Raises ValueError on invalid input.
+    """
+    connection_config = properties.get(CONNECTION)
+    if not connection_config:
+        return None
+    if not isinstance(connection_config, dict):
+        raise ValueError(f"`{CONNECTION}` must be a mapping, got: {type(connection_config).__name__}")
+
+    timeout: float | None = None
+    if (raw_timeout := connection_config.get(CONNECTION_TIMEOUT)) is not None:
+        try:
+            timeout = float(raw_timeout)
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"`{CONNECTION}.{CONNECTION_TIMEOUT}` must be a number, got: {raw_timeout!r}") from e
+        if timeout <= 0:
+            raise ValueError(f"`{CONNECTION}.{CONNECTION_TIMEOUT}` must be a positive number, got: {timeout}")
+
+    retry: Retry | None = None
+    if (retry_config := connection_config.get(CONNECTION_RETRY)) is not None:
+        if not isinstance(retry_config, dict):
+            raise ValueError(f"`{CONNECTION}.{CONNECTION_RETRY}` must be a mapping, got: {type(retry_config).__name__}")
+        try:
+            retry = Retry(**retry_config)
+        except TypeError as e:
+            raise ValueError(f"Invalid `{CONNECTION}.{CONNECTION_RETRY}` configuration: {e}") from e
+
+    if timeout is None and retry is None:
+        return None
+
+    return _RetryTimeoutHTTPAdapter(timeout=timeout, max_retries=retry)
+
+
 class RestCatalog(Catalog):
     uri: str
     _session: Session
@@ -417,6 +479,12 @@ class RestCatalog(Catalog):
     def _create_session(self) -> Session:
         """Create a request session with provided catalog configuration."""
         session = Session()
+
+        # Mount the retry/timeout adapter when `connection.*` properties are set.
+        # SigV4's adapter mounted below at `self.uri` is a longer prefix and still wins for that host.
+        if (connection_adapter := _create_connection_adapter(self.properties)) is not None:
+            session.mount("http://", connection_adapter)
+            session.mount("https://", connection_adapter)
 
         # Set HTTP headers
         self._config_headers(session)
@@ -763,8 +831,6 @@ class RestCatalog(Catalog):
         import boto3
         from botocore.auth import SigV4Auth
         from botocore.awsrequest import AWSRequest
-        from requests import PreparedRequest
-        from requests.adapters import HTTPAdapter
 
         class SigV4Adapter(HTTPAdapter):
             def __init__(self, **properties: str):
