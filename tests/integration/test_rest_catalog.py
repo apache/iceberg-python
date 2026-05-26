@@ -16,7 +16,6 @@
 # under the License.
 # pylint:disable=redefined-outer-name
 
-import time
 
 import pytest
 from pytest_lazy_fixtures import lf
@@ -24,7 +23,6 @@ from pytest_lazy_fixtures import lf
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.exceptions import NoSuchViewError
 from pyiceberg.schema import Schema
-from pyiceberg.view.metadata import SQLViewRepresentation, ViewVersion
 
 TEST_NAMESPACE_IDENTIFIER = "TEST NS"
 
@@ -76,21 +74,7 @@ def test_load_view(catalog: RestCatalog, table_schema_nested: Schema, database_n
     if not catalog.namespace_exists(database_name):
         catalog.create_namespace(database_name)
 
-    view_version = ViewVersion(
-        version_id=1,
-        schema_id=1,
-        timestamp_ms=int(time.time() * 1000),
-        summary={},
-        representations=[
-            SQLViewRepresentation(
-                type="sql",
-                sql="SELECT 1 as some_col",
-                dialect="spark",
-            )
-        ],
-        default_namespace=["default"],
-    )
-    view = catalog.create_view(identifier, table_schema_nested, view_version=view_version)
+    view = catalog.create_sql_view(identifier, table_schema_nested, "spark", "SELECT 1 as some_col", "default")
     loaded_view = catalog.load_view(identifier)
     assert view == loaded_view
 
