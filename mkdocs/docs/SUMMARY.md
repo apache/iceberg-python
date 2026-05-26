@@ -26,6 +26,7 @@
 - [API](api.md)
     - [Row Filter Syntax](row-filter-syntax.md)
     - [Expression DSL](expression-dsl.md)
+    - [Geospatial Types](geospatial.md)
 - [Contributing](contributing.md)
 - [Community](community.md)
 - Releases

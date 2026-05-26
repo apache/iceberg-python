@@ -160,10 +160,10 @@ test-notebook: ## Run notebook tests (pyiceberg_example and spark_integration_ex
 ##@ Documentation
 
 docs-serve: ## Serve local docs preview (hot reload)
-	uv run $(PYTHON_ARG) --group docs mkdocs serve -f mkdocs/mkdocs.yml --livereload
+	NO_MKDOCS_2_WARNING=true uv run $(PYTHON_ARG) --group docs mkdocs serve -f mkdocs/mkdocs.yml --livereload
 
 docs-build: ## Build the static documentation site
-	uv run $(PYTHON_ARG) --group docs mkdocs build -f mkdocs/mkdocs.yml --strict
+	NO_MKDOCS_2_WARNING=true uv run $(PYTHON_ARG) --group docs mkdocs build -f mkdocs/mkdocs.yml --strict
 
 # ========================
 # Experimentation
