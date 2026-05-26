@@ -56,7 +56,6 @@ pyiceberg = "pyiceberg.cli.console:run"
 [project.optional-dependencies]
 pyarrow = [
     "pyarrow>=17.0.0",
-    "pyiceberg-core>=0.5.1,<0.10.0",
 ]
 pandas = [
     "pandas>=1.0.0",
