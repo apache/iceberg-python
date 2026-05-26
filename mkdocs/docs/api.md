@@ -1529,23 +1529,41 @@ cleanup_old_snapshots("analytics.user_events", [12345, 67890, 11111])
 
 ## Create a view
 
-To create a view from a catalog:
+If the REST server does not indicate support for view endpoints, you can enable it by setting `"view-endpoints-supported": "true"`:
+
+```python
+from pyiceberg.catalog import load_catalog
+
+catalog = load_catalog(
+    "docs",
+    **{
+        "uri": "http://127.0.0.1:8181",
+        "s3.endpoint": "http://127.0.0.1:9000",
+        "py-io-impl": "pyiceberg.io.pyarrow.PyArrowFileIO",
+        "s3.access-key-id": "admin",
+        "s3.secret-access-key": "password",
+        "view-endpoints-supported": "true",
+    }
+)
+```
+
+To create a view from the catalog:
 
 ```python
 import time
-import pyarrow as pa
 from pyiceberg.catalog import load_catalog
+from pyiceberg.schema import Schema
+from pyiceberg.types import IntegerType, NestedField
 from pyiceberg.view import SQLViewRepresentation, ViewVersion
 
 catalog = load_catalog("default")
 
-identifier = "default.some_view"
-schema = pa.schema([pa.field("some_col", pa.int32())])
+schema = Schema(NestedField(field_id=1, name="some_col", field_type=IntegerType(), required=False))
 view_version = ViewVersion(
     version_id=1,
     schema_id=1,
     timestamp_ms=int(time.time() * 1000),
-    summary={},
+    summary={"spark-version": "4.1"},
     representations=[
         SQLViewRepresentation(
             type="sql",
@@ -1557,7 +1575,21 @@ view_version = ViewVersion(
 )
 
 catalog.create_view(
-    identifier=identifier,
+    identifier="default.some_view",
+    schema=schema,
+    view_version=view_version,
+)
+```
+
+`catalog.create_view` also accepts a PyArrow schema, so the following is equivalent:
+
+```python
+import pyarrow as pa
+
+schema = pa.schema([pa.field("some_col", pa.int32())])
+
+catalog.create_view(
+    identifier="default.some_view",
     schema=schema,
     view_version=view_version,
 )
