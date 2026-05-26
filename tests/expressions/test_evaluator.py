@@ -900,6 +900,62 @@ def test_string_starts_with(
     # assert not should_read, "Should not read: range doesn't match"
 
 
+def test_inclusive_metrics_evaluator_uses_empty_byte_lower_bound() -> None:
+    schema = Schema(NestedField(1, "empty_string", StringType(), required=True))
+    data_file = DataFile.from_args(
+        file_path="file.parquet",
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=10,
+        file_size_in_bytes=1,
+        value_counts={1: 10},
+        null_value_counts={1: 0},
+        nan_value_counts=None,
+        lower_bounds={1: to_bytes(StringType(), "")},
+        upper_bounds={1: to_bytes(StringType(), "")},
+    )
+
+    # Lower-bound branch: LessThan reads lower_bound only.
+    should_read = _InclusiveMetricsEvaluator(schema, LessThan("empty_string", "")).eval(data_file)
+    assert not should_read, "Should not read: lower bound is present and equal to the literal"
+
+    # Upper-bound branch: GreaterThan reads upper_bound only.
+    should_read = _InclusiveMetricsEvaluator(schema, GreaterThan("empty_string", "abc")).eval(data_file)
+    assert not should_read, "Should not read: upper bound '' is not greater than 'abc'"
+
+    # Both-bounds branch: EqualTo reads lower_bound and upper_bound.
+    should_read = _InclusiveMetricsEvaluator(schema, EqualTo("empty_string", "abc")).eval(data_file)
+    assert not should_read, "Should not read: 'abc' falls outside ['', '']"
+
+
+def test_strict_metrics_evaluator_uses_empty_byte_bounds() -> None:
+    schema = Schema(NestedField(1, "empty_string", StringType(), required=True))
+    data_file = DataFile.from_args(
+        file_path="file.parquet",
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=10,
+        file_size_in_bytes=1,
+        value_counts={1: 10},
+        null_value_counts={1: 0},
+        nan_value_counts=None,
+        lower_bounds={1: to_bytes(StringType(), "")},
+        upper_bounds={1: to_bytes(StringType(), "")},
+    )
+
+    # Both-bounds branch: EqualTo reads lower_bound and upper_bound.
+    should_read = _StrictMetricsEvaluator(schema, EqualTo("empty_string", "")).eval(data_file)
+    assert should_read, "Should match: lower and upper bounds are present and equal to the literal"
+
+    # Upper-bound branch: LessThan reads upper_bound only.
+    should_read = _StrictMetricsEvaluator(schema, LessThan("empty_string", "a")).eval(data_file)
+    assert should_read, "Should match: upper bound '' is strictly less than 'a'"
+
+    # Both-bounds branch: NotEqualTo reads lower_bound and upper_bound.
+    should_read = _StrictMetricsEvaluator(schema, NotEqualTo("empty_string", "abc")).eval(data_file)
+    assert should_read, "Should match: 'abc' falls outside ['', '']"
+
+
 def test_string_not_starts_with(
     schema_data_file: Schema, data_file: DataFile, data_file_2: DataFile, data_file_3: DataFile, data_file_4: DataFile
 ) -> None:

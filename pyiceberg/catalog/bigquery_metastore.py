@@ -26,6 +26,7 @@ from google.cloud.bigquery.external_config import ExternalCatalogDatasetOptions,
 from google.cloud.bigquery.schema import SerDeInfo, StorageDescriptor
 from google.cloud.exceptions import Conflict
 from google.oauth2 import service_account
+from typing_extensions import override
 
 from pyiceberg.catalog import WAREHOUSE_LOCATION, MetastoreCatalog, PropertiesUpdateSummary
 from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchNamespaceError, NoSuchTableError, TableAlreadyExistsError
@@ -101,6 +102,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         self.location = location
         self.project_id = project_id
 
+    @override
     def create_table(
         self,
         identifier: str | Identifier,
@@ -156,6 +158,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
 
         return self.load_table(identifier=identifier)
 
+    @override
     def create_namespace(self, namespace: str | Identifier, properties: Properties = EMPTY_DICT) -> None:
         """Create a namespace in the catalog.
 
@@ -177,6 +180,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         except Conflict as e:
             raise NamespaceAlreadyExistsError("Namespace {database_name} already exists") from e
 
+    @override
     def load_table(self, identifier: str | Identifier) -> Table:
         """
         Load the table's metadata and returns the table instance.
@@ -205,6 +209,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         except NotFound as e:
             raise NoSuchTableError(f"Table does not exist: {dataset_name}.{table_name}") from e
 
+    @override
     def drop_table(self, identifier: str | Identifier) -> None:
         """Drop a table.
 
@@ -225,14 +230,17 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         except NoSuchTableError as e:
             raise NoSuchTableError(f"Table does not exist: {dataset_name}.{table_name}") from e
 
+    @override
     def commit_table(
         self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
         raise NotImplementedError
 
+    @override
     def rename_table(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> Table:
         raise NotImplementedError
 
+    @override
     def drop_namespace(self, namespace: str | Identifier) -> None:
         database_name = self.identifier_to_database(namespace)
 
@@ -243,6 +251,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         except NotFound as e:
             raise NoSuchNamespaceError(f"Namespace {namespace} does not exist.") from e
 
+    @override
     def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
         database_name = self.identifier_to_database(namespace)
         iceberg_tables: list[Identifier] = []
@@ -257,6 +266,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Namespace (dataset) '{database_name}' not found.") from None
         return iceberg_tables
 
+    @override
     def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
         # Since this catalog only supports one-level namespaces, it always returns an empty list unless
         # passed an empty namespace to list all namespaces within the catalog.
@@ -267,6 +277,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         datasets_iterator = self.client.list_datasets()
         return [(dataset.dataset_id,) for dataset in datasets_iterator]
 
+    @override
     def register_table(self, identifier: str | Identifier, metadata_location: str, overwrite: bool = False) -> Table:
         """Register a new table using existing metadata.
 
@@ -302,18 +313,27 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
 
         return self.load_table(identifier=identifier)
 
+    @override
     def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         raise NotImplementedError
 
+    @override
+    def register_view(self, identifier: str | Identifier, metadata_location: str) -> View:
+        raise NotImplementedError
+
+    @override
     def drop_view(self, identifier: str | Identifier) -> None:
         raise NotImplementedError
 
+    @override
     def view_exists(self, identifier: str | Identifier) -> bool:
         raise NotImplementedError
 
+    @override
     def load_view(self, identifier: str | Identifier) -> View:
         raise NotImplementedError
 
+    @override
     def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
         dataset_name = self.identifier_to_database(namespace)
 
@@ -326,6 +346,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Namespace {namespace} not found") from e
         return {}
 
+    @override
     def update_namespace_properties(
         self, namespace: str | Identifier, removals: set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:

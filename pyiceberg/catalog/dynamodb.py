@@ -24,6 +24,7 @@ from typing import (
 )
 
 import boto3
+from typing_extensions import override
 
 from pyiceberg.catalog import (
     BOTOCORE_SESSION,
@@ -151,6 +152,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         else:
             return True
 
+    @override
     def create_table(
         self,
         identifier: str | Identifier,
@@ -210,6 +212,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return self.load_table(identifier=identifier)
 
+    @override
     def register_table(self, identifier: str | Identifier, metadata_location: str, overwrite: bool = False) -> Table:
         """Register a new table using existing metadata.
 
@@ -226,6 +229,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         """
         raise NotImplementedError
 
+    @override
     def commit_table(
         self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
@@ -245,6 +249,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         """
         raise NotImplementedError
 
+    @override
     def load_table(self, identifier: str | Identifier) -> Table:
         """
         Load the table's metadata and returns the table instance.
@@ -265,6 +270,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         dynamo_table_item = self._get_iceberg_table_item(database_name=database_name, table_name=table_name)
         return self._convert_dynamo_table_item_to_iceberg_table(dynamo_table_item=dynamo_table_item)
 
+    @override
     def drop_table(self, identifier: str | Identifier) -> None:
         """Drop a table.
 
@@ -285,6 +291,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         except ConditionalCheckFailedException as e:
             raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}") from e
 
+    @override
     def rename_table(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> Table:
         """Rename a fully classified table name.
 
@@ -351,6 +358,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return self.load_table(to_identifier)
 
+    @override
     def create_namespace(self, namespace: str | Identifier, properties: Properties = EMPTY_DICT) -> None:
         """Create a namespace in the catalog.
 
@@ -372,6 +380,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         except ConditionalCheckFailedException as e:
             raise NamespaceAlreadyExistsError(f"Database {database_name} already exists") from e
 
+    @override
     def drop_namespace(self, namespace: str | Identifier) -> None:
         """Drop a namespace.
 
@@ -399,6 +408,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         except ConditionalCheckFailedException as e:
             raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
 
+    @override
     def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
         """List Iceberg tables under the given namespace in the catalog.
 
@@ -443,6 +453,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return table_identifiers
 
+    @override
     def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
         """List top-level namespaces from the catalog.
 
@@ -485,6 +496,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return database_identifiers
 
+    @override
     def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
         """
         Get properties for a namespace.
@@ -503,6 +515,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         namespace_dict = _convert_dynamo_item_to_regular_dict(namespace_item)
         return _get_namespace_properties(namespace_dict=namespace_dict)
 
+    @override
     def update_namespace_properties(
         self, namespace: str | Identifier, removals: set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
@@ -540,6 +553,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return properties_update_summary
 
+    @override
     def create_view(
         self,
         identifier: str | Identifier,
@@ -550,15 +564,23 @@ class DynamoDbCatalog(MetastoreCatalog):
     ) -> View:
         raise NotImplementedError
 
+    @override
     def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         raise NotImplementedError
 
+    @override
+    def register_view(self, identifier: str | Identifier, metadata_location: str) -> View:
+        raise NotImplementedError
+
+    @override
     def drop_view(self, identifier: str | Identifier) -> None:
         raise NotImplementedError
 
+    @override
     def view_exists(self, identifier: str | Identifier) -> bool:
         raise NotImplementedError
 
+    @override
     def load_view(self, identifier: str | Identifier) -> View:
         raise NotImplementedError
 

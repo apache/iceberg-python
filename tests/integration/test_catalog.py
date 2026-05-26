@@ -19,6 +19,7 @@ import os
 import uuid
 from collections.abc import Generator
 from pathlib import Path, PosixPath
+from typing import Any
 
 import pytest
 from pytest_lazy_fixtures import lf
@@ -44,6 +45,8 @@ from pyiceberg.table.metadata import INITIAL_SPEC_ID
 from pyiceberg.table.sorting import INITIAL_SORT_ORDER_ID, SortField, SortOrder
 from pyiceberg.transforms import BucketTransform, DayTransform, IdentityTransform
 from pyiceberg.types import IntegerType, LongType, NestedField, TimestampType, UUIDType
+from pyiceberg.view import View
+from pyiceberg.view.metadata import ViewMetadata
 from tests.conftest import (
     clean_up,
     does_support_atomic_concurrent_updates,
@@ -615,6 +618,55 @@ def test_register_table_existing(test_catalog: Catalog, table_schema_nested: Sch
     # Assert that registering the table again raises TableAlreadyExistsError
     with pytest.raises(TableAlreadyExistsError):
         test_catalog.register_table(identifier, metadata_location=table.metadata_location)
+
+
+@pytest.mark.integration
+def test_rest_list_views(
+    rest_catalog: RestCatalog, example_view_metadata_v1: dict[str, Any], database_name: str, view_name: str
+) -> None:
+    identifier = (database_name, view_name)
+
+    rest_catalog.create_namespace_if_not_exists(database_name)
+    view = View(identifier, ViewMetadata.model_validate(example_view_metadata_v1))
+
+    assert identifier not in rest_catalog.list_views(database_name)
+
+    rest_catalog.create_view(identifier, view.schema(), view.current_version())
+
+    assert identifier in rest_catalog.list_views(database_name)
+
+
+@pytest.mark.integration
+def test_rest_create_view(
+    rest_catalog: RestCatalog, example_view_metadata_v1: dict[str, Any], database_name: str, view_name: str
+) -> None:
+    identifier = (database_name, view_name)
+
+    rest_catalog.create_namespace_if_not_exists(database_name)
+    view = View(identifier, ViewMetadata.model_validate(example_view_metadata_v1))
+
+    assert not rest_catalog.view_exists(identifier)
+
+    rest_catalog.create_view(identifier, view.schema(), view.current_version())
+
+    assert rest_catalog.view_exists(identifier)
+    assert rest_catalog.load_view(identifier).schema() == view.schema()
+
+
+@pytest.mark.integration
+def test_rest_drop_view(
+    rest_catalog: RestCatalog, example_view_metadata_v1: dict[str, Any], database_name: str, view_name: str
+) -> None:
+    identifier = (database_name, view_name)
+
+    rest_catalog.create_namespace_if_not_exists(database_name)
+    view = View(identifier, ViewMetadata.model_validate(example_view_metadata_v1))
+
+    rest_catalog.create_view(identifier, view.schema(), view.current_version())
+    assert rest_catalog.view_exists(identifier)
+
+    rest_catalog.drop_view(identifier)
+    assert not rest_catalog.view_exists(identifier)
 
 
 @pytest.mark.integration

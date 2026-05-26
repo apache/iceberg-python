@@ -27,6 +27,7 @@ from typing import (
 
 import boto3
 from botocore.config import Config
+from typing_extensions import override
 
 from pyiceberg.catalog import (
     BOTOCORE_SESSION,
@@ -538,6 +539,7 @@ class GlueCatalog(MetastoreCatalog):
             catalog=self,
         )
 
+    @override
     def create_table(
         self,
         identifier: str | Identifier,
@@ -601,6 +603,7 @@ class GlueCatalog(MetastoreCatalog):
             catalog=self,
         )
 
+    @override
     def register_table(self, identifier: str | Identifier, metadata_location: str, overwrite: bool = False) -> Table:
         """Register a new table using existing metadata.
 
@@ -627,6 +630,7 @@ class GlueCatalog(MetastoreCatalog):
         self._create_glue_table(database_name=database_name, table_name=table_name, table_input=table_input)
         return self.load_table(identifier=identifier)
 
+    @override
     def commit_table(
         self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
@@ -710,6 +714,7 @@ class GlueCatalog(MetastoreCatalog):
             metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
         )
 
+    @override
     def load_table(self, identifier: str | Identifier) -> Table:
         """Load the table's metadata and returns the table instance.
 
@@ -729,6 +734,7 @@ class GlueCatalog(MetastoreCatalog):
 
         return self._convert_glue_to_iceberg(self._get_glue_table(database_name=database_name, table_name=table_name))
 
+    @override
     def drop_table(self, identifier: str | Identifier) -> None:
         """Drop a table.
 
@@ -744,6 +750,7 @@ class GlueCatalog(MetastoreCatalog):
         except self.glue.exceptions.EntityNotFoundException as e:
             raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}") from e
 
+    @override
     def rename_table(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> Table:
         """Rename a fully classified table name.
 
@@ -804,6 +811,7 @@ class GlueCatalog(MetastoreCatalog):
 
         return self.load_table(to_identifier)
 
+    @override
     def create_namespace(self, namespace: str | Identifier, properties: Properties = EMPTY_DICT) -> None:
         """Create a namespace in the catalog.
 
@@ -821,6 +829,7 @@ class GlueCatalog(MetastoreCatalog):
         except self.glue.exceptions.AlreadyExistsException as e:
             raise NamespaceAlreadyExistsError(f"Database {database_name} already exists") from e
 
+    @override
     def drop_namespace(self, namespace: str | Identifier) -> None:
         """Drop a namespace.
 
@@ -850,6 +859,7 @@ class GlueCatalog(MetastoreCatalog):
                 )
         self.glue.delete_database(Name=database_name)
 
+    @override
     def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
         """List Iceberg tables under the given namespace in the catalog.
 
@@ -881,6 +891,7 @@ class GlueCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
         return [(database_name, table["Name"]) for table in table_list if self.__is_iceberg_table(table)]
 
+    @override
     def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
 
@@ -903,6 +914,7 @@ class GlueCatalog(MetastoreCatalog):
 
         return [self.identifier_to_tuple(database["Name"]) for database in database_list]
 
+    @override
     def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
         """Get properties for a namespace.
 
@@ -933,6 +945,7 @@ class GlueCatalog(MetastoreCatalog):
 
         return properties
 
+    @override
     def update_namespace_properties(
         self, namespace: str | Identifier, removals: set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
@@ -957,6 +970,7 @@ class GlueCatalog(MetastoreCatalog):
 
         return properties_update_summary
 
+    @override
     def create_view(
         self,
         identifier: str | Identifier,
@@ -967,15 +981,23 @@ class GlueCatalog(MetastoreCatalog):
     ) -> View:
         raise NotImplementedError
 
+    @override
     def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         raise NotImplementedError
 
+    @override
+    def register_view(self, identifier: str | Identifier, metadata_location: str) -> View:
+        raise NotImplementedError
+
+    @override
     def drop_view(self, identifier: str | Identifier) -> None:
         raise NotImplementedError
 
+    @override
     def view_exists(self, identifier: str | Identifier) -> bool:
         raise NotImplementedError
 
+    @override
     def load_view(self, identifier: str | Identifier) -> View:
         raise NotImplementedError
 

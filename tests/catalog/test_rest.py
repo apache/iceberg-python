@@ -35,6 +35,7 @@ from pyiceberg.catalog.rest import (
     DEFAULT_ENDPOINTS,
     EMPTY_BODY_SHA256,
     OAUTH2_SERVER_URI,
+    PAGE_SIZE,
     SIGV4_MAX_RETRIES,
     SIGV4_MAX_RETRIES_DEFAULT,
     SNAPSHOT_LOADING_MODE,
@@ -42,6 +43,7 @@ from pyiceberg.catalog.rest import (
     Endpoint,
     HttpMethod,
     RestCatalog,
+    ScanPlanningMode,
 )
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
@@ -105,6 +107,7 @@ TEST_SUPPORTED_ENDPOINTS = [
     Capability.V1_LIST_VIEWS,
     Capability.V1_LOAD_VIEW,
     Capability.V1_VIEW_EXISTS,
+    Capability.V1_REGISTER_VIEW,
     Capability.V1_DELETE_VIEW,
     Capability.V1_SUBMIT_TABLE_SCAN_PLAN,
     Capability.V1_TABLE_SCAN_PLAN_TASKS,
@@ -478,6 +481,113 @@ def test_list_tables_200(rest_mock: Mocker) -> None:
     assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_tables(namespace) == [("examples", "fooshare")]
 
 
+def test_list_tables_paginated_200(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    # First page with next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "table1"},
+                {"namespace": ["examples"], "name": "table2"},
+            ],
+            "next-page-token": "page2token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # Second page with next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables?pageToken=page2token",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "table3"},
+            ],
+            "next-page-token": "page3token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # Third page without next-page-token (last page)
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables?pageToken=page3token",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "table4"},
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_tables(namespace)
+    assert result == [
+        ("examples", "table1"),
+        ("examples", "table2"),
+        ("examples", "table3"),
+        ("examples", "table4"),
+    ]
+
+
+def test_list_tables_paginated_200_none_next_page_token(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    # First page with next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "table1"},
+                {"namespace": ["examples"], "name": "table2"},
+            ],
+            "next-page-token": "page2token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # The last page with NONE next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables?pageToken=page2token",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "table3"},
+            ],
+            "next-page-token": None,
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_tables(namespace)
+    assert result == [
+        ("examples", "table1"),
+        ("examples", "table2"),
+        ("examples", "table3"),
+    ]
+
+
+def test_list_tables_page_size(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "table1"},
+                {"namespace": ["examples"], "name": "table2"},
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "100"}).list_tables(namespace)
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/examples/tables?pageSize=100"
+
+    assert result == [
+        ("examples", "table1"),
+        ("examples", "table2"),
+    ]
+
+
 def test_list_tables_200_sigv4(rest_mock: Mocker) -> None:
     namespace = "examples"
     rest_mock.get(
@@ -640,6 +750,132 @@ def test_list_views_200(rest_mock: Mocker) -> None:
     assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace) == [("examples", "fooshare")]
 
 
+def test_list_views_paginated_200(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    # First page with next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "view1"},
+                {"namespace": ["examples"], "name": "view2"},
+            ],
+            "next-page-token": "page2token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # Second page with next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views?pageToken=page2token",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "view3"},
+            ],
+            "next-page-token": "page3token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # Third page without next-page-token (last page)
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views?pageToken=page3token",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "view4"},
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace)
+    assert result == [
+        ("examples", "view1"),
+        ("examples", "view2"),
+        ("examples", "view3"),
+        ("examples", "view4"),
+    ]
+
+
+def test_list_views_paginated_200_none_next_page_token(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    # First page with next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "view1"},
+                {"namespace": ["examples"], "name": "view2"},
+            ],
+            "next-page-token": "page2token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # The last page with NONE next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views?pageToken=page2token",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "view3"},
+            ],
+            "next-page-token": None,
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace)
+    assert result == [
+        ("examples", "view1"),
+        ("examples", "view2"),
+        ("examples", "view3"),
+    ]
+
+
+def test_list_views_page_size(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "view1"},
+                {"namespace": ["examples"], "name": "view2"},
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "100"}).list_views(namespace)
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/examples/views?pageSize=100"
+
+    assert result == [
+        ("examples", "view1"),
+        ("examples", "view2"),
+    ]
+
+
+def test_list_views_invalid_page_size(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "view1"},
+                {"namespace": ["examples"], "name": "view2"},
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(ValueError) as e:
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "0"}).list_views(namespace)
+    assert str(e.value) == "rest-page-size must be a positive integer"
+
+
 def test_list_views_200_sigv4(rest_mock: Mocker) -> None:
     namespace = "examples"
     rest_mock.get(
@@ -734,6 +970,124 @@ def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
     )
     assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces(("accounting",)) == [
         ("accounting", "tax"),
+    ]
+
+
+def test_list_namespaces_paginated_200(rest_mock: Mocker) -> None:
+    # First page with next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={
+            "namespaces": [["ns1"], ["ns2"]],
+            "next-page-token": "page2token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # Second page with next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces?pageToken=page2token",
+        json={
+            "namespaces": [["ns3"], ["ns4"]],
+            "next-page-token": "page3token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # Third page without next-page-token (last page)
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces?pageToken=page3token",
+        json={
+            "namespaces": [["ns5"]],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces()
+    assert result == [
+        ("ns1",),
+        ("ns2",),
+        ("ns3",),
+        ("ns4",),
+        ("ns5",),
+    ]
+
+
+def test_list_namespaces_with_parent_paginated_200(rest_mock: Mocker) -> None:
+    # First page
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces?parent=accounting",
+        json={
+            "namespaces": [["accounting", "tax"]],
+            "next-page-token": "page2",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # Second page (last)
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces?parent=accounting&pageToken=page2",
+        json={
+            "namespaces": [["accounting", "payroll"]],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces(("accounting",))
+    assert result == [
+        ("accounting", "tax"),
+        ("accounting", "payroll"),
+    ]
+
+
+def test_list_namespaces_paginated_200_none_next_page_token(rest_mock: Mocker) -> None:
+    # First page with next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={
+            "namespaces": [["ns1"], ["ns2"]],
+            "next-page-token": "page2token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # The last page with None next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces?pageToken=page2token",
+        json={
+            "namespaces": [["ns3"]],
+            "next-page-token": None,
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces()
+    assert result == [
+        ("ns1",),
+        ("ns2",),
+        ("ns3",),
+    ]
+
+
+def test_list_namespaces_page_size(rest_mock: Mocker) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={
+            "namespaces": [["ns1"], ["ns2"]],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "100"}).list_namespaces()
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces?pageSize=100"
+
+    assert result == [
+        ("ns1",),
+        ("ns2",),
     ]
 
 
@@ -2182,6 +2536,72 @@ def test_table_identifier_in_commit_table_request(
     )
 
 
+def test_register_view_200(rest_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/default/tables/registered_view",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/default/register-view",
+        json=example_view_metadata_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    actual = catalog.register_view(
+        identifier=("default", "registered_view"), metadata_location="s3://warehouse/database/view/metadata.json"
+    )
+    expected = View(
+        identifier=("default", "registered_view"),
+        metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]),
+    )
+    assert actual == expected
+
+
+def test_register_view_409_view(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/default/tables/registered_view",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/default/register-view",
+        json={
+            "error": {
+                "message": "View already exists: default.view in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
+                "type": "AlreadyExistsException",
+                "code": 409,
+            }
+        },
+        status_code=409,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(ViewAlreadyExistsError) as e:
+        catalog.register_view(
+            identifier=("default", "registered_view"), metadata_location="s3://warehouse/database/view/metadata.json"
+        )
+    assert "View already exists" in str(e.value)
+
+
+def test_register_view_409_table(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/default/tables/registered_view",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(TableAlreadyExistsError) as e:
+        catalog.register_view(
+            identifier=("default", "registered_view"), metadata_location="s3://warehouse/database/view/metadata.json"
+        )
+    assert "Table default.registered_view already exists" in str(e.value)
+
+
 def test_drop_view_invalid_namespace(rest_mock: Mocker) -> None:
     view = "view"
     with pytest.raises(NoSuchIdentifierError) as e:
@@ -2395,7 +2815,7 @@ class TestRestCatalogClose:
             "rest",
             uri=TEST_URI,
             token=TEST_TOKEN,
-            **{"rest-scan-planning-enabled": "true"},
+            **{"scan-planning-mode": ScanPlanningMode.SERVER.value},
         )
 
         assert catalog.supports_server_side_planning() is True
@@ -2411,7 +2831,7 @@ class TestRestCatalogClose:
             "rest",
             uri=TEST_URI,
             token=TEST_TOKEN,
-            **{"rest-scan-planning-enabled": "true"},
+            **{"scan-planning-mode": ScanPlanningMode.SERVER.value},
         )
 
         assert catalog.supports_server_side_planning() is False
@@ -2421,7 +2841,7 @@ class TestRestCatalogClose:
             "rest",
             uri=TEST_URI,
             token=TEST_TOKEN,
-            **{"rest-scan-planning-enabled": "false"},
+            **{"scan-planning-mode": ScanPlanningMode.CLIENT.value},
         )
 
         assert catalog.supports_server_side_planning() is False
@@ -2430,7 +2850,7 @@ class TestRestCatalogClose:
         rest_mock.get(
             f"{TEST_URI}v1/config",
             json={
-                "defaults": {"rest-scan-planning-enabled": "true"},
+                "defaults": {"scan-planning-mode": "server"},
                 "overrides": {},
                 "endpoints": ["POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan"],
             },

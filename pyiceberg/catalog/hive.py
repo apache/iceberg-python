@@ -50,6 +50,7 @@ from hive_metastore.ttypes import Table as HiveTable
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 from thrift.protocol import TBinaryProtocol
 from thrift.transport import TSocket, TTransport
+from typing_extensions import override
 
 from pyiceberg.catalog import (
     EXTERNAL_TABLE,
@@ -146,6 +147,7 @@ class _HiveClient:
 
     _transport: TTransport
     _ugi: list[str] | None
+    _was_opened: bool
 
     def __init__(
         self,
@@ -159,6 +161,7 @@ class _HiveClient:
         self._kerberos_service_name = kerberos_service_name
         self._ugi = ugi.split(":") if ugi else None
         self._transport = self._init_thrift_transport()
+        self._was_opened = False
 
     def _init_thrift_transport(self) -> TTransport:
         url_parts = urlparse(self._uri)
@@ -177,19 +180,11 @@ class _HiveClient:
 
     def __enter__(self) -> Client:
         """Make sure the transport is initialized and open."""
-        if not self._transport.isOpen():
-            try:
-                self._transport.open()
-            except (TypeError, TTransport.TTransportException):
-                # Close the old transport before reinitializing to prevent resource leaks
-                try:
-                    self._transport.close()
-                except Exception:
-                    pass
-                # reinitialize _transport
-                self._transport = self._init_thrift_transport()
-                self._transport.open()
-        return self._client()  # recreate the client
+        if self._was_opened:
+            self._transport = self._init_thrift_transport()
+        self._transport.open()
+        self._was_opened = True
+        return self._client()
 
     def __exit__(self, exctype: type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
         """Close transport if it was opened."""
@@ -390,6 +385,7 @@ class HiveCatalog(MetastoreCatalog):
         except NoSuchObjectException as e:
             raise NoSuchTableError(f"Table does not exists: {table_name}") from e
 
+    @override
     def create_table(
         self,
         identifier: str | Identifier,
@@ -436,6 +432,7 @@ class HiveCatalog(MetastoreCatalog):
 
         return self._convert_hive_into_iceberg(hive_table)
 
+    @override
     def create_view(
         self,
         identifier: str | Identifier,
@@ -446,6 +443,7 @@ class HiveCatalog(MetastoreCatalog):
     ) -> View:
         raise NotImplementedError
 
+    @override
     def register_table(self, identifier: str | Identifier, metadata_location: str, overwrite: bool = False) -> Table:
         """Register a new table using existing metadata.
 
@@ -480,12 +478,15 @@ class HiveCatalog(MetastoreCatalog):
 
         return self._convert_hive_into_iceberg(hive_table)
 
+    @override
     def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         raise NotImplementedError
 
+    @override
     def view_exists(self, identifier: str | Identifier) -> bool:
         raise NotImplementedError
 
+    @override
     def load_view(self, identifier: str | Identifier) -> View:
         raise NotImplementedError
 
@@ -518,6 +519,7 @@ class HiveCatalog(MetastoreCatalog):
 
         return _do_wait_for_lock()
 
+    @override
     def commit_table(
         self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
@@ -630,6 +632,7 @@ class HiveCatalog(MetastoreCatalog):
             metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
         )
 
+    @override
     def load_table(self, identifier: str | Identifier) -> Table:
         """Load the table's metadata and return the table instance.
 
@@ -652,6 +655,7 @@ class HiveCatalog(MetastoreCatalog):
 
         return self._convert_hive_into_iceberg(hive_table)
 
+    @override
     def drop_table(self, identifier: str | Identifier) -> None:
         """Drop a table.
 
@@ -669,10 +673,12 @@ class HiveCatalog(MetastoreCatalog):
             # When the namespace doesn't exist, it throws the same error
             raise NoSuchTableError(f"Table does not exists: {table_name}") from e
 
+    @override
     def purge_table(self, identifier: str | Identifier) -> None:
         # This requires to traverse the reachability set, and drop all the data files.
         raise NotImplementedError("Not yet implemented")
 
+    @override
     def rename_table(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> Table:
         """Rename a fully classified table name.
 
@@ -712,6 +718,7 @@ class HiveCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Database does not exists: {to_database_name}") from e
         return self.load_table(to_identifier)
 
+    @override
     def create_namespace(self, namespace: str | Identifier, properties: Properties = EMPTY_DICT) -> None:
         """Create a namespace in the catalog.
 
@@ -732,6 +739,7 @@ class HiveCatalog(MetastoreCatalog):
         except AlreadyExistsException as e:
             raise NamespaceAlreadyExistsError(f"Database {database_name} already exists") from e
 
+    @override
     def drop_namespace(self, namespace: str | Identifier) -> None:
         """Drop a namespace.
 
@@ -751,6 +759,7 @@ class HiveCatalog(MetastoreCatalog):
         except (MetaException, NoSuchObjectException) as e:
             raise NoSuchNamespaceError(f"Database does not exists: {database_name}") from e
 
+    @override
     def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
         """List Iceberg tables under the given namespace in the catalog.
 
@@ -775,6 +784,7 @@ class HiveCatalog(MetastoreCatalog):
                 if table.parameters.get(TABLE_TYPE, "").lower() == ICEBERG
             ]
 
+    @override
     def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
 
@@ -788,6 +798,7 @@ class HiveCatalog(MetastoreCatalog):
         with self._client as open_client:
             return list(map(self.identifier_to_tuple, open_client.get_all_databases()))
 
+    @override
     def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
         """Get properties for a namespace.
 
@@ -812,6 +823,7 @@ class HiveCatalog(MetastoreCatalog):
         except NoSuchObjectException as e:
             raise NoSuchNamespaceError(f"Database does not exists: {database_name}") from e
 
+    @override
     def update_namespace_properties(
         self, namespace: str | Identifier, removals: set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
@@ -854,6 +866,11 @@ class HiveCatalog(MetastoreCatalog):
 
         return PropertiesUpdateSummary(removed=list(removed or []), updated=list(updated or []), missing=list(expected_to_change))
 
+    @override
+    def register_view(self, identifier: str | Identifier, metadata_location: str) -> View:
+        raise NotImplementedError
+
+    @override
     def drop_view(self, identifier: str | Identifier) -> None:
         raise NotImplementedError
 

@@ -16,12 +16,12 @@
 # under the License.
 from __future__ import annotations
 
-from typing import (
-    Any,
-)
+from typing import Any
+from uuid import UUID
 
+from pyiceberg.schema import Schema
 from pyiceberg.typedef import Identifier
-from pyiceberg.view.metadata import ViewMetadata
+from pyiceberg.view.metadata import SQLViewRepresentation, ViewHistoryEntry, ViewMetadata, ViewVersion
 
 
 class View:
@@ -41,6 +41,51 @@ class View:
     def name(self) -> Identifier:
         """Return the identifier of this view."""
         return self._identifier
+
+    def schema(self) -> Schema:
+        """Return the schema for this view."""
+        return next(schema for schema in self.metadata.schemas if schema.schema_id == self.current_version().schema_id)
+
+    def schemas(self) -> dict[int, Schema]:
+        """Return the schemas for this view."""
+        return {schema.schema_id: schema for schema in self.metadata.schemas}
+
+    def current_version(self) -> ViewVersion:
+        """Get the version of this view."""
+        return next(version for version in self.metadata.versions if version.version_id == self.metadata.current_version_id)
+
+    @property
+    def versions(self) -> list[ViewVersion]:
+        """Get the versions of this view."""
+        return self.metadata.versions
+
+    def version(self, version_id: int) -> ViewVersion:
+        """Get the version in this view by ID."""
+        return next(version for version in self.metadata.versions if version.version_id == version_id)
+
+    def history(self) -> list[ViewHistoryEntry]:
+        """Get the version of this history view."""
+        return self.metadata.version_log
+
+    @property
+    def properties(self) -> dict[str, str]:
+        """Return a map of string properties for this view."""
+        return self.metadata.properties
+
+    def location(self) -> str:
+        """Return the view's base location."""
+        return self.metadata.location
+
+    def uuid(self) -> UUID:
+        """Return the view's UUID."""
+        return UUID(self.metadata.view_uuid)
+
+    def sql_for(self, dialect: str) -> SQLViewRepresentation | None:
+        """Return the view representation for the sql dialect, or None if no representation could be resolved."""
+        return next(
+            (repr.root for repr in self.current_version().representations if repr.root.dialect.casefold() == dialect.casefold()),
+            None,
+        )
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the View class."""
