@@ -20,6 +20,7 @@ from __future__ import annotations
 import importlib
 import logging
 import re
+import time
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -71,7 +72,7 @@ from pyiceberg.typedef import (
 from pyiceberg.utils.config import Config, merge_config
 from pyiceberg.utils.properties import property_as_bool
 from pyiceberg.view import View
-from pyiceberg.view.metadata import ViewVersion
+from pyiceberg.view.metadata import SQLViewRepresentation, ViewVersion
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -743,6 +744,49 @@ class Catalog(ABC):
         Raises:
             ViewAlreadyExistsError: If a view with the name already exists.
         """
+
+    def create_sql_view(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        dialect: str,
+        sql: str,
+        default_namespace: str | Identifier,
+        location: str | None = None,
+        properties: Properties = EMPTY_DICT,
+        default_catalog: str | None = None,
+    ) -> View:
+        """Create a view.
+
+        Args:
+            identifier (str | Identifier): View identifier.
+            schema (Schema): View's schema.
+            dialect (str): SQL dialect for the view.
+            sql (str): SQL for the view.
+            default_namespace (str | Identifier): Default namespace name.
+            location (str | None): Location for the view. Optional Argument.
+            properties (Properties): View properties that can be a string based dictionary.
+            default_catalog (str | None): Default catalog name. Optional Argument.
+
+        Returns:
+            View: the created view instance.
+
+        Raises:
+            ViewAlreadyExistsError: If a view with the name already exists.
+        """
+        iceberg_schema = self._convert_schema_if_needed(schema)
+        namespace_tuple = Catalog.identifier_to_tuple(default_namespace)
+
+        view_version = ViewVersion(
+            version_id=1,
+            schema_id=iceberg_schema.schema_id,
+            timestamp_ms=int(time.time() * 1000),
+            summary={},  # TODO Set summary field like EnvironmentContext of Iceberg Java
+            representations=[SQLViewRepresentation(type="sql", dialect=dialect, sql=sql)],
+            default_catalog=default_catalog,
+            default_namespace=namespace_tuple,
+        )
+        return self.create_view(identifier, iceberg_schema, view_version, location, properties)
 
     @staticmethod
     def identifier_to_tuple(identifier: str | Identifier) -> Identifier:
