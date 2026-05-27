@@ -104,6 +104,7 @@ TEST_SUPPORTED_ENDPOINTS = [
     Capability.V1_DELETE_TABLE,
     Capability.V1_RENAME_TABLE,
     Capability.V1_REGISTER_TABLE,
+    Capability.V1_UNREGISTER_TABLE,
     Capability.V1_LOAD_CREDENTIALS,
     Capability.V1_LIST_VIEWS,
     Capability.V1_LOAD_VIEW,
@@ -1992,6 +1993,46 @@ def test_register_table_overwrite(
     assert actual.metadata.model_dump() == expected.metadata.model_dump()
     assert actual.metadata_location == expected.metadata_location
     assert actual.name() == expected.name()
+
+
+def test_unregister_table_200(
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    unregister_response = {
+        "metadata-location": "s3://warehouse/database/table/metadata.json",
+        "metadata": example_table_metadata_no_snapshot_v1_rest_json["metadata"],
+    }
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/default/tables/my_table/unregister",
+        json=unregister_response,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    metadata_location, metadata = catalog.unregister_table(identifier=("default", "my_table"))
+
+    assert metadata_location == "s3://warehouse/database/table/metadata.json"
+    assert metadata.model_dump() == TableMetadataV1(**example_table_metadata_no_snapshot_v1_rest_json["metadata"]).model_dump()
+
+
+def test_unregister_table_404(rest_mock: Mocker) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/default/tables/does_not_exist/unregister",
+        json={
+            "error": {
+                "message": "Table does not exist: default.does_not_exist",
+                "type": "NoSuchTableException",
+                "code": 404,
+            }
+        },
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(NoSuchTableError) as e:
+        catalog.unregister_table(identifier=("default", "does_not_exist"))
+    assert "Table does not exist" in str(e.value)
 
 
 def test_delete_namespace_204(rest_mock: Mocker) -> None:
