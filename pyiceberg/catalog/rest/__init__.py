@@ -1476,6 +1476,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def rename_view(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> None:
+        self._check_endpoint(Capability.V1_RENAME_VIEW)
         payload = {
             "source": self._split_identifier_for_json(from_identifier),
             "destination": self._split_identifier_for_json(to_identifier),
@@ -1483,7 +1484,7 @@ class RestCatalog(Catalog):
 
         # Ensure source and destination namespaces exist before rename.
         source_namespace = self._split_identifier_for_json(from_identifier)["namespace"]
-        dest_namespace = self._split_identifier_for_path(to_identifier)["namespace"]
+        dest_namespace = self._split_identifier_for_json(to_identifier)["namespace"]
 
         if not self.namespace_exists(source_namespace):
             raise NoSuchNamespaceError(f"Source namespace does not exist: {source_namespace}")

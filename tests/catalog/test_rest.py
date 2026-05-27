@@ -109,6 +109,7 @@ TEST_SUPPORTED_ENDPOINTS = [
     Capability.V1_VIEW_EXISTS,
     Capability.V1_REGISTER_VIEW,
     Capability.V1_DELETE_VIEW,
+    Capability.V1_RENAME_VIEW,
     Capability.V1_SUBMIT_TABLE_SCAN_PLAN,
     Capability.V1_TABLE_SCAN_PLAN_TASKS,
 ]
@@ -3285,4 +3286,4 @@ def test_rename_view_destination_namespace_does_not_exist(rest_mock: Mocker) -> 
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
     with pytest.raises(NoSuchNamespaceError) as exc_info:
         catalog.rename_view(from_identifier, to_identifier)
-    assert "Destination namespace does not exist: non_existent_namespace" in str(exc_info.value)
+    assert "Destination namespace does not exist: ('non_existent_namespace',)" in str(exc_info.value)

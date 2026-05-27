@@ -670,6 +670,25 @@ def test_rest_drop_view(
 
 
 @pytest.mark.integration
+def test_rest_rename_view(
+    rest_catalog: RestCatalog, example_view_metadata_v1: dict[str, Any], database_name: str, view_name: str
+) -> None:
+    from_identifier = (database_name, view_name)
+    to_identifier = (database_name, f"{view_name}_renamed")
+
+    rest_catalog.create_namespace_if_not_exists(database_name)
+    view = View(from_identifier, ViewMetadata.model_validate(example_view_metadata_v1))
+
+    rest_catalog.create_view(from_identifier, view.schema(), view.current_version())
+    assert rest_catalog.view_exists(from_identifier)
+
+    rest_catalog.rename_view(from_identifier, to_identifier)
+
+    assert not rest_catalog.view_exists(from_identifier)
+    assert rest_catalog.view_exists(to_identifier)
+
+
+@pytest.mark.integration
 @pytest.mark.skip(reason="Requires Iceberg REST Fixtures 1.11.x")
 def test_rest_custom_namespace_separator(rest_catalog: RestCatalog, table_schema_simple: Schema) -> None:
     """
