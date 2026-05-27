@@ -21,10 +21,10 @@ import copy
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Sequence
 from functools import cached_property
-from typing import Any, TypeAlias
+from typing import Annotated, Any, TypeAlias
 from typing import Literal as TypingLiteral
 
-from pydantic import ConfigDict, Field, SerializeAsAny, model_validator
+from pydantic import BeforeValidator, ConfigDict, Field, SerializeAsAny, model_validator
 from pydantic_core.core_schema import ValidatorFunctionWrapHandler
 
 from pyiceberg.expressions.literals import AboveMax, BelowMin, Literal, literal
@@ -508,7 +508,7 @@ class BoundPredicate(Bound, BooleanExpression, ABC):
 class UnboundPredicate(Unbound, BooleanExpression, ABC):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    term: UnboundTerm
+    term: Annotated[str | UnboundTerm, BeforeValidator(_to_unbound_term)]
 
     def __init__(self, term: str | UnboundTerm, **kwargs: Any) -> None:
         super().__init__(term=_to_unbound_term(term), **kwargs)
@@ -540,7 +540,7 @@ class UnaryPredicate(UnboundPredicate, ABC):
         return f"{str(self.__class__.__name__)}(term={str(self.term)})"
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundUnaryPredicate:
-        bound_term = self.term.bind(schema, case_sensitive)
+        bound_term = self.term.bind(schema, case_sensitive)  # type: ignore[union-attr]
         bound_type = self.as_bound
         return bound_type(bound_term)  # type: ignore[misc]
 
@@ -696,7 +696,7 @@ class SetPredicate(UnboundPredicate, ABC):
         super().__init__(term=_to_unbound_term(term), values=literal_set)
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundSetPredicate:
-        bound_term = self.term.bind(schema, case_sensitive)
+        bound_term = self.term.bind(schema, case_sensitive)  # type: ignore[union-attr]
         literal_set = self.literals
         return self.as_bound(bound_term, {lit.to(bound_term.ref().field.field_type) for lit in literal_set})  # type: ignore
 
@@ -870,7 +870,7 @@ class NotIn(SetPredicate, ABC):
 
 class LiteralPredicate(UnboundPredicate, ABC):
     type: TypingLiteral["lt", "lt-eq", "gt", "gt-eq", "eq", "not-eq", "starts-with", "not-starts-with"] = Field(alias="type")
-    term: UnboundTerm
+    term: Annotated[str | UnboundTerm, BeforeValidator(_to_unbound_term)]
     value: LiteralValue = Field()
     model_config = ConfigDict(populate_by_name=True, frozen=True, arbitrary_types_allowed=True)
 
@@ -885,7 +885,7 @@ class LiteralPredicate(UnboundPredicate, ABC):
         return self.value
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundLiteralPredicate:
-        bound_term = self.term.bind(schema, case_sensitive)
+        bound_term = self.term.bind(schema, case_sensitive)  # type: ignore[union-attr]
         lit = self.literal.to(bound_term.ref().field.field_type)
 
         if isinstance(lit, AboveMax):
