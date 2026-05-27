@@ -57,6 +57,7 @@ from pyiceberg.expressions import (
     BoundStartsWith,
     GreaterThan,
     Not,
+    NotEqualTo,
     Or,
 )
 from pyiceberg.expressions.literals import literal
@@ -113,6 +114,7 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
     TimeType,
+    UUIDType,
 )
 from tests.catalog.test_base import InMemoryCatalog
 from tests.conftest import UNIFIED_AWS_SESSION_PROPERTIES
@@ -1154,6 +1156,95 @@ def project(
             for file in files
         ]
     )
+
+
+def test_projection_uuid_filter_with_physical_fixed_uuid(tmpdir: str) -> None:
+    schema = Schema(NestedField(1, "uuid_col", UUIDType(), required=False))
+    uuid_value = uuid.UUID("c1b0d8e0-0b0e-4b1e-9b0a-0e0b0d0c0a0b")
+    pyarrow_schema = pa.schema(
+        [
+            pa.field("uuid_col", pa.binary(16), metadata={PYARROW_PARQUET_FIELD_ID_KEY: b"1"}),
+        ],
+        metadata={ICEBERG_SCHEMA: bytes(schema.model_dump_json(), UTF8)},
+    )
+    filepath = _write_table_to_file(
+        f"file:{tmpdir}/uuid_fixed.parquet",
+        pyarrow_schema,
+        pa.Table.from_arrays([pa.array([uuid_value.bytes], type=pa.binary(16))], schema=pyarrow_schema),
+    )
+
+    actual = project(schema, [filepath], expr=NotEqualTo("uuid_col", str(uuid_value)))
+
+    assert actual["uuid_col"].to_pylist() == []
+
+
+def test_projection_uuid_filter_with_arrow_uuid_raises_public_error_from_scanner(tmpdir: str) -> None:
+    schema = Schema(NestedField(1, "uuid_col", UUIDType(), required=False))
+    uuid_value = uuid.UUID("c1b0d8e0-0b0e-4b1e-9b0a-0e0b0d0c0a0b")
+    pyarrow_schema = schema_to_pyarrow(schema, metadata={ICEBERG_SCHEMA: bytes(schema.model_dump_json(), UTF8)})
+    filepath = _write_table_to_file(
+        f"file:{tmpdir}/uuid_logical.parquet",
+        pyarrow_schema,
+        pa.Table.from_arrays([pa.array([uuid_value.bytes], type=pa.uuid())], schema=pyarrow_schema),
+    )
+
+    with pytest.raises(NotImplementedError, match="Filtering on UUID columns is not supported") as exc_info:
+        project(schema, [filepath], expr=NotEqualTo("uuid_col", str(uuid_value)))
+
+    assert "https://github.com/apache/iceberg-python/issues/2372" in str(exc_info.value)
+
+
+def test_projection_uuid_filter_with_arrow_uuid_and_positional_deletes_raises_public_error(tmpdir: str) -> None:
+    schema = Schema(NestedField(1, "uuid_col", UUIDType(), required=False))
+    uuid_value = uuid.UUID("c1b0d8e0-0b0e-4b1e-9b0a-0e0b0d0c0a0b")
+    pyarrow_schema = schema_to_pyarrow(schema, metadata={ICEBERG_SCHEMA: bytes(schema.model_dump_json(), UTF8)})
+    data_file_path = _write_table_to_file(
+        f"file:{tmpdir}/uuid_logical_with_delete.parquet",
+        pyarrow_schema,
+        pa.Table.from_arrays([pa.array([uuid_value.bytes], type=pa.uuid())], schema=pyarrow_schema),
+    )
+    delete_file_path = f"{tmpdir}/uuid_position_deletes.parquet"
+    pq.write_table(pa.table({"file_path": [data_file_path], "pos": [1]}), delete_file_path)
+
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=data_file_path,
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=1,
+        file_size_in_bytes=1,
+    )
+    data_file.spec_id = 0
+
+    with pytest.raises(NotImplementedError, match="Filtering on UUID columns is not supported") as exc_info:
+        ArrowScan(
+            table_metadata=TableMetadataV2(
+                location="file://a/b/",
+                last_column_id=1,
+                format_version=2,
+                schemas=[schema],
+                partition_specs=[PartitionSpec()],
+            ),
+            io=PyArrowFileIO(),
+            projected_schema=schema,
+            row_filter=NotEqualTo("uuid_col", str(uuid_value)),
+            case_sensitive=True,
+        ).to_table(
+            tasks=[
+                FileScanTask(
+                    data_file=data_file,
+                    delete_files={
+                        DataFile.from_args(
+                            content=DataFileContent.POSITION_DELETES,
+                            file_path=delete_file_path,
+                            file_format=FileFormat.PARQUET,
+                        )
+                    },
+                )
+            ]
+        )
+
+    assert "https://github.com/apache/iceberg-python/issues/2372" in str(exc_info.value)
 
 
 def test_projection_add_column(file_int: str) -> None:

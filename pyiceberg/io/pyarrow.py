@@ -38,6 +38,7 @@ import uuid
 import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 from copy import copy
 from dataclasses import dataclass
 from enum import Enum
@@ -203,10 +204,6 @@ MAP_KEY_NAME = "key"
 MAP_VALUE_NAME = "value"
 DOC = "doc"
 UTC_ALIASES = {"UTC", "+00:00", "Etc/UTC", "Z"}
-UUID_FILTER_NOT_SUPPORTED_ERROR_MESSAGE = (
-    f"Filtering on UUID columns is not supported by the installed PyArrow version ({pa.__version__})"
-)
-
 
 T = TypeVar("T")
 
@@ -1605,6 +1602,19 @@ def _get_column_projection_values(
     return projected_missing_fields
 
 
+@contextmanager
+def _handle_unsupported_pyarrow_uuid_filter() -> Iterator[None]:
+    try:
+        yield
+    except pyarrow.lib.ArrowNotImplementedError as e:
+        if "arrow.uuid" in str(e):
+            raise NotImplementedError(
+                "Filtering on UUID columns is not supported. "
+                "See https://github.com/apache/iceberg-python/issues/2372 for context."
+            ) from e
+        raise
+
+
 def _task_to_record_batches(
     io: FileIO,
     task: FileScanTask,
@@ -1645,23 +1655,19 @@ def _task_to_record_batches(
                 bound_row_filter, file_schema, case_sensitive=case_sensitive, projected_field_values=projected_missing_fields
             )
             bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
-            try:
-                pyarrow_filter = expression_to_pyarrow(bound_file_filter, file_schema)
-            except pyarrow.lib.ArrowNotImplementedError as e:
-                if "arrow.uuid" in str(e):
-                    raise NotImplementedError(UUID_FILTER_NOT_SUPPORTED_ERROR_MESSAGE) from e
-                raise
+            pyarrow_filter = expression_to_pyarrow(bound_file_filter, file_schema)
 
         file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
 
-        fragment_scanner = ds.Scanner.from_fragment(
-            fragment=fragment,
-            schema=physical_schema,
-            # This will push down the query to Arrow.
-            # But in case there are positional deletes, we have to apply them first
-            filter=pyarrow_filter if not positional_deletes else None,
-            columns=[col.name for col in file_project_schema.columns],
-        )
+        with _handle_unsupported_pyarrow_uuid_filter():
+            fragment_scanner = ds.Scanner.from_fragment(
+                fragment=fragment,
+                schema=physical_schema,
+                # This will push down the query to Arrow.
+                # But in case there are positional deletes, we have to apply them first
+                filter=pyarrow_filter if not positional_deletes else None,
+                columns=[col.name for col in file_project_schema.columns],
+            )
 
         next_index = 0
         batches = fragment_scanner.to_batches()
@@ -1683,7 +1689,9 @@ def _task_to_record_batches(
             if pyarrow_filter is not None:
                 # Temporary fix until PyArrow 21 is released ( https://github.com/apache/arrow/pull/46057 )
                 table = pa.Table.from_batches([current_batch])
-                table = table.filter(pyarrow_filter)
+                with _handle_unsupported_pyarrow_uuid_filter():
+                    table = table.filter(pyarrow_filter)
+
                 # skip empty batches
                 if table.num_rows == 0:
                     continue
