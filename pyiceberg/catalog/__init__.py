@@ -754,6 +754,7 @@ class Catalog(ABC):
 
         Raises:
             NoSuchViewError: If a view with the name does not exist.
+            ViewAlreadyExistsError: If the target view already exists.
         """
 
     @staticmethod
