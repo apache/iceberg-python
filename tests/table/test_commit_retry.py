@@ -556,3 +556,45 @@ def test_overwrite_with_serializable_update_isolation_raises(catalog: Catalog) -
 
     with pytest.raises(ValidationException):
         tbl2.overwrite(pa.table({"x": [10, 20, 30]}), overwrite_filter="x > 0")
+
+
+def test_clean_all_uncommitted_on_validation_exception(catalog: Catalog) -> None:
+    """Verify that all manifests are cleaned up when commit aborts with ValidationException."""
+    catalog.create_namespace("default")
+    schema = _test_schema()
+    catalog.create_table("default.clean_abort_test", schema=schema)
+
+    import pyarrow as pa
+
+    df = pa.table({"x": [1, 2, 3]})
+
+    tbl = catalog.load_table("default.clean_abort_test")
+    tbl.append(df)
+
+    tbl1 = catalog.load_table("default.clean_abort_test")
+    tbl2 = catalog.load_table("default.clean_abort_test")
+
+    tbl1.delete("x == 1")
+
+    captured_producers: list = []
+
+    original_clean_all = None
+
+    def capturing_clean_all(self_producer: Any) -> None:
+        captured_producers.append(self_producer)
+        original_clean_all(self_producer)
+
+    from pyiceberg.table.update.snapshot import _SnapshotProducer
+
+    original_clean_all = _SnapshotProducer._clean_all_uncommitted
+
+    with patch.object(_SnapshotProducer, "_clean_all_uncommitted", capturing_clean_all):
+        with pytest.raises(ValidationException):
+            tbl2.delete("x == 1")
+
+    # _clean_all_uncommitted was called on abort
+    assert len(captured_producers) > 0
+    # All manifest lists should be cleared
+    for producer in captured_producers:
+        assert producer._written_manifests == []
+        assert producer._uncommitted_manifests == []

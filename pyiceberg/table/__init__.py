@@ -997,27 +997,32 @@ class Transaction:
                 total_timeout_val if total_timeout_val is not None else TableProperties.COMMIT_TOTAL_RETRY_TIME_MS_DEFAULT
             )
             start_time = time.monotonic()
+            self._requirements += (AssertTableUUID(uuid=self.table_metadata.table_uuid),)
 
-            for attempt in range(num_retries + 1):
-                try:
-                    self._requirements += (AssertTableUUID(uuid=self.table_metadata.table_uuid),)
-                    self._table._do_commit(  # pylint: disable=W0212
-                        updates=self._updates,
-                        requirements=self._requirements,
-                    )
-                    self._cleanup_uncommitted_manifests()
-                    break
-                except CommitFailedException:
-                    elapsed_ms = (time.monotonic() - start_time) * 1000
-                    if attempt == num_retries or not self._snapshot_producers or elapsed_ms >= total_timeout_ms:
-                        raise
+            try:
+                for attempt in range(num_retries + 1):
+                    try:
+                        self._table._do_commit(  # pylint: disable=W0212
+                            updates=self._updates,
+                            requirements=self._requirements,
+                        )
+                        self._cleanup_uncommitted_manifests()
+                        break
+                    except CommitFailedException:
+                        elapsed_ms = (time.monotonic() - start_time) * 1000
+                        if attempt == num_retries or not self._snapshot_producers or elapsed_ms >= total_timeout_ms:
+                            raise
 
-                    wait = min(min_wait_ms * (2**attempt), max_wait_ms)
-                    jitter = random.uniform(0, 0.25 * wait)
-                    time.sleep((wait + jitter) / 1000.0)
+                        wait = min(min_wait_ms * (2**attempt), max_wait_ms)
+                        jitter = random.uniform(0, 0.25 * wait)
+                        time.sleep((wait + jitter) / 1000.0)
 
-                    self._table.refresh()
-                    self._rebuild_snapshot_updates()
+                        self._table.refresh()
+                        self._rebuild_snapshot_updates()
+            except Exception:
+                for producer in self._snapshot_producers:
+                    producer._clean_all_uncommitted()
+                raise
 
         self._updates = ()
         self._requirements = ()
@@ -1034,7 +1039,7 @@ class Transaction:
         from pyiceberg.table.update import AddSnapshotUpdate, AssertRefSnapshotId, SetSnapshotRefUpdate
 
         self._updates = tuple(u for u in self._updates if not isinstance(u, (AddSnapshotUpdate, SetSnapshotRefUpdate)))
-        self._requirements = tuple(r for r in self._requirements if not isinstance(r, (AssertRefSnapshotId, AssertTableUUID)))
+        self._requirements = tuple(r for r in self._requirements if not isinstance(r, AssertRefSnapshotId))
 
         for producer in self._snapshot_producers:
             producer._refresh_for_retry()

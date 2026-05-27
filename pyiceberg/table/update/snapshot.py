@@ -378,6 +378,16 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                 logger.warning("Failed to delete uncommitted manifest: %s", path, exc_info=True)
         self._uncommitted_manifests.clear()
 
+    def _clean_all_uncommitted(self) -> None:
+        """Clean up all manifests written during this producer's lifecycle on abort."""
+        for path in itertools.chain(self._uncommitted_manifests, self._written_manifests):
+            try:
+                self._io.delete(path)
+            except Exception:
+                logger.warning("Failed to delete uncommitted manifest: %s", path, exc_info=True)
+        self._uncommitted_manifests.clear()
+        self._written_manifests.clear()
+
     def _refresh_for_retry(self) -> None:
         """Reset state for a retry attempt with refreshed metadata."""
         self._uncommitted_manifests.extend(self._written_manifests)
