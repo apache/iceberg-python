@@ -716,7 +716,7 @@ class SetPredicate(UnboundPredicate, ABC):
         """Return the equality of two instances of the SetPredicate class."""
         return self.term == other.term and self.literals == other.literals if isinstance(other, self.__class__) else False
 
-    def __getnewargs__(self) -> tuple[UnboundTerm, set[Any]]:
+    def __getnewargs__(self) -> tuple[str | UnboundTerm, set[Any]]:
         """Pickle the SetPredicate class."""
         return (self.term, self.literals)
 
