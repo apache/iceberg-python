@@ -576,17 +576,14 @@ def test_clean_all_uncommitted_on_validation_exception(catalog: Catalog) -> None
 
     tbl1.delete("x == 1")
 
-    captured_producers: list = []
+    from pyiceberg.table.update.snapshot import _SnapshotProducer
 
-    original_clean_all = None
+    captured_producers: list[Any] = []
+    original_clean_all = _SnapshotProducer._clean_all_uncommitted
 
     def capturing_clean_all(self_producer: Any) -> None:
         captured_producers.append(self_producer)
         original_clean_all(self_producer)
-
-    from pyiceberg.table.update.snapshot import _SnapshotProducer
-
-    original_clean_all = _SnapshotProducer._clean_all_uncommitted
 
     with patch.object(_SnapshotProducer, "_clean_all_uncommitted", capturing_clean_all):
         with pytest.raises(ValidationException):
