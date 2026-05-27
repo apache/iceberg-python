@@ -1527,7 +1527,7 @@ def cleanup_old_snapshots(table_name: str, snapshot_ids: list[int]):
 cleanup_old_snapshots("analytics.user_events", [12345, 67890, 11111])
 ```
 
-## Create a view
+## Views
 
 If the REST server does not indicate support for view endpoints, you can enable it by setting `"view-endpoints-supported": "true"`:
 
@@ -1546,6 +1546,8 @@ catalog = load_catalog(
     }
 )
 ```
+
+## Create a view
 
 To create a view from the catalog:
 
