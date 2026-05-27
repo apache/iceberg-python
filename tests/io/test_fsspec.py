@@ -146,6 +146,20 @@ def test_fsspec_getting_length_of_file(fsspec_fileio: FsspecFileIO) -> None:
     fsspec_fileio.delete(output_file)
 
 
+@pytest.mark.parametrize("size_key", ["Size", "size"])
+def test_fsspec_getting_zero_length_of_file(size_key: str) -> None:
+    """Test getting zero-byte lengths from object metadata."""
+    location = "s3://warehouse/empty-file"
+    fs = mock.Mock(spec=AbstractFileSystem)
+    fs.info.return_value = {size_key: 0}
+
+    output_file = fsspec.FsspecOutputFile(location=location, fs=fs)
+    assert len(output_file) == 0
+
+    input_file = fsspec.FsspecInputFile(location=location, fs=fs)
+    assert len(input_file) == 0
+
+
 @pytest.mark.s3
 def test_fsspec_file_tell(fsspec_fileio: FsspecFileIO) -> None:
     """Test finding cursor position for an fsspec file-io file"""

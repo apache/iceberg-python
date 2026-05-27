@@ -16,7 +16,7 @@
 # under the License.
 .PHONY: help install install-uv check-license lint \
         test test-integration test-integration-setup test-integration-exec test-integration-cleanup test-integration-rebuild \
-        test-s3 test-adls test-gcs test-coverage coverage-report \
+        test-s3 test-adls test-gcs test-coverage coverage-report test test-notebook\
         docs-serve docs-build notebook notebook-infra \
         clean
 
@@ -149,6 +149,9 @@ coverage-report: ## Combine and report coverage
 	uv run $(PYTHON_ARG) coverage report -m --fail-under=$(COVERAGE_FAIL_UNDER)
 	uv run $(PYTHON_ARG) coverage html
 	uv run $(PYTHON_ARG) coverage xml
+
+test-notebook: ## Run notebook tests (pyiceberg_example and spark_integration_example) via papermill
+	$(TEST_RUNNER) pytest tests/notebooks/test_pyiceberg_example.py tests/notebooks/test_spark_integration_example.py -m notebook $(PYTEST_ARGS)
 
 # ================
 # Documentation

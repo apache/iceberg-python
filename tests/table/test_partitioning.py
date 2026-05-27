@@ -267,6 +267,12 @@ def test_deserialize_partition_field_v3() -> None:
     assert field == PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate")
 
 
+def test_deserialize_partition_field_empty_source_ids_rejected() -> None:
+    json_partition_spec = """{"source-ids": [], "field-id": 1000, "transform": "identity", "name": "x"}"""
+    with pytest.raises(Exception, match="Empty source-ids is not allowed"):
+        PartitionField.model_validate_json(json_partition_spec)
+
+
 def test_incompatible_source_column_not_found() -> None:
     schema = Schema(NestedField(1, "foo", IntegerType()), NestedField(2, "bar", IntegerType()))
 

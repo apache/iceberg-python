@@ -26,6 +26,7 @@ from google.cloud.bigquery.external_config import ExternalCatalogDatasetOptions,
 from google.cloud.bigquery.schema import SerDeInfo, StorageDescriptor
 from google.cloud.exceptions import Conflict
 from google.oauth2 import service_account
+from typing_extensions import override
 
 from pyiceberg.catalog import WAREHOUSE_LOCATION, MetastoreCatalog, PropertiesUpdateSummary
 from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchNamespaceError, NoSuchTableError, TableAlreadyExistsError
@@ -41,6 +42,7 @@ from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import TableRequirement, TableUpdate
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.utils.config import Config
+from pyiceberg.view import View
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -100,6 +102,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         self.location = location
         self.project_id = project_id
 
+    @override
     def create_table(
         self,
         identifier: str | Identifier,
@@ -132,7 +135,6 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
 
         dataset_name, table_name = self.identifier_to_database_and_table(identifier)
 
-        dataset_ref = DatasetReference(project=self.project_id, dataset_id=dataset_name)
         location = self._resolve_table_location(location, dataset_name, table_name)
         provider = load_location_provider(table_location=location, table_properties=properties)
         metadata_location = provider.new_table_metadata_file_location()
@@ -156,6 +158,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
 
         return self.load_table(identifier=identifier)
 
+    @override
     def create_namespace(self, namespace: str | Identifier, properties: Properties = EMPTY_DICT) -> None:
         """Create a namespace in the catalog.
 
@@ -172,13 +175,12 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         try:
             dataset_ref = DatasetReference(project=self.project_id, dataset_id=database_name)
             dataset = Dataset(dataset_ref=dataset_ref)
-            dataset.external_catalog_dataset_options = self._create_external_catalog_dataset_options(
-                self._get_default_warehouse_location_for_dataset(database_name), properties, dataset_ref
-            )
+            dataset.external_catalog_dataset_options = self._create_external_catalog_dataset_options(properties, dataset_ref)
             self.client.create_dataset(dataset)
         except Conflict as e:
             raise NamespaceAlreadyExistsError("Namespace {database_name} already exists") from e
 
+    @override
     def load_table(self, identifier: str | Identifier) -> Table:
         """
         Load the table's metadata and returns the table instance.
@@ -195,7 +197,6 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
         """
-        database_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
         dataset_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
 
         try:
@@ -208,6 +209,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         except NotFound as e:
             raise NoSuchTableError(f"Table does not exist: {dataset_name}.{table_name}") from e
 
+    @override
     def drop_table(self, identifier: str | Identifier) -> None:
         """Drop a table.
 
@@ -228,14 +230,17 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         except NoSuchTableError as e:
             raise NoSuchTableError(f"Table does not exist: {dataset_name}.{table_name}") from e
 
+    @override
     def commit_table(
         self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
         raise NotImplementedError
 
+    @override
     def rename_table(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> Table:
         raise NotImplementedError
 
+    @override
     def drop_namespace(self, namespace: str | Identifier) -> None:
         database_name = self.identifier_to_database(namespace)
 
@@ -246,6 +251,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         except NotFound as e:
             raise NoSuchNamespaceError(f"Namespace {namespace} does not exist.") from e
 
+    @override
     def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
         database_name = self.identifier_to_database(namespace)
         iceberg_tables: list[Identifier] = []
@@ -260,6 +266,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Namespace (dataset) '{database_name}' not found.") from None
         return iceberg_tables
 
+    @override
     def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
         # Since this catalog only supports one-level namespaces, it always returns an empty list unless
         # passed an empty namespace to list all namespaces within the catalog.
@@ -270,12 +277,14 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         datasets_iterator = self.client.list_datasets()
         return [(dataset.dataset_id,) for dataset in datasets_iterator]
 
-    def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
+    @override
+    def register_table(self, identifier: str | Identifier, metadata_location: str, overwrite: bool = False) -> Table:
         """Register a new table using existing metadata.
 
         Args:
             identifier (str | Identifier): Table identifier for the table
             metadata_location (str): The location to the metadata
+            overwrite (bool): Whether to overwrite the existing table, default False
 
         Returns:
             Table: The newly registered table
@@ -283,6 +292,9 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         Raises:
             TableAlreadyExistsError: If the table already exists
         """
+        if overwrite:
+            raise NotImplementedError("`overwrite` isn't supported")
+
         dataset_name, table_name = self.identifier_to_database_and_table(identifier)
 
         dataset_ref = DatasetReference(project=self.project_id, dataset_id=dataset_name)
@@ -301,15 +313,27 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
 
         return self.load_table(identifier=identifier)
 
+    @override
     def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         raise NotImplementedError
 
+    @override
+    def register_view(self, identifier: str | Identifier, metadata_location: str) -> View:
+        raise NotImplementedError
+
+    @override
     def drop_view(self, identifier: str | Identifier) -> None:
         raise NotImplementedError
 
+    @override
     def view_exists(self, identifier: str | Identifier) -> bool:
         raise NotImplementedError
 
+    @override
+    def load_view(self, identifier: str | Identifier) -> View:
+        raise NotImplementedError
+
+    @override
     def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
         dataset_name = self.identifier_to_database(namespace)
 
@@ -322,6 +346,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Namespace {namespace} not found") from e
         return {}
 
+    @override
     def update_namespace_properties(
         self, namespace: str | Identifier, removals: set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
@@ -359,7 +384,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         )
 
     def _create_external_catalog_dataset_options(
-        self, default_storage_location: str, metadataParameters: dict[str, Any], dataset_ref: DatasetReference
+        self, metadataParameters: dict[str, Any], dataset_ref: DatasetReference
     ) -> ExternalCatalogDatasetOptions:
         return ExternalCatalogDatasetOptions(
             default_storage_location_uri=self._get_default_warehouse_location_for_dataset(dataset_ref.dataset_id),

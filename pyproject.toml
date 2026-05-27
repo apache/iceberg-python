@@ -29,6 +29,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
     "mmh3>=4.0.0,<6.0.0",
@@ -55,7 +56,6 @@ pyiceberg = "pyiceberg.cli.console:run"
 [project.optional-dependencies]
 pyarrow = [
     "pyarrow>=17.0.0",
-    "pyiceberg-core>=0.5.1,<0.10.0",
 ]
 pandas = [
     "pandas>=1.0.0",
@@ -71,7 +71,7 @@ ray = [
     "pandas>=1.0.0",
 ]
 bodo = ["bodo>=2025.7.4"]
-daft = ["daft>=0.5.0"]
+daft = ["daft>=0.7.10"]
 polars = ["polars>=1.21.0,<2"]
 snappy = ["python-snappy>=0.6.0,<1.0.0"]
 hive = ["thrift>=0.13.0,<1.0.0"]
@@ -103,7 +103,7 @@ geoarrow = ["geoarrow-pyarrow>=0.2.0"]
 dev = [
     "pytest==9.0.3",
     "pytest-checkdocs==2.14.0",
-    "prek>=0.2.1,<0.4",
+    "prek>=0.2.1,<0.5",
     "pytest-lazy-fixtures==1.4.0",
     "fastavro==1.12.2",
     "coverage[toml]>=7.4.2,<8",
@@ -121,6 +121,9 @@ dev = [
     "google-cloud-bigquery>=3.33.0,<4",
     "pyarrow-stubs>=20.0.0.20251107", # Remove when pyarrow >= 23.0.0 https://github.com/apache/arrow/pull/47609
     "sqlalchemy>=2.0.18,<3",
+    "papermill>=2.6.0",
+    "nbformat>=5.10.0",
+    "ipykernel>=6.29.0",
 ]
 # for mkdocs
 docs = [
@@ -160,6 +163,7 @@ markers = [
   "integration: marks integration tests against Apache Spark",
   "gcs: marks a test as requiring access to gcs compliant storage (use with --gs.token, --gs.project, and --gs.endpoint)",
   "benchmark: collection of tests to validate read/write performance before and after a change",
+  "notebook: marks tests that execute Jupyter notebooks via papermill",
 ]
 
 # Turns a warning into an error

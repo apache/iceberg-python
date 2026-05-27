@@ -1175,6 +1175,43 @@ def example_view_metadata_v1() -> dict[str, Any]:
 
 
 @pytest.fixture
+def example_view_metadata_v1_multiple_versions() -> dict[str, Any]:
+    return {
+        "view-uuid": "a20125c8-7284-442c-9aea-15fee620737c",
+        "format-version": 1,
+        "location": "s3://bucket/test/location/test_view",
+        "current-version-id": 2,
+        "versions": [
+            {
+                "version-id": 1,
+                "timestamp-ms": 1602638573874,
+                "schema-id": 1,
+                "summary": {},
+                "representations": [{"type": "sql", "sql": "SELECT 1", "dialect": "spark"}],
+                "default-namespace": ["default"],
+            },
+            {
+                "version-id": 2,
+                "timestamp-ms": 1602638573875,
+                "schema-id": 2,
+                "summary": {},
+                "representations": [{"type": "sql", "sql": "SELECT 2", "dialect": "spark"}],
+                "default-namespace": ["default"],
+            },
+        ],
+        "schemas": [
+            {"type": "struct", "schema-id": 1, "fields": [{"id": 1, "name": "a", "required": True, "type": "long"}]},
+            {"type": "struct", "schema-id": 2, "fields": [{"id": 2, "name": "b", "required": True, "type": "string"}]},
+        ],
+        "version-log": [
+            {"timestamp-ms": 1602638573874, "version-id": 1},
+            {"timestamp-ms": 1602638573875, "version-id": 2},
+        ],
+        "properties": {},
+    }
+
+
+@pytest.fixture
 def example_table_metadata_v3() -> dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_V3
 
@@ -2354,6 +2391,13 @@ def table_list(table_name: str) -> list[str]:
 
 
 @pytest.fixture()
+def view_name() -> str:
+    prefix = "my_iceberg_view-"
+    random_tag = "".join(choice(string.ascii_letters) for _ in range(RANDOM_LENGTH))
+    return (prefix + random_tag).lower()
+
+
+@pytest.fixture()
 def database_name() -> str:
     prefix = "my_iceberg_database-"
     random_tag = "".join(choice(string.ascii_letters) for _ in range(RANDOM_LENGTH))
@@ -2466,6 +2510,11 @@ def clean_up(test_catalog: Catalog) -> None:
         if "my_iceberg_database-" in database_name:
             for identifier in test_catalog.list_tables(database_name):
                 test_catalog.drop_table(identifier)
+            try:
+                for identifier in test_catalog.list_views(database_name):
+                    test_catalog.drop_view(identifier)
+            except NotImplementedError:
+                pass
             test_catalog.drop_namespace(database_name)
 
 
@@ -3029,6 +3078,15 @@ def pyarrow_table_with_promoted_types(pyarrow_schema_with_promoted_types: "pa.Sc
     )
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    # Disable Ray's automatic uv environment propagation to workers.
+    # When tests are invoked via `uv run`, Ray detects the wrapper and tries
+    # to package the working directory for remote workers, which is unnecessary
+    # and problematic in local single-node test mode
+    # See https://docs.ray.io/en/latest/_modules/ray/_private/worker.html
+    os.environ["RAY_ENABLE_UV_RUN_RUNTIME_ENV"] = "0"
+
+
 @pytest.fixture(scope="session")
 def ray_session() -> Generator[Any, None, None]:
     """Fixture to manage Ray initialization and shutdown for tests."""
@@ -3036,7 +3094,6 @@ def ray_session() -> Generator[Any, None, None]:
 
     ray.init(
         ignore_reinit_error=True,
-        runtime_env={"working_dir": None},  # Prevent Ray from serializing the working directory to workers
     )
     yield ray
     ray.shutdown()

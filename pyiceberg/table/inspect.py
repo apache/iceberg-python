@@ -38,6 +38,10 @@ if TYPE_CHECKING:
 ALWAYS_TRUE = AlwaysTrue()
 
 
+def _readable_bound(field_type: PrimitiveType, bound: bytes | None) -> Any | None:
+    return from_bytes(field_type, bound) if bound is not None else None
+
+
 class InspectTable:
     tbl: Table
 
@@ -180,12 +184,8 @@ class InspectTable:
                         "null_value_count": null_value_counts.get(field.field_id),
                         "nan_value_count": nan_value_counts.get(field.field_id),
                         # Makes them readable
-                        "lower_bound": from_bytes(field.field_type, lower_bound)
-                        if (lower_bound := lower_bounds.get(field.field_id))
-                        else None,
-                        "upper_bound": from_bytes(field.field_type, upper_bound)
-                        if (upper_bound := upper_bounds.get(field.field_id))
-                        else None,
+                        "lower_bound": _readable_bound(field.field_type, lower_bounds.get(field.field_id)),
+                        "upper_bound": _readable_bound(field.field_type, upper_bounds.get(field.field_id)),
                     }
                     for field in self.tbl.metadata.schema().fields
                 }
@@ -570,12 +570,8 @@ class InspectTable:
                     "value_count": value_counts.get(field.field_id),
                     "null_value_count": null_value_counts.get(field.field_id),
                     "nan_value_count": nan_value_counts.get(field.field_id),
-                    "lower_bound": from_bytes(field.field_type, lower_bound)
-                    if (lower_bound := lower_bounds.get(field.field_id))
-                    else None,
-                    "upper_bound": from_bytes(field.field_type, upper_bound)
-                    if (upper_bound := upper_bounds.get(field.field_id))
-                    else None,
+                    "lower_bound": _readable_bound(field.field_type, lower_bounds.get(field.field_id)),
+                    "upper_bound": _readable_bound(field.field_type, upper_bounds.get(field.field_id)),
                 }
                 for field in self.tbl.metadata.schema().fields
             }
