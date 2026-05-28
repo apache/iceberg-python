@@ -917,7 +917,7 @@ def test_decimal_literal_increment() -> None:
     assert dec.increment().value.as_tuple() == Decimal("10.124").as_tuple()
 
 
-def test_decimal_literal_dencrement() -> None:
+def test_decimal_literal_decrement() -> None:
     dec = DecimalLiteral(Decimal("10.123"))
     # Twice to check that we don't mutate the value
     assert dec.decrement() == DecimalLiteral(Decimal("10.122"))
