@@ -540,7 +540,8 @@ class UnaryPredicate(UnboundPredicate, ABC):
         return f"{str(self.__class__.__name__)}(term={str(self.term)})"
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundUnaryPredicate:
-        bound_term = self.term.bind(schema, case_sensitive)  # type: ignore[union-attr]
+        assert isinstance(self.term, UnboundTerm)
+        bound_term = self.term.bind(schema, case_sensitive)
         bound_type = self.as_bound
         return bound_type(bound_term)  # type: ignore[misc]
 
@@ -696,7 +697,8 @@ class SetPredicate(UnboundPredicate, ABC):
         super().__init__(term=_to_unbound_term(term), values=literal_set)
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundSetPredicate:
-        bound_term = self.term.bind(schema, case_sensitive)  # type: ignore[union-attr]
+        assert isinstance(self.term, UnboundTerm)
+        bound_term = self.term.bind(schema, case_sensitive)
         literal_set = self.literals
         return self.as_bound(bound_term, {lit.to(bound_term.ref().field.field_type) for lit in literal_set})  # type: ignore
 
@@ -885,7 +887,8 @@ class LiteralPredicate(UnboundPredicate, ABC):
         return self.value
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundLiteralPredicate:
-        bound_term = self.term.bind(schema, case_sensitive)  # type: ignore[union-attr]
+        assert isinstance(self.term, UnboundTerm)
+        bound_term = self.term.bind(schema, case_sensitive)
         lit = self.literal.to(bound_term.ref().field.field_type)
 
         if isinstance(lit, AboveMax):
