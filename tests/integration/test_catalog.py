@@ -439,7 +439,7 @@ def test_create_duplicate_namespace(test_catalog: Catalog, database_name: str) -
 
 @pytest.mark.integration
 @pytest.mark.parametrize("test_catalog", CATALOGS)
-def test_create_namepsace_if_not_exists(test_catalog: Catalog, database_name: str) -> None:
+def test_create_namespace_if_not_exists(test_catalog: Catalog, database_name: str) -> None:
     test_catalog.create_namespace(database_name)
     test_catalog.create_namespace_if_not_exists(database_name)
     assert (database_name,) in test_catalog.list_namespaces()
