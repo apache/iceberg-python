@@ -17,6 +17,7 @@
 
 
 import logging
+from collections.abc import Iterator
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -860,14 +861,14 @@ class GlueCatalog(MetastoreCatalog):
         self.glue.delete_database(Name=database_name)
 
     @override
-    def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> Iterator[Identifier]:
         """List Iceberg tables under the given namespace in the catalog.
 
         Args:
             namespace (str | Identifier): Namespace identifier to search.
 
         Returns:
-            List[Identifier]: list of table identifiers.
+            Iterator[Identifier]: an iterator of table identifiers.
 
         Raises:
             NoSuchNamespaceError: If a namespace with the given name does not exist, or the identifier is invalid.
@@ -889,18 +890,18 @@ class GlueCatalog(MetastoreCatalog):
 
         except self.glue.exceptions.EntityNotFoundException as e:
             raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
-        return [(database_name, table["Name"]) for table in table_list if self.__is_iceberg_table(table)]
+        return iter([(database_name, table["Name"]) for table in table_list if self.__is_iceberg_table(table)])
 
     @override
-    def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> Iterator[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
 
         Returns:
-            List[Identifier]: a List of namespace identifiers.
+            Iterator[Identifier]: an iterator of namespace identifiers.
         """
         # Hierarchical namespace is not supported. Return an empty list
         if namespace:
-            return []
+            return iter([])
 
         database_list: list[DatabaseTypeDef] = []
         next_token: str | None = None
@@ -912,7 +913,7 @@ class GlueCatalog(MetastoreCatalog):
             if not next_token:
                 break
 
-        return [self.identifier_to_tuple(database["Name"]) for database in database_list]
+        return iter([self.identifier_to_tuple(database["Name"]) for database in database_list])
 
     @override
     def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
@@ -982,7 +983,7 @@ class GlueCatalog(MetastoreCatalog):
         raise NotImplementedError
 
     @override
-    def list_views(self, namespace: str | Identifier) -> list[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> Iterator[Identifier]:
         raise NotImplementedError
 
     @override

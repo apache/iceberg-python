@@ -15,8 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=broad-except,redefined-builtin,redefined-outer-name
+import itertools
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from functools import wraps
 from typing import (
     Any,
@@ -33,6 +34,7 @@ from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchPropertyException, 
 from pyiceberg.io import WAREHOUSE
 from pyiceberg.table import TableProperties
 from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
+from pyiceberg.typedef import Identifier
 from pyiceberg.utils.properties import property_as_int
 
 
@@ -130,14 +132,19 @@ def _catalog_and_output(ctx: Context) -> tuple[Catalog, Output]:
 def list(ctx: Context, parent: str | None) -> None:  # pylint: disable=redefined-builtin
     """List tables or namespaces."""
     catalog, output = _catalog_and_output(ctx)
+    identifiers: Iterator[Identifier]
 
-    identifiers = []
     if parent:
-        # Do we have tables under parent namespace?
-        identifiers = catalog.list_tables(parent)
-    if not identifiers:
-        # List hierarchical namespaces if parent, root namespaces otherwise.
-        identifiers = catalog.list_namespaces(parent or ())
+        # Do we have tables under parent namespace? Peek at first element.
+        tables = catalog.list_tables(parent)
+        try:
+            first = next(tables)
+            identifiers = itertools.chain([first], tables)
+        except StopIteration:
+            # No tables found; list hierarchical namespaces instead.
+            identifiers = catalog.list_namespaces(parent)
+    else:
+        identifiers = catalog.list_namespaces(())
     output.identifiers(identifiers)
 
 

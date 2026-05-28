@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Iterator
 from enum import Enum
 from typing import (
     TYPE_CHECKING,
@@ -1038,7 +1039,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     @override
-    def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> Iterator[Identifier]:
         self._check_endpoint(Capability.V1_LIST_TABLES)
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = self._encode_namespace_path(namespace_tuple)
@@ -1070,7 +1071,7 @@ class RestCatalog(Catalog):
                 break
             page_token = parsed.next_page_token
 
-        return tables
+        return iter(tables)
 
     @retry(**_RETRY_ARGS)
     @override
@@ -1151,7 +1152,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     @override
-    def list_views(self, namespace: str | Identifier) -> list[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> Iterator[Identifier]:
         if Capability.V1_LIST_VIEWS not in self._supported_endpoints:
             return []
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
@@ -1185,7 +1186,7 @@ class RestCatalog(Catalog):
                 break
             page_token = parsed.next_page_token
 
-        return views
+        return iter(views)
 
     @retry(**_RETRY_ARGS)
     @override
@@ -1276,7 +1277,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     @override
-    def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> Iterator[Identifier]:
         self._check_endpoint(Capability.V1_LIST_NAMESPACES)
         namespace_tuple = self.identifier_to_tuple(namespace)
 
@@ -1309,7 +1310,7 @@ class RestCatalog(Catalog):
                 break
             page_token = parsed.next_page_token
 
-        return namespaces
+        return iter(namespaces)
 
     @retry(**_RETRY_ARGS)
     @override
