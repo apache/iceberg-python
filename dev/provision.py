@@ -395,3 +395,13 @@ for catalog_name, catalog in catalogs.items():
     )
     spark.sql(f"ALTER TABLE {catalog_name}.default.test_empty_scan_ordered_str WRITE ORDERED BY id")
     spark.sql(f"INSERT INTO {catalog_name}.default.test_empty_scan_ordered_str VALUES 'a', 'c'")
+
+# Encrypted Iceberg table written via Spark, read back via PyIceberg in tests/integration/test_encryption.py.
+# Only the Hive catalog is configured with a Java-side KMS (encryption.kms-impl=UnitestKMS); the REST catalog
+# image does not ship UnitestKMS so we limit this fixture to Hive.
+spark.sql("""
+    CREATE OR REPLACE TABLE hive.default.test_encrypted (id bigint, data string, value float)
+    USING iceberg
+    TBLPROPERTIES ('encryption.key-id'='keyA', 'format-version'='3')
+""")
+spark.sql("INSERT INTO hive.default.test_encrypted VALUES (1, 'alice', 1.0), (2, 'bob', 2.0), (3, 'charlie', 3.0)")

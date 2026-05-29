@@ -16,7 +16,7 @@
 # under the License.
 .PHONY: help install install-uv check-license lint \
         test test-integration test-integration-setup test-integration-exec test-integration-cleanup test-integration-rebuild \
-        test-s3 test-adls test-gcs test-coverage coverage-report test test-notebook\
+        test-s3 test-adls test-gcs test-coverage coverage-report \
         docs-serve docs-build notebook notebook-infra \
         clean
 
@@ -38,10 +38,12 @@ else
   PYTHON_ARG =
 endif
 
+# --no-sync so that overlays applied after `make install` (e.g. install-pyarrow-nightly for
+# the encryption integration test) aren't reverted by uv re-syncing the lockfile on `uv run`.
 ifeq ($(COVERAGE),1)
-  TEST_RUNNER = uv run $(PYTHON_ARG) python -m coverage run --parallel-mode --source=pyiceberg -m
+  TEST_RUNNER = uv run --no-sync $(PYTHON_ARG) python -m coverage run --parallel-mode --source=pyiceberg -m
 else
-  TEST_RUNNER = uv run $(PYTHON_ARG) python -m
+  TEST_RUNNER = uv run --no-sync $(PYTHON_ARG) python -m
 endif
 
 ifeq ($(KEEP_COMPOSE),1)
@@ -108,11 +110,18 @@ test: ## Run all unit tests (excluding integration)
 
 test-integration: test-integration-setup test-integration-exec test-integration-cleanup ## Run integration tests
 
-test-integration-setup: install ## Start Docker services for integration tests
+test-integration-setup: install install-pyarrow-nightly ## Start Docker services for integration tests
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml up -d --build --wait
 	uv run $(PYTHON_ARG) python dev/provision.py
+
+# Parquet Modular Encryption decryption (tests/integration/test_encryption.py) needs the
+# pyarrow.parquet.encryption.create_decryption_properties API from apache/arrow#49667. That
+# lands in pyarrow 25, which hasn't been released — pull the nightly until it is.
+install-pyarrow-nightly: ## Overlay nightly pyarrow on top of the installed env (for PME)
+	uv pip install $(PYTHON_ARG) --prerelease=allow --upgrade --force-reinstall \
+		-i https://pypi.anaconda.org/scientific-python-nightly-wheels/simple pyarrow
 
 test-integration-exec: ## Run integration tests (excluding provision)
 	$(TEST_RUNNER) pytest tests/ -m integration $(PYTEST_ARGS)
@@ -149,9 +158,6 @@ coverage-report: ## Combine and report coverage
 	uv run $(PYTHON_ARG) coverage report -m --fail-under=$(COVERAGE_FAIL_UNDER)
 	uv run $(PYTHON_ARG) coverage html
 	uv run $(PYTHON_ARG) coverage xml
-
-test-notebook: ## Run notebook tests (pyiceberg_example and spark_integration_example) via papermill
-	$(TEST_RUNNER) pytest tests/notebooks/test_pyiceberg_example.py tests/notebooks/test_spark_integration_example.py -m notebook $(PYTEST_ARGS)
 
 # ================
 # Documentation
