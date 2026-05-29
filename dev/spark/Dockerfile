@@ -43,11 +43,17 @@ RUN apt-get update -qq && \
 # fixed-master-key KMS used by the encryption integration test on the Spark write path.
 RUN set -e && \
     cd "${SPARK_HOME}/jars" && \
+    # Spark 4.0.1 ships hadoop-client-{api,runtime} 3.4.1; replace them with HADOOP_VERSION so
+    # hadoop-aws methods like ConfigurationHelper.resolveEnum / S3ABlockOutputStream.builder()
+    # that iceberg-aws-bundle 1.11.0 expects are present at runtime.
+    rm -f hadoop-client-api-*.jar hadoop-client-runtime-*.jar && \
     for jar_path in \
         "org/apache/iceberg/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}/${ICEBERG_VERSION}/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar" \
         "org/apache/iceberg/iceberg-aws-bundle/${ICEBERG_VERSION}/iceberg-aws-bundle-${ICEBERG_VERSION}.jar" \
         "org/apache/iceberg/iceberg-core/${ICEBERG_VERSION}/iceberg-core-${ICEBERG_VERSION}-tests.jar" \
         "org/apache/hadoop/hadoop-aws/${HADOOP_VERSION}/hadoop-aws-${HADOOP_VERSION}.jar" \
+        "org/apache/hadoop/hadoop-client-api/${HADOOP_VERSION}/hadoop-client-api-${HADOOP_VERSION}.jar" \
+        "org/apache/hadoop/hadoop-client-runtime/${HADOOP_VERSION}/hadoop-client-runtime-${HADOOP_VERSION}.jar" \
         "software/amazon/awssdk/bundle/${AWS_SDK_VERSION}/bundle-${AWS_SDK_VERSION}.jar"; \
     do \
         jar_name=$(basename "${jar_path}") && \
