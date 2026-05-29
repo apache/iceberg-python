@@ -937,6 +937,37 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         """
         return self._remove_ref_snapshot(ref_name=branch_name)
 
+    def rename_branch(self, name: str, new_name: str) -> ManageSnapshots:
+        """
+        Rename a branch.
+
+        Args:
+            name (str): name of branch to rename
+            new_name (str): the desired new name of the branch
+        Returns:
+            This for method chaining
+        """
+        self._commit_if_ref_updates_exist()
+
+        if name == MAIN_BRANCH:
+            raise ValueError("Cannot rename main branch")
+
+        refs = self._transaction.table_metadata.refs
+        if name not in refs:
+            raise ValueError(f"Branch does not exist: {name}")
+
+        ref = refs[name]
+        if ref.snapshot_ref_type != SnapshotRefType.BRANCH:
+            raise ValueError(f"Ref {name} is not a branch")
+
+        if new_name in refs:
+            raise ValueError(f"Ref {new_name} already exists")
+
+        self.create_branch(ref.snapshot_id, new_name, ref.max_ref_age_ms, ref.max_snapshot_age_ms, ref.min_snapshots_to_keep)
+        self.remove_branch(name)
+
+        return self
+
     def set_current_snapshot(self, snapshot_id: int | None = None, ref_name: str | None = None) -> ManageSnapshots:
         """Set the current snapshot to a specific snapshot ID or ref.
 
