@@ -110,3 +110,24 @@ def test_encrypted_table_to_polars(hive_catalog_with_kms) -> None:  # type: igno
     assert df["id"].to_list() == [1, 2, 3]
     assert df["data"].to_list() == ["alice", "bob", "charlie"]
     assert df["value"].to_list() == [1.0, 2.0, 3.0]
+
+
+@pytest.mark.integration
+def test_encrypted_table_direct_parquet_read_fails(hive_catalog_with_kms) -> None:  # type: ignore[no-untyped-def]
+    """Canary: a raw PyArrow read of a data file without decryption properties must fail.
+
+    Mirrors iceberg-java's TestTableEncryption#testDirectDataFileRead, which proves the data
+    files are genuinely PME-encrypted by asserting that reading them without the keys raises
+    ParquetCryptoRuntimeException. Without this check, the read tests above could silently pass
+    on plaintext Parquet and the POC would be meaningless.
+    """
+    import pyarrow.parquet as pq
+
+    tbl = hive_catalog_with_kms.load_table("default.test_encrypted")
+
+    data_files = [task.file.file_path for task in tbl.scan().plan_files()]
+    assert data_files, "expected at least one data file in the encrypted table"
+
+    for file_path in data_files:
+        with pytest.raises(OSError, match="encrypted"), tbl.io.new_input(file_path).open() as fi:
+            pq.read_table(fi)

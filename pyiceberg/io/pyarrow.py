@@ -1120,14 +1120,20 @@ def _get_file_format(file_format: FileFormat, **kwargs: dict[str, Any]) -> ds.Fi
 def _get_decryption_properties(key_metadata_bytes: bytes) -> Any:
     """Build FileDecryptionProperties from Iceberg key metadata.
 
-    Requires a custom PyArrow build with pyarrow.parquet.encryption support.
+    Requires PyArrow >= 25 (currently nightly-only) for the direct-key
+    `create_decryption_properties` API added by apache/arrow#49667.
     """
     try:
         import pyarrow.parquet.encryption as pe
+
+        if not hasattr(pe, "create_decryption_properties"):
+            raise ImportError("create_decryption_properties not available")
     except ImportError as e:
         raise ImportError(
-            "Parquet Modular Encryption requires a PyArrow build with encryption support. "
-            "See PYARROW_ENCRYPTION_HANDOFF.md for build instructions."
+            "Parquet Modular Encryption requires PyArrow >= 25 with the direct-key API "
+            "(apache/arrow#49667). Until it releases, install the nightly: "
+            "`make install-pyarrow-nightly` (or `uv pip install -i "
+            "https://pypi.anaconda.org/scientific-python-nightly-wheels/simple pyarrow`)."
         ) from e
 
     from pyiceberg.encryption.key_metadata import StandardKeyMetadata
