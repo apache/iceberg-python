@@ -404,6 +404,8 @@ class InspectTable:
 
         all_manifests_schema = self._get_manifests_schema()
         all_manifests_schema = all_manifests_schema.append(pa.field("reference_snapshot_id", pa.int64(), nullable=False))
+        # Iceberg 1.11.0 (apache/iceberg#14750) added key_metadata to the all_manifests table only.
+        all_manifests_schema = all_manifests_schema.append(pa.field("key_metadata", pa.binary(), nullable=True))
         return all_manifests_schema
 
     def _generate_manifests_table(self, snapshot: Snapshot | None, is_all_manifests_table: bool = False) -> pa.Table:
@@ -468,6 +470,7 @@ class InspectTable:
                 }
                 if is_all_manifests_table:
                     manifest_row["reference_snapshot_id"] = snapshot.snapshot_id
+                    manifest_row["key_metadata"] = manifest.key_metadata
                 manifests.append(manifest_row)
 
         return pa.Table.from_pylist(
