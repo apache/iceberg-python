@@ -23,7 +23,7 @@ from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.table import Table
-from pyiceberg.table.refs import SnapshotRef
+from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
 
 
 @pytest.fixture
@@ -105,6 +105,62 @@ def test_remove_branch(catalog: Catalog) -> None:
     # now, remove the branch
     tbl.manage_snapshots().remove_branch(branch_name=branch_name).commit()
     assert tbl.metadata.refs.get(branch_name, None) is None
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_replace_branch(catalog: Catalog) -> None:
+    identifier = "default.test_table_snapshot_operations"
+    tbl = catalog.load_table(identifier)
+    assert len(tbl.history()) > 2
+
+    current_snapshot_id = tbl.history()[-1].snapshot_id
+    older_snapshot_id = tbl.history()[-2].snapshot_id
+
+    branch_name = "my-branch"
+    tbl.manage_snapshots().create_branch(older_snapshot_id, branch_name, 1, 2, 3).commit()
+    branch = tbl.metadata.refs.get(branch_name)
+    assert branch is not None
+    assert branch.snapshot_id == older_snapshot_id
+    assert branch.snapshot_ref_type == SnapshotRefType.BRANCH
+    assert branch.max_ref_age_ms == 1
+    assert branch.max_snapshot_age_ms == 2
+    assert branch.min_snapshots_to_keep == 3
+
+    tbl.manage_snapshots().replace_branch(branch_name=branch_name, snapshot_id=current_snapshot_id).commit()
+
+    branch = tbl.metadata.refs.get(branch_name)
+    assert branch is not None
+    assert branch.snapshot_id == current_snapshot_id
+    assert branch.snapshot_ref_type == SnapshotRefType.BRANCH
+    assert branch.max_ref_age_ms == 1
+    assert branch.max_snapshot_age_ms == 2
+    assert branch.min_snapshots_to_keep == 3
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_replace_missing_branch(catalog: Catalog) -> None:
+    identifier = "default.test_table_snapshot_operations"
+    tbl = catalog.load_table(identifier)
+    snapshot_id = tbl.history()[-1].snapshot_id
+
+    with pytest.raises(ValueError, match="Branch does not exist: test"):
+        tbl.manage_snapshots().replace_branch(branch_name="test", snapshot_id=snapshot_id).commit()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_replace_branch_with_tag(catalog: Catalog) -> None:
+    identifier = "default.test_table_snapshot_operations"
+    tbl = catalog.load_table(identifier)
+    snapshot_id = tbl.history()[-1].snapshot_id
+
+    tag_name = "my-tag"
+    tbl.manage_snapshots().create_tag(snapshot_id=snapshot_id, tag_name=tag_name).commit()
+
+    with pytest.raises(ValueError, match="Ref my-tag is not a branch"):
+        tbl.manage_snapshots().replace_branch(branch_name=tag_name, snapshot_id=snapshot_id).commit()
 
 
 @pytest.mark.integration
