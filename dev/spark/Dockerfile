@@ -50,7 +50,6 @@ RUN set -e && \
     for jar_path in \
         "org/apache/iceberg/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}/${ICEBERG_VERSION}/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar" \
         "org/apache/iceberg/iceberg-aws-bundle/${ICEBERG_VERSION}/iceberg-aws-bundle-${ICEBERG_VERSION}.jar" \
-        "org/apache/iceberg/iceberg-core/${ICEBERG_VERSION}/iceberg-core-${ICEBERG_VERSION}-tests.jar" \
         "org/apache/hadoop/hadoop-aws/${HADOOP_VERSION}/hadoop-aws-${HADOOP_VERSION}.jar" \
         "org/apache/hadoop/hadoop-client-api/${HADOOP_VERSION}/hadoop-client-api-${HADOOP_VERSION}.jar" \
         "org/apache/hadoop/hadoop-client-runtime/${HADOOP_VERSION}/hadoop-client-runtime-${HADOOP_VERSION}.jar" \
@@ -62,6 +61,24 @@ RUN set -e && \
              "${MAVEN_MIRROR}/${jar_path}" && \
         chown spark:spark "${jar_name}"; \
     done
+
+# Pull UnitestKMS + MemoryMockKMS out of iceberg-core's -tests.jar into a slim jar that only
+# ships those two classes. The full -tests.jar contains testing stubs for unrelated classes
+# (e.g. a stub S3ABlockOutputStream that lacks builder()) which would shadow the real ones in
+# hadoop-aws and break Spark's S3A writes; this avoids that classpath collision.
+RUN set -e && \
+    tmp="$(mktemp -d)" && cd "${tmp}" && \
+    curl -fsSL --retry 3 --retry-delay 5 \
+        -o iceberg-core-tests.jar \
+        "${MAVEN_MIRROR}/org/apache/iceberg/iceberg-core/${ICEBERG_VERSION}/iceberg-core-${ICEBERG_VERSION}-tests.jar" && \
+    /opt/java/openjdk/bin/jar xf iceberg-core-tests.jar \
+        org/apache/iceberg/encryption/UnitestKMS.class \
+        org/apache/iceberg/encryption/MemoryMockKMS.class && \
+    /opt/java/openjdk/bin/jar cf "${SPARK_HOME}/jars/iceberg-core-${ICEBERG_VERSION}-tests-kms-only.jar" \
+        org/apache/iceberg/encryption/UnitestKMS.class \
+        org/apache/iceberg/encryption/MemoryMockKMS.class && \
+    chown spark:spark "${SPARK_HOME}/jars/iceberg-core-${ICEBERG_VERSION}-tests-kms-only.jar" && \
+    rm -rf "${tmp}"
 
 # Copy configuration last (changes more frequently than JARs)
 COPY --chown=spark:spark spark-defaults.conf ${SPARK_HOME}/conf/
