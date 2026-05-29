@@ -14,8 +14,6 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""Key Management Service interfaces and implementations."""
-
 from __future__ import annotations
 
 import importlib
@@ -34,15 +32,11 @@ PY_KMS_IMPL = "py-kms-impl"
 
 
 class KeyManagementClient(ABC):
-    """Abstract base class for key management operations."""
+    @abstractmethod
+    def wrap_key(self, key: bytes, wrapping_key_id: str) -> bytes: ...
 
     @abstractmethod
-    def wrap_key(self, key: bytes, wrapping_key_id: str) -> bytes:
-        """Wrap (encrypt) a key using the master key identified by wrapping_key_id."""
-
-    @abstractmethod
-    def unwrap_key(self, wrapped_key: bytes, wrapping_key_id: str) -> bytes:
-        """Unwrap (decrypt) a wrapped key using the master key identified by wrapping_key_id."""
+    def unwrap_key(self, wrapped_key: bytes, wrapping_key_id: str) -> bytes: ...
 
     def initialize(self, properties: dict[str, str]) -> None:  # noqa: B027
         """Initialize the KMS client from catalog/table properties."""
@@ -55,39 +49,26 @@ class InMemoryKms(KeyManagementClient):
         self._master_keys: dict[str, bytes] = dict(master_keys) if master_keys else {}
 
     def initialize(self, properties: dict[str, str]) -> None:
+        prefix = "encryption.kms.key."
         for key, value in properties.items():
-            if key.startswith("encryption.kms.key."):
-                key_id = key[len("encryption.kms.key.") :]
-                self._master_keys[key_id] = bytes.fromhex(value)
+            if key.startswith(prefix):
+                self._master_keys[key[len(prefix) :]] = bytes.fromhex(value)
 
     def wrap_key(self, key: bytes, wrapping_key_id: str) -> bytes:
-        master_key = self._master_keys.get(wrapping_key_id)
-        if master_key is None:
-            raise ValueError(f"Wrapping key not found: {wrapping_key_id}")
-        return aes_gcm_encrypt(master_key, key, aad=None)
+        return aes_gcm_encrypt(self._master(wrapping_key_id), key, aad=None)
 
     def unwrap_key(self, wrapped_key: bytes, wrapping_key_id: str) -> bytes:
+        return aes_gcm_decrypt(self._master(wrapping_key_id), wrapped_key, aad=None)
+
+    def _master(self, wrapping_key_id: str) -> bytes:
         master_key = self._master_keys.get(wrapping_key_id)
         if master_key is None:
             raise ValueError(f"Wrapping key not found: {wrapping_key_id}")
-        return aes_gcm_decrypt(master_key, wrapped_key, aad=None)
+        return master_key
 
 
 def load_kms_client(properties: Properties) -> KeyManagementClient | None:
-    """Load a KMS client from properties using py-kms-impl.
-
-    Follows the same pattern as py-io-impl for FileIO.
-
-    The property 'py-kms-impl' should be a fully qualified Python class name
-    (e.g., 'pyiceberg.encryption.kms.InMemoryKms'). The class must be a
-    subclass of KeyManagementClient.
-
-    Args:
-        properties: Catalog and/or table properties.
-
-    Returns:
-        An initialized KeyManagementClient, or None if py-kms-impl is not set.
-    """
+    """Instantiate a KeyManagementClient from a fully-qualified `py-kms-impl` (or return None)."""
     kms_impl = properties.get(PY_KMS_IMPL)
     if kms_impl is None:
         return None

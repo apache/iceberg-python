@@ -874,14 +874,14 @@ class ManifestFile(Record):
         Args:
             io: The FileIO to fetch the file.
             discard_deleted: Filter on live entries.
-            encryption_manager: Optional encryption manager for decrypting encrypted manifests.
+            encryption_manager: When set, decrypt an AGS1-encrypted manifest.
 
         Returns:
             An Iterator of manifest entries.
         """
         input_file = io.new_input(self.manifest_path)
 
-        # If this manifest has key_metadata, it's AGS1-encrypted
+        # A non-null key_metadata signals the manifest is AGS1-encrypted.
         if self.key_metadata is not None and encryption_manager is not None:
             from pyiceberg.encryption.io import BytesInputFile
 
@@ -945,8 +945,8 @@ def _manifests(
     Args:
         io: FileIO instance for reading the manifest list.
         manifest_list: Path to the manifest list file.
-        encryption_manager: Optional encryption manager for decrypting encrypted manifest lists.
-        snapshot_key_id: Optional key ID from snapshot for manifest list decryption.
+        encryption_manager: When set together with snapshot_key_id, decrypt an AGS1-encrypted manifest list.
+        snapshot_key_id: Snapshot's encryption key id.
 
     Returns:
         A tuple of ManifestFile objects.
@@ -977,13 +977,12 @@ def read_manifest_list(
 
     Args:
         input_file: The input file where the stream can be read from.
-        encryption_manager: Optional encryption manager for decrypting encrypted manifest lists.
-        snapshot_key_id: Optional key ID from snapshot for manifest list decryption.
+        encryption_manager: When set together with snapshot_key_id, decrypt an AGS1-encrypted manifest list.
+        snapshot_key_id: Snapshot's encryption key id.
 
     Returns:
         An iterator of ManifestFiles that are part of the list.
     """
-    # If we have encryption info, decrypt the manifest list first
     if snapshot_key_id is not None and encryption_manager is not None:
         from pyiceberg.encryption.io import BytesInputFile
 

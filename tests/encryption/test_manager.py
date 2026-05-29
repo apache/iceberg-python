@@ -31,7 +31,6 @@ from pyiceberg.encryption.manager import EncryptedKey, EncryptionManager
 
 
 def _make_ags1_stream(key: bytes, plaintext: bytes, aad_prefix: bytes, plain_block_size: int = 1024 * 1024) -> bytes:
-    """Build an AGS1 encrypted stream for testing."""
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
     aesgcm = AESGCM(key)
@@ -53,26 +52,17 @@ def _make_ags1_stream(key: bytes, plaintext: bytes, aad_prefix: bytes, plain_blo
 
 
 def _build_test_encryption_manager() -> tuple[EncryptionManager, bytes, bytes, str]:
-    """Build an EncryptionManager with test keys, mimicking the REST catalog flow.
-
-    Returns (manager, dek, aad_prefix, manifest_list_key_id).
-    """
-    master_key = b"0123456789012345"  # 16 bytes, standard Iceberg test key "keyA"
+    master_key = b"0123456789012345"
     kms = InMemoryKms(master_keys={"keyA": master_key})
 
-    # Create a KEK (simulating what the REST catalog would provide)
     kek_bytes = os.urandom(16)
     kek_wrapped = kms.wrap_key(kek_bytes, "keyA")
     kek_timestamp = "1234567890"
 
-    # Create a DEK for the manifest list
     dek = os.urandom(16)
     aad_prefix = os.urandom(8)
     key_metadata = StandardKeyMetadata(encryption_key=dek, aad_prefix=aad_prefix)
-    key_metadata_bytes = key_metadata.serialize()
-
-    # Wrap the DEK key metadata with the KEK (using timestamp as AAD)
-    wrapped_dek = aes_gcm_encrypt(kek_bytes, key_metadata_bytes, aad=kek_timestamp.encode("utf-8"))
+    wrapped_dek = aes_gcm_encrypt(kek_bytes, key_metadata.serialize(), aad=kek_timestamp.encode("utf-8"))
 
     encryption_keys = {
         "kek-1": EncryptedKey(
@@ -107,24 +97,17 @@ class TestEncryptionManager:
         encrypted_stream = _make_ags1_stream(dek, plaintext, aad_prefix)
         key_metadata = StandardKeyMetadata(encryption_key=dek, aad_prefix=aad_prefix)
 
-        # The manager only needs a KMS for KEK unwrapping; manifest decryption
-        # uses the plaintext key metadata directly (from inside the encrypted manifest list)
-        kms = InMemoryKms()
-        manager = EncryptionManager(kms_client=kms)
+        manager = EncryptionManager(kms_client=InMemoryKms())
         result = manager.decrypt_manifest(encrypted_stream, key_metadata.serialize())
         assert result == plaintext
 
     def test_kek_caching(self) -> None:
-        """KEK should be unwrapped once and cached."""
         manager, dek, aad_prefix, mlk_id = _build_test_encryption_manager()
-        plaintext = b"test"
-        encrypted = _make_ags1_stream(dek, plaintext, aad_prefix)
+        encrypted = _make_ags1_stream(dek, b"test", aad_prefix)
 
-        # Decrypt twice
         manager.decrypt_manifest_list(encrypted, mlk_id)
         manager.decrypt_manifest_list(encrypted, mlk_id)
 
-        # KEK should be cached
         assert "kek-1" in manager._kek_cache
 
     def test_missing_snapshot_key(self) -> None:

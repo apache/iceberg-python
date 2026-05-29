@@ -14,7 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""InputFile implementation backed by in-memory bytes."""
+"""In-memory InputFile/InputStream used to wrap decrypted Avro buffers for AvroFile."""
 
 from __future__ import annotations
 
@@ -25,8 +25,6 @@ from pyiceberg.io import InputFile, InputStream
 
 
 class BytesInputStream(InputStream):
-    """InputStream implementation backed by a bytes buffer."""
-
     def __init__(self, data: bytes) -> None:
         self._buffer = io.BytesIO(data)
 
@@ -45,7 +43,6 @@ class BytesInputStream(InputStream):
         self._buffer.close()
 
     def __enter__(self) -> BytesInputStream:
-        """Enter the context manager."""
         return self
 
     def __exit__(
@@ -54,23 +51,15 @@ class BytesInputStream(InputStream):
         excinst: BaseException | None,
         exctb: TracebackType | None,
     ) -> None:
-        """Exit the context manager and close the stream."""
         self.close()
 
 
 class BytesInputFile(InputFile):
-    """InputFile implementation backed by in-memory bytes.
-
-    Used to wrap decrypted data so that it can be read by
-    AvroFile and other readers that expect an InputFile.
-    """
-
     def __init__(self, location: str, data: bytes) -> None:
         super().__init__(location)
         self._data = data
 
     def __len__(self) -> int:
-        """Return the length of the underlying data."""
         return len(self._data)
 
     def exists(self) -> bool:

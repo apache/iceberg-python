@@ -1118,11 +1118,7 @@ def _get_file_format(file_format: FileFormat, **kwargs: dict[str, Any]) -> ds.Fi
 
 
 def _get_decryption_properties(key_metadata_bytes: bytes) -> Any:
-    """Build FileDecryptionProperties from Iceberg key metadata.
-
-    Requires PyArrow >= 25 (currently nightly-only) for the direct-key
-    `create_decryption_properties` API added by apache/arrow#49667.
-    """
+    # Needs PyArrow >= 25 (nightly today) for `create_decryption_properties` (apache/arrow#49667).
     try:
         import pyarrow.parquet.encryption as pe
 
@@ -1130,10 +1126,8 @@ def _get_decryption_properties(key_metadata_bytes: bytes) -> Any:
             raise ImportError("create_decryption_properties not available")
     except ImportError as e:
         raise ImportError(
-            "Parquet Modular Encryption requires PyArrow >= 25 with the direct-key API "
-            "(apache/arrow#49667). Until it releases, install the nightly: "
-            "`make install-pyarrow-nightly` (or `uv pip install -i "
-            "https://pypi.anaconda.org/scientific-python-nightly-wheels/simple pyarrow`)."
+            "Parquet Modular Encryption requires PyArrow >= 25 (apache/arrow#49667). "
+            "Install the nightly via `make install-pyarrow-nightly`."
         ) from e
 
     from pyiceberg.encryption.key_metadata import StandardKeyMetadata
@@ -1141,7 +1135,7 @@ def _get_decryption_properties(key_metadata_bytes: bytes) -> Any:
     key_metadata = StandardKeyMetadata.deserialize(key_metadata_bytes)
     return pe.create_decryption_properties(
         footer_key=key_metadata.encryption_key,
-        aad_prefix=key_metadata.aad_prefix if key_metadata.aad_prefix else None,
+        aad_prefix=key_metadata.aad_prefix or None,
     )
 
 
@@ -1670,8 +1664,6 @@ def _task_to_record_batches(
 ) -> Iterator[pa.RecordBatch]:
     arrow_format = _get_file_format(task.file.file_format, pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
 
-    # For encrypted files, create a ParquetFileFormat with decryption properties
-    # so that make_fragment can read the encrypted metadata
     if task.file.key_metadata is not None and encryption_manager is not None:
         decryption_properties = _get_decryption_properties(task.file.key_metadata)
         scan_options = ds.ParquetFragmentScanOptions(

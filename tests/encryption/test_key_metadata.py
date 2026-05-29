@@ -52,7 +52,6 @@ class TestStandardKeyMetadata:
         assert restored.file_length == 12345
 
     def test_version_byte(self) -> None:
-        """First byte should always be 0x01."""
         key = os.urandom(16)
         serialized = StandardKeyMetadata(encryption_key=key).serialize()
         assert serialized[0] == 0x01
@@ -66,15 +65,13 @@ class TestStandardKeyMetadata:
             StandardKeyMetadata.deserialize(b"\x02\x00")
 
     def test_frozen(self) -> None:
-        """StandardKeyMetadata is a frozen dataclass."""
         skm = StandardKeyMetadata(encryption_key=b"key")
         with pytest.raises(AttributeError):
             skm.encryption_key = b"other"  # type: ignore[misc]
 
     def test_roundtrip_large_file_length(self) -> None:
-        """Zigzag encoding should handle large values correctly."""
+        # Exercise zigzag varint for a value beyond int32.
         key = os.urandom(16)
         original = StandardKeyMetadata(encryption_key=key, file_length=2**40)
-        serialized = original.serialize()
-        restored = StandardKeyMetadata.deserialize(serialized)
+        restored = StandardKeyMetadata.deserialize(original.serialize())
         assert restored.file_length == 2**40

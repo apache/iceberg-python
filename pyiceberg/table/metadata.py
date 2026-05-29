@@ -51,20 +51,15 @@ from pyiceberg.utils.datetime import datetime_to_millis
 
 
 class EncryptedKeyModel(IcebergBaseModel):
-    """An encrypted key entry in table metadata.
-
-    Matches the EncryptedKey schema in the REST API spec.
-    """
+    """An encrypted key entry in table metadata."""
 
     key_id: str = Field(alias="key-id")
     encrypted_key_metadata: str = Field(alias="encrypted-key-metadata")
-    """Base64-encoded encrypted key metadata bytes."""
     encrypted_by_id: str | None = Field(alias="encrypted-by-id", default=None)
     properties: dict[str, str] = Field(default_factory=dict)
 
     @property
     def encrypted_key_metadata_bytes(self) -> bytes:
-        """Decode the base64-encoded encrypted key metadata."""
         return base64.b64decode(self.encrypted_key_metadata)
 
 

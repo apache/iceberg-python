@@ -14,14 +14,10 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""StandardKeyMetadata Avro serialization.
+"""StandardKeyMetadata Avro codec.
 
-Wire format: ``0x01 version byte || Avro-encoded fields``
-
-Avro schema:
-  - encryption_key: bytes (required)
-  - aad_prefix: union[null, bytes] (optional)
-  - file_length: union[null, long] (optional)
+Wire: ``0x01 version`` || encryption_key (bytes) || aad_prefix (union[null,bytes])
+                       || file_length (union[null,long]).
 """
 
 from __future__ import annotations
@@ -32,7 +28,6 @@ V1 = 0x01
 
 
 def _read_avro_long(data: bytes, offset: int) -> tuple[int, int]:
-    """Read a zigzag-encoded Avro long from data at offset. Returns (value, new_offset)."""
     result = 0
     shift = 0
     while True:
@@ -44,12 +39,10 @@ def _read_avro_long(data: bytes, offset: int) -> tuple[int, int]:
         if (b & 0x80) == 0:
             break
         shift += 7
-    # Zigzag decode
     return (result >> 1) ^ -(result & 1), offset
 
 
 def _read_avro_bytes(data: bytes, offset: int) -> tuple[bytes, int]:
-    """Read Avro bytes (length-prefixed). Returns (bytes_value, new_offset)."""
     length, offset = _read_avro_long(data, offset)
     if length < 0:
         raise ValueError(f"Negative Avro bytes length: {length}")
@@ -61,31 +54,20 @@ def _read_avro_bytes(data: bytes, offset: int) -> tuple[bytes, int]:
 
 @dataclass(frozen=True)
 class StandardKeyMetadata:
-    """Standard key metadata for Iceberg table encryption.
-
-    Contains the plaintext encryption key (DEK), AAD prefix, and optional file length.
-    """
-
     encryption_key: bytes
     aad_prefix: bytes = b""
     file_length: int | None = None
 
     @staticmethod
     def deserialize(data: bytes) -> StandardKeyMetadata:
-        """Deserialize from wire format: ``0x01 version || Avro-encoded fields``."""
         if not data:
             raise ValueError("Empty key metadata buffer")
-
-        version = data[0]
-        if version != V1:
-            raise ValueError(f"Unsupported key metadata version: {version}")
-
+        if data[0] != V1:
+            raise ValueError(f"Unsupported key metadata version: {data[0]}")
         offset = 1
 
-        # Read encryption_key (required bytes)
         encryption_key, offset = _read_avro_bytes(data, offset)
 
-        # Read aad_prefix (optional: union[null, bytes])
         union_index, offset = _read_avro_long(data, offset)
         if union_index == 0:
             aad_prefix = b""
@@ -94,50 +76,30 @@ class StandardKeyMetadata:
         else:
             raise ValueError(f"Invalid union index for aad_prefix: {union_index}")
 
-        # Read file_length (optional: union[null, long])
-        file_length = None
+        file_length: int | None = None
         if offset < len(data):
             union_index, offset = _read_avro_long(data, offset)
-            if union_index == 0:
-                file_length = None
-            elif union_index == 1:
+            if union_index == 1:
                 file_length, offset = _read_avro_long(data, offset)
-            else:
+            elif union_index != 0:
                 raise ValueError(f"Invalid union index for file_length: {union_index}")
 
-        return StandardKeyMetadata(
-            encryption_key=encryption_key,
-            aad_prefix=aad_prefix,
-            file_length=file_length,
-        )
+        return StandardKeyMetadata(encryption_key=encryption_key, aad_prefix=aad_prefix, file_length=file_length)
 
     def serialize(self) -> bytes:
-        """Serialize to wire format: ``0x01 version || Avro-encoded fields``."""
-        parts = [bytes([V1])]
-
-        # encryption_key (required bytes)
-        parts.append(_encode_avro_bytes(self.encryption_key))
-
-        # aad_prefix (union[null, bytes])
+        parts = [bytes([V1]), _encode_avro_bytes(self.encryption_key)]
         if self.aad_prefix:
-            parts.append(_encode_avro_long(1))  # union index 1 = bytes
-            parts.append(_encode_avro_bytes(self.aad_prefix))
+            parts += [_encode_avro_long(1), _encode_avro_bytes(self.aad_prefix)]
         else:
-            parts.append(_encode_avro_long(0))  # union index 0 = null
-
-        # file_length (union[null, long])
+            parts.append(_encode_avro_long(0))
         if self.file_length is not None:
-            parts.append(_encode_avro_long(1))  # union index 1 = long
-            parts.append(_encode_avro_long(self.file_length))
+            parts += [_encode_avro_long(1), _encode_avro_long(self.file_length)]
         else:
-            parts.append(_encode_avro_long(0))  # union index 0 = null
-
+            parts.append(_encode_avro_long(0))
         return b"".join(parts)
 
 
 def _encode_avro_long(value: int) -> bytes:
-    """Encode a long as zigzag-encoded Avro varint."""
-    # Zigzag encode
     n = (value << 1) ^ (value >> 63)
     result = bytearray()
     while n & ~0x7F:
@@ -148,5 +110,4 @@ def _encode_avro_long(value: int) -> bytes:
 
 
 def _encode_avro_bytes(data: bytes) -> bytes:
-    """Encode bytes with Avro length prefix."""
     return _encode_avro_long(len(data)) + data

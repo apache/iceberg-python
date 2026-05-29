@@ -44,7 +44,6 @@ class TestInMemoryKms:
         kms = InMemoryKms()
         key_hex = os.urandom(16).hex()
         kms.initialize({"encryption.kms.key.testKey": key_hex})
-        # Should be able to wrap/unwrap with the initialized key
         wrapped = kms.wrap_key(b"secret", "testKey")
         assert kms.unwrap_key(wrapped, "testKey") == b"secret"
 
@@ -55,7 +54,6 @@ class TestInMemoryKms:
             kms.wrap_key(b"key", "nonexistent")
 
     def test_wrap_unwrap_with_standard_test_keys(self) -> None:
-        """Wrap/unwrap with the standard Iceberg test master keys."""
         kms = InMemoryKms(
             master_keys={
                 "keyA": b"0123456789012345",
@@ -93,9 +91,7 @@ class TestLoadKmsClient:
                 "encryption.kms.key.myKey": os.urandom(16).hex(),
             }
         )
-        assert client is not None
         assert isinstance(client, InMemoryKms)
-        # Should be initialized — the key should be usable
         wrapped = client.wrap_key(b"data", "myKey")
         assert client.unwrap_key(wrapped, "myKey") == b"data"
 
@@ -112,13 +108,11 @@ class TestLoadKmsClient:
             load_kms_client({"py-kms-impl": "pyiceberg.encryption.kms.NonexistentClass"})
 
     def test_not_a_subclass(self) -> None:
+        # AESGCM is a real class but not a KeyManagementClient
         with pytest.raises(ValueError, match="not a subclass"):
-            # AESGCM is a real class but not a KeyManagementClient
             load_kms_client({"py-kms-impl": "cryptography.hazmat.primitives.ciphers.aead.AESGCM"})
 
     def test_custom_kms_impl(self) -> None:
-        """Verify that a custom KMS implementation can be loaded by module path."""
-
         class _TestKms(KeyManagementClient):
             initialized_with: dict[str, str] = {}
 
@@ -131,13 +125,11 @@ class TestLoadKmsClient:
             def initialize(self, properties: dict[str, str]) -> None:
                 _TestKms.initialized_with = properties
 
-        # Register in the module namespace so importlib can find it
         import pyiceberg.encryption.kms as kms_module
 
         kms_module._TestKms = _TestKms  # type: ignore[attr-defined]
         try:
             client = load_kms_client({"py-kms-impl": "pyiceberg.encryption.kms._TestKms", "foo": "bar"})
-            assert client is not None
             assert isinstance(client, _TestKms)
             assert _TestKms.initialized_with.get("foo") == "bar"
         finally:

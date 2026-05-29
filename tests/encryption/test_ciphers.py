@@ -62,11 +62,10 @@ class TestAesGcm:
             aes_gcm_decrypt(key, ciphertext, aad=b"wrong")
 
     def test_wire_format(self) -> None:
-        """Verify the wire format: nonce(12) || ciphertext || tag(16)."""
+        # nonce(12) || ciphertext || tag(16)
         key = os.urandom(16)
         plaintext = b"test"
         ciphertext = aes_gcm_encrypt(key, plaintext)
-        # Minimum size: nonce + tag + at least len(plaintext) of ciphertext
         assert len(ciphertext) == NONCE_LENGTH + len(plaintext) + GCM_TAG_LENGTH
 
     def test_ciphertext_too_short(self) -> None:
@@ -90,7 +89,6 @@ class TestStreamBlockAad:
 
 
 def _encrypt_ags1_stream(key: bytes, plaintext: bytes, aad_prefix: bytes, plain_block_size: int = 1024 * 1024) -> bytes:
-    """Build an AGS1 encrypted stream for testing."""
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
     aesgcm = AESGCM(key)
@@ -120,11 +118,9 @@ class TestAgs1Stream:
         assert decrypt_ags1_stream(key, encrypted, aad_prefix) == plaintext
 
     def test_roundtrip_multi_block(self) -> None:
-        """Test with a small block size to force multiple blocks."""
         key = os.urandom(16)
         plaintext = b"A" * 200
         aad_prefix = b"multi"
-        # Use a 64-byte block size to get multiple blocks
         encrypted = _encrypt_ags1_stream(key, plaintext, aad_prefix, plain_block_size=64)
         assert decrypt_ags1_stream(key, encrypted, aad_prefix) == plaintext
 
@@ -143,20 +139,16 @@ class TestAgs1Stream:
             decrypt_ags1_stream(os.urandom(16), b"AGS1", b"")
 
     def test_custom_block_size(self) -> None:
-        """Verify the block size from the header is respected, not hardcoded."""
+        # Block size comes from the header, not a constant.
         key = os.urandom(16)
         plaintext = b"B" * 300
         aad_prefix = b"custom"
-        # Encrypt with a 100-byte block size
         encrypted = _encrypt_ags1_stream(key, plaintext, aad_prefix, plain_block_size=100)
-        # Verify the header contains 100
         assert struct.unpack_from("<I", encrypted, 4)[0] == 100
-        # Decrypt should work because it reads the block size from the header
         assert decrypt_ags1_stream(key, encrypted, aad_prefix) == plaintext
 
     def test_truncated_block(self) -> None:
         key = os.urandom(16)
-        # Header + a few bytes that are too short for even nonce+tag
         data = GCM_STREAM_MAGIC + struct.pack("<I", 1024 * 1024) + b"short"
         with pytest.raises(ValueError, match="Truncated AGS1 block"):
             decrypt_ags1_stream(key, data, b"")
