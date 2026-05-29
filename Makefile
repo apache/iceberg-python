@@ -110,15 +110,17 @@ test: ## Run all unit tests (excluding integration)
 
 test-integration: test-integration-setup test-integration-exec test-integration-cleanup ## Run integration tests
 
-test-integration-setup: install install-pyarrow-nightly ## Start Docker services for integration tests
+test-integration-setup: install ## Start Docker services for integration tests
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml up -d --build --wait
-	uv run $(PYTHON_ARG) python dev/provision.py
+	uv run --no-sync $(PYTHON_ARG) python dev/provision.py
+	$(MAKE) install-pyarrow-nightly
 
 # Parquet Modular Encryption decryption (tests/integration/test_encryption.py) needs the
 # pyarrow.parquet.encryption.create_decryption_properties API from apache/arrow#49667. That
-# lands in pyarrow 25, which hasn't been released — pull the nightly until it is.
+# lands in pyarrow 25, which hasn't been released — pull the nightly until it is. Runs AFTER
+# provision so that the implicit `uv run` sync during provision.py doesn't revert this overlay.
 install-pyarrow-nightly: ## Overlay nightly pyarrow on top of the installed env (for PME)
 	uv pip install $(PYTHON_ARG) --prerelease=allow --upgrade --force-reinstall \
 		-i https://pypi.anaconda.org/scientific-python-nightly-wheels/simple pyarrow
