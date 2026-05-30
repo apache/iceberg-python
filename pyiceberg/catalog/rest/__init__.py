@@ -185,6 +185,7 @@ class Capability:
     V1_LIST_VIEWS = Endpoint(http_method=HttpMethod.GET, path=f"{API_PREFIX}/{Endpoints.list_views}")
     V1_LOAD_VIEW = Endpoint(http_method=HttpMethod.GET, path=f"{API_PREFIX}/{Endpoints.load_view}")
     V1_VIEW_EXISTS = Endpoint(http_method=HttpMethod.HEAD, path=f"{API_PREFIX}/{Endpoints.view_exists}")
+    V1_CREATE_VIEW = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.create_view}")
     V1_REGISTER_VIEW = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.register_view}")
     V1_DELETE_VIEW = Endpoint(http_method=HttpMethod.DELETE, path=f"{API_PREFIX}/{Endpoints.drop_view}")
     V1_SUBMIT_TABLE_SCAN_PLAN = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.plan_table_scan}")
@@ -215,6 +216,7 @@ VIEW_ENDPOINTS: frozenset[Endpoint] = frozenset(
     (
         Capability.V1_LIST_VIEWS,
         Capability.V1_LOAD_VIEW,
+        Capability.V1_CREATE_VIEW,
         Capability.V1_DELETE_VIEW,
     )
 )
@@ -971,6 +973,7 @@ class RestCatalog(Catalog):
         location: str | None = None,
         properties: Properties = EMPTY_DICT,
     ) -> View:
+        self._check_endpoint(Capability.V1_CREATE_VIEW)
         iceberg_schema = self._convert_schema_if_needed(schema)
         fresh_schema = assign_fresh_schema_ids(iceberg_schema)
 
