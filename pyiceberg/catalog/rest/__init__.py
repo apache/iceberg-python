@@ -83,8 +83,16 @@ from pyiceberg.table import (
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
 from pyiceberg.table.update import (
+    AddSchemaUpdate,
+    AddViewVersionUpdate,
+    AssertViewUUID,
+    SetCurrentViewVersionUpdate,
+    SetLocationUpdate,
+    SetPropertiesUpdate,
     TableRequirement,
     TableUpdate,
+    ViewRequirement,
+    ViewUpdate,
 )
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
 from pyiceberg.types import transform_dict_value_to_str
@@ -156,6 +164,7 @@ class Endpoints:
     list_views: str = "namespaces/{namespace}/views"
     load_view: str = "namespaces/{namespace}/views/{view}"
     create_view: str = "namespaces/{namespace}/views"
+    update_view: str = "namespaces/{namespace}/views/{view}"
     register_view: str = "namespaces/{namespace}/register-view"
     drop_view: str = "namespaces/{namespace}/views/{view}"
     view_exists: str = "namespaces/{namespace}/views/{view}"
@@ -187,6 +196,7 @@ class Capability:
     V1_LIST_VIEWS = Endpoint(http_method=HttpMethod.GET, path=f"{API_PREFIX}/{Endpoints.list_views}")
     V1_LOAD_VIEW = Endpoint(http_method=HttpMethod.GET, path=f"{API_PREFIX}/{Endpoints.load_view}")
     V1_VIEW_EXISTS = Endpoint(http_method=HttpMethod.HEAD, path=f"{API_PREFIX}/{Endpoints.view_exists}")
+    V1_UPDATE_VIEW = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.update_view}")
     V1_REGISTER_VIEW = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.register_view}")
     V1_DELETE_VIEW = Endpoint(http_method=HttpMethod.DELETE, path=f"{API_PREFIX}/{Endpoints.drop_view}")
     V1_SUBMIT_TABLE_SCAN_PLAN = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.plan_table_scan}")
@@ -217,6 +227,7 @@ VIEW_ENDPOINTS: frozenset[Endpoint] = frozenset(
     (
         Capability.V1_LIST_VIEWS,
         Capability.V1_LOAD_VIEW,
+        Capability.V1_UPDATE_VIEW,
         Capability.V1_DELETE_VIEW,
     )
 )
@@ -341,6 +352,12 @@ class RegisterTableRequest(IcebergBaseModel):
 class RegisterViewRequest(IcebergBaseModel):
     name: str
     metadata_location: str = Field(..., alias="metadata-location")
+
+
+class CommitViewRequest(IcebergBaseModel):
+    identifier: TableIdentifier = Field()
+    requirements: tuple[ViewRequirement, ...] = Field(default_factory=tuple)
+    updates: tuple[ViewUpdate, ...] = Field(default_factory=tuple)
 
 
 class ConfigResponse(IcebergBaseModel):
@@ -1002,6 +1019,75 @@ class RestCatalog(Catalog):
             response.raise_for_status()
         except HTTPError as exc:
             _handle_non_200_response(exc, {409: ViewAlreadyExistsError})
+
+        view_response = ViewResponse.model_validate_json(response.text)
+        return self._response_to_view(self.identifier_to_tuple(identifier), view_response)
+
+    @override
+    @retry(**_RETRY_ARGS)
+    def replace_view(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        view_version: ViewVersion,
+        location: str | None = None,
+        properties: Properties = EMPTY_DICT,
+    ) -> View:
+        self._check_endpoint(Capability.V1_UPDATE_VIEW)
+        iceberg_schema = self._convert_schema_if_needed(schema)
+
+        namespace_and_view = self._split_identifier_for_path(identifier, IdentifierKind.VIEW)
+        if self.table_exists(identifier):
+            raise TableAlreadyExistsError(f"Table with same name already exists: {identifier}")
+        if not self.view_exists(identifier):
+            raise NoSuchViewError(f"View does not exist: {identifier}")
+
+        current_view = self.load_view(identifier)
+
+        if location:
+            location = location.rstrip("/")
+
+        # Check if schema already exists in view metadata by comparing structure
+        schema_id = None
+        for existing_schema in current_view.metadata.schemas:
+            if existing_schema.as_struct() == iceberg_schema.as_struct():
+                schema_id = existing_schema.schema_id
+                break
+
+        updates: list[ViewUpdate] = []
+        if schema_id is None:
+            # Schema not found, add new schema with next schema_id
+            next_schema_id = max((s.schema_id for s in current_view.metadata.schemas), default=0) + 1
+            schema_to_add = iceberg_schema.model_copy(update={"schema_id": next_schema_id})
+            updates.append(AddSchemaUpdate(schema_=schema_to_add))
+            schema_id = next_schema_id
+
+        fresh_view_version = view_version.model_copy(update={"schema_id": schema_id})
+        updates.append(AddViewVersionUpdate(view_version=fresh_view_version))
+        updates.append(SetCurrentViewVersionUpdate(view_version_id=fresh_view_version.version_id))
+
+        updates_tuple: tuple[ViewUpdate, ...] = tuple(updates)
+        if location:
+            updates_tuple = updates_tuple + (SetLocationUpdate(location=location),)
+        if properties:
+            updates_tuple = updates_tuple + (SetPropertiesUpdate(updates=properties),)
+
+        requirements: tuple[ViewRequirement, ...] = (AssertViewUUID(uuid=current_view.metadata.view_uuid),)
+
+        identifier = current_view.name()
+        view_identifier = TableIdentifier(namespace=identifier[:-1], name=identifier[-1])
+        request = CommitViewRequest(identifier=view_identifier, requirements=requirements, updates=updates_tuple)
+
+        serialized_json = request.model_dump_json().encode(UTF8)
+        response = self._session.post(
+            self.url(Endpoints.update_view, **namespace_and_view),
+            data=serialized_json,
+        )
+
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            _handle_non_200_response(exc, {409: CommitFailedException, 404: NoSuchViewError})
 
         view_response = ViewResponse.model_validate_json(response.text)
         return self._response_to_view(self.identifier_to_tuple(identifier), view_response)
