@@ -27,6 +27,7 @@ from pyspark.sql import DataFrame, SparkSession
 from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog import Catalog
+from pyiceberg.environment_context import EnvironmentContext
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.expressions import (
     And,
@@ -277,6 +278,8 @@ def test_inspect_snapshots(
         ("total-files-size", str(file_size)),
         ("total-position-deletes", "0"),
         ("total-equality-deletes", "0"),
+        ("engine-name", "pyiceberg"),
+        ("engine-version", EnvironmentContext.get().get("engine-version")),
     ]
 
     # Delete
@@ -290,6 +293,8 @@ def test_inspect_snapshots(
         ("total-files-size", "0"),
         ("total-position-deletes", "0"),
         ("total-equality-deletes", "0"),
+        ("engine-name", "pyiceberg"),
+        ("engine-version", EnvironmentContext.get().get("engine-version")),
     ]
 
     lhs = spark.table(f"{identifier}.snapshots").toPandas()

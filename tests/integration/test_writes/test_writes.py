@@ -44,6 +44,7 @@ from pytest_mock.plugin import MockerFixture
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.sql import SqlCatalog
+from pyiceberg.environment_context import EnvironmentContext
 from pyiceberg.exceptions import CommitFailedException, NoSuchTableError
 from pyiceberg.expressions import And, EqualTo, GreaterThanOrEqual, In, LessThan, Not
 from pyiceberg.io.pyarrow import UnsupportedPyArrowTypeException, _dataframe_to_data_files
@@ -231,6 +232,8 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
         "total-files-size": str(file_size),
         "total-position-deletes": "0",
         "total-records": "3",
+        "engine-name": "pyiceberg",
+        "engine-version": EnvironmentContext.get().get("engine-version"),
     }
 
     # Append
@@ -244,6 +247,8 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
         "total-files-size": str(file_size * 2),
         "total-position-deletes": "0",
         "total-records": "6",
+        "engine-name": "pyiceberg",
+        "engine-version": EnvironmentContext.get().get("engine-version"),
     }
 
     # Delete
@@ -257,6 +262,8 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
         "total-files-size": "0",
         "total-position-deletes": "0",
         "total-records": "0",
+        "engine-name": "pyiceberg",
+        "engine-version": EnvironmentContext.get().get("engine-version"),
     }
 
     # Append
@@ -270,6 +277,8 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
         "total-files-size": str(file_size),
         "total-position-deletes": "0",
         "total-records": "3",
+        "engine-name": "pyiceberg",
+        "engine-version": EnvironmentContext.get().get("engine-version"),
     }
 
 
@@ -326,6 +335,8 @@ def test_summaries_partial_overwrite(spark: SparkSession, session_catalog: Catal
         "total-files-size": summaries[0]["total-files-size"],
         "total-position-deletes": "0",
         "total-records": "5",
+        "engine-name": "pyiceberg",
+        "engine-version": EnvironmentContext.get().get("engine-version"),
     }
     # Java produces:
     # {
@@ -367,6 +378,8 @@ def test_summaries_partial_overwrite(spark: SparkSession, session_catalog: Catal
         "total-files-size": summaries[1]["total-files-size"],
         "total-position-deletes": "0",
         "total-records": "4",
+        "engine-name": "pyiceberg",
+        "engine-version": EnvironmentContext.get().get("engine-version"),
     }
     assert len(tbl.scan().to_pandas()) == 4
 
@@ -831,6 +844,8 @@ def test_summaries_with_only_nulls(
         "total-files-size": "0",
         "total-position-deletes": "0",
         "total-records": "0",
+        "engine-name": "pyiceberg",
+        "engine-version": EnvironmentContext.get().get("engine-version"),
     }
 
     assert summaries[1] == {
@@ -843,6 +858,8 @@ def test_summaries_with_only_nulls(
         "total-files-size": str(file_size),
         "total-position-deletes": "0",
         "total-records": "2",
+        "engine-name": "pyiceberg",
+        "engine-version": EnvironmentContext.get().get("engine-version"),
     }
 
     assert summaries[2] == {
@@ -855,6 +872,8 @@ def test_summaries_with_only_nulls(
         "total-files-size": "0",
         "total-position-deletes": "0",
         "total-records": "0",
+        "engine-name": "pyiceberg",
+        "engine-version": EnvironmentContext.get().get("engine-version"),
     }
 
     assert summaries[3] == {
@@ -864,6 +883,8 @@ def test_summaries_with_only_nulls(
         "total-files-size": "0",
         "total-position-deletes": "0",
         "total-records": "0",
+        "engine-name": "pyiceberg",
+        "engine-version": EnvironmentContext.get().get("engine-version"),
     }
 
 
@@ -1156,6 +1177,8 @@ def test_inspect_snapshots(
         ("total-files-size", str(file_size)),
         ("total-position-deletes", "0"),
         ("total-equality-deletes", "0"),
+        ("engine-name", "pyiceberg"),
+        ("engine-version", EnvironmentContext.get().get("engine-version")),
     ]
 
     # Delete
@@ -1169,6 +1192,8 @@ def test_inspect_snapshots(
         ("total-files-size", "0"),
         ("total-position-deletes", "0"),
         ("total-equality-deletes", "0"),
+        ("engine-name", "pyiceberg"),
+        ("engine-version", EnvironmentContext.get().get("engine-version")),
     ]
 
     lhs = spark.table(f"{identifier}.snapshots").toPandas()

@@ -21,6 +21,7 @@ from typing import Literal
 
 from pydantic import Field, RootModel, field_validator
 
+from pyiceberg.environment_context import EnvironmentContext
 from pyiceberg.schema import Schema
 from pyiceberg.typedef import IcebergBaseModel, Identifier, Properties
 from pyiceberg.typedef import ViewVersion as ViewVersionLiteral
@@ -51,7 +52,7 @@ class ViewVersion(IcebergBaseModel):
     """ID of the schema for the view version"""
     timestamp_ms: int = Field(alias="timestamp-ms", default_factory=lambda: int(time.time() * 1000))
     """Timestamp when the version was created (ms from epoch)"""
-    summary: dict[str, str] = Field(default_factory=dict)
+    summary: dict[str, str] = Field(default_factory=lambda: EnvironmentContext.get())
     """A string to string map of summary metadata about the version"""
     representations: list[ViewRepresentation] = Field()
     """A list of representations for the view definition"""
