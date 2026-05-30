@@ -23,6 +23,7 @@ import pytest
 from pyspark.sql import SparkSession
 
 from pyiceberg.catalog.rest import RestCatalog
+from pyiceberg.environment_context import EnvironmentContext
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.expressions import AlwaysTrue, EqualTo, LessThanOrEqual
 from pyiceberg.manifest import ManifestEntryStatus
@@ -480,6 +481,8 @@ def test_partitioned_table_positional_deletes_sequence_number(spark: SparkSessio
             "total-files-size": snapshots[2].summary["total-files-size"],
             "total-position-deletes": "1",
             "total-records": "4",
+            "engine-name": "pyiceberg",
+            "engine-version": EnvironmentContext.get().get("engine-version"),
         },
     )
 

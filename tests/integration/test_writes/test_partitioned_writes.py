@@ -25,6 +25,7 @@ import pytest
 from pyspark.sql import SparkSession
 
 from pyiceberg.catalog import Catalog
+from pyiceberg.environment_context import EnvironmentContext
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
@@ -498,6 +499,8 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
         "total-files-size": str(file_size),
         "total-position-deletes": "0",
         "total-records": "3",
+        "engine-name": "pyiceberg",
+        "engine-version": EnvironmentContext.get().get("engine-version"),
     }
 
     assert summaries[1] == {
@@ -511,6 +514,8 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
         "total-files-size": str(file_size * 2),
         "total-position-deletes": "0",
         "total-records": "6",
+        "engine-name": "pyiceberg",
+        "engine-version": EnvironmentContext.get().get("engine-version"),
     }
     assert summaries[2] == {
         "removed-files-size": str(file_size * 2),
@@ -523,6 +528,8 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
         "total-files-size": "0",
         "total-data-files": "0",
         "total-records": "0",
+        "engine-name": "pyiceberg",
+        "engine-version": EnvironmentContext.get().get("engine-version"),
     }
     assert summaries[3] == {
         "changed-partition-count": "3",
@@ -535,6 +542,8 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
         "total-files-size": str(file_size),
         "total-data-files": "3",
         "total-records": "3",
+        "engine-name": "pyiceberg",
+        "engine-version": EnvironmentContext.get().get("engine-version"),
     }
     assert summaries[4] == {
         "changed-partition-count": "3",
@@ -547,6 +556,8 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
         "total-files-size": str(file_size * 2),
         "total-data-files": "6",
         "total-records": "6",
+        "engine-name": "pyiceberg",
+        "engine-version": EnvironmentContext.get().get("engine-version"),
     }
     assert "removed-files-size" in summaries[5]
     assert "total-files-size" in summaries[5]
@@ -561,6 +572,8 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
         "total-files-size": summaries[5]["total-files-size"],
         "total-data-files": "2",
         "total-records": "2",
+        "engine-name": "pyiceberg",
+        "engine-version": EnvironmentContext.get().get("engine-version"),
     }
     assert "added-files-size" in summaries[6]
     assert "total-files-size" in summaries[6]
@@ -575,6 +588,8 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
         "total-files-size": summaries[6]["total-files-size"],
         "total-data-files": "4",
         "total-records": "4",
+        "engine-name": "pyiceberg",
+        "engine-version": EnvironmentContext.get().get("engine-version"),
     }
 
 
