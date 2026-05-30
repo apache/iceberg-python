@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 from collections.abc import Callable
 from typing import Any, cast
@@ -2468,6 +2469,115 @@ def test_rest_catalog_oauth2_non_200_token_response(requests_mock: Mocker) -> No
 
     with pytest.raises(HTTPError):
         RestCatalog("rest", **catalog_properties)  # type: ignore
+
+
+def _rest_catalog_properties_from_environment() -> RecursiveDict:
+    env_config = Config._from_environment_variables({})
+    catalogs = cast(RecursiveDict, env_config["catalog"])
+    return cast(RecursiveDict, catalogs["rest"])
+
+
+@mock.patch.dict(
+    os.environ,
+    {
+        "PYICEBERG_CATALOG__REST__URI": TEST_URI,
+        "PYICEBERG_CATALOG__REST__AUTH": json.dumps({"type": "basic", "basic": {"username": "one", "password": "two"}}),
+    },
+    clear=True,
+)
+def test_rest_catalog_with_basic_auth_json_environment_variable(rest_mock: Mocker) -> None:
+    rest_mock.get(f"{TEST_URI}v1/config", json={"defaults": {}, "overrides": {}}, status_code=200)
+
+    RestCatalog("rest", **_rest_catalog_properties_from_environment())  # type: ignore
+
+    encoded_user_pass = base64.b64encode(b"one:two").decode()
+    assert rest_mock.last_request.headers["Authorization"] == f"Basic {encoded_user_pass}"
+
+
+@mock.patch.dict(
+    os.environ,
+    {
+        "PYICEBERG_CATALOG__REST__URI": TEST_URI,
+        "PYICEBERG_CATALOG__REST__AUTH": json.dumps(
+            {
+                "type": "oauth2",
+                "oauth2": {
+                    "client_id": "some_client_id",
+                    "client_secret": "some_client_secret",
+                    "token_url": f"{TEST_URI}oauth2/token",
+                },
+            }
+        ),
+    },
+    clear=True,
+)
+def test_rest_catalog_with_oauth2_auth_json_environment_variable(requests_mock: Mocker) -> None:
+    requests_mock.post(
+        f"{TEST_URI}oauth2/token",
+        json={"access_token": TEST_TOKEN, "token_type": "Bearer", "expires_in": 3600},
+        status_code=200,
+    )
+    requests_mock.get(f"{TEST_URI}v1/config", json={"defaults": {}, "overrides": {}}, status_code=200)
+
+    catalog = RestCatalog("rest", **_rest_catalog_properties_from_environment())  # type: ignore
+
+    assert catalog.uri == TEST_URI
+
+
+@mock.patch.dict(
+    os.environ,
+    {
+        "PYICEBERG_CATALOG__REST__URI": TEST_URI,
+        "PYICEBERG_CATALOG__REST__AUTH": "not-valid-json",
+    },
+    clear=True,
+)
+def test_rest_catalog_with_invalid_json_auth_environment_variable() -> None:
+    with pytest.raises(ValueError, match="Failed to parse auth configuration as JSON"):
+        RestCatalog("rest", **_rest_catalog_properties_from_environment())  # type: ignore
+
+
+@mock.patch.dict(
+    os.environ,
+    {
+        "PYICEBERG_CATALOG__REST__URI": TEST_URI,
+        "PYICEBERG_CATALOG__REST__AUTH__TYPE": "basic",
+        "PYICEBERG_CATALOG__REST__AUTH__BASIC__USERNAME": "one",
+        "PYICEBERG_CATALOG__REST__AUTH__BASIC__PASSWORD": "two",
+    },
+    clear=True,
+)
+def test_rest_catalog_with_basic_auth_flat_environment_variables(rest_mock: Mocker) -> None:
+    rest_mock.get(f"{TEST_URI}v1/config", json={"defaults": {}, "overrides": {}}, status_code=200)
+
+    RestCatalog("rest", **_rest_catalog_properties_from_environment())  # type: ignore
+
+    encoded_user_pass = base64.b64encode(b"one:two").decode()
+    assert rest_mock.last_request.headers["Authorization"] == f"Basic {encoded_user_pass}"
+
+
+@mock.patch.dict(
+    os.environ,
+    {
+        "PYICEBERG_CATALOG__REST__URI": TEST_URI,
+        "PYICEBERG_CATALOG__REST__AUTH__TYPE": "oauth2",
+        "PYICEBERG_CATALOG__REST__AUTH__OAUTH2__CLIENT_ID": "some_client_id",
+        "PYICEBERG_CATALOG__REST__AUTH__OAUTH2__CLIENT_SECRET": "some_client_secret",
+        "PYICEBERG_CATALOG__REST__AUTH__OAUTH2__TOKEN_URL": f"{TEST_URI}oauth2/token",
+    },
+    clear=True,
+)
+def test_rest_catalog_with_oauth2_auth_flat_environment_variables(requests_mock: Mocker) -> None:
+    requests_mock.post(
+        f"{TEST_URI}oauth2/token",
+        json={"access_token": TEST_TOKEN, "token_type": "Bearer", "expires_in": 3600},
+        status_code=200,
+    )
+    requests_mock.get(f"{TEST_URI}v1/config", json={"defaults": {}, "overrides": {}}, status_code=200)
+
+    catalog = RestCatalog("rest", **_rest_catalog_properties_from_environment())  # type: ignore
+
+    assert catalog.uri == TEST_URI
 
 
 EXAMPLE_ENV = {"PYICEBERG_CATALOG__PRODUCTION__URI": TEST_URI}

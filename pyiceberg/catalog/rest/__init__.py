@@ -16,6 +16,7 @@
 #  under the License.
 from __future__ import annotations
 
+import json
 from collections import deque
 from enum import Enum
 from typing import (
@@ -435,7 +436,32 @@ class RestCatalog(Catalog):
                 elif ssl_client_cert := ssl_client.get(CERT):
                     session.cert = ssl_client_cert
 
-        if auth_config := self.properties.get(AUTH):
+        raw_auth = self.properties.get(AUTH)
+        if isinstance(raw_auth, str):
+            try:
+                auth_config: dict[str, Any] | None = json.loads(raw_auth)
+            except json.JSONDecodeError as e:
+                raise ValueError("Failed to parse auth configuration as JSON") from e
+        elif raw_auth is not None:
+            auth_config = raw_auth
+        elif auth_type := self.properties.get(f"{AUTH}.type"):
+            type_prefix = f"{AUTH}.{auth_type}."
+            auth_config = {
+                "type": auth_type,
+                "impl": self.properties.get(f"{AUTH}.impl"),
+                auth_type: {
+                    key[len(type_prefix) :].replace("-", "_"): value
+                    for key, value in self.properties.items()
+                    if key.startswith(type_prefix)
+                },
+            }
+        else:
+            auth_config = None
+
+        if auth_config is not None and not isinstance(auth_config, dict):
+            raise ValueError("auth configuration must be a dictionary")
+
+        if auth_config:
             auth_type = auth_config.get("type")
             if auth_type is None:
                 raise ValueError("auth.type must be defined")
