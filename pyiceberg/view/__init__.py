@@ -59,9 +59,9 @@ class View:
         """Get the versions of this view."""
         return self.metadata.versions
 
-    def version(self, version_id: int) -> ViewVersion:
-        """Get the version in this view by ID."""
-        return next(version for version in self.metadata.versions if version.version_id == version_id)
+    def version(self, version_id: int) -> ViewVersion | None:
+        """Get the version in this view by ID, or None if the ID cannot be found."""
+        return next((version for version in self.metadata.versions if version.version_id == version_id), None)
 
     def history(self) -> list[ViewHistoryEntry]:
         """Get the version of this history view."""
