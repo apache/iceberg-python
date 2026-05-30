@@ -1529,7 +1529,7 @@ cleanup_old_snapshots("analytics.user_events", [12345, 67890, 11111])
 
 ## Views
 
-If the REST server does not indicate support for view endpoints, you can enable it by setting `"view-endpoints-supported": "true"`:
+If PyIceberg is unable to automatically determine view support on your REST Catalog, you can manually specify, `"view-endpoints-supported": "true"`:
 
 ```python
 from pyiceberg.catalog import load_catalog
