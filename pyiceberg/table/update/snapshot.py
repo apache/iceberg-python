@@ -100,6 +100,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     _operation: Operation
     _snapshot_id: int
     _parent_snapshot_id: int | None
+    _starting_snapshot_id: int | None
     _added_data_files: list[DataFile]
     _manifest_num_counter: itertools.count[int]
     _deleted_data_files: set[DataFile]
@@ -139,6 +140,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._parent_snapshot_id = (
             snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.snapshot_by_name(self._target_branch)) else None
         )
+        self._starting_snapshot_id = self._parent_snapshot_id
         self._predicate = AlwaysFalse()
         self._case_sensitive = True
         self._isolation_level_property: str = TableProperties.WRITE_DELETE_ISOLATION_LEVEL
@@ -579,6 +581,11 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         if parent_snapshot is None:
             return
 
+        starting_snapshot_id = self._starting_snapshot_id if self._starting_snapshot_id is not None else self._parent_snapshot_id
+        starting_snapshot = table.metadata.snapshot_by_id(starting_snapshot_id)
+        if starting_snapshot is None:
+            return
+
         isolation_level_str = table.metadata.properties.get(
             self._isolation_level_property, TableProperties.WRITE_ISOLATION_LEVEL_DEFAULT
         )
@@ -586,15 +593,15 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         conflict_detection_filter = self._predicate if self._predicate != AlwaysFalse() else None
 
         if isolation_level == IsolationLevel.SERIALIZABLE:
-            _validate_added_data_files(table, parent_snapshot, conflict_detection_filter, parent_snapshot)
+            _validate_added_data_files(table, parent_snapshot, conflict_detection_filter, starting_snapshot)
 
         if conflict_detection_filter is not None:
-            _validate_no_new_delete_files(table, parent_snapshot, conflict_detection_filter, None, parent_snapshot)
-            _validate_deleted_data_files(table, parent_snapshot, conflict_detection_filter, parent_snapshot)
+            _validate_no_new_delete_files(table, parent_snapshot, conflict_detection_filter, None, starting_snapshot)
+            _validate_deleted_data_files(table, parent_snapshot, conflict_detection_filter, starting_snapshot)
 
         if self._deleted_data_files:
             _validate_no_new_deletes_for_data_files(
-                table, parent_snapshot, conflict_detection_filter, self._deleted_data_files, parent_snapshot
+                table, parent_snapshot, conflict_detection_filter, self._deleted_data_files, starting_snapshot
             )
 
 
@@ -792,6 +799,11 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
         if parent_snapshot is None:
             return
 
+        starting_snapshot_id = self._starting_snapshot_id if self._starting_snapshot_id is not None else self._parent_snapshot_id
+        starting_snapshot = table.metadata.snapshot_by_id(starting_snapshot_id)
+        if starting_snapshot is None:
+            return
+
         isolation_level_str = table.metadata.properties.get(
             self._isolation_level_property, TableProperties.WRITE_ISOLATION_LEVEL_DEFAULT
         )
@@ -799,15 +811,15 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
         conflict_detection_filter = self._predicate if self._predicate != AlwaysFalse() else None
 
         if isolation_level == IsolationLevel.SERIALIZABLE:
-            _validate_added_data_files(table, parent_snapshot, conflict_detection_filter, parent_snapshot)
+            _validate_added_data_files(table, parent_snapshot, conflict_detection_filter, starting_snapshot)
 
         if conflict_detection_filter is not None:
-            _validate_no_new_delete_files(table, parent_snapshot, conflict_detection_filter, None, parent_snapshot)
-            _validate_deleted_data_files(table, parent_snapshot, conflict_detection_filter, parent_snapshot)
+            _validate_no_new_delete_files(table, parent_snapshot, conflict_detection_filter, None, starting_snapshot)
+            _validate_deleted_data_files(table, parent_snapshot, conflict_detection_filter, starting_snapshot)
 
         if self._deleted_data_files:
             _validate_no_new_deletes_for_data_files(
-                table, parent_snapshot, conflict_detection_filter, self._deleted_data_files, parent_snapshot
+                table, parent_snapshot, conflict_detection_filter, self._deleted_data_files, starting_snapshot
             )
 
 
