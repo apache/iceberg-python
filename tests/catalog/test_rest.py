@@ -107,6 +107,7 @@ TEST_SUPPORTED_ENDPOINTS = [
     Capability.V1_LIST_VIEWS,
     Capability.V1_LOAD_VIEW,
     Capability.V1_VIEW_EXISTS,
+    Capability.V1_UPDATE_VIEW,
     Capability.V1_REGISTER_VIEW,
     Capability.V1_DELETE_VIEW,
     Capability.V1_SUBMIT_TABLE_SCAN_PLAN,

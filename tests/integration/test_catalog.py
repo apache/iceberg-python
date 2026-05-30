@@ -35,6 +35,7 @@ from pyiceberg.exceptions import (
     NamespaceNotEmptyError,
     NoSuchNamespaceError,
     NoSuchTableError,
+    NoSuchViewError,
     TableAlreadyExistsError,
     ValidationError,
 )
@@ -651,6 +652,61 @@ def test_rest_create_view(
 
     assert rest_catalog.view_exists(identifier)
     assert rest_catalog.load_view(identifier).schema() == view.schema()
+
+
+@pytest.mark.integration
+def test_rest_replace_view(
+    rest_catalog: RestCatalog,
+    example_view_metadata_v1: dict[str, Any],
+    example_view_metadata_v1_multiple_versions: dict[str, Any],
+    database_name: str,
+    view_name: str,
+) -> None:
+    identifier = (database_name, view_name)
+
+    rest_catalog.create_namespace_if_not_exists(database_name)
+    new_view = View(identifier, ViewMetadata.model_validate(example_view_metadata_v1))
+
+    assert not rest_catalog.view_exists(identifier)
+
+    rest_catalog.create_view(identifier, new_view.schema(), new_view.current_version())
+    assert rest_catalog.view_exists(identifier)
+    assert rest_catalog.load_view(identifier).schema() == new_view.schema()
+
+    replaced_view = View(identifier, ViewMetadata.model_validate(example_view_metadata_v1_multiple_versions))
+    rest_catalog.replace_view(identifier, replaced_view.schema(), replaced_view.current_version())
+    assert rest_catalog.view_exists(identifier)
+    assert rest_catalog.load_view(identifier).schema() == replaced_view.schema()
+
+
+@pytest.mark.integration
+def test_rest_replace_nonexistent_view(
+    rest_catalog: RestCatalog, example_view_metadata_v1: dict[str, Any], database_name: str, view_name: str
+) -> None:
+    identifier = (database_name, view_name)
+
+    rest_catalog.create_namespace_if_not_exists(database_name)
+    view = View(identifier, ViewMetadata.model_validate(example_view_metadata_v1))
+
+    assert not rest_catalog.view_exists(identifier)
+
+    with pytest.raises(NoSuchViewError):
+        rest_catalog.replace_view(identifier, view.schema(), view.current_version())
+
+
+@pytest.mark.integration
+def test_rest_replace_view_with_table(
+    rest_catalog: RestCatalog, test_schema: Schema, example_view_metadata_v1: dict[str, Any], database_name: str, view_name: str
+) -> None:
+    identifier = (database_name, view_name)
+
+    rest_catalog.create_namespace_if_not_exists(database_name)
+    rest_catalog.create_table(identifier, test_schema)
+
+    view = View(identifier, ViewMetadata.model_validate(example_view_metadata_v1))
+
+    with pytest.raises(TableAlreadyExistsError):
+        rest_catalog.replace_view(identifier, view.schema(), view.current_version())
 
 
 @pytest.mark.integration

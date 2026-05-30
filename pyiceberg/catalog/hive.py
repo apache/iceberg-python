@@ -444,6 +444,17 @@ class HiveCatalog(MetastoreCatalog):
         raise NotImplementedError
 
     @override
+    def replace_view(
+        self,
+        identifier: str | Identifier,
+        schema: Union[Schema, "pa.Schema"],
+        view_version: ViewVersion,
+        location: str | None = None,
+        properties: Properties = EMPTY_DICT,
+    ) -> View:
+        raise NotImplementedError
+
+    @override
     def register_table(self, identifier: str | Identifier, metadata_location: str, overwrite: bool = False) -> Table:
         """Register a new table using existing metadata.
 
