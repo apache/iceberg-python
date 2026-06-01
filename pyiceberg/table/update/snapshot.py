@@ -27,6 +27,7 @@ from functools import cached_property
 from typing import TYPE_CHECKING, Generic
 
 from pyiceberg.avro.codecs import AvroCompressionCodec
+from pyiceberg.exceptions import ValidationException
 from pyiceberg.expressions import AlwaysFalse, BooleanExpression, Or
 from pyiceberg.expressions.visitors import (
     ROWS_MIGHT_NOT_MATCH,
@@ -579,12 +580,12 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         table = self._transaction._table
         parent_snapshot = table.metadata.snapshot_by_id(self._parent_snapshot_id)
         if parent_snapshot is None:
-            return
+            raise ValidationException(f"Cannot find parent snapshot {self._parent_snapshot_id} in table metadata")
 
         starting_snapshot_id = self._starting_snapshot_id if self._starting_snapshot_id is not None else self._parent_snapshot_id
         starting_snapshot = table.metadata.snapshot_by_id(starting_snapshot_id)
         if starting_snapshot is None:
-            return
+            raise ValidationException(f"Cannot find starting snapshot {starting_snapshot_id} in table metadata")
 
         isolation_level_str = table.metadata.properties.get(
             self._isolation_level_property, TableProperties.WRITE_ISOLATION_LEVEL_DEFAULT
@@ -797,12 +798,12 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
         table = self._transaction._table
         parent_snapshot = table.metadata.snapshot_by_id(self._parent_snapshot_id)
         if parent_snapshot is None:
-            return
+            raise ValidationException(f"Cannot find parent snapshot {self._parent_snapshot_id} in table metadata")
 
         starting_snapshot_id = self._starting_snapshot_id if self._starting_snapshot_id is not None else self._parent_snapshot_id
         starting_snapshot = table.metadata.snapshot_by_id(starting_snapshot_id)
         if starting_snapshot is None:
-            return
+            raise ValidationException(f"Cannot find starting snapshot {starting_snapshot_id} in table metadata")
 
         isolation_level_str = table.metadata.properties.get(
             self._isolation_level_property, TableProperties.WRITE_ISOLATION_LEVEL_DEFAULT

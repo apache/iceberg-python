@@ -816,6 +816,7 @@ class Transaction:
                 ).overwrite() as overwrite_snapshot:
                     if _isolation_level_property is not None:
                         overwrite_snapshot._isolation_level_property = _isolation_level_property
+                    overwrite_snapshot._starting_snapshot_id = delete_snapshot._starting_snapshot_id
                     overwrite_snapshot.commit_uuid = commit_uuid
                     overwrite_snapshot.delete_by_predicate(delete_filter, case_sensitive)
                     for original_data_file, replaced_data_files in replaced_files:

@@ -595,3 +595,90 @@ def test_clean_all_uncommitted_on_validation_exception(catalog: Catalog) -> None
     for producer in captured_producers:
         assert producer._written_manifests == []
         assert producer._uncommitted_manifests == []
+
+
+def test_mixed_delete_overwrite_starts_from_catalog_snapshot(catalog: Catalog) -> None:
+    """Mixed full-file and partial deletes should validate from the original table snapshot."""
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.table.update.snapshot import _DeleteFiles, _OverwriteFiles
+    from pyiceberg.transforms import IdentityTransform
+
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(1, "category", StringType(), required=False),
+        NestedField(2, "value", LongType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="category"))
+    table = catalog.create_table("default.mixed_delete_start_snapshot", schema=schema, partition_spec=spec)
+
+    import pyarrow as pa
+
+    # Partition "a" has one row (will be fully deleted) and partition "b" has two rows (partial delete)
+    table.append(pa.table({"category": ["a", "b", "b"], "value": [1, 2, 3]}))
+
+    base_snapshot_id = table.metadata.current_snapshot_id
+
+    tx = Transaction(table, autocommit=False)
+    # "value == 1" deletes the entire file in partition "a" (full-file delete)
+    # "value == 2" partially deletes from partition "b" (CoW rewrite)
+    tx.delete("value <= 2")
+
+    assert len(tx._snapshot_producers) == 2
+
+    delete_producer = next(p for p in tx._snapshot_producers if isinstance(p, _DeleteFiles))
+    overwrite_producer = next(p for p in tx._snapshot_producers if isinstance(p, _OverwriteFiles))
+
+    assert delete_producer._starting_snapshot_id == base_snapshot_id
+    assert overwrite_producer._starting_snapshot_id == base_snapshot_id
+
+
+def test_validate_concurrency_raises_on_missing_parent_snapshot(catalog: Catalog) -> None:
+    """Validation should raise when parent_snapshot_id is non-null but cannot be resolved."""
+    catalog.create_namespace("default")
+    schema = _test_schema()
+    table = catalog.create_table("default.missing_parent_test", schema=schema)
+
+    import pyarrow as pa
+
+    table.append(pa.table({"x": [1, 2, 3]}))
+
+    from pyiceberg.table.update.snapshot import _DeleteFiles
+
+    tx = Transaction(table, autocommit=False)
+    producer = _DeleteFiles(
+        operation=Operation.DELETE,
+        transaction=tx,
+        io=table.io,
+    )
+
+    # Artificially set a non-existent parent snapshot ID
+    producer._parent_snapshot_id = 99999999
+
+    with pytest.raises(ValidationException, match="Cannot find parent snapshot"):
+        producer._validate_concurrency()
+
+
+def test_validate_concurrency_raises_on_missing_starting_snapshot(catalog: Catalog) -> None:
+    """Validation should raise when starting_snapshot_id is non-null but cannot be resolved."""
+    catalog.create_namespace("default")
+    schema = _test_schema()
+    table = catalog.create_table("default.missing_starting_test", schema=schema)
+
+    import pyarrow as pa
+
+    table.append(pa.table({"x": [1, 2, 3]}))
+
+    from pyiceberg.table.update.snapshot import _DeleteFiles
+
+    tx = Transaction(table, autocommit=False)
+    producer = _DeleteFiles(
+        operation=Operation.DELETE,
+        transaction=tx,
+        io=table.io,
+    )
+
+    # parent is valid but starting is corrupted
+    producer._starting_snapshot_id = 99999999
+
+    with pytest.raises(ValidationException, match="Cannot find starting snapshot"):
+        producer._validate_concurrency()
