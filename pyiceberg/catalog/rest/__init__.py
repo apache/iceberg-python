@@ -16,12 +16,18 @@
 #  under the License.
 from __future__ import annotations
 
+import importlib
 import json
 from collections import deque
 from enum import Enum
+from types import UnionType
 from typing import (
     TYPE_CHECKING,
     Any,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
 )
 from urllib.parse import quote, unquote
 
@@ -397,6 +403,64 @@ class ListViewsResponse(IcebergBaseModel):
 _PLANNING_RESPONSE_ADAPTER = TypeAdapter(PlanningResponse)
 
 
+def _get_auth_manager_class(class_or_name: str) -> type[AuthManager]:
+    if class_or_name in AuthManagerFactory._registry:
+        return AuthManagerFactory._registry[class_or_name]
+
+    try:
+        module_path, class_name = class_or_name.rsplit(".", 1)
+        module = importlib.import_module(module_path)
+        return getattr(module, class_name)
+    except Exception as err:
+        raise ValueError(f"Could not load AuthManager class for '{class_or_name}'") from err
+
+
+def _coerce_auth_option_value(key: str, value: Any, annotation: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+
+    origin = get_origin(annotation)
+    if origin is list:
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError as err:
+            raise ValueError(f"Failed to parse auth configuration value '{key}' as JSON array") from err
+
+        if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
+            raise ValueError(f"auth configuration value '{key}' must be a JSON array of strings")
+        return parsed
+
+    if origin in (Union, UnionType):
+        non_none_args = [arg for arg in get_args(annotation) if arg is not type(None)]
+        if len(non_none_args) == 1:
+            return _coerce_auth_option_value(key, value, non_none_args[0])
+
+    if origin is not None:
+        if origin is list:
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError as err:
+                raise ValueError(f"Failed to parse auth configuration value '{key}' as JSON array") from err
+
+            if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
+                raise ValueError(f"auth configuration value '{key}' must be a JSON array of strings")
+            return parsed
+
+    if annotation is int:
+        try:
+            return int(value)
+        except ValueError as err:
+            raise ValueError(f"Failed to parse auth configuration value '{key}' as integer") from err
+
+    return value
+
+
+def _coerce_auth_config_values(class_or_name: str, config: dict[str, Any]) -> dict[str, Any]:
+    manager_class = _get_auth_manager_class(class_or_name)
+    hints = get_type_hints(manager_class.__init__)
+    return {key: _coerce_auth_option_value(key, value, hints.get(key, Any)) for key, value in config.items()}
+
+
 class RestCatalog(Catalog):
     uri: str
     _session: Session
@@ -467,6 +531,7 @@ class RestCatalog(Catalog):
                 raise ValueError("auth.type must be defined")
             auth_type_config = auth_config.get(auth_type, {})
             auth_impl = auth_config.get("impl")
+            auth_manager_name = auth_impl or auth_type
 
             if auth_type == CUSTOM and not auth_impl:
                 raise ValueError("auth.impl must be specified when using custom auth.type")
@@ -474,7 +539,8 @@ class RestCatalog(Catalog):
             if auth_type != CUSTOM and auth_impl:
                 raise ValueError("auth.impl can only be specified when using custom auth.type")
 
-            self._auth_manager = AuthManagerFactory.create(auth_impl or auth_type, auth_type_config)
+            typed_auth_type_config = _coerce_auth_config_values(auth_manager_name, auth_type_config)
+            self._auth_manager = AuthManagerFactory.create(auth_manager_name, typed_auth_type_config)
             session.auth = AuthManagerAdapter(self._auth_manager)
         else:
             self._auth_manager = self._create_legacy_oauth2_auth_manager(session)
