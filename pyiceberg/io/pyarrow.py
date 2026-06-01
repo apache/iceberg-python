@@ -2404,14 +2404,29 @@ def data_file_statistics_from_parquet_metadata(
     )
 
 
+def _resolve_row_group_size(arrow_table: pa.Table, row_group_limit: int | None, row_group_size_bytes: int | None) -> int | None:
+    if not row_group_size_bytes or arrow_table.num_rows == 0:
+        return row_group_limit
+    bytes_per_row = max(1, arrow_table.nbytes // arrow_table.num_rows)
+    rows_for_byte_budget = max(1, row_group_size_bytes // bytes_per_row)
+    if row_group_limit is None:
+        return rows_for_byte_budget
+    return min(row_group_limit, rows_for_byte_budget)
+
+
 def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties
 
     parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
-    row_group_size = property_as_int(
+    row_group_limit = property_as_int(
         properties=table_metadata.properties,
         property_name=TableProperties.PARQUET_ROW_GROUP_LIMIT,
         default=TableProperties.PARQUET_ROW_GROUP_LIMIT_DEFAULT,
+    )
+    row_group_size_bytes = property_as_int(
+        properties=table_metadata.properties,
+        property_name=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
+        default=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT,
     )
     location_provider = load_location_provider(table_location=table_metadata.location, table_properties=table_metadata.properties)
 
@@ -2436,6 +2451,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             for batch in task.record_batches
         ]
         arrow_table = pa.Table.from_batches(batches)
+        row_group_size = _resolve_row_group_size(arrow_table, row_group_limit, row_group_size_bytes)
         file_path = location_provider.new_data_location(
             data_file_name=task.generate_data_file_filename("parquet"),
             partition_key=task.partition_key,
@@ -2564,7 +2580,6 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
     from pyiceberg.table import TableProperties
 
     for key_pattern in [
-        TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
         TableProperties.PARQUET_BLOOM_FILTER_MAX_BYTES,
         f"{TableProperties.PARQUET_BLOOM_FILTER_COLUMN_ENABLED_PREFIX}.*",
     ]:
