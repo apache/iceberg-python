@@ -3267,6 +3267,59 @@ def test_task_to_record_batches_nanos(format_version: TableVersion, tmpdir: str)
     assert _expected_batch("ns" if format_version > 2 else "us").equals(actual_result)
 
 
+def test_task_to_record_batches_filter_without_positional_deletes_avoids_table_refilter(tmpdir: str) -> None:
+    arrow_schema = pa.schema((pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),))
+    arrow_table = pa.table([pa.array([1, 2, 3], type=pa.int32())], schema=arrow_schema)
+    data_file = _write_table_to_data_file(
+        f"{tmpdir}/test_task_to_record_batches_filter_no_positional.parquet", arrow_schema, arrow_table
+    )
+
+    table_schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    from pyiceberg.expressions.visitors import bind
+
+    result_batches = list(
+        _task_to_record_batches(
+            PyArrowFileIO(),
+            FileScanTask(data_file),
+            bound_row_filter=bind(table_schema, GreaterThan("id", 1), case_sensitive=True),
+            projected_schema=table_schema,
+            table_schema=table_schema,
+            projected_field_ids={1},
+            positional_deletes=None,
+            case_sensitive=True,
+        )
+    )
+    assert len(result_batches) == 1
+    assert result_batches[0].column(0).to_pylist() == [2, 3]
+
+
+def test_task_to_record_batches_filter_with_positional_deletes_handles_empty_batch(tmpdir: str) -> None:
+    arrow_schema = pa.schema((pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),))
+    arrow_table = pa.table([pa.array([1, 2, 3], type=pa.int32())], schema=arrow_schema)
+    data_file = _write_table_to_data_file(
+        f"{tmpdir}/test_task_to_record_batches_filter_with_positional.parquet", arrow_schema, arrow_table
+    )
+
+    table_schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    from pyiceberg.expressions.visitors import bind
+
+    positional_deletes = [pa.chunked_array([pa.array([], type=pa.int64())])]
+    result_batches = list(
+        _task_to_record_batches(
+            PyArrowFileIO(),
+            FileScanTask(data_file),
+            bound_row_filter=bind(table_schema, GreaterThan("id", 100), case_sensitive=True),
+            projected_schema=table_schema,
+            table_schema=table_schema,
+            projected_field_ids={1},
+            positional_deletes=positional_deletes,
+            case_sensitive=True,
+        )
+    )
+
+    assert result_batches == []
+
+
 def test_parse_location_defaults() -> None:
     """Test that parse_location uses defaults."""
 

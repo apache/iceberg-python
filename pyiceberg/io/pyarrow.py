@@ -1681,16 +1681,13 @@ def _task_to_record_batches(
             if current_batch.num_rows == 0:
                 continue
 
-            # Apply the user filter
-            if pyarrow_filter is not None:
-                # Temporary fix until PyArrow 21 is released ( https://github.com/apache/arrow/pull/46057 )
-                table = pa.Table.from_batches([current_batch])
-                table = table.filter(pyarrow_filter)
+            # Apply the user filter only when positional deletes are present.
+            # In the default case, the filter is already pushed down via Scanner.from_fragment.
+            if pyarrow_filter is not None and positional_deletes:
+                current_batch = current_batch.filter(pyarrow_filter)
                 # skip empty batches
-                if table.num_rows == 0:
+                if current_batch.num_rows == 0:
                     continue
-
-                current_batch = table.combine_chunks().to_batches()[0]
 
             yield _to_requested_schema(
                 projected_schema,
