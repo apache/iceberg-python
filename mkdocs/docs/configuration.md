@@ -201,12 +201,12 @@ Tencent Cloud Object Storage (COS) is S3-compatible and can be used with PyIcebe
 
 No additional dependencies are required.
 
-| Key                  | Example                                           | Description |
-| -------------------- | ------------------------------------------------- | ----------- |
-| s3.endpoint          | https://cos.ap-guangzhou.myqcloud.com            | Tencent COS S3-compatible endpoint |
-| s3.access-key-id     | <access-key>                                      | Access key for COS |
-| s3.secret-access-key | <secret-key>                                      | Secret key for COS |
-| s3.session-token     | <optional-session-token>                          | Optional session token |
+| Key                  | Example                        | Description |
+| -------------------- | ------------------------------ | ----------- |
+| s3.endpoint          | https://cos.ap-guangzhou.myqcloud.com | Tencent COS S3-compatible endpoint |
+| s3.access-key-id     | `<access-key>`                 | Access key for COS |
+| s3.secret-access-key | `<secret-key>`                  | Secret key for COS |
+| s3.session-token     | `<optional-session-token>`      | Optional session token |
 
 ### Example
 
