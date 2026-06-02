@@ -59,6 +59,7 @@ from pyiceberg.expressions import (
     Or,
     Reference,
     StartsWith,
+    UnboundTerm,
 )
 from pyiceberg.expressions.literals import (
     BooleanLiteral,
@@ -164,6 +165,22 @@ comparison = left_ref | right_ref
 between = column + BETWEEN + literal + AND + literal
 
 
+def _comparison_to_predicate(term: UnboundTerm, op: str, literal: Literal[Any]) -> BooleanExpression:
+    if op == "<":
+        return LessThan(term, literal)
+    elif op == "<=":
+        return LessThanOrEqual(term, literal)
+    elif op == ">":
+        return GreaterThan(term, literal)
+    elif op == ">=":
+        return GreaterThanOrEqual(term, literal)
+    elif op in ("=", "=="):
+        return EqualTo(term, literal)
+    elif op in ("!=", "<>"):
+        return NotEqualTo(term, literal)
+    raise ValueError(f"Unsupported operation type: {op}")
+
+
 @between.set_parse_action
 def _(result: ParseResults) -> BooleanExpression:
     return And(GreaterThanOrEqual(result.column, result[2]), LessThanOrEqual(result.column, result[4]))
@@ -171,19 +188,7 @@ def _(result: ParseResults) -> BooleanExpression:
 
 @left_ref.set_parse_action
 def _(result: ParseResults) -> BooleanExpression:
-    if result.op == "<":
-        return LessThan(result.column, result.literal)
-    elif result.op == "<=":
-        return LessThanOrEqual(result.column, result.literal)
-    elif result.op == ">":
-        return GreaterThan(result.column, result.literal)
-    elif result.op == ">=":
-        return GreaterThanOrEqual(result.column, result.literal)
-    if result.op in ("=", "=="):
-        return EqualTo(result.column, result.literal)
-    if result.op in ("!=", "<>"):
-        return NotEqualTo(result.column, result.literal)
-    raise ValueError(f"Unsupported operation type: {result.op}")
+    return _comparison_to_predicate(result.column, result.op, result.literal)
 
 
 @right_ref.set_parse_action
@@ -302,20 +307,7 @@ cast_left_ref = cast_term + comparison_op + literal
 
 @cast_left_ref.set_parse_action
 def _(result: ParseResults) -> BooleanExpression:
-    term = result[0]
-    if result.op == "<":
-        return LessThan(term, result.literal)
-    elif result.op == "<=":
-        return LessThanOrEqual(term, result.literal)
-    elif result.op == ">":
-        return GreaterThan(term, result.literal)
-    elif result.op == ">=":
-        return GreaterThanOrEqual(term, result.literal)
-    if result.op in ("=", "=="):
-        return EqualTo(term, result.literal)
-    if result.op in ("!=", "<>"):
-        return NotEqualTo(term, result.literal)
-    raise ValueError(f"Unsupported operation type: {result.op}")
+    return _comparison_to_predicate(result[0], result.op, result.literal)
 
 
 predicate = (between | cast_left_ref | comparison | in_check | null_check | nan_check | starts_check | boolean).set_results_name(

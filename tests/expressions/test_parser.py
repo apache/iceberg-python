@@ -42,14 +42,17 @@ from pyiceberg.expressions import (
     Reference,
     StartsWith,
 )
-from pyiceberg.expressions.literals import DecimalLiteral, LongLiteral, StringLiteral, literal
+from pyiceberg.expressions.literals import DateLiteral, DecimalLiteral, LongLiteral, StringLiteral, literal
+from pyiceberg.schema import Schema
 from pyiceberg.transforms import (
+    BoundTransform,
     DayTransform,
     HourTransform,
     MonthTransform,
     UnboundTransform,
     YearTransform,
 )
+from pyiceberg.types import DateType, NestedField
 
 
 def test_always_true() -> None:
@@ -287,6 +290,14 @@ def test_cast_date_comparison() -> None:
         StringLiteral("2024-01-01"),
     )
     assert expected == parser.parse("CAST(created_at AS date) = '2024-01-01'")
+
+
+def test_cast_date_binds_string_literal_to_date() -> None:
+    """Binding a CAST(... AS date) predicate converts the StringLiteral to a DateLiteral."""
+    schema = Schema(NestedField(1, "created_at", DateType(), required=False))
+    bound = parser.parse("CAST(created_at AS date) = '2024-01-01'").bind(schema)
+    assert isinstance(bound.term, BoundTransform)
+    assert isinstance(bound.literal, DateLiteral)
 
 
 def test_cast_year_comparison() -> None:
