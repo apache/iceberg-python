@@ -17,11 +17,7 @@
 from __future__ import annotations
 
 from typing import Any
-from urllib import parse
 
-import boto3
-from botocore.auth import SigV4Auth
-from botocore.awsrequest import AWSRequest
 from requests import PreparedRequest, Session
 from requests.adapters import HTTPAdapter
 
@@ -44,6 +40,8 @@ EMPTY_BODY_SHA256: str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca49599
 
 class SigV4Adapter(HTTPAdapter):
     def __init__(self, **properties: str):
+        import boto3
+
         self._properties = properties
         max_retries = property_as_int(self._properties, SIGV4_MAX_RETRIES, SIGV4_MAX_RETRIES_DEFAULT)
         super().__init__(max_retries=max_retries)
@@ -57,6 +55,11 @@ class SigV4Adapter(HTTPAdapter):
         )
 
     def add_headers(self, request: PreparedRequest, **kwargs: Any) -> None:  # pylint: disable=W0613
+        from urllib import parse
+
+        from botocore.auth import SigV4Auth
+        from botocore.awsrequest import AWSRequest
+
         credentials = self._boto_session.get_credentials().get_frozen_credentials()
         region = self._properties.get(SIGV4_REGION, self._boto_session.region_name)
         service = self._properties.get(SIGV4_SERVICE, "execute-api")
