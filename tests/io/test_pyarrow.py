@@ -3267,65 +3267,49 @@ def test_task_to_record_batches_nanos(format_version: TableVersion, tmpdir: str)
     assert _expected_batch("ns" if format_version > 2 else "us").equals(actual_result)
 
 
-def test_task_to_record_batches_does_not_use_table_filter_without_positional_deletes(tmpdir: str) -> None:
+def test_task_to_record_batches_scanner_filter_not_set_with_positional_deletes(tmpdir: str) -> None:
     """Regression test for https://github.com/apache/iceberg-python/issues/3272.
 
-    The old code always created a ``pa.Table`` via ``pa.Table.from_batches`` and called
-    ``filter`` / ``combine_chunks`` / ``to_batches()[0]`` — even when no positional deletes
-    existed and the scanner had already applied the predicate push-down.  On Apple Silicon
-    with affected PyArrow versions this triggered a SIGSEGV.  The fix removes that
-    Table-based code path for the no-positional-delete case.
+    When positional deletes are present the scanner must NOT receive the row filter as a
+    push-down predicate.  Positional-delete indices reference absolute row positions in the
+    original file; if the scanner filters rows first the surviving rows shift and the
+    indices no longer map correctly, producing silently wrong results.
 
-    We detect a regression by replacing ``pyarrow.Table`` with a sentinel class whose
-    ``from_batches`` raises immediately.  ``isinstance`` checks against the original
-    ``pa.Table`` are preserved via a custom metaclass so the rest of the code-path is
-    unaffected.  With the fix the sentinel is never reached; without the fix it is called
-    and the test fails.
+    The test chooses data where the old (buggy) code path gives a distinct wrong answer:
+      - File rows (positions 0-3): [1, 2, 3, 4]
+      - Positional delete: position 2 → removes value 3 → survivors [1, 2, 4]
+      - Row filter: id > 2 → expected result [4]
+
+    Old bug (scanner pre-filters id > 2 → [3, 4], then _combine_positional_deletes sees only
+    2 rows so absolute position 2 is outside the batch range and nothing is deleted → [3, 4]).
     """
     from pyiceberg.expressions.visitors import bind
 
     arrow_schema = pa.schema((pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),))
-    arrow_table = pa.table([pa.array([1, 2, 3], type=pa.int32())], schema=arrow_schema)
+    # File row positions: 0→1, 1→2, 2→3, 3→4
+    arrow_table = pa.table([pa.array([1, 2, 3, 4], type=pa.int32())], schema=arrow_schema)
     data_file = _write_table_to_data_file(
-        f"{tmpdir}/test_task_to_record_batches_no_table_refilter.parquet", arrow_schema, arrow_table
+        f"{tmpdir}/test_scanner_filter_not_set_with_pos_deletes.parquet", arrow_schema, arrow_table
     )
 
     table_schema = Schema(NestedField(1, "id", IntegerType(), required=False))
 
-    _real_Table = pa.Table
-
-    class _TableFilterSentinelMeta(type):
-        """Metaclass that delegates isinstance/issubclass to the real pa.Table."""
-
-        def __instancecheck__(cls, instance: object) -> bool:
-            return isinstance(instance, _real_Table)
-
-        def __subclasscheck__(cls, subclass: type) -> bool:
-            return issubclass(subclass, _real_Table)
-
-    class _TableFilterSentinel(metaclass=_TableFilterSentinelMeta):
-        @staticmethod
-        def from_batches(*_: object, **__: object) -> None:
-            raise AssertionError(
-                "pa.Table.from_batches must not be called when positional_deletes is None: "
-                "the SIGSEGV-prone workaround path (from_batches/filter/combine_chunks/to_batches) was taken"
-            )
-
-    with patch("pyarrow.Table", new=_TableFilterSentinel):
-        result_batches = list(
-            _task_to_record_batches(
-                PyArrowFileIO(),
-                FileScanTask(data_file),
-                bound_row_filter=bind(table_schema, GreaterThan("id", 1), case_sensitive=True),
-                projected_schema=table_schema,
-                table_schema=table_schema,
-                projected_field_ids={1},
-                positional_deletes=None,
-                case_sensitive=True,
-            )
+    positional_deletes = [pa.chunked_array([pa.array([2], type=pa.int64())])]
+    result_batches = list(
+        _task_to_record_batches(
+            PyArrowFileIO(),
+            FileScanTask(data_file),
+            bound_row_filter=bind(table_schema, GreaterThan("id", 2), case_sensitive=True),
+            projected_schema=table_schema,
+            table_schema=table_schema,
+            projected_field_ids={1},
+            positional_deletes=positional_deletes,
+            case_sensitive=True,
         )
+    )
+
     assert len(result_batches) == 1
-    assert result_batches[0].column(0).to_pylist() == [2, 3]
+    assert result_batches[0].column(0).to_pylist() == [4]
 
 
 def test_task_to_record_batches_filter_applied_after_positional_deletes(tmpdir: str) -> None:

@@ -1676,18 +1676,12 @@ def _task_to_record_batches(
                 # Create the mask of indices that we're interested in
                 indices = _combine_positional_deletes(positional_deletes, current_index, current_index + len(batch))
                 current_batch = current_batch.take(indices)
+                if pyarrow_filter is not None:
+                    current_batch = current_batch.filter(pyarrow_filter)
 
             # skip empty batches
             if current_batch.num_rows == 0:
                 continue
-
-            # Apply the user filter only when positional deletes are present.
-            # In the default case, the filter is already pushed down via Scanner.from_fragment.
-            if pyarrow_filter is not None and positional_deletes:
-                current_batch = current_batch.filter(pyarrow_filter)
-                # skip empty batches
-                if current_batch.num_rows == 0:
-                    continue
 
             yield _to_requested_schema(
                 projected_schema,
