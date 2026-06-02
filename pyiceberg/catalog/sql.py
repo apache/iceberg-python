@@ -38,6 +38,7 @@ from sqlalchemy.orm import (
     Session,
     mapped_column,
 )
+from typing_extensions import override
 
 from pyiceberg.catalog import (
     METADATA_LOCATION,
@@ -172,6 +173,7 @@ class SqlCatalog(MetastoreCatalog):
             catalog=self,
         )
 
+    @override
     def create_table(
         self,
         identifier: str | Identifier,
@@ -237,12 +239,14 @@ class SqlCatalog(MetastoreCatalog):
 
         return self.load_table(identifier=identifier)
 
-    def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
+    @override
+    def register_table(self, identifier: str | Identifier, metadata_location: str, overwrite: bool = False) -> Table:
         """Register a new table using existing metadata.
 
         Args:
             identifier (Union[str, Identifier]): Table identifier for the table
             metadata_location (str): The location to the metadata
+            overwrite (bool): Whether to overwrite the existing table, default False
 
         Returns:
             Table: The newly registered table
@@ -251,6 +255,9 @@ class SqlCatalog(MetastoreCatalog):
             TableAlreadyExistsError: If the table already exists
             NoSuchNamespaceError: If namespace does not exist
         """
+        if overwrite:
+            raise NotImplementedError("`overwrite` isn't supported")
+
         namespace_tuple = Catalog.namespace_from(identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple)
         table_name = Catalog.table_name_from(identifier)
@@ -274,6 +281,7 @@ class SqlCatalog(MetastoreCatalog):
 
         return self.load_table(identifier=identifier)
 
+    @override
     def load_table(self, identifier: str | Identifier) -> Table:
         """Load the table's metadata and return the table instance.
 
@@ -303,6 +311,7 @@ class SqlCatalog(MetastoreCatalog):
             return self._convert_orm_to_iceberg(result)
         raise NoSuchTableError(f"Table does not exist: {namespace}.{table_name}")
 
+    @override
     def drop_table(self, identifier: str | Identifier) -> None:
         """Drop a table.
 
@@ -343,6 +352,7 @@ class SqlCatalog(MetastoreCatalog):
                     raise NoSuchTableError(f"Table does not exist: {namespace}.{table_name}") from e
             session.commit()
 
+    @override
     def rename_table(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> Table:
         """Rename a fully classified table name.
 
@@ -402,6 +412,7 @@ class SqlCatalog(MetastoreCatalog):
                 raise TableAlreadyExistsError(f"Table {to_namespace}.{to_table_name} already exists") from e
         return self.load_table(to_identifier)
 
+    @override
     def commit_table(
         self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
@@ -498,6 +509,7 @@ class SqlCatalog(MetastoreCatalog):
             metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
         )
 
+    @override
     def namespace_exists(self, identifier: str | Identifier) -> bool:
         namespace_tuple = Catalog.identifier_to_tuple(identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple, NoSuchNamespaceError)
@@ -530,6 +542,7 @@ class SqlCatalog(MetastoreCatalog):
                 return True
         return False
 
+    @override
     def create_namespace(self, namespace: str | Identifier, properties: Properties = EMPTY_DICT) -> None:
         """Create a namespace in the catalog.
 
@@ -558,6 +571,7 @@ class SqlCatalog(MetastoreCatalog):
                 )
             session.commit()
 
+    @override
     def drop_namespace(self, namespace: str | Identifier) -> None:
         """Drop a namespace.
 
@@ -584,6 +598,7 @@ class SqlCatalog(MetastoreCatalog):
             )
             session.commit()
 
+    @override
     def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
         """List tables under the given namespace in the catalog.
 
@@ -605,6 +620,7 @@ class SqlCatalog(MetastoreCatalog):
             result = session.scalars(stmt)
             return [(Catalog.identifier_to_tuple(table.table_namespace) + (table.table_name,)) for table in result]
 
+    @override
     def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
 
@@ -646,6 +662,7 @@ class SqlCatalog(MetastoreCatalog):
 
             return namespaces
 
+    @override
     def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
         """Get properties for a namespace.
 
@@ -669,6 +686,7 @@ class SqlCatalog(MetastoreCatalog):
             result = session.scalars(stmt)
             return {props.property_key: props.property_value for props in result}
 
+    @override
     def update_namespace_properties(
         self, namespace: str | Identifier, removals: set[str] | None = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
@@ -725,6 +743,7 @@ class SqlCatalog(MetastoreCatalog):
             session.commit()
         return properties_update_summary
 
+    @override
     def create_view(
         self,
         identifier: str | Identifier,
@@ -735,13 +754,24 @@ class SqlCatalog(MetastoreCatalog):
     ) -> View:
         raise NotImplementedError
 
+    @override
     def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         raise NotImplementedError
 
+    @override
     def view_exists(self, identifier: str | Identifier) -> bool:
         raise NotImplementedError
 
+    @override
+    def register_view(self, identifier: str | Identifier, metadata_location: str) -> View:
+        raise NotImplementedError
+
+    @override
     def drop_view(self, identifier: str | Identifier) -> None:
+        raise NotImplementedError
+
+    @override
+    def load_view(self, identifier: str | Identifier) -> View:
         raise NotImplementedError
 
     def close(self) -> None:

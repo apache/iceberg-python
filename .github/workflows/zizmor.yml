@@ -17,36 +17,28 @@
 # under the License.
 #
 
-name: "Python CI Docs"
+name: GitHub Actions Security Analysis with zizmor 🌈
 
 on:
   push:
-    branches:
-      - 'main'
+    branches: ["main"]
   pull_request:
+    branches: ["**"]
 
-permissions:
-  contents: read
-
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+permissions: {}
 
 jobs:
-  docs:
-    runs-on: ubuntu-slim
-
+  zizmor:
+    name: Run zizmor 🌈
+    runs-on: ubuntu-latest
+    permissions: {}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+
+      - name: Run zizmor 🌈
+        uses: zizmorcore/zizmor-action@b1d7e1fb5de872772f31590499237e7cce841e8e # v0.5.3
         with:
-          python-version: 3.12
-      - name: Install UV
-        uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098 # v7.3.1
-      - name: Build docs
-        run: make docs-build
-      - name: Run linters
-        run: make lint
+          advanced-security: false

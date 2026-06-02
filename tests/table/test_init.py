@@ -32,6 +32,7 @@ from pyiceberg.expressions import (
     EqualTo,
     In,
 )
+from pyiceberg.expressions.visitors import bind
 from pyiceberg.io import PY_IO_IMPL, load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
@@ -90,6 +91,7 @@ from pyiceberg.transforms import (
     BucketTransform,
     IdentityTransform,
 )
+from pyiceberg.typedef import Record
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -1753,3 +1755,14 @@ def test_check_uuid_passes_when_match(table_v2: Table, example_table_metadata_v2
     new_metadata = TableMetadataV2(**example_table_metadata_v2)
     # Should not raise with same uuid
     Table._check_uuid(table_v2.metadata, new_metadata)
+
+
+def test_build_large_partition_predicate(table_v2: Table) -> None:
+    with table_v2.transaction() as tx:
+        expr = tx._build_partition_predicate(
+            partition_records={Record(i) for i in range(5000)},
+            spec=table_v2.metadata.spec(),
+            schema=table_v2.metadata.schema(),
+        )
+
+    bind(table_v2.metadata.schema(), expr, case_sensitive=True)

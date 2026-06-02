@@ -31,6 +31,8 @@ from typing import (
     cast,
 )
 
+from typing_extensions import override
+
 from pyiceberg.exceptions import (
     NamespaceAlreadyExistsError,
     NoSuchNamespaceError,
@@ -493,12 +495,13 @@ class Catalog(ABC):
         """
 
     @abstractmethod
-    def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
+    def register_table(self, identifier: str | Identifier, metadata_location: str, overwrite: bool = False) -> Table:
         """Register a new table using existing metadata.
 
         Args:
             identifier (Union[str, Identifier]): Table identifier for the table
             metadata_location (str): The location to the metadata
+            overwrite (bool): Whether to overwrite the existing table, default False
 
         Returns:
             Table: The newly registered table
@@ -544,6 +547,7 @@ class Catalog(ABC):
 
         Raises:
             NoSuchTableError: If a table with the name does not exist.
+            TableAlreadyExistsError: If the target table already exists.
         """
 
     @abstractmethod
@@ -645,6 +649,20 @@ class Catalog(ABC):
         """
 
     @abstractmethod
+    def load_view(self, identifier: str | Identifier) -> View:
+        """Load the view's metadata and returns the view instance.
+
+        Args:
+            identifier (str | Identifier): View identifier.
+
+        Returns:
+            View: the view instance with its metadata.
+
+        Raises:
+            NoSuchViewError: If a view with the name does not exist.
+        """
+
+    @abstractmethod
     def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
         """Get properties for a namespace.
 
@@ -672,6 +690,22 @@ class Catalog(ABC):
         Raises:
             NoSuchNamespaceError: If a namespace with the given name does not exist.
             ValueError: If removals and updates have overlapping keys.
+        """
+
+    @abstractmethod
+    def register_view(self, identifier: str | Identifier, metadata_location: str) -> View:
+        """Register a new view using existing metadata.
+
+        Args:
+            identifier (Union[str, Identifier]): View identifier for the view
+            metadata_location (str): The location to the metadata
+
+        Returns:
+            View: The newly registered view
+
+        Raises:
+            ViewAlreadyExistsError: If the view already exists.
+            TableAlreadyExistsError: If a table with the same name already exists.
         """
 
     @abstractmethod
@@ -872,9 +906,11 @@ class MetastoreCatalog(Catalog, ABC):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
 
+    @override
     def supports_server_side_planning(self) -> bool:
         return False
 
+    @override
     def create_table_transaction(
         self,
         identifier: str | Identifier,
@@ -888,6 +924,7 @@ class MetastoreCatalog(Catalog, ABC):
             self._create_staged_table(identifier, schema, location, partition_spec, sort_order, properties)
         )
 
+    @override
     def table_exists(self, identifier: str | Identifier) -> bool:
         try:
             self.load_table(identifier)
@@ -895,6 +932,7 @@ class MetastoreCatalog(Catalog, ABC):
         except NoSuchTableError:
             return False
 
+    @override
     def namespace_exists(self, namespace: str | Identifier) -> bool:
         """Check if a namespace exists.
 
@@ -910,6 +948,7 @@ class MetastoreCatalog(Catalog, ABC):
         except NoSuchNamespaceError:
             return False
 
+    @override
     def purge_table(self, identifier: str | Identifier) -> None:
         table = self.load_table(identifier)
         self.drop_table(identifier)
@@ -930,6 +969,7 @@ class MetastoreCatalog(Catalog, ABC):
         delete_files(io, prev_metadata_files, PREVIOUS_METADATA)
         delete_files(io, {table.metadata_location}, METADATA)
 
+    @override
     def create_view(
         self,
         identifier: str | Identifier,

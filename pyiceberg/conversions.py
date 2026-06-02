@@ -143,7 +143,7 @@ def _(primitive_type: PrimitiveType, value_str: str) -> int:
     _, _, exponent = Decimal(value_str).as_tuple()
     if exponent != 0:  # Raise if there are digits to the right of the decimal
         raise ValueError(f"Cannot convert partition value, value cannot have fractional digits for {primitive_type} partition")
-    return int(float(value_str))
+    return int(value_str)
 
 
 @partition_to_py.register(FloatType)
@@ -343,13 +343,20 @@ def _(_: PrimitiveType, b: bytes) -> int:
     return _INT_STRUCT.unpack(b)[0]
 
 
-@from_bytes.register(LongType)
 @from_bytes.register(TimeType)
 @from_bytes.register(TimestampType)
 @from_bytes.register(TimestamptzType)
 @from_bytes.register(TimestampNanoType)
 @from_bytes.register(TimestamptzNanoType)
 def _(_: PrimitiveType, b: bytes) -> int:
+    return _LONG_STRUCT.unpack(b)[0]
+
+
+@from_bytes.register(LongType)
+def _(_: PrimitiveType, b: bytes) -> int:
+    if len(b) < 8:
+        # If the length is 4 bytes, it is a promoted IntegerType
+        return _INT_STRUCT.unpack(b)[0]
     return _LONG_STRUCT.unpack(b)[0]
 
 
@@ -360,6 +367,9 @@ def _(_: FloatType, b: bytes) -> float:
 
 @from_bytes.register(DoubleType)
 def _(_: DoubleType, b: bytes) -> float:
+    if len(b) < 8:
+        # If the length is 4 bytes, it is a promoted FloatType
+        return _FLOAT_STRUCT.unpack(b)[0]
     return _DOUBLE_STRUCT.unpack(b)[0]
 
 

@@ -614,7 +614,7 @@ class ManifestEntry(Record):
 
     @snapshot_id.setter
     def snapshot_id(self, value: int) -> None:
-        self._data[0] = value
+        self._data[1] = value
 
     @property
     def sequence_number(self) -> int | None:
