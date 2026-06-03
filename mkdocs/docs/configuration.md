@@ -189,18 +189,16 @@ For the FileIO there are several configuration options available:
 
 ### Alibaba Cloud Object Storage Service (OSS)
 
-| Key                          | Example                                       | Description |
-| ---------------------------- | --------------------------------------------- | ----------- |
-| s3.endpoint                  | <https://s3.oss-your-bucket-region.aliyuncs.com/> | Configure an endpoint of the OSS service for the FileIO to access. Be sure to use S3 compatible endpoint as given in the example. |
-| s3.access-key-id             | admin                                         | Configure the static access key id used to access the FileIO. |
-| s3.secret-access-key         | password                                      | Configure the static secret access key used to access the FileIO. |
-| s3.session-token             | AQoDYXdzEJr...                                | Configure the static session token used to access the FileIO. |
-| s3.force-virtual-addressing  | True                                          | Whether to use virtual addressing of buckets. This is set to `True` by default as OSS can only be accessed with virtual hosted style address. |
-| s3.anonymous                 | True                                          | Configure whether to use anonymous connection. If False (default), uses key/secret if configured or standard AWS configuration methods. |
-
-<!-- markdown-link-check-disable -->
-
 PyIceberg uses [S3FileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.S3FileSystem.html) class to connect to OSS bucket as the service is [compatible with S3 SDK](https://www.alibabacloud.com/help/en/oss/developer-reference/use-amazon-s3-sdks-to-access-oss) as long as the endpoint is addressed with virtual hosted style.
+
+| Key                          | Example                                            | Description |
+| ---------------------------- | -------------------------------------------------- | ----------- |
+| s3.endpoint                  | <https://s3.oss-your-bucket-region.aliyuncs.com/>   | Configure an endpoint of the OSS service for the FileIO to access. Be sure to use S3 compatible endpoint as given in the example. |
+| s3.access-key-id             | admin                                              | Configure the static access key id used to access the FileIO. |
+| s3.secret-access-key         | password                                           | Configure the static secret access key used to access the FileIO. |
+| s3.session-token             | AQoDYXdzEJr...                                     | Configure the static session token used to access the FileIO. |
+| s3.force-virtual-addressing  | True                                               | Whether to use virtual addressing of buckets. This is set to `True` by default as OSS can only be accessed with virtual hosted style address. |
+| s3.anonymous                 | True                                               | Configure whether to use anonymous connection. If False (default), uses key/secret if configured or standard AWS configuration methods. |
 
 ### Tencent Cloud Object Storage (COS)
 
@@ -208,14 +206,14 @@ Tencent Cloud Object Storage (COS) is S3-compatible and can be used with PyIcebe
 
 No additional dependencies are required.
 
-| Key                  | Example                        | Description |
-| -------------------- | ------------------------------ | ----------- |
-| s3.endpoint          | <https://cos.ap-guangzhou.myqcloud.com> | Tencent COS S3-compatible endpoint |
-| s3.access-key-id     | admin                           | Access key for COS |
-| s3.secret-access-key | password                        | Secret key for COS |
-| s3.session-token     | AQoDYXdzEJr...                  | Optional session token |
+| Key                  | Example                                  | Description |
+| -------------------- | ---------------------------------------- | ----------- |
+| s3.endpoint          | <https://cos.ap-guangzhou.myqcloud.com>    | Tencent COS S3-compatible endpoint |
+| s3.access-key-id     | admin                                    | Access key for COS |
+| s3.secret-access-key | password                                 | Secret key for COS |
+| s3.session-token     | AQoDYXdzEJr...                           | Optional session token |
 
-### Example
+#### Example
 
 ```python
 catalog = load_catalog(
@@ -227,7 +225,7 @@ catalog = load_catalog(
 )
 ```
 
-<!-- markdown-link-check-enable-->
+<!-- markdown-link-check-disable -->
 
 ### Hugging Face
 
