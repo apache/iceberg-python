@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pytest
 
 from pyiceberg.utils.pagination import PaginationList
@@ -31,7 +33,7 @@ def _make_pages(pages: list[list[int]]) -> tuple[list[int], str | None, list[lis
     return first, first_token, remaining
 
 
-def _make_fetch(remaining: list[list[int]], tokens: list[str | None]):
+def _make_fetch(remaining: list[list[int]], tokens: list[str | None]) -> Callable[[str], tuple[list[int], str | None]]:
     """Return a fetch callback that yields successive pages."""
     idx = 0
 
@@ -47,7 +49,7 @@ def _make_fetch(remaining: list[list[int]], tokens: list[str | None]):
 
 def _simple_pagination_list(
     pages: list[list[int]],
-) -> tuple[PaginationList, list[int]]:
+) -> tuple[PaginationList[int], list[int]]:
     """Build a PaginationList and return it with the full expected items."""
     all_items = [item for page in pages for item in page]
     next_tokens = [f"tok{i}" for i in range(1, len(pages))] + [None]

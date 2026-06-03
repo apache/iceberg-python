@@ -20,12 +20,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from typing import Generic, TypeVar, overload
+from typing import SupportsIndex, TypeVar, overload
 
 T = TypeVar("T")
 
 
-class PaginationList(list, Generic[T]):
+class PaginationList(list[T]):
     """A list that lazily fetches subsequent pages from a paginated API.
 
     The first page is pre-loaded on construction.  Subsequent pages are only
@@ -89,42 +89,47 @@ class PaginationList(list, Generic[T]):
     # ------------------------------------------------------------------
 
     def __len__(self) -> int:
+        """Return the total number of items, fetching all pages first."""
         self._fetch_all()
         return list.__len__(self)
 
     def __contains__(self, item: object) -> bool:
+        """Return True if item is present, fetching all pages first."""
         self._fetch_all()
         return list.__contains__(self, item)
 
     def __repr__(self) -> str:
+        """Return string representation after fetching all pages."""
         self._fetch_all()
         return f"PaginationList({list.__repr__(self)})"
+
+    def __eq__(self, other: object) -> bool:
+        """Compare equality after fetching all pages."""
+        self._fetch_all()
+        return list.__eq__(self, other)
+
+    def __ne__(self, other: object) -> bool:
+        """Compare inequality after fetching all pages."""
+        return not self.__eq__(other)
 
     # ------------------------------------------------------------------
     # Index / slice access
     # ------------------------------------------------------------------
 
-    def __eq__(self, other: object) -> bool:
-        self._fetch_all()
-        return list.__eq__(self, other)
-
-    def __ne__(self, other: object) -> bool:
-        return not self.__eq__(other)
-
     @overload
-    def __getitem__(self, idx: int) -> T: ...
+    def __getitem__(self, idx: SupportsIndex) -> T: ...
 
     @overload
     def __getitem__(self, idx: slice) -> list[T]: ...
 
-    def __getitem__(self, idx: int | slice) -> T | list[T]:
-        if isinstance(idx, int):
-            # Negative index requires knowing the length.
-            if idx < 0:
+    def __getitem__(self, idx: SupportsIndex | slice) -> T | list[T]:
+        """Fetch pages as needed before returning the requested item(s)."""
+        if isinstance(idx, slice):
+            self._fetch_all()
+        else:
+            i = idx.__index__()
+            if i < 0:
                 self._fetch_all()
             else:
-                self._fetch_through_index(idx)
-        else:
-            # Slice — fetch all to avoid partial results.
-            self._fetch_all()
-        return list.__getitem__(self, idx)  # type: ignore[return-value]
+                self._fetch_through_index(i)
+        return list.__getitem__(self, idx)
