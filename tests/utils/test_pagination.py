@@ -19,8 +19,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-import pytest
-
 from pyiceberg.utils.pagination import PaginationList
 
 
@@ -63,7 +61,7 @@ def _simple_pagination_list(
         call_count += 1
         return pages[page_idx], next_tokens[page_idx]
 
-    first_token = f"tok1" if len(pages) > 1 else None
+    first_token = "tok1" if len(pages) > 1 else None
     pl = PaginationList(pages[0], first_token, fetch)
     return pl, all_items
 
@@ -192,3 +190,40 @@ class TestPaginationListMultiPage:
     def test_equality_with_plain_list(self) -> None:
         pl, expected = _simple_pagination_list([[1, 2], [3]])
         assert pl == expected
+
+
+class TestPaginationListPerformance:
+    """Verify that PaginationList does not eagerly fetch all pages for len()
+    on a single-page list, and that multi-page len() fetches all pages exactly once."""
+
+    def test_len_single_page_makes_no_extra_fetches(self) -> None:
+        """len() on a single-page PaginationList should not call the fetch callback."""
+        fetched: list[str] = []
+
+        def fetch(token: str) -> tuple[list[int], str | None]:
+            fetched.append(token)
+            return [], None
+
+        pl: PaginationList[int] = PaginationList([1, 2, 3], None, fetch)
+        assert len(pl) == 3
+        assert fetched == [], "No fetch should occur for a single-page list"
+
+    def test_len_multi_page_fetches_all_pages_once(self) -> None:
+        """len() on a multi-page PaginationList fetches remaining pages exactly once."""
+        fetch_count = 0
+
+        def fetch(token: str) -> tuple[list[int], str | None]:
+            nonlocal fetch_count
+            fetch_count += 1
+            if token == "p2":
+                return [3, 4], "p3"
+            return [5], None
+
+        pl: PaginationList[int] = PaginationList([1, 2], "p2", fetch)
+        assert len(pl) == 5
+        assert fetch_count == 2, "Should fetch pages 2 and 3 exactly once each"
+
+        # Second len() call must not trigger further fetches
+        fetch_count = 0
+        assert len(pl) == 5
+        assert fetch_count == 0, "Second len() should use cached data"
