@@ -212,7 +212,7 @@ No additional dependencies are required.
 
 | Key                  | Example                        | Description |
 | -------------------- | ------------------------------ | ----------- |
-| s3.endpoint          | https://cos.ap-guangzhou.myqcloud.com | Tencent COS S3-compatible endpoint |
+| s3.endpoint          | <https://cos.ap-guangzhou.myqcloud.com> | Tencent COS S3-compatible endpoint |
 | s3.access-key-id     | admin                           | Access key for COS |
 | s3.secret-access-key | password                        | Secret key for COS |
 | s3.session-token     | AQoDYXdzEJr...                  | Optional session token |
