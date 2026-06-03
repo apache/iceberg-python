@@ -117,10 +117,14 @@ class PaginationList(list[T]):
     # ------------------------------------------------------------------
 
     @overload
-    def __getitem__(self, idx: SupportsIndex) -> T: ...
+    def __getitem__(self, idx: SupportsIndex) -> T:
+        """Return item at integer index, fetching pages as needed."""
+        ...
 
     @overload
-    def __getitem__(self, idx: slice) -> list[T]: ...
+    def __getitem__(self, idx: slice) -> list[T]:
+        """Return slice, fetching all remaining pages first."""
+        ...
 
     def __getitem__(self, idx: SupportsIndex | slice) -> T | list[T]:
         """Fetch pages as needed before returning the requested item(s)."""
