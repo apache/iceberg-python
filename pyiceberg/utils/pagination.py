@@ -20,7 +20,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from typing import SupportsIndex, TypeVar, overload
+from typing import SupportsIndex, TypeVar
 
 T = TypeVar("T")
 
@@ -115,12 +115,6 @@ class PaginationList(list[T]):
     # ------------------------------------------------------------------
     # Index / slice access
     # ------------------------------------------------------------------
-
-    @overload
-    def __getitem__(self, idx: SupportsIndex) -> T: ...  # noqa: D105
-
-    @overload
-    def __getitem__(self, idx: slice) -> list[T]: ...  # noqa: D105
 
     def __getitem__(self, idx: SupportsIndex | slice) -> T | list[T]:
         """Fetch pages as needed before returning the requested item(s)."""
