@@ -558,7 +558,10 @@ def test_list_tables_returns_pagination_list(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
 
-    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_tables(namespace)
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    calls_after_init = rest_mock.call_count  # config endpoint called during __init__
+
+    result = catalog.list_tables(namespace)
 
     assert isinstance(result, PaginationList)
 
@@ -570,8 +573,8 @@ def test_list_tables_returns_pagination_list(rest_mock: Mocker) -> None:
             break
 
     assert first_two == [("examples", "table1"), ("examples", "table2")]
-    # Only the initial request should have been made so far.
-    assert rest_mock.call_count == 1
+    # Only the initial list_tables request should have been made beyond __init__.
+    assert rest_mock.call_count == calls_after_init + 1
 
     # Consuming all items forces the second request.
     all_tables = list(result)
@@ -580,7 +583,7 @@ def test_list_tables_returns_pagination_list(rest_mock: Mocker) -> None:
         ("examples", "table2"),
         ("examples", "table3"),
     ]
-    assert rest_mock.call_count == 2
+    assert rest_mock.call_count == calls_after_init + 2
 
 
 def test_list_tables_paginated_200_none_next_page_token(rest_mock: Mocker) -> None:
