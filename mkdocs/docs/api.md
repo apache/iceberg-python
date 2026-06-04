@@ -1565,7 +1565,7 @@ view_version = ViewVersion(
     version_id=1,
     schema_id=1,
     timestamp_ms=int(time.time() * 1000),
-    summary={"spark-version": "4.1"},
+    summary={"engine-name": "spark", "engineVersion": "4.1"},
     representations=[
         SQLViewRepresentation(
             type="sql",
