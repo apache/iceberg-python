@@ -213,18 +213,6 @@ No additional dependencies are required.
 | s3.secret-access-key | password                                 | Secret key for COS |
 | s3.session-token     | AQoDYXdzEJr...                           | Optional session token |
 
-#### Example
-
-```python
-catalog = load_catalog(
-    **{
-        "s3.endpoint": "https://cos.ap-guangzhou.myqcloud.com",
-        "s3.access-key-id": "admin",
-        "s3.secret-access-key": "password",
-    }
-)
-```
-
 <!-- markdown-link-check-disable -->
 
 ### Hugging Face
