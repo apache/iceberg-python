@@ -45,7 +45,6 @@ from pyiceberg.catalog.rest import (
     RestCatalog,
     ScanPlanningMode,
 )
-from pyiceberg.utils.pagination import PaginationList
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
     NamespaceAlreadyExistsError,
@@ -69,6 +68,7 @@ from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import RecursiveDict
 from pyiceberg.types import StringType
 from pyiceberg.utils.config import Config
+from pyiceberg.utils.pagination import PaginationList
 from pyiceberg.view import View
 from pyiceberg.view.metadata import ViewMetadata, ViewVersion
 
