@@ -1565,7 +1565,7 @@ view_version = ViewVersion(
     version_id=1,
     schema_id=1,
     timestamp_ms=int(time.time() * 1000),
-    summary={"engine-name": "spark", "engineVersion": "4.1"},
+    summary={"engine-name": "pyiceberg", "engine-version": "0.11.1"},
     representations=[
         SQLViewRepresentation(
             type="sql",
