@@ -1219,6 +1219,7 @@ class Table:
         snapshot_id: int | None = None,
         options: Properties = EMPTY_DICT,
         limit: int | None = None,
+        dictionary_columns: tuple[str, ...] = (),
     ) -> DataScan:
         """Fetch a DataScan based on the table's current metadata.
 
@@ -1245,6 +1246,14 @@ class Table:
                 An integer representing the number of rows to
                 return in the scan result. If None, fetches all
                 matching rows.
+            dictionary_columns:
+                A tuple of column names that PyArrow should read as
+                dictionary-encoded (``pa.DictionaryArray``).  Dictionary
+                encoding can substantially reduce memory usage for columns
+                that contain large or frequently repeated string values
+                (e.g. large JSON blobs or low-cardinality categoricals).
+                Only applies to Parquet files; silently ignored for ORC.
+                Columns absent from the file are silently skipped.
 
         Returns:
             A DataScan based on the table's current metadata.
@@ -1260,6 +1269,7 @@ class Table:
             limit=limit,
             catalog=self.catalog,
             table_identifier=self._identifier,
+            dictionary_columns=dictionary_columns,
         )
 
     @property
@@ -1775,6 +1785,7 @@ class StagedTable(Table):
         snapshot_id: int | None = None,
         options: Properties = EMPTY_DICT,
         limit: int | None = None,
+        dictionary_columns: tuple[str, ...] = (),
     ) -> DataScan:
         raise ValueError("Cannot scan a staged table")
 
@@ -1809,6 +1820,7 @@ class TableScan(ABC):
     limit: int | None
     catalog: Catalog | None
     table_identifier: Identifier | None
+    dictionary_columns: tuple[str, ...]
 
     def __init__(
         self,
@@ -1822,6 +1834,7 @@ class TableScan(ABC):
         limit: int | None = None,
         catalog: Catalog | None = None,
         table_identifier: Identifier | None = None,
+        dictionary_columns: tuple[str, ...] = (),
     ):
         self.table_metadata = table_metadata
         self.io = io
@@ -1833,6 +1846,7 @@ class TableScan(ABC):
         self.limit = limit
         self.catalog = catalog
         self.table_identifier = table_identifier
+        self.dictionary_columns = dictionary_columns
 
     def snapshot(self) -> Snapshot | None:
         if self.snapshot_id:
@@ -2072,13 +2086,11 @@ class DataScan(TableScan):
         # The lambda created here is run in multiple threads.
         # So we avoid creating _EvaluatorExpression methods bound to a single
         # shared instance across multiple threads.
-        return lambda datafile: (
-            residual_evaluator_of(
-                spec=spec,
-                expr=self.row_filter,
-                case_sensitive=self.case_sensitive,
-                schema=self.table_metadata.schema(),
-            )
+        return lambda datafile: residual_evaluator_of(
+            spec=spec,
+            expr=self.row_filter,
+            case_sensitive=self.case_sensitive,
+            schema=self.table_metadata.schema(),
         )
 
     @staticmethod
@@ -2224,7 +2236,13 @@ class DataScan(TableScan):
         from pyiceberg.io.pyarrow import ArrowScan
 
         return ArrowScan(
-            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
+            self.table_metadata,
+            self.io,
+            self.projection(),
+            self.row_filter,
+            self.case_sensitive,
+            self.limit,
+            dictionary_columns=self.dictionary_columns,
         ).to_table(self.plan_files())
 
     def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
@@ -2244,7 +2262,13 @@ class DataScan(TableScan):
 
         target_schema = schema_to_pyarrow(self.projection())
         batches = ArrowScan(
-            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
+            self.table_metadata,
+            self.io,
+            self.projection(),
+            self.row_filter,
+            self.case_sensitive,
+            self.limit,
+            dictionary_columns=self.dictionary_columns,
         ).to_record_batches(self.plan_files())
 
         return pa.RecordBatchReader.from_batches(
