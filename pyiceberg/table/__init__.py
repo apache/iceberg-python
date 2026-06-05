@@ -639,7 +639,8 @@ class Transaction:
 
         # The global predicate (used by manifest evaluators) is the union of all
         # per-spec predicates; this ensures no manifests are skipped.
-        global_delete_filter = Or(*per_spec_predicates.values()) if per_spec_predicates else AlwaysFalse()
+        preds = list(per_spec_predicates.values())
+        global_delete_filter = Or(*preds) if len(preds) > 1 else preds[0] if preds else AlwaysFalse()
 
         # Open the delete snapshot and set per-spec predicates before committing.
         # This mirrors Transaction.delete() but injects per_spec_predicates so that
