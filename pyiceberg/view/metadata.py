@@ -16,6 +16,7 @@
 # under the License.
 from __future__ import annotations
 
+import time
 from typing import Literal
 
 from pydantic import Field, RootModel, field_validator
@@ -44,13 +45,13 @@ class ViewRepresentation(IcebergBaseModel, RootModel):
 class ViewVersion(IcebergBaseModel):
     """A version of the view definition."""
 
-    version_id: int = Field(alias="version-id")
+    version_id: int = Field(alias="version-id", default=1)
     """ID for the version"""
     schema_id: int = Field(alias="schema-id")
     """ID of the schema for the view version"""
-    timestamp_ms: int = Field(alias="timestamp-ms")
+    timestamp_ms: int = Field(alias="timestamp-ms", default=int(time.time() * 1000))
     """Timestamp when the version was created (ms from epoch)"""
-    summary: dict[str, str] = Field()
+    summary: dict[str, str] = Field(default={})
     """A string to string map of summary metadata about the version"""
     representations: list[ViewRepresentation] = Field()
     """A list of representations for the view definition"""

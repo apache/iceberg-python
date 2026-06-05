@@ -1769,10 +1769,7 @@ def test_create_view(
     identifier = "default.some_view"
     schema = pa.schema([pa.field("some_col", pa.int32())])
     view_version = ViewVersion(
-        version_id=1,
         schema_id=1,
-        timestamp_ms=int(time.time() * 1000),
-        summary={},
         representations=[
             SQLViewRepresentation(
                 type="sql",
