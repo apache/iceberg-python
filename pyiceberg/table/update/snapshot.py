@@ -405,7 +405,63 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self.commit_uuid = uuid.uuid4()
 
     def _validate_concurrency(self) -> None:
-        """Validate that concurrent changes do not conflict with this operation. No-op by default."""
+        """Validate that concurrent changes do not conflict with this operation.
+
+        Checks isolation level and uses the conflict detection filter to determine
+        whether concurrent commits introduced conflicting data or delete files.
+        Subclasses that do not require validation (e.g. fast append) should override
+        with a no-op.
+        """
+        from pyiceberg.table import TableProperties
+        from pyiceberg.table.snapshots import IsolationLevel
+        from pyiceberg.table.update.validate import (
+            _validate_added_data_files,
+            _validate_deleted_data_files,
+            _validate_no_new_delete_files,
+            _validate_no_new_deletes_for_data_files,
+        )
+
+        parent_snapshot = self._resolve_parent_snapshot()
+        if parent_snapshot is None:
+            return
+
+        starting_snapshot = self._resolve_starting_snapshot()
+
+        table = self._transaction._table
+        isolation_level_str = table.metadata.properties.get(
+            self._isolation_level_property, TableProperties.WRITE_ISOLATION_LEVEL_DEFAULT
+        )
+        isolation_level = IsolationLevel(isolation_level_str)
+        conflict_detection_filter = self._predicate if self._predicate != AlwaysFalse() else None
+
+        if isolation_level == IsolationLevel.SERIALIZABLE:
+            _validate_added_data_files(table, parent_snapshot, conflict_detection_filter, starting_snapshot)
+
+        if conflict_detection_filter is not None:
+            _validate_no_new_delete_files(table, parent_snapshot, conflict_detection_filter, None, starting_snapshot)
+            _validate_deleted_data_files(table, parent_snapshot, conflict_detection_filter, starting_snapshot)
+
+        if self._deleted_data_files:
+            _validate_no_new_deletes_for_data_files(
+                table, parent_snapshot, conflict_detection_filter, self._deleted_data_files, starting_snapshot
+            )
+
+    def _resolve_parent_snapshot(self) -> Snapshot | None:
+        """Resolve parent snapshot, raising ValidationException if ID is set but snapshot is missing."""
+        if self._parent_snapshot_id is None:
+            return None
+        snapshot = self._transaction._table.metadata.snapshot_by_id(self._parent_snapshot_id)
+        if snapshot is None:
+            raise ValidationException(f"Cannot find parent snapshot {self._parent_snapshot_id} in table metadata")
+        return snapshot
+
+    def _resolve_starting_snapshot(self) -> Snapshot:
+        """Resolve starting snapshot for the conflict detection window."""
+        starting_id = self._starting_snapshot_id if self._starting_snapshot_id is not None else self._parent_snapshot_id
+        snapshot = self._transaction._table.metadata.snapshot_by_id(starting_id)
+        if snapshot is None:
+            raise ValidationException(f"Cannot find starting snapshot {starting_id} in table metadata")
+        return snapshot
 
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
         project = inclusive_projection(self.schema(), self.spec(spec_id), self._case_sensitive)
@@ -557,56 +613,11 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         if "_compute_deletes" in self.__dict__:
             del self.__dict__["_compute_deletes"]
 
-    def _validate_concurrency(self) -> None:
-        """Validate that concurrent changes do not conflict with this delete.
-
-        Note: This method is intentionally duplicated in _OverwriteFiles rather than
-        extracted to the base class. While the logic is currently identical, Java Iceberg's
-        BaseOverwriteFiles and BaseRowDelta have divergent validation. Keeping them separate
-        makes it easier to add RowDelta-specific validation in the future.
-        """
-        from pyiceberg.table import TableProperties
-        from pyiceberg.table.snapshots import IsolationLevel
-        from pyiceberg.table.update.validate import (
-            _validate_added_data_files,
-            _validate_deleted_data_files,
-            _validate_no_new_delete_files,
-            _validate_no_new_deletes_for_data_files,
-        )
-
-        if self._parent_snapshot_id is None:
-            return
-
-        table = self._transaction._table
-        parent_snapshot = table.metadata.snapshot_by_id(self._parent_snapshot_id)
-        if parent_snapshot is None:
-            raise ValidationException(f"Cannot find parent snapshot {self._parent_snapshot_id} in table metadata")
-
-        starting_snapshot_id = self._starting_snapshot_id if self._starting_snapshot_id is not None else self._parent_snapshot_id
-        starting_snapshot = table.metadata.snapshot_by_id(starting_snapshot_id)
-        if starting_snapshot is None:
-            raise ValidationException(f"Cannot find starting snapshot {starting_snapshot_id} in table metadata")
-
-        isolation_level_str = table.metadata.properties.get(
-            self._isolation_level_property, TableProperties.WRITE_ISOLATION_LEVEL_DEFAULT
-        )
-        isolation_level = IsolationLevel(isolation_level_str)
-        conflict_detection_filter = self._predicate if self._predicate != AlwaysFalse() else None
-
-        if isolation_level == IsolationLevel.SERIALIZABLE:
-            _validate_added_data_files(table, parent_snapshot, conflict_detection_filter, starting_snapshot)
-
-        if conflict_detection_filter is not None:
-            _validate_no_new_delete_files(table, parent_snapshot, conflict_detection_filter, None, starting_snapshot)
-            _validate_deleted_data_files(table, parent_snapshot, conflict_detection_filter, starting_snapshot)
-
-        if self._deleted_data_files:
-            _validate_no_new_deletes_for_data_files(
-                table, parent_snapshot, conflict_detection_filter, self._deleted_data_files, starting_snapshot
-            )
-
 
 class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
+    def _validate_concurrency(self) -> None:
+        """Appends do not conflict with other operations; skip validation."""
+
     def _existing_manifests(self) -> list[ManifestFile]:
         """To determine if there are any existing manifest files.
 
@@ -776,52 +787,6 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
             return list(itertools.chain(*list_of_entries))
         else:
             return []
-
-    def _validate_concurrency(self) -> None:
-        """Validate that concurrent changes do not conflict with this overwrite.
-
-        Note: See _DeleteFiles._validate_concurrency() for why this is intentionally
-        duplicated rather than extracted to the base class.
-        """
-        from pyiceberg.table import TableProperties
-        from pyiceberg.table.snapshots import IsolationLevel
-        from pyiceberg.table.update.validate import (
-            _validate_added_data_files,
-            _validate_deleted_data_files,
-            _validate_no_new_delete_files,
-            _validate_no_new_deletes_for_data_files,
-        )
-
-        if self._parent_snapshot_id is None:
-            return
-
-        table = self._transaction._table
-        parent_snapshot = table.metadata.snapshot_by_id(self._parent_snapshot_id)
-        if parent_snapshot is None:
-            raise ValidationException(f"Cannot find parent snapshot {self._parent_snapshot_id} in table metadata")
-
-        starting_snapshot_id = self._starting_snapshot_id if self._starting_snapshot_id is not None else self._parent_snapshot_id
-        starting_snapshot = table.metadata.snapshot_by_id(starting_snapshot_id)
-        if starting_snapshot is None:
-            raise ValidationException(f"Cannot find starting snapshot {starting_snapshot_id} in table metadata")
-
-        isolation_level_str = table.metadata.properties.get(
-            self._isolation_level_property, TableProperties.WRITE_ISOLATION_LEVEL_DEFAULT
-        )
-        isolation_level = IsolationLevel(isolation_level_str)
-        conflict_detection_filter = self._predicate if self._predicate != AlwaysFalse() else None
-
-        if isolation_level == IsolationLevel.SERIALIZABLE:
-            _validate_added_data_files(table, parent_snapshot, conflict_detection_filter, starting_snapshot)
-
-        if conflict_detection_filter is not None:
-            _validate_no_new_delete_files(table, parent_snapshot, conflict_detection_filter, None, starting_snapshot)
-            _validate_deleted_data_files(table, parent_snapshot, conflict_detection_filter, starting_snapshot)
-
-        if self._deleted_data_files:
-            _validate_no_new_deletes_for_data_files(
-                table, parent_snapshot, conflict_detection_filter, self._deleted_data_files, starting_snapshot
-            )
 
 
 class UpdateSnapshot:

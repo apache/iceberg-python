@@ -96,7 +96,7 @@ from pyiceberg.typedef import (
 from pyiceberg.types import strtobool
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
-from pyiceberg.utils.properties import property_as_bool
+from pyiceberg.utils.properties import property_as_bool, property_as_int
 
 if TYPE_CHECKING:
     import bodo.pandas as bd
@@ -1073,8 +1073,6 @@ class Transaction:
             The table with the updates applied.
         """
         if len(self._updates) > 0:
-            from pyiceberg.utils.properties import property_as_int
-
             properties = self._table.metadata.properties
             num_retries_val = property_as_int(
                 properties, TableProperties.COMMIT_NUM_RETRIES, TableProperties.COMMIT_NUM_RETRIES_DEFAULT
