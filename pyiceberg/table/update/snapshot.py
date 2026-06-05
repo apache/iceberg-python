@@ -362,7 +362,8 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
 
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
         project = inclusive_projection(self.schema(), self.spec(spec_id), self._case_sensitive)
-        return project(self._predicate)
+        predicate = self._per_spec_predicates.get(spec_id, self._predicate)
+        return project(predicate)
 
     @cached_property
     def partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
@@ -434,13 +435,10 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
 
         manifest_evaluators: dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
 
-        def _strict_metrics_for_spec(spec_id: int) -> Callable[[DataFile], bool]:
-            predicate = self._per_spec_predicates.get(spec_id, self._predicate)
-            return _StrictMetricsEvaluator(schema, predicate, case_sensitive=self._case_sensitive).eval
-
-        def _inclusive_metrics_for_spec(spec_id: int) -> Callable[[DataFile], bool]:
-            predicate = self._per_spec_predicates.get(spec_id, self._predicate)
-            return _InclusiveMetricsEvaluator(schema, predicate, case_sensitive=self._case_sensitive).eval
+        strict_metrics_evaluator = _StrictMetricsEvaluator(schema, self._predicate, case_sensitive=self._case_sensitive).eval
+        inclusive_metrics_evaluator = _InclusiveMetricsEvaluator(
+            schema, self._predicate, case_sensitive=self._case_sensitive
+        ).eval
 
         existing_manifests = []
         total_deleted_entries = []
@@ -460,9 +458,6 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
                             existing_manifests.append(manifest_file)
                         else:
                             # It is relevant, let's check out the content
-                            spec_id = manifest_file.partition_spec_id
-                            strict_metrics_evaluator = _strict_metrics_for_spec(spec_id)
-                            inclusive_metrics_evaluator = _inclusive_metrics_for_spec(spec_id)
                             deleted_entries = []
                             existing_entries = []
                             for entry in manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True):

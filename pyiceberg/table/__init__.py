@@ -622,6 +622,11 @@ class Transaction:
             # _compute_deletes uses the right predicate when evaluating each manifest file.
             source_id_to_pos = {field.source_id: pos for pos, field in enumerate(current_spec.fields)}
             source_id_to_col = {field.source_id: schema.find_field(field.source_id).name for field in current_spec.fields}
+            exact_delete_filter = self._build_partition_predicate(
+                partition_records=partitions_to_overwrite,
+                spec=current_spec,
+                schema=schema,
+            )
 
             per_spec_predicates: dict[int, BooleanExpression] = {}
             for spec_id, hist_spec in all_specs.items():
@@ -645,9 +650,6 @@ class Transaction:
 
                 per_spec_predicates[spec_id] = Or(*per_record_exprs) if len(per_record_exprs) > 1 else per_record_exprs[0]
 
-            preds = list(per_spec_predicates.values())
-            global_delete_filter = Or(*preds) if len(preds) > 1 else preds[0] if preds else AlwaysFalse()
-
             # Open the delete snapshot and set per-spec predicates before committing.
             # This mirrors Transaction.delete() but injects per_spec_predicates so that
             # _compute_deletes uses the right predicate for each historical spec.
@@ -655,14 +657,14 @@ class Transaction:
 
             with self.update_snapshot(snapshot_properties=snapshot_properties, branch=branch).delete() as delete_snapshot:
                 delete_snapshot._per_spec_predicates = per_spec_predicates
-                delete_snapshot.delete_by_predicate(global_delete_filter)
+                delete_snapshot.delete_by_predicate(exact_delete_filter)
 
             # Handle partial-match files that need to be rewritten (copy-on-write).
             if delete_snapshot.rewrites_needed is True:
-                bound_delete_filter = bind(self.table_metadata.schema(), global_delete_filter, case_sensitive=True)
+                bound_delete_filter = bind(self.table_metadata.schema(), exact_delete_filter, case_sensitive=True)
                 preserve_row_filter = _expression_to_complementary_pyarrow(bound_delete_filter, self.table_metadata.schema())
 
-                file_scan = self._scan(row_filter=global_delete_filter)
+                file_scan = self._scan(row_filter=exact_delete_filter)
                 if branch is not None:
                     file_scan = file_scan.use_ref(branch)
 
