@@ -355,11 +355,7 @@ class Transaction:
         return updates, requirements
 
     def _build_partition_predicate(
-        self,
-        partition_records: set[Record],
-        spec: PartitionSpec,
-        schema: Schema,
-        evolved_source_ids: set[int] | None = None,
+        self, partition_records: set[Record], spec: PartitionSpec, schema: Schema
     ) -> BooleanExpression:
         """Build a filter predicate matching any of the input partition records.
 
@@ -367,34 +363,21 @@ class Transaction:
             partition_records: A set of partition records to match
             spec: An optional partition spec, if none then defaults to current
             schema: An optional schema, if none then defaults to current
-            evolved_source_ids: Source IDs of partition fields that were added via spec
-                evolution and therefore may be absent (NULL) in data written under older
-                specs.  When a field is in this set and the partition value is non-NULL,
-                the predicate also accepts NULL so that pre-evolution files are included.
         Returns:
             A predicate matching any of the input partition records.
         """
-        spec_fields = spec.fields
-        partition_field_names = [schema.find_field(field.source_id).name for field in spec_fields]
-        if not partition_records or not partition_field_names:
+        partition_fields = [schema.find_field(field.source_id).name for field in spec.fields]
+        if not partition_records or not partition_fields:
             return AlwaysFalse()
-
-        nullable_source_ids: set[int] = evolved_source_ids or set()
 
         per_record_exprs: list[BooleanExpression] = []
         for partition_record in partition_records:
-            predicates: list[BooleanExpression] = []
-            for pos, (field_name, spec_field) in enumerate(zip(partition_field_names, spec_fields, strict=True)):
-                value = partition_record[pos]
-                if value is not None:
-                    field_pred: BooleanExpression = EqualTo(Reference(field_name), value)
-                    if spec_field.source_id in nullable_source_ids:
-                        # Also match NULL: pre-evolution files may have no value for this
-                        # field because it was not in the schema when the data was written.
-                        field_pred = Or(field_pred, IsNull(Reference(field_name)))
-                else:
-                    field_pred = IsNull(Reference(field_name))
-                predicates.append(field_pred)
+            predicates: list[BooleanExpression] = [
+                EqualTo(Reference(partition_field), partition_record[pos])
+                if partition_record[pos] is not None
+                else IsNull(Reference(partition_field))
+                for pos, partition_field in enumerate(partition_fields)
+            ]
             per_record_exprs.append(And(*predicates) if len(predicates) > 1 else predicates[0])
 
         return Or(*per_record_exprs) if len(per_record_exprs) > 1 else per_record_exprs[0]
@@ -604,25 +587,116 @@ class Transaction:
 
         partitions_to_overwrite = {data_file.partition for data_file in data_files}
 
-        # Determine which partition fields were introduced via spec evolution.  Data
-        # written under older specs may have NULL for those fields even when the new
-        # partition value is non-NULL, so the delete predicate must also match NULL.
+        # Build per-spec delete predicates to handle partition spec evolution correctly.
+        #
+        # When a partition field was added via spec evolution, data files written under
+        # older specs carry NULL for that field (because it was absent from the schema at
+        # write time).  A single "category=A AND region=us" predicate would never match
+        # those files because the strict-metrics evaluator sees region=NULL ≠ "us".
+        #
+        # To fix this, we compute a per-spec predicate for every historical spec:
+        #   - For specs that include all current partition fields → use exact-match predicate.
+        #   - For specs that are missing some current partition fields → also accept NULL
+        #     for the missing fields (NULL means the value was absent at write time and can
+        #     legitimately belong to any partition of that field).
+        #
+        # These per-spec predicates are stored on the delete snapshot producer so that
+        # _compute_deletes uses the right predicate when evaluating each manifest file.
         current_spec = self.table_metadata.spec()
         all_specs = self.table_metadata.specs()
-        # A field is "evolved" if it is absent from at least one historical spec.
-        evolved_source_ids = {
-            f.source_id
-            for f in current_spec.fields
-            if not all(any(hf.source_id == f.source_id for hf in hs.fields) for hs in all_specs.values())
-        }
+        schema = self.table_metadata.schema()
 
-        delete_filter = self._build_partition_predicate(
-            partition_records=partitions_to_overwrite,
-            spec=current_spec,
-            schema=self.table_metadata.schema(),
-            evolved_source_ids=evolved_source_ids,
-        )
-        self.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties, branch=branch)
+        # source_ids in the current spec
+        current_source_ids = {f.source_id for f in current_spec.fields}
+        # map source_id → position in the current spec's partition record
+        source_id_to_pos = {f.source_id: pos for pos, f in enumerate(current_spec.fields)}
+        # map source_id → data-column name
+        source_id_to_col = {f.source_id: schema.find_field(f.source_id).name for f in current_spec.fields}
+
+        per_spec_predicates: dict[int, BooleanExpression] = {}
+        for spec_id, hist_spec in all_specs.items():
+            hist_source_ids = {f.source_id for f in hist_spec.fields}
+            # Fields present in the current spec but absent from this historical spec
+            missing_source_ids = current_source_ids - hist_source_ids
+
+            per_record_exprs: list[BooleanExpression] = []
+            for partition_record in partitions_to_overwrite:
+                predicates: list[BooleanExpression] = []
+                for source_id, col_name in source_id_to_col.items():
+                    value = partition_record[source_id_to_pos[source_id]]
+                    if value is not None:
+                        field_pred: BooleanExpression = EqualTo(Reference(col_name), value)
+                        if source_id in missing_source_ids:
+                            # Pre-evolution files have NULL for this field; also match NULL
+                            # so those files are included in the delete.
+                            field_pred = Or(field_pred, IsNull(Reference(col_name)))
+                    else:
+                        field_pred = IsNull(Reference(col_name))
+                    predicates.append(field_pred)
+                per_record_exprs.append(And(*predicates) if len(predicates) > 1 else predicates[0])
+
+            per_spec_predicates[spec_id] = Or(*per_record_exprs) if len(per_record_exprs) > 1 else per_record_exprs[0]
+
+        # The global predicate (used by manifest evaluators) is the union of all
+        # per-spec predicates; this ensures no manifests are skipped.
+        global_delete_filter = Or(*per_spec_predicates.values()) if per_spec_predicates else AlwaysFalse()
+
+        # Open the delete snapshot and set per-spec predicates before committing.
+        # This mirrors Transaction.delete() but injects per_spec_predicates so that
+        # _compute_deletes uses the right predicate for each historical spec.
+        from pyiceberg.io.pyarrow import ArrowScan, _dataframe_to_data_files, _expression_to_complementary_pyarrow
+
+        with self.update_snapshot(snapshot_properties=snapshot_properties, branch=branch).delete() as delete_snapshot:
+            delete_snapshot._per_spec_predicates = per_spec_predicates
+            delete_snapshot.delete_by_predicate(global_delete_filter)
+
+        # Handle partial-match files that need to be rewritten (copy-on-write).
+        if delete_snapshot.rewrites_needed is True:
+            bound_delete_filter = bind(self.table_metadata.schema(), global_delete_filter, case_sensitive=True)
+            preserve_row_filter = _expression_to_complementary_pyarrow(bound_delete_filter, self.table_metadata.schema())
+
+            file_scan = self._scan(row_filter=global_delete_filter)
+            if branch is not None:
+                file_scan = file_scan.use_ref(branch)
+
+            rewrite_uuid = uuid.uuid4()
+            rewrite_counter = itertools.count(0)
+            replaced_files: list[tuple[DataFile, list[DataFile]]] = []
+            for original_file in file_scan.plan_files():
+                df_orig = ArrowScan(
+                    table_metadata=self.table_metadata,
+                    io=self._table.io,
+                    projected_schema=self.table_metadata.schema(),
+                    row_filter=AlwaysTrue(),
+                ).to_table(tasks=[original_file])
+                filtered_df = df_orig.filter(preserve_row_filter)
+                if len(filtered_df) == 0:
+                    replaced_files.append((original_file.file, []))
+                elif len(df_orig) != len(filtered_df):
+                    replaced_files.append(
+                        (
+                            original_file.file,
+                            list(
+                                _dataframe_to_data_files(
+                                    io=self._table.io,
+                                    df=filtered_df,
+                                    table_metadata=self.table_metadata,
+                                    write_uuid=rewrite_uuid,
+                                    counter=rewrite_counter,
+                                )
+                            ),
+                        )
+                    )
+
+            if replaced_files:
+                with self.update_snapshot(
+                    snapshot_properties=snapshot_properties, branch=branch
+                ).overwrite() as overwrite_snapshot:
+                    overwrite_snapshot.commit_uuid = rewrite_uuid
+                    for original_data_file, replacement_data_files in replaced_files:
+                        overwrite_snapshot.delete_data_file(original_data_file)
+                        for replacement_data_file in replacement_data_files:
+                            overwrite_snapshot.append_data_file(replacement_data_file)
 
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
             append_files.commit_uuid = append_snapshot_commit_uuid
