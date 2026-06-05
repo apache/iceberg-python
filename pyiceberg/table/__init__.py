@@ -632,6 +632,7 @@ class Transaction:
             for spec_id, hist_spec in all_specs.items():
                 hist_source_ids = {field.source_id for field in hist_spec.fields}
                 missing_source_ids = current_source_ids - hist_source_ids
+                has_overlap_with_current = bool(hist_source_ids & current_source_ids)
 
                 per_record_exprs: list[BooleanExpression] = []
                 for partition_record in partitions_to_overwrite:
@@ -640,7 +641,7 @@ class Transaction:
                         value = partition_record[source_id_to_pos[source_id]]
                         if value is not None:
                             field_pred: BooleanExpression = EqualTo(Reference(col_name), value)
-                            if source_id in missing_source_ids:
+                            if source_id in missing_source_ids and has_overlap_with_current:
                                 field_pred = Or(field_pred, IsNull(Reference(col_name)))
                         else:
                             field_pred = IsNull(Reference(col_name))
