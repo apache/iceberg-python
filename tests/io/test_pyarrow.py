@@ -3356,6 +3356,41 @@ def test_task_to_record_batches_filter_applied_after_positional_deletes(tmpdir: 
     assert result_batches[0].column(0).to_pylist() == [3, 5]
 
 
+def test_task_to_record_batches_filter_after_positional_deletes_empty_result(tmpdir: str) -> None:
+    """Regression: filter after positional deletes must not raise even when the result is empty.
+
+    PyArrow < 21 raises IndexError from RecordBatch.filter(Expression) when the result has
+    zero rows (fixed in https://github.com/apache/arrow/pull/46057). This test ensures the
+    positional-delete path handles that case gracefully and yields no batches.
+    """
+    from pyiceberg.expressions.visitors import bind
+
+    arrow_schema = pa.schema((pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),))
+    arrow_table = pa.table([pa.array([1, 2, 3], type=pa.int32())], schema=arrow_schema)
+    data_file = _write_table_to_data_file(
+        f"{tmpdir}/test_filter_after_positional_deletes_empty_result.parquet", arrow_schema, arrow_table
+    )
+
+    table_schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+
+    # No rows deleted, but filter (id > 10) eliminates all rows → must return empty
+    positional_deletes = [pa.chunked_array([pa.array([], type=pa.int64())])]
+    result_batches = list(
+        _task_to_record_batches(
+            PyArrowFileIO(),
+            FileScanTask(data_file),
+            bound_row_filter=bind(table_schema, GreaterThan("id", 10), case_sensitive=True),
+            projected_schema=table_schema,
+            table_schema=table_schema,
+            projected_field_ids={1},
+            positional_deletes=positional_deletes,
+            case_sensitive=True,
+        )
+    )
+
+    assert result_batches == []
+
+
 def test_parse_location_defaults() -> None:
     """Test that parse_location uses defaults."""
 

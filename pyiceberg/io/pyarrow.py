@@ -1677,7 +1677,12 @@ def _task_to_record_batches(
                 indices = _combine_positional_deletes(positional_deletes, current_index, current_index + len(batch))
                 current_batch = current_batch.take(indices)
                 if pyarrow_filter is not None:
-                    current_batch = current_batch.filter(pyarrow_filter)
+                    try:
+                        current_batch = current_batch.filter(pyarrow_filter)
+                    except IndexError:
+                        # PyArrow < 21 raises IndexError when filter produces zero rows
+                        # (fixed in https://github.com/apache/arrow/pull/46057)
+                        current_batch = current_batch.slice(0, 0)
 
             # skip empty batches
             if current_batch.num_rows == 0:
