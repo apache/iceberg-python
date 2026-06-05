@@ -31,6 +31,8 @@ from pyiceberg.expressions import (
     And,
     EqualTo,
     In,
+    IsNull,
+    Or,
 )
 from pyiceberg.expressions.visitors import bind
 from pyiceberg.io import PY_IO_IMPL, load_file_io
@@ -1766,3 +1768,63 @@ def test_build_large_partition_predicate(table_v2: Table) -> None:
         )
 
     bind(table_v2.metadata.schema(), expr, case_sensitive=True)
+
+
+def test_build_partition_predicate_with_evolved_source_ids(table_v2: Table) -> None:
+    """Regression test for https://github.com/apache/iceberg-python/issues/3148.
+
+    When a partition field is added via spec evolution, data written under older specs
+    may have NULL for that field.  _build_partition_predicate must include
+    ``OR field IS NULL`` for evolved fields so that pre-evolution files are matched by
+    the delete predicate and are not silently left behind.
+    """
+    from pyiceberg.transforms import IdentityTransform
+
+    schema = Schema(
+        NestedField(1, "category", StringType(), required=False),
+        NestedField(2, "region", StringType(), required=False),
+    )
+    spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="category"),
+        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="region"),
+    )
+
+    # region (source_id=2) was added via spec evolution → it is an evolved field
+    with table_v2.transaction() as tx:
+        expr = tx._build_partition_predicate(
+            partition_records={Record("A", "us")},
+            spec=spec,
+            schema=schema,
+            evolved_source_ids={2},
+        )
+
+    # category=A AND (region=us OR region IS NULL)
+    expected = And(
+        EqualTo("category", "A"),
+        Or(EqualTo("region", "us"), IsNull("region")),
+    )
+    assert repr(expr) == repr(expected)
+
+
+def test_build_partition_predicate_without_evolved_source_ids(table_v2: Table) -> None:
+    """Without evolved_source_ids, the predicate matches exact values only."""
+    from pyiceberg.transforms import IdentityTransform
+
+    schema = Schema(
+        NestedField(1, "category", StringType(), required=False),
+        NestedField(2, "region", StringType(), required=False),
+    )
+    spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="category"),
+        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="region"),
+    )
+
+    with table_v2.transaction() as tx:
+        expr = tx._build_partition_predicate(
+            partition_records={Record("A", "us")},
+            spec=spec,
+            schema=schema,
+        )
+
+    expected = And(EqualTo("category", "A"), EqualTo("region", "us"))
+    assert repr(expr) == repr(expected)
