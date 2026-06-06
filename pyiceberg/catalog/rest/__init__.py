@@ -21,6 +21,7 @@ from enum import Enum
 from typing import (
     TYPE_CHECKING,
     Any,
+    TypeAlias,
 )
 from urllib.parse import quote, unquote
 
@@ -86,16 +87,17 @@ from pyiceberg.table.update import (
     TableRequirement,
     TableUpdate,
 )
-from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
+from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, PaginationList, Properties
 from pyiceberg.types import transform_dict_value_to_str
 from pyiceberg.utils.deprecated import deprecation_message
-from pyiceberg.utils.pagination import PaginationList
 from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool, property_as_int
 from pyiceberg.view import View
 from pyiceberg.view.metadata import ViewMetadata, ViewVersion
 
 if TYPE_CHECKING:
     import pyarrow as pa
+
+_PageFetchResult: TypeAlias = tuple[list[Identifier], str | None]
 
 
 class HttpMethod(str, Enum):
@@ -1052,7 +1054,7 @@ class RestCatalog(Catalog):
                 raise ValueError(f"{PAGE_SIZE} must be a positive integer")
             params["pageSize"] = str(page_size)
 
-        def _fetch_page(page_token: str) -> tuple[list[Identifier], str | None]:
+        def _fetch_page(page_token: str) -> _PageFetchResult:
             params["pageToken"] = page_token
             response = self._session.get(url, params=params)
             try:
@@ -1164,7 +1166,7 @@ class RestCatalog(Catalog):
                 raise ValueError(f"{PAGE_SIZE} must be a positive integer")
             params["pageSize"] = str(page_size)
 
-        def _fetch_page(page_token: str) -> tuple[list[Identifier], str | None]:
+        def _fetch_page(page_token: str) -> _PageFetchResult:
             params["pageToken"] = page_token
             response = self._session.get(url, params=params)
             try:
@@ -1286,7 +1288,7 @@ class RestCatalog(Catalog):
         if namespace_tuple:
             params["parent"] = self._encode_namespace_path(namespace_tuple)
 
-        def _fetch_page(page_token: str) -> tuple[list[Identifier], str | None]:
+        def _fetch_page(page_token: str) -> _PageFetchResult:
             params["pageToken"] = page_token
             response = self._session.get(namespaces_url, params=params)
             try:
