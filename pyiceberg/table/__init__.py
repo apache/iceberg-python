@@ -1219,7 +1219,6 @@ class Table:
         snapshot_id: int | None = None,
         options: Properties = EMPTY_DICT,
         limit: int | None = None,
-        dictionary_columns: tuple[str, ...] = (),
     ) -> DataScan:
         """Fetch a DataScan based on the table's current metadata.
 
@@ -1246,14 +1245,6 @@ class Table:
                 An integer representing the number of rows to
                 return in the scan result. If None, fetches all
                 matching rows.
-            dictionary_columns:
-                A tuple of column names that PyArrow should read as
-                dictionary-encoded (``pa.DictionaryArray``).  Dictionary
-                encoding can substantially reduce memory usage for columns
-                that contain large or frequently repeated string values
-                (e.g. large JSON blobs or low-cardinality categoricals).
-                Only applies to Parquet files; silently ignored for ORC.
-                Columns absent from the file are silently skipped.
 
         Returns:
             A DataScan based on the table's current metadata.
@@ -1269,7 +1260,6 @@ class Table:
             limit=limit,
             catalog=self.catalog,
             table_identifier=self._identifier,
-            dictionary_columns=dictionary_columns,
         )
 
     @property
@@ -1785,7 +1775,6 @@ class StagedTable(Table):
         snapshot_id: int | None = None,
         options: Properties = EMPTY_DICT,
         limit: int | None = None,
-        dictionary_columns: tuple[str, ...] = (),
     ) -> DataScan:
         raise ValueError("Cannot scan a staged table")
 
@@ -1820,7 +1809,6 @@ class TableScan(ABC):
     limit: int | None
     catalog: Catalog | None
     table_identifier: Identifier | None
-    dictionary_columns: tuple[str, ...]
 
     def __init__(
         self,
@@ -1834,7 +1822,6 @@ class TableScan(ABC):
         limit: int | None = None,
         catalog: Catalog | None = None,
         table_identifier: Identifier | None = None,
-        dictionary_columns: tuple[str, ...] = (),
     ):
         self.table_metadata = table_metadata
         self.io = io
@@ -1846,7 +1833,6 @@ class TableScan(ABC):
         self.limit = limit
         self.catalog = catalog
         self.table_identifier = table_identifier
-        self.dictionary_columns = dictionary_columns
 
     def snapshot(self) -> Snapshot | None:
         if self.snapshot_id:
@@ -2225,10 +2211,18 @@ class DataScan(TableScan):
             return self._plan_files_server_side()
         return self._plan_files_local()
 
-    def to_arrow(self) -> pa.Table:
+    def to_arrow(self, dictionary_columns: tuple[str, ...] = ()) -> pa.Table:
         """Read an Arrow table eagerly from this DataScan.
 
         All rows will be loaded into memory at once.
+
+        Args:
+            dictionary_columns:
+                A tuple of column names that PyArrow should read as
+                dictionary-encoded (``pa.DictionaryArray``).  Dictionary
+                encoding can substantially reduce memory usage for columns
+                with low-cardinality repeated string values.
+                Only applies to Parquet files; silently ignored for ORC.
 
         Returns:
             pa.Table: Materialized Arrow Table from the Iceberg table's DataScan
@@ -2242,15 +2236,23 @@ class DataScan(TableScan):
             self.row_filter,
             self.case_sensitive,
             self.limit,
-            dictionary_columns=self.dictionary_columns,
+            dictionary_columns=dictionary_columns,
         ).to_table(self.plan_files())
 
-    def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
+    def to_arrow_batch_reader(self, dictionary_columns: tuple[str, ...] = ()) -> pa.RecordBatchReader:
         """Return an Arrow RecordBatchReader from this DataScan.
 
         For large results, using a RecordBatchReader requires less memory than
         loading an Arrow Table for the same DataScan, because a RecordBatch
         is read one at a time.
+
+        Args:
+            dictionary_columns:
+                A tuple of column names that PyArrow should read as
+                dictionary-encoded (``pa.DictionaryArray``).  Dictionary
+                encoding can substantially reduce memory usage for columns
+                with low-cardinality repeated string values.
+                Only applies to Parquet files; silently ignored for ORC.
 
         Returns:
             pa.RecordBatchReader: Arrow RecordBatchReader from the Iceberg table's DataScan
@@ -2268,7 +2270,7 @@ class DataScan(TableScan):
             self.row_filter,
             self.case_sensitive,
             self.limit,
-            dictionary_columns=self.dictionary_columns,
+            dictionary_columns=dictionary_columns,
         ).to_record_batches(self.plan_files())
 
         return pa.RecordBatchReader.from_batches(
