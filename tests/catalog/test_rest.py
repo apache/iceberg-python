@@ -1747,6 +1747,7 @@ def test_create_view_200(rest_mock: Mocker, table_schema_simple: Schema, example
         schema=table_schema_simple,
         view_version=ViewVersion(
             schema_id=1,
+            summary={"engine-name": "spark", "engineVersion": "3.3"},
             representations=[
                 {
                     "type": "sql",
@@ -1789,6 +1790,7 @@ def test_create_view_409(
             schema=table_schema_simple,
             view_version=ViewVersion(
                 schema_id=1,
+                summary={"engine-name": "spark", "engineVersion": "3.3"},
                 representations=[],
                 default_namespace=[],
             ),

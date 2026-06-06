@@ -49,9 +49,9 @@ class ViewVersion(IcebergBaseModel):
     """ID for the version"""
     schema_id: int = Field(alias="schema-id")
     """ID of the schema for the view version"""
-    timestamp_ms: int = Field(alias="timestamp-ms", default=int(time.time() * 1000))
+    timestamp_ms: int = Field(alias="timestamp-ms", default_factory=lambda: int(time.time() * 1000))
     """Timestamp when the version was created (ms from epoch)"""
-    summary: dict[str, str] = Field(default={})
+    summary: dict[str, str] = Field(default_factory=dict)
     """A string to string map of summary metadata about the version"""
     representations: list[ViewRepresentation] = Field()
     """A list of representations for the view definition"""
