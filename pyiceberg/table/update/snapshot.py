@@ -458,6 +458,8 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     def _resolve_starting_snapshot(self) -> Snapshot:
         """Resolve starting snapshot for the conflict detection window."""
         starting_id = self._starting_snapshot_id if self._starting_snapshot_id is not None else self._parent_snapshot_id
+        if starting_id is None:
+            raise ValidationException("Cannot resolve starting snapshot: both starting and parent snapshot IDs are None")
         snapshot = self._transaction._table.metadata.snapshot_by_id(starting_id)
         if snapshot is None:
             raise ValidationException(f"Cannot find starting snapshot {starting_id} in table metadata")
@@ -616,7 +618,7 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
 
 class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
     def _validate_concurrency(self) -> None:
-        """Appends do not conflict with other operations; skip validation."""
+        """Skip validation; appends do not conflict with other operations."""
 
     def _existing_manifests(self) -> list[ManifestFile]:
         """To determine if there are any existing manifest files.
