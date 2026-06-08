@@ -1676,8 +1676,16 @@ def _task_to_record_batches(
                 # Create the mask of indices that we're interested in
                 indices = _combine_positional_deletes(positional_deletes, current_index, current_index + len(batch))
                 current_batch = current_batch.take(indices)
-                if pyarrow_filter is not None and len(current_batch) > 0:
-                    current_batch = current_batch.filter(pyarrow_filter)
+                if pyarrow_filter is not None:
+                    # Temporary fix until PyArrow 21 is the minimum supported version
+                    # (https://github.com/apache/arrow/pull/46057): RecordBatch.filter raises
+                    # IndexError on PyArrow <21 when the result is empty; Table.filter does not.
+                    table = pa.Table.from_batches([current_batch])
+                    table = table.filter(pyarrow_filter)
+                    if table.num_rows == 0:
+                        current_batch = current_batch.slice(0, 0)
+                    else:
+                        current_batch = table.combine_chunks().to_batches()[0]
 
             # skip empty batches
             if current_batch.num_rows == 0:
