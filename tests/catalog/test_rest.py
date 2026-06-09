@@ -1746,8 +1746,6 @@ def test_create_view_200(rest_mock: Mocker, table_schema_simple: Schema, example
         identifier=("fokko", "fokko2"),
         schema=table_schema_simple,
         view_version=ViewVersion(
-            version_id=1,
-            timestamp_ms=12345,
             schema_id=1,
             summary={"engine-name": "spark", "engineVersion": "3.3"},
             representations=[
@@ -1791,8 +1789,6 @@ def test_create_view_409(
             identifier=("fokko", "fokko2"),
             schema=table_schema_simple,
             view_version=ViewVersion(
-                version_id=1,
-                timestamp_ms=12345,
                 schema_id=1,
                 summary={"engine-name": "spark", "engineVersion": "3.3"},
                 representations=[],
