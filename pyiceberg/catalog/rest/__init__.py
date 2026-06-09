@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import MutableMapping
+from collections.abc import Mapping
 from enum import Enum
 from typing import (
     TYPE_CHECKING,
@@ -425,7 +425,7 @@ class _RetryTimeoutHTTPAdapter(HTTPAdapter):
         timeout: None | float | tuple[float, float] | tuple[float, None] = None,
         verify: bool | str = True,
         cert: None | bytes | str | tuple[bytes | str, bytes | str] = None,
-        proxies: MutableMapping[str, str] | None = None,
+        proxies: Mapping[str, str] | None = None,
     ) -> Response:
         if timeout is None:
             timeout = self._timeout
