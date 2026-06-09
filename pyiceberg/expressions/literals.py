@@ -526,9 +526,9 @@ class DecimalLiteral(Literal[Decimal]):
     def _(self, _: LongType) -> Literal[int]:
         value_int = int(self.value.to_integral_value())
         if value_int > LongType.max:
-            return IntAboveMax()
+            return LongAboveMax()
         elif value_int < LongType.min:
-            return IntBelowMin()
+            return LongBelowMin()
         else:
             return LongLiteral(value_int)
 
