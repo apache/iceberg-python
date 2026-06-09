@@ -351,27 +351,28 @@ catalog:
 #### Retry and timeout
 
 The REST Catalog uses `requests` with no retries and no timeout by default, so transient
-5xx/network failures bubble up immediately and slow servers can hang the client indefinitely.
+5xx / network failures bubble up immediately and slow servers can hang the client indefinitely.
 Set a `connection:` block on the catalog to opt in to a per-request timeout and a retry policy.
-Both keys are optional; when neither is set, the default `requests` behavior is preserved.
+Every key is optional; when none are set, the default `requests` behavior is preserved.
 
 ```yaml
 catalog:
   default:
     uri: http://rest-catalog/ws/
     connection:
-      timeout: 60                     # seconds, applied to every HTTP call
-      retry:
-        total: 5
-        backoff_factor: 1.0
-        status_forcelist: [429, 500, 502, 503, 504]
-        allowed_methods: [GET, HEAD, OPTIONS]
+      timeout: 60          # seconds, applied to every HTTP call
+      retries: 5           # number of retry attempts on transient failures
+      backoff-factor: 1.0  # exponential backoff between retries
 ```
 
-| Key                          | Example                              | Description                                                                                            |
-| ---------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| connection.timeout           | 60                                   | Per-request timeout in seconds. Must be a positive number.                                             |
-| connection.retry             | `{total: 5, backoff_factor: 1.0}`    | Mapping passed verbatim as kwargs to [`urllib3.util.retry.Retry`](https://urllib3.readthedocs.io/en/latest/reference/urllib3.util.html#urllib3.util.Retry). |
+| Key                          | Example  | Description                                                                                                        |
+| ---------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------ |
+| connection.timeout           | 60       | Per-request timeout in seconds. Must be a positive number.                                                         |
+| connection.retries           | 5        | Number of retry attempts for transient failures. Must be non-negative.                                             |
+| connection.backoff-factor    | 1.0      | Backoff factor between retry attempts. Must be non-negative. See [`urllib3` Retry docs](https://urllib3.readthedocs.io/en/latest/reference/urllib3.util.html#urllib3.util.Retry) for the formula. |
+
+Retries are applied to idempotent methods only (`GET`, `HEAD`, `OPTIONS`) and to the
+transient HTTP status codes `429`, `500`, `502`, `503`, `504`. Other failures are not retried.
 
 #### Headers in REST Catalog
 

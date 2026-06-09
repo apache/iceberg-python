@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import MutableMapping
 from enum import Enum
 from typing import (
     TYPE_CHECKING,
@@ -259,7 +260,12 @@ SIGV4_MAX_RETRIES = "rest.sigv4.max-retries"
 SIGV4_MAX_RETRIES_DEFAULT = 10
 CONNECTION = "connection"
 CONNECTION_TIMEOUT = "timeout"
-CONNECTION_RETRY = "retry"
+CONNECTION_RETRIES = "retries"
+CONNECTION_BACKOFF_FACTOR = "backoff-factor"
+# Hard-coded internally so users cannot misconfigure the retry policy
+# (e.g. setting raise_on_status=False would swallow 4xx errors silently).
+_CONNECTION_RETRY_STATUS_FORCELIST = (429, 500, 502, 503, 504)
+_CONNECTION_RETRY_ALLOWED_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 EMPTY_BODY_SHA256: str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 OAUTH2_SERVER_URI = "oauth2-server-uri"
 SNAPSHOT_LOADING_MODE = "snapshot-loading-mode"
@@ -412,10 +418,18 @@ class _RetryTimeoutHTTPAdapter(HTTPAdapter):
         else:
             super().__init__()
 
-    def send(self, request: PreparedRequest, **kwargs: Any) -> Response:
-        if kwargs.get("timeout") is None and self._timeout is not None:
-            kwargs["timeout"] = self._timeout
-        return super().send(request, **kwargs)
+    def send(
+        self,
+        request: PreparedRequest,
+        stream: bool = False,
+        timeout: None | float | tuple[float, float] | tuple[float, None] = None,
+        verify: bool | str = True,
+        cert: None | bytes | str | tuple[bytes | str, bytes | str] = None,
+        proxies: MutableMapping[str, str] | None = None,
+    ) -> Response:
+        if timeout is None:
+            timeout = self._timeout
+        return super().send(request, stream=stream, timeout=timeout, verify=verify, cert=cert, proxies=proxies)
 
 
 def _create_connection_adapter(properties: Properties) -> _RetryTimeoutHTTPAdapter | None:
@@ -439,19 +453,37 @@ def _create_connection_adapter(properties: Properties) -> _RetryTimeoutHTTPAdapt
         if timeout <= 0:
             raise ValueError(f"`{CONNECTION}.{CONNECTION_TIMEOUT}` must be a positive number, got: {timeout}")
 
-    retry: Retry | None = None
-    if (retry_config := connection_config.get(CONNECTION_RETRY)) is not None:
-        if not isinstance(retry_config, dict):
-            raise ValueError(f"`{CONNECTION}.{CONNECTION_RETRY}` must be a mapping, got: {type(retry_config).__name__}")
+    retries: int | None = None
+    if (raw_retries := connection_config.get(CONNECTION_RETRIES)) is not None:
         try:
-            retry = Retry(**retry_config)
-        except TypeError as e:
-            raise ValueError(f"Invalid `{CONNECTION}.{CONNECTION_RETRY}` configuration: {e}") from e
+            retries = int(raw_retries)
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"`{CONNECTION}.{CONNECTION_RETRIES}` must be an integer, got: {raw_retries!r}") from e
+        if retries < 0:
+            raise ValueError(f"`{CONNECTION}.{CONNECTION_RETRIES}` must be non-negative, got: {retries}")
 
-    if timeout is None and retry is None:
+    backoff_factor: float | None = None
+    if (raw_backoff := connection_config.get(CONNECTION_BACKOFF_FACTOR)) is not None:
+        try:
+            backoff_factor = float(raw_backoff)
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"`{CONNECTION}.{CONNECTION_BACKOFF_FACTOR}` must be a number, got: {raw_backoff!r}") from e
+        if backoff_factor < 0:
+            raise ValueError(f"`{CONNECTION}.{CONNECTION_BACKOFF_FACTOR}` must be non-negative, got: {backoff_factor}")
+
+    max_retries: Retry | None = None
+    if retries is not None or backoff_factor is not None:
+        max_retries = Retry(
+            total=retries if retries is not None else 0,
+            backoff_factor=backoff_factor if backoff_factor is not None else 0,
+            status_forcelist=list(_CONNECTION_RETRY_STATUS_FORCELIST),
+            allowed_methods=_CONNECTION_RETRY_ALLOWED_METHODS,
+        )
+
+    if timeout is None and max_retries is None:
         return None
 
-    return _RetryTimeoutHTTPAdapter(timeout=timeout, max_retries=retry)
+    return _RetryTimeoutHTTPAdapter(timeout=timeout, max_retries=max_retries)
 
 
 class RestCatalog(Catalog):
