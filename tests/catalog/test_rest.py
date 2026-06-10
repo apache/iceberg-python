@@ -2887,6 +2887,34 @@ class TestRestCatalogClose:
         with pytest.raises(NotImplementedError, match="Server does not support endpoint"):
             catalog._check_endpoint(Capability.V1_LIST_TABLES)
 
+    def test_list_tables_returns_empty_when_unsupported(self, requests_mock: Mocker) -> None:
+        requests_mock.get(
+            f"{TEST_URI}v1/config",
+            json={
+                "defaults": {},
+                "overrides": {},
+                "endpoints": ["GET /v1/{prefix}/namespaces"],
+            },
+            status_code=200,
+        )
+        catalog = RestCatalog("rest", uri=TEST_URI, token="token")
+
+        assert catalog.list_tables(("examples",)) == []
+
+    def test_list_namespaces_returns_empty_when_unsupported(self, requests_mock: Mocker) -> None:
+        requests_mock.get(
+            f"{TEST_URI}v1/config",
+            json={
+                "defaults": {},
+                "overrides": {},
+                "endpoints": ["GET /v1/{prefix}/namespaces/{namespace}/tables"],
+            },
+            status_code=200,
+        )
+        catalog = RestCatalog("rest", uri=TEST_URI, token="token")
+
+        assert catalog.list_namespaces() == []
+
     def test_config_returns_invalid_endpoint(self, requests_mock: Mocker) -> None:
         requests_mock.get(
             f"{TEST_URI}v1/config",

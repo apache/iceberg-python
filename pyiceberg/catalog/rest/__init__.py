@@ -1039,7 +1039,8 @@ class RestCatalog(Catalog):
     @retry(**_RETRY_ARGS)
     @override
     def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
-        self._check_endpoint(Capability.V1_LIST_TABLES)
+        if Capability.V1_LIST_TABLES not in self._supported_endpoints:
+            return []
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = self._encode_namespace_path(namespace_tuple)
         url = self.url(Endpoints.list_tables, namespace=namespace_concat)
@@ -1277,7 +1278,8 @@ class RestCatalog(Catalog):
     @retry(**_RETRY_ARGS)
     @override
     def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
-        self._check_endpoint(Capability.V1_LIST_NAMESPACES)
+        if Capability.V1_LIST_NAMESPACES not in self._supported_endpoints:
+            return []
         namespace_tuple = self.identifier_to_tuple(namespace)
 
         params: dict[str, str] = {}
