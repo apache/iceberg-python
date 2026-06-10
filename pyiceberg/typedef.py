@@ -289,10 +289,10 @@ class PaginationList(list[T]):
         return not self.__eq__(other)
 
     @overload
-    def __getitem__(self, idx: SupportsIndex) -> T: ...  # noqa: D105
+    def __getitem__(self, idx: SupportsIndex) -> T: ...
 
     @overload
-    def __getitem__(self, idx: slice) -> list[T]: ...  # noqa: D105
+    def __getitem__(self, idx: slice) -> list[T]: ...
 
     def __getitem__(self, idx: SupportsIndex | slice) -> T | list[T]:
         """Fetch pages as needed before returning the requested item(s)."""
