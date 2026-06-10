@@ -1562,9 +1562,7 @@ catalog = load_catalog("default")
 
 schema = Schema(NestedField(field_id=1, name="some_col", field_type=IntegerType(), required=False))
 view_version = ViewVersion(
-    version_id=1,
     schema_id=1,
-    timestamp_ms=int(time.time() * 1000),
     summary={"engine-name": "pyiceberg", "engine-version": "0.11.1"},
     representations=[
         SQLViewRepresentation(
