@@ -1772,7 +1772,6 @@ def test_create_view(
         schema_id=1,
         representations=[
             SQLViewRepresentation(
-                type="sql",
                 sql="SELECT 1 as some_col",
                 dialect="spark",
             )

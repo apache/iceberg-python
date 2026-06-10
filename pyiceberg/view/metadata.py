@@ -30,7 +30,7 @@ from pyiceberg.types import transform_dict_value_to_str
 class SQLViewRepresentation(IcebergBaseModel):
     """Represents the SQL query that defines the view."""
 
-    type: Literal["sql"] = Field()
+    type: Literal["sql"] = Field(default="sql")
     """A string that indicates the type of representation. Must be `sql`"""
     sql: str = Field()
     """A string that contains the SQL text of the view definition."""

@@ -83,7 +83,6 @@ def test_load_view(catalog: RestCatalog, table_schema_nested: Schema, database_n
         summary={},
         representations=[
             SQLViewRepresentation(
-                type="sql",
                 sql="SELECT 1 as some_col",
                 dialect="spark",
             )
