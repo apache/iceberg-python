@@ -65,10 +65,9 @@ from pyiceberg.table import Table
 from pyiceberg.table.metadata import TableMetadataV1
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
-from pyiceberg.typedef import RecursiveDict
+from pyiceberg.typedef import PaginationList, RecursiveDict
 from pyiceberg.types import StringType
 from pyiceberg.utils.config import Config
-from pyiceberg.typedef import PaginationList
 from pyiceberg.view import View
 from pyiceberg.view.metadata import ViewMetadata, ViewVersion
 
