@@ -1552,7 +1552,6 @@ catalog = load_catalog(
 To create a view from the catalog:
 
 ```python
-import time
 from pyiceberg.catalog import load_catalog
 from pyiceberg.schema import Schema
 from pyiceberg.types import IntegerType, NestedField
