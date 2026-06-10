@@ -327,6 +327,25 @@ def test_key_cols_misaligned(catalog: Catalog) -> None:
         table.upsert(df=df_src, join_cols=["order_id"])
 
 
+def test_key_cols_source_only_join_col(catalog: Catalog) -> None:
+    """
+    tests join column present in the source dataframe but missing from the table
+    """
+
+    identifier = "default.test_key_cols_source_only_join_col"
+    _drop_table(catalog, identifier)
+
+    ctx = SessionContext()
+
+    df = ctx.sql("select 1 as order_id, date '2021-01-01' as order_date, 'A' as order_type").to_arrow_table()
+    table = catalog.create_table(identifier, df.schema)
+
+    df_src = ctx.sql("select 1 as order_id, 10 as item_id, date '2021-05-01' as order_date, 'B' as order_type").to_arrow_table()
+
+    with pytest.raises(ValueError, match="Join column 'item_id' does not exist in the table schema"):
+        table.upsert(df=df_src, join_cols=["item_id"])
+
+
 def test_upsert_with_identifier_fields(catalog: Catalog) -> None:
     identifier = "default.test_upsert_with_identifier_fields"
     _drop_table(catalog, identifier)

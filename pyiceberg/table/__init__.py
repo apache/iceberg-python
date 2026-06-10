@@ -788,6 +788,11 @@ class Transaction:
         df_column_names = set(df.schema.names)
 
         for col in join_cols:
+            if col not in table_arrow_schema.names:
+                raise ValueError(
+                    f"Join column '{col}' does not exist in the table schema. "
+                    f"Available columns: {', '.join(table_arrow_schema.names)}."
+                )
             table_field = table_arrow_schema.field(col)
             # Table-level rejections: These types are fundamentally unreliable or
             # unsupported as join keys regardless of the input data format.
