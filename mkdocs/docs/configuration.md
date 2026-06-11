@@ -353,7 +353,6 @@ catalog:
 The REST Catalog uses `requests` with no retries and no timeout by default, so transient
 5xx / network failures bubble up immediately and slow servers can hang the client indefinitely.
 Set a `connection:` block on the catalog to opt in to a per-request timeout and a retry policy.
-Every key is optional; when none are set, the default `requests` behavior is preserved.
 
 ```yaml
 catalog:

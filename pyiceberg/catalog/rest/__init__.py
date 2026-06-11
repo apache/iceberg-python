@@ -453,7 +453,9 @@ def _create_connection_adapter(properties: Properties) -> _RetryTimeoutHTTPAdapt
         if timeout <= 0:
             raise ValueError(f"`{CONNECTION}.{CONNECTION_TIMEOUT}` must be a positive number, got: {timeout}")
 
-    retries: int | None = None
+    # `retries` and `backoff_factor` default to 0 (a no-op Retry) so the user can set only
+    # one or the other without forcing the rest of the policy to be specified explicitly.
+    retries = 0
     if (raw_retries := connection_config.get(CONNECTION_RETRIES)) is not None:
         try:
             retries = int(raw_retries)
@@ -462,7 +464,7 @@ def _create_connection_adapter(properties: Properties) -> _RetryTimeoutHTTPAdapt
         if retries < 0:
             raise ValueError(f"`{CONNECTION}.{CONNECTION_RETRIES}` must be non-negative, got: {retries}")
 
-    backoff_factor: float | None = None
+    backoff_factor = 0.0
     if (raw_backoff := connection_config.get(CONNECTION_BACKOFF_FACTOR)) is not None:
         try:
             backoff_factor = float(raw_backoff)
@@ -471,19 +473,15 @@ def _create_connection_adapter(properties: Properties) -> _RetryTimeoutHTTPAdapt
         if backoff_factor < 0:
             raise ValueError(f"`{CONNECTION}.{CONNECTION_BACKOFF_FACTOR}` must be non-negative, got: {backoff_factor}")
 
-    max_retries: Retry | None = None
-    if retries is not None or backoff_factor is not None:
-        max_retries = Retry(
-            total=retries if retries is not None else 0,
-            backoff_factor=backoff_factor if backoff_factor is not None else 0,
+    return _RetryTimeoutHTTPAdapter(
+        timeout=timeout,
+        max_retries=Retry(
+            total=retries,
+            backoff_factor=backoff_factor,
             status_forcelist=list(_CONNECTION_RETRY_STATUS_FORCELIST),
             allowed_methods=_CONNECTION_RETRY_ALLOWED_METHODS,
-        )
-
-    if timeout is None and max_retries is None:
-        return None
-
-    return _RetryTimeoutHTTPAdapter(timeout=timeout, max_retries=max_retries)
+        ),
+    )
 
 
 class RestCatalog(Catalog):

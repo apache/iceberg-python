@@ -19,7 +19,8 @@ from __future__ import annotations
 
 import base64
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import Any, cast
 from unittest import mock
 
@@ -2065,21 +2066,23 @@ def test_session_with_connection_timeout_only(rest_mock: Mocker) -> None:
     adapter = catalog._session.adapters["https://"]
     assert isinstance(adapter, _RetryTimeoutHTTPAdapter)
     assert adapter._timeout == 30.0
-    # No retry options set, so no Retry object is configured.
+    # Default retry policy (total=0) is a no-op when only timeout is configured.
     assert adapter.max_retries.total == 0
 
 
-def test_session_retries_on_transient_5xx_then_succeeds() -> None:
-    """Three real 503 responses followed by a 200; the catalog should make all four attempts.
+@contextmanager
+def _local_rest_server_503_then_200(num_failures: int) -> Iterator[dict[str, Any]]:
+    """Stand up a loopback HTTP server that returns `num_failures` 503s for `/v1/namespaces` then a 200.
 
-    `requests_mock` would replace our HTTPAdapter, bypassing the retry logic we want to exercise,
-    so this test stands up an actual `http.server` on a loopback port instead.
+    Used in place of `requests_mock`, which replaces the HTTPAdapter and would bypass the retry logic.
+
+    Yields a dict with `port` and `namespace_calls` keys (the latter is updated in-place as requests arrive).
     """
     import json
     import threading
     from http.server import BaseHTTPRequestHandler, HTTPServer
 
-    state = {"namespace_calls": 0}
+    state: dict[str, Any] = {"namespace_calls": 0}
     config_body = json.dumps(
         {"defaults": {}, "overrides": {}, "endpoints": [str(endpoint) for endpoint in TEST_SUPPORTED_ENDPOINTS]}
     ).encode()
@@ -2090,7 +2093,7 @@ def test_session_retries_on_transient_5xx_then_succeeds() -> None:
                 self._respond(200, config_body)
             elif self.path.endswith("/v1/namespaces"):
                 state["namespace_calls"] += 1
-                if state["namespace_calls"] <= 3:
+                if state["namespace_calls"] <= num_failures:
                     self._respond(503, b"")
                 else:
                     self._respond(200, json.dumps({"namespaces": [["foo"]]}).encode())
@@ -2109,24 +2112,30 @@ def test_session_retries_on_transient_5xx_then_succeeds() -> None:
             pass
 
     server = HTTPServer(("127.0.0.1", 0), _Handler)
-    port = server.server_address[1]
+    state["port"] = server.server_address[1]
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
     try:
+        yield state
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_session_retries_on_transient_5xx_then_succeeds() -> None:
+    """The catalog should retry on transient 5xx and succeed once the server stabilizes."""
+    with _local_rest_server_503_then_200(num_failures=3) as server:
         catalog = RestCatalog(
             "rest",
             **{  # type: ignore
-                "uri": f"http://127.0.0.1:{port}/",
+                "uri": f"http://127.0.0.1:{server['port']}/",
                 "token": TEST_TOKEN,
                 # backoff-factor=0 keeps the test fast; retries=3 covers three 503s + the eventual 200.
                 CONNECTION: {CONNECTION_RETRIES: 3, CONNECTION_BACKOFF_FACTOR: 0},
             },
         )
         assert catalog.list_namespaces() == [("foo",)]
-        assert state["namespace_calls"] == 4
-    finally:
-        server.shutdown()
-        server.server_close()
+        assert server["namespace_calls"] == 4
 
 
 def test_session_with_invalid_connection_timeout_raises(rest_mock: Mocker) -> None:
