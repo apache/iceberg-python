@@ -35,6 +35,7 @@ import pytest
 from packaging import version
 from pyarrow.fs import AwsDefaultS3RetryStrategy, FileType, LocalFileSystem, S3FileSystem
 
+from pyiceberg.catalog.rest.credentials_provider import VendedCredentialsProvider
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import (
     AlwaysFalse,
@@ -5103,3 +5104,121 @@ def test_partition_column_projection_with_schema_evolution(catalog: InMemoryCata
     result_sorted = result.sort_by("name")
     assert result_sorted["name"].to_pylist() == ["Alice", "Bob", "Charlie", "David"]
     assert result_sorted["new_column"].to_pylist() == [None, None, "new1", "new2"]
+
+
+def test_pyarrow_credentials_provider_merges_fresh_creds() -> None:
+    """_initialize_s3_fs() uses fresh credentials from the provider when needs_refresh is True."""
+    provider = MagicMock(spec=VendedCredentialsProvider)
+    provider.needs_refresh.return_value = True
+    provider.get_credentials.return_value = {
+        "s3.access-key-id": "refreshed-key",
+        "s3.secret-access-key": "refreshed-secret",
+        "s3.session-token": "refreshed-token",
+    }
+
+    s3_fileio = PyArrowFileIO(
+        properties={
+            "s3.endpoint": "http://localhost:9000",
+            "s3.access-key-id": "stale-key",
+            "s3.secret-access-key": "stale-secret",
+            "s3.session-token": "stale-token",
+            "s3.region": "us-east-1",
+        }
+    )
+    s3_fileio.set_credentials_provider(provider)
+
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs, patch("pyarrow.fs.resolve_s3_region", side_effect=OSError):
+        s3_fileio.new_input("s3://bucket/key")
+        call_kwargs = mock_s3fs.call_args[1]
+        assert call_kwargs["access_key"] == "refreshed-key"
+        assert call_kwargs["secret_key"] == "refreshed-secret"
+        assert call_kwargs["session_token"] == "refreshed-token"
+
+
+def test_pyarrow_credentials_provider_bypasses_lru_cache() -> None:
+    """With needs_refresh=True, every file open calls get_credentials() — no stale fs served."""
+    provider = MagicMock(spec=VendedCredentialsProvider)
+    provider.needs_refresh.return_value = True
+    provider.get_credentials.return_value = {
+        "s3.access-key-id": "refreshed-key",
+        "s3.secret-access-key": "refreshed-secret",
+        "s3.session-token": "refreshed-token",
+    }
+
+    s3_fileio = PyArrowFileIO(properties={"s3.endpoint": "http://localhost:9000", "s3.region": "us-east-1"})
+    s3_fileio.set_credentials_provider(provider)
+
+    with patch("pyarrow.fs.S3FileSystem"), patch("pyarrow.fs.resolve_s3_region", side_effect=OSError):
+        s3_fileio.new_input("s3://bucket/key1")
+        s3_fileio.new_input("s3://bucket/key2")
+
+    assert provider.get_credentials.call_count == 2
+
+
+def test_pyarrow_no_provider_preserves_lru_cache() -> None:
+    """Without a provider, fs_by_scheme is lru_cache-wrapped — S3FileSystem instantiated once."""
+    from unittest.mock import patch
+
+    s3_fileio = PyArrowFileIO(properties={"s3.endpoint": "http://localhost:9000", "s3.region": "us-east-1"})
+
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs, patch("pyarrow.fs.resolve_s3_region", side_effect=OSError):
+        s3_fileio.new_input("s3://bucket/key1")
+        s3_fileio.new_input("s3://bucket/key2")
+
+    assert mock_s3fs.call_count == 1
+
+
+def test_pyarrow_credentials_provider_updates_properties_after_refresh() -> None:
+    """When needs_refresh=True, self.properties is updated with refreshed creds (intentional caching)."""
+    from unittest.mock import MagicMock, patch
+
+    from pyiceberg.catalog.rest.credentials_provider import VendedCredentialsProvider
+
+    provider = MagicMock(spec=VendedCredentialsProvider)
+    provider.needs_refresh.return_value = True
+    provider.get_credentials.return_value = {
+        "s3.access-key-id": "refreshed-key",
+        "s3.secret-access-key": "refreshed-secret",
+        "s3.session-token": "refreshed-token",
+    }
+
+    s3_fileio = PyArrowFileIO(
+        properties={
+            "s3.endpoint": "http://localhost:9000",
+            "s3.access-key-id": "original-key",
+            "s3.region": "us-east-1",
+        }
+    )
+    s3_fileio.set_credentials_provider(provider)
+
+    with patch("pyarrow.fs.S3FileSystem"), patch("pyarrow.fs.resolve_s3_region", side_effect=OSError):
+        s3_fileio.new_input("s3://bucket/key")
+
+    assert s3_fileio.properties["s3.access-key-id"] == "refreshed-key"
+    assert s3_fileio.properties["s3.endpoint"] == "http://localhost:9000"
+
+
+def test_pyarrow_credentials_provider_skips_refresh_when_fresh() -> None:
+    """When needs_refresh=False, self.properties is not modified and get_credentials is not called."""
+    from unittest.mock import MagicMock, patch
+
+    from pyiceberg.catalog.rest.credentials_provider import VendedCredentialsProvider
+
+    provider = MagicMock(spec=VendedCredentialsProvider)
+    provider.needs_refresh.return_value = False
+
+    s3_fileio = PyArrowFileIO(
+        properties={
+            "s3.endpoint": "http://localhost:9000",
+            "s3.access-key-id": "original-key",
+            "s3.region": "us-east-1",
+        }
+    )
+    s3_fileio.set_credentials_provider(provider)
+
+    with patch("pyarrow.fs.S3FileSystem"), patch("pyarrow.fs.resolve_s3_region", side_effect=OSError):
+        s3_fileio.new_input("s3://bucket/key1")
+        s3_fileio.new_input("s3://bucket/key2")
+
+    provider.get_credentials.assert_not_called()
+    assert s3_fileio.properties["s3.access-key-id"] == "original-key"

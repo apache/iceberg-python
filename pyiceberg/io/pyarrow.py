@@ -187,6 +187,7 @@ from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
 
 if TYPE_CHECKING:
+    from pyiceberg.catalog.rest.credentials_provider import VendedCredentialsProvider
     from pyiceberg.table import FileScanTask, WriteTask
 
 logger = logging.getLogger(__name__)
@@ -394,7 +395,19 @@ class PyArrowFileIO(FileIO):
 
     def __init__(self, properties: Properties = EMPTY_DICT):
         self.fs_by_scheme: Callable[[str, str | None], FileSystem] = lru_cache(self._initialize_fs)
+        self._credentials_provider: VendedCredentialsProvider | None = None
         super().__init__(properties=properties)
+
+    def set_credentials_provider(self, provider: VendedCredentialsProvider) -> None:
+        self._credentials_provider = provider
+
+    def _get_fs(self, scheme: str, netloc: str | None) -> FileSystem:
+        # If we have available a CredentialProvider and we detect that the tokens need to be refreshed
+        # then invalidate the cached fileio in order to get a new fileio with the fresh credentials
+        if self._credentials_provider and self._credentials_provider.needs_refresh():
+            self.properties = {**self.properties, **self._credentials_provider.get_credentials()}
+            self.fs_by_scheme = lru_cache(self._initialize_fs)
+        return self.fs_by_scheme(scheme, netloc)
 
     @staticmethod
     def parse_location(location: str, properties: Properties = EMPTY_DICT) -> tuple[str, str, str]:
@@ -628,7 +641,7 @@ class PyArrowFileIO(FileIO):
         """
         scheme, netloc, path = self.parse_location(location, self.properties)
         return PyArrowFile(
-            fs=self.fs_by_scheme(scheme, netloc),
+            fs=self._get_fs(scheme, netloc),
             location=location,
             path=path,
             buffer_size=int(self.properties.get(BUFFER_SIZE, ONE_MEGABYTE)),
@@ -646,7 +659,7 @@ class PyArrowFileIO(FileIO):
         """
         scheme, netloc, path = self.parse_location(location, self.properties)
         return PyArrowFile(
-            fs=self.fs_by_scheme(scheme, netloc),
+            fs=self._get_fs(scheme, netloc),
             location=location,
             path=path,
             buffer_size=int(self.properties.get(BUFFER_SIZE, ONE_MEGABYTE)),

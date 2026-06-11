@@ -32,6 +32,7 @@ from typing_extensions import override
 from pyiceberg import __version__
 from pyiceberg.catalog import BOTOCORE_SESSION, TOKEN, URI, WAREHOUSE_LOCATION, Catalog, PropertiesUpdateSummary
 from pyiceberg.catalog.rest.auth import AUTH_MANAGER, AuthManager, AuthManagerAdapter, AuthManagerFactory, LegacyOAuth2AuthManager
+from pyiceberg.catalog.rest.credentials_provider import REFRESH_CREDENTIALS_ENABLED, VendedCredentialsProvider
 from pyiceberg.catalog.rest.response import _handle_non_200_response
 from pyiceberg.catalog.rest.scan_planning import (
     FetchScanTasksRequest,
@@ -484,7 +485,10 @@ class RestCatalog(Catalog):
         merged_properties = {**self.properties, **properties}
         if self._auth_manager:
             merged_properties[AUTH_MANAGER] = self._auth_manager
-        return load_file_io(merged_properties, location)
+        file_io = load_file_io(merged_properties, location)
+        if property_as_bool(merged_properties, REFRESH_CREDENTIALS_ENABLED, False):
+            file_io.set_credentials_provider(VendedCredentialsProvider(self._session, merged_properties))
+        return file_io
 
     @override
     def supports_server_side_planning(self) -> bool:

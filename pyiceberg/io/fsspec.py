@@ -39,6 +39,7 @@ from typing_extensions import override
 
 from pyiceberg.catalog import TOKEN, URI
 from pyiceberg.catalog.rest.auth import AUTH_MANAGER
+from pyiceberg.catalog.rest.credentials_provider import VendedCredentialsProvider
 from pyiceberg.exceptions import SignError
 from pyiceberg.io import (
     ADLS_ACCOUNT_HOST,
@@ -166,8 +167,11 @@ def _file(_: Properties) -> LocalFileSystem:
     return LocalFileSystem(auto_mkdir=True)
 
 
-def _s3(properties: Properties) -> AbstractFileSystem:
+def _s3(properties: Properties, cred_provider: VendedCredentialsProvider | None) -> AbstractFileSystem:
     from s3fs import S3FileSystem
+
+    if cred_provider is not None and cred_provider.needs_refresh():
+        properties = {**properties, **cred_provider.get_credentials()}
 
     client_kwargs = {
         "endpoint_url": properties.get(S3_ENDPOINT),
@@ -319,6 +323,7 @@ SCHEME_TO_FS: dict[str, Callable[..., AbstractFileSystem]] = {
 }
 
 _ADLS_SCHEMES = frozenset({"abfs", "abfss", "wasb", "wasbs"})
+_S3_SCHEMES = frozenset({"s3", "s3a", "s3n"})
 
 
 class FsspecInputFile(InputFile):
@@ -430,7 +435,11 @@ class FsspecFileIO(FileIO):
     def __init__(self, properties: Properties):
         self._scheme_to_fs: dict[str, Callable[..., AbstractFileSystem]] = dict(SCHEME_TO_FS)
         self._thread_locals = threading.local()
+        self._credentials_provider: VendedCredentialsProvider | None = None
         super().__init__(properties=properties)
+
+    def set_credentials_provider(self, provider: VendedCredentialsProvider) -> None:
+        self._credentials_provider = provider
 
     @override
     def new_input(self, location: str) -> FsspecInputFile:
@@ -486,9 +495,12 @@ class FsspecFileIO(FileIO):
 
     def get_fs(self, scheme: str, hostname: str | None = None) -> AbstractFileSystem:
         """Get a filesystem for a specific scheme, cached per thread."""
-        if not hasattr(self._thread_locals, "get_fs_cached"):
-            self._thread_locals.get_fs_cached = lru_cache(self._get_fs)
+        # If we have available a CredentialProvider and we detect that the tokens need to be refreshed
+        # then invalidate the cached fileio in order to get a new fileio with the fresh credentials
+        needs_refresh = self._credentials_provider and self._credentials_provider.needs_refresh()
 
+        if not hasattr(self._thread_locals, "get_fs_cached") or needs_refresh:
+            self._thread_locals.get_fs_cached = lru_cache(self._get_fs)
         return self._thread_locals.get_fs_cached(scheme, hostname)
 
     def _get_fs(self, scheme: str, hostname: str | None = None) -> AbstractFileSystem:
@@ -498,6 +510,9 @@ class FsspecFileIO(FileIO):
 
         if scheme in _ADLS_SCHEMES:
             return _adls(self.properties, hostname)
+
+        if scheme in _S3_SCHEMES:
+            return _s3(self.properties, self._credentials_provider)
 
         return self._scheme_to_fs[scheme](self.properties)
 

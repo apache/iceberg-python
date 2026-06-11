@@ -32,9 +32,13 @@ from abc import ABC, abstractmethod
 from io import SEEK_SET
 from types import TracebackType
 from typing import (
+    TYPE_CHECKING,
     Protocol,
     runtime_checkable,
 )
+
+if TYPE_CHECKING:
+    from pyiceberg.catalog.rest.credentials_provider import VendedCredentialsProvider
 from urllib.parse import urlparse
 
 from pyiceberg.typedef import EMPTY_DICT, Properties
@@ -289,6 +293,13 @@ class FileIO(ABC):
         Raises:
             PermissionError: If the file at location cannot be accessed due to a permission error.
             FileNotFoundError: When the file at the provided location does not exist.
+        """
+
+    def set_credentials_provider(self, provider: VendedCredentialsProvider) -> None:  # noqa: B027
+        """Inject a credentials provider for refreshing vended storage credentials.
+
+        Args:
+            provider (VendedCredentialsProvider): A concrete type of VendedCredentialsProvider (e.g S3VendedCredentialsProvider)
         """
 
 

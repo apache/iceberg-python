@@ -29,6 +29,7 @@ from fsspec.spec import AbstractFileSystem
 from requests_mock import Mocker
 
 from pyiceberg.catalog.rest.auth import AUTH_MANAGER
+from pyiceberg.catalog.rest.credentials_provider import VendedCredentialsProvider
 from pyiceberg.exceptions import SignError
 from pyiceberg.io import fsspec
 from pyiceberg.io.fsspec import FsspecFileIO, S3V4RestSigner
@@ -1105,3 +1106,75 @@ def test_s3v4_rest_signer_uses_auth_manager(requests_mock: Mocker) -> None:
     assert requests_mock.last_request is not None
     assert requests_mock.last_request.headers["Authorization"] == "Bearer via-manager"
     assert request.url == new_uri
+
+
+def test_fsspec_credentials_provider_bypasses_cache() -> None:
+    provider = mock.MagicMock(spec=VendedCredentialsProvider)
+    provider.needs_refresh.return_value = True
+    provider.get_credentials.return_value = {
+        "s3.access-key-id": "refreshed-key",
+        "s3.secret-access-key": "refreshed-secret",
+        "s3.session-token": "refreshed-token",
+    }
+
+    s3_fileio = FsspecFileIO(properties={"s3.endpoint": "http://localhost:9000"})
+    s3_fileio.set_credentials_provider(provider)
+
+    with mock.patch("s3fs.S3FileSystem"):
+        s3_fileio.new_input("s3://bucket/key1")
+        s3_fileio.new_input("s3://bucket/key2")
+
+    assert provider.get_credentials.call_count == 2
+
+
+def test_fsspec_credentials_provider_uses_cache_when_fresh() -> None:
+    provider = mock.MagicMock(spec=VendedCredentialsProvider)
+    provider.needs_refresh.return_value = False
+
+    s3_fileio = FsspecFileIO(properties={"s3.endpoint": "http://localhost:9000"})
+    s3_fileio.set_credentials_provider(provider)
+
+    with mock.patch("s3fs.S3FileSystem") as mock_s3fs:
+        s3_fileio.new_input("s3://bucket/key1")
+        s3_fileio.new_input("s3://bucket/key2")
+
+    provider.get_credentials.assert_not_called()
+    assert mock_s3fs.call_count == 1
+
+
+def test_fsspec_credentials_provider_merges_fresh_creds() -> None:
+    provider = mock.MagicMock(spec=VendedCredentialsProvider)
+    provider.needs_refresh.return_value = True
+    provider.get_credentials.return_value = {
+        "s3.access-key-id": "refreshed-key",
+        "s3.secret-access-key": "refreshed-secret",
+        "s3.session-token": "refreshed-token",
+    }
+
+    s3_fileio = FsspecFileIO(
+        properties={
+            "s3.endpoint": "http://localhost:9000",
+            "s3.access-key-id": "stale-key",
+            "s3.secret-access-key": "stale-secret",
+            "s3.session-token": "stale-token",
+            "s3.region": "us-east-1",
+        }
+    )
+    s3_fileio.set_credentials_provider(provider)
+
+    with mock.patch("s3fs.S3FileSystem") as mock_s3fs:
+        s3_fileio.new_input("s3://bucket/key")
+        call_kwargs = mock_s3fs.call_args[1]["client_kwargs"]
+        assert call_kwargs["aws_access_key_id"] == "refreshed-key"
+        assert call_kwargs["aws_secret_access_key"] == "refreshed-secret"
+        assert call_kwargs["aws_session_token"] == "refreshed-token"
+
+
+def test_fsspec_no_credentials_provider_uses_lru_cache() -> None:
+    s3_fileio = FsspecFileIO(properties={"s3.endpoint": "http://localhost:9000"})
+
+    with mock.patch("s3fs.S3FileSystem") as mock_s3fs:
+        s3_fileio.new_input("s3://bucket/key1")
+        s3_fileio.new_input("s3://bucket/key2")
+
+    assert mock_s3fs.call_count == 1
