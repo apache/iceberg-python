@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from pyiceberg.typedef import PaginationList
 
 
@@ -75,6 +77,38 @@ def test_single_page_slice() -> None:
 def test_single_page_is_list_subclass() -> None:
     pl, _ = _simple_pagination_list([[1, 2]])
     assert isinstance(pl, list)
+
+
+def test_single_page_count() -> None:
+    pl, _ = _simple_pagination_list([[1, 2, 2, 3]])
+    assert pl.count(2) == 2
+
+
+def test_single_page_index() -> None:
+    pl, _ = _simple_pagination_list([[10, 20, 30]])
+    assert pl.index(30) == 2
+
+
+def test_single_page_reversed() -> None:
+    pl, _ = _simple_pagination_list([[1, 2, 3]])
+    assert list(reversed(pl)) == [3, 2, 1]
+
+
+def test_single_page_copy() -> None:
+    pl, expected = _simple_pagination_list([[1, 2, 3]])
+    copied = pl.copy()
+    assert copied == expected
+    assert type(copied) is list
+
+
+def test_single_page_add() -> None:
+    pl, _ = _simple_pagination_list([[1, 2]])
+    assert pl + [3] == [1, 2, 3]
+
+
+def test_single_page_radd() -> None:
+    pl, _ = _simple_pagination_list([[2, 3]])
+    assert [1] + pl == [1, 2, 3]
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +210,44 @@ def test_multi_page_empty_first_page() -> None:
 def test_multi_page_equality_with_plain_list() -> None:
     pl, expected = _simple_pagination_list([[1, 2], [3]])
     assert pl == expected
+
+
+def test_multi_page_count_fetches_all() -> None:
+    pl, _ = _simple_pagination_list([[1, 2], [2, 3]])
+    assert pl.count(2) == 2
+
+
+def test_multi_page_index_fetches_all() -> None:
+    pl, _ = _simple_pagination_list([[1, 2], [3, 4]])
+    assert pl.index(4) == 3
+
+
+def test_multi_page_index_raises_for_missing_value() -> None:
+    pl, _ = _simple_pagination_list([[1, 2], [3, 4]])
+    with pytest.raises(ValueError):
+        pl.index(99)
+
+
+def test_multi_page_reversed_fetches_all() -> None:
+    pl, expected = _simple_pagination_list([[1, 2], [3, 4]])
+    assert list(reversed(pl)) == list(reversed(expected))
+
+
+def test_multi_page_copy_fetches_all() -> None:
+    pl, expected = _simple_pagination_list([[1, 2], [3, 4]])
+    copied = pl.copy()
+    assert copied == expected
+    assert type(copied) is list
+
+
+def test_multi_page_add_fetches_all() -> None:
+    pl, expected = _simple_pagination_list([[1, 2], [3, 4]])
+    assert pl + [5] == expected + [5]
+
+
+def test_multi_page_radd_fetches_all() -> None:
+    pl, expected = _simple_pagination_list([[1, 2], [3, 4]])
+    assert [0] + pl == [0] + expected
 
 
 # ---------------------------------------------------------------------------

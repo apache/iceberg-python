@@ -16,6 +16,7 @@
 # under the License.
 from __future__ import annotations
 
+import sys
 from abc import abstractmethod
 from collections.abc import Callable, Iterator
 from datetime import date, datetime, time
@@ -155,6 +156,7 @@ class IcebergBaseModel(BaseModel):
 
 
 T = TypeVar("T")
+S = TypeVar("S")
 
 
 class IcebergRootModel(RootModel[T], Generic[T]):
@@ -305,3 +307,39 @@ class PaginationList(list[T]):
             else:
                 self._fetch_through_index(i)
         return list.__getitem__(self, idx)
+
+    def count(self, value: T) -> int:
+        """Return the number of occurrences of value, fetching all pages first."""
+        self._fetch_all()
+        return list.count(self, value)
+
+    def index(self, value: T, start: SupportsIndex = 0, stop: SupportsIndex = sys.maxsize, /) -> int:
+        """Return the index of the first occurrence of value, fetching all pages first."""
+        self._fetch_all()
+        return list.index(self, value, start, stop)
+
+    def __reversed__(self) -> Iterator[T]:
+        """Return an iterator over the items in reverse order, fetching all pages first."""
+        self._fetch_all()
+        return list.__reversed__(self)
+
+    def copy(self) -> list[T]:
+        """Return a plain list with all items, fetching all pages first."""
+        self._fetch_all()
+        return list.copy(self)
+
+    @overload
+    def __add__(self, other: list[T]) -> list[T]: ...
+
+    @overload
+    def __add__(self, other: list[S]) -> list[S | T]: ...
+
+    def __add__(self, other: list[Any]) -> list[Any]:
+        """Return self + other as a plain list, fetching all pages first."""
+        self._fetch_all()
+        return list.__add__(self, other)
+
+    def __radd__(self, other: list[T]) -> list[T]:
+        """Return other + self as a plain list, fetching all pages first."""
+        self._fetch_all()
+        return list.__add__(other, self)
