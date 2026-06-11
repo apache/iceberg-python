@@ -15,11 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
+import json
 import logging
 import os
+import struct
 import tempfile
 import uuid
 import warnings
+import zlib
 from collections.abc import Iterator
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -34,6 +37,7 @@ import pyarrow.parquet as pq
 import pytest
 from packaging import version
 from pyarrow.fs import AwsDefaultS3RetryStrategy, FileType, LocalFileSystem, S3FileSystem
+from pyroaring import BitMap
 
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import (
@@ -89,8 +93,14 @@ from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema, make_compatible_name, visit
 from pyiceberg.table import FileScanTask, TableProperties
+from pyiceberg.table.deletion_vector import (
+    _DV_BLOB_MAGIC_NUMBER,
+    PROPERTY_REFERENCED_DATA_FILE,
+    deletion_vectors_from_puffin_file,
+)
 from pyiceberg.table.metadata import TableMetadataV2
 from pyiceberg.table.name_mapping import create_mapping_from_schema
+from pyiceberg.table.puffin import MAGIC_BYTES, PuffinFile
 from pyiceberg.transforms import HourTransform, IdentityTransform
 from pyiceberg.typedef import UTF8, Properties, Record, TableVersion
 from pyiceberg.types import (
@@ -1818,6 +1828,82 @@ def test_read_deletes(deletes_file: str, request: pytest.FixtureRequest) -> None
     expected_file_path = list(deletes.keys())[0]
     assert set(deletes.keys()) == {expected_file_path}
     assert list(deletes.values())[0] == pa.chunked_array([[1, 3, 5]])
+
+
+def _deletion_vector_bitmap_payload() -> bytes:
+    return (1).to_bytes(8, byteorder="little") + (0).to_bytes(4, byteorder="little") + BitMap([1, 3, 5]).serialize()
+
+
+def _deletion_vector_blob(bitmap_payload: bytes) -> bytes:
+    bitmap_data = struct.pack("<I", _DV_BLOB_MAGIC_NUMBER) + bitmap_payload
+    return struct.pack(">I", len(bitmap_data)) + bitmap_data + struct.pack(">I", zlib.crc32(bitmap_data) & 0xFFFFFFFF)
+
+
+def test_deletion_vectors_from_puffin_file(tmp_path: Path) -> None:
+    referenced_data_file = f"{tmp_path}/data.parquet"
+    bitmap_payload = _deletion_vector_bitmap_payload()
+    footer_payload = json.dumps(
+        {
+            "blobs": [
+                {
+                    "type": "deletion-vector-v1",
+                    "fields": [2147483546],
+                    "snapshot-id": 1,
+                    "sequence-number": 1,
+                    "offset": 0,
+                    "length": len(bitmap_payload),
+                    "properties": {PROPERTY_REFERENCED_DATA_FILE: referenced_data_file},
+                }
+            ],
+            "properties": {},
+        }
+    ).encode()
+    puffin_payload = (
+        MAGIC_BYTES
+        + b"\x00\x00\x00\x00"
+        + bitmap_payload
+        + footer_payload
+        + len(footer_payload).to_bytes(4, byteorder="little")
+        + b"\x00\x00\x00\x00"
+        + MAGIC_BYTES
+    )
+    delete_file_path = f"{tmp_path}/deletes.puffin"
+
+    with open(delete_file_path, "wb") as f:
+        f.write(puffin_payload)
+
+    with open(delete_file_path, "rb") as f:
+        deletion_vectors = deletion_vectors_from_puffin_file(PuffinFile(f.read()))
+
+    assert {dv.referenced_data_file: dv.to_vector() for dv in deletion_vectors} == {
+        referenced_data_file: pa.chunked_array([[1, 3, 5]])
+    }
+
+
+def test_read_deletion_vector_blob_from_content_range(tmp_path: Path) -> None:
+    referenced_data_file = f"{tmp_path}/data.parquet"
+    dv_blob = _deletion_vector_blob(_deletion_vector_bitmap_payload())
+    prefix = b"\x01not-a-puffin-file"
+    delete_file_path = f"{tmp_path}/deletes.bin"
+
+    with open(delete_file_path, "wb") as f:
+        f.write(prefix + dv_blob + b"trailing-bytes")
+
+    deletes = _read_deletes(
+        PyArrowFileIO(),
+        DataFile.from_args(
+            _table_format_version=3,
+            content=DataFileContent.POSITION_DELETES,
+            file_path=delete_file_path,
+            file_format=FileFormat.PUFFIN,
+            record_count=3,
+            referenced_data_file=referenced_data_file,
+            content_offset=len(prefix),
+            content_size_in_bytes=len(dv_blob),
+        ),
+    )
+
+    assert deletes == {referenced_data_file: pa.chunked_array([[1, 3, 5]])}
 
 
 def test_delete(deletes_file: str, request: pytest.FixtureRequest, table_schema_simple: Schema) -> None:
