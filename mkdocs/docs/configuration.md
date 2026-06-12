@@ -195,7 +195,7 @@ PyIceberg uses [S3FileSystem](https://arrow.apache.org/docs/python/generated/pya
 
 | Key                          | Example                                            | Description |
 | ---------------------------- | -------------------------------------------------- | ----------- |
-| s3.endpoint                  | <https://s3.oss-your-bucket-region.aliyuncs.com>    | Configure an endpoint of the OSS service for the FileIO to access. Be sure to use S3 compatible endpoint as given in the example. |
+| s3.endpoint                  | <https://s3.oss-your-bucket-region.aliyuncs.com/>    | Configure an endpoint of the OSS service for the FileIO to access. Be sure to use S3 compatible endpoint as given in the example. |
 | s3.access-key-id             | admin                                              | Configure the static access key id used to access the FileIO. |
 | s3.secret-access-key         | password                                           | Configure the static secret access key used to access the FileIO. |
 | s3.session-token             | AQoDYXdzEJr...                                     | Configure the static session token used to access the FileIO. |
