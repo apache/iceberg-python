@@ -176,6 +176,8 @@ filterwarnings = [
   # Ignore Ray subprocess cleanup warnings
   "ignore:unclosed file:ResourceWarning",
   "ignore:subprocess.*is still running:ResourceWarning",
+  # Ignore google-crc32c C extension missing warning (common on Python 3.14+)
+  "ignore:As the c extension couldn't be imported:RuntimeWarning:google_crc32c",
 ]
 
 [tool.mypy]
