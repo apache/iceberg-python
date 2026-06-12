@@ -323,8 +323,13 @@ def test_sigv4_auth_manager_relocates_delegate_authorization() -> None:
     # SigV4 owns Authorization; the delegate's Basic header is relocated.
     assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256 Credential=")
     assert prepared.headers["Original-Authorization"].startswith("Basic ")
+    # Relocated header is signed (in SignedHeaders), matching Iceberg Java.
+    assert "original-authorization" in prepared.headers["Authorization"]
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.11.0, will be removed in 1.0.0. The property rest.sigv4-enabled is deprecated:DeprecationWarning"
+)
 def test_sigv4_legacy_config_builds_sigv4_auth_manager(rest_mock: Mocker) -> None:
     """Legacy rest.sigv4-enabled config produces a SigV4AuthManager."""
     from pyiceberg.catalog.rest.auth import SigV4AuthManager
@@ -359,6 +364,54 @@ def test_sigv4_auth_type_config_builds_sigv4_auth_manager(rest_mock: Mocker) -> 
     assert isinstance(catalog._auth_manager, SigV4AuthManager)
 
 
+def test_sigv4_auth_type_rejects_auth_impl(rest_mock: Mocker) -> None:
+    """auth.impl is only valid with auth.type=custom, not sigv4."""
+    with pytest.raises(ValueError, match="auth.impl can only be specified when using custom auth.type"):
+        RestCatalog(
+            "rest",
+            **{  # type: ignore
+                "uri": TEST_URI,
+                "auth": {"type": "sigv4", "impl": "my.custom.AuthManager"},
+                "rest.signing-region": "us-east-1",
+                "client.access-key-id": "id",
+                "client.secret-access-key": "secret",
+            },
+        )
+
+
+def test_sigv4_rejects_sigv4_delegate(rest_mock: Mocker) -> None:
+    """A SigV4 delegate cannot itself be sigv4, matching Iceberg Java's AuthManagers check."""
+    with pytest.raises(ValueError, match="Cannot delegate a SigV4 auth manager to another SigV4 auth manager"):
+        RestCatalog(
+            "rest",
+            **{  # type: ignore
+                "uri": TEST_URI,
+                "auth": {"type": "sigv4", "sigv4": {"delegate": {"type": "sigv4"}}},
+                "rest.signing-region": "us-east-1",
+                "client.access-key-id": "id",
+                "client.secret-access-key": "secret",
+            },
+        )
+
+
+def test_sigv4_legacy_flag_emits_deprecation_warning(rest_mock: Mocker) -> None:
+    """The legacy rest.sigv4-enabled flag warns and points at auth.type=sigv4, matching Iceberg Java."""
+    with pytest.warns(DeprecationWarning, match="rest.sigv4-enabled is deprecated"):
+        RestCatalog(
+            "rest",
+            **{
+                "uri": TEST_URI,
+                "rest.sigv4-enabled": "true",
+                "rest.signing-region": "us-east-1",
+                "client.access-key-id": "id",
+                "client.secret-access-key": "secret",
+            },
+        )
+
+
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.11.0, will be removed in 1.0.0. The property rest.sigv4-enabled is deprecated:DeprecationWarning"
+)
 def test_sigv4_sign_request_without_body(rest_mock: Mocker) -> None:
     from pyiceberg.catalog.rest.auth import EMPTY_BODY_SHA256
 
@@ -391,6 +444,9 @@ def test_sigv4_sign_request_without_body(rest_mock: Mocker) -> None:
     assert "x-amz-content-sha256" in auth_header
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.11.0, will be removed in 1.0.0. The property rest.sigv4-enabled is deprecated:DeprecationWarning"
+)
 def test_sigv4_sign_request_with_body(rest_mock: Mocker) -> None:
     existing_token = "existing_token"
 
@@ -429,6 +485,9 @@ def test_sigv4_sign_request_with_body(rest_mock: Mocker) -> None:
     assert "x-amz-content-sha256" in auth_header
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.11.0, will be removed in 1.0.0. The property rest.sigv4-enabled is deprecated:DeprecationWarning"
+)
 def test_sigv4_content_sha256_with_bytes_body(rest_mock: Mocker) -> None:
     existing_token = "existing_token"
 
@@ -460,6 +519,9 @@ def test_sigv4_content_sha256_with_bytes_body(rest_mock: Mocker) -> None:
     assert content_sha256 == expected_sha256
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.11.0, will be removed in 1.0.0. The property rest.sigv4-enabled is deprecated:DeprecationWarning"
+)
 def test_sigv4_conflicting_sigv4_headers(rest_mock: Mocker) -> None:
     from pyiceberg.catalog.rest.auth import EMPTY_BODY_SHA256
 
@@ -493,6 +555,9 @@ def test_sigv4_conflicting_sigv4_headers(rest_mock: Mocker) -> None:
     assert "X-Amz-Date" in prepared.headers
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.11.0, will be removed in 1.0.0. The property rest.sigv4-enabled is deprecated:DeprecationWarning"
+)
 def test_sigv4_canonical_request_uses_hex_payload(rest_mock: Mocker) -> None:
     """Verify that the canonical request uses hex-encoded payload hash, not the base64 header value."""
     from typing import Any
@@ -542,6 +607,9 @@ def test_sigv4_canonical_request_uses_hex_payload(rest_mock: Mocker) -> None:
     assert prepared.headers["x-amz-content-sha256"] == base64.b64encode(hashlib.sha256(body_content).digest()).decode()
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.11.0, will be removed in 1.0.0. The property rest.sigv4-enabled is deprecated:DeprecationWarning"
+)
 def test_sigv4_content_sha256_matches_iceberg_java_reference(rest_mock: Mocker) -> None:
     """Pin byte-for-byte equivalence with Iceberg Java TestRESTSigV4AuthSession (L121, L177)."""
     java_reference_body = b'{"namespace":["ns"],"properties":{}}'
@@ -596,6 +664,9 @@ def test_sigv4_unsupported_body_type_raises() -> None:
         manager.sign_request(prepared)
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.11.0, will be removed in 1.0.0. The property rest.sigv4-enabled is deprecated:DeprecationWarning"
+)
 def test_sigv4_uses_client_profile_name(rest_mock: Mocker) -> None:
     import boto3
 

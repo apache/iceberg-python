@@ -587,6 +587,9 @@ def test_list_tables_page_size(rest_mock: Mocker) -> None:
     ]
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.11.0, will be removed in 1.0.0. The property rest.sigv4-enabled is deprecated:DeprecationWarning"
+)
 def test_list_tables_200_sigv4(rest_mock: Mocker) -> None:
     namespace = "examples"
     # SigV4 signing replaces the bearer Authorization header with an AWS4-HMAC-SHA256
@@ -611,6 +614,9 @@ def test_list_tables_200_sigv4(rest_mock: Mocker) -> None:
     assert rest_mock.called
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.11.0, will be removed in 1.0.0. The property rest.sigv4-enabled is deprecated:DeprecationWarning"
+)
 def test_sigv4_adapter_default_retry_config(rest_mock: Mocker) -> None:
     catalog = RestCatalog(
         "rest",
@@ -629,6 +635,9 @@ def test_sigv4_adapter_default_retry_config(rest_mock: Mocker) -> None:
     assert adapter.max_retries.total == SIGV4_MAX_RETRIES_DEFAULT
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.11.0, will be removed in 1.0.0. The property rest.sigv4-enabled is deprecated:DeprecationWarning"
+)
 def test_sigv4_adapter_override_retry_config(rest_mock: Mocker) -> None:
     catalog = RestCatalog(
         "rest",
@@ -805,6 +814,9 @@ def test_list_views_invalid_page_size(rest_mock: Mocker) -> None:
     assert str(e.value) == "rest-page-size must be a positive integer"
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.11.0, will be removed in 1.0.0. The property rest.sigv4-enabled is deprecated:DeprecationWarning"
+)
 def test_list_views_200_sigv4(rest_mock: Mocker) -> None:
     namespace = "examples"
     # SigV4 signing replaces the bearer Authorization header with an AWS4-HMAC-SHA256
@@ -2688,6 +2700,9 @@ class TestRestCatalogClose:
         # Second close should not raise any exception
         catalog.close()
 
+    @pytest.mark.filterwarnings(
+        "ignore:Deprecated in 0.11.0, will be removed in 1.0.0. The property rest.sigv4-enabled is deprecated:DeprecationWarning"
+    )
     def test_rest_catalog_close_sigv4(self, rest_mock: Mocker) -> None:
         catalog = None
         rest_mock.get(
@@ -2730,6 +2745,9 @@ class TestRestCatalogClose:
         assert catalog is not None and hasattr(catalog, "_session")
         assert len(catalog._session.adapters) == self.EXPECTED_ADAPTERS
 
+    @pytest.mark.filterwarnings(
+        "ignore:Deprecated in 0.11.0, will be removed in 1.0.0. The property rest.sigv4-enabled is deprecated:DeprecationWarning"
+    )
     def test_rest_catalog_context_manager_with_exception_sigv4(self, rest_mock: Mocker) -> None:
         """Test RestCatalog context manager properly closes with exceptions."""
         catalog = None

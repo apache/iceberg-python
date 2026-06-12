@@ -472,6 +472,12 @@ class RestCatalog(Catalog):
         """Build the AuthManager, wrapping the delegate in SigV4 when enabled."""
         delegate = self._build_delegate_auth_manager(session)
         if self._is_sigv4_enabled():
+            if property_as_bool(self.properties, SIGV4, False):
+                deprecation_message(
+                    deprecated_in="0.11.0",
+                    removed_in="1.0.0",
+                    help_message=f"The property {SIGV4} is deprecated. Please use auth.type={SIGV4_AUTH_TYPE} instead",
+                )
             return self._build_sigv4_auth_manager(delegate)
         return delegate
 
@@ -483,6 +489,8 @@ class RestCatalog(Catalog):
                 raise ValueError("auth.type must be defined")
 
             if auth_type == SIGV4_AUTH_TYPE:
+                if auth_config.get("impl"):
+                    raise ValueError("auth.impl can only be specified when using custom auth.type")
                 # The delegate is configured under auth.sigv4.delegate.*
                 sigv4_config = auth_config.get(SIGV4_AUTH_TYPE, {})
                 delegate_config = sigv4_config.get("delegate")
@@ -490,6 +498,8 @@ class RestCatalog(Catalog):
                     # No delegate configured: SigV4-only auth, with no header-based delegate.
                     return NoopAuthManager()
                 delegate_type = delegate_config["type"]
+                if delegate_type == SIGV4_AUTH_TYPE:
+                    raise ValueError("Cannot delegate a SigV4 auth manager to another SigV4 auth manager")
                 return AuthManagerFactory.create(delegate_type, delegate_config.get(delegate_type, {}))
 
             auth_type_config = auth_config.get(auth_type, {})
