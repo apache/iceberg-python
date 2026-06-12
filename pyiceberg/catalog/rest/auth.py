@@ -415,6 +415,9 @@ class SigV4AuthManager(AuthManager):
             content_sha256_header = EMPTY_BODY_SHA256
 
         signing_headers = dict(request.headers)
+        # Relocate Authorization before signing so it lands in SignedHeaders, like Java.
+        if "Authorization" in signing_headers:
+            signing_headers["Original-Authorization"] = signing_headers.pop("Authorization")
         signing_headers["x-amz-content-sha256"] = content_sha256_header
 
         aws_request = AWSRequest(method=request.method, url=url, params=params, data=request.body, headers=signing_headers)
