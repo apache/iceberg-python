@@ -130,6 +130,16 @@ def test_timestamptz_to_nanos(timestamp: str, nanos: int) -> None:
     assert nanos == timestamptz_to_nanos(timestamp)
 
 
+def test_timestamptz_to_nanos_missing_zone_offset() -> None:
+    with pytest.raises(ValueError, match="Missing zone offset: 2025-02-23T20:21:44.375612001"):
+        timestamptz_to_nanos("2025-02-23T20:21:44.375612001")
+
+
+def test_timestamp_to_nanos_unexpected_zone_offset() -> None:
+    with pytest.raises(ValueError, match="Zone offset provided, but not expected: 2025-02-23T16:21:44.375612001-04:00"):
+        timestamp_to_nanos("2025-02-23T16:21:44.375612001-04:00")
+
+
 @pytest.mark.parametrize("nanos, micros", [(1510871468000001001, 1510871468000001), (-1510871468000001001, -1510871468000002)])
 def test_nanos_to_micros(nanos: int, micros: int) -> None:
     assert micros == nanos_to_micros(nanos)
