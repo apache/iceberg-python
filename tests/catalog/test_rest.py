@@ -104,7 +104,6 @@ TEST_SUPPORTED_ENDPOINTS = [
     Capability.V1_DELETE_TABLE,
     Capability.V1_RENAME_TABLE,
     Capability.V1_REGISTER_TABLE,
-    Capability.V1_LOAD_CREDENTIALS,
     Capability.V1_LIST_VIEWS,
     Capability.V1_LOAD_VIEW,
     Capability.V1_VIEW_EXISTS,
@@ -1452,10 +1451,19 @@ def test_load_table_200_loading_mode(
 
 
 def test_load_table_honor_access_delegation(
-    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
+    requests_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
 ) -> None:
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={
+            "defaults": {},
+            "overrides": {},
+            "endpoints": [str(endpoint) for endpoint in [*TEST_SUPPORTED_ENDPOINTS, Capability.V1_LOAD_CREDENTIALS]],
+        },
+        status_code=200,
+    )
     test_headers_with_remote_signing = {**TEST_HEADERS, "X-Iceberg-Access-Delegation": "remote-signing"}
-    rest_mock.get(
+    requests_mock.get(
         f"{TEST_URI}v1/namespaces/fokko/tables/table",
         json=example_table_metadata_with_snapshot_v1_rest_json,
         status_code=200,
@@ -3110,9 +3118,20 @@ def test_resolve_storage_credentials_empty() -> None:
     assert RestCatalog._resolve_storage_credentials([], None) == {}
 
 
-def test_load_table_with_storage_credentials(rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]) -> None:
+def test_load_table_with_storage_credentials(
+    requests_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
+) -> None:
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={
+            "defaults": {},
+            "overrides": {},
+            "endpoints": [str(endpoint) for endpoint in [*TEST_SUPPORTED_ENDPOINTS, Capability.V1_LOAD_CREDENTIALS]],
+        },
+        status_code=200,
+    )
     metadata_location = "s3://warehouse/database/table/metadata/00001.metadata.json"
-    rest_mock.get(
+    requests_mock.get(
         f"{TEST_URI}v1/namespaces/fokko/tables/table",
         json={
             "metadata-location": metadata_location,
@@ -3142,10 +3161,78 @@ def test_load_table_with_storage_credentials(rest_mock: Mocker, example_table_me
     assert table.io.properties["s3.access-key-id"] == "vended-key"
     assert table.io.properties["s3.secret-access-key"] == "vended-secret"
     assert table.io.properties["s3.session-token"] == "vended-token"
+    assert len(requests_mock.request_history) == 2
 
 
-def test_load_credentials_with_longest_prefix(rest_mock: Mocker) -> None:
-    rest_mock.get(
+def test_load_table_loads_credentials_when_endpoint_supported(
+    requests_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
+) -> None:
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={
+            "defaults": {},
+            "overrides": {},
+            "endpoints": [str(endpoint) for endpoint in [*TEST_SUPPORTED_ENDPOINTS, Capability.V1_LOAD_CREDENTIALS]],
+        },
+        status_code=200,
+    )
+    metadata_location = "s3://warehouse/database/table/metadata/00001.metadata.json"
+    requests_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": example_table_metadata_with_snapshot_v1,
+            "config": {
+                "s3.access-key-id": "from-config",
+                "s3.secret-access-key": "from-config-secret",
+            },
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    requests_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table/credentials",
+        json={
+            "storage-credentials": [
+                {
+                    "prefix": "s3://warehouse/database/",
+                    "config": {"s3.access-key-id": "short-prefix-key"},
+                },
+                {
+                    "prefix": "s3://warehouse/database/table",
+                    "config": {
+                        "s3.access-key-id": "long-prefix-key",
+                        "s3.secret-access-key": "long-prefix-secret",
+                    },
+                },
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    table = catalog.load_table(("fokko", "table"))
+
+    assert table.io.properties["s3.access-key-id"] == "long-prefix-key"
+    assert table.io.properties["s3.secret-access-key"] == "long-prefix-secret"
+    assert [request.url for request in requests_mock.request_history] == [
+        f"{TEST_URI}v1/config",
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        f"{TEST_URI}v1/namespaces/fokko/tables/table/credentials",
+    ]
+
+
+def test_load_credentials_with_longest_prefix(requests_mock: Mocker) -> None:
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={
+            "defaults": {},
+            "overrides": {},
+            "endpoints": [str(endpoint) for endpoint in [*TEST_SUPPORTED_ENDPOINTS, Capability.V1_LOAD_CREDENTIALS]],
+        },
+        status_code=200,
+    )
+    requests_mock.get(
         f"{TEST_URI}v1/namespaces/fokko/tables/table/credentials",
         json={
             "storage-credentials": [
@@ -3173,7 +3260,7 @@ def test_load_credentials_with_longest_prefix(rest_mock: Mocker) -> None:
     )
 
     assert credentials == {"s3.access-key-id": "long-prefix-key", "s3.secret-access-key": "long-prefix-secret"}
-    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/fokko/tables/table/credentials"
+    assert requests_mock.last_request.url == f"{TEST_URI}v1/namespaces/fokko/tables/table/credentials"
 
 
 def test_load_table_without_storage_credentials(
