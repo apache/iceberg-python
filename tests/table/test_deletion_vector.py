@@ -19,7 +19,7 @@ from os import path
 import pytest
 from pyroaring import BitMap
 
-from pyiceberg.table.puffin import _deserialize_bitmap
+from pyiceberg.table.deletion_vector import DeletionVector
 
 
 def _open_file(file: str) -> bytes:
@@ -32,7 +32,7 @@ def test_map_empty() -> None:
     puffin = _open_file("64mapempty.bin")
 
     expected: list[BitMap] = []
-    actual = _deserialize_bitmap(puffin)
+    actual = DeletionVector._deserialize_bitmap(puffin)
 
     assert expected == actual
 
@@ -41,7 +41,7 @@ def test_map_bitvals() -> None:
     puffin = _open_file("64map32bitvals.bin")
 
     expected = [BitMap([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])]
-    actual = _deserialize_bitmap(puffin)
+    actual = DeletionVector._deserialize_bitmap(puffin)
 
     assert expected == actual
 
@@ -61,7 +61,7 @@ def test_map_spread_vals() -> None:
         BitMap([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
         BitMap([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
     ]
-    actual = _deserialize_bitmap(puffin)
+    actual = DeletionVector._deserialize_bitmap(puffin)
 
     assert expected == actual
 
@@ -70,4 +70,4 @@ def test_map_high_vals() -> None:
     puffin = _open_file("64maphighvals.bin")
 
     with pytest.raises(ValueError, match="Key 4022190063 is too large, max 2147483647 to maintain compatibility with Java impl"):
-        _ = _deserialize_bitmap(puffin)
+        _ = DeletionVector._deserialize_bitmap(puffin)
