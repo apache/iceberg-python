@@ -1668,7 +1668,10 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
         # Rows must match when X < Min or Max < X because it is not in the range
         field_id = term.ref().field.field_id
 
-        if self._can_contain_nulls(field_id) or self._can_contain_nans(field_id):
+        # When the column is entirely null or entirely NaN there is no value equal to the
+        # literal, so every row satisfies the predicate. A merely partial presence of nulls
+        # or NaNs does not guarantee this, so we must fall through to the bounds check below.
+        if self._contains_nulls_only(field_id) or self._contains_nans_only(field_id):
             return ROWS_MUST_MATCH
 
         field = self._get_field(field_id)
@@ -1728,7 +1731,10 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
     def visit_not_in(self, term: BoundTerm, literals: set[L]) -> bool:
         field_id = term.ref().field.field_id
 
-        if self._can_contain_nulls(field_id) or self._can_contain_nans(field_id):
+        # When the column is entirely null or entirely NaN none of the values are in the set,
+        # so every row satisfies the predicate. A merely partial presence of nulls or NaNs does
+        # not guarantee this, so we must fall through to the bounds check below.
+        if self._contains_nulls_only(field_id) or self._contains_nans_only(field_id):
             return ROWS_MUST_MATCH
 
         field = self._get_field(field_id)
