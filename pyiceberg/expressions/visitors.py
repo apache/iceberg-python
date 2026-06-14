@@ -1880,25 +1880,29 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
             return self.visit_true()
 
     def visit_less_than(self, term: BoundTerm, literal: LiteralValue) -> BooleanExpression:
-        if term.eval(self.struct) < literal.value:
+        value = term.eval(self.struct)
+        if value is not None and value < literal.value:
             return self.visit_true()
         else:
             return self.visit_false()
 
     def visit_less_than_or_equal(self, term: BoundTerm, literal: LiteralValue) -> BooleanExpression:
-        if term.eval(self.struct) <= literal.value:
+        value = term.eval(self.struct)
+        if value is not None and value <= literal.value:
             return self.visit_true()
         else:
             return self.visit_false()
 
     def visit_greater_than(self, term: BoundTerm, literal: LiteralValue) -> BooleanExpression:
-        if term.eval(self.struct) > literal.value:
+        value = term.eval(self.struct)
+        if value is not None and value > literal.value:
             return self.visit_true()
         else:
             return self.visit_false()
 
     def visit_greater_than_or_equal(self, term: BoundTerm, literal: LiteralValue) -> BooleanExpression:
-        if term.eval(self.struct) >= literal.value:
+        value = term.eval(self.struct)
+        if value is not None and value >= literal.value:
             return self.visit_true()
         else:
             return self.visit_false()
