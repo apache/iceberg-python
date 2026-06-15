@@ -123,7 +123,9 @@ class LegacyOAuth2AuthManager(AuthManager):
         if self._credential is not None:
             self._token = self._fetch_access_token(self._credential)
 
-    def auth_header(self) -> str:
+    def auth_header(self) -> str | None:
+        if self._token is None:
+            return None
         return f"Bearer {self._token}"
 
 

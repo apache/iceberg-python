@@ -22,7 +22,14 @@ import pytest
 import requests
 from requests_mock import Mocker
 
-from pyiceberg.catalog.rest.auth import AuthManagerAdapter, BasicAuthManager, EntraAuthManager, GoogleAuthManager, NoopAuthManager
+from pyiceberg.catalog.rest.auth import (
+    AuthManagerAdapter,
+    BasicAuthManager,
+    EntraAuthManager,
+    GoogleAuthManager,
+    LegacyOAuth2AuthManager,
+    NoopAuthManager,
+)
 
 TEST_URI = "https://iceberg-test-catalog/"
 GOOGLE_CREDS_URI = "https://oauth2.googleapis.com/token"
@@ -245,6 +252,23 @@ def test_entra_auth_manager_token_failure(mock_default_cred: MagicMock, rest_moc
 
     with pytest.raises(Exception, match="Failed to acquire token"):
         session.get(TEST_URI)
+
+
+def test_legacy_oauth2_auth_header_returns_none_when_no_token() -> None:
+    """LegacyOAuth2AuthManager.auth_header() must return None (not 'Bearer None') when no
+    credential or initial_token is provided. Returning 'Bearer None' caused S3V4RestSigner
+    to forward an invalid Authorization header to the catalog signer endpoint, resulting in
+    a 403 that was silently swallowed and the S3 request going unsigned."""
+    session = requests.Session()
+    auth_manager = LegacyOAuth2AuthManager(session=session, credential=None, initial_token=None)
+    assert auth_manager.auth_header() is None
+
+
+def test_legacy_oauth2_auth_header_returns_bearer_token_when_set() -> None:
+    """LegacyOAuth2AuthManager.auth_header() returns a proper Bearer token when one is present."""
+    session = requests.Session()
+    auth_manager = LegacyOAuth2AuthManager(session=session, credential=None, initial_token="my-token")
+    assert auth_manager.auth_header() == "Bearer my-token"
 
     # Verify no requests were made with a blank/missing auth header
     history = rest_mock.request_history

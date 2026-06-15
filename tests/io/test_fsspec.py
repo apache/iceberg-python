@@ -23,7 +23,7 @@ import uuid
 from unittest import mock
 
 import pytest
-from botocore.awsrequest import AWSRequest
+from botocore.awsrequest import AWSPreparedRequest, AWSRequest
 from fsspec.implementations.local import LocalFileSystem
 from fsspec.spec import AbstractFileSystem
 from requests_mock import Mocker
@@ -1105,3 +1105,70 @@ def test_s3v4_rest_signer_uses_auth_manager(requests_mock: Mocker) -> None:
     assert requests_mock.last_request is not None
     assert requests_mock.last_request.headers["Authorization"] == "Bearer via-manager"
     assert request.url == new_uri
+
+
+def test_s3v4_rest_signer_with_prepared_request(requests_mock: Mocker) -> None:
+    """S3V4RestSigner must work with AWSPreparedRequest (the type passed by botocore's
+    before-send event) so that signing works in both sync and async (aiobotocore) paths."""
+    new_uri = "https://other-bucket/data/file.parquet"
+    requests_mock.post(
+        f"{TEST_URI}/v1/aws/s3/sign",
+        json={
+            "uri": new_uri,
+            "headers": {
+                "Authorization": ["AWS4-HMAC-SHA256 Credential=ASIA.../s3/aws4_request, Signature=abc"],
+                "X-Amz-Date": ["20221017T102940Z"],
+            },
+            "extensions": {},
+        },
+        status_code=200,
+    )
+
+    prepared = AWSPreparedRequest(
+        method="PUT",
+        url="https://bucket/data/file.parquet",
+        headers={"User-Agent": "botocore/1.43"},
+        body=b"",
+        stream_output=False,
+    )
+    prepared.context = {"client_region": "us-east-1"}
+
+    signer = S3V4RestSigner(properties={"token": "abc", "uri": TEST_URI})
+    signer(prepared)
+
+    assert prepared.url == new_uri
+    assert prepared.headers["Authorization"] == "AWS4-HMAC-SHA256 Credential=ASIA.../s3/aws4_request, Signature=abc"
+    assert prepared.headers["X-Amz-Date"] == "20221017T102940Z"
+
+
+def test_s3_signer_registered_on_before_send_event() -> None:
+    """S3V4RestSigner must be registered on the before-send.s3 event, not before-sign.s3.
+    botocore short-circuits RequestSigner.sign() before emitting before-sign when
+    signature_version=UNSIGNED is set, so before-sign never fires and the signer is
+    never called — leaving the S3 request unsigned and causing AccessDenied."""
+    from unittest.mock import MagicMock, patch
+
+    properties = {
+        "uri": "https://catalog",
+        "s3.access-key-id": "key",
+        "s3.secret-access-key": "secret",
+        "s3.endpoint": "https://s3.example.com",
+        "s3.region": "us-east-1",
+        "s3.signer": "S3V4RestSigner",
+    }
+
+    mock_fs = MagicMock()
+    mock_fs.s3.meta.events = MagicMock()
+
+    with patch("pyiceberg.io.fsspec.S3FileSystem", return_value=mock_fs):
+        from pyiceberg.io.fsspec import _s3
+
+        _s3(properties)
+
+    registered_calls = mock_fs.s3.meta.events.register_last.call_args_list
+    assert len(registered_calls) == 1
+    event_name = registered_calls[0][0][0]
+    assert event_name == "before-send.s3", (
+        f"Expected S3V4RestSigner to be registered on 'before-send.s3' but got '{event_name}'. "
+        "before-sign.s3 is never emitted when signature_version=UNSIGNED."
+    )

@@ -97,7 +97,7 @@ from pyiceberg.utils.properties import get_first_property_value, get_header_prop
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from botocore.awsrequest import AWSRequest
+    from botocore.awsrequest import AWSPreparedRequest, AWSRequest
 
 
 class S3RequestSigner(abc.ABC):
@@ -122,7 +122,7 @@ class S3V4RestSigner(S3RequestSigner):
         super().__init__(properties)
         self._session = requests.Session()
 
-    def __call__(self, request: "AWSRequest", **_: Any) -> None:
+    def __call__(self, request: "AWSPreparedRequest", **_: Any) -> None:
         signer_url = self.properties.get(S3_SIGNER_URI, self.properties[URI]).rstrip("/")  # type: ignore
         signer_endpoint = self.properties.get(S3_SIGNER_ENDPOINT, S3_SIGNER_ENDPOINT_DEFAULT)
 
@@ -154,7 +154,9 @@ class S3V4RestSigner(S3RequestSigner):
             raise SignError(f"Failed to sign request {response.status_code}: {signer_body}") from e
 
         for key, value in response_json["headers"].items():
-            request.headers.add_header(key, ", ".join(value))
+            # Use dict-style assignment compatible with both AWSPreparedRequest (before-send)
+            # and AWSRequest (before-sign), and to replace rather than append duplicate headers.
+            request.headers[key] = ", ".join(value)
 
         request.url = response_json["uri"]
 
@@ -183,9 +185,13 @@ def _s3(properties: Properties) -> AbstractFileSystem:
         logger.info("Loading signer %s", signer)
         if signer_cls := SIGNERS.get(signer):
             signer = signer_cls(properties)
-            register_events["before-sign.s3"] = signer
+            # Register on before-send (not before-sign) so the handler fires even when
+            # signature_version=UNSIGNED — botocore short-circuits RequestSigner.sign()
+            # before emitting before-sign when UNSIGNED is set, so the signer would
+            # never be called. before-send fires unconditionally, after signing.
+            register_events["before-send.s3"] = signer
 
-            # Disable the AWS Signer
+            # Disable botocore's own SigV4 signing; the REST signer adds its own headers.
             from botocore import UNSIGNED
 
             config_kwargs["signature_version"] = UNSIGNED
