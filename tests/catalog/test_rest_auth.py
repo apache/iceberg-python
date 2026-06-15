@@ -269,7 +269,3 @@ def test_legacy_oauth2_auth_header_returns_bearer_token_when_set() -> None:
     session = requests.Session()
     auth_manager = LegacyOAuth2AuthManager(session=session, credential=None, initial_token="my-token")
     assert auth_manager.auth_header() == "Bearer my-token"
-
-    # Verify no requests were made with a blank/missing auth header
-    history = rest_mock.request_history
-    assert len(history) == 0
