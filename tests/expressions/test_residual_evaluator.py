@@ -251,6 +251,19 @@ def test_not_in_timestamp() -> None:
     assert residual == AlwaysTrue()
 
 
+def test_starts_with() -> None:
+    schema = Schema(NestedField(1, "x", StringType()))
+    spec = PartitionSpec(PartitionField(1, 1001, IdentityTransform(), "x_part"))
+
+    predicate = StartsWith("x", "a")
+    res_eval = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
+
+    assert res_eval.residual_for(Record("bb")) == AlwaysFalse()
+    assert res_eval.residual_for(Record("abc")) == AlwaysTrue()
+    assert res_eval.residual_for(Record("a")) == AlwaysTrue()
+    assert res_eval.residual_for(Record("zoo")) == AlwaysFalse()
+
+
 def test_not_starts_with() -> None:
     schema = Schema(NestedField(1, "x", StringType()))
     spec = PartitionSpec(PartitionField(1, 1001, IdentityTransform(), "x_part"))

@@ -1906,6 +1906,7 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
 
     def visit_not_starts_with(self, term: BoundTerm, literal: LiteralValue) -> BooleanExpression:
         starts_with_result = self.visit_starts_with(term, literal)
+        # Should return opposite of visit_starts_with
         if isinstance(starts_with_result, AlwaysTrue):
             return AlwaysFalse()
         else:
