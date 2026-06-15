@@ -30,11 +30,11 @@ from pyiceberg.io import (
     S3_ACCESS_KEY_ID,
     S3_SECRET_ACCESS_KEY,
     S3_SESSION_TOKEN,
+    S3_SESSION_TOKEN_EXPIRES_AT_MS,
 )
 from pyiceberg.typedef import IcebergBaseModel, Properties
 from pyiceberg.utils.properties import get_first_property_value
 
-S3_SESSION_TOKEN_EXPIRES_AT_MS = "s3.session-token-expires-at-ms"
 CREDENTIALS_ENDPOINT = "client.refresh-credentials-endpoint"
 REFRESH_CREDENTIALS_ENABLED = "client.refresh-credentials-enabled"
 
