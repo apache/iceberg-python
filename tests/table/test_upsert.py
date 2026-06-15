@@ -437,10 +437,10 @@ def test_create_match_filter_single_condition() -> None:
     schema = pa.schema([pa.field("order_id", pa.int32()), pa.field("order_line_id", pa.int32()), pa.field("extra", pa.string())])
     table = pa.Table.from_pylist(data, schema=schema)
     expr = create_match_filter(table, ["order_id", "order_line_id"])
-    assert expr == And(
-        EqualTo(term=Reference(name="order_id"), literal=LongLiteral(101)),
-        EqualTo(term=Reference(name="order_line_id"), literal=LongLiteral(1)),
-    )
+    # Be insensitive to left/right operands
+    op1 = EqualTo(term=Reference(name="order_id"), literal=LongLiteral(101))
+    op2 = EqualTo(term=Reference(name="order_line_id"), literal=LongLiteral(1))
+    assert expr == And(op1, op2) or expr == And(op2, op1)
 
 
 def test_upsert_with_duplicate_rows_in_table(catalog: Catalog) -> None:
