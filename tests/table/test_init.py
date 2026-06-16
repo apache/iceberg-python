@@ -42,7 +42,7 @@ from pyiceberg.table import (
     Table,
     TableIdentifier,
 )
-from pyiceberg.table.metadata import TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
+from pyiceberg.table.metadata import TableMetadataUtil, TableMetadataV1, TableMetadataV2, _generate_snapshot_id
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     MetadataLogEntry,
@@ -336,6 +336,25 @@ def test_table_scan_projection_unknown_column(table_v2: Table) -> None:
         _ = scan.select("a").projection()
 
     assert "Could not find column: 'a'" in str(exc_info.value)
+
+
+def test_data_scan_plan_files_no_current_snapshot(example_table_metadata_no_snapshot_v1: dict[str, Any]) -> None:
+    # A table with no current snapshot must plan zero files (rather than raising) across every
+    # read path. DataScan routes local planning through ManifestGroupPlanner, which has no
+    # snapshot guard of its own, so the guard lives in DataScan._plan_files_local.
+    table = Table(
+        identifier=("default", "test_no_snapshot"),
+        metadata=TableMetadataV1(**example_table_metadata_no_snapshot_v1),
+        metadata_location="s3://bucket/test/metadata.json",
+        io=load_file_io(),
+        catalog=NoopCatalog("noop"),
+    )
+    assert table.current_snapshot() is None
+
+    scan = table.scan()
+    assert list(scan.plan_files()) == []
+    assert scan.count() == 0
+    assert len(scan.to_arrow()) == 0
 
 
 def test_static_table_same_as_table(table_v2: Table, metadata_location: str) -> None:
