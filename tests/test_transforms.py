@@ -1037,9 +1037,7 @@ def test_projection_truncate_string_not_starts_with(bound_reference_str: BoundRe
     ) == NotStartsWith(term="name", literal=literal("he"))
 
     # longer than width: can't be projected, so the partition is always read
-    assert (
-        TruncateTransform(2).project("name", BoundNotStartsWith(term=bound_reference_str, literal=literal("hello"))) is None
-    )
+    assert TruncateTransform(2).project("name", BoundNotStartsWith(term=bound_reference_str, literal=literal("hello"))) is None
 
 
 def _test_projection(lhs: UnboundPredicate | None, rhs: UnboundPredicate | None) -> None:
