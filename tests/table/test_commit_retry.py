@@ -632,8 +632,8 @@ def test_mixed_delete_overwrite_starts_from_catalog_snapshot(catalog: Catalog) -
     assert overwrite_producer._starting_snapshot_id == base_snapshot_id
 
 
-def test_validate_concurrency_raises_on_missing_parent_snapshot(catalog: Catalog) -> None:
-    """Validation should raise when parent_snapshot_id is non-null but cannot be resolved."""
+def test_validate_concurrency_raises_on_missing_catalog_head_snapshot(catalog: Catalog) -> None:
+    """Validation should raise when catalog_head_snapshot_id is non-null but cannot be resolved."""
     catalog.create_namespace("default")
     schema = _test_schema()
     table = catalog.create_table("default.missing_parent_test", schema=schema)
@@ -642,7 +642,7 @@ def test_validate_concurrency_raises_on_missing_parent_snapshot(catalog: Catalog
 
     table.append(pa.table({"x": [1, 2, 3]}))
 
-    from pyiceberg.table.update.snapshot import _DeleteFiles
+    from pyiceberg.table.update.snapshot import CommitWindow, _DeleteFiles
 
     tx = Transaction(table, autocommit=False)
     producer = _DeleteFiles(
@@ -651,10 +651,12 @@ def test_validate_concurrency_raises_on_missing_parent_snapshot(catalog: Catalog
         io=table.io,
     )
 
-    # Artificially set a non-existent parent snapshot ID
-    producer._parent_snapshot_id = 99999999
+    # Set a CommitWindow with a non-existent catalog head snapshot ID
+    producer._commit_window = CommitWindow(
+        starting_snapshot_id=table.metadata.current_snapshot_id, catalog_head_snapshot_id=99999999
+    )
 
-    with pytest.raises(ValidationException, match="Cannot find parent snapshot"):
+    with pytest.raises(ValidationException, match="Cannot find catalog head snapshot"):
         producer._validate_concurrency()
 
 
@@ -668,7 +670,7 @@ def test_validate_concurrency_raises_on_missing_starting_snapshot(catalog: Catal
 
     table.append(pa.table({"x": [1, 2, 3]}))
 
-    from pyiceberg.table.update.snapshot import _DeleteFiles
+    from pyiceberg.table.update.snapshot import CommitWindow, _DeleteFiles
 
     tx = Transaction(table, autocommit=False)
     producer = _DeleteFiles(
@@ -677,8 +679,46 @@ def test_validate_concurrency_raises_on_missing_starting_snapshot(catalog: Catal
         io=table.io,
     )
 
-    # parent is valid but starting is corrupted
-    producer._starting_snapshot_id = 99999999
+    # Set a CommitWindow with a non-existent starting snapshot ID
+    producer._commit_window = CommitWindow(
+        starting_snapshot_id=99999999, catalog_head_snapshot_id=table.metadata.current_snapshot_id
+    )
 
     with pytest.raises(ValidationException, match="Cannot find starting snapshot"):
         producer._validate_concurrency()
+
+
+def test_mixed_delete_overwrite_retries_successfully(catalog: Catalog) -> None:
+    """A mixed full-file + partial delete should succeed via retry, not raise ValidationException."""
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.transforms import IdentityTransform
+
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(1, "category", StringType(), required=False),
+        NestedField(2, "value", LongType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="category"))
+    catalog.create_table("default.mixed_retry_test", schema=schema, partition_spec=spec)
+
+    import pyarrow as pa
+
+    tbl = catalog.load_table("default.mixed_retry_test")
+
+    # 3 partitions, one data file each: a->[1,2], b->[3,4], c->[5,6]
+    tbl.append(pa.table({"category": ["a", "a", "b", "b", "c", "c"], "value": [1, 2, 3, 4, 5, 6]}))
+
+    tbl1 = catalog.load_table("default.mixed_retry_test")
+    tbl2 = catalog.load_table("default.mixed_retry_test")
+
+    # Concurrent append to partition 'c' (commits first, advances the HEAD)
+    tbl1.append(pa.table({"category": ["c"], "value": [7]}))
+
+    # Mixed delete on tbl2 (stale snapshot):
+    # partition 'a' is a partial rewrite (value==1 deleted, value==2 remains) -> _OverwriteFiles
+    # partition 'b' is a full delete (category == 'b') -> _DeleteFiles
+    # This should NOT conflict with the append to 'c', so retry should succeed.
+    tbl2.delete("value == 1 or category == 'b'")
+
+    result = catalog.load_table("default.mixed_retry_test").scan().to_arrow()
+    assert sorted(result.column("value").to_pylist()) == [2, 5, 6, 7]

@@ -22,6 +22,7 @@ import uuid
 from abc import abstractmethod
 from collections import defaultdict
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from functools import cached_property
 from typing import TYPE_CHECKING, Generic
@@ -95,6 +96,18 @@ def _new_manifest_list_file_name(snapshot_id: int, attempt: int, commit_uuid: uu
     return f"snap-{snapshot_id}-{attempt}-{commit_uuid}.avro"
 
 
+@dataclass
+class CommitWindow:
+    """Tracks the commit range to validate against during retry.
+
+    starting_snapshot_id: The snapshot when the operation began (fixed across retries).
+    catalog_head_snapshot_id: The catalog's latest HEAD snapshot (updated on each retry).
+    """
+
+    starting_snapshot_id: int | None
+    catalog_head_snapshot_id: int | None
+
+
 class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     commit_uuid: uuid.UUID
     _io: FileIO
@@ -109,6 +122,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     _target_branch: str | None
     _predicate: BooleanExpression
     _case_sensitive: bool
+    _commit_window: CommitWindow | None
     _written_manifests: list[str]
     _uncommitted_manifests: list[str]
 
@@ -144,6 +158,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._starting_snapshot_id = self._parent_snapshot_id
         self._predicate = AlwaysFalse()
         self._case_sensitive = True
+        self._commit_window = None
         self._isolation_level_property: str = TableProperties.WRITE_DELETE_ISOLATION_LEVEL
 
     def _validate_target_branch(self, branch: str | None) -> str | None:
@@ -407,8 +422,10 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     def _validate_concurrency(self) -> None:
         """Validate that concurrent changes do not conflict with this operation.
 
-        Checks isolation level and uses the conflict detection filter to determine
-        whether concurrent commits introduced conflicting data or delete files.
+        Uses the CommitWindow to determine which catalog commits to validate against.
+        The window spans from starting_snapshot (when the operation began) to the
+        catalog HEAD (latest committed snapshot), covering all external concurrent commits.
+
         Subclasses that do not require validation (e.g. fast append) should override
         with a no-op.
         """
@@ -421,8 +438,11 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             _validate_no_new_deletes_for_data_files,
         )
 
-        parent_snapshot = self._resolve_parent_snapshot()
-        if parent_snapshot is None:
+        if self._commit_window is None:
+            return
+
+        catalog_head = self._resolve_catalog_head_snapshot()
+        if catalog_head is None:
             return
 
         starting_snapshot = self._resolve_starting_snapshot()
@@ -435,16 +455,27 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         conflict_detection_filter = self._predicate if self._predicate != AlwaysFalse() else None
 
         if isolation_level == IsolationLevel.SERIALIZABLE:
-            _validate_added_data_files(table, parent_snapshot, conflict_detection_filter, starting_snapshot)
+            _validate_added_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot)
 
         if conflict_detection_filter is not None:
-            _validate_no_new_delete_files(table, parent_snapshot, conflict_detection_filter, None, starting_snapshot)
-            _validate_deleted_data_files(table, parent_snapshot, conflict_detection_filter, starting_snapshot)
+            _validate_no_new_delete_files(table, catalog_head, conflict_detection_filter, None, starting_snapshot)
+            _validate_deleted_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot)
 
         if self._deleted_data_files:
             _validate_no_new_deletes_for_data_files(
-                table, parent_snapshot, conflict_detection_filter, self._deleted_data_files, starting_snapshot
+                table, catalog_head, conflict_detection_filter, self._deleted_data_files, starting_snapshot
             )
+
+    def _resolve_catalog_head_snapshot(self) -> Snapshot | None:
+        """Resolve the catalog HEAD snapshot from the CommitWindow."""
+        if self._commit_window is None or self._commit_window.catalog_head_snapshot_id is None:
+            return None
+        snapshot = self._transaction._table.metadata.snapshot_by_id(self._commit_window.catalog_head_snapshot_id)
+        if snapshot is None:
+            raise ValidationException(
+                f"Cannot find catalog head snapshot {self._commit_window.catalog_head_snapshot_id} in table metadata"
+            )
+        return snapshot
 
     def _resolve_parent_snapshot(self) -> Snapshot | None:
         """Resolve parent snapshot, raising ValidationException if ID is set but snapshot is missing."""
@@ -456,8 +487,8 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         return snapshot
 
     def _resolve_starting_snapshot(self) -> Snapshot:
-        """Resolve starting snapshot for the conflict detection window."""
-        starting_id = self._starting_snapshot_id if self._starting_snapshot_id is not None else self._parent_snapshot_id
+        """Resolve starting snapshot for the conflict detection window from the CommitWindow."""
+        starting_id = self._commit_window.starting_snapshot_id if self._commit_window else self._starting_snapshot_id
         if starting_id is None:
             raise ValidationException("Cannot resolve starting snapshot: both starting and parent snapshot IDs are None")
         snapshot = self._transaction._table.metadata.snapshot_by_id(starting_id)

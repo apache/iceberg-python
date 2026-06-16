@@ -1133,11 +1133,20 @@ class Transaction:
     def _rebuild_snapshot_updates(self) -> None:
         """Rebuild snapshot updates for retry by re-executing registered producers."""
         from pyiceberg.table.update import AddSnapshotUpdate, AssertRefSnapshotId, SetSnapshotRefUpdate
+        from pyiceberg.table.update.snapshot import CommitWindow
 
         self._updates = tuple(u for u in self._updates if not isinstance(u, (AddSnapshotUpdate, SetSnapshotRefUpdate)))
         self._requirements = tuple(r for r in self._requirements if not isinstance(r, AssertRefSnapshotId))
 
+        # Build CommitWindow: starting_snapshot_id is from the first producer (fixed at operation start),
+        # catalog_head_snapshot_id is the current catalog HEAD after refresh.
+        starting_id = self._snapshot_producers[0]._starting_snapshot_id if self._snapshot_producers else None
+        current_snapshot = self._table.metadata.current_snapshot()
+        catalog_head_id = current_snapshot.snapshot_id if current_snapshot else None
+        commit_window = CommitWindow(starting_snapshot_id=starting_id, catalog_head_snapshot_id=catalog_head_id)
+
         for producer in self._snapshot_producers:
+            producer._commit_window = commit_window
             producer._refresh_for_retry()
             producer._validate_concurrency()
             updates, requirements = producer._commit()
