@@ -43,6 +43,7 @@ class BytesInputStream(InputStream):
         self._buffer.close()
 
     def __enter__(self) -> BytesInputStream:
+        """Enter the context manager."""
         return self
 
     def __exit__(
@@ -51,6 +52,7 @@ class BytesInputStream(InputStream):
         excinst: BaseException | None,
         exctb: TracebackType | None,
     ) -> None:
+        """Exit the context manager and close the stream."""
         self.close()
 
 
@@ -60,6 +62,7 @@ class BytesInputFile(InputFile):
         self._data = data
 
     def __len__(self) -> int:
+        """Return the length of the underlying byte buffer."""
         return len(self._data)
 
     def exists(self) -> bool:

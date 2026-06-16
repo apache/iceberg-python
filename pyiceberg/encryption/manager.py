@@ -43,6 +43,7 @@ class EncryptedKey:
         self.properties = properties or {}
 
     def __repr__(self) -> str:
+        """Return a string representation of the EncryptedKey."""
         return (
             f"EncryptedKey(key_id={self.key_id!r}, "
             f"encrypted_by_id={self.encrypted_by_id!r}, "

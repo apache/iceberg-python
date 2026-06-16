@@ -73,9 +73,7 @@ def decrypt_ags1_stream(key: bytes, encrypted_data: bytes, aad_prefix: bytes) ->
             raise ValueError(f"Truncated AGS1 block at offset {offset}: {block_cipher_size} bytes")
 
         block = stream_data[offset : offset + block_cipher_size]
-        result.extend(
-            aesgcm.decrypt(block[:NONCE_LENGTH], block[NONCE_LENGTH:], stream_block_aad(aad_prefix, block_index))
-        )
+        result.extend(aesgcm.decrypt(block[:NONCE_LENGTH], block[NONCE_LENGTH:], stream_block_aad(aad_prefix, block_index)))
         offset += block_cipher_size
         block_index += 1
 
