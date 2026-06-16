@@ -73,6 +73,8 @@ from pyiceberg.types import (
     DateType,
     DecimalType,
     FixedType,
+    GeographyType,
+    GeometryType,
     IcebergType,
     IntegerType,
     LongType,
@@ -717,7 +719,7 @@ class IdentityTransform(Transform[S, S]):
         return lambda v: v
 
     def can_transform(self, source: IcebergType) -> bool:
-        return source.is_primitive
+        return source.is_primitive and not isinstance(source, (GeographyType, GeometryType))
 
     def result_type(self, source: IcebergType) -> IcebergType:
         return source
