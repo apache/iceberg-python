@@ -29,7 +29,9 @@ from pyiceberg.table.snapshots import (
     SnapshotSummaryCollector,
     Summary,
     ancestors_between,
+    ancestors_between_ids,
     ancestors_of,
+    is_parent_ancestor_of,
     latest_ancestor_before_timestamp,
     update_snapshot_summaries,
 )
@@ -475,6 +477,43 @@ def test_ancestors_between(table_v2_with_extensive_snapshots: Table) -> None:
         )
         == 2000
     )
+
+
+def test_is_parent_ancestor_of(table_v2: Table) -> None:
+    snapshot_id, ancestor_snapshot_id = 3055729675574597004, 3051729675574597004
+
+    # The older snapshot is the parent of an ancestor (here, of `snapshot_id` itself).
+    assert is_parent_ancestor_of(snapshot_id, ancestor_snapshot_id, table_v2.metadata)
+    # A snapshot is not its own parent ancestor.
+    assert not is_parent_ancestor_of(snapshot_id, snapshot_id, table_v2.metadata)
+    # A descendant is not a parent ancestor of its parent.
+    assert not is_parent_ancestor_of(ancestor_snapshot_id, snapshot_id, table_v2.metadata)
+    # An ID not referenced anywhere in the chain is not a parent ancestor.
+    assert not is_parent_ancestor_of(snapshot_id, 42, table_v2.metadata)
+    # Raises when the start snapshot ID is missing from metadata.
+    with pytest.raises(ValueError, match="Cannot find snapshot: 42"):
+        is_parent_ancestor_of(42, snapshot_id, table_v2.metadata)
+
+
+def test_ancestors_between_ids(table_v2: Table) -> None:
+    snapshot_id, ancestor_snapshot_id = 3055729675574597004, 3051729675574597004
+
+    # Exclusive-inclusive: just `snapshot_id`.
+    assert [s.snapshot_id for s in ancestors_between_ids(ancestor_snapshot_id, snapshot_id, table_v2.metadata)] == [snapshot_id]
+    # Equal from/to is empty.
+    assert list(ancestors_between_ids(snapshot_id, snapshot_id, table_v2.metadata)) == []
+
+
+def test_ancestors_between_ids_missing_from_snapshot(table_v2: Table) -> None:
+    snapshot_id, ancestor_snapshot_id = 3055729675574597004, 3051729675574597004
+
+    # With from=None, all ancestors are returned.
+    assert [
+        s.snapshot_id
+        for s in ancestors_between_ids(
+            from_snapshot_id_exclusive=None, to_snapshot_id_inclusive=snapshot_id, table_metadata=table_v2.metadata
+        )
+    ] == [snapshot_id, ancestor_snapshot_id]
 
 
 def test_latest_ancestor_before_timestamp() -> None:
