@@ -812,6 +812,10 @@ class TruncateTransform(Transform[S, S]):
             if isinstance(pred, BoundLiteralPredicate):
                 return _truncate_number(name, pred, self.transform(field_type))
         elif isinstance(field_type, (BinaryType, StringType)):
+            if isinstance(pred, BoundNotStartsWith) and len(pred.literal.value) > self.width:
+                # A prefix longer than the width can't be projected: the truncated partition
+                # holds both matching and non-matching rows, so it cannot be pruned.
+                return None
             if isinstance(pred, BoundLiteralPredicate):
                 return _truncate_array(name, pred, self.transform(field_type))
 

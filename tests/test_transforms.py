@@ -1026,9 +1026,20 @@ def test_projection_truncate_string_starts_with(bound_reference_str: BoundRefere
 
 
 def test_projection_truncate_string_not_starts_with(bound_reference_str: BoundReference) -> None:
+    # shorter than width: projects to not-starts-with on the untruncated prefix
     assert TruncateTransform(2).project(
-        "name", BoundNotStartsWith(term=bound_reference_str, literal=literal("hello"))
+        "name", BoundNotStartsWith(term=bound_reference_str, literal=literal("h"))
+    ) == NotStartsWith(term="name", literal=literal("h"))
+
+    # equal to width: projects to not-starts-with on the full prefix
+    assert TruncateTransform(2).project(
+        "name", BoundNotStartsWith(term=bound_reference_str, literal=literal("he"))
     ) == NotStartsWith(term="name", literal=literal("he"))
+
+    # longer than width: can't be projected, so the partition is always read
+    assert (
+        TruncateTransform(2).project("name", BoundNotStartsWith(term=bound_reference_str, literal=literal("hello"))) is None
+    )
 
 
 def _test_projection(lhs: UnboundPredicate | None, rhs: UnboundPredicate | None) -> None:
