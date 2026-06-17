@@ -791,10 +791,10 @@ def test_invalid_arguments(spark: SparkSession, session_catalog: Catalog, arrow_
     identifier = "default.arrow_data_files"
     tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [])
 
-    with pytest.raises(ValueError, match="Expected PyArrow table, got: not a df"):
+    with pytest.raises(ValueError, match="Expected pa.Table or pa.RecordBatchReader, got: not a df"):
         tbl.overwrite("not a df")
 
-    with pytest.raises(ValueError, match="Expected PyArrow table, got: not a df"):
+    with pytest.raises(ValueError, match="Expected pa.Table or pa.RecordBatchReader, got: not a df"):
         tbl.append("not a df")
 
 
@@ -1769,10 +1769,7 @@ def test_create_view(
     identifier = "default.some_view"
     schema = pa.schema([pa.field("some_col", pa.int32())])
     view_version = ViewVersion(
-        version_id=1,
         schema_id=1,
-        timestamp_ms=int(time.time() * 1000),
-        summary={},
         representations=[
             SQLViewRepresentation(
                 type="sql",
@@ -2571,3 +2568,87 @@ def test_v3_write_and_read_row_lineage(spark: SparkSession, session_catalog: Cat
     assert tbl.metadata.next_row_id == initial_next_row_id + len(test_data), (
         "Expected next_row_id to be incremented by the number of added rows"
     )
+
+
+# RecordBatchReader streaming append/overwrite — see https://github.com/apache/iceberg-python/issues/2152
+#
+# These integration tests prove Spark can read tables written via the new streaming
+# path. Equivalent in-process scan coverage lives in tests/catalog/test_catalog_behaviors.py
+# but only Spark exercises the manifest stats + Parquet metadata produced by the
+# write_file → fast_append pipeline against an external reader.
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_append_record_batch_reader(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = f"default.streaming_append_record_batch_reader_v{format_version}"
+    tbl = _create_table(session_catalog, identifier, {"format-version": str(format_version)})
+
+    # 4 batches × 3 rows each — exercises the multi-batch streaming path while
+    # keeping the assertion data tractable for Spark.
+    batches = arrow_table_with_null.to_batches() * 4
+    reader = pa.RecordBatchReader.from_batches(arrow_table_with_null.schema, iter(batches))
+    expected_rows = sum(b.num_rows for b in batches)
+
+    tbl.append(reader)
+
+    assert len(tbl.scan().to_arrow()) == expected_rows
+    df = spark.table(identifier)
+    assert df.count() == expected_rows
+    # Spot-check that Spark agrees on the schema as written
+    assert sorted(df.columns) == sorted(arrow_table_with_null.column_names)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_overwrite_record_batch_reader(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = f"default.streaming_overwrite_record_batch_reader_v{format_version}"
+    tbl = _create_table(session_catalog, identifier, {"format-version": str(format_version)}, [arrow_table_with_null])
+    assert len(tbl.scan().to_arrow()) == arrow_table_with_null.num_rows
+
+    batches = arrow_table_with_null.to_batches() * 2
+    reader = pa.RecordBatchReader.from_batches(arrow_table_with_null.schema, iter(batches))
+    expected_rows = sum(b.num_rows for b in batches)
+
+    tbl.overwrite(reader)
+
+    # Existing rows replaced, only the streamed rows remain
+    assert len(tbl.scan().to_arrow()) == expected_rows
+    df = spark.table(identifier)
+    assert df.count() == expected_rows
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_append_record_batch_reader_multifile(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    """Forcing a tiny target file size should produce >1 data file in a single
+    snapshot, proving the byte-budget rollover in bin_pack_record_batches fires
+    end-to-end and the resulting files are valid Iceberg data files (Spark reads
+    them all)."""
+    identifier = f"default.streaming_append_multifile_v{format_version}"
+    tbl = _create_table(
+        session_catalog,
+        identifier,
+        {"format-version": str(format_version), TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: "1"},
+    )
+
+    batches = arrow_table_with_null.to_batches(max_chunksize=1) * 4
+    reader = pa.RecordBatchReader.from_batches(arrow_table_with_null.schema, iter(batches))
+    expected_rows = sum(b.num_rows for b in batches)
+
+    tbl.append(reader)
+
+    snapshot = tbl.metadata.current_snapshot()
+    assert snapshot is not None
+    assert snapshot.summary is not None
+    added_files = snapshot.summary["added-data-files"]
+    assert added_files is not None and int(added_files) > 1, snapshot.summary
+
+    df = spark.table(identifier)
+    assert df.count() == expected_rows

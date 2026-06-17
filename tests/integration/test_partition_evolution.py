@@ -442,7 +442,7 @@ def test_cannot_rename_and_delete(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
-def test_cannot_add_same_tranform_for_same_field(catalog: Catalog) -> None:
+def test_cannot_add_same_transform_for_same_field(catalog: Catalog) -> None:
     table = _table(catalog)
     with pytest.raises(ValueError) as exc_info:
         table.update_spec().add_field("str", TruncateTransform(4), "truncated_str").add_field(

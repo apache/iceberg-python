@@ -52,6 +52,7 @@ github:
   collaborators:  # Note: the number of collaborators is limited to 10
     - ajantha-bhat
     - ndrluis
+    - rambleraptor
   ghp_branch: gh-pages
   ghp_path: /
 
