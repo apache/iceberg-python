@@ -1972,7 +1972,7 @@ class BaseScan(ABC):
 S = TypeVar("S", bound="TableScan", covariant=True)
 
 
-class TableScan(BaseScan, ABC):
+class TableScan(BaseScan):
     """A base class for table scans targeting a single snapshot."""
 
     snapshot_id: int | None
@@ -2520,14 +2520,18 @@ class ManifestGroupPlanner:
         """
         # step 1: filter manifests using partition summaries
         # the filter depends on the partition spec used to write the manifest file, so create a cache of filters for each spec id
+
         manifest_evaluators: dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
+
         manifests = [
             manifest_file for manifest_file in manifests if manifest_evaluators[manifest_file.partition_spec_id](manifest_file)
         ]
 
         # step 2: filter the data files in each manifest
         # this filter depends on the partition spec used to write the manifest file
+
         partition_evaluators: dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._build_partition_evaluator)
+
         min_sequence_number = _min_sequence_number(manifests)
 
         executor = ExecutorFactory.get_or_create()
@@ -2558,10 +2562,10 @@ class ManifestGroupPlanner:
         Returns:
             List of FileScanTasks that contain both data and delete files.
         """
-        residual_evaluators: dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
-
         data_entries: list[ManifestEntry] = []
         delete_index = DeleteFileIndex()
+
+        residual_evaluators: dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
 
         for manifest_entry in chain.from_iterable(self.plan_manifest_entries(manifests)):
             if not manifest_entry_filter(manifest_entry):
