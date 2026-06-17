@@ -2351,10 +2351,10 @@ class IncrementalAppendScan(BaseScan):
         row_filter: str | BooleanExpression = ALWAYS_TRUE,
         selected_fields: tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
-        options: Properties = EMPTY_DICT,
-        limit: int | None = None,
         from_snapshot_id_exclusive: int | None = None,
         to_snapshot_id_inclusive: int | None = None,
+        options: Properties = EMPTY_DICT,
+        limit: int | None = None,
     ):
         super().__init__(
             table_metadata=table_metadata,
@@ -2410,7 +2410,7 @@ class IncrementalAppendScan(BaseScan):
             if snapshot.summary is not None and snapshot.summary.operation == Operation.APPEND
         ]
         if len(append_snapshots) == 0:
-            return iter([])
+            return []
 
         append_snapshot_ids = {snapshot.snapshot_id for snapshot in append_snapshots}
 
