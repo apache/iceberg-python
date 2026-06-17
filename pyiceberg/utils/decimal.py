@@ -58,11 +58,16 @@ def bytes_required(value: int | Decimal) -> int:
         int: the minimum number of bytes needed to serialize the value.
     """
     if isinstance(value, int):
-        return (value.bit_length() + 8) // 8
+        unscaled = value
     elif isinstance(value, Decimal):
-        return (decimal_to_unscaled(value).bit_length() + 8) // 8
+        unscaled = decimal_to_unscaled(value)
+    else:
+        raise ValueError(f"Unsupported value: {value}")
 
-    raise ValueError(f"Unsupported value: {value}")
+    # bit_length() overcounts negatives equal to -2**(8k-1) (e.g. -128, -32768) by one byte;
+    # using (unscaled + 1) for negatives yields the true minimum, matching the Iceberg spec.
+    n_bits = unscaled.bit_length() if unscaled >= 0 else (unscaled + 1).bit_length()
+    return (n_bits + 8) // 8
 
 
 def decimal_to_bytes(value: Decimal, byte_length: int | None = None) -> bytes:
