@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import itertools
 from pathlib import PosixPath
 
 import pyarrow as pa
@@ -25,11 +26,13 @@ from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.expressions import AlwaysTrue, And, EqualTo, Reference
 from pyiceberg.expressions.literals import LongLiteral
+from pyiceberg.expressions.visitors import expression_evaluator
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table, UpsertResult
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.upsert_util import create_match_filter
+from pyiceberg.typedef import Record
 from pyiceberg.types import IntegerType, NestedField, StringType, StructType
 from tests.catalog.test_base import InMemoryCatalog
 
@@ -441,6 +444,72 @@ def test_create_match_filter_single_condition() -> None:
     op1 = EqualTo(term=Reference(name="order_id"), literal=LongLiteral(101))
     op2 = EqualTo(term=Reference(name="order_line_id"), literal=LongLiteral(1))
     assert expr == And(op1, op2) or expr == And(op2, op1)
+
+
+def _assert_match_filter_selects(data: list[dict[str, int]], join_cols: list[str], schema: Schema) -> None:
+    """Assert the filter from ``create_match_filter`` matches exactly the unique source keys.
+
+    Rather than asserting a specific expression tree (which is implementation-specific),
+    this binds the filter and evaluates it against the full cross-product of the values
+    observed per column. The filter must accept exactly the unique keys present in
+    ``data`` and reject every other combination, so any over- or under-matching
+    (e.g. a cross-product regression) is caught. This holds for any correct
+    implementation of ``create_match_filter``.
+    """
+    arrow_schema = schema_to_pyarrow(schema)
+    table = pa.Table.from_pylist(data, schema=arrow_schema)
+    expr = create_match_filter(table, join_cols)
+
+    field_names = [field.name for field in schema.fields]
+    expected_keys = {tuple(row[name] for name in field_names) for row in data}
+    domains = [sorted({row[name] for row in data}) for name in field_names]
+
+    evaluate = expression_evaluator(schema, expr, case_sensitive=True)
+    for candidate in itertools.product(*domains):
+        key = dict(zip(field_names, candidate, strict=True))
+        should_match = candidate in expected_keys
+        verb = "rejected matching" if should_match else "matched non-matching"
+        assert evaluate(Record(*candidate)) is should_match, f"Filter {expr} {verb} key {key}"
+
+
+def test_create_match_filter_single_prefix_group() -> None:
+    """
+    Test create_match_filter with multiple key columns whose rows all share a single prefix combination.
+
+    The filter must match the (one order_id, many order_line_id) keys and nothing else.
+    """
+    schema = Schema(
+        NestedField(1, "order_id", IntegerType(), required=True),
+        NestedField(2, "order_line_id", IntegerType(), required=True),
+    )
+    data = [
+        {"order_id": 101, "order_line_id": 1},
+        {"order_id": 101, "order_line_id": 2},
+        {"order_id": 101, "order_line_id": 3},
+        {"order_id": 101, "order_line_id": 3},  # duplicate
+    ]
+    _assert_match_filter_selects(data, ["order_id", "order_line_id"], schema)
+
+
+def test_create_match_filter_multiple_prefix_groups() -> None:
+    """
+    Test create_match_filter with multiple key columns that yield several distinct prefix combinations.
+
+    The filter must match exactly the listed composite keys and must NOT match cross-product
+    combinations that never appear together (e.g. order_id 101 with order_line_id 2).
+    """
+    schema = Schema(
+        NestedField(1, "order_id", IntegerType(), required=True),
+        NestedField(2, "order_line_id", IntegerType(), required=True),
+    )
+    data = [
+        {"order_id": 101, "order_line_id": 1},
+        {"order_id": 102, "order_line_id": 1},
+        {"order_id": 103, "order_line_id": 1},
+        {"order_id": 201, "order_line_id": 2},
+        {"order_id": 202, "order_line_id": 2},
+    ]
+    _assert_match_filter_selects(data, ["order_id", "order_line_id"], schema)
 
 
 def test_upsert_with_duplicate_rows_in_table(catalog: Catalog) -> None:
