@@ -1320,7 +1320,10 @@ def test_incremental_append_scan_empty_range(catalog: Catalog) -> None:
         to_snapshot_id_inclusive=test_table.snapshots()[3].snapshot_id,
     )
     assert list(scan.plan_files()) == []
-    assert len(scan.to_arrow()) == 0
+    result = scan.to_arrow()
+    assert len(result) == 0
+    # An empty result still carries the projected (current) schema.
+    assert result.schema.names == ["number", "letter", "extra"]
 
 
 @pytest.mark.integration

@@ -38,6 +38,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
     CommitTableRequest,
+    StagedTable,
     StaticTable,
     Table,
     TableIdentifier,
@@ -481,6 +482,23 @@ def test_incremental_append_scan_update_preserves_type(table_v2: Table) -> None:
     assert type(base_scan.filter(EqualTo("x", 1))) is base_type
     assert type(base_scan.select("x")) is base_type
     assert type(base_scan.with_case_sensitive(False)) is base_type
+
+    # None round-trips through the chaining helpers (update() reconstructs by keyword).
+    assert base_scan.from_snapshot_exclusive(123).from_snapshot_exclusive(None).from_snapshot_id_exclusive is None
+    assert base_scan.to_snapshot_inclusive(456).to_snapshot_inclusive(None).to_snapshot_id_inclusive is None
+
+
+def test_incremental_append_scan_staged_table_raises(table_v2: Table) -> None:
+    # Mirrors StagedTable.scan: a staged table has no committed metadata to scan against.
+    staged_table = StagedTable(
+        identifier=table_v2._identifier,
+        metadata=table_v2.metadata,
+        metadata_location=table_v2.metadata_location,
+        io=table_v2.io,
+        catalog=table_v2.catalog,
+    )
+    with pytest.raises(ValueError, match="Cannot scan a staged table"):
+        staged_table.incremental_append_scan()
 
 
 def test_static_table_same_as_table(table_v2: Table, metadata_location: str) -> None:
