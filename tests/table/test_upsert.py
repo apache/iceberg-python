@@ -24,7 +24,7 @@ from pyarrow import Table as pa_table
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
-from pyiceberg.expressions import AlwaysTrue, And, EqualTo, Reference
+from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, EqualTo, In, Reference
 from pyiceberg.expressions.literals import LongLiteral
 from pyiceberg.expressions.visitors import expression_evaluator
 from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -510,6 +510,109 @@ def test_create_match_filter_multiple_prefix_groups() -> None:
         {"order_id": 202, "order_line_id": 2},
     ]
     _assert_match_filter_selects(data, ["order_id", "order_line_id"], schema)
+
+
+def test_create_match_filter_single_column() -> None:
+    """A single join column collapses to a single In() over the unique values."""
+    schema = pa.schema([pa.field("order_id", pa.int32())])
+    table = pa.Table.from_pylist([{"order_id": 1}, {"order_id": 2}, {"order_id": 2}], schema=schema)
+    assert create_match_filter(table, ["order_id"]) == In("order_id", [1, 2])
+
+
+def test_create_match_filter_single_column_single_value() -> None:
+    """A single unique value collapses the In() down to an EqualTo()."""
+    schema = pa.schema([pa.field("order_id", pa.int32())])
+    table = pa.Table.from_pylist([{"order_id": 1}, {"order_id": 1}], schema=schema)
+    assert create_match_filter(table, ["order_id"]) == EqualTo("order_id", 1)
+
+
+def test_create_match_filter_empty_input() -> None:
+    """An empty source matches nothing (AlwaysFalse), for both single and composite keys."""
+    schema = pa.schema([pa.field("order_id", pa.int32()), pa.field("order_line_id", pa.int32())])
+    empty = pa.Table.from_pylist([], schema=schema)
+    assert create_match_filter(empty, ["order_id"]) == AlwaysFalse()
+    assert create_match_filter(empty, ["order_id", "order_line_id"]) == AlwaysFalse()
+
+
+def test_create_match_filter_three_columns() -> None:
+    """
+    Test create_match_filter with three key columns.
+
+    Exercises the multi-column prefix branch where the prefix predicate is an And of two
+    EqualTo() conjuncts combined with an In() over the folded column.
+    """
+    schema = Schema(
+        NestedField(1, "a", IntegerType(), required=True),
+        NestedField(2, "b", IntegerType(), required=True),
+        NestedField(3, "c", IntegerType(), required=True),
+    )
+    data = [
+        {"a": 1, "b": 1, "c": 1},
+        {"a": 1, "b": 1, "c": 2},
+        {"a": 1, "b": 1, "c": 3},
+        {"a": 2, "b": 9, "c": 5},
+        {"a": 2, "b": 9, "c": 6},
+    ]
+    _assert_match_filter_selects(data, ["a", "b", "c"], schema)
+
+
+def test_create_match_filter_column_named_like_aggregate() -> None:
+    """
+    Regression test for #3509 review feedback.
+
+    A join column named ``<in_col>_list`` must not collide with the internal list-aggregation
+    column used to fold values into an In(). Before the fix this raised a TypeError.
+    """
+    schema = Schema(
+        NestedField(1, "a", IntegerType(), required=True),
+        NestedField(2, "a_list", IntegerType(), required=True),
+    )
+    data = [
+        {"a": 1, "a_list": 7},
+        {"a": 2, "a_list": 7},
+        {"a": 3, "a_list": 8},
+    ]
+    _assert_match_filter_selects(data, ["a", "a_list"], schema)
+
+
+def test_upsert_large_composite_key_does_not_overflow(catalog: Catalog) -> None:
+    """
+    Regression test for #3508: a large multi-column upsert must not overflow PyArrow's
+    expression canonicalizer when at least one key column is low-cardinality (see #3509).
+    """
+    identifier = "default.test_upsert_large_composite_key"
+    _drop_table(catalog, identifier)
+
+    n = 20_000
+    schema = pa.schema(
+        [
+            pa.field("order_id", pa.int64(), nullable=False),
+            pa.field("region", pa.string(), nullable=False),
+            pa.field("amount", pa.int64(), nullable=False),
+        ]
+    )
+
+    def make(order_ids: range, amount: int) -> pa.Table:
+        # region is intentionally low-cardinality (4 values) so the fix folds order_id into an In().
+        return pa.Table.from_pylist(
+            [{"order_id": oid, "region": "ABCD"[oid % 4], "amount": amount} for oid in order_ids],
+            schema=schema,
+        )
+
+    tbl = catalog.create_table(identifier, schema)
+    tbl.append(make(range(1, n + 1), amount=1))
+
+    # Update the first half (amount changes) and insert a tenth of brand-new keys.
+    source = pa.concat_tables(
+        [
+            make(range(1, n // 2 + 1), amount=2),
+            make(range(n + 1, n + n // 10 + 1), amount=2),
+        ]
+    )
+
+    res = tbl.upsert(source, join_cols=["order_id", "region"])
+    assert res.rows_updated == n // 2
+    assert res.rows_inserted == n // 10
 
 
 def test_upsert_with_duplicate_rows_in_table(catalog: Catalog) -> None:
