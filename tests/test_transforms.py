@@ -258,7 +258,7 @@ def test_identity_transform_unknown_type() -> None:
 
 
 @pytest.mark.parametrize("type_var", [GeometryType(), GeographyType()])
-def test_identity_transform_unsupported_type(type_var: PrimitiveType) -> None:
+def test_identity_can_transform_unsupported_type(type_var: PrimitiveType) -> None:
     assert not IdentityTransform().can_transform(type_var)
 
 
