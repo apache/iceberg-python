@@ -450,12 +450,53 @@ class Transaction:
         """
         return UpdateStatistics(transaction=self)
 
-    def append(self, df: pa.Table, snapshot_properties: dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH) -> None:
+    def append(
+        self,
+        df: pa.Table | pa.RecordBatchReader,
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
+        branch: str | None = MAIN_BRANCH,
+    ) -> None:
         """
-        Shorthand API for appending a PyArrow table to a table transaction.
+        Shorthand API for appending PyArrow data to a table transaction.
+
+        Accepts either a fully materialised ``pa.Table`` or a streaming
+        ``pa.RecordBatchReader``. Streaming is microbatched by
+        ``write.target-file-size-bytes`` so memory stays bounded; the reader is
+        consumed once and cannot be reused.
+
+        Streaming writes are currently only supported on unpartitioned tables;
+        passing a ``pa.RecordBatchReader`` for a partitioned table raises
+        ``NotImplementedError``. See
+        https://github.com/apache/iceberg-python/issues/2152.
+
+        Note:
+            When ``df`` is a ``pa.RecordBatchReader`` the reader is consumed
+            once and cannot be replayed. If the catalog commit fails (e.g.
+            ``CommitFailedException`` from a concurrent writer) the reader is
+            already drained and a naive retry will append zero rows. Callers
+            that need at-least-once semantics should either:
+
+            - reconstruct the reader on each attempt via a factory callable,
+              or
+            - use a two-stage pattern — write Parquet files explicitly and
+              then call :meth:`add_files` (whose input is a replayable list of
+              paths) within a retry loop.
+
+            Failures during the write stage (mid-stream reader exception, S3
+            errors) do not commit a snapshot, but may leave orphan data files
+            in storage that are not referenced by any snapshot. Clean these
+            up with expire/orphan-file maintenance jobs.
+
+            ``write.target-file-size-bytes`` is currently interpreted as
+            uncompressed in-memory Arrow bytes (the bin-packing weight) rather
+            than compressed on-disk Parquet bytes. The resulting files are
+            typically 3-10× smaller than the property suggests after
+            compression. This matches the existing ``pa.Table`` write path and
+            will be tightened once the writer is switched to a
+            rolling-``ParquetWriter`` with ``OutputStream.tell()`` (#2998).
 
         Args:
-            df: The Arrow dataframe that will be appended to overwrite the table
+            df: An Arrow Table or a RecordBatchReader of records to append.
             snapshot_properties: Custom properties to be added to the snapshot summary
             branch: Branch Reference to run the append operation
         """
@@ -466,8 +507,8 @@ class Transaction:
 
         from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, _dataframe_to_data_files
 
-        if not isinstance(df, pa.Table):
-            raise ValueError(f"Expected PyArrow table, got: {df}")
+        if not isinstance(df, (pa.Table, pa.RecordBatchReader)):
+            raise ValueError(f"Expected pa.Table or pa.RecordBatchReader, got: {df}")
 
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
         _check_pyarrow_schema_compatible(
@@ -478,12 +519,14 @@ class Transaction:
         )
 
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
-            # skip writing data files if the dataframe is empty
-            if df.shape[0] > 0:
-                data_files = list(
-                    _dataframe_to_data_files(
-                        table_metadata=self.table_metadata, write_uuid=append_files.commit_uuid, df=df, io=self._table.io
-                    )
+            # For pa.Table we can short-circuit empty inputs cheaply. For a
+            # RecordBatchReader the stream is consumed lazily by
+            # _dataframe_to_data_files and an empty reader simply yields zero
+            # data files (the snapshot is still committed for symmetry with the
+            # pa.Table case where empty inputs also produce a snapshot).
+            if isinstance(df, pa.RecordBatchReader) or df.shape[0] > 0:
+                data_files = _dataframe_to_data_files(
+                    table_metadata=self.table_metadata, write_uuid=append_files.commit_uuid, df=df, io=self._table.io
                 )
                 for data_file in data_files:
                     append_files.append_data_file(data_file)
@@ -555,14 +598,50 @@ class Transaction:
 
     def overwrite(
         self,
-        df: pa.Table,
+        df: pa.Table | pa.RecordBatchReader,
         overwrite_filter: BooleanExpression | str = ALWAYS_TRUE,
         snapshot_properties: dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
         branch: str | None = MAIN_BRANCH,
     ) -> None:
         """
-        Shorthand for adding a table overwrite with a PyArrow table to the transaction.
+        Shorthand for adding a table overwrite with a PyArrow table or RecordBatchReader to the transaction.
+
+        Accepts either a fully materialised ``pa.Table`` or a streaming
+        ``pa.RecordBatchReader``. Streaming is microbatched by
+        ``write.target-file-size-bytes`` so memory stays bounded; the reader is
+        consumed once and cannot be reused.
+
+        Streaming writes are currently only supported on unpartitioned tables;
+        passing a ``pa.RecordBatchReader`` for a partitioned table raises
+        ``NotImplementedError``. See
+        https://github.com/apache/iceberg-python/issues/2152.
+
+        Note:
+            When ``df`` is a ``pa.RecordBatchReader`` the reader is consumed
+            once and cannot be replayed. If the catalog commit fails (e.g.
+            ``CommitFailedException`` from a concurrent writer) the reader is
+            already drained and a naive retry will write zero rows. Callers
+            that need at-least-once semantics should either:
+
+            - reconstruct the reader on each attempt via a factory callable,
+              or
+            - use a two-stage pattern — write Parquet files explicitly and
+              then call :meth:`add_files` (whose input is a replayable list
+              of paths) within a retry loop.
+
+            Failures during the write stage (mid-stream reader exception, S3
+            errors) do not commit a snapshot, but may leave orphan data files
+            in storage that are not referenced by any snapshot. Clean these
+            up with expire/orphan-file maintenance jobs.
+
+            ``write.target-file-size-bytes`` is currently interpreted as
+            uncompressed in-memory Arrow bytes (the bin-packing weight) rather
+            than compressed on-disk Parquet bytes. The resulting files are
+            typically 3-10× smaller than the property suggests after
+            compression. This matches the existing ``pa.Table`` write path and
+            will be tightened once the writer is switched to a
+            rolling-``ParquetWriter`` with ``OutputStream.tell()`` (#2998).
 
         An overwrite may produce zero or more snapshots based on the operation:
 
@@ -571,7 +650,7 @@ class Transaction:
             - APPEND: In case new data is being inserted into the table.
 
         Args:
-            df: The Arrow dataframe that will be used to overwrite the table
+            df: An Arrow Table or a RecordBatchReader of records to write.
             overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
                               or a boolean expression in case of a partial overwrite
             snapshot_properties: Custom properties to be added to the snapshot summary
@@ -585,8 +664,8 @@ class Transaction:
 
         from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, _dataframe_to_data_files
 
-        if not isinstance(df, pa.Table):
-            raise ValueError(f"Expected PyArrow table, got: {df}")
+        if not isinstance(df, (pa.Table, pa.RecordBatchReader)):
+            raise ValueError(f"Expected pa.Table or pa.RecordBatchReader, got: {df}")
 
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
         _check_pyarrow_schema_compatible(
@@ -606,8 +685,8 @@ class Transaction:
             )
 
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
-            # skip writing data files if the dataframe is empty
-            if df.shape[0] > 0:
+            # See append() for the empty-input handling rationale.
+            if isinstance(df, pa.RecordBatchReader) or df.shape[0] > 0:
                 data_files = _dataframe_to_data_files(
                     table_metadata=self.table_metadata, write_uuid=append_files.commit_uuid, df=df, io=self._table.io
                 )
@@ -861,6 +940,28 @@ class Transaction:
 
         return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 
+    def _find_referenced_data_files(self, file_paths: list[str]) -> list[str]:
+        """Return file_paths already referenced by data files in the current snapshot."""
+        snapshot = self.table_metadata.current_snapshot()
+        if snapshot is None:
+            return []
+
+        candidates = set(file_paths)
+        io = self._table.io
+        data_manifests = [m for m in snapshot.manifests(io) if m.content == ManifestContent.DATA]
+
+        def path_filter(data_file: DataFile) -> bool:
+            return data_file.file_path in candidates
+
+        executor = ExecutorFactory.get_or_create()
+        entries = chain.from_iterable(
+            executor.map(
+                lambda args: _open_manifest(*args),
+                [(io, manifest, path_filter, lambda _: True) for manifest in data_manifests],
+            )
+        )
+        return [entry.data_file.file_path for entry in entries]
+
     def add_files(
         self,
         file_paths: list[str],
@@ -883,11 +984,7 @@ class Transaction:
             raise ValueError("File paths must be unique")
 
         if check_duplicate_files:
-            import pyarrow.compute as pc
-
-            expr = pc.field("file_path").isin(file_paths)
-            referenced_files = [file["file_path"] for file in self._table.inspect.data_files().filter(expr).to_pylist()]
-
+            referenced_files = self._find_referenced_data_files(file_paths)
             if referenced_files:
                 raise ValueError(f"Cannot add files that are already referenced by table, files: {', '.join(referenced_files)}")
 
@@ -1426,12 +1523,21 @@ class Table:
                 snapshot_properties=snapshot_properties,
             )
 
-    def append(self, df: pa.Table, snapshot_properties: dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH) -> None:
+    def append(
+        self,
+        df: pa.Table | pa.RecordBatchReader,
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
+        branch: str | None = MAIN_BRANCH,
+    ) -> None:
         """
-        Shorthand API for appending a PyArrow table to the table.
+        Shorthand API for appending PyArrow data to the table.
+
+        Accepts either a ``pa.Table`` or a streaming ``pa.RecordBatchReader``.
+        See :meth:`Transaction.append` for streaming semantics and partition
+        limitations.
 
         Args:
-            df: The Arrow dataframe that will be appended to overwrite the table
+            df: An Arrow Table or a RecordBatchReader of records to append.
             snapshot_properties: Custom properties to be added to the snapshot summary
             branch: Branch Reference to run the append operation
         """
@@ -1454,14 +1560,18 @@ class Table:
 
     def overwrite(
         self,
-        df: pa.Table,
+        df: pa.Table | pa.RecordBatchReader,
         overwrite_filter: BooleanExpression | str = ALWAYS_TRUE,
         snapshot_properties: dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
         branch: str | None = MAIN_BRANCH,
     ) -> None:
         """
-        Shorthand for overwriting the table with a PyArrow table.
+        Shorthand for overwriting the table with a PyArrow Table or RecordBatchReader.
+
+        Accepts either a ``pa.Table`` or a streaming ``pa.RecordBatchReader``.
+        See :meth:`Transaction.overwrite` for streaming semantics and partition
+        limitations.
 
         An overwrite may produce zero or more snapshots based on the operation:
 
@@ -1470,7 +1580,7 @@ class Table:
             - APPEND: In case new data is being inserted into the table.
 
         Args:
-            df: The Arrow dataframe that will be used to overwrite the table
+            df: An Arrow Table or a RecordBatchReader of records to write.
             overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
                               or a boolean expression in case of a partial overwrite
             snapshot_properties: Custom properties to be added to the snapshot summary

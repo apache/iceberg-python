@@ -39,6 +39,8 @@ from pyiceberg.expressions.literals import (
     IntAboveMax,
     IntBelowMin,
     Literal,
+    LongAboveMax,
+    LongBelowMin,
     LongLiteral,
     StringLiteral,
     TimeLiteral,
@@ -845,6 +847,46 @@ def test_string_to_int_min_value() -> None:
     assert isinstance(literal(str(IntegerType.min - 1)).to(IntegerType()), IntBelowMin)
 
 
+def test_string_to_long_max_value_without_precision_loss() -> None:
+    assert literal(str(LongType.max)).to(LongType()) == literal(LongType.max)
+
+
+def test_string_to_long_large_integer_without_precision_loss() -> None:
+    assert literal("9007199254740993").to(LongType()) == literal(9007199254740993)
+
+
+def test_string_to_long_decimal_like_integer_without_precision_loss() -> None:
+    assert literal("9007199254740993.0").to(LongType()) == literal(9007199254740993)
+
+
+def test_string_to_long_scientific_notation_integer_without_precision_loss() -> None:
+    assert literal("9007199254740993e0").to(LongType()) == literal(9007199254740993)
+
+
+def test_string_to_long_max_decimal_like_integer_without_precision_loss() -> None:
+    assert literal(f"{LongType.max}.0").to(LongType()) == literal(LongType.max)
+
+
+def test_string_to_integer_scientific_notation_without_regression() -> None:
+    assert literal("1e3").to(IntegerType()) == literal(1000)
+
+
+def test_string_to_integer_large_scientific_notation_above_max() -> None:
+    assert isinstance(literal("1e1000000").to(IntegerType()), IntAboveMax)
+
+
+def test_string_to_long_large_scientific_notation_above_max() -> None:
+    assert isinstance(literal("1e1000000").to(LongType()), LongAboveMax)
+
+
+def test_decimal_to_long_above_max() -> None:
+    assert isinstance(DecimalLiteral(Decimal(LongType.max + 1)).to(LongType()), LongAboveMax)
+
+
+def test_decimal_to_long_below_min() -> None:
+    assert isinstance(DecimalLiteral(Decimal(LongType.min - 1)).to(LongType()), LongBelowMin)
+
+
 def test_string_to_integer_type_invalid_value() -> None:
     with pytest.raises(ValueError) as e:
         _ = literal("abc").to(IntegerType())
@@ -884,7 +926,7 @@ def test_decimal_literal_increment() -> None:
     assert dec.increment().value.as_tuple() == Decimal("10.124").as_tuple()
 
 
-def test_decimal_literal_dencrement() -> None:
+def test_decimal_literal_decrement() -> None:
     dec = DecimalLiteral(Decimal("10.123"))
     # Twice to check that we don't mutate the value
     assert dec.decrement() == DecimalLiteral(Decimal("10.122"))

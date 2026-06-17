@@ -101,7 +101,8 @@ class SortField(IcebergBaseModel):
     @classmethod
     def map_source_ids_onto_source_id(cls, data: Any) -> Any:
         if isinstance(data, dict):
-            if "source-id" not in data and (source_ids := data["source-ids"]):
+            if "source-id" not in data and "source-ids" in data:
+                source_ids = data["source-ids"]
                 if isinstance(source_ids, list):
                     if len(source_ids) == 0:
                         raise ValueError("Empty source-ids is not allowed")

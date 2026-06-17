@@ -1744,7 +1744,7 @@ def test_set_partition_statistics_update(table_v2_with_statistics: Table) -> Non
 
     partition_statistics_file = PartitionStatisticsFile(
         snapshot_id=snapshot_id,
-        statistics_path="s3://bucket/warehouse/stats.puffin",
+        statistics_path="s3://bucket/warehouse/stats.parquet",
         file_size_in_bytes=124,
     )
 
@@ -1764,7 +1764,7 @@ def test_set_partition_statistics_update(table_v2_with_statistics: Table) -> Non
     expected = """
     {
       "snapshot-id": 3055729675574597004,
-      "statistics-path": "s3://bucket/warehouse/stats.puffin",
+      "statistics-path": "s3://bucket/warehouse/stats.parquet",
       "file-size-in-bytes": 124
     }"""
 
@@ -1782,7 +1782,7 @@ def test_remove_partition_statistics_update(table_v2_with_statistics: Table) -> 
 
     partition_statistics_file = PartitionStatisticsFile(
         snapshot_id=snapshot_id,
-        statistics_path="s3://bucket/warehouse/stats.puffin",
+        statistics_path="s3://bucket/warehouse/stats.parquet",
         file_size_in_bytes=124,
     )
 
