@@ -51,8 +51,13 @@ def create_match_filter(df: pyarrow_table, join_cols: list[str]) -> BooleanExpre
     )
     prefix_cols = [c for c in join_cols if c != in_col]
 
-    grouped = unique_keys.group_by(prefix_cols).aggregate([(in_col, "list")])
-    in_values_col = f"{in_col}_list"
+    # The group keys come first (in prefix_cols order) followed by the list aggregate.
+    # Rename the aggregate to a sentinel so it cannot collide with a join column that
+    # happens to be named f"{in_col}_list".
+    in_values_col = "__in_values"
+    while in_values_col in prefix_cols:
+        in_values_col += "_"
+    grouped = unique_keys.group_by(prefix_cols).aggregate([(in_col, "list")]).rename_columns([*prefix_cols, in_values_col])
 
     disjuncts: list[BooleanExpression] = []
     for row in grouped.to_pylist():
