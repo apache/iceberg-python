@@ -85,20 +85,20 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
             f"DataFrames, and cannot be used as column names"
         ) from None
 
-    # Step 1: Prepare source index with join keys and a marker index
-    # Cast to target table schema, so we can do the join
-    # See: https://github.com/apache/arrow/issues/37542
+    # Step 1: Prepare source index with join keys and a marker index.
+    # Cast only join columns to target join-column schema so schema evolution
+    # (for example, newly added non-key columns) doesn't break the join setup.
     source_index = (
-        source_table.cast(target_table.schema)
-        .select(join_cols_set)
+        source_table.select(join_cols)
+        .cast(pa.schema([target_table.schema.field(col) for col in join_cols]))
         .append_column(SOURCE_INDEX_COLUMN_NAME, pa.array(range(len(source_table))))
     )
 
     # Step 2: Prepare target index with join keys and a marker
-    target_index = target_table.select(join_cols_set).append_column(TARGET_INDEX_COLUMN_NAME, pa.array(range(len(target_table))))
+    target_index = target_table.select(join_cols).append_column(TARGET_INDEX_COLUMN_NAME, pa.array(range(len(target_table))))
 
     # Step 3: Perform an inner join to find which rows from source exist in target
-    matching_indices = source_index.join(target_index, keys=list(join_cols_set), join_type="inner")
+    matching_indices = source_index.join(target_index, keys=join_cols, join_type="inner")
 
     # Step 4: Compare all rows using Python
     to_update_indices = []
@@ -112,7 +112,7 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
 
         for key in non_key_cols:
             source_val = source_row.column(key)[0].as_py()
-            target_val = target_row.column(key)[0].as_py()
+            target_val = target_row.column(key)[0].as_py() if key in target_table.column_names else None
             if source_val != target_val:
                 to_update_indices.append(source_idx)
                 break

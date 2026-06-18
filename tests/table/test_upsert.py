@@ -714,6 +714,57 @@ def test_upsert_with_nulls(catalog: Catalog) -> None:
     )
 
 
+def test_upsert_after_schema_add_column(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_after_schema_add_column"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(2, "name", StringType(), required=True),
+        identifier_field_ids=[1],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    initial = pa.Table.from_pylist(
+        [{"id": 1, "name": "Alice"}],
+        schema=pa.schema(
+            [
+                pa.field("id", pa.int32(), nullable=False),
+                pa.field("name", pa.string(), nullable=False),
+            ]
+        ),
+    )
+    tbl.append(initial)
+
+    with tbl.update_schema() as update_schema:
+        update_schema.add_column("country", StringType())
+        tbl = tbl.refresh()
+
+    source = pa.Table.from_pylist(
+        [
+            {"id": 1, "name": "Alice", "country": "NL"},
+            {"id": 2, "name": "Bob", "country": "US"},
+        ],
+        schema=pa.schema(
+            [
+                pa.field("id", pa.int32(), nullable=False),
+                pa.field("name", pa.string(), nullable=False),
+                pa.field("country", pa.string(), nullable=True),
+            ]
+        ),
+    )
+
+    upd = tbl.upsert(source, ["id"])
+
+    assert upd.rows_updated == 1
+    assert upd.rows_inserted == 1
+    assert sorted(tbl.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == [
+        {"id": 1, "name": "Alice", "country": "NL"},
+        {"id": 2, "name": "Bob", "country": "US"},
+    ]
+
+
 def test_transaction(catalog: Catalog) -> None:
     """Test the upsert within a Transaction. Make sure that if something fails the entire Transaction is
     rolled back."""
