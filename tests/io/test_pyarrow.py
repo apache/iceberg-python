@@ -3084,6 +3084,7 @@ def test__to_requested_schema_timestamps_without_downcast_raises_exception(
         (pa.int8(), IntegerType(), pa.int32()),
         (pa.int16(), IntegerType(), pa.int32()),
         (pa.uint16(), IntegerType(), pa.int32()),
+        (pa.uint32(), IntegerType(), pa.int32()),
         (pa.uint32(), LongType(), pa.int64()),
         (pa.int32(), LongType(), pa.int64()),
     ],
