@@ -1058,7 +1058,7 @@ def test_read_spark_written_puffin_dv(spark: SparkSession, session_catalog: Rest
 
     manifests = current_snapshot.manifests(table.io)
     delete_manifests = [m for m in manifests if m.content == ManifestContent.DELETES]
-    assert len(delete_manifests) > 0, "Expected delete manifest with DVs"
+    assert len(delete_manifests) == 1, "Expected exactly one delete manifest with DVs"
 
     delete_manifest = delete_manifests[0]
     entries = list(delete_manifest.fetch_manifest_entry(table.io))
