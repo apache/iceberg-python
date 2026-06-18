@@ -340,9 +340,6 @@ def test_table_scan_projection_unknown_column(table_v2: Table) -> None:
 
 
 def test_data_scan_plan_files_no_current_snapshot(example_table_metadata_no_snapshot_v1: dict[str, Any]) -> None:
-    # A table with no current snapshot must plan zero files (rather than raising) across every
-    # read path. DataScan routes local planning through ManifestGroupPlanner, which has no
-    # snapshot guard of its own, so the guard lives in DataScan._plan_files_local.
     table = Table(
         identifier=("default", "test_no_snapshot"),
         metadata=TableMetadataV1(**example_table_metadata_no_snapshot_v1),
