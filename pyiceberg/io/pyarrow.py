@@ -1625,8 +1625,12 @@ def _task_to_record_batches(
     partition_spec: PartitionSpec | None = None,
     format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
     downcast_ns_timestamp_to_us: bool | None = None,
+    dictionary_columns: tuple[str, ...] = (),
 ) -> Iterator[pa.RecordBatch]:
-    arrow_format = _get_file_format(task.file.file_format, pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
+    format_kwargs: dict[str, Any] = {"pre_buffer": True, "buffer_size": ONE_MEGABYTE * 8}
+    if dictionary_columns and task.file.file_format == FileFormat.PARQUET:
+        format_kwargs["dictionary_columns"] = dictionary_columns
+    arrow_format = _get_file_format(task.file.file_format, **format_kwargs)
     with io.new_input(task.file.file_path).open() as fin:
         fragment = arrow_format.make_fragment(fin)
         physical_schema = fragment.physical_schema
@@ -1729,6 +1733,7 @@ class ArrowScan:
     _case_sensitive: bool
     _limit: int | None
     _downcast_ns_timestamp_to_us: bool | None
+    _dictionary_columns: tuple[str, ...]
     """Scan the Iceberg Table and create an Arrow construct.
 
     Attributes:
@@ -1738,6 +1743,7 @@ class ArrowScan:
         _bound_row_filter: Schema bound row expression to filter the data with
         _case_sensitive: Case sensitivity when looking up column names
         _limit: Limit the number of records.
+        _dictionary_columns: Column names to read as dictionary-encoded arrays.
     """
 
     def __init__(
@@ -1748,6 +1754,8 @@ class ArrowScan:
         row_filter: BooleanExpression,
         case_sensitive: bool = True,
         limit: int | None = None,
+        *,
+        dictionary_columns: tuple[str, ...] = (),
     ) -> None:
         self._table_metadata = table_metadata
         self._io = io
@@ -1756,6 +1764,7 @@ class ArrowScan:
         self._case_sensitive = case_sensitive
         self._limit = limit
         self._downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE)
+        self._dictionary_columns = dictionary_columns
 
     @property
     def _projected_field_ids(self) -> set[int]:
@@ -1866,6 +1875,7 @@ class ArrowScan:
                 self._table_metadata.specs().get(task.file.spec_id),
                 self._table_metadata.format_version,
                 self._downcast_ns_timestamp_to_us,
+                self._dictionary_columns,
             )
             for batch in batches:
                 if self._limit is not None:

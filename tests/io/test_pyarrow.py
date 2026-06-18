@@ -5103,3 +5103,73 @@ def test_partition_column_projection_with_schema_evolution(catalog: InMemoryCata
     result_sorted = result.sort_by("name")
     assert result_sorted["name"].to_pylist() == ["Alice", "Bob", "Charlie", "David"]
     assert result_sorted["new_column"].to_pylist() == [None, None, "new1", "new2"]
+
+
+def test_dictionary_columns_produces_dict_encoded_output(tmpdir: str) -> None:
+    """dictionary_columns passed to ArrowScan must yield dictionary-encoded arrays.
+
+    Verifies that:
+    1. The requested column is returned as a pa.DictionaryArray.
+    2. Values are identical to a plain (non-dict) scan.
+    3. A column NOT in dictionary_columns is still returned as a plain array.
+    """
+    from pyiceberg.expressions import AlwaysTrue
+    from pyiceberg.io.pyarrow import ArrowScan, PyArrowFileIO
+    from pyiceberg.partitioning import PartitionSpec
+    from pyiceberg.table import FileScanTask
+    from pyiceberg.table.metadata import TableMetadataV2
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),
+            pa.field("label", pa.string(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "2"}),
+        ]
+    )
+    arrow_table = pa.table(
+        [pa.array([1, 2, 3, 4], type=pa.int32()), pa.array(["a", "b", "a", "b"], type=pa.string())],
+        schema=arrow_schema,
+    )
+    data_file = _write_table_to_data_file(f"{tmpdir}/test_dict_cols.parquet", arrow_schema, arrow_table)
+    data_file.spec_id = 0
+
+    iceberg_schema = Schema(
+        NestedField(1, "id", IntegerType(), required=False),
+        NestedField(2, "label", StringType(), required=False),
+    )
+    table_metadata = TableMetadataV2(
+        location=f"file://{tmpdir}",
+        last_column_id=2,
+        format_version=2,
+        schemas=[iceberg_schema],
+        partition_specs=[PartitionSpec()],
+    )
+    io = PyArrowFileIO()
+    task = FileScanTask(data_file)
+
+    scan_plain = ArrowScan(
+        table_metadata=table_metadata,
+        io=io,
+        projected_schema=iceberg_schema,
+        row_filter=AlwaysTrue(),
+    )
+    scan_dict = ArrowScan(
+        table_metadata=table_metadata,
+        io=io,
+        projected_schema=iceberg_schema,
+        row_filter=AlwaysTrue(),
+        dictionary_columns=("label",),
+    )
+
+    result_plain = scan_plain.to_table([task])
+    result_dict = scan_dict.to_table([task])
+
+    # id column is not in dictionary_columns — both scans should return int32
+    assert result_plain.schema.field("id").type == pa.int32()
+    assert result_dict.schema.field("id").type == pa.int32()
+
+    # label column: plain scan → string, dict scan → dictionary<values=string, indices=int32>
+    assert result_plain.schema.field("label").type == pa.string()
+    assert pa.types.is_dictionary(result_dict.schema.field("label").type)
+
+    # Values must be identical
+    assert result_plain.column("label").to_pylist() == result_dict.column("label").to_pylist()
