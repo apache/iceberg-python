@@ -2171,10 +2171,18 @@ class DataScan(TableScan):
             return self._plan_files_server_side()
         return self._plan_files_local()
 
-    def to_arrow(self) -> pa.Table:
+    def to_arrow(self, dictionary_columns: tuple[str, ...] = ()) -> pa.Table:
         """Read an Arrow table eagerly from this DataScan.
 
         All rows will be loaded into memory at once.
+
+        Args:
+            dictionary_columns:
+                A tuple of column names that PyArrow should read as
+                dictionary-encoded (``pa.DictionaryArray``).  Dictionary
+                encoding can substantially reduce memory usage for columns
+                with low-cardinality repeated string values.
+                Only applies to Parquet files; silently ignored for ORC.
 
         Returns:
             pa.Table: Materialized Arrow Table from the Iceberg table's DataScan
@@ -2182,15 +2190,29 @@ class DataScan(TableScan):
         from pyiceberg.io.pyarrow import ArrowScan
 
         return ArrowScan(
-            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
+            self.table_metadata,
+            self.io,
+            self.projection(),
+            self.row_filter,
+            self.case_sensitive,
+            self.limit,
+            dictionary_columns=dictionary_columns,
         ).to_table(self.plan_files())
 
-    def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
+    def to_arrow_batch_reader(self, dictionary_columns: tuple[str, ...] = ()) -> pa.RecordBatchReader:
         """Return an Arrow RecordBatchReader from this DataScan.
 
         For large results, using a RecordBatchReader requires less memory than
         loading an Arrow Table for the same DataScan, because a RecordBatch
         is read one at a time.
+
+        Args:
+            dictionary_columns:
+                A tuple of column names that PyArrow should read as
+                dictionary-encoded (``pa.DictionaryArray``).  Dictionary
+                encoding can substantially reduce memory usage for columns
+                with low-cardinality repeated string values.
+                Only applies to Parquet files; silently ignored for ORC.
 
         Returns:
             pa.RecordBatchReader: Arrow RecordBatchReader from the Iceberg table's DataScan
@@ -2202,7 +2224,13 @@ class DataScan(TableScan):
 
         target_schema = schema_to_pyarrow(self.projection())
         batches = ArrowScan(
-            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
+            self.table_metadata,
+            self.io,
+            self.projection(),
+            self.row_filter,
+            self.case_sensitive,
+            self.limit,
+            dictionary_columns=dictionary_columns,
         ).to_record_batches(self.plan_files())
 
         return pa.RecordBatchReader.from_batches(
@@ -2381,13 +2409,11 @@ class ManifestGroupPlanner:
         # The lambda created here is run in multiple threads.
         # So we avoid creating _EvaluatorExpression methods bound to a single
         # shared instance across multiple threads.
-        return lambda datafile: (
-            residual_evaluator_of(
-                spec=spec,
-                expr=self.row_filter,
-                case_sensitive=self.case_sensitive,
-                schema=self.table_metadata.schema(),
-            )
+        return lambda datafile: residual_evaluator_of(
+            spec=spec,
+            expr=self.row_filter,
+            case_sensitive=self.case_sensitive,
+            schema=self.table_metadata.schema(),
         )
 
     @staticmethod
