@@ -27,6 +27,7 @@ from pyiceberg.catalog import load_catalog
 from pyiceberg.catalog.sql import (
     DEFAULT_ECHO_VALUE,
     DEFAULT_POOL_PRE_PING_VALUE,
+    ICEBERG_TABLE_TYPE,
     IcebergTables,
     SqlCatalog,
     SqlCatalogBaseTable,
@@ -261,3 +262,78 @@ class TestSqlCatalogClose:
 
         # Second close should not raise an exception
         catalog_sqlite.close()
+
+
+class TestIcebergTypeFilter:
+    """Verify that table operations filter on iceberg_type and ignore view rows."""
+
+    def _insert_view_row(self, catalog: SqlCatalog, namespace: str, name: str) -> None:
+        """Directly insert a row with iceberg_type='VIEW' to simulate a view written by another engine."""
+        from sqlalchemy.orm import Session
+
+        with Session(catalog.engine) as session:
+            session.add(
+                IcebergTables(
+                    catalog_name=catalog.name,
+                    table_namespace=namespace,
+                    table_name=name,
+                    metadata_location=None,
+                    previous_metadata_location=None,
+                    iceberg_type="VIEW",
+                )
+            )
+            session.commit()
+
+    def test_iceberg_type_set_on_create(self, catalog_memory: SqlCatalog) -> None:
+        """Tables created by SqlCatalog should have iceberg_type='TABLE'."""
+        from sqlalchemy import select
+        from sqlalchemy.orm import Session
+
+        catalog_memory.create_namespace("iceberg_type_ns")
+        schema = Schema(NestedField(1, "id", StringType(), required=True))
+        catalog_memory.create_table("iceberg_type_ns.tbl_type_check", schema)
+
+        with Session(catalog_memory.engine) as session:
+            row = session.scalar(
+                select(IcebergTables).where(
+                    IcebergTables.catalog_name == catalog_memory.name,
+                    IcebergTables.table_namespace == "iceberg_type_ns",
+                    IcebergTables.table_name == "tbl_type_check",
+                )
+            )
+        assert row is not None
+        assert row.iceberg_type == ICEBERG_TABLE_TYPE
+
+    def test_list_tables_excludes_view_rows(self, catalog_memory: SqlCatalog) -> None:
+        """list_tables must not return rows with iceberg_type='VIEW'."""
+        catalog_memory.create_namespace("view_filter_ns")
+        self._insert_view_row(catalog_memory, "view_filter_ns", "my_view")
+        tables = catalog_memory.list_tables("view_filter_ns")
+        assert ("view_filter_ns", "my_view") not in tables
+
+    def test_load_table_ignores_view_rows(self, catalog_memory: SqlCatalog) -> None:
+        """load_table must raise NoSuchTableError for rows with iceberg_type='VIEW'."""
+        from pyiceberg.exceptions import NoSuchTableError
+
+        catalog_memory.create_namespace("load_view_ns")
+        self._insert_view_row(catalog_memory, "load_view_ns", "a_view")
+        with pytest.raises(NoSuchTableError):
+            catalog_memory.load_table("load_view_ns.a_view")
+
+    def test_drop_table_ignores_view_rows(self, catalog_memory: SqlCatalog) -> None:
+        """drop_table must raise NoSuchTableError for rows with iceberg_type='VIEW'."""
+        from pyiceberg.exceptions import NoSuchTableError
+
+        catalog_memory.create_namespace("drop_view_ns")
+        self._insert_view_row(catalog_memory, "drop_view_ns", "droppable_view")
+        with pytest.raises(NoSuchTableError):
+            catalog_memory.drop_table("drop_view_ns.droppable_view")
+
+    def test_rename_table_ignores_view_rows(self, catalog_memory: SqlCatalog) -> None:
+        """rename_table must raise NoSuchTableError for rows with iceberg_type='VIEW'."""
+        from pyiceberg.exceptions import NoSuchTableError
+
+        catalog_memory.create_namespace("rename_view_ns")
+        self._insert_view_row(catalog_memory, "rename_view_ns", "renamed_view")
+        with pytest.raises(NoSuchTableError):
+            catalog_memory.rename_table("rename_view_ns.renamed_view", "rename_view_ns.new_name")
