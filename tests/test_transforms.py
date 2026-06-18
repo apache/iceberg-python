@@ -1026,9 +1026,22 @@ def test_projection_truncate_string_starts_with(bound_reference_str: BoundRefere
 
 
 def test_projection_truncate_string_not_starts_with(bound_reference_str: BoundReference) -> None:
+    # literal_width (5) > truncate width (2): no inclusive projection possible (unsafe)
+    assert TruncateTransform(2).project("name", BoundNotStartsWith(term=bound_reference_str, literal=literal("hello"))) is None
+
+
+def test_projection_truncate_string_not_starts_with_shorter_literal(bound_reference_str: BoundReference) -> None:
+    # literal_width (2) == truncate width (2): project to !=
     assert TruncateTransform(2).project(
-        "name", BoundNotStartsWith(term=bound_reference_str, literal=literal("hello"))
-    ) == NotStartsWith(term="name", literal=literal("he"))
+        "name", BoundNotStartsWith(term=bound_reference_str, literal=literal("he"))
+    ) == NotEqualTo(term="name", literal=literal("he"))
+
+
+def test_projection_truncate_string_not_starts_with_original_literal(bound_reference_str: BoundReference) -> None:
+    # literal_width (1) < truncate width (2): keep original literal
+    assert TruncateTransform(2).project(
+        "name", BoundNotStartsWith(term=bound_reference_str, literal=literal("h"))
+    ) == NotStartsWith(term="name", literal=literal("h"))
 
 
 def _test_projection(lhs: UnboundPredicate | None, rhs: UnboundPredicate | None) -> None:
