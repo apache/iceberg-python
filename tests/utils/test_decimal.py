@@ -55,6 +55,7 @@ def test_bytes_required() -> None:
     assert bytes_required(-32768) == 2
     assert bytes_required(-8388608) == 3
     # The same applies when the unscaled value comes from a Decimal.
+    assert bytes_required(Decimal("1.27")) == 1
     assert bytes_required(Decimal("-1.28")) == 1
     assert bytes_required(Decimal("-327.68")) == 2
 
