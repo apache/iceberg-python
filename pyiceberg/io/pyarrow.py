@@ -1625,11 +1625,11 @@ def _task_to_record_batches(
     partition_spec: PartitionSpec | None = None,
     format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
     downcast_ns_timestamp_to_us: bool | None = None,
-    dictionary_columns: frozenset[str] = frozenset(),
+    dictionary_columns: tuple[str, ...] = (),
 ) -> Iterator[pa.RecordBatch]:
     format_kwargs: dict[str, Any] = {"pre_buffer": True, "buffer_size": ONE_MEGABYTE * 8}
     if dictionary_columns and task.file.file_format == FileFormat.PARQUET:
-        format_kwargs["dictionary_columns"] = tuple(dictionary_columns)
+        format_kwargs["dictionary_columns"] = dictionary_columns
     arrow_format = _get_file_format(task.file.file_format, **format_kwargs)
     with io.new_input(task.file.file_path).open() as fin:
         fragment = arrow_format.make_fragment(fin)
@@ -1733,7 +1733,7 @@ class ArrowScan:
     _case_sensitive: bool
     _limit: int | None
     _downcast_ns_timestamp_to_us: bool | None
-    _dictionary_columns: frozenset[str]
+    _dictionary_columns: tuple[str, ...]
     """Scan the Iceberg Table and create an Arrow construct.
 
     Attributes:
@@ -1764,7 +1764,7 @@ class ArrowScan:
         self._case_sensitive = case_sensitive
         self._limit = limit
         self._downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE)
-        self._dictionary_columns = frozenset(dictionary_columns)
+        self._dictionary_columns = dictionary_columns
 
     @property
     def _projected_field_ids(self) -> set[int]:
