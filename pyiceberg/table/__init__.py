@@ -2163,16 +2163,26 @@ def _min_sequence_number(manifests: list[ManifestFile]) -> int:
         return INITIAL_SEQUENCE_NUMBER
 
 
-def _to_arrow_via_file_scan_tasks(scan: BaseScan, tasks: Iterable[FileScanTask]) -> pa.Table:
+def _to_arrow_via_file_scan_tasks(
+    scan: BaseScan, tasks: Iterable[FileScanTask], dictionary_columns: tuple[str, ...] = ()
+) -> pa.Table:
     """Materialize a scan into an Arrow table given its planned ``FileScanTask``s."""
     from pyiceberg.io.pyarrow import ArrowScan
 
-    return ArrowScan(scan.table_metadata, scan.io, scan.projection(), scan.row_filter, scan.case_sensitive, scan.limit).to_table(
-        tasks
-    )
+    return ArrowScan(
+        scan.table_metadata,
+        scan.io,
+        scan.projection(),
+        scan.row_filter,
+        scan.case_sensitive,
+        scan.limit,
+        dictionary_columns=dictionary_columns,
+    ).to_table(tasks)
 
 
-def _to_arrow_batch_reader_via_file_scan_tasks(scan: BaseScan, tasks: Iterable[FileScanTask]) -> pa.RecordBatchReader:
+def _to_arrow_batch_reader_via_file_scan_tasks(
+    scan: BaseScan, tasks: Iterable[FileScanTask], dictionary_columns: tuple[str, ...] = ()
+) -> pa.RecordBatchReader:
     """Stream a scan into an Arrow ``RecordBatchReader`` given its planned ``FileScanTask``s."""
     import pyarrow as pa
 
@@ -2180,7 +2190,13 @@ def _to_arrow_batch_reader_via_file_scan_tasks(scan: BaseScan, tasks: Iterable[F
 
     target_schema = schema_to_pyarrow(scan.projection())
     batches = ArrowScan(
-        scan.table_metadata, scan.io, scan.projection(), scan.row_filter, scan.case_sensitive, scan.limit
+        scan.table_metadata,
+        scan.io,
+        scan.projection(),
+        scan.row_filter,
+        scan.case_sensitive,
+        scan.limit,
+        dictionary_columns=dictionary_columns,
     ).to_record_batches(tasks)
 
     return pa.RecordBatchReader.from_batches(target_schema, batches).cast(target_schema)
@@ -2259,28 +2275,44 @@ class DataScan(TableScan):
             return self._plan_files_server_side()
         return self._plan_files_local()
 
-    def to_arrow(self) -> pa.Table:
+    def to_arrow(self, dictionary_columns: tuple[str, ...] = ()) -> pa.Table:
         """Read an Arrow table eagerly from this DataScan.
 
         All rows will be loaded into memory at once.
 
+        Args:
+            dictionary_columns:
+                A tuple of column names that PyArrow should read as
+                dictionary-encoded (``pa.DictionaryArray``).  Dictionary
+                encoding can substantially reduce memory usage for columns
+                with low-cardinality repeated string values.
+                Only applies to Parquet files; silently ignored for ORC.
+
         Returns:
             pa.Table: Materialized Arrow Table from the Iceberg table's DataScan
         """
-        return _to_arrow_via_file_scan_tasks(self, self.plan_files())
+        return _to_arrow_via_file_scan_tasks(self, self.plan_files(), dictionary_columns=dictionary_columns)
 
-    def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
+    def to_arrow_batch_reader(self, dictionary_columns: tuple[str, ...] = ()) -> pa.RecordBatchReader:
         """Return an Arrow RecordBatchReader from this DataScan.
 
         For large results, using a RecordBatchReader requires less memory than
         loading an Arrow Table for the same DataScan, because a RecordBatch
         is read one at a time.
 
+        Args:
+            dictionary_columns:
+                A tuple of column names that PyArrow should read as
+                dictionary-encoded (``pa.DictionaryArray``).  Dictionary
+                encoding can substantially reduce memory usage for columns
+                with low-cardinality repeated string values.
+                Only applies to Parquet files; silently ignored for ORC.
+
         Returns:
             pa.RecordBatchReader: Arrow RecordBatchReader from the Iceberg table's DataScan
                 which can be used to read a stream of record batches one by one.
         """
-        return _to_arrow_batch_reader_via_file_scan_tasks(self, self.plan_files())
+        return _to_arrow_batch_reader_via_file_scan_tasks(self, self.plan_files(), dictionary_columns=dictionary_columns)
 
     def count(self) -> int:
         from pyiceberg.io.pyarrow import ArrowScan
@@ -2637,13 +2669,11 @@ class ManifestGroupPlanner:
         # The lambda created here is run in multiple threads.
         # So we avoid creating _EvaluatorExpression methods bound to a single
         # shared instance across multiple threads.
-        return lambda datafile: (
-            residual_evaluator_of(
-                spec=spec,
-                expr=self.row_filter,
-                case_sensitive=self.case_sensitive,
-                schema=self.table_metadata.schema(),
-            )
+        return lambda datafile: residual_evaluator_of(
+            spec=spec,
+            expr=self.row_filter,
+            case_sensitive=self.case_sensitive,
+            schema=self.table_metadata.schema(),
         )
 
     @staticmethod
