@@ -17,6 +17,7 @@
 # pylint:disable=redefined-outer-name
 
 import time
+from unittest.mock import patch
 
 import pytest
 from pytest_lazy_fixtures import lf
@@ -125,12 +126,14 @@ def test_list_tables_returns_pagination_list(table_schema_nested: Schema, databa
         catalog.create_table((database_name, table_name), table_schema_nested)
 
     try:
-        result = catalog.list_tables(database_name)
+        with patch.object(catalog._session, "get", wraps=catalog._session.get) as mock_get:
+            result = catalog.list_tables(database_name)
 
-        assert isinstance(result, PaginationList)
-        assert len(result) == len(table_list)
-        for table_name in table_list:
-            assert (database_name, table_name) in result
+            assert isinstance(result, PaginationList)
+            assert len(result) == len(table_list)
+            for table_name in table_list:
+                assert (database_name, table_name) in result
+            assert mock_get.call_count == len(table_list)
     finally:
         clean_up(catalog)
 
@@ -144,10 +147,12 @@ def test_list_namespaces_returns_pagination_list(database_list: list[str]) -> No
             catalog.create_namespace(namespace)
 
     try:
-        result = catalog.list_namespaces()
+        with patch.object(catalog._session, "get", wraps=catalog._session.get) as mock_get:
+            result = catalog.list_namespaces()
 
-        assert isinstance(result, PaginationList)
-        for namespace in database_list:
-            assert (namespace,) in result
+            assert isinstance(result, PaginationList)
+            for namespace in database_list:
+                assert (namespace,) in result
+            assert mock_get.call_count == len(result)
     finally:
         clean_up(catalog)

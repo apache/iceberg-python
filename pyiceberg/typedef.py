@@ -216,6 +216,8 @@ class Record(StructProtocol):
 TableVersion: TypeAlias = Literal[1, 2, 3]
 ViewVersion: TypeAlias = Literal[1]
 
+FetchNextPage: TypeAlias = Callable[[str], tuple[list[T], str | None]]
+
 
 class PaginationList(list[T]):
     """A list that lazily fetches subsequent pages from a paginated API.
@@ -229,15 +231,15 @@ class PaginationList(list[T]):
         first_page: Items from the first API response.
         next_page_token: Pagination token returned with the first response,
             or ``None`` if no further pages exist.
-        fetch_next_page: Callable that accepts a page token and returns a
-            tuple of ``(items, next_page_token_or_None)``.
+        fetch_next_page: Callable matching ``FetchNextPage[T]`` — accepts a
+            page token and returns ``(items, next_page_token_or_None)``.
     """
 
     def __init__(
         self,
         first_page: list[T],
         next_page_token: str | None,
-        fetch_next_page: Callable[[str], tuple[list[T], str | None]],
+        fetch_next_page: FetchNextPage[T],
     ) -> None:
         super().__init__(first_page)
         self._next_page_token = next_page_token
