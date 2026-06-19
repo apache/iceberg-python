@@ -111,6 +111,16 @@ def test_single_page_radd() -> None:
     assert [1] + pl == [1, 2, 3]
 
 
+def test_single_page_mul() -> None:
+    pl, _ = _simple_pagination_list([[1, 2]])
+    assert pl * 2 == [1, 2, 1, 2]
+
+
+def test_single_page_rmul() -> None:
+    pl, _ = _simple_pagination_list([[1, 2]])
+    assert 2 * pl == [1, 2, 1, 2]
+
+
 # ---------------------------------------------------------------------------
 # Multi-page: lazily fetches subsequent pages
 # ---------------------------------------------------------------------------
@@ -248,6 +258,16 @@ def test_multi_page_add_fetches_all() -> None:
 def test_multi_page_radd_fetches_all() -> None:
     pl, expected = _simple_pagination_list([[1, 2], [3, 4]])
     assert [0] + pl == [0] + expected
+
+
+def test_multi_page_mul_fetches_all() -> None:
+    pl, expected = _simple_pagination_list([[1, 2], [3, 4]])
+    assert pl * 2 == expected * 2
+
+
+def test_multi_page_rmul_fetches_all() -> None:
+    pl, expected = _simple_pagination_list([[1, 2], [3, 4]])
+    assert 2 * pl == 2 * expected
 
 
 # ---------------------------------------------------------------------------

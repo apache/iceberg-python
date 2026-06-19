@@ -345,3 +345,13 @@ class PaginationList(list[T]):
         """Return other + self as a plain list, fetching all pages first."""
         self._fetch_all()
         return list.__add__(other, self)
+
+    def __mul__(self, n: SupportsIndex) -> list[T]:
+        """Return self * n as a plain list, fetching all pages first."""
+        self._fetch_all()
+        return list.__mul__(self, n)
+
+    def __rmul__(self, n: SupportsIndex) -> list[T]:
+        """Return n * self as a plain list, fetching all pages first."""
+        self._fetch_all()
+        return list.__mul__(self, n)
