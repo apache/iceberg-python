@@ -551,32 +551,6 @@ class RestCatalog(Catalog):
 
         return ScanTasks.model_validate_json(response.text)
 
-    @retry(**_RETRY_ARGS)
-    def _load_credentials(
-        self,
-        identifier: str | Identifier,
-    ) -> LoadCredentialsResponse:
-        """Load raw vended storage credentials for a table."""
-        self._check_endpoint(Capability.V1_LOAD_CREDENTIALS)
-        response = self._session.get(
-            self.url(Endpoints.load_credentials, prefixed=True, **self._split_identifier_for_path(identifier)),
-        )
-        try:
-            response.raise_for_status()
-        except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchTableError})
-
-        return LoadCredentialsResponse.model_validate_json(response.text)
-
-    def load_credentials(
-        self,
-        identifier: str | Identifier,
-        location: str,
-    ) -> Properties:
-        """Load vended storage credentials and return the best match for a location."""
-        credentials_response = self._load_credentials(identifier)
-        return self._resolve_storage_credentials(credentials_response.storage_credentials, location)
-
     def plan_scan(self, identifier: str | Identifier, request: PlanTableScanRequest) -> list[FileScanTask]:
         """Plan a table scan and return FileScanTasks.
 
@@ -1125,6 +1099,32 @@ class RestCatalog(Catalog):
 
         table_response = TableResponse.model_validate_json(response.text)
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
+
+    @retry(**_RETRY_ARGS)
+    def _load_credentials(
+        self,
+        identifier: str | Identifier,
+    ) -> LoadCredentialsResponse:
+        """Load raw vended storage credentials for a table."""
+        self._check_endpoint(Capability.V1_LOAD_CREDENTIALS)
+        response = self._session.get(
+            self.url(Endpoints.load_credentials, prefixed=True, **self._split_identifier_for_path(identifier)),
+        )
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            _handle_non_200_response(exc, {404: NoSuchTableError})
+
+        return LoadCredentialsResponse.model_validate_json(response.text)
+
+    def load_credentials(
+        self,
+        identifier: str | Identifier,
+        location: str,
+    ) -> Properties:
+        """Load vended storage credentials and return the best match for a location."""
+        credentials_response = self._load_credentials(identifier)
+        return self._resolve_storage_credentials(credentials_response.storage_credentials, location)
 
     @retry(**_RETRY_ARGS)
     @override
