@@ -1475,21 +1475,21 @@ class RestCatalog(Catalog):
             _handle_non_200_response(exc, {404: NoSuchViewError})
 
     @retry(**_RETRY_ARGS)
+    @override
     def rename_view(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> None:
         self._check_endpoint(Capability.V1_RENAME_VIEW)
+        source = self._split_identifier_for_json(from_identifier)
+        destination = self._split_identifier_for_json(to_identifier)
         payload = {
-            "source": self._split_identifier_for_json(from_identifier),
-            "destination": self._split_identifier_for_json(to_identifier),
+            "source": source,
+            "destination": destination,
         }
 
         # Ensure source and destination namespaces exist before rename.
-        source_namespace = self._split_identifier_for_json(from_identifier)["namespace"]
-        dest_namespace = self._split_identifier_for_json(to_identifier)["namespace"]
-
-        if not self.namespace_exists(source_namespace):
-            raise NoSuchNamespaceError(f"Source namespace does not exist: {source_namespace}")
-        if not self.namespace_exists(dest_namespace):
-            raise NoSuchNamespaceError(f"Destination namespace does not exist: {dest_namespace}")
+        if not self.namespace_exists(source["namespace"]):
+            raise NoSuchNamespaceError(f"Source namespace does not exist: {source['namespace']}")
+        if not self.namespace_exists(destination["namespace"]):
+            raise NoSuchNamespaceError(f"Destination namespace does not exist: {destination['namespace']}")
 
         response = self._session.post(self.url(Endpoints.rename_view), json=payload)
         try:
