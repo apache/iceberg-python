@@ -1828,9 +1828,6 @@ class BaseScan(ABC):
         self.limit = limit
 
     @abstractmethod
-    def projection(self) -> Schema: ...
-
-    @abstractmethod
     def plan_files(self) -> Iterable[ScanTask]: ...
 
     @abstractmethod
@@ -2109,7 +2106,7 @@ class DataScan(TableScan):
             options=self.options,
         )
 
-    @property
+    @cached_property
     def partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
         return self._manifest_planner.partition_filters
 
