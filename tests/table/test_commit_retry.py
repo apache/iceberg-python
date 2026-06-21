@@ -722,3 +722,86 @@ def test_mixed_delete_overwrite_retries_successfully(catalog: Catalog) -> None:
 
     result = catalog.load_table("default.mixed_retry_test").scan().to_arrow()
     assert sorted(result.column("value").to_pylist()) == [2, 5, 6, 7]
+
+
+def test_manifest_list_cleanup_on_retry(catalog: Catalog) -> None:
+    """Verify that manifest list files from failed retry attempts are cleaned up."""
+    catalog.create_namespace("default")
+    schema = _test_schema()
+    catalog.create_table("default.manifest_list_cleanup_test", schema=schema)
+
+    import pyarrow as pa
+
+    df = pa.table({"x": [1, 2, 3]})
+
+    # Seed the table so there's a branch HEAD to conflict with
+    tbl = catalog.load_table("default.manifest_list_cleanup_test")
+    tbl.append(df)
+
+    # Two writers see the same snapshot
+    tbl1 = catalog.load_table("default.manifest_list_cleanup_test")
+    tbl2 = catalog.load_table("default.manifest_list_cleanup_test")
+
+    # tbl1 commits first, advancing catalog HEAD
+    tbl1.append(df)
+
+    # Track deletes on tbl2
+    deleted_paths: list[str] = []
+    original_delete = tbl2.io.delete
+
+    def tracking_delete(path: str) -> None:
+        deleted_paths.append(path)
+        original_delete(path)
+
+    with patch.object(tbl2.io, "delete", side_effect=tracking_delete):
+        tbl2.append(df)
+
+    # At least one manifest list (snap-*.avro) from the failed attempt should be deleted
+    manifest_list_deletes = [p for p in deleted_paths if "snap-" in p and p.endswith(".avro")]
+    assert len(manifest_list_deletes) >= 1, (
+        f"Expected at least one orphaned manifest list to be cleaned up. Deleted paths: {deleted_paths}"
+    )
+
+    # Sanity check: all data committed
+    refreshed = catalog.load_table("default.manifest_list_cleanup_test")
+    assert len(refreshed.scan().to_arrow()) == 9
+
+
+def test_manifest_list_cleanup_on_abort(catalog: Catalog) -> None:
+    """Verify that ALL manifest lists are cleaned up when a commit permanently fails."""
+    catalog.create_namespace("default")
+    schema = _test_schema()
+    catalog.create_table("default.manifest_list_abort_test", schema=schema)
+
+    import pyarrow as pa
+
+    df = pa.table({"x": [1, 2, 3]})
+
+    # Seed the table
+    tbl = catalog.load_table("default.manifest_list_abort_test")
+    tbl.append(df)
+
+    # Two writers see the same snapshot
+    tbl1 = catalog.load_table("default.manifest_list_abort_test")
+    tbl2 = catalog.load_table("default.manifest_list_abort_test")
+
+    # tbl1 deletes x==1, so tbl2's same delete will conflict
+    tbl1.delete("x == 1")
+
+    # Track deletes on tbl2
+    deleted_paths: list[str] = []
+    original_delete = tbl2.io.delete
+
+    def tracking_delete(path: str) -> None:
+        deleted_paths.append(path)
+        original_delete(path)
+
+    with patch.object(tbl2.io, "delete", side_effect=tracking_delete):
+        with pytest.raises(ValidationException):
+            tbl2.delete("x == 1")
+
+    # Manifest list files should be cleaned up on abort
+    manifest_list_deletes = [p for p in deleted_paths if "snap-" in p and p.endswith(".avro")]
+    assert len(manifest_list_deletes) >= 1, (
+        f"Expected manifest list cleanup on abort. Deleted paths: {deleted_paths}"
+    )

@@ -125,6 +125,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     _commit_window: CommitWindow | None
     _written_manifests: list[str]
     _uncommitted_manifests: list[str]
+    _written_manifest_lists: list[str]
 
     def __init__(
         self,
@@ -146,6 +147,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._manifest_num_counter = itertools.count(0)
         self._written_manifests = []
         self._uncommitted_manifests = []
+        self._written_manifest_lists = []
         from pyiceberg.table import TableProperties
 
         self._compression = self._transaction.table_metadata.properties.get(  # type: ignore
@@ -301,6 +303,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         )
         location_provider = self._transaction._table.location_provider()
         manifest_list_file_path = location_provider.new_metadata_location(file_name)
+        self._written_manifest_lists.append(manifest_list_file_path)
 
         with write_manifest_list(
             format_version=self._transaction.table_metadata.format_version,
@@ -390,23 +393,37 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._transaction._apply(*self._commit())
 
     def _cleanup_uncommitted(self) -> None:
-        """Delete manifest files from failed retry attempts."""
+        """Delete manifest files and manifest lists from failed retry attempts."""
         for path in self._uncommitted_manifests:
             try:
                 self._io.delete(path)
             except Exception:
                 logger.warning("Failed to delete uncommitted manifest: %s", path, exc_info=True)
         self._uncommitted_manifests.clear()
+        # Delete all manifest lists except the last one (which the committed snapshot references)
+        if len(self._written_manifest_lists) > 1:
+            for path in self._written_manifest_lists[:-1]:
+                try:
+                    self._io.delete(path)
+                except Exception:
+                    logger.warning("Failed to delete uncommitted manifest list: %s", path, exc_info=True)
+            self._written_manifest_lists = self._written_manifest_lists[-1:]
 
     def _clean_all_uncommitted(self) -> None:
-        """Clean up all manifests written during this producer's lifecycle on abort."""
+        """Clean up all manifests and manifest lists on abort."""
         for path in itertools.chain(self._uncommitted_manifests, self._written_manifests):
             try:
                 self._io.delete(path)
             except Exception:
                 logger.warning("Failed to delete uncommitted manifest: %s", path, exc_info=True)
+        for path in self._written_manifest_lists:
+            try:
+                self._io.delete(path)
+            except Exception:
+                logger.warning("Failed to delete uncommitted manifest list: %s", path, exc_info=True)
         self._uncommitted_manifests.clear()
         self._written_manifests.clear()
+        self._written_manifest_lists.clear()
 
     def _refresh_for_retry(self) -> None:
         """Reset state for a retry attempt with refreshed metadata."""
