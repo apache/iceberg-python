@@ -1030,7 +1030,6 @@ def test_projection_truncate_string_not_starts_with_longer_literal(bound_referen
     assert TruncateTransform(2).project("name", BoundNotStartsWith(term=bound_reference_str, literal=literal("hello"))) is None
 
 
-def test_projection_truncate_string_not_starts_with_shorter_literal(bound_reference_str: BoundReference) -> None:
 def test_projection_truncate_string_not_starts_with_equal_width_literal(bound_reference_str: BoundReference) -> None:
     # Valid projection: improve NOT STARTS WITH "he" to partition != "he".
     assert TruncateTransform(2).project(
