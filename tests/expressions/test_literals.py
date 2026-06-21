@@ -160,6 +160,16 @@ def test_integer_to_date_conversion() -> None:
     assert date_lit.value == date_delta
 
 
+def test_long_to_date_outside_bound() -> None:
+    big_lit = literal(IntegerType.max + 1).to(LongType())
+    above_max_lit = big_lit.to(DateType())
+    assert above_max_lit == IntAboveMax()
+
+    small_lit = literal(IntegerType.min - 1).to(LongType())
+    below_min_lit = small_lit.to(DateType())
+    assert below_min_lit == IntBelowMin()
+
+
 def test_long_to_integer_within_bound() -> None:
     lit = literal(34).to(LongType())
     int_lit = lit.to(IntegerType())
