@@ -319,7 +319,7 @@ class LongLiteral(Literal[int]):
     def _(self, _: FloatType) -> Literal[float]:
         if FloatType.max < self.value:
             return FloatAboveMax()
-        elif FloatType.min > self.value:
+        elif self.value < FloatType.min:
             return FloatBelowMin()
         return FloatLiteral(float(self.value))
 
