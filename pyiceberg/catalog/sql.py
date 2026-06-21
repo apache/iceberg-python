@@ -786,5 +786,6 @@ class SqlCatalog(MetastoreCatalog):
             self.engine.dispose()
 
     @override
+     @override
     def rename_view(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> None:
         raise NotImplementedError
