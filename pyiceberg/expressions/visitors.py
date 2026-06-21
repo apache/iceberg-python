@@ -1905,10 +1905,7 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
             return AlwaysFalse()
 
     def visit_not_starts_with(self, term: BoundTerm, literal: LiteralValue) -> BooleanExpression:
-        if not self.visit_starts_with(term, literal):
-            return AlwaysTrue()
-        else:
-            return AlwaysFalse()
+        return ~self.visit_starts_with(term, literal)
 
     def visit_bound_predicate(self, predicate: BoundPredicate) -> BooleanExpression:
         """
