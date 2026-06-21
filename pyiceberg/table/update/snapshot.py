@@ -109,7 +109,7 @@ class CommitWindow:
     head: Snapshot | None
 
     @classmethod
-    def resolve(cls, metadata: "TableMetadata", base_id: int | None, branch: str | None) -> "CommitWindow":
+    def resolve(cls, metadata: TableMetadata, base_id: int | None, branch: str | None) -> CommitWindow:
         """Resolve a CommitWindow from metadata, starting snapshot ID, and target branch."""
         head = metadata.snapshot_by_name(branch)
         base = metadata.snapshot_by_id(base_id) if base_id is not None else None
@@ -474,6 +474,9 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
 
         catalog_head = self._commit_window.head
         starting_snapshot = self._commit_window.base
+
+        if catalog_head is None or starting_snapshot is None:
+            return
 
         table = self._transaction._table
         isolation_level_str = table.metadata.properties.get(

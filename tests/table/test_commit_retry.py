@@ -652,6 +652,7 @@ def test_validate_concurrency_skips_when_commit_window_is_empty(catalog: Catalog
     )
 
     # CommitWindow where base == head means no concurrent commits occurred
+    assert table.metadata.current_snapshot_id is not None
     current = table.metadata.snapshot_by_id(table.metadata.current_snapshot_id)
     producer._commit_window = CommitWindow(base=current, head=current)
 
@@ -789,9 +790,7 @@ def test_manifest_list_cleanup_on_abort(catalog: Catalog) -> None:
 
     # Manifest list files should be cleaned up on abort
     manifest_list_deletes = [p for p in deleted_paths if "snap-" in p and p.endswith(".avro")]
-    assert len(manifest_list_deletes) >= 1, (
-        f"Expected manifest list cleanup on abort. Deleted paths: {deleted_paths}"
-    )
+    assert len(manifest_list_deletes) >= 1, f"Expected manifest list cleanup on abort. Deleted paths: {deleted_paths}"
 
 
 def test_commit_retry_on_non_main_branch(catalog: Catalog) -> None:
@@ -807,9 +806,8 @@ def test_commit_retry_on_non_main_branch(catalog: Catalog) -> None:
     # Seed the table and create a branch
     tbl = catalog.load_table("default.branch_retry_test")
     tbl.append(df)
-    tbl.manage_snapshots().create_branch(
-        snapshot_id=tbl.metadata.current_snapshot_id, branch_name="test-branch"
-    ).commit()
+    assert tbl.metadata.current_snapshot_id is not None
+    tbl.manage_snapshots().create_branch(snapshot_id=tbl.metadata.current_snapshot_id, branch_name="test-branch").commit()
 
     # Two writers targeting the same branch
     tbl1 = catalog.load_table("default.branch_retry_test")
@@ -859,9 +857,8 @@ def test_commit_retry_delete_on_non_main_branch(catalog: Catalog) -> None:
     # Seed and create branch
     tbl = catalog.load_table("default.branch_delete_retry_test")
     tbl.append(df)
-    tbl.manage_snapshots().create_branch(
-        snapshot_id=tbl.metadata.current_snapshot_id, branch_name="test-branch"
-    ).commit()
+    assert tbl.metadata.current_snapshot_id is not None
+    tbl.manage_snapshots().create_branch(snapshot_id=tbl.metadata.current_snapshot_id, branch_name="test-branch").commit()
 
     # Append more data to the branch
     tbl = catalog.load_table("default.branch_delete_retry_test")
