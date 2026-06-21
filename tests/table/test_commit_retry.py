@@ -632,8 +632,8 @@ def test_mixed_delete_overwrite_starts_from_catalog_snapshot(catalog: Catalog) -
     assert overwrite_producer._starting_snapshot_id == base_snapshot_id
 
 
-def test_validate_concurrency_raises_on_missing_catalog_head_snapshot(catalog: Catalog) -> None:
-    """Validation should raise when catalog_head_snapshot_id is non-null but cannot be resolved."""
+def test_validate_concurrency_skips_when_commit_window_is_empty(catalog: Catalog) -> None:
+    """Validation should be skipped when CommitWindow.is_empty() is True (no concurrent commits)."""
     catalog.create_namespace("default")
     schema = _test_schema()
     table = catalog.create_table("default.missing_parent_test", schema=schema)
@@ -651,17 +651,16 @@ def test_validate_concurrency_raises_on_missing_catalog_head_snapshot(catalog: C
         io=table.io,
     )
 
-    # Set a CommitWindow with a non-existent catalog head snapshot ID
-    producer._commit_window = CommitWindow(
-        starting_snapshot_id=table.metadata.current_snapshot_id, catalog_head_snapshot_id=99999999
-    )
+    # CommitWindow where base == head means no concurrent commits occurred
+    current = table.metadata.snapshot_by_id(table.metadata.current_snapshot_id)
+    producer._commit_window = CommitWindow(base=current, head=current)
 
-    with pytest.raises(ValidationException, match="Cannot find catalog head snapshot"):
-        producer._validate_concurrency()
+    # Should not raise (validation is skipped)
+    producer._validate_concurrency()
 
 
 def test_validate_concurrency_raises_on_missing_starting_snapshot(catalog: Catalog) -> None:
-    """Validation should raise when starting_snapshot_id is non-null but cannot be resolved."""
+    """CommitWindow.resolve should raise when starting_snapshot_id cannot be resolved."""
     catalog.create_namespace("default")
     schema = _test_schema()
     table = catalog.create_table("default.missing_starting_test", schema=schema)
@@ -670,22 +669,10 @@ def test_validate_concurrency_raises_on_missing_starting_snapshot(catalog: Catal
 
     table.append(pa.table({"x": [1, 2, 3]}))
 
-    from pyiceberg.table.update.snapshot import CommitWindow, _DeleteFiles
-
-    tx = Transaction(table, autocommit=False)
-    producer = _DeleteFiles(
-        operation=Operation.DELETE,
-        transaction=tx,
-        io=table.io,
-    )
-
-    # Set a CommitWindow with a non-existent starting snapshot ID
-    producer._commit_window = CommitWindow(
-        starting_snapshot_id=99999999, catalog_head_snapshot_id=table.metadata.current_snapshot_id
-    )
+    from pyiceberg.table.update.snapshot import CommitWindow
 
     with pytest.raises(ValidationException, match="Cannot find starting snapshot"):
-        producer._validate_concurrency()
+        CommitWindow.resolve(table.metadata, base_id=99999999, branch="main")
 
 
 def test_mixed_delete_overwrite_retries_successfully(catalog: Catalog) -> None:

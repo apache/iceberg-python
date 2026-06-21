@@ -82,6 +82,7 @@ from pyiceberg.utils.properties import property_as_bool, property_as_int
 
 if TYPE_CHECKING:
     from pyiceberg.table import Transaction
+    from pyiceberg.table.metadata import TableMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -96,16 +97,29 @@ def _new_manifest_list_file_name(snapshot_id: int, attempt: int, commit_uuid: uu
     return f"snap-{snapshot_id}-{attempt}-{commit_uuid}.avro"
 
 
-@dataclass
+@dataclass(frozen=True)
 class CommitWindow:
     """Tracks the commit range to validate against during retry.
 
-    starting_snapshot_id: The snapshot when the operation began (fixed across retries).
-    catalog_head_snapshot_id: The catalog's latest HEAD snapshot (updated on each retry).
+    base: The snapshot when the operation began (exclusive lower bound, fixed across retries).
+    head: The branch HEAD snapshot after metadata refresh (inclusive upper bound).
     """
 
-    starting_snapshot_id: int | None
-    catalog_head_snapshot_id: int | None
+    base: Snapshot | None
+    head: Snapshot | None
+
+    @classmethod
+    def resolve(cls, metadata: "TableMetadata", base_id: int | None, branch: str | None) -> "CommitWindow":
+        """Resolve a CommitWindow from metadata, starting snapshot ID, and target branch."""
+        head = metadata.snapshot_by_name(branch)
+        base = metadata.snapshot_by_id(base_id) if base_id is not None else None
+        if base_id is not None and base is None:
+            raise ValidationException(f"Cannot find starting snapshot {base_id}")
+        return cls(base=base, head=head)
+
+    def is_empty(self) -> bool:
+        """Return True if no concurrent commits occurred (validation can be skipped)."""
+        return self.head is None or self.base is None or self.base.snapshot_id == self.head.snapshot_id
 
 
 class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
@@ -440,8 +454,8 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         """Validate that concurrent changes do not conflict with this operation.
 
         Uses the CommitWindow to determine which catalog commits to validate against.
-        The window spans from starting_snapshot (when the operation began) to the
-        catalog HEAD (latest committed snapshot), covering all external concurrent commits.
+        The window spans from base (when the operation began) to head (latest branch
+        HEAD), covering all external concurrent commits.
 
         Subclasses that do not require validation (e.g. fast append) should override
         with a no-op.
@@ -455,14 +469,11 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             _validate_no_new_deletes_for_data_files,
         )
 
-        if self._commit_window is None:
+        if self._commit_window is None or self._commit_window.is_empty():
             return
 
-        catalog_head = self._resolve_catalog_head_snapshot()
-        if catalog_head is None:
-            return
-
-        starting_snapshot = self._resolve_starting_snapshot()
+        catalog_head = self._commit_window.head
+        starting_snapshot = self._commit_window.base
 
         table = self._transaction._table
         isolation_level_str = table.metadata.properties.get(
@@ -483,17 +494,6 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                 table, catalog_head, conflict_detection_filter, self._deleted_data_files, starting_snapshot
             )
 
-    def _resolve_catalog_head_snapshot(self) -> Snapshot | None:
-        """Resolve the catalog HEAD snapshot from the CommitWindow."""
-        if self._commit_window is None or self._commit_window.catalog_head_snapshot_id is None:
-            return None
-        snapshot = self._transaction._table.metadata.snapshot_by_id(self._commit_window.catalog_head_snapshot_id)
-        if snapshot is None:
-            raise ValidationException(
-                f"Cannot find catalog head snapshot {self._commit_window.catalog_head_snapshot_id} in table metadata"
-            )
-        return snapshot
-
     def _resolve_parent_snapshot(self) -> Snapshot | None:
         """Resolve parent snapshot, raising ValidationException if ID is set but snapshot is missing."""
         if self._parent_snapshot_id is None:
@@ -501,16 +501,6 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         snapshot = self._transaction._table.metadata.snapshot_by_id(self._parent_snapshot_id)
         if snapshot is None:
             raise ValidationException(f"Cannot find parent snapshot {self._parent_snapshot_id} in table metadata")
-        return snapshot
-
-    def _resolve_starting_snapshot(self) -> Snapshot:
-        """Resolve starting snapshot for the conflict detection window from the CommitWindow."""
-        starting_id = self._commit_window.starting_snapshot_id if self._commit_window else self._starting_snapshot_id
-        if starting_id is None:
-            raise ValidationException("Cannot resolve starting snapshot: both starting and parent snapshot IDs are None")
-        snapshot = self._transaction._table.metadata.snapshot_by_id(starting_id)
-        if snapshot is None:
-            raise ValidationException(f"Cannot find starting snapshot {starting_id} in table metadata")
         return snapshot
 
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
