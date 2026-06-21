@@ -509,7 +509,7 @@ class _ExpressionEvaluator(BoundBooleanExpressionVisitor[bool]):
 
     def visit_starts_with(self, term: BoundTerm, literal: LiteralValue) -> bool:
         eval_res = term.eval(self.struct)
-        return eval_res is not None and str(eval_res).startswith(str(literal.value))
+        return eval_res is not None and eval_res.startswith(literal.value)
 
     def visit_not_starts_with(self, term: BoundTerm, literal: LiteralValue) -> bool:
         return not self.visit_starts_with(term, literal)
@@ -712,7 +712,7 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
     def visit_starts_with(self, term: BoundTerm, literal: LiteralValue) -> bool:
         pos = term.ref().accessor.position
         field = self.partition_fields[pos]
-        prefix = str(literal.value)
+        prefix = literal.value
         len_prefix = len(prefix)
 
         if field.lower_bound is None:
@@ -736,7 +736,7 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
     def visit_not_starts_with(self, term: BoundTerm, literal: LiteralValue) -> bool:
         pos = term.ref().accessor.position
         field = self.partition_fields[pos]
-        prefix = str(literal.value)
+        prefix = literal.value
         len_prefix = len(prefix)
 
         if field.contains_null or field.lower_bound is None or field.upper_bound is None:
@@ -1408,12 +1408,12 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
         if not isinstance(field.field_type, PrimitiveType):
             raise ValueError(f"Expected PrimitiveType: {field.field_type}")
 
-        prefix = str(literal.value)
+        prefix = literal.value
         len_prefix = len(prefix)
 
         lower_bound_bytes = self.lower_bounds.get(field_id)
         if lower_bound_bytes is not None:
-            lower_bound = str(from_bytes(field.field_type, lower_bound_bytes))
+            lower_bound = from_bytes(field.field_type, lower_bound_bytes)
 
             # truncate lower bound so that its length is not greater than the length of prefix
             if lower_bound and lower_bound[:len_prefix] > prefix:
@@ -1421,7 +1421,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
 
         upper_bound_bytes = self.upper_bounds.get(field_id)
         if upper_bound_bytes is not None:
-            upper_bound = str(from_bytes(field.field_type, upper_bound_bytes))
+            upper_bound = from_bytes(field.field_type, upper_bound_bytes)
 
             # truncate upper bound so that its length is not greater than the length of prefix
             if upper_bound is not None and upper_bound[:len_prefix] < prefix:
@@ -1439,7 +1439,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
         if not isinstance(field.field_type, PrimitiveType):
             raise ValueError(f"Expected PrimitiveType: {field.field_type}")
 
-        prefix = str(literal.value)
+        prefix = literal.value
         len_prefix = len(prefix)
 
         # not_starts_with will match unless all values must start with the prefix. This happens when
@@ -1447,8 +1447,8 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
         lower_bound_bytes = self.lower_bounds.get(field_id)
         upper_bound_bytes = self.upper_bounds.get(field_id)
         if lower_bound_bytes is not None and upper_bound_bytes is not None:
-            lower_bound = str(from_bytes(field.field_type, lower_bound_bytes))
-            upper_bound = str(from_bytes(field.field_type, upper_bound_bytes))
+            lower_bound = from_bytes(field.field_type, lower_bound_bytes)
+            upper_bound = from_bytes(field.field_type, upper_bound_bytes)
 
             # if lower is shorter than the prefix then lower doesn't start with the prefix
             if len(lower_bound) < len_prefix:
@@ -1899,7 +1899,7 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
 
     def visit_starts_with(self, term: BoundTerm, literal: LiteralValue) -> BooleanExpression:
         eval_res = term.eval(self.struct)
-        if eval_res is not None and str(eval_res).startswith(str(literal.value)):
+        if eval_res is not None and eval_res.startswith(literal.value):
             return AlwaysTrue()
         else:
             return AlwaysFalse()
