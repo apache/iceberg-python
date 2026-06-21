@@ -184,6 +184,16 @@ def test_long_to_float_conversion() -> None:
     assert lit.value == float_lit.value
 
 
+def test_long_to_float_outside_bound() -> None:
+    big_lit = literal(10**39)
+    above_max_lit = big_lit.to(FloatType())
+    assert above_max_lit == FloatAboveMax()
+
+    small_lit = literal(-(10**39))
+    below_min_lit = small_lit.to(FloatType())
+    assert below_min_lit == FloatBelowMin()
+
+
 def test_long_to_double_conversion() -> None:
     lit = literal(34).to(LongType())
     dbl_lit = lit.to(DoubleType())
