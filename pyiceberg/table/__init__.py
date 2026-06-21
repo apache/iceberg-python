@@ -1139,10 +1139,11 @@ class Transaction:
         self._requirements = tuple(r for r in self._requirements if not isinstance(r, AssertRefSnapshotId))
 
         # Build CommitWindow: starting_snapshot_id is from the first producer (fixed at operation start),
-        # catalog_head_snapshot_id is the current catalog HEAD after refresh.
+        # catalog_head_snapshot_id is the branch HEAD after refresh.
         starting_id = self._snapshot_producers[0]._starting_snapshot_id if self._snapshot_producers else None
-        current_snapshot = self._table.metadata.current_snapshot()
-        catalog_head_id = current_snapshot.snapshot_id if current_snapshot else None
+        target_branch = self._snapshot_producers[0]._target_branch if self._snapshot_producers else None
+        branch_head = self._table.metadata.snapshot_by_name(target_branch)
+        catalog_head_id = branch_head.snapshot_id if branch_head else None
         commit_window = CommitWindow(starting_snapshot_id=starting_id, catalog_head_snapshot_id=catalog_head_id)
 
         for producer in self._snapshot_producers:

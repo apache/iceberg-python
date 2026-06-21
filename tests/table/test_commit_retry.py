@@ -805,3 +805,94 @@ def test_manifest_list_cleanup_on_abort(catalog: Catalog) -> None:
     assert len(manifest_list_deletes) >= 1, (
         f"Expected manifest list cleanup on abort. Deleted paths: {deleted_paths}"
     )
+
+
+def test_commit_retry_on_non_main_branch(catalog: Catalog) -> None:
+    """Verify that commit retry works correctly on a non-main branch."""
+    catalog.create_namespace("default")
+    schema = _test_schema()
+    catalog.create_table("default.branch_retry_test", schema=schema)
+
+    import pyarrow as pa
+
+    df = pa.table({"x": [1, 2, 3]})
+
+    # Seed the table and create a branch
+    tbl = catalog.load_table("default.branch_retry_test")
+    tbl.append(df)
+    tbl.manage_snapshots().create_branch(
+        snapshot_id=tbl.metadata.current_snapshot_id, branch_name="test-branch"
+    ).commit()
+
+    # Two writers targeting the same branch
+    tbl1 = catalog.load_table("default.branch_retry_test")
+    tbl2 = catalog.load_table("default.branch_retry_test")
+
+    # tbl1 appends to the branch first
+    tbl1.append(df, branch="test-branch")
+
+    # tbl2 appends to the same branch (stale ref), should retry and succeed
+    import pyiceberg.table as _table_module
+
+    RuntimeTransaction = _table_module.Transaction
+    original_rebuild = RuntimeTransaction._rebuild_snapshot_updates
+    rebuild_count = 0
+
+    def counting_rebuild(self_tx: Any) -> None:
+        nonlocal rebuild_count
+        rebuild_count += 1
+        original_rebuild(self_tx)
+
+    with patch.object(RuntimeTransaction, "_rebuild_snapshot_updates", counting_rebuild):
+        tbl2.append(df, branch="test-branch")
+
+    assert rebuild_count == 1, "Expected exactly one retry on non-main branch"
+
+    # Both branch appends should be visible when scanning the branch
+    refreshed = catalog.load_table("default.branch_retry_test")
+    branch_snapshot_id = refreshed.metadata.refs["test-branch"].snapshot_id
+    result = refreshed.scan(snapshot_id=branch_snapshot_id).to_arrow()
+    assert len(result) == 9
+
+
+def test_commit_retry_delete_on_non_main_branch(catalog: Catalog) -> None:
+    """Verify that delete with retry works correctly on a non-main branch."""
+    catalog.create_namespace("default")
+    schema = _test_schema()
+    catalog.create_table(
+        "default.branch_delete_retry_test",
+        schema=schema,
+        properties={"write.delete.isolation-level": "snapshot"},
+    )
+
+    import pyarrow as pa
+
+    df = pa.table({"x": [1, 2, 3]})
+
+    # Seed and create branch
+    tbl = catalog.load_table("default.branch_delete_retry_test")
+    tbl.append(df)
+    tbl.manage_snapshots().create_branch(
+        snapshot_id=tbl.metadata.current_snapshot_id, branch_name="test-branch"
+    ).commit()
+
+    # Append more data to the branch
+    tbl = catalog.load_table("default.branch_delete_retry_test")
+    tbl.append(pa.table({"x": [4, 5, 6]}), branch="test-branch")
+
+    # Two writers: one appends, one deletes on the same branch
+    tbl1 = catalog.load_table("default.branch_delete_retry_test")
+    tbl2 = catalog.load_table("default.branch_delete_retry_test")
+
+    # tbl1 appends to branch (non-conflicting with delete on different data)
+    tbl1.append(pa.table({"x": [7, 8, 9]}), branch="test-branch")
+
+    # tbl2 deletes x==1 on branch. Should retry (stale ref) and succeed
+    # because the concurrent append (x=7,8,9) does not conflict under snapshot isolation.
+    tbl2.delete("x == 1", branch="test-branch")
+
+    refreshed = catalog.load_table("default.branch_delete_retry_test")
+    branch_snapshot_id = refreshed.metadata.refs["test-branch"].snapshot_id
+    result = refreshed.scan(snapshot_id=branch_snapshot_id).to_arrow()
+    # Original: 1,2,3,4,5,6 + append 7,8,9 - delete x==1 = 2,3,4,5,6,7,8,9
+    assert sorted(result.column("x").to_pylist()) == [2, 3, 4, 5, 6, 7, 8, 9]
