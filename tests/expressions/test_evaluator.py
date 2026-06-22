@@ -1523,7 +1523,7 @@ def test_strict_integer_not_in(strict_data_file_schema: Schema, strict_data_file
     assert should_read, "Should match: notIn on all nulls column"
 
     should_read = _StrictMetricsEvaluator(strict_data_file_schema, NotIn("some_nulls", {"abc", "def"})).eval(strict_data_file_1)
-    assert not should_read, "Should not match: some non-null value may be == 'def' which is within bounds ['bbb', 'eee']"
+    assert not should_read, "Should not match: mixed-null notIn cannot be proven when bounds are missing"
 
     should_read = _StrictMetricsEvaluator(strict_data_file_schema, NotIn("no_nulls", {"abc", "def"})).eval(strict_data_file_1)
     assert not should_read, "Should not match: no_nulls field does not have bounds"
