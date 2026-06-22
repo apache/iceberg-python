@@ -1523,10 +1523,46 @@ def test_strict_integer_not_in(strict_data_file_schema: Schema, strict_data_file
     assert should_read, "Should match: notIn on all nulls column"
 
     should_read = _StrictMetricsEvaluator(strict_data_file_schema, NotIn("some_nulls", {"abc", "def"})).eval(strict_data_file_1)
-    assert should_read, "Should match: notIn on some nulls column, 'bbb' > 'abc' and 'bbb' < 'def'"
+    assert not should_read, "Should not match: mixed-null notIn cannot be proven when bounds are missing"
 
     should_read = _StrictMetricsEvaluator(strict_data_file_schema, NotIn("no_nulls", {"abc", "def"})).eval(strict_data_file_1)
     assert not should_read, "Should not match: no_nulls field does not have bounds"
+
+
+def test_strict_not_eq_partial_nulls_within_bounds() -> None:
+    # Regression test for https://github.com/apache/iceberg-python/issues/3498
+    # A column that contains *some* nulls (but not only nulls) whose bounds still cover the
+    # literal must not be reported as ROWS_MUST_MATCH: the non-null value equal to the literal
+    # does not satisfy the predicate. Reporting a match here lets _DeleteFiles drop the whole
+    # data file and silently lose the row that should have survived the delete.
+    schema = Schema(NestedField(1, "x", IntegerType(), required=False))
+    data_file = DataFile.from_args(
+        file_path="file.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=2,
+        value_counts={1: 2},
+        null_value_counts={1: 1},  # one null, one non-null -> not "nulls only"
+        nan_value_counts={},
+        lower_bounds={1: to_bytes(IntegerType(), 5)},
+        upper_bounds={1: to_bytes(IntegerType(), 5)},  # the only non-null value is 5
+    )
+
+    assert not _StrictMetricsEvaluator(schema, NotEqualTo("x", 5)).eval(data_file), (
+        "Should not match: the non-null value 5 does not satisfy x != 5"
+    )
+    assert not _StrictMetricsEvaluator(schema, NotIn("x", {5})).eval(data_file), (
+        "Should not match: the non-null value 5 is in {5}"
+    )
+
+    # The literal sits outside the bounds, so every non-null value satisfies the predicate and
+    # the remaining nulls/NaNs also satisfy it -> the whole file matches.
+    assert _StrictMetricsEvaluator(schema, NotEqualTo("x", 6)).eval(data_file), (
+        "Should match: no value equals 6 and nulls satisfy x != 6"
+    )
+    assert _StrictMetricsEvaluator(schema, NotIn("x", {6})).eval(data_file), (
+        "Should match: no value is in {6} and nulls satisfy not-in"
+    )
 
 
 @pytest.mark.parametrize(
