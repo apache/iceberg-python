@@ -630,9 +630,6 @@ class TableMetadataV3(TableMetadataCommonFields, IcebergBaseModel):
             serialized.pop("encryption-keys", None)
         return serialized
 
-    def model_dump_json(self, exclude_none: bool = True, exclude: Any | None = None, by_alias: bool = True, **kwargs: Any) -> str:
-        raise NotImplementedError("Writing V3 is not yet supported, see: https://github.com/apache/iceberg-python/issues/1551")
-
 
 TableMetadata = Annotated[TableMetadataV1 | TableMetadataV2 | TableMetadataV3, Field(discriminator="format_version")]
 
