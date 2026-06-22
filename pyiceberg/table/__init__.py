@@ -2466,28 +2466,46 @@ class IncrementalAppendScan(BaseScan):
             and manifest_entry.status == ManifestEntryStatus.ADDED,
         )
 
-    def to_arrow(self) -> pa.Table:
+    def to_arrow(self, dictionary_columns: tuple[str, ...] = ()) -> pa.Table:
         """Read an Arrow table eagerly from this IncrementalAppendScan.
 
         All rows will be loaded into memory at once.
 
+        Args:
+            dictionary_columns:
+                A tuple of column names that PyArrow should read as
+                dictionary-encoded (``pa.DictionaryArray``).  Dictionary
+                encoding can substantially reduce memory usage for columns
+                with low-cardinality repeated string values.
+                Only applies to Parquet files; silently ignored for ORC.
+
         Returns:
             pa.Table: Materialized Arrow Table from the Iceberg table's IncrementalAppendScan
         """
-        return _to_arrow_via_file_scan_tasks(self, self.projection(), self.plan_files())
+        return _to_arrow_via_file_scan_tasks(self, self.projection(), self.plan_files(), dictionary_columns=dictionary_columns)
 
-    def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
+    def to_arrow_batch_reader(self, dictionary_columns: tuple[str, ...] = ()) -> pa.RecordBatchReader:
         """Return an Arrow RecordBatchReader from this IncrementalAppendScan.
 
         For large results, using a RecordBatchReader requires less memory than
         loading an Arrow Table for the same IncrementalAppendScan, because a
         RecordBatch is read one at a time.
 
+        Args:
+            dictionary_columns:
+                A tuple of column names that PyArrow should read as
+                dictionary-encoded (``pa.DictionaryArray``).  Dictionary
+                encoding can substantially reduce memory usage for columns
+                with low-cardinality repeated string values.
+                Only applies to Parquet files; silently ignored for ORC.
+
         Returns:
             pa.RecordBatchReader: Arrow RecordBatchReader from the Iceberg table's IncrementalAppendScan
                 which can be used to read a stream of record batches one by one.
         """
-        return _to_arrow_batch_reader_via_file_scan_tasks(self, self.projection(), self.plan_files())
+        return _to_arrow_batch_reader_via_file_scan_tasks(
+            self, self.projection(), self.plan_files(), dictionary_columns=dictionary_columns
+        )
 
     def _validate_and_resolve_snapshots(self) -> tuple[int, int]:
         if self.from_snapshot_id_exclusive is None:

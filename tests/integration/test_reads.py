@@ -1297,6 +1297,24 @@ def test_incremental_append_scan_append_only(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_dictionary_columns(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    scan = (
+        test_table.incremental_append_scan()
+        .from_snapshot_exclusive(test_table.snapshots()[0].snapshot_id)
+        .to_snapshot_inclusive(test_table.snapshots()[2].snapshot_id)
+    )
+    result = scan.to_arrow(dictionary_columns=("letter",))
+
+    # The requested column is dictionary-encoded; others stay plain.
+    assert pa.types.is_dictionary(result.schema.field("letter").type)
+    assert not pa.types.is_dictionary(result.schema.field("number").type)
+    assert sorted(result["number"].to_pylist()) == [2, 3, 4]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_incremental_append_scan_ignores_non_append_snapshots(catalog: Catalog) -> None:
     test_table = catalog.load_table("default.test_incremental_read")
 
