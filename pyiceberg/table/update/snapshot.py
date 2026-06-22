@@ -140,6 +140,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     _written_manifests: list[str]
     _uncommitted_manifests: list[str]
     _written_manifest_lists: list[str]
+    _isolation_level_property: str
 
     def __init__(
         self,
@@ -404,7 +405,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
 
     def commit(self) -> None:
         self._transaction._register_snapshot_producer(self)
-        self._transaction._apply(*self._commit())
+        super().commit()
 
     def _cleanup_uncommitted(self) -> None:
         """Delete manifest files and manifest lists from failed retry attempts."""

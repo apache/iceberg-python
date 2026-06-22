@@ -110,6 +110,7 @@ if TYPE_CHECKING:
 
     from pyiceberg.catalog import Catalog
     from pyiceberg.catalog.rest.scan_planning import RESTContentFile, RESTDeleteFile, RESTFileScanTask
+    from pyiceberg.table.update.snapshot import _SnapshotProducer
 
 ALWAYS_TRUE = AlwaysTrue()
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
@@ -242,7 +243,7 @@ class Transaction:
         self._autocommit = autocommit
         self._updates = ()
         self._requirements = ()
-        self._snapshot_producers: list[Any] = []
+        self._snapshot_producers: list[_SnapshotProducer[Any]] = []
 
     @property
     def table_metadata(self) -> TableMetadata:
@@ -285,7 +286,7 @@ class Transaction:
 
         return self
 
-    def _register_snapshot_producer(self, producer: Any) -> None:
+    def _register_snapshot_producer(self, producer: _SnapshotProducer[Any]) -> None:
         """Register a snapshot producer for retry support."""
         self._snapshot_producers.append(producer)
 
