@@ -49,20 +49,15 @@ def unscaled_to_decimal(unscaled: int, scale: int) -> Decimal:
 
 
 def bytes_required(value: int | Decimal) -> int:
-    """Return the minimum number of bytes needed to serialize a decimal or unscaled value.
-
-    Args:
-        value (int | Decimal): a Decimal value or unscaled int value.
-
-    Returns:
-        int: the minimum number of bytes needed to serialize the value.
-    """
-    if isinstance(value, int):
-        return (value.bit_length() + 8) // 8
-    elif isinstance(value, Decimal):
-        return (decimal_to_unscaled(value).bit_length() + 8) // 8
-
-    raise ValueError(f"Unsupported value: {value}")
+    """Return the minimum number of bytes needed to serialize a decimal or unscaled value."""
+    if isinstance(value, Decimal):
+        value = decimal_to_unscaled(value)
+    if not isinstance(value, int):
+        raise ValueError(f"Unsupported value: {value}")
+    if value == 0:
+        return 1
+    bits = (~value).bit_length() + 1 if value < 0 else value.bit_length() + 1
+    return (bits + 7) // 8
 
 
 def decimal_to_bytes(value: Decimal, byte_length: int | None = None) -> bytes:

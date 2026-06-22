@@ -18,7 +18,7 @@ from decimal import Decimal
 
 import pytest
 
-from pyiceberg.utils.decimal import decimal_required_bytes, decimal_to_bytes
+from pyiceberg.utils.decimal import bytes_required, decimal_required_bytes, decimal_to_bytes
 
 
 def test_decimal_required_bytes() -> None:
@@ -47,3 +47,15 @@ def test_decimal_to_bytes() -> None:
     # 2 bytes has a minimum of -32,768 and a maximum value of 32,767 (inclusive).
     assert decimal_to_bytes(Decimal("32767.")) == b"\x7f\xff"
     assert decimal_to_bytes(Decimal("32768.")) == b"\x00\x80\x00"
+
+
+def test_bytes_required() -> None:
+    # Test boundary limits for signed powers of two
+    assert bytes_required(0) == 1
+    assert bytes_required(127) == 1
+    assert bytes_required(128) == 2
+    assert bytes_required(-127) == 1
+    assert bytes_required(-128) == 1  # Fixes #3522: Should fit perfectly into 1 byte (b\x80)
+    assert bytes_required(-129) == 2
+    assert bytes_required(-32768) == 2  # Fixes #3522: Should fit perfectly into 2 bytes
+    assert bytes_required(-32769) == 3
