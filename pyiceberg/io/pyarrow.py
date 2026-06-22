@@ -148,6 +148,7 @@ from pyiceberg.table.deletion_vector import DeletionVector
 from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
+from pyiceberg.table.puffin import PuffinFile
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record, TableVersion
 from pyiceberg.types import (
@@ -1141,7 +1142,7 @@ def _read_deletes(io: FileIO, data_file: DataFile) -> dict[str, pa.ChunkedArray]
         with io.new_input(data_file.file_path).open() as fi:
             payload = fi.read()
 
-        return DeletionVector(payload).to_vector()
+        return DeletionVector.from_puffin_file(PuffinFile(payload)).to_vector()
     else:
         raise ValueError(f"Delete file format not supported: {data_file.file_format}")
 

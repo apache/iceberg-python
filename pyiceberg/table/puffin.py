@@ -19,9 +19,10 @@ from typing import TYPE_CHECKING, Literal
 from pydantic import Field
 
 from pyiceberg.typedef import IcebergBaseModel
+from pyiceberg.utils.deprecated import deprecated
 
 if TYPE_CHECKING:
-    pass
+    import pyarrow as pa
 
 # Short for: Puffin Fratercula arctica, version 1
 MAGIC_BYTES = b"PFA1"
@@ -68,3 +69,11 @@ class PuffinFile:
 
     def get_blob_payload(self, blob: PuffinBlobMetadata) -> bytes:
         return self._payload[blob.offset : blob.offset + blob.length]
+
+    @deprecated(
+        deprecated_in="0.12.0", removed_in="0.13.0", help_message="Use DeletionVector.from_bytes(...).to_vector() instead"
+    )
+    def to_vector(self) -> dict[str, "pa.ChunkedArray"]:
+        from pyiceberg.table.deletion_vector import DeletionVector  # local import avoids the cycle
+
+        return DeletionVector.from_puffin_file(self).to_vector()

@@ -32,12 +32,17 @@ PROPERTY_REFERENCED_DATA_FILE = "referenced-data-file"
 class DeletionVector:
     _deletion_vectors: dict[str, list[BitMap]]
 
-    def __init__(self, puffin: bytes) -> None:
-        puffin_file = PuffinFile(puffin)
-        self._deletion_vectors = {
-            blob.properties[PROPERTY_REFERENCED_DATA_FILE]: self._deserialize_bitmap(puffin_file.get_blob_payload(blob))
-            for blob in puffin_file.footer.blobs
-        }
+    def __init__(self, deletion_vectors: dict[str, list[BitMap]]) -> None:
+        self._deletion_vectors = deletion_vectors
+
+    @classmethod
+    def from_puffin_file(cls, puffin_file: PuffinFile) -> "DeletionVector":
+        return cls(
+            {
+                blob.properties[PROPERTY_REFERENCED_DATA_FILE]: cls._deserialize_bitmap(puffin_file.get_blob_payload(blob))
+                for blob in puffin_file.footer.blobs
+            }
+        )
 
     @staticmethod
     def _deserialize_bitmap(pl: bytes) -> list[BitMap]:
