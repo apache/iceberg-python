@@ -2373,10 +2373,10 @@ def test_nanosecond_support_on_catalog(
 
     _create_table(session_catalog, identifier, {"format-version": "3"}, schema=arrow_table_schema_with_all_timestamp_precisions)
 
-    with pytest.raises(NotImplementedError, match="Writing V3 is not yet supported"):
-        catalog.create_table(
-            "ns.table1", schema=arrow_table_schema_with_all_timestamp_precisions, properties={"format-version": "3"}
-        )
+    table_v3 = catalog.create_table(
+        "ns.table1", schema=arrow_table_schema_with_all_timestamp_precisions, properties={"format-version": "3"}
+    )
+    assert table_v3.metadata.format_version == 3
 
     with pytest.raises(
         UnsupportedPyArrowTypeException, match=re.escape("Column 'timestamp_ns' has an unsupported type: timestamp[ns]")
