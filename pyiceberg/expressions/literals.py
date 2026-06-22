@@ -317,6 +317,10 @@ class LongLiteral(Literal[int]):
 
     @to.register(FloatType)
     def _(self, _: FloatType) -> Literal[float]:
+        if FloatType.max < self.value:
+            return FloatAboveMax()
+        elif self.value < FloatType.min:
+            return FloatBelowMin()
         return FloatLiteral(float(self.value))
 
     @to.register(DoubleType)
@@ -325,6 +329,10 @@ class LongLiteral(Literal[int]):
 
     @to.register(DateType)
     def _(self, _: DateType) -> Literal[int]:
+        if IntegerType.max < self.value:
+            return IntAboveMax()
+        elif IntegerType.min > self.value:
+            return IntBelowMin()
         return DateLiteral(self.value)
 
     @to.register(TimeType)

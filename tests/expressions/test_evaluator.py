@@ -1152,6 +1152,48 @@ def test_strict_some_nulls(strict_data_file_schema: Schema, strict_data_file_2: 
     assert not should_read, "Should not match: equal on some nulls column"
 
 
+def test_strict_not_equal_and_not_in_with_mixed_nulls_and_matching_bounds() -> None:
+    schema = Schema(NestedField(1, "x", IntegerType(), required=False))
+    data_file = DataFile.from_args(
+        file_path="file.parquet",
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=2,
+        file_size_in_bytes=1,
+        value_counts={1: 2},
+        null_value_counts={1: 1},
+        nan_value_counts=None,
+        lower_bounds={1: to_bytes(IntegerType(), 5)},
+        upper_bounds={1: to_bytes(IntegerType(), 5)},
+    )
+
+    should_read = _StrictMetricsEvaluator(schema, NotEqualTo("x", 5)).eval(data_file)
+    assert should_read == ROWS_MIGHT_NOT_MATCH, "Should not match: bounds prove the non-null value is 5"
+
+    should_read = _StrictMetricsEvaluator(schema, NotIn("x", {5, 6})).eval(data_file)
+    assert should_read == ROWS_MIGHT_NOT_MATCH, "Should not match: bounds prove the non-null value is 5"
+
+
+def test_strict_not_equal_and_not_in_with_all_nulls() -> None:
+    schema = Schema(NestedField(1, "x", IntegerType(), required=False))
+    data_file = DataFile.from_args(
+        file_path="file.parquet",
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=2,
+        file_size_in_bytes=1,
+        value_counts={1: 2},
+        null_value_counts={1: 2},
+        nan_value_counts=None,
+    )
+
+    should_read = _StrictMetricsEvaluator(schema, NotEqualTo("x", 5)).eval(data_file)
+    assert should_read == ROWS_MUST_MATCH, "Should match: notEqual on all-null column"
+
+    should_read = _StrictMetricsEvaluator(schema, NotIn("x", {5, 6})).eval(data_file)
+    assert should_read == ROWS_MUST_MATCH, "Should match: notIn on all-null column"
+
+
 def test_strict_is_nan(strict_data_file_schema: Schema, strict_data_file_1: DataFile) -> None:
     should_read = _StrictMetricsEvaluator(strict_data_file_schema, IsNaN("all_nans")).eval(strict_data_file_1)
     assert should_read, "Should match: all values are nan"
@@ -1196,6 +1238,50 @@ def test_strict_not_nan(strict_data_file_schema: Schema, strict_data_file_1: Dat
 
     should_read = _StrictMetricsEvaluator(strict_data_file_schema, NotNaN("nan_and_null_only")).eval(strict_data_file_1)
     assert not should_read, "Should not match: null values are not nan"
+
+
+@pytest.mark.parametrize("field_type", [FloatType(), DoubleType()])
+def test_strict_not_equal_and_not_in_with_mixed_nans_and_matching_bounds(field_type: PrimitiveType) -> None:
+    schema = Schema(NestedField(1, "x", field_type, required=False))
+    data_file = DataFile.from_args(
+        file_path="file.parquet",
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=2,
+        file_size_in_bytes=1,
+        value_counts={1: 2},
+        null_value_counts={1: 0},
+        nan_value_counts={1: 1},
+        lower_bounds={1: to_bytes(field_type, 5.0)},
+        upper_bounds={1: to_bytes(field_type, 5.0)},
+    )
+
+    should_read = _StrictMetricsEvaluator(schema, NotEqualTo("x", 5.0)).eval(data_file)
+    assert should_read == ROWS_MIGHT_NOT_MATCH, "Should not match: bounds prove the non-NaN value is 5.0"
+
+    should_read = _StrictMetricsEvaluator(schema, NotIn("x", {5.0, 6.0})).eval(data_file)
+    assert should_read == ROWS_MIGHT_NOT_MATCH, "Should not match: bounds prove the non-NaN value is 5.0"
+
+
+@pytest.mark.parametrize("field_type", [FloatType(), DoubleType()])
+def test_strict_not_equal_and_not_in_with_all_nans(field_type: PrimitiveType) -> None:
+    schema = Schema(NestedField(1, "x", field_type, required=False))
+    data_file = DataFile.from_args(
+        file_path="file.parquet",
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=2,
+        file_size_in_bytes=1,
+        value_counts={1: 2},
+        null_value_counts={1: 0},
+        nan_value_counts={1: 2},
+    )
+
+    should_read = _StrictMetricsEvaluator(schema, NotEqualTo("x", 5.0)).eval(data_file)
+    assert should_read == ROWS_MUST_MATCH, "Should match: notEqual on all-NaN column"
+
+    should_read = _StrictMetricsEvaluator(schema, NotIn("x", {5.0, 6.0})).eval(data_file)
+    assert should_read == ROWS_MUST_MATCH, "Should match: notIn on all-NaN column"
 
 
 def test_strict_required_column(strict_data_file_schema: Schema, strict_data_file_1: DataFile) -> None:
@@ -1523,7 +1609,7 @@ def test_strict_integer_not_in(strict_data_file_schema: Schema, strict_data_file
     assert should_read, "Should match: notIn on all nulls column"
 
     should_read = _StrictMetricsEvaluator(strict_data_file_schema, NotIn("some_nulls", {"abc", "def"})).eval(strict_data_file_1)
-    assert should_read, "Should match: notIn on some nulls column, 'bbb' > 'abc' and 'bbb' < 'def'"
+    assert not should_read, "Should not match: mixed-null notIn cannot be proven when bounds are missing"
 
     should_read = _StrictMetricsEvaluator(strict_data_file_schema, NotIn("no_nulls", {"abc", "def"})).eval(strict_data_file_1)
     assert not should_read, "Should not match: no_nulls field does not have bounds"

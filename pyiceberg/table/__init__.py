@@ -1893,9 +1893,6 @@ class BaseScan(ABC):
         self.limit = limit
 
     @abstractmethod
-    def projection(self) -> Schema: ...
-
-    @abstractmethod
     def plan_files(self) -> Iterable[ScanTask]: ...
 
     @abstractmethod
@@ -2164,7 +2161,7 @@ def _min_sequence_number(manifests: list[ManifestFile]) -> int:
 
 
 def _to_arrow_via_file_scan_tasks(
-    scan: BaseScan, tasks: Iterable[FileScanTask], dictionary_columns: tuple[str, ...] = ()
+    scan: BaseScan, projected_schema: Schema, tasks: Iterable[FileScanTask], dictionary_columns: tuple[str, ...] = ()
 ) -> pa.Table:
     """Materialize a scan into an Arrow table given its planned ``FileScanTask``s."""
     from pyiceberg.io.pyarrow import ArrowScan
@@ -2172,7 +2169,7 @@ def _to_arrow_via_file_scan_tasks(
     return ArrowScan(
         scan.table_metadata,
         scan.io,
-        scan.projection(),
+        projected_schema,
         scan.row_filter,
         scan.case_sensitive,
         scan.limit,
@@ -2181,18 +2178,18 @@ def _to_arrow_via_file_scan_tasks(
 
 
 def _to_arrow_batch_reader_via_file_scan_tasks(
-    scan: BaseScan, tasks: Iterable[FileScanTask], dictionary_columns: tuple[str, ...] = ()
+    scan: BaseScan, projected_schema: Schema, tasks: Iterable[FileScanTask], dictionary_columns: tuple[str, ...] = ()
 ) -> pa.RecordBatchReader:
     """Stream a scan into an Arrow ``RecordBatchReader`` given its planned ``FileScanTask``s."""
     import pyarrow as pa
 
     from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
 
-    target_schema = schema_to_pyarrow(scan.projection())
+    target_schema = schema_to_pyarrow(projected_schema)
     batches = ArrowScan(
         scan.table_metadata,
         scan.io,
-        scan.projection(),
+        projected_schema,
         scan.row_filter,
         scan.case_sensitive,
         scan.limit,
@@ -2213,7 +2210,7 @@ class DataScan(TableScan):
             options=self.options,
         )
 
-    @property
+    @cached_property
     def partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
         return self._manifest_planner.partition_filters
 
@@ -2291,7 +2288,7 @@ class DataScan(TableScan):
         Returns:
             pa.Table: Materialized Arrow Table from the Iceberg table's DataScan
         """
-        return _to_arrow_via_file_scan_tasks(self, self.plan_files(), dictionary_columns=dictionary_columns)
+        return _to_arrow_via_file_scan_tasks(self, self.projection(), self.plan_files(), dictionary_columns=dictionary_columns)
 
     def to_arrow_batch_reader(self, dictionary_columns: tuple[str, ...] = ()) -> pa.RecordBatchReader:
         """Return an Arrow RecordBatchReader from this DataScan.
@@ -2312,7 +2309,9 @@ class DataScan(TableScan):
             pa.RecordBatchReader: Arrow RecordBatchReader from the Iceberg table's DataScan
                 which can be used to read a stream of record batches one by one.
         """
-        return _to_arrow_batch_reader_via_file_scan_tasks(self, self.plan_files(), dictionary_columns=dictionary_columns)
+        return _to_arrow_batch_reader_via_file_scan_tasks(
+            self, self.projection(), self.plan_files(), dictionary_columns=dictionary_columns
+        )
 
     def count(self) -> int:
         from pyiceberg.io.pyarrow import ArrowScan
@@ -2475,7 +2474,7 @@ class IncrementalAppendScan(BaseScan):
         Returns:
             pa.Table: Materialized Arrow Table from the Iceberg table's IncrementalAppendScan
         """
-        return _to_arrow_via_file_scan_tasks(self, self.plan_files())
+        return _to_arrow_via_file_scan_tasks(self, self.projection(), self.plan_files())
 
     def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
         """Return an Arrow RecordBatchReader from this IncrementalAppendScan.
@@ -2488,7 +2487,7 @@ class IncrementalAppendScan(BaseScan):
             pa.RecordBatchReader: Arrow RecordBatchReader from the Iceberg table's IncrementalAppendScan
                 which can be used to read a stream of record batches one by one.
         """
-        return _to_arrow_batch_reader_via_file_scan_tasks(self, self.plan_files())
+        return _to_arrow_batch_reader_via_file_scan_tasks(self, self.projection(), self.plan_files())
 
     def _validate_and_resolve_snapshots(self) -> tuple[int, int]:
         if self.from_snapshot_id_exclusive is None:
