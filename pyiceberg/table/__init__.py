@@ -1264,11 +1264,12 @@ class Table:
 
     def incremental_append_scan(
         self,
+        *,
+        from_snapshot_id_exclusive: int,
+        to_snapshot_id_inclusive: int | None = None,
         row_filter: str | BooleanExpression = ALWAYS_TRUE,
         selected_fields: tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
-        from_snapshot_id_exclusive: int | None = None,
-        to_snapshot_id_inclusive: int | None = None,
         options: Properties = EMPTY_DICT,
         limit: int | None = None,
     ) -> IncrementalAppendScan:
@@ -1278,6 +1279,11 @@ class Table:
         range that match the provided row_filter, projected onto the table's current schema.
 
         Args:
+            from_snapshot_id_exclusive:
+                ID of the snapshot to start the incremental scan from, exclusively.
+            to_snapshot_id_inclusive:
+                Optional ID of the snapshot to end the incremental scan at, inclusively. If not set, it defaults to
+                the table's current snapshot.
             row_filter:
                 A string or BooleanExpression that describes the
                 desired rows.
@@ -1286,12 +1292,6 @@ class Table:
                 to return in the output dataframe.
             case_sensitive:
                 If True column matching is case sensitive.
-            from_snapshot_id_exclusive:
-                Optional ID of the "from" snapshot, to start the incremental scan from, exclusively. This can be set
-                on the IncrementalAppendScan object returned, but ultimately must not be None.
-            to_snapshot_id_inclusive:
-                Optional ID of the "to" snapshot, to end the incremental scan at, inclusively. This can be set on the
-                IncrementalAppendScan object returned. If not set, it defaults to the table's current snapshot.
             options:
                 Additional Table properties as a dictionary of
                 string key value pairs to use for this scan.
@@ -1833,11 +1833,12 @@ class StagedTable(Table):
 
     def incremental_append_scan(
         self,
+        *,
+        from_snapshot_id_exclusive: int | None = None,
+        to_snapshot_id_inclusive: int | None = None,
         row_filter: str | BooleanExpression = ALWAYS_TRUE,
         selected_fields: tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
-        from_snapshot_id_exclusive: int | None = None,
-        to_snapshot_id_inclusive: int | None = None,
         options: Properties = EMPTY_DICT,
         limit: int | None = None,
     ) -> IncrementalAppendScan:
@@ -2341,13 +2342,15 @@ class DataScan(TableScan):
         return res
 
 
-IAS = TypeVar("IAS", bound="IncrementalAppendScan", covariant=True)
-
-
 class IncrementalAppendScan(BaseScan):
     """An incremental scan of a table's data that accumulates appended data between two snapshots.
 
     Args:
+        from_snapshot_id_exclusive:
+            ID of the snapshot to start the incremental scan from, exclusively.
+        to_snapshot_id_inclusive:
+            Optional ID of the snapshot to end the incremental scan at, inclusively.
+            Omitting it will default to the table's current snapshot.
         row_filter:
             A string or BooleanExpression that describes the
             desired rows
@@ -2363,27 +2366,21 @@ class IncrementalAppendScan(BaseScan):
             An integer representing the number of rows to
             return in the scan result. If None, fetches all
             matching rows.
-        from_snapshot_id_exclusive:
-            Optional ID of the "from" snapshot, to start the incremental scan from, exclusively. When the scan is
-            ultimately planned, this must not be None. The snapshot does not need to be present in the table metadata
-            (it may have been expired), as long as it is the parent of some ancestor of the "to" snapshot.
-        to_snapshot_id_inclusive:
-            Optional ID of the "to" snapshot, to end the incremental scan at, inclusively.
-            Omitting it will default to the table's current snapshot.
     """
 
-    from_snapshot_id_exclusive: int | None
+    from_snapshot_id_exclusive: int
     to_snapshot_id_inclusive: int | None
 
     def __init__(
         self,
         table_metadata: TableMetadata,
         io: FileIO,
+        *,
+        from_snapshot_id_exclusive: int,
+        to_snapshot_id_inclusive: int | None = None,
         row_filter: str | BooleanExpression = ALWAYS_TRUE,
         selected_fields: tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
-        from_snapshot_id_exclusive: int | None = None,
-        to_snapshot_id_inclusive: int | None = None,
         options: Properties = EMPTY_DICT,
         limit: int | None = None,
     ):
@@ -2398,28 +2395,6 @@ class IncrementalAppendScan(BaseScan):
         )
         self.from_snapshot_id_exclusive = from_snapshot_id_exclusive
         self.to_snapshot_id_inclusive = to_snapshot_id_inclusive
-
-    def from_snapshot_exclusive(self: IAS, from_snapshot_id_exclusive: int | None) -> IAS:
-        """Instructs this scan to look for changes starting from a particular snapshot (exclusive).
-
-        Args:
-            from_snapshot_id_exclusive: the start snapshot ID (exclusive)
-
-        Returns:
-            this for method chaining
-        """
-        return self.update(from_snapshot_id_exclusive=from_snapshot_id_exclusive)
-
-    def to_snapshot_inclusive(self: IAS, to_snapshot_id_inclusive: int | None) -> IAS:
-        """Instructs this scan to look for changes up to a particular snapshot (inclusive).
-
-        Args:
-            to_snapshot_id_inclusive: the end snapshot ID (inclusive)
-
-        Returns:
-            this for method chaining
-        """
-        return self.update(to_snapshot_id_inclusive=to_snapshot_id_inclusive)
 
     def projection(self) -> Schema:
         current_schema = self.table_metadata.schema()
@@ -2490,9 +2465,6 @@ class IncrementalAppendScan(BaseScan):
         return _to_arrow_batch_reader_via_file_scan_tasks(self, self.projection(), self.plan_files())
 
     def _validate_and_resolve_snapshots(self) -> tuple[int, int]:
-        if self.from_snapshot_id_exclusive is None:
-            raise ValueError("Start snapshot is not set, please set from_snapshot_id_exclusive")
-
         if self.to_snapshot_id_inclusive is None:
             current_snapshot = self.table_metadata.current_snapshot()
             if current_snapshot is None:

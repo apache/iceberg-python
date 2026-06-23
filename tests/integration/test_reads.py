@@ -1279,10 +1279,9 @@ def test_scan_source_field_missing_in_spec(catalog: Catalog, spark: SparkSession
 def test_incremental_append_scan_append_only(catalog: Catalog) -> None:
     test_table = catalog.load_table("default.test_incremental_read")
 
-    scan = (
-        test_table.incremental_append_scan()
-        .from_snapshot_exclusive(test_table.snapshots()[0].snapshot_id)
-        .to_snapshot_inclusive(test_table.snapshots()[2].snapshot_id)
+    scan = test_table.incremental_append_scan(
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[2].snapshot_id,
     )
 
     # snapshots[1] adds 1 file (letter=b); snapshots[2] adds 2 files (letter=b, letter=c).
@@ -1334,10 +1333,9 @@ def test_incremental_append_scan_schema_evolution_within_range(catalog: Catalog)
     # snapshots[1..2] are on the original schema (number, letter); snapshots[4] is on the evolved
     # schema (number, letter, extra) after ALTER TABLE ADD COLUMN. The scan must project the older
     # rows onto the current schema (extra -> null) and pick up the new value for the newer row.
-    scan = (
-        test_table.incremental_append_scan()
-        .from_snapshot_exclusive(test_table.snapshots()[0].snapshot_id)
-        .to_snapshot_inclusive(test_table.snapshots()[4].snapshot_id)
+    scan = test_table.incremental_append_scan(
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[4].snapshot_id,
     )
     assert len(list(scan.plan_files())) == 4
 
@@ -1361,10 +1359,10 @@ def test_incremental_append_scan_partition_pruning(catalog: Catalog) -> None:
     # `letter=c` only appears in snapshots[2]. The manifest evaluator rejects snapshots[1]'s
     # manifest (letter=b only); the partition evaluator rejects the letter=b entry in
     # snapshots[2]'s manifest. One file remains.
-    scan = (
-        test_table.incremental_append_scan(row_filter=EqualTo("letter", "c"))
-        .from_snapshot_exclusive(test_table.snapshots()[0].snapshot_id)
-        .to_snapshot_inclusive(test_table.snapshots()[2].snapshot_id)
+    scan = test_table.incremental_append_scan(
+        row_filter=EqualTo("letter", "c"),
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[2].snapshot_id,
     )
     assert len(list(scan.plan_files())) == 1
     assert scan.to_arrow()["number"].to_pylist() == [3]
@@ -1377,10 +1375,10 @@ def test_incremental_append_scan_metrics_pruning(catalog: Catalog) -> None:
 
     # Non-partition predicate: the manifest/partition evaluators degenerate, leaving the per-file
     # metrics evaluator to prune. `number=99` matches no file's [min, max] stats for `number`.
-    scan = (
-        test_table.incremental_append_scan(row_filter=EqualTo("number", 99))
-        .from_snapshot_exclusive(test_table.snapshots()[0].snapshot_id)
-        .to_snapshot_inclusive(test_table.snapshots()[2].snapshot_id)
+    scan = test_table.incremental_append_scan(
+        row_filter=EqualTo("number", 99),
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[2].snapshot_id,
     )
     assert len(list(scan.plan_files())) == 0
     assert len(scan.to_arrow()) == 0
@@ -1391,10 +1389,10 @@ def test_incremental_append_scan_metrics_pruning(catalog: Catalog) -> None:
 def test_incremental_append_scan_selected_fields(catalog: Catalog) -> None:
     test_table = catalog.load_table("default.test_incremental_read")
 
-    scan = (
-        test_table.incremental_append_scan(selected_fields=("number",))
-        .from_snapshot_exclusive(test_table.snapshots()[0].snapshot_id)
-        .to_snapshot_inclusive(test_table.snapshots()[2].snapshot_id)
+    scan = test_table.incremental_append_scan(
+        selected_fields=("number",),
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[2].snapshot_id,
     )
     result_table = scan.to_arrow()
     assert result_table.schema.equals(pa.schema([pa.field("number", pa.int32())]))
@@ -1406,10 +1404,10 @@ def test_incremental_append_scan_selected_fields(catalog: Catalog) -> None:
 def test_incremental_append_scan_limit(catalog: Catalog) -> None:
     test_table = catalog.load_table("default.test_incremental_read")
 
-    scan = (
-        test_table.incremental_append_scan(limit=2)
-        .from_snapshot_exclusive(test_table.snapshots()[0].snapshot_id)
-        .to_snapshot_inclusive(test_table.snapshots()[2].snapshot_id)
+    scan = test_table.incremental_append_scan(
+        limit=2,
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[2].snapshot_id,
     )
     assert len(scan.to_arrow()) == 2
 

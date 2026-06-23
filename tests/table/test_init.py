@@ -356,20 +356,23 @@ def test_data_scan_plan_files_no_current_snapshot(example_table_metadata_no_snap
 
 
 def test_incremental_append_scan_default(table_v2: Table) -> None:
-    scan = table_v2.incremental_append_scan()
+    scan = table_v2.incremental_append_scan(from_snapshot_id_exclusive=3051729675574597004)
     assert scan.row_filter == AlwaysTrue()
     assert scan.selected_fields == ("*",)
     assert scan.case_sensitive is True
-    assert scan.from_snapshot_id_exclusive is None
+    assert scan.from_snapshot_id_exclusive == 3051729675574597004
     assert scan.to_snapshot_id_inclusive is None
 
 
 def test_incremental_append_scan_chaining(table_v2: Table) -> None:
     older_snapshot_id, newer_snapshot_id = 3051729675574597004, 3055729675574597004
+    # The snapshot range is set at construction; the snapshot-independent helpers still chain
+    # and must round-trip the range through `update()`.
     scan = (
-        table_v2.incremental_append_scan()
-        .from_snapshot_exclusive(older_snapshot_id)
-        .to_snapshot_inclusive(newer_snapshot_id)
+        table_v2.incremental_append_scan(
+            from_snapshot_id_exclusive=older_snapshot_id,
+            to_snapshot_id_inclusive=newer_snapshot_id,
+        )
         .filter(EqualTo("x", 1))
         .select("x", "y")
         .with_case_sensitive(False)
@@ -382,18 +385,19 @@ def test_incremental_append_scan_chaining(table_v2: Table) -> None:
 
 
 def test_incremental_append_scan_projection_uses_current_schema(table_v2: Table) -> None:
-    scan = table_v2.incremental_append_scan(selected_fields=("x", "y"))
+    scan = table_v2.incremental_append_scan(from_snapshot_id_exclusive=3051729675574597004, selected_fields=("x", "y"))
     projection_schema = scan.projection()
     assert projection_schema.schema_id == 1
     assert {f.name for f in projection_schema.fields} == {"x", "y"}
 
 
 def test_incremental_append_scan_requires_from_snapshot(table_v2: Table) -> None:
-    scan = table_v2.incremental_append_scan(
-        to_snapshot_id_inclusive=table_v2.current_snapshot().snapshot_id,  # type: ignore[union-attr]
-    )
-    with pytest.raises(ValueError, match="Start snapshot is not set"):
-        list(scan.plan_files())
+    # `from_snapshot_id_exclusive` is a required argument, so omitting it fails fast at construction
+    # rather than deferring the error to plan time.
+    with pytest.raises(TypeError, match="from_snapshot_id_exclusive"):
+        table_v2.incremental_append_scan(
+            to_snapshot_id_inclusive=table_v2.current_snapshot().snapshot_id,  # type: ignore[union-attr,call-arg]
+        )
 
 
 def test_incremental_append_scan_invalid_to_snapshot(table_v2: Table) -> None:
@@ -470,19 +474,20 @@ def test_incremental_append_scan_admits_expired_from_snapshot(example_table_meta
 
 def test_incremental_append_scan_update_preserves_type(table_v2: Table) -> None:
     # `update()` lives on BaseScan and uses `type(self)(...)` to construct the copy;
-    # verify the concrete type is preserved through both `update` and the chaining helpers.
-    base_scan = table_v2.incremental_append_scan()
+    # verify the concrete type is preserved through both `update` and the fluent helpers.
+    base_scan = table_v2.incremental_append_scan(from_snapshot_id_exclusive=123)
     base_type = type(base_scan)
     assert base_type.__name__ == "IncrementalAppendScan"
-    assert type(base_scan.from_snapshot_exclusive(123)) is base_type
-    assert type(base_scan.to_snapshot_inclusive(456)) is base_type
+    assert type(base_scan.update(from_snapshot_id_exclusive=456)) is base_type
+    assert type(base_scan.update(to_snapshot_id_inclusive=789)) is base_type
     assert type(base_scan.filter(EqualTo("x", 1))) is base_type
     assert type(base_scan.select("x")) is base_type
     assert type(base_scan.with_case_sensitive(False)) is base_type
 
-    # None round-trips through the chaining helpers (update() reconstructs by keyword).
-    assert base_scan.from_snapshot_exclusive(123).from_snapshot_exclusive(None).from_snapshot_id_exclusive is None
-    assert base_scan.to_snapshot_inclusive(456).to_snapshot_inclusive(None).to_snapshot_id_inclusive is None
+    # The snapshot range round-trips through update() (which reconstructs by keyword).
+    assert base_scan.update(from_snapshot_id_exclusive=456).from_snapshot_id_exclusive == 456
+    assert base_scan.update(to_snapshot_id_inclusive=789).to_snapshot_id_inclusive == 789
+    assert base_scan.update(to_snapshot_id_inclusive=789).update(to_snapshot_id_inclusive=None).to_snapshot_id_inclusive is None
 
 
 def test_incremental_append_scan_staged_table_raises(table_v2: Table) -> None:
@@ -494,6 +499,8 @@ def test_incremental_append_scan_staged_table_raises(table_v2: Table) -> None:
         io=table_v2.io,
         catalog=table_v2.catalog,
     )
+    # No-arg call must raise the staged-table ValueError, not a TypeError for the missing
+    # required `from_snapshot_id_exclusive` (the override keeps it optional, like StagedTable.scan).
     with pytest.raises(ValueError, match="Cannot scan a staged table"):
         staged_table.incremental_append_scan()
 
