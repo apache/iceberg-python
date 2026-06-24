@@ -30,19 +30,12 @@ PROPERTY_REFERENCED_DATA_FILE = "referenced-data-file"
 
 
 class DeletionVector:
-    _deletion_vectors: dict[str, list[BitMap]]
+    referenced_data_file: str
+    _bitmaps: list[BitMap]
 
-    def __init__(self, deletion_vectors: dict[str, list[BitMap]]) -> None:
-        self._deletion_vectors = deletion_vectors
-
-    @classmethod
-    def from_puffin_file(cls, puffin_file: PuffinFile) -> "DeletionVector":
-        return cls(
-            {
-                blob.properties[PROPERTY_REFERENCED_DATA_FILE]: cls._deserialize_bitmap(puffin_file.get_blob_payload(blob))
-                for blob in puffin_file.footer.blobs
-            }
-        )
+    def __init__(self, referenced_data_file: str, bitmaps: list[BitMap]) -> None:
+        self.referenced_data_file = referenced_data_file
+        self._bitmaps = bitmaps
 
     @staticmethod
     def _deserialize_bitmap(pl: bytes) -> list[BitMap]:
@@ -80,5 +73,15 @@ class DeletionVector:
 
         return pa.chunked_array([(key_pos << 32) + pos for pos in bitmap] for key_pos, bitmap in enumerate(bitmaps))
 
-    def to_vector(self) -> dict[str, "pa.ChunkedArray"]:
-        return {path: self._bitmaps_to_chunked_array(bitmaps) for path, bitmaps in self._deletion_vectors.items()}
+    def to_vector(self) -> "pa.ChunkedArray":
+        return self._bitmaps_to_chunked_array(self._bitmaps)
+
+
+def deletion_vectors_from_puffin_file(puffin_file: PuffinFile) -> list[DeletionVector]:
+    return [
+        DeletionVector(
+            referenced_data_file=blob.properties[PROPERTY_REFERENCED_DATA_FILE],
+            bitmaps=DeletionVector._deserialize_bitmap(puffin_file.get_blob_payload(blob)),
+        )
+        for blob in puffin_file.footer.blobs
+    ]

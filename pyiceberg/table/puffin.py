@@ -70,10 +70,8 @@ class PuffinFile:
     def get_blob_payload(self, blob: PuffinBlobMetadata) -> bytes:
         return self._payload[blob.offset : blob.offset + blob.length]
 
-    @deprecated(
-        deprecated_in="0.12.0", removed_in="0.13.0", help_message="Use DeletionVector.from_puffin_file(...).to_vector() instead"
-    )
+    @deprecated(deprecated_in="0.12.0", removed_in="0.13.0", help_message="Use deletion_vectors_from_puffin_file(...) instead")
     def to_vector(self) -> dict[str, "pa.ChunkedArray"]:
-        from pyiceberg.table.deletion_vector import DeletionVector  # local import avoids the cycle
+        from pyiceberg.table.deletion_vector import deletion_vectors_from_puffin_file  # local import avoids the cycle
 
-        return DeletionVector.from_puffin_file(self).to_vector()
+        return {dv.referenced_data_file: dv.to_vector() for dv in deletion_vectors_from_puffin_file(self)}
