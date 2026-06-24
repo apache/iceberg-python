@@ -404,7 +404,7 @@ def update_snapshot_summaries(summary: Summary, previous_summary: Mapping[str, s
     )
 
     for key, value in EnvironmentContext.get().items():
-        summary.__setitem__(key, value)
+        summary[key] = value
 
     return summary
 

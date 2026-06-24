@@ -14,21 +14,29 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-import re
-
+from pyiceberg import __version__
 from pyiceberg.environment_context import EnvironmentContext
 
 
 def test_default_value() -> None:
+    assert EnvironmentContext.get() == {
+        "engine-name": "pyiceberg",
+        "engine-version": __version__,
+    }
+
+
+def test_get_returns_copy() -> None:
     actual = EnvironmentContext.get()
-    assert len(actual) == 2
-    assert actual["engine-name"] == "pyiceberg"
-    assert re.match(r"^\d+\.\d+\.\d+", actual["engine-version"])
+    actual["test-key"] = "test-value"
+
+    assert "test-key" not in EnvironmentContext.get()
 
 
 def test_put_and_remove() -> None:
-    EnvironmentContext.put("test-key", "test-value")
-    assert EnvironmentContext.get()["test-key"] == "test-value"
-
-    EnvironmentContext.remove("test-key")
-    assert "test-key" not in EnvironmentContext.get()
+    try:
+        EnvironmentContext.put("test-key", "test-value")
+        assert EnvironmentContext.get()["test-key"] == "test-value"
+        assert EnvironmentContext.remove("test-key") == "test-value"
+        assert "test-key" not in EnvironmentContext.get()
+    finally:
+        EnvironmentContext.remove("test-key")

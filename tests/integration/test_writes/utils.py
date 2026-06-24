@@ -20,6 +20,7 @@ from typing import Union
 import pyarrow as pa
 
 from pyiceberg.catalog import Catalog
+from pyiceberg.environment_context import EnvironmentContext
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
@@ -79,3 +80,11 @@ def _create_table(
             tbl.append(d)
 
     return tbl
+
+
+def with_environment_context(summary: dict[str, str]) -> dict[str, str]:
+    return {**summary, **EnvironmentContext.get()}
+
+
+def with_environment_context_tuples(summary: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    return summary + list(EnvironmentContext.get().items())
