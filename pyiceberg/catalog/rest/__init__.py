@@ -480,6 +480,11 @@ def _create_connection_adapter(properties: Properties) -> _RetryTimeoutHTTPAdapt
             backoff_factor=backoff_factor,
             status_forcelist=list(_CONNECTION_RETRY_STATUS_FORCELIST),
             allowed_methods=_CONNECTION_RETRY_ALLOWED_METHODS,
+            # Return the final response on retry exhaustion (instead of raising MaxRetryError)
+            # so `_handle_non_200_response` can map the 5xx status to a typed exception
+            # (ServiceUnavailableError, etc.). 4xx codes are not in status_forcelist and are
+            # never retried, so they reach the same mapping unchanged.
+            raise_on_status=False,
         ),
     )
 

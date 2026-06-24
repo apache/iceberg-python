@@ -60,6 +60,7 @@ from pyiceberg.exceptions import (
     NoSuchViewError,
     OAuthError,
     ServerError,
+    ServiceUnavailableError,
     TableAlreadyExistsError,
     ViewAlreadyExistsError,
 )
@@ -2136,6 +2137,25 @@ def test_session_retries_on_transient_5xx_then_succeeds() -> None:
         )
         assert catalog.list_namespaces() == [("foo",)]
         assert server["namespace_calls"] == 4
+
+
+def test_session_exhausted_retries_surfaces_typed_exception() -> None:
+    """When retries are exhausted, the typed exception from `_handle_non_200_response` should be raised
+    (e.g. `ServiceUnavailableError` for 503), not the urllib3 `MaxRetryError` / `RetryError`."""
+    # `num_failures` greater than `retries + 1` guarantees the server never returns success.
+    with _local_rest_server_503_then_200(num_failures=100) as server:
+        catalog = RestCatalog(
+            "rest",
+            **{  # type: ignore
+                "uri": f"http://127.0.0.1:{server['port']}/",
+                "token": TEST_TOKEN,
+                CONNECTION: {CONNECTION_RETRIES: 2, CONNECTION_BACKOFF_FACTOR: 0},
+            },
+        )
+        with pytest.raises(ServiceUnavailableError):
+            catalog.list_namespaces()
+        # retries=2 means 1 initial attempt + 2 retries = 3 calls
+        assert server["namespace_calls"] == 3
 
 
 def test_session_with_invalid_connection_timeout_raises(rest_mock: Mocker) -> None:
