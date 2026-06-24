@@ -25,7 +25,6 @@ import pytest
 from pyspark.sql import SparkSession
 
 from pyiceberg.catalog import Catalog
-from pyiceberg.environment_context import EnvironmentContext
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
@@ -43,7 +42,7 @@ from pyiceberg.transforms import (
 from pyiceberg.types import (
     StringType,
 )
-from utils import TABLE_SCHEMA, _create_table
+from utils import TABLE_SCHEMA, _create_table, with_environment_context
 
 
 @pytest.mark.integration
@@ -488,109 +487,109 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
     file_size = int(summaries[0]["added-files-size"])
     assert file_size > 0
 
-    assert summaries[0] == {
-        "changed-partition-count": "3",
-        "added-data-files": "3",
-        "added-files-size": str(file_size),
-        "added-records": "3",
-        "total-data-files": "3",
-        "total-delete-files": "0",
-        "total-equality-deletes": "0",
-        "total-files-size": str(file_size),
-        "total-position-deletes": "0",
-        "total-records": "3",
-        "engine-name": "pyiceberg",
-        "engine-version": EnvironmentContext.get().get("engine-version"),
-    }
+    assert summaries[0] == with_environment_context(
+        {
+            "changed-partition-count": "3",
+            "added-data-files": "3",
+            "added-files-size": str(file_size),
+            "added-records": "3",
+            "total-data-files": "3",
+            "total-delete-files": "0",
+            "total-equality-deletes": "0",
+            "total-files-size": str(file_size),
+            "total-position-deletes": "0",
+            "total-records": "3",
+        }
+    )
 
-    assert summaries[1] == {
-        "changed-partition-count": "3",
-        "added-data-files": "3",
-        "added-files-size": str(file_size),
-        "added-records": "3",
-        "total-data-files": "6",
-        "total-delete-files": "0",
-        "total-equality-deletes": "0",
-        "total-files-size": str(file_size * 2),
-        "total-position-deletes": "0",
-        "total-records": "6",
-        "engine-name": "pyiceberg",
-        "engine-version": EnvironmentContext.get().get("engine-version"),
-    }
-    assert summaries[2] == {
-        "removed-files-size": str(file_size * 2),
-        "changed-partition-count": "3",
-        "total-equality-deletes": "0",
-        "deleted-data-files": "6",
-        "total-position-deletes": "0",
-        "total-delete-files": "0",
-        "deleted-records": "6",
-        "total-files-size": "0",
-        "total-data-files": "0",
-        "total-records": "0",
-        "engine-name": "pyiceberg",
-        "engine-version": EnvironmentContext.get().get("engine-version"),
-    }
-    assert summaries[3] == {
-        "changed-partition-count": "3",
-        "added-data-files": "3",
-        "total-equality-deletes": "0",
-        "added-records": "3",
-        "total-position-deletes": "0",
-        "added-files-size": str(file_size),
-        "total-delete-files": "0",
-        "total-files-size": str(file_size),
-        "total-data-files": "3",
-        "total-records": "3",
-        "engine-name": "pyiceberg",
-        "engine-version": EnvironmentContext.get().get("engine-version"),
-    }
-    assert summaries[4] == {
-        "changed-partition-count": "3",
-        "added-data-files": "3",
-        "total-equality-deletes": "0",
-        "added-records": "3",
-        "total-position-deletes": "0",
-        "added-files-size": str(file_size),
-        "total-delete-files": "0",
-        "total-files-size": str(file_size * 2),
-        "total-data-files": "6",
-        "total-records": "6",
-        "engine-name": "pyiceberg",
-        "engine-version": EnvironmentContext.get().get("engine-version"),
-    }
+    assert summaries[1] == with_environment_context(
+        {
+            "changed-partition-count": "3",
+            "added-data-files": "3",
+            "added-files-size": str(file_size),
+            "added-records": "3",
+            "total-data-files": "6",
+            "total-delete-files": "0",
+            "total-equality-deletes": "0",
+            "total-files-size": str(file_size * 2),
+            "total-position-deletes": "0",
+            "total-records": "6",
+        }
+    )
+    assert summaries[2] == with_environment_context(
+        {
+            "removed-files-size": str(file_size * 2),
+            "changed-partition-count": "3",
+            "total-equality-deletes": "0",
+            "deleted-data-files": "6",
+            "total-position-deletes": "0",
+            "total-delete-files": "0",
+            "deleted-records": "6",
+            "total-files-size": "0",
+            "total-data-files": "0",
+            "total-records": "0",
+        }
+    )
+    assert summaries[3] == with_environment_context(
+        {
+            "changed-partition-count": "3",
+            "added-data-files": "3",
+            "total-equality-deletes": "0",
+            "added-records": "3",
+            "total-position-deletes": "0",
+            "added-files-size": str(file_size),
+            "total-delete-files": "0",
+            "total-files-size": str(file_size),
+            "total-data-files": "3",
+            "total-records": "3",
+        }
+    )
+    assert summaries[4] == with_environment_context(
+        {
+            "changed-partition-count": "3",
+            "added-data-files": "3",
+            "total-equality-deletes": "0",
+            "added-records": "3",
+            "total-position-deletes": "0",
+            "added-files-size": str(file_size),
+            "total-delete-files": "0",
+            "total-files-size": str(file_size * 2),
+            "total-data-files": "6",
+            "total-records": "6",
+        }
+    )
     assert "removed-files-size" in summaries[5]
     assert "total-files-size" in summaries[5]
-    assert summaries[5] == {
-        "removed-files-size": summaries[5]["removed-files-size"],
-        "changed-partition-count": "2",
-        "total-equality-deletes": "0",
-        "deleted-data-files": "4",
-        "total-position-deletes": "0",
-        "total-delete-files": "0",
-        "deleted-records": "4",
-        "total-files-size": summaries[5]["total-files-size"],
-        "total-data-files": "2",
-        "total-records": "2",
-        "engine-name": "pyiceberg",
-        "engine-version": EnvironmentContext.get().get("engine-version"),
-    }
+    assert summaries[5] == with_environment_context(
+        {
+            "removed-files-size": summaries[5]["removed-files-size"],
+            "changed-partition-count": "2",
+            "total-equality-deletes": "0",
+            "deleted-data-files": "4",
+            "total-position-deletes": "0",
+            "total-delete-files": "0",
+            "deleted-records": "4",
+            "total-files-size": summaries[5]["total-files-size"],
+            "total-data-files": "2",
+            "total-records": "2",
+        }
+    )
     assert "added-files-size" in summaries[6]
     assert "total-files-size" in summaries[6]
-    assert summaries[6] == {
-        "changed-partition-count": "2",
-        "added-data-files": "2",
-        "total-equality-deletes": "0",
-        "added-records": "2",
-        "total-position-deletes": "0",
-        "added-files-size": summaries[6]["added-files-size"],
-        "total-delete-files": "0",
-        "total-files-size": summaries[6]["total-files-size"],
-        "total-data-files": "4",
-        "total-records": "4",
-        "engine-name": "pyiceberg",
-        "engine-version": EnvironmentContext.get().get("engine-version"),
-    }
+    assert summaries[6] == with_environment_context(
+        {
+            "changed-partition-count": "2",
+            "added-data-files": "2",
+            "total-equality-deletes": "0",
+            "added-records": "2",
+            "total-position-deletes": "0",
+            "added-files-size": summaries[6]["added-files-size"],
+            "total-delete-files": "0",
+            "total-files-size": summaries[6]["total-files-size"],
+            "total-data-files": "4",
+            "total-records": "4",
+        }
+    )
 
 
 @pytest.mark.integration

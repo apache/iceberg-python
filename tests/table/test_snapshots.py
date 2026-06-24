@@ -316,8 +316,7 @@ def test_merge_snapshot_summaries_empty() -> None:
             "total-files-size": "0",
             "total-position-deletes": "0",
             "total-equality-deletes": "0",
-            "engine-name": "pyiceberg",
-            "engine-version": EnvironmentContext.get().get("engine-version"),
+            **EnvironmentContext.get(),
         },
     )
 
@@ -352,8 +351,7 @@ def test_merge_snapshot_summaries_new_summary() -> None:
             "total-files-size": "4",
             "total-position-deletes": "5",
             "total-equality-deletes": "3",
-            "engine-name": "pyiceberg",
-            "engine-version": EnvironmentContext.get().get("engine-version"),
+            **EnvironmentContext.get(),
         },
     )
 
@@ -396,8 +394,7 @@ def test_merge_snapshot_summaries_overwrite_summary() -> None:
         "total-files-size": "5",
         "total-position-deletes": "6",
         "total-equality-deletes": "4",
-        "engine-name": "pyiceberg",
-        "engine-version": EnvironmentContext.get().get("engine-version"),
+        **EnvironmentContext.get(),
     }
 
     assert actual.additional_properties == expected

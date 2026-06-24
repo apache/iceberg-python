@@ -44,7 +44,6 @@ from pytest_mock.plugin import MockerFixture
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.sql import SqlCatalog
-from pyiceberg.environment_context import EnvironmentContext
 from pyiceberg.exceptions import CommitFailedException, NoSuchTableError
 from pyiceberg.expressions import And, EqualTo, GreaterThanOrEqual, In, LessThan, Not
 from pyiceberg.io.pyarrow import UnsupportedPyArrowTypeException, _dataframe_to_data_files
@@ -67,7 +66,7 @@ from pyiceberg.types import (
     UUIDType,
 )
 from pyiceberg.view.metadata import SQLViewRepresentation, ViewVersion
-from utils import TABLE_SCHEMA, _create_table
+from utils import TABLE_SCHEMA, _create_table, with_environment_context, with_environment_context_tuples
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -222,64 +221,64 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
     assert file_size > 0
 
     # Append
-    assert summaries[0] == {
-        "added-data-files": "1",
-        "added-files-size": str(file_size),
-        "added-records": "3",
-        "total-data-files": "1",
-        "total-delete-files": "0",
-        "total-equality-deletes": "0",
-        "total-files-size": str(file_size),
-        "total-position-deletes": "0",
-        "total-records": "3",
-        "engine-name": "pyiceberg",
-        "engine-version": EnvironmentContext.get().get("engine-version"),
-    }
+    assert summaries[0] == with_environment_context(
+        {
+            "added-data-files": "1",
+            "added-files-size": str(file_size),
+            "added-records": "3",
+            "total-data-files": "1",
+            "total-delete-files": "0",
+            "total-equality-deletes": "0",
+            "total-files-size": str(file_size),
+            "total-position-deletes": "0",
+            "total-records": "3",
+        }
+    )
 
     # Append
-    assert summaries[1] == {
-        "added-data-files": "1",
-        "added-files-size": str(file_size),
-        "added-records": "3",
-        "total-data-files": "2",
-        "total-delete-files": "0",
-        "total-equality-deletes": "0",
-        "total-files-size": str(file_size * 2),
-        "total-position-deletes": "0",
-        "total-records": "6",
-        "engine-name": "pyiceberg",
-        "engine-version": EnvironmentContext.get().get("engine-version"),
-    }
+    assert summaries[1] == with_environment_context(
+        {
+            "added-data-files": "1",
+            "added-files-size": str(file_size),
+            "added-records": "3",
+            "total-data-files": "2",
+            "total-delete-files": "0",
+            "total-equality-deletes": "0",
+            "total-files-size": str(file_size * 2),
+            "total-position-deletes": "0",
+            "total-records": "6",
+        }
+    )
 
     # Delete
-    assert summaries[2] == {
-        "deleted-data-files": "2",
-        "deleted-records": "6",
-        "removed-files-size": str(file_size * 2),
-        "total-data-files": "0",
-        "total-delete-files": "0",
-        "total-equality-deletes": "0",
-        "total-files-size": "0",
-        "total-position-deletes": "0",
-        "total-records": "0",
-        "engine-name": "pyiceberg",
-        "engine-version": EnvironmentContext.get().get("engine-version"),
-    }
+    assert summaries[2] == with_environment_context(
+        {
+            "deleted-data-files": "2",
+            "deleted-records": "6",
+            "removed-files-size": str(file_size * 2),
+            "total-data-files": "0",
+            "total-delete-files": "0",
+            "total-equality-deletes": "0",
+            "total-files-size": "0",
+            "total-position-deletes": "0",
+            "total-records": "0",
+        }
+    )
 
     # Append
-    assert summaries[3] == {
-        "added-data-files": "1",
-        "added-files-size": str(file_size),
-        "added-records": "3",
-        "total-data-files": "1",
-        "total-delete-files": "0",
-        "total-equality-deletes": "0",
-        "total-files-size": str(file_size),
-        "total-position-deletes": "0",
-        "total-records": "3",
-        "engine-name": "pyiceberg",
-        "engine-version": EnvironmentContext.get().get("engine-version"),
-    }
+    assert summaries[3] == with_environment_context(
+        {
+            "added-data-files": "1",
+            "added-files-size": str(file_size),
+            "added-records": "3",
+            "total-data-files": "1",
+            "total-delete-files": "0",
+            "total-equality-deletes": "0",
+            "total-files-size": str(file_size),
+            "total-position-deletes": "0",
+            "total-records": "3",
+        }
+    )
 
 
 @pytest.mark.integration
@@ -324,20 +323,20 @@ def test_summaries_partial_overwrite(spark: SparkSession, session_catalog: Catal
     # APPEND
     assert "added-files-size" in summaries[0]
     assert "total-files-size" in summaries[0]
-    assert summaries[0] == {
-        "added-data-files": "3",
-        "added-files-size": summaries[0]["added-files-size"],
-        "added-records": "5",
-        "changed-partition-count": "3",
-        "total-data-files": "3",
-        "total-delete-files": "0",
-        "total-equality-deletes": "0",
-        "total-files-size": summaries[0]["total-files-size"],
-        "total-position-deletes": "0",
-        "total-records": "5",
-        "engine-name": "pyiceberg",
-        "engine-version": EnvironmentContext.get().get("engine-version"),
-    }
+    assert summaries[0] == with_environment_context(
+        {
+            "added-data-files": "3",
+            "added-files-size": summaries[0]["added-files-size"],
+            "added-records": "5",
+            "changed-partition-count": "3",
+            "total-data-files": "3",
+            "total-delete-files": "0",
+            "total-equality-deletes": "0",
+            "total-files-size": summaries[0]["total-files-size"],
+            "total-position-deletes": "0",
+            "total-records": "5",
+        }
+    )
     # Java produces:
     # {
     #     "added-data-files": "1",
@@ -364,23 +363,23 @@ def test_summaries_partial_overwrite(spark: SparkSession, session_catalog: Catal
     assert "added-files-size" in summaries[1]
     assert "removed-files-size" in summaries[1]
     assert "total-files-size" in summaries[1]
-    assert summaries[1] == {
-        "added-data-files": "1",
-        "added-files-size": summaries[1]["added-files-size"],
-        "added-records": "2",
-        "changed-partition-count": "1",
-        "deleted-data-files": "1",
-        "deleted-records": "3",
-        "removed-files-size": summaries[1]["removed-files-size"],
-        "total-data-files": "3",
-        "total-delete-files": "0",
-        "total-equality-deletes": "0",
-        "total-files-size": summaries[1]["total-files-size"],
-        "total-position-deletes": "0",
-        "total-records": "4",
-        "engine-name": "pyiceberg",
-        "engine-version": EnvironmentContext.get().get("engine-version"),
-    }
+    assert summaries[1] == with_environment_context(
+        {
+            "added-data-files": "1",
+            "added-files-size": summaries[1]["added-files-size"],
+            "added-records": "2",
+            "changed-partition-count": "1",
+            "deleted-data-files": "1",
+            "deleted-records": "3",
+            "removed-files-size": summaries[1]["removed-files-size"],
+            "total-data-files": "3",
+            "total-delete-files": "0",
+            "total-equality-deletes": "0",
+            "total-files-size": summaries[1]["total-files-size"],
+            "total-position-deletes": "0",
+            "total-records": "4",
+        }
+    )
     assert len(tbl.scan().to_pandas()) == 4
 
 
@@ -837,55 +836,55 @@ def test_summaries_with_only_nulls(
     file_size = int(summaries[1]["added-files-size"])
     assert file_size > 0
 
-    assert summaries[0] == {
-        "total-data-files": "0",
-        "total-delete-files": "0",
-        "total-equality-deletes": "0",
-        "total-files-size": "0",
-        "total-position-deletes": "0",
-        "total-records": "0",
-        "engine-name": "pyiceberg",
-        "engine-version": EnvironmentContext.get().get("engine-version"),
-    }
+    assert summaries[0] == with_environment_context(
+        {
+            "total-data-files": "0",
+            "total-delete-files": "0",
+            "total-equality-deletes": "0",
+            "total-files-size": "0",
+            "total-position-deletes": "0",
+            "total-records": "0",
+        }
+    )
 
-    assert summaries[1] == {
-        "added-data-files": "1",
-        "added-files-size": str(file_size),
-        "added-records": "2",
-        "total-data-files": "1",
-        "total-delete-files": "0",
-        "total-equality-deletes": "0",
-        "total-files-size": str(file_size),
-        "total-position-deletes": "0",
-        "total-records": "2",
-        "engine-name": "pyiceberg",
-        "engine-version": EnvironmentContext.get().get("engine-version"),
-    }
+    assert summaries[1] == with_environment_context(
+        {
+            "added-data-files": "1",
+            "added-files-size": str(file_size),
+            "added-records": "2",
+            "total-data-files": "1",
+            "total-delete-files": "0",
+            "total-equality-deletes": "0",
+            "total-files-size": str(file_size),
+            "total-position-deletes": "0",
+            "total-records": "2",
+        }
+    )
 
-    assert summaries[2] == {
-        "deleted-data-files": "1",
-        "deleted-records": "2",
-        "removed-files-size": str(file_size),
-        "total-data-files": "0",
-        "total-delete-files": "0",
-        "total-equality-deletes": "0",
-        "total-files-size": "0",
-        "total-position-deletes": "0",
-        "total-records": "0",
-        "engine-name": "pyiceberg",
-        "engine-version": EnvironmentContext.get().get("engine-version"),
-    }
+    assert summaries[2] == with_environment_context(
+        {
+            "deleted-data-files": "1",
+            "deleted-records": "2",
+            "removed-files-size": str(file_size),
+            "total-data-files": "0",
+            "total-delete-files": "0",
+            "total-equality-deletes": "0",
+            "total-files-size": "0",
+            "total-position-deletes": "0",
+            "total-records": "0",
+        }
+    )
 
-    assert summaries[3] == {
-        "total-data-files": "0",
-        "total-delete-files": "0",
-        "total-equality-deletes": "0",
-        "total-files-size": "0",
-        "total-position-deletes": "0",
-        "total-records": "0",
-        "engine-name": "pyiceberg",
-        "engine-version": EnvironmentContext.get().get("engine-version"),
-    }
+    assert summaries[3] == with_environment_context(
+        {
+            "total-data-files": "0",
+            "total-delete-files": "0",
+            "total-equality-deletes": "0",
+            "total-files-size": "0",
+            "total-position-deletes": "0",
+            "total-records": "0",
+        }
+    )
 
 
 @pytest.mark.integration
@@ -1167,34 +1166,34 @@ def test_inspect_snapshots(
     assert file_size > 0
 
     # Append
-    assert df["summary"][0].as_py() == [
-        ("added-files-size", str(file_size)),
-        ("added-data-files", "1"),
-        ("added-records", "3"),
-        ("total-data-files", "1"),
-        ("total-delete-files", "0"),
-        ("total-records", "3"),
-        ("total-files-size", str(file_size)),
-        ("total-position-deletes", "0"),
-        ("total-equality-deletes", "0"),
-        ("engine-name", "pyiceberg"),
-        ("engine-version", EnvironmentContext.get().get("engine-version")),
-    ]
+    assert df["summary"][0].as_py() == with_environment_context_tuples(
+        [
+            ("added-files-size", str(file_size)),
+            ("added-data-files", "1"),
+            ("added-records", "3"),
+            ("total-data-files", "1"),
+            ("total-delete-files", "0"),
+            ("total-records", "3"),
+            ("total-files-size", str(file_size)),
+            ("total-position-deletes", "0"),
+            ("total-equality-deletes", "0"),
+        ]
+    )
 
     # Delete
-    assert df["summary"][1].as_py() == [
-        ("removed-files-size", str(file_size)),
-        ("deleted-data-files", "1"),
-        ("deleted-records", "3"),
-        ("total-data-files", "0"),
-        ("total-delete-files", "0"),
-        ("total-records", "0"),
-        ("total-files-size", "0"),
-        ("total-position-deletes", "0"),
-        ("total-equality-deletes", "0"),
-        ("engine-name", "pyiceberg"),
-        ("engine-version", EnvironmentContext.get().get("engine-version")),
-    ]
+    assert df["summary"][1].as_py() == with_environment_context_tuples(
+        [
+            ("removed-files-size", str(file_size)),
+            ("deleted-data-files", "1"),
+            ("deleted-records", "3"),
+            ("total-data-files", "0"),
+            ("total-delete-files", "0"),
+            ("total-records", "0"),
+            ("total-files-size", "0"),
+            ("total-position-deletes", "0"),
+            ("total-equality-deletes", "0"),
+        ]
+    )
 
     lhs = spark.table(f"{identifier}.snapshots").toPandas()
     rhs = df.to_pandas()

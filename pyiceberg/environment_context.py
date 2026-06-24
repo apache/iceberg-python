@@ -15,13 +15,13 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from importlib.metadata import version
+from pyiceberg import __version__
 
 
 class EnvironmentContext:
     _PROPERTIES: dict[str, str] = {
         "engine-name": "pyiceberg",
-        "engine-version": version("pyiceberg"),
+        "engine-version": __version__,
     }
 
     def __init__(self) -> None:
