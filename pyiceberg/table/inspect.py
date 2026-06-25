@@ -46,6 +46,15 @@ class InspectTable:
     tbl: Table
 
     def __init__(self, tbl: Table) -> None:
+        """Initialize the InspectTable helper.
+
+        Args:
+            tbl: The Iceberg :class:`~pyiceberg.table.Table` whose metadata
+                will be inspected.
+
+        Raises:
+            ModuleNotFoundError: If PyArrow is not installed.
+        """
         self.tbl = tbl
 
         try:
@@ -54,6 +63,19 @@ class InspectTable:
             raise ModuleNotFoundError("For metadata operations PyArrow needs to be installed") from e
 
     def _get_snapshot(self, snapshot_id: int | None = None) -> Snapshot:
+        """Return the snapshot identified by *snapshot_id*, or the current snapshot.
+
+        Args:
+            snapshot_id: The snapshot ID to look up.  When ``None`` the current
+                table snapshot is returned.
+
+        Returns:
+            The requested :class:`~pyiceberg.table.snapshots.Snapshot`.
+
+        Raises:
+            ValueError: If *snapshot_id* does not exist, or if the table has no
+                snapshots at all.
+        """
         if snapshot_id is not None:
             if snapshot := self.tbl.metadata.snapshot_by_id(snapshot_id):
                 return snapshot
@@ -66,6 +88,26 @@ class InspectTable:
             raise ValueError("Cannot get a snapshot as the table does not have any.")
 
     def snapshots(self) -> pa.Table:
+        """Return all snapshots of the table as a PyArrow table.
+
+        Each row represents one snapshot and includes the commit timestamp,
+        snapshot ID, parent snapshot ID, the write operation that produced the
+        snapshot (e.g. ``append``, ``overwrite``, ``delete``), the path to the
+        manifest list file, and a map of additional summary properties.
+
+        Returns:
+            A :class:`pyarrow.Table` with schema::
+
+                committed_at    timestamp[ms, tz=UTC]  not null
+                snapshot_id     int64                  not null
+                parent_id       int64                  nullable
+                operation       string                 nullable
+                manifest_list   string                 not null
+                summary         map<string, string>    nullable
+
+        Example:
+            >>> tbl.inspect.snapshots().to_pandas()
+        """
         import pyarrow as pa
 
         snapshots_schema = pa.schema(
@@ -104,9 +146,33 @@ class InspectTable:
         )
 
     def entries(self, snapshot_id: int | None = None) -> pa.Table:
-        import pyarrow as pa
+        """Return all manifest entries for a snapshot as a PyArrow table.
 
-        from pyiceberg.io.pyarrow import schema_to_pyarrow
+        Each row represents one manifest entry (a single data or delete file
+        tracked within a manifest).  Readable per-column metrics (lower/upper
+        bounds, null counts, etc.) are decoded from their binary representation
+        into native Python types.
+
+        Args:
+            snapshot_id: The snapshot to inspect.  Defaults to the current
+                snapshot when ``None``.
+
+        Returns:
+            A :class:`pyarrow.Table` with schema::
+
+                status               int8     not null  (0=EXISTING, 1=ADDED, 2=DELETED)
+                snapshot_id          int64    not null
+                sequence_number      int64    not null
+                file_sequence_number int64    not null
+                data_file            struct   not null  (content, file_path, format, partition, metrics…)
+                readable_metrics     struct   nullable  (one sub-struct per column)
+
+        Raises:
+            ValueError: If *snapshot_id* does not exist or the table has no snapshots.
+
+        Example:
+            >>> tbl.inspect.entries().to_pandas()
+        """
 
         schema = self.tbl.metadata.schema()
 
@@ -231,6 +297,21 @@ class InspectTable:
         )
 
     def refs(self) -> pa.Table:
+        """Return all named references (branches and tags) of the table.
+
+        Returns:
+            A :class:`pyarrow.Table` with schema::
+
+                name                    string                  not null
+                type                    dictionary<int32,str>   not null  ("branch" or "tag")
+                snapshot_id             int64                   not null
+                max_reference_age_in_ms int64                   nullable
+                min_snapshots_to_keep   int32                   nullable
+                max_snapshot_age_in_ms  int64                   nullable
+
+        Example:
+            >>> tbl.inspect.refs().to_pandas()
+        """
         import pyarrow as pa
 
         ref_schema = pa.schema(
@@ -266,10 +347,38 @@ class InspectTable:
         row_filter: str | BooleanExpression = ALWAYS_TRUE,
         case_sensitive: bool = True,
     ) -> pa.Table:
-        import pyarrow as pa
+        """Return partition-level statistics for a snapshot.
 
-        from pyiceberg.io.pyarrow import schema_to_pyarrow
-        from pyiceberg.table import DataScan
+        Aggregates record counts, file counts, total data file sizes and delete
+        file information per distinct partition value.  When a *row_filter* is
+        supplied only the partitions that could contain matching rows are
+        included.
+
+        Args:
+            snapshot_id: The snapshot to inspect.  Defaults to the current
+                snapshot when ``None``.
+            row_filter: A predicate (as a string expression or
+                :class:`~pyiceberg.expressions.BooleanExpression`) used to
+                prune which partitions are returned.  Defaults to
+                :data:`ALWAYS_TRUE` (all partitions).
+            case_sensitive: Whether column name matching in *row_filter* is
+                case-sensitive.  Defaults to ``True``.
+
+        Returns:
+            A :class:`pyarrow.Table` with one row per distinct partition.
+            The schema includes ``partition``, ``spec_id``, ``record_count``,
+            ``file_count``, ``total_data_file_size_in_bytes``,
+            ``position_delete_record_count``, ``position_delete_file_count``,
+            ``equality_delete_record_count``, ``equality_delete_file_count``,
+            ``last_updated_at``, and ``last_updated_snapshot_id``.
+
+        Raises:
+            ValueError: If *snapshot_id* does not exist or the table has no
+                snapshots.
+
+        Example:
+            >>> tbl.inspect.partitions().to_pandas()
+        """
 
         table_schema = pa.schema(
             [
@@ -476,12 +585,41 @@ class InspectTable:
         )
 
     def manifests(self) -> pa.Table:
+        """Return the manifest files for the current snapshot.
+
+        Each row describes one manifest file referenced by the current snapshot,
+        including file counts (added, existing, deleted) for both data files
+        and delete files, as well as per-partition bound summaries.
+
+        Returns:
+            A :class:`pyarrow.Table` — see :meth:`_get_manifests_schema` for
+            the full column list.
+
+        Example:
+            >>> tbl.inspect.manifests().to_pandas()
+        """
         return self._generate_manifests_table(self.tbl.current_snapshot())
 
     def metadata_log_entries(self) -> pa.Table:
-        import pyarrow as pa
+        """Return the metadata log for the table.
 
-        from pyiceberg.table.snapshots import MetadataLogEntry
+        The metadata log records every metadata file that has been the current
+        metadata for the table, along with the snapshot that was current when
+        each metadata file was written.  The most recent entry corresponds to
+        the current metadata location.
+
+        Returns:
+            A :class:`pyarrow.Table` with schema::
+
+                timestamp               timestamp[ms]   not null
+                file                    string          not null
+                latest_snapshot_id      int64           nullable
+                latest_schema_id        int32           nullable
+                latest_sequence_number  int64           nullable
+
+        Example:
+            >>> tbl.inspect.metadata_log_entries().to_pandas()
+        """
 
         table_schema = pa.schema(
             [
@@ -515,6 +653,25 @@ class InspectTable:
         )
 
     def history(self) -> pa.Table:
+        """Return the snapshot history of the table.
+
+        Each row in the result corresponds to a snapshot-log entry, i.e. a
+        point in time when a snapshot became the current snapshot of the table.
+        The ``is_current_ancestor`` column is ``True`` when the snapshot is on
+        the ancestry chain of the current snapshot (useful for detecting
+        expired or replaced snapshots after branch operations).
+
+        Returns:
+            A :class:`pyarrow.Table` with schema::
+
+                made_current_at     timestamp[ms, tz=UTC]   not null
+                snapshot_id         int64                   not null
+                parent_id           int64                   nullable
+                is_current_ancestor bool                    not null
+
+        Example:
+            >>> tbl.inspect.history().to_pandas()
+        """
         import pyarrow as pa
 
         history_schema = pa.schema(
@@ -678,15 +835,88 @@ class InspectTable:
         return pa.concat_tables(results)
 
     def files(self, snapshot_id: int | None = None) -> pa.Table:
+        """Return all data and delete files tracked by a snapshot.
+
+        Args:
+            snapshot_id: The snapshot to inspect.  Defaults to the current
+                snapshot when ``None``.
+
+        Returns:
+            A :class:`pyarrow.Table` with one row per file — see
+            :meth:`_get_files_schema` for the full schema.  The ``content``
+            column distinguishes data files (``0``) from position-delete files
+            (``1``) and equality-delete files (``2``).
+
+        Raises:
+            ValueError: If *snapshot_id* does not exist or the table has no
+                snapshots.
+
+        Example:
+            >>> tbl.inspect.files().to_pandas()
+        """
         return self._files(snapshot_id)
 
     def data_files(self, snapshot_id: int | None = None) -> pa.Table:
+        """Return only data files tracked by a snapshot.
+
+        Convenience wrapper around :meth:`files` that filters to rows where
+        ``content == 0`` (``DATA``).
+
+        Args:
+            snapshot_id: The snapshot to inspect.  Defaults to the current
+                snapshot when ``None``.
+
+        Returns:
+            A :class:`pyarrow.Table` — same schema as :meth:`files`.
+
+        Raises:
+            ValueError: If *snapshot_id* does not exist or the table has no
+                snapshots.
+
+        Example:
+            >>> tbl.inspect.data_files().to_pandas()
+        """
         return self._files(snapshot_id, {DataFileContent.DATA})
 
     def delete_files(self, snapshot_id: int | None = None) -> pa.Table:
+        """Return only delete files (position and equality) tracked by a snapshot.
+
+        Convenience wrapper around :meth:`files` that filters to rows where
+        ``content`` is ``1`` (``POSITION_DELETES``) or ``2``
+        (``EQUALITY_DELETES``).
+
+        Args:
+            snapshot_id: The snapshot to inspect.  Defaults to the current
+                snapshot when ``None``.
+
+        Returns:
+            A :class:`pyarrow.Table` — same schema as :meth:`files`.
+
+        Raises:
+            ValueError: If *snapshot_id* does not exist or the table has no
+                snapshots.
+
+        Example:
+            >>> tbl.inspect.delete_files().to_pandas()
+        """
         return self._files(snapshot_id, {DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES})
 
     def all_manifests(self) -> pa.Table:
+        """Return manifest files across *all* snapshots of the table.
+
+        Unlike :meth:`manifests`, which only covers the current snapshot, this
+        method collects manifests from every snapshot and adds a
+        ``reference_snapshot_id`` column so that each row can be traced back to
+        the snapshot it belongs to.
+
+        Returns:
+            A :class:`pyarrow.Table` with the same columns as :meth:`manifests`
+            plus ``reference_snapshot_id int64 not null``.  Returns an empty
+            table when the table has no snapshots.
+
+        Example:
+            >>> tbl.inspect.all_manifests().to_pandas()
+        """
         import pyarrow as pa
 
         snapshots = self.tbl.snapshots()
@@ -718,10 +948,45 @@ class InspectTable:
         return pa.concat_tables(file_lists)
 
     def all_files(self) -> pa.Table:
+        """Return all files (data and delete) across *all* snapshots.
+
+        De-duplicates manifests by path so that files shared between snapshots
+        are only emitted once.  Use :meth:`files` when you only need the
+        current snapshot.
+
+        Returns:
+            A :class:`pyarrow.Table` — same schema as :meth:`files`.  Returns
+            an empty table when the table has no snapshots.
+
+        Example:
+            >>> tbl.inspect.all_files().to_pandas()
+        """
         return self._all_files()
 
     def all_data_files(self) -> pa.Table:
+        """Return all data files across *all* snapshots.
+
+        Convenience wrapper around :meth:`all_files` that filters to data files
+        only (``content == 0``).
+
+        Returns:
+            A :class:`pyarrow.Table` — same schema as :meth:`files`.
+
+        Example:
+            >>> tbl.inspect.all_data_files().to_pandas()
+        """
         return self._all_files({DataFileContent.DATA})
 
     def all_delete_files(self) -> pa.Table:
+        """Return all delete files (position and equality) across *all* snapshots.
+
+        Convenience wrapper around :meth:`all_files` that filters to delete
+        files only (``content`` is ``1`` or ``2``).
+
+        Returns:
+            A :class:`pyarrow.Table` — same schema as :meth:`files`.
+
+        Example:
+            >>> tbl.inspect.all_delete_files().to_pandas()
+        """
         return self._all_files({DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES})
