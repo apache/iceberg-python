@@ -101,7 +101,7 @@ geoarrow = ["geoarrow-pyarrow>=0.2.0"]
 
 [dependency-groups]
 dev = [
-    "pytest==9.0.3",
+    "pytest==9.1.1",
     "pytest-checkdocs==2.14.0",
     "prek>=0.2.1,<0.5",
     "pytest-lazy-fixtures==1.4.0",
