@@ -1538,6 +1538,7 @@ def test_set_statistics_update(table_v2_with_statistics: Table) -> None:
     assert len(updated_statistics) == 1
     assert json.loads(updated_statistics[0].model_dump_json()) == json.loads(expected)
 
+
 def test_set_statistics_update_handles_deprecated_snapshot_id(table_v2_with_statistics: Table) -> None:
     snapshot_id = table_v2_with_statistics.metadata.current_snapshot_id
 
@@ -1587,6 +1588,7 @@ def test_set_statistics_update_handles_deprecated_snapshot_id(table_v2_with_stat
     update_with_json = SetStatisticsUpdate.model_validate_json(update_json)
     assert model_roundtrips(update_with_json)
     assert update_with_json.snapshot_id == snapshot_id
+
 
 def test_remove_statistics_update(table_v2_with_statistics: Table) -> None:
     update = RemoveStatisticsUpdate(
@@ -1688,49 +1690,54 @@ def test_remove_partition_statistics_update_with_invalid_snapshot_id(table_v2_wi
             table_v2_with_statistics.metadata,
             (RemovePartitionStatisticsUpdate(snapshot_id=123456789),),
         )
-@pytest.mark.xfail(reason="remove_statistics uses = instead of +=, dropping preceeding updates")
+
+
+@pytest.mark.xfail(reason="remove_statistics uses = instead of +=, dropping preceding updates")
 def test_update_statistics_set_remove_chain(tmp_path: Path) -> None:
+    catalog = InMemoryCatalog("test", warehouse=f"file://{tmp_path}")
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test", schema=Schema(NestedField(1, "x", LongType())))
 
-   catalog = InMemoryCatalog("test",warehouse = f"file://{tmp_path}")
-   catalog.create_namespace("default")
-   table = catalog.create_table("default.test",schema = Schema(NestedField(1,"x", LongType())))
+    snapshot_id_1 = 1111111111
+    snapshot_id_2 = 2222222222
 
-   snapshot_id_1 = 1111111111
-   snapshot_id_2 = 2222222222
+    statistics_file_1 = StatisticsFile(
+        snapshot_id=snapshot_id_1,
+        statistics_path="s3://bucket/warehouse/stats1.puffin",
+        file_size_in_bytes=124,
+        file_footer_size_in_bytes=27,
+        blob_metadata=[
+            BlobMetadata(
+                type="apache-datasketches-theta-v1",
+                snapshot_id=snapshot_id_1,
+                sequence_number=1,
+                fields=[1],
+            )
+        ],
+    )
 
-   statistics_file_1 = StatisticsFile(
-       snapshot_id=snapshot_id_1,
-       statistics_path="s3://bucket/warehouse/stats1.puffin",
-       file_size_in_bytes=124,
-       file_footer_size_in_bytes=27,
-       blob_metadata=[BlobMetadata(
-           type="apache-datasketches-theta-v1",
-           snapshot_id=snapshot_id_1,
-           sequence_number=1,
-           fields=[1],
-       )],
-   )
+    statistics_file_2 = StatisticsFile(
+        snapshot_id=snapshot_id_2,
+        statistics_path="s3://bucket/warehouse/stats2.puffin",
+        file_size_in_bytes=124,
+        file_footer_size_in_bytes=27,
+        blob_metadata=[
+            BlobMetadata(
+                type="apache-datasketches-theta-v1",
+                snapshot_id=snapshot_id_2,
+                sequence_number=2,
+                fields=[1],
+            )
+        ],
+    )
 
-   statistics_file_2 = StatisticsFile(
-       snapshot_id=snapshot_id_2,
-       statistics_path="s3://bucket/warehouse/stats2.puffin",
-       file_size_in_bytes=124,
-       file_footer_size_in_bytes=27,
-       blob_metadata=[BlobMetadata(
-           type="apache-datasketches-theta-v1",
-           snapshot_id=snapshot_id_2,
-           sequence_number=2,
-           fields=[1],
-       )],
-   )
+    with table.update_statistics() as update:
+        update.set_statistics(statistics_file_1)
 
-   with table.update_statistics() as update:
-       update.set_statistics(statistics_file_1)
+    with table.update_statistics() as update:
+        update.set_statistics(statistics_file_2).remove_statistics(snapshot_id_1)
 
-   with table.update_statistics() as update:
-       update.set_statistics(statistics_file_2).remove_statistics(snapshot_id_1)
-
-   assert len(table.metadata.statistics) == 1
+    assert len(table.metadata.statistics) == 1
 
 
 def test_add_snapshot_update_fails_without_first_row_id(table_v3: Table) -> None:
