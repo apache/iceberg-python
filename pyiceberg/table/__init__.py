@@ -41,7 +41,7 @@ from pyiceberg.expressions.visitors import (
     manifest_evaluator,
 )
 from pyiceberg.io import FileIO, load_file_io
-from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestEntry, ManifestFile
+from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestEntry, ManifestEntryStatus, ManifestFile
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, UNPARTITIONED_PARTITION_SPEC, PartitionKey, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.delete_file_index import DeleteFileIndex
@@ -51,7 +51,7 @@ from pyiceberg.table.maintenance import MaintenanceTable
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadata
 from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
-from pyiceberg.table.snapshots import Snapshot, SnapshotLogEntry
+from pyiceberg.table.snapshots import Operation, Snapshot, SnapshotLogEntry, ancestors_between_ids, is_parent_ancestor_of
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import (
     AddPartitionSpecUpdate,
@@ -1262,6 +1262,59 @@ class Table:
             table_identifier=self._identifier,
         )
 
+    def incremental_append_scan(
+        self,
+        row_filter: str | BooleanExpression = ALWAYS_TRUE,
+        selected_fields: tuple[str, ...] = ("*",),
+        case_sensitive: bool = True,
+        from_snapshot_id_exclusive: int | None = None,
+        to_snapshot_id_inclusive: int | None = None,
+        options: Properties = EMPTY_DICT,
+        limit: int | None = None,
+    ) -> IncrementalAppendScan:
+        """Fetch an IncrementalAppendScan based on the table's current metadata.
+
+        The incremental append scan returns the rows added by append snapshots in a snapshot
+        range that match the provided row_filter, projected onto the table's current schema.
+
+        Args:
+            row_filter:
+                A string or BooleanExpression that describes the
+                desired rows.
+            selected_fields:
+                A tuple of strings representing the column names
+                to return in the output dataframe.
+            case_sensitive:
+                If True column matching is case sensitive.
+            from_snapshot_id_exclusive:
+                Optional ID of the "from" snapshot, to start the incremental scan from, exclusively. This can be set
+                on the IncrementalAppendScan object returned, but ultimately must not be None.
+            to_snapshot_id_inclusive:
+                Optional ID of the "to" snapshot, to end the incremental scan at, inclusively. This can be set on the
+                IncrementalAppendScan object returned. If not set, it defaults to the table's current snapshot.
+            options:
+                Additional Table properties as a dictionary of
+                string key value pairs to use for this scan.
+            limit:
+                An integer representing the number of rows to
+                return in the scan result. If None, fetches all
+                matching rows.
+
+        Returns:
+            An IncrementalAppendScan based on the table's current metadata and provided parameters.
+        """
+        return IncrementalAppendScan(
+            table_metadata=self.metadata,
+            io=self.io,
+            row_filter=row_filter,
+            selected_fields=selected_fields,
+            case_sensitive=case_sensitive,
+            from_snapshot_id_exclusive=from_snapshot_id_exclusive,
+            to_snapshot_id_inclusive=to_snapshot_id_inclusive,
+            options=options,
+            limit=limit,
+        )
+
     @property
     def format_version(self) -> TableVersion:
         return self.metadata.format_version
@@ -1778,6 +1831,18 @@ class StagedTable(Table):
     ) -> DataScan:
         raise ValueError("Cannot scan a staged table")
 
+    def incremental_append_scan(
+        self,
+        row_filter: str | BooleanExpression = ALWAYS_TRUE,
+        selected_fields: tuple[str, ...] = ("*",),
+        case_sensitive: bool = True,
+        from_snapshot_id_exclusive: int | None = None,
+        to_snapshot_id_inclusive: int | None = None,
+        options: Properties = EMPTY_DICT,
+        limit: int | None = None,
+    ) -> IncrementalAppendScan:
+        raise ValueError("Cannot scan a staged table")
+
     def to_daft(self) -> daft.DataFrame:
         raise ValueError("Cannot convert a staged table to a Daft DataFrame")
 
@@ -2095,6 +2160,45 @@ def _min_sequence_number(manifests: list[ManifestFile]) -> int:
         return INITIAL_SEQUENCE_NUMBER
 
 
+def _to_arrow_via_file_scan_tasks(
+    scan: BaseScan, projected_schema: Schema, tasks: Iterable[FileScanTask], dictionary_columns: tuple[str, ...] = ()
+) -> pa.Table:
+    """Materialize a scan into an Arrow table given its planned ``FileScanTask``s."""
+    from pyiceberg.io.pyarrow import ArrowScan
+
+    return ArrowScan(
+        scan.table_metadata,
+        scan.io,
+        projected_schema,
+        scan.row_filter,
+        scan.case_sensitive,
+        scan.limit,
+        dictionary_columns=dictionary_columns,
+    ).to_table(tasks)
+
+
+def _to_arrow_batch_reader_via_file_scan_tasks(
+    scan: BaseScan, projected_schema: Schema, tasks: Iterable[FileScanTask], dictionary_columns: tuple[str, ...] = ()
+) -> pa.RecordBatchReader:
+    """Stream a scan into an Arrow ``RecordBatchReader`` given its planned ``FileScanTask``s."""
+    import pyarrow as pa
+
+    from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
+
+    target_schema = schema_to_pyarrow(projected_schema)
+    batches = ArrowScan(
+        scan.table_metadata,
+        scan.io,
+        projected_schema,
+        scan.row_filter,
+        scan.case_sensitive,
+        scan.limit,
+        dictionary_columns=dictionary_columns,
+    ).to_record_batches(tasks)
+
+    return pa.RecordBatchReader.from_batches(target_schema, batches).cast(target_schema)
+
+
 class DataScan(TableScan):
     @cached_property
     def _manifest_planner(self) -> ManifestGroupPlanner:
@@ -2184,17 +2288,7 @@ class DataScan(TableScan):
         Returns:
             pa.Table: Materialized Arrow Table from the Iceberg table's DataScan
         """
-        from pyiceberg.io.pyarrow import ArrowScan
-
-        return ArrowScan(
-            self.table_metadata,
-            self.io,
-            self.projection(),
-            self.row_filter,
-            self.case_sensitive,
-            self.limit,
-            dictionary_columns=dictionary_columns,
-        ).to_table(self.plan_files())
+        return _to_arrow_via_file_scan_tasks(self, self.projection(), self.plan_files(), dictionary_columns=dictionary_columns)
 
     def to_arrow_batch_reader(self, dictionary_columns: tuple[str, ...] = ()) -> pa.RecordBatchReader:
         """Return an Arrow RecordBatchReader from this DataScan.
@@ -2215,25 +2309,9 @@ class DataScan(TableScan):
             pa.RecordBatchReader: Arrow RecordBatchReader from the Iceberg table's DataScan
                 which can be used to read a stream of record batches one by one.
         """
-        import pyarrow as pa
-
-        from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
-
-        target_schema = schema_to_pyarrow(self.projection())
-        batches = ArrowScan(
-            self.table_metadata,
-            self.io,
-            self.projection(),
-            self.row_filter,
-            self.case_sensitive,
-            self.limit,
-            dictionary_columns=dictionary_columns,
-        ).to_record_batches(self.plan_files())
-
-        return pa.RecordBatchReader.from_batches(
-            target_schema,
-            batches,
-        ).cast(target_schema)
+        return _to_arrow_batch_reader_via_file_scan_tasks(
+            self, self.projection(), self.plan_files(), dictionary_columns=dictionary_columns
+        )
 
     def count(self) -> int:
         from pyiceberg.io.pyarrow import ArrowScan
@@ -2261,6 +2339,198 @@ class DataScan(TableScan):
                 tbl = arrow_scan.to_table([task])
                 res += len(tbl)
         return res
+
+
+IAS = TypeVar("IAS", bound="IncrementalAppendScan", covariant=True)
+
+
+class IncrementalAppendScan(BaseScan):
+    """An incremental scan of a table's data that accumulates appended data between two snapshots.
+
+    Args:
+        row_filter:
+            A string or BooleanExpression that describes the
+            desired rows
+        selected_fields:
+            A tuple of strings representing the column names
+            to return in the output dataframe.
+        case_sensitive:
+            If True column matching is case sensitive
+        options:
+            Additional Table properties as a dictionary of
+            string key value pairs to use for this scan.
+        limit:
+            An integer representing the number of rows to
+            return in the scan result. If None, fetches all
+            matching rows.
+        from_snapshot_id_exclusive:
+            Optional ID of the "from" snapshot, to start the incremental scan from, exclusively. When the scan is
+            ultimately planned, this must not be None. The snapshot does not need to be present in the table metadata
+            (it may have been expired), as long as it is the parent of some ancestor of the "to" snapshot.
+        to_snapshot_id_inclusive:
+            Optional ID of the "to" snapshot, to end the incremental scan at, inclusively.
+            Omitting it will default to the table's current snapshot.
+    """
+
+    from_snapshot_id_exclusive: int | None
+    to_snapshot_id_inclusive: int | None
+
+    def __init__(
+        self,
+        table_metadata: TableMetadata,
+        io: FileIO,
+        row_filter: str | BooleanExpression = ALWAYS_TRUE,
+        selected_fields: tuple[str, ...] = ("*",),
+        case_sensitive: bool = True,
+        from_snapshot_id_exclusive: int | None = None,
+        to_snapshot_id_inclusive: int | None = None,
+        options: Properties = EMPTY_DICT,
+        limit: int | None = None,
+    ):
+        super().__init__(
+            table_metadata=table_metadata,
+            io=io,
+            row_filter=row_filter,
+            selected_fields=selected_fields,
+            case_sensitive=case_sensitive,
+            options=options,
+            limit=limit,
+        )
+        self.from_snapshot_id_exclusive = from_snapshot_id_exclusive
+        self.to_snapshot_id_inclusive = to_snapshot_id_inclusive
+
+    def from_snapshot_exclusive(self: IAS, from_snapshot_id_exclusive: int | None) -> IAS:
+        """Instructs this scan to look for changes starting from a particular snapshot (exclusive).
+
+        Args:
+            from_snapshot_id_exclusive: the start snapshot ID (exclusive)
+
+        Returns:
+            this for method chaining
+        """
+        return self.update(from_snapshot_id_exclusive=from_snapshot_id_exclusive)
+
+    def to_snapshot_inclusive(self: IAS, to_snapshot_id_inclusive: int | None) -> IAS:
+        """Instructs this scan to look for changes up to a particular snapshot (inclusive).
+
+        Args:
+            to_snapshot_id_inclusive: the end snapshot ID (inclusive)
+
+        Returns:
+            this for method chaining
+        """
+        return self.update(to_snapshot_id_inclusive=to_snapshot_id_inclusive)
+
+    def projection(self) -> Schema:
+        current_schema = self.table_metadata.schema()
+        if "*" in self.selected_fields:
+            return current_schema
+        return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
+
+    def plan_files(self) -> Iterable[FileScanTask]:
+        """Plans the relevant files added between the specified snapshots."""
+        from_snapshot_id, to_snapshot_id = self._validate_and_resolve_snapshots()
+
+        append_snapshots = [
+            snapshot
+            for snapshot in ancestors_between_ids(
+                from_snapshot_id_exclusive=from_snapshot_id,
+                to_snapshot_id_inclusive=to_snapshot_id,
+                table_metadata=self.table_metadata,
+            )
+            if snapshot.summary is not None and snapshot.summary.operation == Operation.APPEND
+        ]
+        if len(append_snapshots) == 0:
+            return []
+
+        append_snapshot_ids = {snapshot.snapshot_id for snapshot in append_snapshots}
+
+        manifests = list(
+            {
+                manifest_file
+                for snapshot in append_snapshots
+                for manifest_file in snapshot.manifests(self.io)
+                if manifest_file.content == ManifestContent.DATA and manifest_file.added_snapshot_id in append_snapshot_ids
+            }
+        )
+
+        return ManifestGroupPlanner(
+            table_metadata=self.table_metadata,
+            io=self.io,
+            row_filter=self.row_filter,
+            case_sensitive=self.case_sensitive,
+            options=self.options,
+        ).plan_files(
+            manifests=manifests,
+            manifest_entry_filter=lambda manifest_entry: manifest_entry.snapshot_id in append_snapshot_ids
+            and manifest_entry.status == ManifestEntryStatus.ADDED,
+        )
+
+    def to_arrow(self, dictionary_columns: tuple[str, ...] = ()) -> pa.Table:
+        """Read an Arrow table eagerly from this IncrementalAppendScan.
+
+        All rows will be loaded into memory at once.
+
+        Args:
+            dictionary_columns:
+                A tuple of column names that PyArrow should read as
+                dictionary-encoded (``pa.DictionaryArray``).  Dictionary
+                encoding can substantially reduce memory usage for columns
+                with low-cardinality repeated string values.
+                Only applies to Parquet files; silently ignored for ORC.
+
+        Returns:
+            pa.Table: Materialized Arrow Table from the Iceberg table's IncrementalAppendScan
+        """
+        return _to_arrow_via_file_scan_tasks(self, self.projection(), self.plan_files(), dictionary_columns=dictionary_columns)
+
+    def to_arrow_batch_reader(self, dictionary_columns: tuple[str, ...] = ()) -> pa.RecordBatchReader:
+        """Return an Arrow RecordBatchReader from this IncrementalAppendScan.
+
+        For large results, using a RecordBatchReader requires less memory than
+        loading an Arrow Table for the same IncrementalAppendScan, because a
+        RecordBatch is read one at a time.
+
+        Args:
+            dictionary_columns:
+                A tuple of column names that PyArrow should read as
+                dictionary-encoded (``pa.DictionaryArray``).  Dictionary
+                encoding can substantially reduce memory usage for columns
+                with low-cardinality repeated string values.
+                Only applies to Parquet files; silently ignored for ORC.
+
+        Returns:
+            pa.RecordBatchReader: Arrow RecordBatchReader from the Iceberg table's IncrementalAppendScan
+                which can be used to read a stream of record batches one by one.
+        """
+        return _to_arrow_batch_reader_via_file_scan_tasks(
+            self, self.projection(), self.plan_files(), dictionary_columns=dictionary_columns
+        )
+
+    def _validate_and_resolve_snapshots(self) -> tuple[int, int]:
+        if self.from_snapshot_id_exclusive is None:
+            raise ValueError("Start snapshot is not set, please set from_snapshot_id_exclusive")
+
+        if self.to_snapshot_id_inclusive is None:
+            current_snapshot = self.table_metadata.current_snapshot()
+            if current_snapshot is None:
+                raise ValueError("End snapshot is not set and table has no current snapshot")
+            to_snapshot_id = current_snapshot.snapshot_id
+        else:
+            if self.table_metadata.snapshot_by_id(self.to_snapshot_id_inclusive) is None:
+                raise ValueError(f"End snapshot not found in table metadata: {self.to_snapshot_id_inclusive}")
+            to_snapshot_id = self.to_snapshot_id_inclusive
+
+        # The start snapshot is exclusive, so it does not need to be present in the table metadata
+        # (it may have been expired). It is valid as long as it is the parent of some ancestor of
+        # the end snapshot.
+        if not is_parent_ancestor_of(to_snapshot_id, self.from_snapshot_id_exclusive, self.table_metadata):
+            raise ValueError(
+                f"Starting snapshot (exclusive) {self.from_snapshot_id_exclusive} is not a parent "
+                f"ancestor of end snapshot {to_snapshot_id}"
+            )
+
+        return self.from_snapshot_id_exclusive, to_snapshot_id
 
 
 class ManifestGroupPlanner:
@@ -2328,8 +2598,15 @@ class ManifestGroupPlanner:
             ],
         )
 
-    def plan_files(self, manifests: Iterable[ManifestFile]) -> Iterable[FileScanTask]:
+    def plan_files(
+        self,
+        manifests: Iterable[ManifestFile],
+        manifest_entry_filter: Callable[[ManifestEntry], bool] = lambda _: True,
+    ) -> Iterable[FileScanTask]:
         """Plan the file scan tasks for the given manifests.
+
+        ``manifest_entry_filter`` is an additional predicate applied after the partition
+        evaluator; entries for which it returns False are excluded from the result.
 
         Returns:
             List of FileScanTasks that contain both data and delete files.
@@ -2340,6 +2617,9 @@ class ManifestGroupPlanner:
         residual_evaluators: dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
 
         for manifest_entry in chain.from_iterable(self.plan_manifest_entries(manifests)):
+            if not manifest_entry_filter(manifest_entry):
+                continue
+
             data_file = manifest_entry.data_file
             if data_file.content == DataFileContent.DATA:
                 data_entries.append(manifest_entry)
