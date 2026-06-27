@@ -1319,10 +1319,6 @@ def test_incremental_append_scan_does_not_double_count_compacted_files(catalog: 
     # compacts them into a single rewritten file. A scan spanning the compaction must read each
     # appended row exactly once -- the rewritten file (added by the compaction, not by an append)
     # must not be picked up on top of the originals.
-    #
-    # Guard the fixture: rewrite_data_files is a no-op (no snapshot) when there's nothing to
-    # compact, which would silently shift the indices and make this test scan to the wrong
-    # snapshot. Assert snapshots[3] really is the compaction.
     assert test_table.snapshots()[3].summary.operation == Operation.REPLACE  # type: ignore[union-attr]
 
     scan = test_table.incremental_append_scan(
