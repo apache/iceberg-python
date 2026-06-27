@@ -410,7 +410,7 @@ def test_incremental_append_scan_builders(table_v2: Table) -> None:
     assert scan.from_snapshot_inclusive is False
     assert scan.to_snapshot_id == newer_snapshot_id
     assert scan.row_filter == EqualTo("x", 1)
-    assert scan.selected_fields == ("x", "y") or set(scan.selected_fields) == {"x", "y"}
+    assert set(scan.selected_fields) == {"x", "y"}
     assert scan.case_sensitive is False
 
     # `from_snapshot_id_inclusive` flips the flag on the same slot.

@@ -2351,7 +2351,7 @@ class DataScan(TableScan):
         return res
 
 
-IAS = TypeVar("IAS", bound="IncrementalAppendScan")
+IAS = TypeVar("IAS", bound="IncrementalAppendScan", covariant=True)
 
 
 class IncrementalAppendScan(BaseScan):

@@ -477,10 +477,7 @@ def is_parent_ancestor_of(snapshot_id: int, ancestor_parent_snapshot_id: int, ta
     snapshot = table_metadata.snapshot_by_id(snapshot_id)
     if snapshot is None:
         raise ValueError(f"Cannot find snapshot: {snapshot_id}")
-    for ancestor in ancestors_of(snapshot, table_metadata):
-        if ancestor.parent_snapshot_id is not None and ancestor.parent_snapshot_id == ancestor_parent_snapshot_id:
-            return True
-    return False
+    return any(ancestor.parent_snapshot_id == ancestor_parent_snapshot_id for ancestor in ancestors_of(snapshot, table_metadata))
 
 
 def latest_ancestor_before_timestamp(table_metadata: TableMetadata, timestamp_ms: int) -> Snapshot | None:
