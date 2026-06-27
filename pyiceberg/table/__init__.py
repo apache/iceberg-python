@@ -51,7 +51,14 @@ from pyiceberg.table.maintenance import MaintenanceTable
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadata
 from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
-from pyiceberg.table.snapshots import Operation, Snapshot, SnapshotLogEntry, ancestors_between_ids, is_parent_ancestor_of
+from pyiceberg.table.snapshots import (
+    Operation,
+    Snapshot,
+    SnapshotLogEntry,
+    ancestors_between_ids,
+    is_ancestor_of,
+    is_parent_ancestor_of,
+)
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import (
     AddPartitionSpecUpdate,
@@ -1265,7 +1272,7 @@ class Table:
     def incremental_append_scan(
         self,
         *,
-        from_snapshot_id_exclusive: int,
+        from_snapshot_id_exclusive: int | None = None,
         to_snapshot_id_inclusive: int | None = None,
         row_filter: str | BooleanExpression = ALWAYS_TRUE,
         selected_fields: tuple[str, ...] = ("*",),
@@ -1280,7 +1287,8 @@ class Table:
 
         Args:
             from_snapshot_id_exclusive:
-                ID of the snapshot to start the incremental scan from, exclusively.
+                Optional ID of the snapshot to start the incremental scan from, exclusively. If not set, the scan
+                starts from the oldest ancestor of the end snapshot (inclusive).
             to_snapshot_id_inclusive:
                 Optional ID of the snapshot to end the incremental scan at, inclusively. If not set, it defaults to
                 the table's current snapshot.
@@ -1309,8 +1317,9 @@ class Table:
             row_filter=row_filter,
             selected_fields=selected_fields,
             case_sensitive=case_sensitive,
-            from_snapshot_id_exclusive=from_snapshot_id_exclusive,
-            to_snapshot_id_inclusive=to_snapshot_id_inclusive,
+            from_snapshot_id=from_snapshot_id_exclusive,
+            from_snapshot_inclusive=False,
+            to_snapshot_id=to_snapshot_id_inclusive,
             options=options,
             limit=limit,
         )
@@ -2342,13 +2351,20 @@ class DataScan(TableScan):
         return res
 
 
+IAS = TypeVar("IAS", bound="IncrementalAppendScan")
+
+
 class IncrementalAppendScan(BaseScan):
     """An incremental scan of a table's data that accumulates appended data between two snapshots.
 
     Args:
-        from_snapshot_id_exclusive:
-            ID of the snapshot to start the incremental scan from, exclusively.
-        to_snapshot_id_inclusive:
+        from_snapshot_id:
+            ID of the snapshot to start the incremental scan from. If None, the scan starts from
+            the oldest ancestor of the "to" snapshot (inclusive).
+        from_snapshot_inclusive:
+            Whether from_snapshot_id is included in the scan. If False, the start snapshot is
+            exclusive.
+        to_snapshot_id:
             Optional ID of the snapshot to end the incremental scan at, inclusively.
             Omitting it will default to the table's current snapshot.
         row_filter:
@@ -2368,19 +2384,20 @@ class IncrementalAppendScan(BaseScan):
             matching rows.
     """
 
-    from_snapshot_id_exclusive: int
-    to_snapshot_id_inclusive: int | None
+    from_snapshot_id: int | None
+    from_snapshot_inclusive: bool
+    to_snapshot_id: int | None
 
     def __init__(
         self,
         table_metadata: TableMetadata,
         io: FileIO,
-        *,
-        from_snapshot_id_exclusive: int,
-        to_snapshot_id_inclusive: int | None = None,
         row_filter: str | BooleanExpression = ALWAYS_TRUE,
         selected_fields: tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
+        from_snapshot_id: int | None = None,
+        from_snapshot_inclusive: bool = False,
+        to_snapshot_id: int | None = None,
         options: Properties = EMPTY_DICT,
         limit: int | None = None,
     ):
@@ -2393,8 +2410,21 @@ class IncrementalAppendScan(BaseScan):
             options=options,
             limit=limit,
         )
-        self.from_snapshot_id_exclusive = from_snapshot_id_exclusive
-        self.to_snapshot_id_inclusive = to_snapshot_id_inclusive
+        self.from_snapshot_id = from_snapshot_id
+        self.from_snapshot_inclusive = from_snapshot_inclusive
+        self.to_snapshot_id = to_snapshot_id
+
+    def from_snapshot_id_exclusive(self: IAS, from_snapshot_id: int) -> IAS:
+        """Return a copy of this scan that starts (exclusively) from the given snapshot ID."""
+        return self.update(from_snapshot_id=from_snapshot_id, from_snapshot_inclusive=False)
+
+    def from_snapshot_id_inclusive(self: IAS, from_snapshot_id: int) -> IAS:
+        """Return a copy of this scan that starts (inclusively) from the given snapshot ID."""
+        return self.update(from_snapshot_id=from_snapshot_id, from_snapshot_inclusive=True)
+
+    def to_snapshot_id_inclusive(self: IAS, to_snapshot_id: int) -> IAS:
+        """Return a copy of this scan that ends (inclusively) at the given snapshot ID."""
+        return self.update(to_snapshot_id=to_snapshot_id)
 
     def projection(self) -> Schema:
         current_schema = self.table_metadata.schema()
@@ -2404,12 +2434,16 @@ class IncrementalAppendScan(BaseScan):
 
     def plan_files(self) -> Iterable[FileScanTask]:
         """Plans the relevant files added between the specified snapshots."""
-        from_snapshot_id, to_snapshot_id = self._validate_and_resolve_snapshots()
+        # With neither bound set, an empty table (no current snapshot) has nothing to scan.
+        if self.from_snapshot_id is None and self.to_snapshot_id is None and self.table_metadata.current_snapshot() is None:
+            return []
+
+        from_snapshot_id_exclusive, to_snapshot_id = self._validate_and_resolve_snapshots()
 
         append_snapshots = [
             snapshot
             for snapshot in ancestors_between_ids(
-                from_snapshot_id_exclusive=from_snapshot_id,
+                from_snapshot_id_exclusive=from_snapshot_id_exclusive,
                 to_snapshot_id_inclusive=to_snapshot_id,
                 table_metadata=self.table_metadata,
             )
@@ -2464,27 +2498,45 @@ class IncrementalAppendScan(BaseScan):
         """
         return _to_arrow_batch_reader_via_file_scan_tasks(self, self.projection(), self.plan_files())
 
-    def _validate_and_resolve_snapshots(self) -> tuple[int, int]:
-        if self.to_snapshot_id_inclusive is None:
+    def _validate_and_resolve_snapshots(self) -> tuple[int | None, int]:
+        """Resolve the configured range to ``(from_snapshot_id_exclusive, to_snapshot_id_inclusive)``.
+
+        A ``None`` "from" means the scan starts from the oldest ancestor of the end snapshot.
+        """
+        # Resolve the inclusive end snapshot, defaulting to the table's current snapshot.
+        if self.to_snapshot_id is not None:
+            if self.table_metadata.snapshot_by_id(self.to_snapshot_id) is None:
+                raise ValueError(f"End snapshot not found in table metadata: {self.to_snapshot_id}")
+            to_snapshot_id = self.to_snapshot_id
+        else:
             current_snapshot = self.table_metadata.current_snapshot()
             if current_snapshot is None:
                 raise ValueError("End snapshot is not set and table has no current snapshot")
             to_snapshot_id = current_snapshot.snapshot_id
-        else:
-            if self.table_metadata.snapshot_by_id(self.to_snapshot_id_inclusive) is None:
-                raise ValueError(f"End snapshot not found in table metadata: {self.to_snapshot_id_inclusive}")
-            to_snapshot_id = self.to_snapshot_id_inclusive
 
-        # The start snapshot is exclusive, so it does not need to be present in the table metadata
-        # (it may have been expired). It is valid as long as it is the parent of some ancestor of
-        # the end snapshot.
-        if not is_parent_ancestor_of(to_snapshot_id, self.from_snapshot_id_exclusive, self.table_metadata):
+        # An unset start scans the whole lineage of the end snapshot (from its oldest ancestor).
+        if self.from_snapshot_id is None:
+            return None, to_snapshot_id
+
+        if self.from_snapshot_inclusive:
+            # An inclusive start must be present (its parent becomes the exclusive boundary, and may
+            # be None when the start is the root) and an ancestor of the end snapshot.
+            from_snapshot = self.table_metadata.snapshot_by_id(self.from_snapshot_id)
+            if from_snapshot is None:
+                raise ValueError(f"Start snapshot (inclusive) not found in table metadata: {self.from_snapshot_id}")
+            if not is_ancestor_of(to_snapshot_id, self.from_snapshot_id, self.table_metadata):
+                raise ValueError(
+                    f"Starting snapshot (inclusive) {self.from_snapshot_id} is not an ancestor of end snapshot {to_snapshot_id}"
+                )
+            return from_snapshot.parent_snapshot_id, to_snapshot_id
+
+        # An exclusive start does not need to be present in the table metadata (it may have been
+        # expired). It is valid as long as it is the parent of some ancestor of the end snapshot.
+        if not is_parent_ancestor_of(to_snapshot_id, self.from_snapshot_id, self.table_metadata):
             raise ValueError(
-                f"Starting snapshot (exclusive) {self.from_snapshot_id_exclusive} is not a parent "
-                f"ancestor of end snapshot {to_snapshot_id}"
+                f"Starting snapshot (exclusive) {self.from_snapshot_id} is not a parent ancestor of end snapshot {to_snapshot_id}"
             )
-
-        return self.from_snapshot_id_exclusive, to_snapshot_id
+        return self.from_snapshot_id, to_snapshot_id
 
 
 class ManifestGroupPlanner:

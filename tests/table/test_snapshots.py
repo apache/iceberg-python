@@ -31,6 +31,7 @@ from pyiceberg.table.snapshots import (
     ancestors_between,
     ancestors_between_ids,
     ancestors_of,
+    is_ancestor_of,
     is_parent_ancestor_of,
     latest_ancestor_before_timestamp,
     update_snapshot_summaries,
@@ -477,6 +478,22 @@ def test_ancestors_between(table_v2_with_extensive_snapshots: Table) -> None:
         )
         == 2000
     )
+
+
+def test_is_ancestor_of(table_v2: Table) -> None:
+    snapshot_id, ancestor_snapshot_id = 3055729675574597004, 3051729675574597004
+
+    # The older snapshot is an ancestor of the newer one.
+    assert is_ancestor_of(snapshot_id, ancestor_snapshot_id, table_v2.metadata)
+    # A snapshot is its own ancestor.
+    assert is_ancestor_of(snapshot_id, snapshot_id, table_v2.metadata)
+    # A descendant is not an ancestor of its parent.
+    assert not is_ancestor_of(ancestor_snapshot_id, snapshot_id, table_v2.metadata)
+    # An ID not in the chain is not an ancestor.
+    assert not is_ancestor_of(snapshot_id, 42, table_v2.metadata)
+    # Raises when the start snapshot ID is missing from metadata.
+    with pytest.raises(ValueError, match="Cannot find snapshot: 42"):
+        is_ancestor_of(42, snapshot_id, table_v2.metadata)
 
 
 def test_is_parent_ancestor_of(table_v2: Table) -> None:

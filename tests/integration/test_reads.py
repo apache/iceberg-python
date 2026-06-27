@@ -1422,3 +1422,41 @@ def test_incremental_append_scan_throws_on_disconnected_snapshots(catalog: Catal
 
     with pytest.raises(ValueError, match=f"Starting snapshot .exclusive. {from_id} is not a parent ancestor"):
         list(test_table.incremental_append_scan(from_snapshot_id_exclusive=from_id, to_snapshot_id_inclusive=to_id).plan_files())
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_unset_from_scans_from_oldest_ancestor(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # With `from` unset, the scan starts from the oldest ancestor of `to` (inclusive), so it also
+    # picks up snapshots[0]'s append (number=1) that an exclusive from=snapshots[0] would skip.
+    scan = test_table.incremental_append_scan(to_snapshot_id_inclusive=test_table.snapshots()[2].snapshot_id)
+    assert sorted(scan.to_arrow()["number"].to_pylist()) == [1, 2, 3, 4]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_inclusive_from(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # Inclusive from=snapshots[1] includes snapshots[1]'s append (number=2), unlike the exclusive
+    # form which would start strictly after it (numbers [3, 4]).
+    scan = test_table.incremental_append_scan(
+        to_snapshot_id_inclusive=test_table.snapshots()[2].snapshot_id,
+    ).from_snapshot_id_inclusive(test_table.snapshots()[1].snapshot_id)
+    assert sorted(scan.to_arrow()["number"].to_pylist()) == [2, 3, 4]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_builder_chain(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # The builder chain is equivalent to setting the range at construction.
+    scan = (
+        test_table.incremental_append_scan()
+        .from_snapshot_id_exclusive(test_table.snapshots()[0].snapshot_id)
+        .to_snapshot_id_inclusive(test_table.snapshots()[2].snapshot_id)
+    )
+    assert sorted(scan.to_arrow()["number"].to_pylist()) == [2, 3, 4]
