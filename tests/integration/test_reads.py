@@ -1299,7 +1299,25 @@ def test_incremental_append_scan_append_only(catalog: Catalog) -> None:
 def test_incremental_append_scan_ignores_non_append_snapshots(catalog: Catalog) -> None:
     test_table = catalog.load_table("default.test_incremental_read")
 
-    # snapshots[3] is a delete. The append scan must ignore it.
+    # snapshots[3] compacts and snapshots[4] deletes number=2 -- both non-append, both ignored.
+    # number=2 was appended in snapshots[1], so it still appears despite the later delete.
+    scan = test_table.incremental_append_scan(
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[4].snapshot_id,
+    )
+    assert len(list(scan.plan_files())) == 3
+    assert sorted(scan.to_arrow()["number"].to_pylist()) == [2, 3, 4]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_does_not_double_count_compacted_files(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # snapshots[1] and [2] append the two letter='b' files (number=2 and number=4); snapshots[3]
+    # compacts them into a single rewritten file. A scan spanning the compaction must read each
+    # appended row exactly once -- the rewritten file (added by the compaction, not by an append)
+    # must not be picked up on top of the originals.
     scan = test_table.incremental_append_scan(
         from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
         to_snapshot_id_inclusive=test_table.snapshots()[3].snapshot_id,
@@ -1313,7 +1331,8 @@ def test_incremental_append_scan_ignores_non_append_snapshots(catalog: Catalog) 
 def test_incremental_append_scan_empty_range(catalog: Catalog) -> None:
     test_table = catalog.load_table("default.test_incremental_read")
 
-    # snapshots[3] is the only snapshot in the range and is a delete; the scan must return empty.
+    # snapshots[3] is the only snapshot in the range and is a compaction (non-append); the scan
+    # must return empty.
     scan = test_table.incremental_append_scan(
         from_snapshot_id_exclusive=test_table.snapshots()[2].snapshot_id,
         to_snapshot_id_inclusive=test_table.snapshots()[3].snapshot_id,
@@ -1330,12 +1349,12 @@ def test_incremental_append_scan_empty_range(catalog: Catalog) -> None:
 def test_incremental_append_scan_schema_evolution_within_range(catalog: Catalog) -> None:
     test_table = catalog.load_table("default.test_incremental_read")
 
-    # snapshots[1..2] are on the original schema (number, letter); snapshots[4] is on the evolved
+    # snapshots[1..2] are on the original schema (number, letter); snapshots[5] is on the evolved
     # schema (number, letter, extra) after ALTER TABLE ADD COLUMN. The scan must project the older
     # rows onto the current schema (extra -> null) and pick up the new value for the newer row.
     scan = test_table.incremental_append_scan(
         from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
-        to_snapshot_id_inclusive=test_table.snapshots()[4].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[5].snapshot_id,
     )
     assert len(list(scan.plan_files())) == 4
 
@@ -1415,10 +1434,10 @@ def test_incremental_append_scan_limit(catalog: Catalog) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_incremental_append_scan_throws_on_disconnected_snapshots(catalog: Catalog) -> None:
-    # snapshots[5] is the REPLACE TABLE result, with no lineage back to snapshots[0].
+    # snapshots[6] is the REPLACE TABLE result, with no lineage back to snapshots[0].
     test_table = catalog.load_table("default.test_incremental_read")
     from_id = test_table.snapshots()[0].snapshot_id
-    to_id = test_table.snapshots()[5].snapshot_id
+    to_id = test_table.snapshots()[6].snapshot_id
 
     with pytest.raises(ValueError, match=f"Starting snapshot .exclusive. {from_id} is not a parent ancestor"):
         list(test_table.incremental_append_scan(from_snapshot_id_exclusive=from_id, to_snapshot_id_inclusive=to_id).plan_files())
