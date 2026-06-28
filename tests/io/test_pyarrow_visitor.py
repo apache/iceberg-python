@@ -173,8 +173,22 @@ def test_pyarrow_time64_us_to_iceberg() -> None:
 
 def test_pyarrow_time64_ns_to_iceberg() -> None:
     pyarrow_type = pa.time64("ns")
-    with pytest.raises(TypeError, match=re.escape("Unsupported type: time64[ns]")):
+    with pytest.raises(
+        TypeError,
+        match=re.escape(
+            "Iceberg does not yet support 'ns' time precision. Use 'downcast-ns-timestamp-to-us-on-write' "
+            "configuration property to automatically downcast 'ns' to 'us' on write."
+        ),
+    ):
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
+
+
+def test_pyarrow_time64_ns_to_iceberg_downcast() -> None:
+    pyarrow_type = pa.time64("ns")
+    converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg(downcast_ns_timestamp_to_us=True))
+    assert converted_iceberg_type == TimeType()
+    # 'ns' time is downcast to 'us' precision
+    assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pa.time64("us")
 
 
 @pytest.mark.parametrize("precision", ["s", "ms", "us", "ns"])
