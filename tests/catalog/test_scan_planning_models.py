@@ -39,6 +39,7 @@ from pyiceberg.catalog.rest.scan_planning import (
 )
 from pyiceberg.expressions import AlwaysTrue, EqualTo, Reference
 from pyiceberg.manifest import FileFormat
+from pyiceberg.table import FileScanTask
 
 TEST_URI = "https://iceberg-test-catalog/"
 
@@ -240,6 +241,24 @@ def test_scan_task_with_residual_filter_true() -> None:
     }
     task = RESTFileScanTask.model_validate(data)
     assert isinstance(task.residual_filter, AlwaysTrue)
+
+
+def test_from_rest_response_preserves_non_constant_residual_filter() -> None:
+    data = {
+        "data-file": _rest_data_file(),
+        "residual-filter": {"type": "eq", "term": "x", "value": 1},
+    }
+    rest_task = RESTFileScanTask.model_validate(data)
+    task = FileScanTask.from_rest_response(rest_task, [])
+    assert task.residual == EqualTo(Reference("x"), 1)
+
+
+def test_from_rest_response_defaults_missing_residual_filter_to_always_true() -> None:
+    data = {"data-file": _rest_data_file()}
+    rest_task = RESTFileScanTask.model_validate(data)
+    assert rest_task.residual_filter is None
+    task = FileScanTask.from_rest_response(rest_task, [])
+    assert task.residual == AlwaysTrue()
 
 
 def test_empty_scan_tasks() -> None:

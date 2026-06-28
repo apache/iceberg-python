@@ -2103,7 +2103,7 @@ class FileScanTask(ScanTask):
         return FileScanTask(
             data_file=data_file,
             delete_files=resolved_deletes,
-            residual=rest_task.residual_filter if rest_task.residual_filter else ALWAYS_TRUE,
+            residual=rest_task.residual_filter if rest_task.residual_filter is not None else ALWAYS_TRUE,
         )
 
 

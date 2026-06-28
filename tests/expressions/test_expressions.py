@@ -639,6 +639,33 @@ def test_invert_always() -> None:
     assert ~AlwaysTrue() == AlwaysFalse()
 
 
+def test_always_bool() -> None:
+    assert bool(AlwaysTrue()) is True
+    assert bool(AlwaysFalse()) is False
+
+
+def test_always_bool_control_flow() -> None:
+    assert (1 if AlwaysTrue() else 0) == 1
+    assert (1 if AlwaysFalse() else 0) == 0
+    assert not AlwaysFalse()
+    assert not (not AlwaysTrue())
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        EqualTo("x", 1),
+        IsNull("x"),
+        And(EqualTo("x", 1), IsNull("y")),
+        Or(EqualTo("x", 1), IsNull("y")),
+        Not(EqualTo("x", 1)),
+    ],
+)
+def test_non_constant_expression_bool_raises(expression: BooleanExpression) -> None:
+    with pytest.raises(TypeError, match="truth value"):
+        bool(expression)
+
+
 def test_accessor_base_class() -> None:
     """Test retrieving a value at a position of a container using an accessor"""
 
