@@ -38,6 +38,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
     CommitTableRequest,
+    StagedTable,
     StaticTable,
     Table,
     TableIdentifier,
@@ -352,6 +353,212 @@ def test_data_scan_plan_files_no_current_snapshot(example_table_metadata_no_snap
     assert list(scan.plan_files()) == []
     assert scan.count() == 0
     assert len(scan.to_arrow()) == 0
+
+
+def test_incremental_append_scan_default(table_v2: Table) -> None:
+    scan = table_v2.incremental_append_scan()
+    assert scan.row_filter == AlwaysTrue()
+    assert scan.selected_fields == ("*",)
+    assert scan.case_sensitive is True
+    assert scan.from_snapshot_id is None
+    assert scan.from_snapshot_inclusive is False
+    assert scan.to_snapshot_id is None
+
+
+def test_incremental_append_scan_no_current_snapshot(example_table_metadata_no_snapshot_v1: dict[str, Any]) -> None:
+    table = Table(
+        identifier=("default", "test_no_snapshot"),
+        metadata=TableMetadataV1(**example_table_metadata_no_snapshot_v1),
+        metadata_location="s3://bucket/test/metadata.json",
+        io=load_file_io(),
+        catalog=NoopCatalog("noop"),
+    )
+    assert table.current_snapshot() is None
+
+    # With no range set and no current snapshot, there is nothing to scan.
+    assert list(table.incremental_append_scan().plan_files()) == []
+
+    # The guard doesn't mask a missing end: an explicit start with no resolvable end still errors.
+    with pytest.raises(ValueError, match="End snapshot is not set and table has no current snapshot"):
+        list(table.incremental_append_scan(from_snapshot_id_exclusive=42).plan_files())
+
+
+def test_incremental_append_scan_factory_maps_to_exclusive_from(table_v2: Table) -> None:
+    older_snapshot_id, newer_snapshot_id = 3051729675574597004, 3055729675574597004
+    scan = table_v2.incremental_append_scan(
+        from_snapshot_id_exclusive=older_snapshot_id,
+        to_snapshot_id_inclusive=newer_snapshot_id,
+    )
+    assert scan.from_snapshot_id == older_snapshot_id
+    assert scan.from_snapshot_inclusive is False
+    assert scan.to_snapshot_id == newer_snapshot_id
+
+
+def test_incremental_append_scan_builders(table_v2: Table) -> None:
+    older_snapshot_id, newer_snapshot_id = 3051729675574597004, 3055729675574597004
+    # Builders return refined copies; the snapshot-independent helpers still chain and must
+    # round-trip the range through `update()`.
+    scan = (
+        table_v2.incremental_append_scan()
+        .from_snapshot_id_exclusive(older_snapshot_id)
+        .to_snapshot_id_inclusive(newer_snapshot_id)
+        .filter(EqualTo("x", 1))
+        .select("x", "y")
+        .with_case_sensitive(False)
+    )
+    assert scan.from_snapshot_id == older_snapshot_id
+    assert scan.from_snapshot_inclusive is False
+    assert scan.to_snapshot_id == newer_snapshot_id
+    assert scan.row_filter == EqualTo("x", 1)
+    assert set(scan.selected_fields) == {"x", "y"}
+    assert scan.case_sensitive is False
+
+    # `from_snapshot_id_inclusive` flips the flag on the same slot.
+    inclusive_scan = table_v2.incremental_append_scan().from_snapshot_id_inclusive(older_snapshot_id)
+    assert inclusive_scan.from_snapshot_id == older_snapshot_id
+    assert inclusive_scan.from_snapshot_inclusive is True
+
+
+def test_incremental_append_scan_projection_uses_current_schema(table_v2: Table) -> None:
+    scan = table_v2.incremental_append_scan(selected_fields=("x", "y"))
+    projection_schema = scan.projection()
+    assert projection_schema.schema_id == 1
+    assert {f.name for f in projection_schema.fields} == {"x", "y"}
+
+
+def test_incremental_append_scan_unset_from_resolves_to_oldest_ancestor(table_v2: Table) -> None:
+    older_snapshot_id, current_snapshot_id = 3051729675574597004, 3055729675574597004
+    # `older` is the oldest ancestor of `current`; an unset start resolves to a None exclusive
+    # boundary (i.e. the whole lineage of the end snapshot is in range).
+    scan = table_v2.incremental_append_scan(to_snapshot_id_inclusive=current_snapshot_id)
+    assert scan._validate_and_resolve_snapshots() == (None, current_snapshot_id)
+    assert table_v2.snapshot_by_id(older_snapshot_id).parent_snapshot_id is None  # type: ignore[union-attr]
+
+
+def test_incremental_append_scan_inclusive_from_resolves_to_parent(table_v2: Table) -> None:
+    older_snapshot_id, current_snapshot_id = 3051729675574597004, 3055729675574597004
+    # An inclusive start resolves to its parent as the exclusive boundary; `older` is the root,
+    # so its parent (None) becomes the boundary and the start snapshot itself stays in range.
+    scan = table_v2.incremental_append_scan().from_snapshot_id_inclusive(older_snapshot_id)
+    assert scan._validate_and_resolve_snapshots() == (None, current_snapshot_id)
+
+    # An inclusive start that isn't an ancestor of the end snapshot is rejected.
+    bad_scan = table_v2.incremental_append_scan(to_snapshot_id_inclusive=older_snapshot_id).from_snapshot_id_inclusive(
+        current_snapshot_id
+    )
+    with pytest.raises(ValueError, match="Starting snapshot .inclusive. .* is not an ancestor"):
+        bad_scan._validate_and_resolve_snapshots()
+
+    # Unlike an exclusive start (which admits an expired snapshot), an inclusive start must be
+    # present in the metadata, since its parent is needed to form the exclusive boundary.
+    missing_scan = table_v2.incremental_append_scan().from_snapshot_id_inclusive(42)
+    with pytest.raises(ValueError, match="Start snapshot .inclusive. not found in table metadata: 42"):
+        missing_scan._validate_and_resolve_snapshots()
+
+
+def test_incremental_append_scan_invalid_to_snapshot(table_v2: Table) -> None:
+    scan = table_v2.incremental_append_scan(
+        from_snapshot_id_exclusive=3051729675574597004,
+        to_snapshot_id_inclusive=42,
+    )
+    with pytest.raises(ValueError, match="End snapshot not found in table metadata: 42"):
+        list(scan.plan_files())
+
+
+@pytest.mark.parametrize(
+    "from_snapshot_id, to_snapshot_id, expected",
+    [
+        # Fabricated 'from' snapshot ID, unrelated to the table.
+        (42, 3055729675574597004, "Starting snapshot .exclusive. 42 is not a parent ancestor"),
+        # 'from' and 'to' reversed (newer used as exclusive start).
+        (3055729675574597004, 3051729675574597004, "is not a parent ancestor of end snapshot"),
+        # Equal from/to: a snapshot is never its own parent ancestor.
+        (3055729675574597004, 3055729675574597004, "is not a parent ancestor of end snapshot"),
+    ],
+)
+def test_incremental_append_scan_rejects_non_parent_ancestor_from(
+    table_v2: Table, from_snapshot_id: int, to_snapshot_id: int, expected: str
+) -> None:
+    scan = table_v2.incremental_append_scan(
+        from_snapshot_id_exclusive=from_snapshot_id,
+        to_snapshot_id_inclusive=to_snapshot_id,
+    )
+    with pytest.raises(ValueError, match=expected):
+        list(scan.plan_files())
+
+
+def test_incremental_append_scan_to_snapshot_defaults_to_current(table_v2: Table) -> None:
+    older_snapshot_id, current_snapshot_id = 3051729675574597004, 3055729675574597004
+    assert table_v2.current_snapshot().snapshot_id == current_snapshot_id  # type: ignore[union-attr]
+
+    # Omitting `to_snapshot_id_inclusive` resolves to the table's current snapshot.
+    scan = table_v2.incremental_append_scan(from_snapshot_id_exclusive=older_snapshot_id)
+    assert scan._validate_and_resolve_snapshots() == (older_snapshot_id, current_snapshot_id)
+
+
+def test_incremental_append_scan_admits_expired_from_snapshot(example_table_metadata_v2: dict[str, Any]) -> None:
+    # The exclusive `from` snapshot does not need to be present in the table metadata, as long as
+    # some ancestor of `to` references it as a parent. Here we drop the oldest snapshot from the
+    # metadata (simulating snapshot expiration) and verify that the remaining-but-now-expired
+    # snapshot ID is still accepted as the exclusive `from`.
+    expired_snapshot_id = 3051729675574597004
+    remaining_snapshot_id = 3055729675574597004
+
+    metadata_dict = {**example_table_metadata_v2}
+    metadata_dict["snapshots"] = [
+        snapshot for snapshot in metadata_dict["snapshots"] if snapshot["snapshot-id"] != expired_snapshot_id
+    ]
+    # The remaining snapshot still references the expired one as its parent.
+    table = Table(
+        identifier=("dummy", "test"),
+        metadata=TableMetadataV2(**metadata_dict),
+        metadata_location="s3://bucket/test/metadata.json",
+        io=load_file_io(),
+        catalog=NoopCatalog("noop"),
+    )
+    assert table.snapshot_by_id(expired_snapshot_id) is None
+    assert table.snapshot_by_id(remaining_snapshot_id) is not None
+
+    scan = table.incremental_append_scan(
+        from_snapshot_id_exclusive=expired_snapshot_id,
+        to_snapshot_id_inclusive=remaining_snapshot_id,
+    )
+    # The private validation method must accept this combination; we don't call `plan_files()` here
+    # because that would require real manifest files.
+    assert scan._validate_and_resolve_snapshots() == (expired_snapshot_id, remaining_snapshot_id)
+
+
+def test_incremental_append_scan_update_preserves_type(table_v2: Table) -> None:
+    # `update()` lives on BaseScan and uses `type(self)(...)` to construct the copy;
+    # verify the concrete type is preserved through both `update` and the fluent helpers.
+    base_scan = table_v2.incremental_append_scan(from_snapshot_id_exclusive=123)
+    base_type = type(base_scan)
+    assert base_type.__name__ == "IncrementalAppendScan"
+    assert type(base_scan.update(from_snapshot_id=456)) is base_type
+    assert type(base_scan.from_snapshot_id_exclusive(456)) is base_type
+    assert type(base_scan.from_snapshot_id_inclusive(456)) is base_type
+    assert type(base_scan.to_snapshot_id_inclusive(789)) is base_type
+    assert type(base_scan.filter(EqualTo("x", 1))) is base_type
+    assert type(base_scan.select("x")) is base_type
+    assert type(base_scan.with_case_sensitive(False)) is base_type
+
+    # The snapshot range round-trips through the public attributes (update() reconstructs by keyword).
+    assert base_scan.from_snapshot_id_inclusive(456).from_snapshot_inclusive is True
+    assert base_scan.to_snapshot_id_inclusive(789).to_snapshot_id == 789
+    assert base_scan.update(to_snapshot_id=789).update(to_snapshot_id=None).to_snapshot_id is None
+
+
+def test_incremental_append_scan_staged_table_raises(table_v2: Table) -> None:
+    # Mirrors StagedTable.scan: a staged table has no committed metadata to scan against.
+    staged_table = StagedTable(
+        identifier=table_v2._identifier,
+        metadata=table_v2.metadata,
+        metadata_location=table_v2.metadata_location,
+        io=table_v2.io,
+        catalog=table_v2.catalog,
+    )
+    with pytest.raises(ValueError, match="Cannot scan a staged table"):
+        staged_table.incremental_append_scan()
 
 
 def test_static_table_same_as_table(table_v2: Table, metadata_location: str) -> None:
