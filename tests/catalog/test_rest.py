@@ -104,6 +104,7 @@ TEST_SUPPORTED_ENDPOINTS = [
     Capability.V1_DELETE_TABLE,
     Capability.V1_RENAME_TABLE,
     Capability.V1_REGISTER_TABLE,
+    Capability.V1_LOAD_CREDENTIALS,
     Capability.V1_LIST_VIEWS,
     Capability.V1_LOAD_VIEW,
     Capability.V1_VIEW_EXISTS,
@@ -1746,8 +1747,6 @@ def test_create_view_200(rest_mock: Mocker, table_schema_simple: Schema, example
         identifier=("fokko", "fokko2"),
         schema=table_schema_simple,
         view_version=ViewVersion(
-            version_id=1,
-            timestamp_ms=12345,
             schema_id=1,
             summary={"engine-name": "spark", "engineVersion": "3.3"},
             representations=[
@@ -1791,8 +1790,6 @@ def test_create_view_409(
             identifier=("fokko", "fokko2"),
             schema=table_schema_simple,
             view_version=ViewVersion(
-                version_id=1,
-                timestamp_ms=12345,
                 schema_id=1,
                 summary={"engine-name": "spark", "engineVersion": "3.3"},
                 representations=[],
@@ -3145,6 +3142,38 @@ def test_load_table_with_storage_credentials(rest_mock: Mocker, example_table_me
     assert table.io.properties["s3.access-key-id"] == "vended-key"
     assert table.io.properties["s3.secret-access-key"] == "vended-secret"
     assert table.io.properties["s3.session-token"] == "vended-token"
+
+
+def test_load_credentials_with_longest_prefix(rest_mock: Mocker) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table/credentials",
+        json={
+            "storage-credentials": [
+                {
+                    "prefix": "s3://warehouse/database/",
+                    "config": {"s3.access-key-id": "short-prefix-key"},
+                },
+                {
+                    "prefix": "s3://warehouse/database/table",
+                    "config": {
+                        "s3.access-key-id": "long-prefix-key",
+                        "s3.secret-access-key": "long-prefix-secret",
+                    },
+                },
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    credentials = catalog.load_credentials(
+        ("fokko", "table"),
+        "s3://warehouse/database/table/data/file.parquet",
+    )
+
+    assert credentials == {"s3.access-key-id": "long-prefix-key", "s3.secret-access-key": "long-prefix-secret"}
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/fokko/tables/table/credentials"
 
 
 def test_load_table_without_storage_credentials(

@@ -42,7 +42,7 @@ from pyiceberg.table import (
     Table,
     TableIdentifier,
 )
-from pyiceberg.table.metadata import TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
+from pyiceberg.table.metadata import TableMetadataUtil, TableMetadataV1, TableMetadataV2, _generate_snapshot_id
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     MetadataLogEntry,
@@ -336,6 +336,22 @@ def test_table_scan_projection_unknown_column(table_v2: Table) -> None:
         _ = scan.select("a").projection()
 
     assert "Could not find column: 'a'" in str(exc_info.value)
+
+
+def test_data_scan_plan_files_no_current_snapshot(example_table_metadata_no_snapshot_v1: dict[str, Any]) -> None:
+    table = Table(
+        identifier=("default", "test_no_snapshot"),
+        metadata=TableMetadataV1(**example_table_metadata_no_snapshot_v1),
+        metadata_location="s3://bucket/test/metadata.json",
+        io=load_file_io(),
+        catalog=NoopCatalog("noop"),
+    )
+    assert table.current_snapshot() is None
+
+    scan = table.scan()
+    assert list(scan.plan_files()) == []
+    assert scan.count() == 0
+    assert len(scan.to_arrow()) == 0
 
 
 def test_static_table_same_as_table(table_v2: Table, metadata_location: str) -> None:
@@ -1599,7 +1615,7 @@ def test_set_partition_statistics_update(table_v2_with_statistics: Table) -> Non
 
     partition_statistics_file = PartitionStatisticsFile(
         snapshot_id=snapshot_id,
-        statistics_path="s3://bucket/warehouse/stats.puffin",
+        statistics_path="s3://bucket/warehouse/stats.parquet",
         file_size_in_bytes=124,
     )
 
@@ -1619,7 +1635,7 @@ def test_set_partition_statistics_update(table_v2_with_statistics: Table) -> Non
     expected = """
     {
       "snapshot-id": 3055729675574597004,
-      "statistics-path": "s3://bucket/warehouse/stats.puffin",
+      "statistics-path": "s3://bucket/warehouse/stats.parquet",
       "file-size-in-bytes": 124
     }"""
 
@@ -1637,7 +1653,7 @@ def test_remove_partition_statistics_update(table_v2_with_statistics: Table) -> 
 
     partition_statistics_file = PartitionStatisticsFile(
         snapshot_id=snapshot_id,
-        statistics_path="s3://bucket/warehouse/stats.puffin",
+        statistics_path="s3://bucket/warehouse/stats.parquet",
         file_size_in_bytes=124,
     )
 

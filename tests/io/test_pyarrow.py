@@ -1234,10 +1234,10 @@ def test_read_map(schema_map: Schema, file_map: str) -> None:
 
     assert (
         repr(result_table.schema)
-        == """properties: map<string, string>
-  child 0, entries: struct<key: string not null, value: string not null> not null
-      child 0, key: string not null
-      child 1, value: string not null"""
+        == """properties: map<large_string, large_string>
+  child 0, entries: struct<key: large_string not null, value: large_string not null> not null
+      child 0, key: large_string not null
+      child 1, value: large_string not null"""
     )
 
 
@@ -1721,13 +1721,13 @@ def test_projection_maps_of_structs(schema_map_of_structs: Schema, file_map_of_s
     ):
         assert actual.as_py() == expected
     expected_schema_repr = (
-        "locations: map<string, struct<latitude: double not null, "
-        "longitude: double not null, altitude: double>>\n"
-        "  child 0, entries: struct<key: string not null, value: struct<latitude: double not null, "
-        "longitude: double not null, al (... 25 chars omitted) not null\n"
-        "      child 0, key: string not null\n"
-        "      child 1, value: struct<latitude: double not null, longitude: double not null, "
-        "altitude: double> not null\n"
+        "locations: map<large_string, struct<latitude: double not null, longitude: "
+        "double not null, altitude: double>>\n"
+        "  child 0, entries: struct<key: large_string not null, value: "
+        "struct<latitude: double not null, longitude: double not nu (... 31 chars omitted) not null\n"
+        "      child 0, key: large_string not null\n"
+        "      child 1, value: struct<latitude: double not null, longitude: double "
+        "not null, altitude: double> not null\n"
         "          child 0, latitude: double not null\n"
         "          child 1, longitude: double not null\n"
         "          child 2, altitude: double"
@@ -3265,6 +3265,130 @@ def test_task_to_record_batches_nanos(format_version: TableVersion, tmpdir: str)
         )
 
     assert _expected_batch("ns" if format_version > 2 else "us").equals(actual_result)
+
+
+def test_task_to_record_batches_scanner_filter_not_set_with_positional_deletes(tmpdir: str) -> None:
+    """Regression test for https://github.com/apache/iceberg-python/issues/3272.
+
+    When positional deletes are present the scanner must NOT receive the row filter as a
+    push-down predicate.  Positional-delete indices reference absolute row positions in the
+    original file; if the scanner filters rows first the surviving rows shift and the
+    indices no longer map correctly, producing silently wrong results.
+
+    The test chooses data where the old (buggy) code path gives a distinct wrong answer:
+      - File rows (positions 0-3): [1, 2, 3, 4]
+      - Positional delete: position 2 → removes value 3 → survivors [1, 2, 4]
+      - Row filter: id > 2 → expected result [4]
+
+    Old bug (scanner pre-filters id > 2 → [3, 4], then _combine_positional_deletes sees only
+    2 rows so absolute position 2 is outside the batch range and nothing is deleted → [3, 4]).
+    """
+    from pyiceberg.expressions.visitors import bind
+
+    arrow_schema = pa.schema((pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),))
+    # File row positions: 0→1, 1→2, 2→3, 3→4
+    arrow_table = pa.table([pa.array([1, 2, 3, 4], type=pa.int32())], schema=arrow_schema)
+    data_file = _write_table_to_data_file(
+        f"{tmpdir}/test_scanner_filter_not_set_with_pos_deletes.parquet", arrow_schema, arrow_table
+    )
+
+    table_schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+
+    positional_deletes = [pa.chunked_array([pa.array([2], type=pa.int64())])]
+    result_batches = list(
+        _task_to_record_batches(
+            PyArrowFileIO(),
+            FileScanTask(data_file),
+            bound_row_filter=bind(table_schema, GreaterThan("id", 2), case_sensitive=True),
+            projected_schema=table_schema,
+            table_schema=table_schema,
+            projected_field_ids={1},
+            positional_deletes=positional_deletes,
+            case_sensitive=True,
+        )
+    )
+
+    assert len(result_batches) == 1
+    assert result_batches[0].column(0).to_pylist() == [4]
+
+
+def test_task_to_record_batches_filter_applied_after_positional_deletes(tmpdir: str) -> None:
+    """Regression test: the row filter must be applied *after* positional deletes are removed.
+
+    When positional deletes are present the scanner does not push down the predicate, so
+    ``_task_to_record_batches`` must apply ``pyarrow_filter`` explicitly after ``take``.
+    This test uses data where the expected result differs from both
+    "filter only" and "deletes only" projections, ensuring that skipping either step
+    would produce the wrong answer.
+    """
+    from pyiceberg.expressions.visitors import bind
+
+    arrow_schema = pa.schema((pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),))
+    # File rows (0-indexed positions): 0→1, 1→2, 2→3, 3→4, 4→5
+    arrow_table = pa.table([pa.array([1, 2, 3, 4, 5], type=pa.int32())], schema=arrow_schema)
+    data_file = _write_table_to_data_file(
+        f"{tmpdir}/test_task_to_record_batches_filter_with_positional.parquet", arrow_schema, arrow_table
+    )
+
+    table_schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+
+    # Delete file-positions 1 and 3 (values 2 and 4); survivors: [1, 3, 5]
+    # Then apply filter id >= 3; expected result: [3, 5]
+    #
+    # Wrong results that would indicate a bug:
+    #   [1, 3, 5]  — filter not applied after deletes
+    #   [3, 4, 5]  — positional deletes not applied (scanner skips filter push-down)
+    positional_deletes = [pa.chunked_array([pa.array([1, 3], type=pa.int64())])]
+    result_batches = list(
+        _task_to_record_batches(
+            PyArrowFileIO(),
+            FileScanTask(data_file),
+            bound_row_filter=bind(table_schema, GreaterThan("id", 2), case_sensitive=True),
+            projected_schema=table_schema,
+            table_schema=table_schema,
+            projected_field_ids={1},
+            positional_deletes=positional_deletes,
+            case_sensitive=True,
+        )
+    )
+
+    assert len(result_batches) == 1
+    assert result_batches[0].column(0).to_pylist() == [3, 5]
+
+
+def test_task_to_record_batches_filter_after_positional_deletes_empty_result(tmpdir: str) -> None:
+    """Regression: filter after positional deletes must not raise even when the result is empty.
+
+    PyArrow < 21 raises IndexError from RecordBatch.filter(Expression) when the result has
+    zero rows (fixed in https://github.com/apache/arrow/pull/46057). This test ensures the
+    positional-delete path handles that case gracefully and yields no batches.
+    """
+    from pyiceberg.expressions.visitors import bind
+
+    arrow_schema = pa.schema((pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),))
+    arrow_table = pa.table([pa.array([1, 2, 3], type=pa.int32())], schema=arrow_schema)
+    data_file = _write_table_to_data_file(
+        f"{tmpdir}/test_filter_after_positional_deletes_empty_result.parquet", arrow_schema, arrow_table
+    )
+
+    table_schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+
+    # No rows deleted, but filter (id > 10) eliminates all rows → must return empty
+    positional_deletes = [pa.chunked_array([pa.array([], type=pa.int64())])]
+    result_batches = list(
+        _task_to_record_batches(
+            PyArrowFileIO(),
+            FileScanTask(data_file),
+            bound_row_filter=bind(table_schema, GreaterThan("id", 10), case_sensitive=True),
+            projected_schema=table_schema,
+            table_schema=table_schema,
+            projected_field_ids={1},
+            positional_deletes=positional_deletes,
+            case_sensitive=True,
+        )
+    )
+
+    assert result_batches == []
 
 
 def test_parse_location_defaults() -> None:
@@ -5103,3 +5227,73 @@ def test_partition_column_projection_with_schema_evolution(catalog: InMemoryCata
     result_sorted = result.sort_by("name")
     assert result_sorted["name"].to_pylist() == ["Alice", "Bob", "Charlie", "David"]
     assert result_sorted["new_column"].to_pylist() == [None, None, "new1", "new2"]
+
+
+def test_dictionary_columns_produces_dict_encoded_output(tmpdir: str) -> None:
+    """dictionary_columns passed to ArrowScan must yield dictionary-encoded arrays.
+
+    Verifies that:
+    1. The requested column is returned as a pa.DictionaryArray.
+    2. Values are identical to a plain (non-dict) scan.
+    3. A column NOT in dictionary_columns is still returned as a plain array.
+    """
+    from pyiceberg.expressions import AlwaysTrue
+    from pyiceberg.io.pyarrow import ArrowScan, PyArrowFileIO
+    from pyiceberg.partitioning import PartitionSpec
+    from pyiceberg.table import FileScanTask
+    from pyiceberg.table.metadata import TableMetadataV2
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),
+            pa.field("label", pa.string(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "2"}),
+        ]
+    )
+    arrow_table = pa.table(
+        [pa.array([1, 2, 3, 4], type=pa.int32()), pa.array(["a", "b", "a", "b"], type=pa.string())],
+        schema=arrow_schema,
+    )
+    data_file = _write_table_to_data_file(f"{tmpdir}/test_dict_cols.parquet", arrow_schema, arrow_table)
+    data_file.spec_id = 0
+
+    iceberg_schema = Schema(
+        NestedField(1, "id", IntegerType(), required=False),
+        NestedField(2, "label", StringType(), required=False),
+    )
+    table_metadata = TableMetadataV2(
+        location=f"file://{tmpdir}",
+        last_column_id=2,
+        format_version=2,
+        schemas=[iceberg_schema],
+        partition_specs=[PartitionSpec()],
+    )
+    io = PyArrowFileIO()
+    task = FileScanTask(data_file)
+
+    scan_plain = ArrowScan(
+        table_metadata=table_metadata,
+        io=io,
+        projected_schema=iceberg_schema,
+        row_filter=AlwaysTrue(),
+    )
+    scan_dict = ArrowScan(
+        table_metadata=table_metadata,
+        io=io,
+        projected_schema=iceberg_schema,
+        row_filter=AlwaysTrue(),
+        dictionary_columns=("label",),
+    )
+
+    result_plain = scan_plain.to_table([task])
+    result_dict = scan_dict.to_table([task])
+
+    # id column is not in dictionary_columns — both scans should return int32
+    assert result_plain.schema.field("id").type == pa.int32()
+    assert result_dict.schema.field("id").type == pa.int32()
+
+    # label column: plain scan → string, dict scan → dictionary<values=string, indices=int32>
+    assert result_plain.schema.field("label").type == pa.string()
+    assert pa.types.is_dictionary(result_dict.schema.field("label").type)
+
+    # Values must be identical
+    assert result_plain.column("label").to_pylist() == result_dict.column("label").to_pylist()

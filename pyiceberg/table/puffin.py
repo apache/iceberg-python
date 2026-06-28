@@ -14,52 +14,18 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-import math
 from typing import TYPE_CHECKING, Literal
 
 from pydantic import Field
-from pyroaring import BitMap, FrozenBitMap
 
 from pyiceberg.typedef import IcebergBaseModel
+from pyiceberg.utils.deprecated import deprecated
 
 if TYPE_CHECKING:
     import pyarrow as pa
 
 # Short for: Puffin Fratercula arctica, version 1
 MAGIC_BYTES = b"PFA1"
-EMPTY_BITMAP = FrozenBitMap()
-MAX_JAVA_SIGNED = int(math.pow(2, 31)) - 1
-PROPERTY_REFERENCED_DATA_FILE = "referenced-data-file"
-
-
-def _deserialize_bitmap(pl: bytes) -> list[BitMap]:
-    number_of_bitmaps = int.from_bytes(pl[0:8], byteorder="little")
-    pl = pl[8:]
-
-    bitmaps = []
-    last_key = -1
-    for _ in range(number_of_bitmaps):
-        key = int.from_bytes(pl[0:4], byteorder="little")
-        if key < 0:
-            raise ValueError(f"Invalid unsigned key: {key}")
-        if key <= last_key:
-            raise ValueError("Keys must be sorted in ascending order")
-        if key > MAX_JAVA_SIGNED:
-            raise ValueError(f"Key {key} is too large, max {MAX_JAVA_SIGNED} to maintain compatibility with Java impl")
-        pl = pl[4:]
-
-        while last_key < key - 1:
-            bitmaps.append(EMPTY_BITMAP)
-            last_key += 1
-
-        bm = BitMap().deserialize(pl)
-        # TODO: Optimize this
-        pl = pl[len(bm.serialize()) :]
-        bitmaps.append(bm)
-
-        last_key = key
-
-    return bitmaps
 
 
 class PuffinBlobMetadata(IcebergBaseModel):
@@ -78,15 +44,9 @@ class Footer(IcebergBaseModel):
     properties: dict[str, str] = Field(default_factory=dict)
 
 
-def _bitmaps_to_chunked_array(bitmaps: list[BitMap]) -> "pa.ChunkedArray":
-    import pyarrow as pa
-
-    return pa.chunked_array([(key_pos << 32) + pos for pos in bitmap] for key_pos, bitmap in enumerate(bitmaps))
-
-
 class PuffinFile:
     footer: Footer
-    _deletion_vectors: dict[str, list[BitMap]]
+    _payload: bytes
 
     def __init__(self, puffin: bytes) -> None:
         for magic_bytes in [puffin[:4], puffin[-4:]]:
@@ -105,12 +65,13 @@ class PuffinFile:
         footer_payload_size_int = int.from_bytes(puffin[-12:-8], byteorder="little")
 
         self.footer = Footer.model_validate_json(puffin[-(footer_payload_size_int + 12) : -12])
-        puffin = puffin[8:]
+        self._payload = puffin[8:]
 
-        self._deletion_vectors = {
-            blob.properties[PROPERTY_REFERENCED_DATA_FILE]: _deserialize_bitmap(puffin[blob.offset : blob.offset + blob.length])
-            for blob in self.footer.blobs
-        }
+    def get_blob_payload(self, blob: PuffinBlobMetadata) -> bytes:
+        return self._payload[blob.offset : blob.offset + blob.length]
 
+    @deprecated(deprecated_in="0.12.0", removed_in="0.13.0", help_message="Use deletion_vectors_from_puffin_file(...) instead")
     def to_vector(self) -> dict[str, "pa.ChunkedArray"]:
-        return {path: _bitmaps_to_chunked_array(bitmaps) for path, bitmaps in self._deletion_vectors.items()}
+        from pyiceberg.table.deletion_vector import deletion_vectors_from_puffin_file  # local import avoids the cycle
+
+        return {dv.referenced_data_file: dv.to_vector() for dv in deletion_vectors_from_puffin_file(self)}

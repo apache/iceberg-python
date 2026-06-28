@@ -119,8 +119,7 @@ def test_view_versions_multiple(example_view_metadata_v1_multiple_versions: dict
 
 
 def test_view_version_unknown_id(view: View) -> None:
-    with pytest.raises(StopIteration):
-        view.version(999)
+    assert not view.version(999)
 
 
 def test_view_sql_for_unknown_dialect(view: View) -> None:

@@ -56,7 +56,6 @@ pyiceberg = "pyiceberg.cli.console:run"
 [project.optional-dependencies]
 pyarrow = [
     "pyarrow>=17.0.0",
-    "pyiceberg-core>=0.5.1,<0.10.0",
 ]
 pandas = [
     "pandas>=1.0.0",
@@ -102,7 +101,7 @@ geoarrow = ["geoarrow-pyarrow>=0.2.0"]
 
 [dependency-groups]
 dev = [
-    "pytest==9.0.3",
+    "pytest==9.1.1",
     "pytest-checkdocs==2.14.0",
     "prek>=0.2.1,<0.5",
     "pytest-lazy-fixtures==1.4.0",
@@ -129,10 +128,10 @@ dev = [
 # for mkdocs
 docs = [
     "mkdocs==1.6.1",
-    "griffe==2.0.2",
+    "griffe==2.1.0",
     "jinja2==3.1.6",
     "mkdocstrings==1.0.4",
-    "mkdocstrings-python==2.0.3",
+    "mkdocstrings-python==2.0.5",
     "mkdocs-literate-nav==0.6.3",
     "mkdocs-autorefs==1.4.4",
     "mkdocs-gen-files==0.6.1",
@@ -177,6 +176,8 @@ filterwarnings = [
   # Ignore Ray subprocess cleanup warnings
   "ignore:unclosed file:ResourceWarning",
   "ignore:subprocess.*is still running:ResourceWarning",
+  # Ignore google-crc32c C extension missing warning (common on Python 3.14+)
+  "ignore:As the c extension couldn't be imported:RuntimeWarning:google_crc32c",
 ]
 
 [tool.mypy]

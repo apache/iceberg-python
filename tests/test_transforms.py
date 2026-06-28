@@ -1025,10 +1025,23 @@ def test_projection_truncate_string_starts_with(bound_reference_str: BoundRefere
     ) == StartsWith(term="name", literal=literal("he"))
 
 
-def test_projection_truncate_string_not_starts_with(bound_reference_str: BoundReference) -> None:
+def test_projection_truncate_string_not_starts_with_longer_literal(bound_reference_str: BoundReference) -> None:
+    # Not a valid projection: return None because pruning on "he" could drop qualifying rows like "help".
+    assert TruncateTransform(2).project("name", BoundNotStartsWith(term=bound_reference_str, literal=literal("hello"))) is None
+
+
+def test_projection_truncate_string_not_starts_with_equal_width_literal(bound_reference_str: BoundReference) -> None:
+    # Valid projection: improve NOT STARTS WITH "he" to partition != "he".
     assert TruncateTransform(2).project(
-        "name", BoundNotStartsWith(term=bound_reference_str, literal=literal("hello"))
-    ) == NotStartsWith(term="name", literal=literal("he"))
+        "name", BoundNotStartsWith(term=bound_reference_str, literal=literal("he"))
+    ) == NotEqualTo(term="name", literal=literal("he"))
+
+
+def test_projection_truncate_string_not_starts_with_shorter_literal(bound_reference_str: BoundReference) -> None:
+    # Valid projection: pass the NOT STARTS WITH literal "h" through unchanged.
+    assert TruncateTransform(2).project(
+        "name", BoundNotStartsWith(term=bound_reference_str, literal=literal("h"))
+    ) == NotStartsWith(term="name", literal=literal("h"))
 
 
 def _test_projection(lhs: UnboundPredicate | None, rhs: UnboundPredicate | None) -> None:

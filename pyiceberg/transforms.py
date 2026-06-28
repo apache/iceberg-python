@@ -813,7 +813,16 @@ class TruncateTransform(Transform[S, S]):
                 return _truncate_number(name, pred, self.transform(field_type))
         elif isinstance(field_type, (BinaryType, StringType)):
             if isinstance(pred, BoundLiteralPredicate):
-                return _truncate_array(name, pred, self.transform(field_type))
+                if isinstance(pred, BoundNotStartsWith):
+                    literal_width = len(pred.literal.value)
+                    if literal_width < self.width:
+                        return pred.as_unbound(name, pred.literal.value)
+                    elif literal_width == self.width:
+                        return NotEqualTo(name, pred.literal.value)
+                    else:
+                        return None
+                else:
+                    return _truncate_array(name, pred, self.transform(field_type))
 
     def strict_project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         field_type = pred.term.ref().field.field_type
