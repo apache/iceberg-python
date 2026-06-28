@@ -2224,7 +2224,7 @@ class DataScan(TableScan):
     def partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
         return self._manifest_planner.partition_filters
 
-    def scan_plan_helper(self) -> Iterator[list[ManifestEntry]]:
+    def _scan_plan_helper(self) -> Iterator[list[ManifestEntry]]:
         """Filter and return manifest entries based on partition and metrics evaluators.
 
         Returns:
