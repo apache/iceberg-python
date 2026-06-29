@@ -21,7 +21,7 @@ import logging
 import threading
 import time
 from abc import ABC, abstractmethod
-from functools import cached_property
+from functools import cache, cached_property
 from typing import Any
 
 import requests
@@ -36,6 +36,37 @@ AUTH_MANAGER = "auth.manager"
 COLON = ":"
 logger = logging.getLogger(__name__)
 
+# SHA-256 of an empty payload. Used as the x-amz-content-sha256 header value for
+# empty-body requests, matching Iceberg Java's RESTSigV4AuthSession workaround.
+EMPTY_BODY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+
+@cache
+def _iceberg_sigv4_auth_class() -> type:
+    """Lazily build the botocore SigV4Auth subclass (botocore is an optional dependency)."""
+    from urllib import parse
+
+    from botocore.auth import SigV4Auth
+    from botocore.awsrequest import AWSRequest
+
+    class _IcebergSigV4Auth(SigV4Auth):
+        def canonical_request(self, request: AWSRequest) -> str:
+            # Override forces the hex payload hash in the canonical request even when
+            # the x-amz-content-sha256 header is base64 (see SigV4AuthManager.sign_request).
+            # Mirrors botocore <=1.42.x SigV4Auth.canonical_request layout:
+            # https://github.com/boto/botocore/blob/1.42.85/botocore/auth.py#L622-L637
+            cr = [request.method.upper()]
+            path = self._normalize_url_path(parse.urlsplit(request.url).path)
+            cr.append(path)
+            cr.append(self.canonical_query_string(request))
+            headers_to_sign = self.headers_to_sign(request)
+            cr.append(self.canonical_headers(headers_to_sign) + "\n")
+            cr.append(self.signed_headers(headers_to_sign))
+            cr.append(self.payload(request))
+            return "\n".join(cr)
+
+    return _IcebergSigV4Auth
+
 
 class AuthManager(ABC):
     """
@@ -47,6 +78,14 @@ class AuthManager(ABC):
     @abstractmethod
     def auth_header(self) -> str | None:
         """Return the Authorization header value, or None if not applicable."""
+
+    def sign_request(self, request: PreparedRequest) -> PreparedRequest:
+        """Optionally sign or otherwise modify the prepared request.
+
+        The default implementation is a no-op. Override for request-signing
+        schemes such as SigV4 that must inspect the full request.
+        """
+        return request
 
 
 class NoopAuthManager(AuthManager):
@@ -311,6 +350,94 @@ class EntraAuthManager(AuthManager):
         return f"Bearer {self._get_token()}"
 
 
+class SigV4AuthManager(AuthManager):
+    """AuthManager that signs requests with AWS SigV4, wrapping a delegate AuthManager.
+
+    Mirrors Iceberg Java's RESTSigV4AuthManager: the delegate AuthManager handles
+    header-based auth (e.g. OAuth2), then SigV4 signs the resulting request.
+    """
+
+    def __init__(
+        self,
+        delegate: AuthManager,
+        boto_session: Any,
+        region: str | None,
+        service: str = "execute-api",
+    ):
+        """Initialize SigV4AuthManager.
+
+        Args:
+            delegate: AuthManager that supplies header-based auth before signing.
+            boto_session: A boto3.Session used to resolve AWS credentials.
+            region: SigV4 signing region; falls back to the boto session's region.
+            service: SigV4 signing service name.
+        """
+        self._delegate = delegate
+        self._boto_session = boto_session
+        self._region = region
+        self._service = service
+
+    def auth_header(self) -> str | None:
+        return self._delegate.auth_header()
+
+    def sign_request(self, request: PreparedRequest) -> PreparedRequest:
+        import hashlib
+        from urllib import parse
+
+        from botocore.awsrequest import AWSRequest
+
+        credentials = self._boto_session.get_credentials().get_frozen_credentials()
+        region = self._region or self._boto_session.region_name
+
+        url = str(request.url).split("?")[0]
+        query = str(parse.urlsplit(request.url).query)
+        params = dict(parse.parse_qsl(query))
+
+        # remove the connection header as it will be updated after signing
+        if "connection" in request.headers:
+            del request.headers["connection"]
+
+        # Match Iceberg Java's AWS SDK v2 flexible-checksum signing:
+        # x-amz-content-sha256 header is base64 for non-empty bodies, hex for empty.
+        # The SigV4 canonical request still uses hex (enforced in _iceberg_sigv4_auth_class).
+        # Ref: https://github.com/apache/iceberg/blob/main/aws/src/main/java/org/apache/iceberg/aws/RESTSigV4AuthSession.java
+        if request.body:
+            if isinstance(request.body, str):
+                body_bytes = request.body.encode("utf-8")
+            elif isinstance(request.body, (bytes, bytearray)):
+                body_bytes = bytes(request.body)
+            else:
+                raise TypeError(
+                    f"Unsupported request body type for SigV4 signing: {type(request.body).__name__}; expected str or bytes."
+                )
+            content_sha256_header = base64.b64encode(hashlib.sha256(body_bytes).digest()).decode()
+        else:
+            content_sha256_header = EMPTY_BODY_SHA256
+
+        signing_headers = dict(request.headers)
+        # Relocate Authorization before signing so it lands in SignedHeaders, like Java.
+        if "Authorization" in signing_headers:
+            signing_headers["Original-Authorization"] = signing_headers.pop("Authorization")
+        signing_headers["x-amz-content-sha256"] = content_sha256_header
+
+        aws_request = AWSRequest(method=request.method, url=url, params=params, data=request.body, headers=signing_headers)
+
+        _iceberg_sigv4_auth_class()(credentials, self._service, region).add_auth(aws_request)
+
+        original_header = dict(request.headers)
+        signed_headers = dict(aws_request.headers)
+        relocated_headers = {}
+
+        # relocate headers if there is a conflict with signed headers
+        for header, value in original_header.items():
+            if header in signed_headers and signed_headers[header] != value:
+                relocated_headers[f"Original-{header}"] = value
+
+        request.headers.update(relocated_headers)
+        request.headers.update(signed_headers)
+        return request
+
+
 class AuthManagerAdapter(AuthBase):
     """A `requests.auth.AuthBase` adapter for integrating an `AuthManager` into a `requests.Session`.
 
@@ -332,17 +459,19 @@ class AuthManagerAdapter(AuthBase):
 
     def __call__(self, request: PreparedRequest) -> PreparedRequest:
         """
-        Modify the outgoing request to include the Authorization header.
+        Modify the outgoing request to include the Authorization header and any signature.
 
         Args:
             request (requests.PreparedRequest): The HTTP request being prepared.
 
         Returns:
-            requests.PreparedRequest: The modified request with Authorization header.
+            requests.PreparedRequest: The modified request.
         """
         if auth_header := self.auth_manager.auth_header():
             request.headers["Authorization"] = auth_header
-        return request
+        # Header first, then sign: a request-signing AuthManager (e.g. SigV4) must
+        # see the Authorization header so it can relocate it before signing.
+        return self.auth_manager.sign_request(request)
 
 
 class AuthManagerFactory:
