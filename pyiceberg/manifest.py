@@ -51,6 +51,7 @@ from pyiceberg.types import (
     StringType,
     StructType,
 )
+from pyiceberg.utils.config import Config
 
 UNASSIGNED_SEQ = -1
 DEFAULT_BLOCK_SIZE = 67108864  # 64 * 1024 * 1024
@@ -891,17 +892,70 @@ class ManifestFile(Record):
         return hash(self.manifest_path)
 
 
-# Global cache for ManifestFile objects, keyed by manifest_path.
-# This deduplicates ManifestFile objects across manifest lists, which commonly
-# share manifests after append operations.
-_manifest_cache: LRUCache[str, ManifestFile] = LRUCache(maxsize=128)
+class _ManifestCache:
+    """Process-wide ManifestFile cache keyed by manifest_path.
 
-# Lock for thread-safe cache access
-_manifest_cache_lock = threading.RLock()
+    Consecutive snapshots often reference the same manifests after append
+    operations, so reusing ManifestFile instances avoids retaining duplicate
+    objects.
+    """
+
+    DEFAULT_SIZE = 128
+
+    _cache: LRUCache[str, ManifestFile] | None
+
+    def __init__(self) -> None:
+        self.maxsize = self._load_configured_size()
+        self._cache = LRUCache(maxsize=self.maxsize) if self.maxsize > 0 else None
+        self._lock = threading.RLock()
+
+    @classmethod
+    def _load_configured_size(cls) -> int:
+        configured_size = Config().get_int("manifest-cache-size")
+        if configured_size is None:
+            return cls.DEFAULT_SIZE
+        if configured_size < 0:
+            raise ValueError(
+                f"manifest-cache-size should be a non-negative integer or left unset. Current value: {configured_size}"
+            )
+        return configured_size
+
+    def clear(self) -> None:
+        with self._lock:
+            if self._cache is not None:
+                self._cache.clear()
+
+    def get_or_cache(self, manifest_file: ManifestFile) -> ManifestFile:
+        if self._cache is None:
+            return manifest_file
+
+        with self._lock:
+            manifest_path = manifest_file.manifest_path
+            if manifest_path in self._cache:
+                return self._cache[manifest_path]
+
+            self._cache[manifest_path] = manifest_file
+            return manifest_file
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._cache) if self._cache is not None else 0
+
+
+_manifest_cache = _ManifestCache()
+
+
+def clear_manifest_cache() -> None:
+    """Clear cached ManifestFile objects.
+
+    This is primarily useful in long-lived or memory-sensitive processes that
+    want to release cached manifest metadata between bursts of table reads.
+    """
+    _manifest_cache.clear()
 
 
 def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
-    """Read manifests from a manifest list, deduplicating ManifestFile objects via cache.
+    """Read manifests from a manifest list, reusing cached ManifestFile objects.
 
     Caches individual ManifestFile objects by manifest_path. This is memory-efficient
     because consecutive manifest lists typically share most of their manifests:
@@ -927,17 +981,7 @@ def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
     file = io.new_input(manifest_list)
     manifest_files = list(read_manifest_list(file))
 
-    result = []
-    with _manifest_cache_lock:
-        for manifest_file in manifest_files:
-            manifest_path = manifest_file.manifest_path
-            if manifest_path in _manifest_cache:
-                result.append(_manifest_cache[manifest_path])
-            else:
-                _manifest_cache[manifest_path] = manifest_file
-                result.append(manifest_file)
-
-    return tuple(result)
+    return tuple(_manifest_cache.get_or_cache(manifest_file) for manifest_file in manifest_files)
 
 
 def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
