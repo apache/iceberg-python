@@ -1721,13 +1721,13 @@ def test_projection_maps_of_structs(schema_map_of_structs: Schema, file_map_of_s
     ):
         assert actual.as_py() == expected
     expected_schema_repr = (
-        "locations: map<large_string, struct<latitude: double not null, "
-        "longitude: double not null, altitude: double>>\n"
-        "  child 0, entries: struct<key: large_string not null, value: struct<latitude: double not null, "
-        "longitude: double not nu (... 31 chars omitted) not null\n"
+        "locations: map<large_string, struct<latitude: double not null, longitude: "
+        "double not null, altitude: double>>\n"
+        "  child 0, entries: struct<key: large_string not null, value: "
+        "struct<latitude: double not null, longitude: double not nu (... 31 chars omitted) not null\n"
         "      child 0, key: large_string not null\n"
-        "      child 1, value: struct<latitude: double not null, longitude: double not null, "
-        "altitude: double> not null\n"
+        "      child 1, value: struct<latitude: double not null, longitude: double "
+        "not null, altitude: double> not null\n"
         "          child 0, latitude: double not null\n"
         "          child 1, longitude: double not null\n"
         "          child 2, altitude: double"
