@@ -2505,13 +2505,15 @@ def fixture_s3_client() -> boto3.client:
 
 def clean_up(test_catalog: Catalog) -> None:
     """Clean all databases and tables created during the integration test."""
-    for database_tuple in test_catalog.list_namespaces():
+    # Materialize before mutating: list_* may return a lazily-paginated list, and
+    # dropping entries while paging would shift the underlying page offsets.
+    for database_tuple in list(test_catalog.list_namespaces()):
         database_name = database_tuple[0]
         if "my_iceberg_database-" in database_name:
-            for identifier in test_catalog.list_tables(database_name):
+            for identifier in list(test_catalog.list_tables(database_name)):
                 test_catalog.drop_table(identifier)
             try:
-                for identifier in test_catalog.list_views(database_name):
+                for identifier in list(test_catalog.list_views(database_name)):
                     test_catalog.drop_view(identifier)
             except NotImplementedError:
                 pass
