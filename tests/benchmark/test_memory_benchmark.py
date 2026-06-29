@@ -73,8 +73,8 @@ def clear_caches() -> None:
 def test_manifest_cache_memory_growth(memory_catalog: InMemoryCatalog) -> None:
     """Benchmark memory growth of manifest cache during repeated appends.
 
-    This test reproduces the issue from GitHub #2325 where each append creates
-    a new manifest list entry in the cache, causing memory to grow.
+    This test reproduces the issue from GitHub #2325 where the old cache stored
+    each manifest list result, causing memory to grow.
 
     With the old caching strategy (tuple per manifest list), memory grew as O(N²).
     With the new strategy (individual ManifestFile objects), memory grows as O(N).

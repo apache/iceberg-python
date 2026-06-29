@@ -51,7 +51,7 @@ For example, `PYICEBERG_CATALOG__DEFAULT__S3__ACCESS_KEY_ID`, sets `s3.access-ke
 ## Manifest Caching
 
 PyIceberg caches `ManifestFile` objects locally and uses an LRU policy to bound the cache size. By default, up to `128`
-manifest entries are retained.
+distinct manifest files are retained.
 
 You can tune the `manifest-cache-size` configuration in `.pyiceberg.yaml`:
 
@@ -59,7 +59,7 @@ You can tune the `manifest-cache-size` configuration in `.pyiceberg.yaml`:
 manifest-cache-size: 256
 ```
 
-Permitted values: Any `int` between `0` and `math.inf`.
+Permitted values: any non-negative integer. Set the value to `0` to disable manifest caching entirely.
 
 You can also set it with the `PYICEBERG_MANIFEST_CACHE_SIZE` environment variable:
 
@@ -69,7 +69,7 @@ export PYICEBERG_MANIFEST_CACHE_SIZE=256
 
 The memory used by this cache depends on the size and number of distinct manifests your workload touches. Lower the value
 if you want a tighter memory bound, or call `clear_manifest_cache()` to proactively release cached manifest metadata in
-long-lived processes. Setting `manifest-cache-size` or `PYICEBERG_MANIFEST_CACHE_SIZE` to `0` disables manifest caching entirely.
+long-lived processes.
 
 ## Tables
 

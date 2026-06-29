@@ -808,9 +808,9 @@ def test_manifest_cache_deduplicates_manifest_files() -> None:
 
         # Verify cache size - should only have 3 unique ManifestFile objects
         # instead of 1 + 2 + 3 = 6 objects as with the old approach
-        cache = manifest_module._manifest_cache
-        assert cache is not None, "Manifest cache should be enabled for this test"
-        assert len(cache) == 3, f"Cache should contain exactly 3 unique ManifestFile objects, but has {len(cache)}"
+        assert len(manifest_module._manifest_cache) == 3, (
+            f"Cache should contain exactly 3 unique ManifestFile objects, but has {len(manifest_module._manifest_cache)}"
+        )
 
 
 def test_manifest_cache_efficiency_with_many_overlapping_lists() -> None:
@@ -883,11 +883,9 @@ def test_manifest_cache_efficiency_with_many_overlapping_lists() -> None:
         # With the new approach, we should have exactly N objects
 
         # Verify cache has exactly N unique entries
-        cache = manifest_module._manifest_cache
-        assert cache is not None, "Manifest cache should be enabled for this test"
-        assert len(cache) == num_manifests, (
+        assert len(manifest_module._manifest_cache) == num_manifests, (
             f"Cache should contain exactly {num_manifests} ManifestFile objects, "
-            f"but has {len(cache)}. "
+            f"but has {len(manifest_module._manifest_cache)}. "
             f"Old approach would have {num_manifests * (num_manifests + 1) // 2} objects."
         )
 
@@ -1035,27 +1033,22 @@ def test_clear_manifest_cache() -> None:
         _manifests(io, list_path)
 
         # Verify cache has entries
-        cache = manifest_module._manifest_cache
-        assert cache is not None, "Cache should be enabled"
-        assert len(cache) > 0, "Cache should have entries after reading manifests"
+        assert len(manifest_module._manifest_cache) > 0, "Cache should have entries after reading manifests"
 
         # Clear the cache
         clear_manifest_cache()
 
         # Verify cache is empty but still enabled
-        cache_after = manifest_module._manifest_cache
-        assert cache_after is not None, "Cache should still be enabled after clear"
-        assert len(cache_after) == 0, "Cache should be empty after clear"
+        assert len(manifest_module._manifest_cache) == 0, "Cache should be empty after clear"
 
 
-@pytest.mark.parametrize("cache_size", ["0", "-1"])
-def test_manifest_cache_can_be_disabled_with_non_positive_size(monkeypatch: pytest.MonkeyPatch, cache_size: str) -> None:
-    """Test that non-positive manifest-cache-size values disable caching."""
-    monkeypatch.setenv("PYICEBERG_MANIFEST_CACHE_SIZE", cache_size)
+def test_manifest_cache_can_be_disabled_with_size_zero(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that manifest-cache-size=0 disables caching."""
+    monkeypatch.setenv("PYICEBERG_MANIFEST_CACHE_SIZE", "0")
     importlib.reload(manifest_module)
 
     try:
-        assert manifest_module._manifest_cache_size == 0
+        assert manifest_module._manifest_cache.maxsize == 0
         assert len(manifest_module._manifest_cache) == 0
 
         io = PyArrowFileIO()
@@ -1079,7 +1072,7 @@ def test_manifest_cache_respects_positive_env_size(monkeypatch: pytest.MonkeyPat
     importlib.reload(manifest_module)
 
     try:
-        assert manifest_module._manifest_cache_size == 1
+        assert manifest_module._manifest_cache.maxsize == 1
 
         io = PyArrowFileIO()
 
@@ -1112,7 +1105,7 @@ def test_manifest_cache_reads_size_from_configuration_file(monkeypatch: pytest.M
     importlib.reload(manifest_module)
 
     try:
-        assert manifest_module._manifest_cache_size == 2
+        assert manifest_module._manifest_cache.maxsize == 2
 
         io = PyArrowFileIO()
 
@@ -1137,6 +1130,18 @@ def test_invalid_manifest_cache_size_raises_value_error(monkeypatch: pytest.Monk
 
     try:
         with pytest.raises(ValueError, match="manifest-cache-size should be an integer or left unset"):
+            importlib.reload(manifest_module)
+    finally:
+        monkeypatch.delenv("PYICEBERG_MANIFEST_CACHE_SIZE", raising=False)
+        importlib.reload(manifest_module)
+
+
+def test_negative_manifest_cache_size_raises_value_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that negative manifest-cache-size values raise a helpful error."""
+    monkeypatch.setenv("PYICEBERG_MANIFEST_CACHE_SIZE", "-1")
+
+    try:
+        with pytest.raises(ValueError, match="manifest-cache-size should be a non-negative integer or left unset"):
             importlib.reload(manifest_module)
     finally:
         monkeypatch.delenv("PYICEBERG_MANIFEST_CACHE_SIZE", raising=False)
