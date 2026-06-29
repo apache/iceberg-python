@@ -51,6 +51,7 @@ from pyiceberg.types import (
     LongType,
     NestedField,
     StringType,
+    StructType,
     TimestampType,
     TimestamptzType,
     TimeType,
@@ -89,7 +90,16 @@ def test_missing_schema() -> None:
 
 # helper function to serialize our objects to dicts to enable
 # direct comparison with the dicts returned by fastavro
-def todict(obj: Any) -> Any:
+def todict(obj: Any, struct: StructType | None = None) -> Any:
+    if struct is not None and isinstance(obj, Record):
+        return {
+            field.name: todict(
+                getattr(obj, field.name),
+                field.field_type if isinstance(field.field_type, StructType) else None,
+            )
+            for field in struct.fields
+            if hasattr(obj, field.name)
+        }
     if isinstance(obj, dict):
         data = []
         for k, v in obj.items():
@@ -157,7 +167,7 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
 
             fa_entry = next(it)
 
-        v2_entry = todict(entry)
+        v2_entry = todict(entry, MANIFEST_ENTRY_SCHEMAS[2].as_struct())
 
         # These are not written in V1
         del v2_entry["sequence_number"]
@@ -222,7 +232,7 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
 
             fa_entry = next(it)
 
-        assert todict(entry) == fa_entry
+        assert todict(entry, MANIFEST_ENTRY_SCHEMAS[2].as_struct()) == fa_entry
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
@@ -260,7 +270,7 @@ def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: Ta
         schema = AvroSchemaConversion().iceberg_to_avro(MANIFEST_ENTRY_SCHEMAS[format_version], schema_name="manifest_entry")
 
         with open(tmp_avro_file, "wb") as out:
-            writer(out, schema, [todict(entry)])
+            writer(out, schema, [todict(entry, MANIFEST_ENTRY_SCHEMAS[format_version].as_struct())])
 
         # Read as V2
         with avro.AvroFile[ManifestEntry](
