@@ -121,6 +121,9 @@ class PuffinWriter:
     ) -> None:
         """Assemble the Puffin file and write it to the output file."""
         self.closed = True
+        # If the with-body raised, skip assembling and writing a half-populated file.
+        if exc_type is not None:
+            return
 
         with io.BytesIO() as out:
             out.write(MAGIC_BYTES)

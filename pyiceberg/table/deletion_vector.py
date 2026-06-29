@@ -29,6 +29,10 @@ if TYPE_CHECKING:
 
 EMPTY_BITMAP = FrozenBitMap()
 MAX_JAVA_SIGNED = int(math.pow(2, 31)) - 1
+# Largest addressable position, mirroring Java's RoaringPositionBitmap.MAX_POSITION
+# (toPosition(Integer.MAX_VALUE - 1, Integer.MIN_VALUE)): the high 32 bits hold the bitmap
+# key and the low 32 bits the position within that bitmap.
+MAX_POSITION = ((MAX_JAVA_SIGNED - 1) << 32) | 0x80000000
 PROPERTY_REFERENCED_DATA_FILE = "referenced-data-file"
 DELETION_VECTOR_MAGIC = b"\xd1\xd3\x39\x64"
 # Reserved field id of the row position (_pos) metadata column, referenced by
@@ -48,8 +52,8 @@ class DeletionVector:
     def from_positions(cls, referenced_data_file: str, positions: Iterable[int]) -> "DeletionVector":
         bitmaps_by_key: dict[int, BitMap] = {}
         for position in positions:
-            if position < 0:
-                raise ValueError(f"Invalid position: {position}, positions must be non-negative")
+            if position < 0 or position > MAX_POSITION:
+                raise ValueError(f"Invalid position: {position}, must be between 0 and {MAX_POSITION}")
             bitmaps_by_key.setdefault(position >> 32, BitMap()).add(position & 0xFFFFFFFF)
 
         if not bitmaps_by_key:
@@ -101,6 +105,9 @@ class DeletionVector:
                 if key > MAX_JAVA_SIGNED:
                     raise ValueError(f"Key {key} is too large, max {MAX_JAVA_SIGNED} to maintain compatibility with Java impl")
                 out.write(key.to_bytes(4, "little"))
+                # Run-length encode before serializing so run-heavy vectors (e.g. contiguous
+                # deletes) stay compact, matching Java's BitmapPositionDeleteIndex.
+                bitmap.run_optimize()
                 out.write(bitmap.serialize())
             return out.getvalue()
 

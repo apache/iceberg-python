@@ -21,6 +21,7 @@ from pyroaring import BitMap
 
 from pyiceberg.table.deletion_vector import (
     DELETION_VECTOR_MAGIC,
+    MAX_POSITION,
     PROPERTY_REFERENCED_DATA_FILE,
     ROW_POSITION_FIELD_ID,
     DeletionVector,
@@ -96,8 +97,24 @@ def test_serialize_bitmap_round_trips(positions: list[int]) -> None:
 
 
 def test_from_positions_rejects_negative() -> None:
-    with pytest.raises(ValueError, match="Invalid position: -1, positions must be non-negative"):
+    with pytest.raises(ValueError, match=f"Invalid position: -1, must be between 0 and {MAX_POSITION}"):
         DeletionVector.from_positions("file.parquet", [1, -1, 2])
+
+
+def test_from_positions_rejects_out_of_range() -> None:
+    too_large = MAX_POSITION + 1
+    with pytest.raises(ValueError, match=f"Invalid position: {too_large}, must be between 0 and {MAX_POSITION}"):
+        DeletionVector.from_positions("file.parquet", [1, too_large, 2])
+
+
+def test_serialize_bitmap_run_optimizes_contiguous_run() -> None:
+    # A long contiguous run serializes compactly thanks to run-length encoding and still round-trips.
+    positions = list(range(100_000))
+    dv = DeletionVector.from_positions("file.parquet", positions)
+
+    serialized = DeletionVector._serialize_bitmap(dv._bitmaps)
+    assert len(serialized) < 1_000  # ~16 KB without run optimization
+    assert DeletionVector._deserialize_bitmap(serialized) == dv._bitmaps
 
 
 def test_from_positions_rejects_empty() -> None:

@@ -143,6 +143,20 @@ def test_puffin_writer_empty(tmp_path: Path) -> None:
     assert deletion_vectors_from_puffin_file(reader) == []
 
 
+def test_puffin_writer_does_not_write_on_exception(tmp_path: Path) -> None:
+    puffin_path = tmp_path / "test.puffin"
+    output_file = PyArrowFileIO().new_output(str(puffin_path))
+
+    with pytest.raises(ValueError, match="boom"):
+        with PuffinWriter(output_file) as writer:
+            writer.add_blob(DeletionVector.from_positions("file.parquet", [1]).to_blob())
+            raise ValueError("boom")
+
+    assert writer.closed
+    # The body raised, so no half-populated file should have been written.
+    assert not output_file.exists()
+
+
 def test_add_blob_to_closed_writer_raises(tmp_path: Path) -> None:
     output_file = PyArrowFileIO().new_output(str(tmp_path / "test.puffin"))
     writer = PuffinWriter(output_file)
