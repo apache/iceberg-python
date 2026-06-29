@@ -138,7 +138,12 @@ test-adls: ## Run tests marked with @pytest.mark.adls
 
 test-gcs: ## Run tests marked with @pytest.mark.gcs
 	sh ./dev/run-gcs-server.sh
-	$(TEST_RUNNER) pytest tests/ -m gcs $(PYTEST_ARGS)
+	# gcsfs 2026.6.0 sends HNS/Zonal bucket detection to endpoint_url.
+	# fake-gcs-server does not support that API, so repeated detection retries
+	# make GCS sanity tests take close to an hour. Disable it here.
+	# Workaround documented by gcsfs:
+	# https://github.com/fsspec/gcsfs/blob/2026.6.0/docs/source/hns_buckets.rst#L99-L101
+	GCSFS_EXPERIMENTAL_ZB_HNS_SUPPORT=false $(TEST_RUNNER) pytest tests/ -m gcs $(PYTEST_ARGS)
 
 test-coverage: ## Run all tests with coverage and report
 	$(MAKE) COVERAGE=1 test test-integration test-s3 test-adls test-gcs
