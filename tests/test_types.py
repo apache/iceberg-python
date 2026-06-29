@@ -921,6 +921,7 @@ def test_nested_field_geography_with_params_as_string() -> None:
     assert field.field_type.crs == "EPSG:4326"
     assert field.field_type.algorithm == "planar"
 
+
 def test_decimal_precision_validation() -> None:
     """Test that DecimalType rejects precision outside the [1, 38] range."""
     decimal_type = DecimalType(38, 2)
