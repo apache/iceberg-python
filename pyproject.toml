@@ -179,7 +179,7 @@ filterwarnings = [
   # Ignore google-crc32c C extension missing warning (common on Python 3.14+)
   "ignore:As the c extension couldn't be imported:RuntimeWarning:google_crc32c",
   # Ignore Spark 4.0.1 pandas conversion warning under pandas 3.0
-  "ignore:The copy keyword is deprecated and will be removed in a future version.*:pandas.errors.Pandas4Warning",
+  "ignore:The copy keyword is deprecated and will be removed in a future version.*",
 ]
 
 [tool.mypy]
