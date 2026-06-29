@@ -23,7 +23,7 @@ from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.table import Table
-from pyiceberg.table.refs import SnapshotRef
+from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
 
 
 @pytest.fixture
@@ -105,6 +105,84 @@ def test_remove_branch(catalog: Catalog) -> None:
     # now, remove the branch
     tbl.manage_snapshots().remove_branch(branch_name=branch_name).commit()
     assert tbl.metadata.refs.get(branch_name, None) is None
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_rename_branch(catalog: Catalog) -> None:
+    identifier = "default.test_table_snapshot_operations"
+    tbl = catalog.load_table(identifier)
+    assert len(tbl.history()) > 2
+
+    # create the branch to rename
+    name = "source"
+    snapshot_id = tbl.history()[-2].snapshot_id
+    tbl.manage_snapshots().create_branch(
+        snapshot_id=snapshot_id, branch_name=name, max_ref_age_ms=1, max_snapshot_age_ms=2, min_snapshots_to_keep=3
+    ).commit()
+    assert tbl.metadata.refs[name] == SnapshotRef(
+        snapshot_id=snapshot_id, snapshot_ref_type="branch", max_ref_age_ms=1, max_snapshot_age_ms=2, min_snapshots_to_keep=3
+    )
+
+    # rename the branch
+    new_name = "target"
+    tbl.manage_snapshots().rename_branch(name=name, new_name=new_name).commit()
+    assert tbl.metadata.refs.get(name, None) is None
+
+    # all attributes should be the same, except for the new name
+    renamed_ref = tbl.metadata.refs.get(new_name, None)
+    assert renamed_ref is not None
+    assert renamed_ref.snapshot_id == snapshot_id
+    assert renamed_ref.snapshot_ref_type == SnapshotRefType.BRANCH
+    assert renamed_ref.max_ref_age_ms == 1
+    assert renamed_ref.max_snapshot_age_ms == 2
+    assert renamed_ref.min_snapshots_to_keep == 3
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_rename_main_branch(catalog: Catalog) -> None:
+    identifier = "default.test_table_snapshot_operations"
+    tbl = catalog.load_table(identifier)
+
+    with pytest.raises(ValueError, match="Cannot rename main branch"):
+        tbl.manage_snapshots().rename_branch(name="main", new_name="renamed").commit()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_rename_missing_branch(catalog: Catalog) -> None:
+    identifier = "default.test_table_snapshot_operations"
+    tbl = catalog.load_table(identifier)
+
+    with pytest.raises(ValueError, match="Branch does not exist: test"):
+        tbl.manage_snapshots().rename_branch(name="test", new_name="renamed").commit()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_rename_tag(catalog: Catalog) -> None:
+    identifier = "default.test_table_snapshot_operations"
+    tbl = catalog.load_table(identifier)
+    snapshot_id = tbl.history()[-1].snapshot_id
+    tbl.manage_snapshots().create_tag(snapshot_id=snapshot_id, tag_name="test").commit()
+
+    with pytest.raises(ValueError, match="Ref test is not a branch"):
+        tbl.manage_snapshots().rename_branch(name="test", new_name="renamed").commit()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_rename_to_existing_branch(catalog: Catalog) -> None:
+    identifier = "default.test_table_snapshot_operations"
+    tbl = catalog.load_table(identifier)
+    snapshot_id = tbl.history()[-1].snapshot_id
+
+    tbl.manage_snapshots().create_branch(snapshot_id=snapshot_id, branch_name="source").commit()
+    tbl.manage_snapshots().create_branch(snapshot_id=snapshot_id, branch_name="target").commit()
+
+    with pytest.raises(ValueError, match="Ref target already exists"):
+        tbl.manage_snapshots().rename_branch(name="source", new_name="target").commit()
 
 
 @pytest.mark.integration
