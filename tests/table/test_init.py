@@ -1989,3 +1989,78 @@ def test_build_large_partition_predicate(table_v2: Table) -> None:
         )
 
     bind(table_v2.metadata.schema(), expr, case_sensitive=True)
+
+
+def test_dynamic_partition_overwrite_spec_evolution(tmp_path: Any) -> None:
+    """Regression test for https://github.com/apache/iceberg-python/issues/3148.
+
+    After partition spec evolution, dynamic_partition_overwrite must delete data files
+    written under the old spec (where the new partition field was absent / NULL) when
+    overwriting the matching logical partition.
+    """
+    import tempfile
+
+    import pyarrow as pa
+
+    from pyiceberg.catalog import load_catalog
+    from pyiceberg.transforms import IdentityTransform
+    from pyiceberg.types import LongType
+
+    with tempfile.TemporaryDirectory() as warehouse:
+        catalog = load_catalog("test", type="sql", uri=f"sqlite:///{warehouse}/catalog.db", warehouse=f"file://{warehouse}")
+        catalog.create_namespace("default")
+
+        schema = Schema(
+            NestedField(1, "category", StringType(), required=False),
+            NestedField(2, "region", StringType(), required=False),
+            NestedField(3, "value", LongType(), required=False),
+        )
+        spec_v0 = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="category"))
+        table = catalog.create_table("default.test_spec_evo", schema=schema, partition_spec=spec_v0)
+
+        # Write under spec-0 (region is NULL — field exists in schema but not in partition spec)
+        table.append(
+            pa.table(
+                {
+                    "category": pa.array(["A", "A", "B"], type=pa.string()),
+                    "region": pa.array([None, None, None], type=pa.string()),
+                    "value": pa.array([1, 2, 10], type=pa.int64()),
+                }
+            )
+        )
+
+        # Evolve to spec-1: add region as a partition field
+        with table.update_spec() as u:
+            u.add_field("region", IdentityTransform(), "region")
+        table = catalog.load_table("default.test_spec_evo")
+
+        # Write under spec-1
+        table.append(
+            pa.table(
+                {
+                    "category": pa.array(["A", "B"], type=pa.string()),
+                    "region": pa.array(["us", "us"], type=pa.string()),
+                    "value": pa.array([100, 200], type=pa.int64()),
+                }
+            )
+        )
+
+        # Overwrite partition {A, us} — must also delete stale spec-0 {A} files
+        table.dynamic_partition_overwrite(
+            pa.table(
+                {
+                    "category": pa.array(["A"], type=pa.string()),
+                    "region": pa.array(["us"], type=pa.string()),
+                    "value": pa.array([999], type=pa.int64()),
+                }
+            )
+        )
+
+        result = table.scan().to_arrow().to_pydict()
+        a_values = sorted([v for c, v in zip(result["category"], result["value"], strict=True) if c == "A"])
+        b_values = sorted([v for c, v in zip(result["category"], result["value"], strict=True) if c == "B"])
+
+        # Spec-0 rows 1,2 (category=A, region=NULL) should be gone; only 999 remains
+        assert a_values == [999], f"Expected [999] but got {a_values}"
+        # B rows from both specs should be untouched
+        assert b_values == [10, 200], f"Expected [10, 200] but got {b_values}"

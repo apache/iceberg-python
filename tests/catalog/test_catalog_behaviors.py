@@ -517,11 +517,11 @@ def test_list_tables(
     catalog.create_namespace(namespace_2)
     catalog.create_table(test_table_identifier, table_schema_nested)
     catalog.create_table(another_table_identifier, table_schema_nested)
-    identifier_list = catalog.list_tables(namespace_1)
+    identifier_list = list(catalog.list_tables(namespace_1))
     assert len(identifier_list) == 1
     assert test_table_identifier in identifier_list
 
-    identifier_list = catalog.list_tables(namespace_2)
+    identifier_list = list(catalog.list_tables(namespace_2))
     assert len(identifier_list) == 1
     assert another_table_identifier in identifier_list
 
@@ -532,8 +532,8 @@ def test_list_tables_under_a_namespace(catalog: Catalog, table_schema_nested: Sc
     catalog.create_table(test_table_identifier, table_schema_nested)
     new_namespace = ("new", "namespace")
     catalog.create_namespace(new_namespace)
-    all_tables = catalog.list_tables(namespace=namespace)
-    new_namespace_tables = catalog.list_tables(new_namespace)
+    all_tables = list(catalog.list_tables(namespace=namespace))
+    new_namespace_tables = list(catalog.list_tables(new_namespace))
     assert all_tables
     assert test_table_identifier in all_tables
     assert new_namespace_tables == []
@@ -541,7 +541,7 @@ def test_list_tables_under_a_namespace(catalog: Catalog, table_schema_nested: Sc
 
 def test_list_tables_when_missing_namespace(catalog: Catalog, test_namespace: Identifier) -> None:
     with pytest.raises(NoSuchNamespaceError):
-        catalog.list_tables(test_namespace)
+        list(catalog.list_tables(test_namespace))
 
 
 # Commit table tests
@@ -1002,7 +1002,7 @@ def test_create_namespace_with_comment_and_location(catalog: Catalog, test_names
         "location": test_location,
     }
     catalog.create_namespace(namespace=test_namespace, properties=test_properties)
-    loaded_database_list = catalog.list_namespaces()
+    loaded_database_list = list(catalog.list_namespaces())
     assert Catalog.identifier_to_tuple(test_namespace)[:1] in loaded_database_list
     properties = catalog.load_namespace_properties(test_namespace)
     assert properties["comment"] == "this is a test description"
@@ -1088,17 +1088,17 @@ def test_list_namespaces(catalog: Catalog) -> None:
         if not catalog.namespace_exists(namespace):
             catalog.create_namespace(namespace)
 
-    ns_list = catalog.list_namespaces()
+    ns_list = list(catalog.list_namespaces())
     for ns in [("db",), ("db%",), ("db2",)]:
         assert ns in ns_list
 
-    ns_list = catalog.list_namespaces("db")
+    ns_list = list(catalog.list_namespaces("db"))
     assert sorted(ns_list) == [("db", "ns1"), ("db", "ns2")]
 
-    ns_list = catalog.list_namespaces("db.ns1")
+    ns_list = list(catalog.list_namespaces("db.ns1"))
     assert sorted(ns_list) == [("db", "ns1", "ns2")]
 
-    ns_list = catalog.list_namespaces("db.ns1.ns2")
+    ns_list = list(catalog.list_namespaces("db.ns1.ns2"))
     assert len(ns_list) == 0
 
 
@@ -1108,14 +1108,14 @@ def test_list_namespaces_fuzzy_match(catalog: Catalog) -> None:
         if not catalog.namespace_exists(namespace):
             catalog.create_namespace(namespace)
 
-    assert catalog.list_namespaces("db.ns1") == [("db", "ns1", "ns2")]
+    assert list(catalog.list_namespaces("db.ns1")) == [("db", "ns1", "ns2")]
 
-    assert catalog.list_namespaces("db_.ns1") == [("db_", "ns1", "ns2")]
+    assert list(catalog.list_namespaces("db_.ns1")) == [("db_", "ns1", "ns2")]
 
 
 def test_list_non_existing_namespaces(catalog: Catalog) -> None:
     with pytest.raises(NoSuchNamespaceError):
-        catalog.list_namespaces("does_not_exist")
+        list(catalog.list_namespaces("does_not_exist"))
 
 
 # Update namespace properties tests

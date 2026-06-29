@@ -18,6 +18,7 @@ import getpass
 import logging
 import socket
 import time
+from collections.abc import Iterator
 from types import TracebackType
 from typing import (
     TYPE_CHECKING,
@@ -479,7 +480,7 @@ class HiveCatalog(MetastoreCatalog):
         return self._convert_hive_into_iceberg(hive_table)
 
     @override
-    def list_views(self, namespace: str | Identifier) -> list[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> Iterator[Identifier]:
         raise NotImplementedError
 
     @override
@@ -760,7 +761,7 @@ class HiveCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Database does not exists: {database_name}") from e
 
     @override
-    def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> Iterator[Identifier]:
         """List Iceberg tables under the given namespace in the catalog.
 
         When the database doesn't exist, it will just return an empty list.
@@ -769,34 +770,36 @@ class HiveCatalog(MetastoreCatalog):
             namespace: Database to list.
 
         Returns:
-            List[Identifier]: list of table identifiers.
+            Iterator[Identifier]: an iterator of table identifiers.
 
         Raises:
             NoSuchNamespaceError: If a namespace with the given name does not exist, or the identifier is invalid.
         """
         database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
         with self._client as open_client:
-            return [
-                (database_name, table.tableName)
-                for table in open_client.get_table_objects_by_name(
-                    dbname=database_name, tbl_names=open_client.get_all_tables(db_name=database_name)
-                )
-                if table.parameters.get(TABLE_TYPE, "").lower() == ICEBERG
-            ]
+            return iter(
+                [
+                    (database_name, table.tableName)
+                    for table in open_client.get_table_objects_by_name(
+                        dbname=database_name, tbl_names=open_client.get_all_tables(db_name=database_name)
+                    )
+                    if table.parameters.get(TABLE_TYPE, "").lower() == ICEBERG
+                ]
+            )
 
     @override
-    def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> Iterator[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
 
         Returns:
-            List[Identifier]: a List of namespace identifiers.
+            Iterator[Identifier]: an iterator of namespace identifiers.
         """
         # Hierarchical namespace is not supported. Return an empty list
         if namespace:
-            return []
+            return iter([])
 
         with self._client as open_client:
-            return list(map(self.identifier_to_tuple, open_client.get_all_databases()))
+            return iter(list(map(self.identifier_to_tuple, open_client.get_all_databases())))
 
     @override
     def load_namespace_properties(self, namespace: str | Identifier) -> Properties:

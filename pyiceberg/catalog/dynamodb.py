@@ -15,6 +15,7 @@
 #  specific language governing permissions and limitations
 #  under the License.
 import uuid
+from collections.abc import Iterator
 from time import time
 from typing import (
     TYPE_CHECKING,
@@ -396,8 +397,11 @@ class DynamoDbCatalog(MetastoreCatalog):
         database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
         table_identifiers = self.list_tables(namespace=database_name)
 
-        if len(table_identifiers) > 0:
+        try:
+            next(table_identifiers)
             raise NamespaceNotEmptyError(f"Database {database_name} is not empty")
+        except StopIteration:
+            pass
 
         try:
             self._delete_dynamo_item(
@@ -409,14 +413,14 @@ class DynamoDbCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
 
     @override
-    def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> Iterator[Identifier]:
         """List Iceberg tables under the given namespace in the catalog.
 
         Args:
             namespace (str | Identifier): Namespace identifier to search.
 
         Returns:
-            List[Identifier]: list of table identifiers.
+            Iterator[Identifier]: an iterator of table identifiers.
         """
         database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
 
@@ -451,20 +455,20 @@ class DynamoDbCatalog(MetastoreCatalog):
 
                 table_identifiers.append(self.identifier_to_tuple(identifier_col))
 
-        return table_identifiers
+        return iter(table_identifiers)
 
     @override
-    def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> Iterator[Identifier]:
         """List top-level namespaces from the catalog.
 
         We do not support hierarchical namespace.
 
         Returns:
-            List[Identifier]: a List of namespace identifiers.
+            Iterator[Identifier]: an iterator of namespace identifiers.
         """
         # Hierarchical namespace is not supported. Return an empty list
         if namespace:
-            return []
+            return iter([])
 
         paginator = self.dynamodb.get_paginator("query")
 
@@ -494,7 +498,7 @@ class DynamoDbCatalog(MetastoreCatalog):
                 namespace_col = _dict[DYNAMODB_COL_NAMESPACE]
                 database_identifiers.append(self.identifier_to_tuple(namespace_col))
 
-        return database_identifiers
+        return iter(database_identifiers)
 
     @override
     def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
@@ -565,7 +569,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         raise NotImplementedError
 
     @override
-    def list_views(self, namespace: str | Identifier) -> list[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> Iterator[Identifier]:
         raise NotImplementedError
 
     @override

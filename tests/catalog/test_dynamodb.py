@@ -398,7 +398,7 @@ def test_list_tables(
     test_catalog.create_namespace(namespace=database_name)
     for table_name in table_list:
         test_catalog.create_table((database_name, table_name), table_schema_nested)
-    loaded_table_list = test_catalog.list_tables(database_name)
+    loaded_table_list = list(test_catalog.list_tables(database_name))
     for table_name in table_list:
         assert (database_name, table_name) in loaded_table_list
 
@@ -408,7 +408,7 @@ def test_list_namespaces(_bucket_initialize: None, database_list: list[str]) -> 
     test_catalog = DynamoDbCatalog("test_ddb_catalog")
     for database_name in database_list:
         test_catalog.create_namespace(namespace=database_name)
-    loaded_database_list = test_catalog.list_namespaces()
+    loaded_database_list = list(test_catalog.list_namespaces())
     for database_name in database_list:
         assert (database_name,) in loaded_database_list
 
@@ -417,7 +417,7 @@ def test_list_namespaces(_bucket_initialize: None, database_list: list[str]) -> 
 def test_create_namespace_no_properties(_bucket_initialize: None, database_name: str) -> None:
     test_catalog = DynamoDbCatalog("test_ddb_catalog")
     test_catalog.create_namespace(namespace=database_name)
-    loaded_database_list = test_catalog.list_namespaces()
+    loaded_database_list = list(test_catalog.list_namespaces())
     assert len(loaded_database_list) == 1
     assert (database_name,) in loaded_database_list
     properties = test_catalog.load_namespace_properties(database_name)
@@ -433,7 +433,7 @@ def test_create_namespace_with_comment_and_location(_bucket_initialize: None, da
     }
     test_catalog = DynamoDbCatalog("test_ddb_catalog")
     test_catalog.create_namespace(namespace=database_name, properties=test_properties)
-    loaded_database_list = test_catalog.list_namespaces()
+    loaded_database_list = list(test_catalog.list_namespaces())
     assert len(loaded_database_list) == 1
     assert (database_name,) in loaded_database_list
     properties = test_catalog.load_namespace_properties(database_name)
@@ -445,7 +445,7 @@ def test_create_namespace_with_comment_and_location(_bucket_initialize: None, da
 def test_create_duplicated_namespace(_bucket_initialize: None, database_name: str) -> None:
     test_catalog = DynamoDbCatalog("test_ddb_catalog")
     test_catalog.create_namespace(namespace=database_name)
-    loaded_database_list = test_catalog.list_namespaces()
+    loaded_database_list = list(test_catalog.list_namespaces())
     assert len(loaded_database_list) == 1
     assert (database_name,) in loaded_database_list
     with pytest.raises(NamespaceAlreadyExistsError):
@@ -456,11 +456,11 @@ def test_create_duplicated_namespace(_bucket_initialize: None, database_name: st
 def test_drop_namespace(_bucket_initialize: None, database_name: str) -> None:
     test_catalog = DynamoDbCatalog("test_ddb_catalog")
     test_catalog.create_namespace(namespace=database_name)
-    loaded_database_list = test_catalog.list_namespaces()
+    loaded_database_list = list(test_catalog.list_namespaces())
     assert len(loaded_database_list) == 1
     assert (database_name,) in loaded_database_list
     test_catalog.drop_namespace(database_name)
-    loaded_database_list = test_catalog.list_namespaces()
+    loaded_database_list = list(test_catalog.list_namespaces())
     assert len(loaded_database_list) == 0
 
 
@@ -472,7 +472,7 @@ def test_drop_non_empty_namespace(
     test_catalog = DynamoDbCatalog("test_ddb_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
-    assert len(test_catalog.list_tables(database_name)) == 1
+    assert len(list(test_catalog.list_tables(database_name))) == 1
     with pytest.raises(NamespaceNotEmptyError):
         test_catalog.drop_namespace(database_name)
 
