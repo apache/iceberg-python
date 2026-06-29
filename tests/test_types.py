@@ -920,3 +920,17 @@ def test_nested_field_geography_with_params_as_string() -> None:
     assert isinstance(field.field_type, GeographyType)
     assert field.field_type.crs == "EPSG:4326"
     assert field.field_type.algorithm == "planar"
+
+def test_decimal_precision_validation() -> None:
+    """Test that DecimalType rejects precision outside the [1, 38] range."""
+    decimal_type = DecimalType(38, 2)
+    assert decimal_type.precision == 38
+
+    with pytest.raises(ValidationError, match="Decimal precision must be between 1 and 38"):
+        DecimalType(39, 2)
+
+    with pytest.raises(ValidationError, match="Decimal precision must be between 1 and 38"):
+        DecimalType(0, 2)
+
+    with pytest.raises(ValidationError, match="Decimal precision must be between 1 and 38"):
+        DecimalType(-5, 2)
