@@ -72,7 +72,7 @@ def _patch_moto_for_s3tables(monkeypatch: pytest.MonkeyPatch) -> None:
     # warehouse location.
     _original_table_init = FakeTable.__init__
 
-    def _table_init_with_location(self, database_name, table_name, table_input, catalog_id):  # type: ignore
+    def _table_init_with_location(self, database_name, table_name, table_input, *args, **kwargs):  # type: ignore
         if table_input.get("Parameters", {}).get("format") == "ICEBERG" and "StorageDescriptor" not in table_input:
             table_input = {
                 **table_input,
@@ -84,7 +84,7 @@ def _patch_moto_for_s3tables(monkeypatch: pytest.MonkeyPatch) -> None:
                     "SerdeInfo": {},
                 },
             }
-        _original_table_init(self, database_name, table_name, table_input, catalog_id)
+        _original_table_init(self, database_name, table_name, table_input, *args, **kwargs)
 
     monkeypatch.setattr(FakeTable, "__init__", _table_init_with_location)
 

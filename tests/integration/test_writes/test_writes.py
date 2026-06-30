@@ -768,7 +768,7 @@ def test_spark_writes_orc_pyiceberg_reads(spark: SparkSession, session_catalog: 
 
     # Verify PyIceberg data types are correct
     assert pyiceberg_df["id"].dtype == "int64"
-    assert pyiceberg_df["name"].dtype == "object"  # string
+    assert pd.api.types.is_string_dtype(pyiceberg_df["name"].dtype)
     assert pyiceberg_df["age"].dtype == "int64"
     assert pyiceberg_df["is_active"].dtype == "bool"
 
