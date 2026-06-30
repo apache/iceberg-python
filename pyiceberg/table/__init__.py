@@ -2618,7 +2618,7 @@ class ManifestGroupPlanner:
             List of FileScanTasks that contain both data and delete files.
         """
         data_entries: list[ManifestEntry] = []
-        delete_index = DeleteFileIndex()
+        delete_index = DeleteFileIndex(self.table_metadata.schema())
 
         residual_evaluators: dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
 
