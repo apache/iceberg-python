@@ -1438,6 +1438,9 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema]):
             else:
                 # Does not exist (yet)
                 raise TypeError(f"Unsupported integer type: {primitive}")
+        elif pa.types.is_float16(primitive):
+            # Iceberg has no half-precision float; widen to single precision (lossless)
+            return FloatType()
         elif pa.types.is_float32(primitive):
             return FloatType()
         elif pa.types.is_float64(primitive):
@@ -1974,6 +1977,15 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
                     # Only allow widening conversions (smaller bit width to larger)
                     # Narrowing conversions fall through to promote() handling below
                     if pa.types.is_integer(values.type):
+                        source_width = values.type.bit_width
+                        target_width = target_type.bit_width
+                        if source_width < target_width:
+                            return values.cast(target_type)
+                elif isinstance(field.field_type, (FloatType, DoubleType)):
+                    # Cast smaller float types to target type for cross-platform compatibility
+                    # Only allow widening conversions (smaller bit width to larger), e.g. float16 -> float32
+                    # Narrowing conversions fall through to promote() handling below
+                    if pa.types.is_floating(values.type):
                         source_width = values.type.bit_width
                         target_width = target_type.bit_width
                         if source_width < target_width:

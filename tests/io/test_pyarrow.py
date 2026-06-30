@@ -3109,6 +3109,35 @@ def test__to_requested_schema_integer_promotion(
     assert result.column(0).to_pylist() == [1, 2, 3, None]
 
 
+@pytest.mark.parametrize(
+    "arrow_type,iceberg_type,expected_arrow_type",
+    [
+        (pa.float16(), FloatType(), pa.float32()),
+        (pa.float16(), DoubleType(), pa.float64()),
+        (pa.float32(), DoubleType(), pa.float64()),
+    ],
+)
+def test__to_requested_schema_float_promotion(
+    arrow_type: pa.DataType,
+    iceberg_type: PrimitiveType,
+    expected_arrow_type: pa.DataType,
+) -> None:
+    """Test that smaller float types are cast to target Iceberg type during write."""
+    requested_schema = Schema(NestedField(1, "col", iceberg_type, required=False))
+    file_schema = requested_schema
+
+    arrow_schema = pa.schema([pa.field("col", arrow_type)])
+    data = pa.array([1.5, 2.25, 3.0, None], type=arrow_type)
+    batch = pa.RecordBatch.from_arrays([data], schema=arrow_schema)
+
+    result = _to_requested_schema(
+        requested_schema, file_schema, batch, downcast_ns_timestamp_to_us=False, include_field_ids=False
+    )
+
+    assert result.schema[0].type == expected_arrow_type
+    assert result.column(0).to_pylist() == [1.5, 2.25, 3.0, None]
+
+
 def test_pyarrow_file_io_fs_by_scheme_cache() -> None:
     # It's better to set up multi-region minio servers for an integration test once `endpoint_url` argument
     # becomes available for `resolve_s3_region`
