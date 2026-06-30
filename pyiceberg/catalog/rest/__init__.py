@@ -402,6 +402,11 @@ class ListViewsResponse(IcebergBaseModel):
 _PLANNING_RESPONSE_ADAPTER = TypeAdapter(PlanningResponse)
 
 
+def _is_hadoop_only_config(config: dict[str, str]) -> bool:
+    """Return True if every key is a Hadoop ``fs.*`` key — pyiceberg has no HadoopFileIO to consume them."""
+    return bool(config) and all(k.startswith("fs.") for k in config)
+
+
 class RestCatalog(Catalog):
     uri: str
     _session: Session
@@ -468,21 +473,30 @@ class RestCatalog(Catalog):
 
     @staticmethod
     def _resolve_storage_credentials(storage_credentials: list[StorageCredential], location: str | None) -> Properties:
-        """Resolve the best-matching storage credential by longest prefix match.
+        """Pick the longest-prefix storage credential for ``location``.
 
-        Mirrors the Java implementation in S3FileIO.clientForStoragePath() which iterates
-        over storage credential prefixes and selects the one with the longest match.
+        Mirrors Java ``S3FileIO.clientForStoragePath``. Hadoop-only (``fs.*``)
+        credentials are filtered out since pyiceberg has no HadoopFileIO to
+        consume them — otherwise a catalog vending both ``fs.*`` and ``s3.*``
+        bundles per location could strand the FileIO with unusable keys.
 
         See: https://github.com/apache/iceberg/blob/main/aws/src/main/java/org/apache/iceberg/aws/s3/S3FileIO.java
         """
         if not storage_credentials or not location:
             return {}
 
+        consumable = [c for c in storage_credentials if not _is_hadoop_only_config(c.config)]
+
         best_match: StorageCredential | None = None
-        for cred in storage_credentials:
+        for cred in consumable:
             if location.startswith(cred.prefix):
                 if best_match is None or len(cred.prefix) > len(best_match.prefix):
                     best_match = cred
+
+        # Java S3FileIO ROOT_PREFIX fallback. Only oss:// needs it — s3/s3a/s3n
+        # already match the "s3" credential via startswith in the loop above.
+        if best_match is None and location.startswith("oss://"):
+            best_match = next((c for c in consumable if c.prefix == "s3"), None)
 
         return best_match.config if best_match else {}
 
