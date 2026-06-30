@@ -884,12 +884,17 @@ class Transaction:
         # get list of rows that exist so we don't have to load the entire target table
         matched_predicate = upsert_util.create_match_filter(df, join_cols)
 
+        # When ``when_matched_update_all=False`` the consumer loop below
+        # only ever reads ``join_cols`` off each destination batch.
+        selected_fields: tuple[str, ...] = ("*",) if when_matched_update_all else tuple(join_cols)
+
         # We must use Transaction.table_metadata for the scan. This includes all uncommitted - but relevant - changes.
 
         matched_iceberg_record_batches_scan = DataScan(
             table_metadata=self.table_metadata,
             io=self._table.io,
             row_filter=matched_predicate,
+            selected_fields=selected_fields,
             case_sensitive=case_sensitive,
         )
 
