@@ -514,6 +514,16 @@ def test_deserialization_decimal() -> None:
     assert decimal.scale == 25
 
 
+def test_decimal_precision_greater_than_max_precision() -> None:
+    with pytest.raises(ValidationError, match="Cannot construct decimal with precision 39"):
+        DecimalType(39, 0)
+
+
+def test_deserialization_decimal_precision_greater_than_max_precision() -> None:
+    with pytest.raises(ValidationError, match="Cannot construct decimal with precision 39"):
+        DecimalType.model_validate_json('"decimal(39, 0)"')
+
+
 def test_deserialization_decimal_failure() -> None:
     with pytest.raises(ValidationError) as exc_info:
         _ = DecimalType.model_validate_json('"decimal(abc, def)"')
