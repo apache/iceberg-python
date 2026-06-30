@@ -320,9 +320,16 @@ def test_fsspec_s3_session_properties() -> None:
         )
 
 
-def test_fsspec_s3_session_properties_force_virtual_addressing() -> None:
+@pytest.mark.parametrize(
+    ("force_virtual_addressing", "config_kwargs"),
+    [
+        ("true", {"s3": {"addressing_style": "virtual"}}),
+        ("false", {}),
+    ],
+)
+def test_fsspec_s3_session_properties_force_virtual_addressing(force_virtual_addressing: str, config_kwargs: Properties) -> None:
     session_properties: Properties = {
-        "s3.force-virtual-addressing": True,
+        "s3.force-virtual-addressing": force_virtual_addressing,
         "s3.endpoint": "http://localhost:9000",
         "s3.access-key-id": "admin",
         "s3.secret-access-key": "password",
@@ -346,7 +353,7 @@ def test_fsspec_s3_session_properties_force_virtual_addressing() -> None:
                 "region_name": "us-east-1",
                 "aws_session_token": "s3.session-token",
             },
-            config_kwargs={"s3": {"addressing_style": "virtual"}},
+            config_kwargs=config_kwargs,
         )
 
 
