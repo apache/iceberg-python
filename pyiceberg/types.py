@@ -324,10 +324,17 @@ class DecimalType(PrimitiveType):
     root: tuple[int, int]
 
     def __init__(self, precision: int, scale: int) -> None:
-        if precision < 1 or precision > 38:
-            raise ValidationError(f"Decimal precision must be between 1 and 38: {precision}")
-
         super().__init__(root=(precision, scale))
+
+    @model_validator(mode="after")
+    def check_precision(self) -> "DecimalType":
+        precision = getattr(self, "precision", None) or self.root[0]
+        
+        if not (1 <= precision <= 38):
+            raise ValidationError(
+                f"Decimal precision must be between 1 and 38 (inclusive), got: {precision}"
+            )
+        return self
 
     @model_serializer
     def ser_model(self) -> str:
