@@ -60,6 +60,7 @@ from pyarrow import ChunkedArray
 from pyarrow._s3fs import S3RetryStrategy
 from pyarrow.fs import (
     FileInfo,
+    FileSelector,
     FileSystem,
     FileType,
 )
@@ -115,6 +116,7 @@ from pyiceberg.io import (
     S3_ROLE_SESSION_NAME,
     S3_SECRET_ACCESS_KEY,
     S3_SESSION_TOKEN,
+    FileEntry,
     FileIO,
     InputFile,
     InputStream,
@@ -683,6 +685,36 @@ class PyArrowFileIO(FileIO):
             elif e.errno == 13 or "AWS Error [code 15]" in str(e):
                 raise PermissionError(f"Cannot delete file, access denied: {location}") from e
             raise  # pragma: no cover - If some other kind of OSError, raise the raw error
+
+    def list_prefix(self, location: str) -> Iterator[FileEntry]:
+        """Recursively list every file under the given location."""
+        original = urlparse(location)
+        scheme, netloc, path = self.parse_location(location, self.properties)
+        fs = self.fs_by_scheme(scheme, netloc)
+        selector = FileSelector(path, recursive=True, allow_not_found=True)
+
+        if original.scheme in ("hdfs", "viewfs"):
+            uri_prefix = f"{original.scheme}://{netloc}"
+            ensure_leading_slash = True
+        elif original.scheme:
+            # Cloud filesystem paths from pyarrow already start with the bucket/container.
+            uri_prefix = f"{original.scheme}://"
+            ensure_leading_slash = False
+        else:
+            uri_prefix = ""
+            ensure_leading_slash = False
+
+        for info in fs.get_file_info(selector):
+            if info.type != FileType.File:
+                continue
+            info_path = info.path
+            if ensure_leading_slash and not info_path.startswith("/"):
+                info_path = "/" + info_path
+            yield FileEntry(
+                location=f"{uri_prefix}{info_path}",
+                size=info.size or 0,
+                last_modified=info.mtime,
+            )
 
     def __getstate__(self) -> dict[str, Any]:
         """Create a dictionary of the PyArrowFileIO fields used when pickling."""
