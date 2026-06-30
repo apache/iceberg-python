@@ -18,12 +18,14 @@
 import json
 import uuid
 from copy import copy
+from pathlib import Path
 from typing import Any
 
 import pytest
 from pydantic import BaseModel, ValidationError
 from pytest_lazy_fixtures import lf
 
+from pyiceberg.catalog.memory import InMemoryCatalog
 from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.expressions import (
@@ -1895,6 +1897,54 @@ def test_remove_partition_statistics_update_with_invalid_snapshot_id(table_v2_wi
             table_v2_with_statistics.metadata,
             (RemovePartitionStatisticsUpdate(snapshot_id=123456789),),
         )
+
+
+@pytest.mark.xfail(reason="remove_statistics uses = instead of +=, dropping preceding updates")
+def test_update_statistics_set_remove_chain(tmp_path: Path) -> None:
+    catalog = InMemoryCatalog("test", warehouse=f"file://{tmp_path}")
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test", schema=Schema(NestedField(1, "x", LongType())))
+
+    snapshot_id_1 = 1111111111
+    snapshot_id_2 = 2222222222
+
+    statistics_file_1 = StatisticsFile(
+        snapshot_id=snapshot_id_1,
+        statistics_path="s3://bucket/warehouse/stats1.puffin",
+        file_size_in_bytes=124,
+        file_footer_size_in_bytes=27,
+        blob_metadata=[
+            BlobMetadata(
+                type="apache-datasketches-theta-v1",
+                snapshot_id=snapshot_id_1,
+                sequence_number=1,
+                fields=[1],
+            )
+        ],
+    )
+
+    statistics_file_2 = StatisticsFile(
+        snapshot_id=snapshot_id_2,
+        statistics_path="s3://bucket/warehouse/stats2.puffin",
+        file_size_in_bytes=124,
+        file_footer_size_in_bytes=27,
+        blob_metadata=[
+            BlobMetadata(
+                type="apache-datasketches-theta-v1",
+                snapshot_id=snapshot_id_2,
+                sequence_number=2,
+                fields=[1],
+            )
+        ],
+    )
+
+    with table.update_statistics() as update:
+        update.set_statistics(statistics_file_1)
+
+    with table.update_statistics() as update:
+        update.set_statistics(statistics_file_2).remove_statistics(snapshot_id_1)
+
+    assert len(table.metadata.statistics) == 1
 
 
 def test_add_snapshot_update_fails_without_first_row_id(table_v3: Table) -> None:
