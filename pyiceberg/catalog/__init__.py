@@ -744,6 +744,32 @@ class Catalog(ABC):
             ViewAlreadyExistsError: If a view with the name already exists.
         """
 
+    @abstractmethod
+    def replace_view(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        view_version: ViewVersion,
+        location: str | None = None,
+        properties: Properties = EMPTY_DICT,
+    ) -> View:
+        """Replace a view.
+
+        Args:
+            identifier (str | Identifier): View identifier.
+            schema (Schema): View's schema.
+            view_version (ViewVersion): The format version for the view.
+            location (str | None): Location for the view. Optional Argument.
+            properties (Properties): View properties that can be a string based dictionary.
+
+        Returns:
+            View: the created view instance.
+
+        Raises:
+            TableAlreadyExistsError: If a table with the same name already exists.
+            NoSuchViewError: If a view with the name does not exist.
+        """
+
     @staticmethod
     def identifier_to_tuple(identifier: str | Identifier) -> Identifier:
         """Parse an identifier to a tuple.
@@ -971,6 +997,17 @@ class MetastoreCatalog(Catalog, ABC):
 
     @override
     def create_view(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        view_version: ViewVersion,
+        location: str | None = None,
+        properties: Properties = EMPTY_DICT,
+    ) -> View:
+        raise NotImplementedError
+
+    @override
+    def replace_view(
         self,
         identifier: str | Identifier,
         schema: Schema | pa.Schema,
