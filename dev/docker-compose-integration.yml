@@ -18,10 +18,7 @@
 services:
   spark-iceberg:
     image: pyiceberg-spark:latest
-    build:
-      context: spark/
-      args:
-        MAVEN_MIRROR: ${MAVEN_MIRROR:-https://repo.maven.apache.org/maven2}
+    build: spark/
     container_name: pyiceberg-spark
     networks:
       iceberg_net:
@@ -96,10 +93,7 @@ services:
       "
   hive:
     image: pyiceberg-hive:latest
-    build:
-      context: hive/
-      args:
-        MAVEN_MIRROR: ${MAVEN_MIRROR:-https://repo1.maven.org/maven2}
+    build: hive/
     container_name: pyiceberg-hive
     hostname: hive
     networks:
