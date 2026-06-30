@@ -26,7 +26,9 @@ from sqlalchemy import (
     create_engine,
     delete,
     insert,
+    or_,
     select,
+    text,
     union,
     update,
 )
@@ -85,6 +87,9 @@ class SqlCatalogBaseTable(MappedAsDataclass, DeclarativeBase):
     pass
 
 
+ICEBERG_TABLE_TYPE = "TABLE"
+
+
 class IcebergTables(SqlCatalogBaseTable):
     __tablename__ = "iceberg_tables"
 
@@ -93,6 +98,7 @@ class IcebergTables(SqlCatalogBaseTable):
     table_name: Mapped[str] = mapped_column(String(255), nullable=False, primary_key=True)
     metadata_location: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     previous_metadata_location: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    iceberg_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class IcebergNamespaceProperties(SqlCatalogBaseTable):
@@ -146,6 +152,17 @@ class SqlCatalog(MetastoreCatalog):
                 ):  # sqlalchemy returns OperationalError in case of sqlite and ProgrammingError with postgres.
                     self.create_tables()
                     return
+
+        # Idempotently add iceberg_type column if it does not exist yet
+        # (backward-compatible migration for databases created before this column was introduced).
+        # Older SQLite versions do not support "ADD COLUMN IF NOT EXISTS", so we catch and ignore
+        # the error if the column is already present.
+        with Session(self.engine) as session:
+            try:
+                session.execute(text("ALTER TABLE iceberg_tables ADD COLUMN iceberg_type VARCHAR(255)"))
+                session.commit()
+            except (OperationalError, ProgrammingError):
+                pass  # column already exists
 
     def create_tables(self) -> None:
         SqlCatalogBaseTable.metadata.create_all(self.engine)
@@ -231,6 +248,7 @@ class SqlCatalog(MetastoreCatalog):
                         table_name=table_name,
                         metadata_location=metadata_location,
                         previous_metadata_location=None,
+                        iceberg_type=ICEBERG_TABLE_TYPE,
                     )
                 )
                 session.commit()
@@ -273,6 +291,7 @@ class SqlCatalog(MetastoreCatalog):
                         table_name=table_name,
                         metadata_location=metadata_location,
                         previous_metadata_location=None,
+                        iceberg_type=ICEBERG_TABLE_TYPE,
                     )
                 )
                 session.commit()
@@ -305,6 +324,7 @@ class SqlCatalog(MetastoreCatalog):
                 IcebergTables.catalog_name == self.name,
                 IcebergTables.table_namespace == namespace,
                 IcebergTables.table_name == table_name,
+                or_(IcebergTables.iceberg_type == ICEBERG_TABLE_TYPE, IcebergTables.iceberg_type.is_(None)),
             )
             result = session.scalar(stmt)
         if result:
@@ -331,6 +351,7 @@ class SqlCatalog(MetastoreCatalog):
                         IcebergTables.catalog_name == self.name,
                         IcebergTables.table_namespace == namespace,
                         IcebergTables.table_name == table_name,
+                        or_(IcebergTables.iceberg_type == ICEBERG_TABLE_TYPE, IcebergTables.iceberg_type.is_(None)),
                     )
                 )
                 if res.rowcount < 1:
@@ -344,6 +365,7 @@ class SqlCatalog(MetastoreCatalog):
                             IcebergTables.catalog_name == self.name,
                             IcebergTables.table_namespace == namespace,
                             IcebergTables.table_name == table_name,
+                            or_(IcebergTables.iceberg_type == ICEBERG_TABLE_TYPE, IcebergTables.iceberg_type.is_(None)),
                         )
                         .one()
                     )
@@ -385,6 +407,7 @@ class SqlCatalog(MetastoreCatalog):
                             IcebergTables.catalog_name == self.name,
                             IcebergTables.table_namespace == from_namespace,
                             IcebergTables.table_name == from_table_name,
+                            or_(IcebergTables.iceberg_type == ICEBERG_TABLE_TYPE, IcebergTables.iceberg_type.is_(None)),
                         )
                         .values(table_namespace=to_namespace, table_name=to_table_name)
                     )
@@ -400,6 +423,7 @@ class SqlCatalog(MetastoreCatalog):
                                 IcebergTables.catalog_name == self.name,
                                 IcebergTables.table_namespace == from_namespace,
                                 IcebergTables.table_name == from_table_name,
+                                or_(IcebergTables.iceberg_type == ICEBERG_TABLE_TYPE, IcebergTables.iceberg_type.is_(None)),
                             )
                             .one()
                         )
@@ -462,6 +486,7 @@ class SqlCatalog(MetastoreCatalog):
                             IcebergTables.table_namespace == namespace,
                             IcebergTables.table_name == table_name,
                             IcebergTables.metadata_location == current_table.metadata_location,
+                            or_(IcebergTables.iceberg_type == ICEBERG_TABLE_TYPE, IcebergTables.iceberg_type.is_(None)),
                         )
                         .values(
                             metadata_location=updated_staged_table.metadata_location,
@@ -481,6 +506,7 @@ class SqlCatalog(MetastoreCatalog):
                                 IcebergTables.table_namespace == namespace,
                                 IcebergTables.table_name == table_name,
                                 IcebergTables.metadata_location == current_table.metadata_location,
+                                or_(IcebergTables.iceberg_type == ICEBERG_TABLE_TYPE, IcebergTables.iceberg_type.is_(None)),
                             )
                             .one()
                         )
@@ -499,6 +525,7 @@ class SqlCatalog(MetastoreCatalog):
                             table_name=table_name,
                             metadata_location=updated_staged_table.metadata_location,
                             previous_metadata_location=None,
+                            iceberg_type=ICEBERG_TABLE_TYPE,
                         )
                     )
                     session.commit()
@@ -615,7 +642,11 @@ class SqlCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}")
 
         namespace = Catalog.namespace_to_string(namespace)
-        stmt = select(IcebergTables).where(IcebergTables.catalog_name == self.name, IcebergTables.table_namespace == namespace)
+        stmt = select(IcebergTables).where(
+            IcebergTables.catalog_name == self.name,
+            IcebergTables.table_namespace == namespace,
+            or_(IcebergTables.iceberg_type == ICEBERG_TABLE_TYPE, IcebergTables.iceberg_type.is_(None)),
+        )
         with Session(self.engine) as session:
             result = session.scalars(stmt)
             return [(Catalog.identifier_to_tuple(table.table_namespace) + (table.table_name,)) for table in result]
