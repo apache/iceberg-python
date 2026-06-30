@@ -387,6 +387,31 @@ catalog:
 | `header.X-Iceberg-Access-Delegation` | `vended-credentials` | Signal to the server that the client supports delegated access via a comma-separated list of access mechanisms. The server may choose to supply access via any or none of the requested mechanisms. When using `vended-credentials`, the server provides temporary credentials to the client. When using `remote-signing`, the server signs requests on behalf of the client. (default: `vended-credentials`) |
 | view-endpoints-supported | false                           | For backwards compatibility with older REST servers. Set to `true` if the server supports view endpoints but doesn't send the `endpoints` field in the ConfigResponse. |
 
+#### Retry and timeout
+
+The REST Catalog uses `requests` with no retries and no timeout by default, so transient
+5xx / network failures bubble up immediately and slow servers can hang the client indefinitely.
+Set a `connection:` block on the catalog to opt in to a per-request timeout and a retry policy.
+
+```yaml
+catalog:
+  default:
+    uri: http://rest-catalog/ws/
+    connection:
+      timeout: 60          # seconds, applied to every HTTP call
+      retries: 5           # number of retry attempts on transient failures
+      backoff-factor: 1.0  # exponential backoff between retries
+```
+
+| Key                          | Example  | Description                                                                                                        |
+| ---------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------ |
+| connection.timeout           | 60       | Per-request timeout in seconds. Must be a positive number.                                                         |
+| connection.retries           | 5        | Number of retry attempts for transient failures. Must be non-negative.                                             |
+| connection.backoff-factor    | 1.0      | Backoff factor between retry attempts. Must be non-negative. See [`urllib3` Retry docs](https://urllib3.readthedocs.io/en/latest/reference/urllib3.util.html#urllib3.util.Retry) for the formula. |
+
+Retries are applied to idempotent methods only (`GET`, `HEAD`, `OPTIONS`) and to the
+transient HTTP status codes `429`, `500`, `502`, `503`, `504`. Other failures are not retried.
+
 #### Headers in REST Catalog
 
 To configure custom headers in REST Catalog, include them in the catalog properties with `header.<Header-Name>`. This
