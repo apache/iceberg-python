@@ -1797,6 +1797,33 @@ def test_create_view(
 
 
 @pytest.mark.integration
+def test_create_sql_view(
+    spark: SparkSession,
+    session_catalog: Catalog,
+) -> None:
+    # Create a view using the REST Catalog.
+    identifier = "default.some_view"
+    schema = pa.schema([pa.field("some_col", pa.int32())])
+    session_catalog.create_sql_view(
+        identifier=identifier,
+        schema=schema,
+        dialect="spark",
+        sql="SELECT 1 as some_col",
+        default_namespace="default",
+    )
+
+    # Ensure the view exists.
+    assert session_catalog.view_exists(identifier)
+
+    # Query the view in spark to ensure it was properly created.
+    df = spark.table(identifier)
+    assert df.count() == 1
+    assert df.collect()[0].some_col == 1
+
+    session_catalog.drop_view(identifier)  # clean up
+
+
+@pytest.mark.integration
 def test_view_exists(
     spark: SparkSession,
     session_catalog: Catalog,
