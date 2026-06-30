@@ -479,7 +479,7 @@ def test_list_tables_200(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
 
-    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_tables(namespace) == [("examples", "fooshare")]
+    assert list(RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_tables(namespace)) == [("examples", "fooshare")]
 
 
 def test_list_tables_paginated_200(rest_mock: Mocker) -> None:
@@ -521,7 +521,7 @@ def test_list_tables_paginated_200(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
 
-    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_tables(namespace)
+    result = list(RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_tables(namespace))
     assert result == [
         ("examples", "table1"),
         ("examples", "table2"),
@@ -558,7 +558,7 @@ def test_list_tables_paginated_200_none_next_page_token(rest_mock: Mocker) -> No
         request_headers=TEST_HEADERS,
     )
 
-    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_tables(namespace)
+    result = list(RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_tables(namespace))
     assert result == [
         ("examples", "table1"),
         ("examples", "table2"),
@@ -580,7 +580,7 @@ def test_list_tables_page_size(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
 
-    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "100"}).list_tables(namespace)
+    result = list(RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "100"}).list_tables(namespace))
     assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/examples/tables?pageSize=100"
 
     assert result == [
@@ -598,9 +598,9 @@ def test_list_tables_200_sigv4(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
 
-    assert RestCatalog("rest", **{"uri": TEST_URI, "token": TEST_TOKEN, "rest.sigv4-enabled": "true"}).list_tables(namespace) == [
-        ("examples", "fooshare")
-    ]
+    assert list(
+        RestCatalog("rest", **{"uri": TEST_URI, "token": TEST_TOKEN, "rest.sigv4-enabled": "true"}).list_tables(namespace)
+    ) == [("examples", "fooshare")]
     assert rest_mock.called
 
 
@@ -735,7 +735,7 @@ def test_list_tables_404(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
     with pytest.raises(NoSuchNamespaceError) as e:
-        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_tables(namespace)
+        list(RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_tables(namespace))
     assert "Namespace does not exist" in str(e.value)
 
 
@@ -748,7 +748,7 @@ def test_list_views_200(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
 
-    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace) == [("examples", "fooshare")]
+    assert list(RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace)) == [("examples", "fooshare")]
 
 
 def test_list_views_paginated_200(rest_mock: Mocker) -> None:
@@ -790,7 +790,7 @@ def test_list_views_paginated_200(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
 
-    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace)
+    result = list(RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace))
     assert result == [
         ("examples", "view1"),
         ("examples", "view2"),
@@ -827,7 +827,7 @@ def test_list_views_paginated_200_none_next_page_token(rest_mock: Mocker) -> Non
         request_headers=TEST_HEADERS,
     )
 
-    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace)
+    result = list(RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace))
     assert result == [
         ("examples", "view1"),
         ("examples", "view2"),
@@ -849,7 +849,7 @@ def test_list_views_page_size(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
 
-    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "100"}).list_views(namespace)
+    result = list(RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "100"}).list_views(namespace))
     assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/examples/views?pageSize=100"
 
     assert result == [
@@ -873,7 +873,7 @@ def test_list_views_invalid_page_size(rest_mock: Mocker) -> None:
     )
 
     with pytest.raises(ValueError) as e:
-        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "0"}).list_views(namespace)
+        list(RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "0"}).list_views(namespace))
     assert str(e.value) == "rest-page-size must be a positive integer"
 
 
@@ -886,9 +886,9 @@ def test_list_views_200_sigv4(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
 
-    assert RestCatalog("rest", **{"uri": TEST_URI, "token": TEST_TOKEN, "rest.sigv4-enabled": "true"}).list_views(namespace) == [
-        ("examples", "fooshare")
-    ]
+    assert list(
+        RestCatalog("rest", **{"uri": TEST_URI, "token": TEST_TOKEN, "rest.sigv4-enabled": "true"}).list_views(namespace)
+    ) == [("examples", "fooshare")]
     assert rest_mock.called
 
 
@@ -907,7 +907,7 @@ def test_list_views_404(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
     with pytest.raises(NoSuchNamespaceError) as e:
-        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace)
+        list(RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace))
     assert "Namespace does not exist" in str(e.value)
 
 
@@ -954,7 +954,7 @@ def test_list_namespaces_200(rest_mock: Mocker) -> None:
         status_code=200,
         request_headers=TEST_HEADERS,
     )
-    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces() == [
+    assert list(RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces()) == [
         ("default",),
         ("examples",),
         ("fokko",),
@@ -969,7 +969,7 @@ def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
         status_code=200,
         request_headers=TEST_HEADERS,
     )
-    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces(("accounting",)) == [
+    assert list(RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces(("accounting",))) == [
         ("accounting", "tax"),
     ]
 
@@ -1005,7 +1005,7 @@ def test_list_namespaces_paginated_200(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
 
-    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces()
+    result = list(RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces())
     assert result == [
         ("ns1",),
         ("ns2",),
@@ -1036,7 +1036,7 @@ def test_list_namespaces_with_parent_paginated_200(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
 
-    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces(("accounting",))
+    result = list(RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces(("accounting",)))
     assert result == [
         ("accounting", "tax"),
         ("accounting", "payroll"),
@@ -1065,7 +1065,7 @@ def test_list_namespaces_paginated_200_none_next_page_token(rest_mock: Mocker) -
         request_headers=TEST_HEADERS,
     )
 
-    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces()
+    result = list(RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces())
     assert result == [
         ("ns1",),
         ("ns2",),
@@ -1083,7 +1083,7 @@ def test_list_namespaces_page_size(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
 
-    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "100"}).list_namespaces()
+    result = list(RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "100"}).list_namespaces())
     assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces?pageSize=100"
 
     assert result == [
@@ -1107,7 +1107,7 @@ def test_list_namespace_with_parent_404(rest_mock: Mocker) -> None:
     )
 
     with pytest.raises(NoSuchNamespaceError):
-        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces(("some_namespace",))
+        list(RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces(("some_namespace",)))
 
 
 @pytest.mark.filterwarnings(
@@ -1162,7 +1162,7 @@ def test_list_namespaces_token_expired_success_on_retries(rest_mock: Mocker, sta
     # which results in the token being refreshed twice when the RestCatalog is initialized.
     assert tokens.call_count == 2
 
-    assert catalog.list_namespaces() == [
+    assert list(catalog.list_namespaces()) == [
         ("default",),
         ("examples",),
         ("fokko",),
@@ -1171,7 +1171,7 @@ def test_list_namespaces_token_expired_success_on_retries(rest_mock: Mocker, sta
     assert namespaces.call_count == 2
     assert tokens.call_count == 3
 
-    assert catalog.list_namespaces() == [
+    assert list(catalog.list_namespaces()) == [
         ("default",),
         ("examples",),
         ("fokko",),

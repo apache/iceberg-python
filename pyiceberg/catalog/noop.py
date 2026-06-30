@@ -16,6 +16,7 @@
 #  under the License.
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import (
     TYPE_CHECKING,
 )
@@ -124,11 +125,11 @@ class NoopCatalog(Catalog):
         raise NotImplementedError
 
     @override
-    def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
+    def list_tables(self, namespace: str | Identifier) -> Iterator[Identifier]:
         raise NotImplementedError
 
     @override
-    def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
+    def list_namespaces(self, namespace: str | Identifier = ()) -> Iterator[Identifier]:
         raise NotImplementedError
 
     @override
@@ -142,7 +143,7 @@ class NoopCatalog(Catalog):
         raise NotImplementedError
 
     @override
-    def list_views(self, namespace: str | Identifier) -> list[Identifier]:
+    def list_views(self, namespace: str | Identifier) -> Iterator[Identifier]:
         raise NotImplementedError
 
     @override
