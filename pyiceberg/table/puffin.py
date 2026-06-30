@@ -29,7 +29,7 @@ MAGIC_BYTES = b"PFA1"
 
 
 class PuffinBlobMetadata(IcebergBaseModel):
-    type: Literal["deletion-vector-v1"] = Field()
+    type: Literal["apache-datasketches-theta-v1", "deletion-vector-v1"] = Field()
     fields: list[int] = Field()
     snapshot_id: int = Field(alias="snapshot-id")
     sequence_number: int = Field(alias="sequence-number")
@@ -65,7 +65,7 @@ class PuffinFile:
         footer_payload_size_int = int.from_bytes(puffin[-12:-8], byteorder="little")
 
         self.footer = Footer.model_validate_json(puffin[-(footer_payload_size_int + 12) : -12])
-        self._payload = puffin[8:]
+        self._payload = puffin
 
     def get_blob_payload(self, blob: PuffinBlobMetadata) -> bytes:
         return self._payload[blob.offset : blob.offset + blob.length]

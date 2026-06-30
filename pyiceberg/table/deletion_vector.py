@@ -77,11 +77,17 @@ class DeletionVector:
         return self._bitmaps_to_chunked_array(self._bitmaps)
 
 
+def _extract_vector_payload(blob_payload: bytes) -> bytes:
+    """Strip deletion-vector-v1 blob framing: length(4 big-endian) + DV magic(4) ... CRC(4 big-endian)."""
+    length_prefix = int.from_bytes(blob_payload[0:4], "big")
+    return blob_payload[8 : 4 + length_prefix]
+
+
 def deletion_vectors_from_puffin_file(puffin_file: PuffinFile) -> list[DeletionVector]:
     return [
         DeletionVector(
             referenced_data_file=blob.properties[PROPERTY_REFERENCED_DATA_FILE],
-            bitmaps=DeletionVector._deserialize_bitmap(puffin_file.get_blob_payload(blob)),
+            bitmaps=DeletionVector._deserialize_bitmap(_extract_vector_payload(puffin_file.get_blob_payload(blob))),
         )
         for blob in puffin_file.footer.blobs
     ]

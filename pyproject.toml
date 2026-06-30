@@ -98,6 +98,7 @@ datafusion = ["datafusion>=52,<53"]
 gcp-auth = ["google-auth>=2.4.0"]
 entra-auth = ["azure-identity>=1.25.1"]
 geoarrow = ["geoarrow-pyarrow>=0.2.0"]
+datasketches = ["datasketches>=3.4.0,<6.0.0"]
 
 [dependency-groups]
 dev = [
@@ -124,6 +125,7 @@ dev = [
     "papermill>=2.6.0",
     "nbformat>=5.10.0",
     "ipykernel>=6.29.0",
+    "datasketches>=3.4.0,<6.0.0",
 ]
 # for mkdocs
 docs = [
