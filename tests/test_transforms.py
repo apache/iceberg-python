@@ -101,6 +101,8 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IntegerType,
     LongType,
     NestedField,
@@ -253,6 +255,11 @@ def test_identity_transform_unknown_type() -> None:
     assert IdentityTransform().result_type(UnknownType()) == UnknownType()
     assert IdentityTransform().transform(UnknownType())(None) is None
     assert IdentityTransform().to_human_string(UnknownType(), None) == "null"
+
+
+@pytest.mark.parametrize("type_var", [GeometryType(), GeographyType()])
+def test_identity_can_transform_unsupported_type(type_var: PrimitiveType) -> None:
+    assert not IdentityTransform().can_transform(type_var)
 
 
 def test_string_with_surrogate_pair() -> None:
