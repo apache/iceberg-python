@@ -73,6 +73,7 @@ from pyiceberg.io.pyarrow import (
     _ConvertToArrowSchema,
     _determine_partitions,
     _primitive_to_physical,
+    _pyarrow_table_ensure_non_dictionary_types,
     _read_deletes,
     _task_to_record_batches,
     _to_requested_schema,
@@ -1299,6 +1300,47 @@ def test_projection_concat_files(schema_int: Schema, file_int: str) -> None:
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 6
     assert repr(result_table.schema) == "id: int32"
+
+
+def test_arrow_scan_to_table_with_mixed_dictionary_and_plain_strings() -> None:
+    schema = Schema(NestedField(1, "foo", StringType(), required=False))
+    scan = ArrowScan(
+        table_metadata=TableMetadataV2(
+            location="file://a/b/",
+            last_column_id=1,
+            format_version=2,
+            schemas=[schema],
+            partition_specs=[PartitionSpec()],
+        ),
+        io=PyArrowFileIO(),
+        projected_schema=schema,
+        row_filter=AlwaysTrue(),
+    )
+    values = pa.array(["a"], type=pa.string())
+    batches = iter([pa.record_batch([values], names=["foo"]), pa.record_batch([values.dictionary_encode()], names=["foo"])])
+
+    with patch.object(scan, "to_record_batches", return_value=batches):
+        assert scan.to_table([]).to_pydict() == {"foo": ["a", "a"]}
+
+
+def test_pyarrow_table_ensure_non_dictionary_types_nested() -> None:
+    dictionary_values = pa.array(["a"]).dictionary_encode()
+    table = pa.table(
+        {
+            "struct": pa.StructArray.from_arrays([dictionary_values], names=["value"]),
+            "list": pa.ListArray.from_arrays(pa.array([0, 1]), dictionary_values),
+        }
+    )
+
+    normalized_table = _pyarrow_table_ensure_non_dictionary_types(table)
+
+    assert normalized_table.schema == pa.schema(
+        [
+            pa.field("struct", pa.struct([pa.field("value", pa.string())])),
+            pa.field("list", pa.list_(pa.string())),
+        ]
+    )
+    assert normalized_table.to_pydict() == {"struct": [{"value": "a"}], "list": [["a"]]}
 
 
 def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCatalog) -> None:

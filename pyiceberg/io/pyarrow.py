@@ -1206,6 +1206,37 @@ def _pyarrow_schema_ensure_small_types(schema: pa.Schema) -> pa.Schema:
     return visit_pyarrow(schema, _ConvertToSmallTypes())
 
 
+def _pyarrow_type_ensure_non_dictionary_types(field_type: pa.DataType) -> pa.DataType:
+    if pa.types.is_dictionary(field_type):
+        return _pyarrow_type_ensure_non_dictionary_types(field_type.value_type)
+    elif pa.types.is_struct(field_type):
+        return pa.struct([field.with_type(_pyarrow_type_ensure_non_dictionary_types(field.type)) for field in field_type])
+    elif pa.types.is_list(field_type):
+        return pa.list_(field_type.value_field.with_type(_pyarrow_type_ensure_non_dictionary_types(field_type.value_type)))
+    elif pa.types.is_large_list(field_type):
+        return pa.large_list(field_type.value_field.with_type(_pyarrow_type_ensure_non_dictionary_types(field_type.value_type)))
+    elif pa.types.is_fixed_size_list(field_type):
+        return pa.list_(
+            field_type.value_field.with_type(_pyarrow_type_ensure_non_dictionary_types(field_type.value_type)),
+            field_type.list_size,
+        )
+    elif pa.types.is_map(field_type):
+        return pa.map_(
+            field_type.key_field.with_type(_pyarrow_type_ensure_non_dictionary_types(field_type.key_type)),
+            field_type.item_field.with_type(_pyarrow_type_ensure_non_dictionary_types(field_type.item_type)),
+            keys_sorted=field_type.keys_sorted,
+        )
+    return field_type
+
+
+def _pyarrow_table_ensure_non_dictionary_types(table: pa.Table) -> pa.Table:
+    schema = pa.schema(
+        [field.with_type(_pyarrow_type_ensure_non_dictionary_types(field.type)) for field in table.schema],
+        metadata=table.schema.metadata,
+    )
+    return table.cast(schema) if schema != table.schema else table
+
+
 @singledispatch
 def visit_pyarrow(obj: pa.DataType | pa.Schema, visitor: PyArrowSchemaVisitor[T]) -> T:
     """Apply a pyarrow schema visitor to any point within a schema.
@@ -1804,7 +1835,11 @@ class ArrowScan:
         # Note: cannot use pa.Table.from_batches(itertools.chain([first_batch], batches)))
         #       as different batches can use different schema's (due to large_ types)
         result = pa.concat_tables(
-            (pa.Table.from_batches([batch]) for batch in itertools.chain([first_batch], batches)), promote_options="permissive"
+            (
+                _pyarrow_table_ensure_non_dictionary_types(pa.Table.from_batches([batch]))
+                for batch in itertools.chain([first_batch], batches)
+            ),
+            promote_options="permissive",
         )
 
         return result
