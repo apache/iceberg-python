@@ -1449,8 +1449,19 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema]):
             return StringType()
         elif pa.types.is_date32(primitive):
             return DateType()
-        elif isinstance(primitive, pa.Time64Type) and primitive.unit == "us":
-            return TimeType()
+        elif isinstance(primitive, pa.Time64Type):
+            if primitive.unit == "us":
+                return TimeType()
+            elif primitive.unit == "ns":
+                if self._downcast_ns_timestamp_to_us:
+                    logger.warning("Iceberg does not yet support 'ns' time precision. Downcasting to 'us'.")
+                    return TimeType()
+                else:
+                    raise TypeError(
+                        "Iceberg does not yet support 'ns' time precision. "
+                        "Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically "
+                        "downcast 'ns' to 'us' on write.",
+                    )
         elif pa.types.is_timestamp(primitive):
             primitive = cast(pa.TimestampType, primitive)
             if primitive.unit in ("s", "ms", "us"):
@@ -1968,6 +1979,12 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
                             return values.cast(target_type, safe=False)
                         elif target_type.unit == "us" and values.type.unit in {"s", "ms", "us"}:
                             return values.cast(target_type)
+                    raise ValueError(f"Unsupported schema projection from {values.type} to {target_type}")
+                elif field.field_type == TimeType():
+                    if pa.types.is_time(target_type) and pa.types.is_time(values.type):
+                        # Downcasting of nanoseconds to microseconds
+                        if target_type.unit == "us" and values.type.unit == "ns" and self._downcast_ns_timestamp_to_us:
+                            return values.cast(target_type, safe=False)
                     raise ValueError(f"Unsupported schema projection from {values.type} to {target_type}")
                 elif isinstance(field.field_type, (IntegerType, LongType)):
                     # Cast smaller integer types to target type for cross-platform compatibility
