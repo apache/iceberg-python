@@ -58,6 +58,7 @@ from pyiceberg.utils.parsing import ParseNumberFromBrackets
 from pyiceberg.utils.singleton import Singleton
 
 DECIMAL_REGEX = re.compile(r"decimal\((\d+),\s*(\d+)\)")
+DECIMAL_MAX_PRECISION = 38
 FIXED = "fixed"
 FIXED_PARSER = ParseNumberFromBrackets(FIXED)
 
@@ -324,6 +325,10 @@ class DecimalType(PrimitiveType):
     root: tuple[int, int]
 
     def __init__(self, precision: int, scale: int) -> None:
+        if precision > DECIMAL_MAX_PRECISION:
+            raise ValidationError(
+                f"Cannot construct decimal with precision {precision}. Max precision is {DECIMAL_MAX_PRECISION}"
+            )
         super().__init__(root=(precision, scale))
 
     @model_serializer
