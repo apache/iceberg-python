@@ -52,6 +52,7 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
 )
+from tests.integration.test_writes.utils import with_environment_context_tuples
 
 TABLE_SCHEMA = Schema(
     NestedField(field_id=1, name="bool", field_type=BooleanType(), required=False),
@@ -267,30 +268,34 @@ def test_inspect_snapshots(
     assert file_size > 0
 
     # Append
-    assert df["summary"][0].as_py() == [
-        ("added-files-size", str(file_size)),
-        ("added-data-files", "1"),
-        ("added-records", "3"),
-        ("total-data-files", "1"),
-        ("total-delete-files", "0"),
-        ("total-records", "3"),
-        ("total-files-size", str(file_size)),
-        ("total-position-deletes", "0"),
-        ("total-equality-deletes", "0"),
-    ]
+    assert df["summary"][0].as_py() == with_environment_context_tuples(
+        [
+            ("added-files-size", str(file_size)),
+            ("added-data-files", "1"),
+            ("added-records", "3"),
+            ("total-data-files", "1"),
+            ("total-delete-files", "0"),
+            ("total-records", "3"),
+            ("total-files-size", str(file_size)),
+            ("total-position-deletes", "0"),
+            ("total-equality-deletes", "0"),
+        ]
+    )
 
     # Delete
-    assert df["summary"][1].as_py() == [
-        ("removed-files-size", str(file_size)),
-        ("deleted-data-files", "1"),
-        ("deleted-records", "3"),
-        ("total-data-files", "0"),
-        ("total-delete-files", "0"),
-        ("total-records", "0"),
-        ("total-files-size", "0"),
-        ("total-position-deletes", "0"),
-        ("total-equality-deletes", "0"),
-    ]
+    assert df["summary"][1].as_py() == with_environment_context_tuples(
+        [
+            ("removed-files-size", str(file_size)),
+            ("deleted-data-files", "1"),
+            ("deleted-records", "3"),
+            ("total-data-files", "0"),
+            ("total-delete-files", "0"),
+            ("total-records", "0"),
+            ("total-files-size", "0"),
+            ("total-position-deletes", "0"),
+            ("total-equality-deletes", "0"),
+        ]
+    )
 
     lhs = spark.table(f"{identifier}.snapshots").toPandas()
     rhs = df.to_pandas()

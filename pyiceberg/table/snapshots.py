@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import Field, PrivateAttr, model_serializer
 
+from pyiceberg.environment_context import EnvironmentContext
 from pyiceberg.io import FileIO
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, _manifests
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
@@ -401,6 +402,9 @@ def update_snapshot_summaries(summary: Summary, previous_summary: Mapping[str, s
         added_property=ADDED_EQUALITY_DELETES,
         removed_property=REMOVED_EQUALITY_DELETES,
     )
+
+    for key, value in EnvironmentContext.get().items():
+        summary[key] = value
 
     return summary
 
