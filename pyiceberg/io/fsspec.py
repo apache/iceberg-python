@@ -139,6 +139,12 @@ class S3V4RestSigner(S3RequestSigner):
 
         signer_headers.update(get_header_properties(self.properties))
 
+        # Some S3-compatible signer services reject requests carrying Expect: 100-continue.
+        # Strip this transport hint before asking the service to sign request headers.
+        for header in list(request.headers):
+            if header.lower() == "expect":
+                del request.headers[header]
+
         signer_body = {
             "method": request.method,
             "region": request.context["client_region"],
