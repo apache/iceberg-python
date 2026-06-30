@@ -894,6 +894,36 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         """
         return self._remove_ref_snapshot(ref_name=tag_name)
 
+    def replace_tag(self, tag_name: str, snapshot_id: int) -> ManageSnapshots:
+        """
+        Replace the tag with the given name to point to the specified snapshot.
+
+        Args:
+            tag_name (str): Tag to replace
+            snapshot_id (int): new snapshot id for the given tag
+        Returns:
+            This for method chaining
+        """
+        self._commit_if_ref_updates_exist()
+
+        refs = self._transaction.table_metadata.refs
+        if tag_name not in refs:
+            raise ValueError(f"Tag does not exist: {tag_name}")
+
+        ref = refs[tag_name]
+        if ref.snapshot_ref_type != SnapshotRefType.TAG:
+            raise ValueError(f"Ref {tag_name} is not a tag")
+
+        update, requirement = self._transaction._set_ref_snapshot(
+            snapshot_id=snapshot_id,
+            ref_name=tag_name,
+            type=SnapshotRefType.TAG,
+            max_ref_age_ms=ref.max_ref_age_ms,
+        )
+        self._updates += update
+        self._requirements += requirement
+        return self
+
     def create_branch(
         self,
         snapshot_id: int,
