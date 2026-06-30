@@ -47,10 +47,13 @@ def _validation_history(
 ) -> tuple[list[ManifestFile], set[int]]:
     """Return newly added manifests and snapshot IDs between the starting snapshot and parent snapshot.
 
+    Walks from to_snapshot backwards towards from_snapshot, collecting manifests from
+    snapshots whose operations match. from_snapshot is excluded from results.
+
     Args:
         table: Table to get the history from
-        from_snapshot: Parent snapshot to get the history from
-        to_snapshot: Starting snapshot
+        from_snapshot: Snapshot where the walk stops (exclusive)
+        to_snapshot: Snapshot where the walk starts
         matching_operations: Operations to match on
         manifest_content_filter: Manifest content type to filter
 
@@ -60,11 +63,17 @@ def _validation_history(
     Returns:
         List of manifest files and set of snapshots ID's matching conditions
     """
+    if from_snapshot.snapshot_id == to_snapshot.snapshot_id:
+        return [], set()
+
     manifests_files: list[ManifestFile] = []
     snapshots: set[int] = set()
 
     last_snapshot = None
     for snapshot in ancestors_between(from_snapshot, to_snapshot, table.metadata):
+        if snapshot.snapshot_id == from_snapshot.snapshot_id:
+            last_snapshot = snapshot
+            break
         last_snapshot = snapshot
         summary = snapshot.summary
         if summary is None:
@@ -73,7 +82,6 @@ def _validation_history(
             continue
 
         snapshots.add(snapshot.snapshot_id)
-        # TODO: Maybe do the IO in a separate thread at some point, and collect at the bottom (we can easily merge the sets
         manifests_files.extend(
             [
                 manifest
@@ -82,7 +90,7 @@ def _validation_history(
             ]
         )
 
-    if last_snapshot is not None and last_snapshot.snapshot_id != from_snapshot.snapshot_id:
+    if last_snapshot is None or last_snapshot.snapshot_id != from_snapshot.snapshot_id:
         raise ValidationException("No matching snapshot found.")
 
     return manifests_files, snapshots
