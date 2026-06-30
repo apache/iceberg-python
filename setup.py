@@ -37,40 +37,46 @@ class sdist(_sdist):
 
 
 allowed_to_fail = os.environ.get("CIBUILDWHEEL", "0") != "1"
+# Allow skipping Cython extension build for GCC version compatibility issues (#3259)
+skip_cython = os.environ.get("PYICEBERG_SKIP_CYTHON", "0") == "1"
 
 ext_modules = []
 
-try:
-    import Cython.Compiler.Options
-    from Cython.Build import cythonize
+if not skip_cython:
+    try:
+        import Cython.Compiler.Options
+        from Cython.Build import cythonize
 
-    Cython.Compiler.Options.annotate = True
+        Cython.Compiler.Options.annotate = True
 
-    if os.name == "nt":  # Windows
-        extra_compile_args = ["/O2"]
-    else:  # UNIX-based systems (Linux, macOS)
-        extra_compile_args = ["-O3"]
+        if os.name == "nt":  # Windows
+            extra_compile_args = ["/O2"]
+        else:  # UNIX-based systems (Linux, macOS)
+            extra_compile_args = ["-O3"]
+            # Suppress warnings that may be treated as errors on newer GCC versions (>= 13.x)
+            # to ensure compatibility with systems that don't have GCC 12.x (#3259)
+            extra_compile_args.extend(["-Wno-error=implicit-function-declaration"])
 
-    package_path = "pyiceberg"
+        package_path = "pyiceberg"
 
-    extensions = [
-        Extension(
-            "pyiceberg.avro.decoder_fast",
-            [os.path.join(package_path, "avro", "decoder_fast.pyx")],
-            extra_compile_args=extra_compile_args,
-            language="c",
+        extensions = [
+            Extension(
+                "pyiceberg.avro.decoder_fast",
+                [os.path.join(package_path, "avro", "decoder_fast.pyx")],
+                extra_compile_args=extra_compile_args,
+                language="c",
+            )
+        ]
+
+        ext_modules = cythonize(
+            extensions,
+            include_path=[package_path],
+            compiler_directives={"language_level": "3"},
+            annotate=True,
         )
-    ]
-
-    ext_modules = cythonize(
-        extensions,
-        include_path=[package_path],
-        compiler_directives={"language_level": "3"},
-        annotate=True,
-    )
-except Exception:
-    if not allowed_to_fail:
-        raise
+    except Exception:
+        if not allowed_to_fail:
+            raise
 
 pyiceberg_packages = find_packages(include=["pyiceberg*"])
 vendor_packages = find_packages(where="vendor", include=["fb303", "hive_metastore"])
