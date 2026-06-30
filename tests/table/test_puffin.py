@@ -15,8 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 from os import path
+from pathlib import Path
 
-from pyiceberg.table.puffin import PuffinFile
+import pytest
+
+from pyiceberg import __version__
+from pyiceberg.io.pyarrow import PyArrowFileIO
+from pyiceberg.table.deletion_vector import DeletionVector, deletion_vectors_from_puffin_file
+from pyiceberg.table.puffin import MAGIC_BYTES, PuffinFile, PuffinWriter
 
 
 def _open_file(file: str) -> bytes:
@@ -55,3 +61,109 @@ def test_read_two_blobs_uncompressed() -> None:
     assert pf.get_blob_payload(blob2) == (
         b"some blob \x00 binary data \xf0\x9f\xa4\xaf that is not very very very very very very long, is it?"
     )
+
+
+def _write(tmp_path: Path, *deletion_vectors: DeletionVector, created_by: str | None = None) -> Path:
+    puffin_path = tmp_path / "test.puffin"
+    with PuffinWriter(PyArrowFileIO().new_output(str(puffin_path)), created_by=created_by) as writer:
+        for dv in deletion_vectors:
+            writer.add_blob(dv.to_blob())
+    return puffin_path
+
+
+def test_puffin_writer_round_trips_single_blob(tmp_path: Path) -> None:
+    positions = [0, 1, 5, (1 << 32) + 7]
+    puffin_path = _write(tmp_path, DeletionVector.from_positions("file.parquet", positions))
+
+    reader = PuffinFile(puffin_path.read_bytes())
+    dvs = deletion_vectors_from_puffin_file(reader)
+
+    assert len(dvs) == 1
+    assert dvs[0].referenced_data_file == "file.parquet"
+    assert dvs[0].to_vector().to_pylist() == sorted(positions)
+
+
+def test_puffin_writer_round_trips_multiple_blobs(tmp_path: Path) -> None:
+    puffin_path = _write(
+        tmp_path,
+        DeletionVector.from_positions("file1.parquet", [1, 2, 3]),
+        DeletionVector.from_positions("file2.parquet", [4, 5, 6]),
+    )
+
+    reader = PuffinFile(puffin_path.read_bytes())
+    dvs = deletion_vectors_from_puffin_file(reader)
+
+    assert {dv.referenced_data_file: dv.to_vector().to_pylist() for dv in dvs} == {
+        "file1.parquet": [1, 2, 3],
+        "file2.parquet": [4, 5, 6],
+    }
+
+
+def test_puffin_writer_writes_magic_bytes_and_offsets(tmp_path: Path) -> None:
+    puffin_path = _write(tmp_path, DeletionVector.from_positions("file.parquet", [1, 2, 3]))
+    puffin_bytes = puffin_path.read_bytes()
+
+    assert puffin_bytes[:4] == MAGIC_BYTES
+    assert puffin_bytes[-4:] == MAGIC_BYTES
+
+    blob = PuffinFile(puffin_bytes).footer.blobs[0]
+    # PuffinWriter fills in the placeholder offset and length while assembling the file
+    assert blob.offset > 0
+    assert blob.length > 0
+
+
+def test_puffin_writer_default_created_by(tmp_path: Path) -> None:
+    puffin_path = _write(tmp_path, DeletionVector.from_positions("file.parquet", [1]))
+
+    reader = PuffinFile(puffin_path.read_bytes())
+    assert reader.footer.properties["created-by"] == f"PyIceberg version {__version__}"
+
+
+def test_puffin_writer_custom_created_by(tmp_path: Path) -> None:
+    puffin_path = _write(tmp_path, DeletionVector.from_positions("file.parquet", [1]), created_by="my-test-app")
+
+    reader = PuffinFile(puffin_path.read_bytes())
+    assert reader.footer.properties["created-by"] == "my-test-app"
+
+
+def test_puffin_writer_file_size_via_output_file(tmp_path: Path) -> None:
+    puffin_path = tmp_path / "test.puffin"
+    output_file = PyArrowFileIO().new_output(str(puffin_path))
+    with PuffinWriter(output_file) as writer:
+        writer.add_blob(DeletionVector.from_positions("file.parquet", [1, 2, 3]).to_blob())
+
+    assert len(output_file) == len(puffin_path.read_bytes())
+
+
+def test_puffin_writer_empty(tmp_path: Path) -> None:
+    puffin_path = _write(tmp_path)
+
+    reader = PuffinFile(puffin_path.read_bytes())
+    assert reader.footer.blobs == []
+    assert deletion_vectors_from_puffin_file(reader) == []
+
+
+def test_puffin_writer_does_not_write_on_exception(tmp_path: Path) -> None:
+    output_file = PyArrowFileIO().new_output(str(tmp_path / "test.puffin"))
+    writer = PuffinWriter(output_file)
+
+    try:
+        with writer:
+            writer.add_blob(DeletionVector.from_positions("file.parquet", [1]).to_blob())
+            raise ValueError("boom")
+    except ValueError:
+        pass
+
+    assert writer.closed
+    # The body raised, so no half-populated file should have been written.
+    assert not output_file.exists()
+
+
+def test_add_blob_to_closed_writer_raises(tmp_path: Path) -> None:
+    output_file = PyArrowFileIO().new_output(str(tmp_path / "test.puffin"))
+    writer = PuffinWriter(output_file)
+    with writer:
+        writer.add_blob(DeletionVector.from_positions("file.parquet", [1]).to_blob())
+
+    with pytest.raises(RuntimeError, match="Cannot add blob to closed Puffin writer"):
+        writer.add_blob(DeletionVector.from_positions("file.parquet", [2]).to_blob())

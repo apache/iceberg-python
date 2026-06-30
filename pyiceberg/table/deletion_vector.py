@@ -14,19 +14,30 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import io
 import math
+import zlib
+from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 from pyroaring import BitMap, FrozenBitMap
 
-from pyiceberg.table.puffin import PuffinFile
+from pyiceberg.table.puffin import PuffinBlob, PuffinBlobMetadata, PuffinFile
 
 if TYPE_CHECKING:
     import pyarrow as pa
 
 EMPTY_BITMAP = FrozenBitMap()
 MAX_JAVA_SIGNED = int(math.pow(2, 31)) - 1
+# Largest addressable position, mirroring Java's RoaringPositionBitmap.MAX_POSITION
+# (toPosition(Integer.MAX_VALUE - 1, Integer.MIN_VALUE)): the high 32 bits hold the bitmap
+# key and the low 32 bits the position within that bitmap.
+MAX_POSITION = ((MAX_JAVA_SIGNED - 1) << 32) | 0x80000000
 PROPERTY_REFERENCED_DATA_FILE = "referenced-data-file"
+DELETION_VECTOR_MAGIC = b"\xd1\xd3\x39\x64"
+# Reserved field id of the row position (_pos) metadata column, referenced by
+# deletion-vector-v1 blob metadata (Java: MetadataColumns.ROW_POSITION)
+ROW_POSITION_FIELD_ID = 2147483645
 
 
 class DeletionVector:
@@ -36,6 +47,21 @@ class DeletionVector:
     def __init__(self, referenced_data_file: str, bitmaps: list[BitMap]) -> None:
         self.referenced_data_file = referenced_data_file
         self._bitmaps = bitmaps
+
+    @classmethod
+    def from_positions(cls, referenced_data_file: str, positions: Iterable[int]) -> "DeletionVector":
+        bitmaps_by_key: dict[int, BitMap] = {}
+        for position in positions:
+            if position < 0 or position > MAX_POSITION:
+                raise ValueError(f"Invalid position: {position}, must be between 0 and {MAX_POSITION}")
+            bitmaps_by_key.setdefault(position >> 32, BitMap()).add(position & 0xFFFFFFFF)
+
+        if not bitmaps_by_key:
+            raise ValueError("Deletion vector must contain at least one position")
+
+        # Materialize a list indexed by key, padding gaps with the empty bitmap (mirrors _deserialize_bitmap)
+        bitmaps: list[BitMap] = [bitmaps_by_key.get(key, EMPTY_BITMAP) for key in range(max(bitmaps_by_key) + 1)]
+        return cls(referenced_data_file, bitmaps)
 
     @staticmethod
     def _deserialize_bitmap(pl: bytes) -> list[BitMap]:
@@ -68,6 +94,24 @@ class DeletionVector:
         return bitmaps
 
     @staticmethod
+    def _serialize_bitmap(bitmaps: list[BitMap]) -> bytes:
+        # Counterpart of _deserialize_bitmap: number of bitmaps (8 bytes, little-endian), then for each
+        # non-empty bitmap in ascending key order its key (4 bytes, little-endian) and serialized payload.
+        non_empty = [(key, bitmap) for key, bitmap in enumerate(bitmaps) if len(bitmap) > 0]
+
+        with io.BytesIO() as out:
+            out.write(len(non_empty).to_bytes(8, "little"))
+            for key, bitmap in non_empty:
+                if key > MAX_JAVA_SIGNED:
+                    raise ValueError(f"Key {key} is too large, max {MAX_JAVA_SIGNED} to maintain compatibility with Java impl")
+                out.write(key.to_bytes(4, "little"))
+                # Run-length encode before serializing so run-heavy vectors (e.g. contiguous
+                # deletes) stay compact, matching Java's BitmapPositionDeleteIndex.
+                bitmap.run_optimize()
+                out.write(bitmap.serialize())
+            return out.getvalue()
+
+    @staticmethod
     def _bitmaps_to_chunked_array(bitmaps: list[BitMap]) -> "pa.ChunkedArray":
         import pyarrow as pa
 
@@ -75,6 +119,29 @@ class DeletionVector:
 
     def to_vector(self) -> "pa.ChunkedArray":
         return self._bitmaps_to_chunked_array(self._bitmaps)
+
+    def to_blob(self) -> PuffinBlob:
+        vector_payload = self._serialize_bitmap(self._bitmaps)
+
+        # deletion-vector-v1 blob layout: combined length of magic and vector (4 bytes, big-endian),
+        # the DV magic bytes, the serialized vector, and a CRC-32 checksum of magic + vector (4 bytes, big-endian)
+        blob_content = DELETION_VECTOR_MAGIC + vector_payload
+        payload = len(blob_content).to_bytes(4, "big") + blob_content + zlib.crc32(blob_content).to_bytes(4, "big")
+
+        cardinality = sum(len(bitmap) for bitmap in self._bitmaps)
+        metadata = PuffinBlobMetadata(
+            type="deletion-vector-v1",
+            fields=[ROW_POSITION_FIELD_ID],
+            # -1 means the snapshot id and sequence number are inherited at commit time
+            snapshot_id=-1,
+            sequence_number=-1,
+            # offset and length are placeholders; PuffinWriter fills them in when assembling the file
+            offset=0,
+            length=0,
+            properties={PROPERTY_REFERENCED_DATA_FILE: self.referenced_data_file, "cardinality": str(cardinality)},
+            compression_codec=None,
+        )
+        return PuffinBlob(metadata=metadata, payload=payload)
 
 
 def _extract_vector_payload(blob_payload: bytes) -> bytes:

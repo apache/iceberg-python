@@ -14,10 +14,15 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import io
+from dataclasses import dataclass
+from types import TracebackType
 from typing import TYPE_CHECKING
 
 from pydantic import Field
 
+from pyiceberg import __version__
+from pyiceberg.io import OutputFile
 from pyiceberg.typedef import IcebergBaseModel
 from pyiceberg.utils.deprecated import deprecated
 
@@ -75,3 +80,76 @@ class PuffinFile:
         from pyiceberg.table.deletion_vector import deletion_vectors_from_puffin_file  # local import avoids the cycle
 
         return {dv.referenced_data_file: dv.to_vector() for dv in deletion_vectors_from_puffin_file(self)}
+
+
+@dataclass(frozen=True)
+class PuffinBlob:
+    """A blob to write into a Puffin file: its metadata and serialized payload."""
+
+    metadata: PuffinBlobMetadata
+    payload: bytes
+
+
+class PuffinWriter:
+    """Assembles a Puffin file from blobs and writes it to an output file.
+
+    This writer is format-level and blob-agnostic: callers supply already-serialized blobs
+    (for example via DeletionVector.to_blob()). Use it as a context manager; the file is
+    written on exit, after which its size is available via len(output_file).
+    """
+
+    closed: bool
+    _output_file: OutputFile
+    _blobs: list[PuffinBlob]
+    _created_by: str
+
+    def __init__(self, output_file: OutputFile, created_by: str | None = None) -> None:
+        self.closed = False
+        self._output_file = output_file
+        self._blobs = []
+        self._created_by = created_by if created_by is not None else f"PyIceberg version {__version__}"
+
+    def __enter__(self) -> "PuffinWriter":
+        """Open the writer."""
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        """Assemble the Puffin file and write it to the output file."""
+        self.closed = True
+        # If the with-body raised, skip assembling and writing a half-populated file.
+        if exc_type is not None:
+            return
+
+        with io.BytesIO() as out:
+            out.write(MAGIC_BYTES)
+
+            blobs_metadata: list[PuffinBlobMetadata] = []
+            for blob in self._blobs:
+                # offset and length are placeholders on the blob's metadata until the file is assembled here
+                blobs_metadata.append(blob.metadata.model_copy(update={"offset": out.tell(), "length": len(blob.payload)}))
+                out.write(blob.payload)
+
+            footer = Footer(blobs=blobs_metadata, properties={"created-by": self._created_by})
+            footer_payload_bytes = footer.model_dump_json(by_alias=True, exclude_none=True).encode("utf-8")
+
+            out.write(MAGIC_BYTES)
+            out.write(footer_payload_bytes)
+            out.write(len(footer_payload_bytes).to_bytes(4, "little"))
+            out.write((0).to_bytes(4, "little"))  # flags
+            out.write(MAGIC_BYTES)
+
+            puffin_bytes = out.getvalue()
+
+        with self._output_file.create(overwrite=True) as output_stream:
+            output_stream.write(puffin_bytes)
+
+    def add_blob(self, blob: PuffinBlob) -> "PuffinWriter":
+        if self.closed:
+            raise RuntimeError("Cannot add blob to closed Puffin writer")
+        self._blobs.append(blob)
+        return self
