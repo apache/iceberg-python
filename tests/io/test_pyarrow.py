@@ -3084,6 +3084,7 @@ def test__to_requested_schema_timestamps_without_downcast_raises_exception(
         (pa.int8(), IntegerType(), pa.int32()),
         (pa.int16(), IntegerType(), pa.int32()),
         (pa.uint16(), IntegerType(), pa.int32()),
+        (pa.uint32(), IntegerType(), pa.int32()),
         (pa.uint32(), LongType(), pa.int64()),
         (pa.int32(), LongType(), pa.int64()),
     ],
@@ -3107,6 +3108,19 @@ def test__to_requested_schema_integer_promotion(
 
     assert result.schema[0].type == expected_arrow_type
     assert result.column(0).to_pylist() == [1, 2, 3, None]
+
+
+def test__to_requested_schema_uint32_overflow_raises() -> None:
+    """Test that uint32 values exceeding INT32_MAX raise an error rather than wrapping."""
+    requested_schema = Schema(NestedField(1, "col", IntegerType(), required=False))
+    file_schema = requested_schema
+
+    arrow_schema = pa.schema([pa.field("col", pa.uint32())])
+    data = pa.array([2**31], type=pa.uint32())
+    batch = pa.RecordBatch.from_arrays([data], schema=arrow_schema)
+
+    with pytest.raises(pa.lib.ArrowInvalid, match="Integer value .* not in range"):
+        _to_requested_schema(requested_schema, file_schema, batch, downcast_ns_timestamp_to_us=False, include_field_ids=False)
 
 
 def test_pyarrow_file_io_fs_by_scheme_cache() -> None:
