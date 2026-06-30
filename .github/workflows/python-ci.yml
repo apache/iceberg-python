@@ -48,6 +48,7 @@ concurrency:
 jobs:
   lint-and-unit-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       max-parallel: 15
       fail-fast: true
@@ -80,6 +81,7 @@ jobs:
 
   integration-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
     - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
@@ -109,6 +111,7 @@ jobs:
 
   integration-test-s3:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
     - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
@@ -138,6 +141,7 @@ jobs:
 
   integration-test-adls:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
     - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
@@ -167,6 +171,7 @@ jobs:
 
   integration-test-gcs:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
     - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
