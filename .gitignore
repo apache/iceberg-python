@@ -3,6 +3,8 @@
 .cache
 tmp/
 site
+.env
+dev/.env
 
 # intellij files
 .idea
