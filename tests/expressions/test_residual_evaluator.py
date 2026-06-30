@@ -28,6 +28,7 @@ from pyiceberg.expressions import (
     IsNaN,
     IsNull,
     LessThan,
+    LessThanOrEqual,
     NotIn,
     NotNaN,
     NotNull,
@@ -211,7 +212,7 @@ def test_is_not_nan() -> None:
     res_eval = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
 
     residual = res_eval.residual_for(Record(None))
-    assert residual == AlwaysFalse()
+    assert residual == AlwaysTrue()
 
     residual = res_eval.residual_for(Record(2))
     assert residual == AlwaysTrue()
@@ -223,10 +224,24 @@ def test_is_not_nan() -> None:
     res_eval = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
 
     residual = res_eval.residual_for(Record(None))
-    assert residual == AlwaysFalse()
+    assert residual == AlwaysTrue()
 
     residual = res_eval.residual_for(Record(2))
     assert residual == AlwaysTrue()
+
+
+def test_comparison_residual_with_null_partition_value() -> None:
+    # Regression test for https://github.com/apache/iceberg-python/issues/3498
+    # A nullable identity-partitioned column whose partition value is None must not raise a
+    # TypeError when compared against a literal; it should behave like row evaluation, where a
+    # null value never satisfies an ordering predicate.
+    schema = Schema(NestedField(50, "x", IntegerType(), required=False), NestedField(51, "hour", IntegerType()))
+    spec = PartitionSpec(PartitionField(50, 1050, IdentityTransform(), "x_part"))
+
+    for predicate in (LessThan("x", 1), LessThanOrEqual("x", 1), GreaterThan("x", 1), GreaterThanOrEqual("x", 1)):
+        res_eval = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
+        residual = res_eval.residual_for(Record(None))
+        assert residual == AlwaysFalse(), f"null partition value should not match {predicate}"
 
 
 def test_not_in_timestamp() -> None:
