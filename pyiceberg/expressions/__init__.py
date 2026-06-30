@@ -70,6 +70,20 @@ class BooleanExpression(IcebergBaseModel, ABC):
 
         return Or(self, other)
 
+    def __bool__(self) -> bool:
+        """Reject truthiness checks on non-constant expressions.
+
+        Truthiness is only defined for the constant expressions ``AlwaysTrue`` and
+        ``AlwaysFalse``, which override this method. Evaluating a predicate such as
+        ``if EqualTo("x", 1):`` is almost always a mistake; use ``~expr`` to negate
+        an expression or compare explicitly against ``AlwaysTrue()``/``AlwaysFalse()``.
+        """
+        raise TypeError(
+            f"The truth value of {type(self).__name__} is ambiguous. "
+            "Truthiness is only defined for AlwaysTrue() and AlwaysFalse(); "
+            "use ~expr to negate an expression or compare against AlwaysTrue()/AlwaysFalse()."
+        )
+
     @model_validator(mode="wrap")
     @classmethod
     def handle_primitive_type(cls, v: Any, handler: ValidatorFunctionWrapHandler) -> BooleanExpression:
@@ -455,6 +469,10 @@ class AlwaysTrue(BooleanExpression, Singleton, IcebergRootModel[bool]):
         """Transform the Expression into its negated version."""
         return AlwaysFalse()
 
+    def __bool__(self) -> bool:
+        """Return True, the constant value of this expression."""
+        return True
+
     def __str__(self) -> str:
         """Return the string representation of the AlwaysTrue class."""
         return "AlwaysTrue()"
@@ -472,6 +490,10 @@ class AlwaysFalse(BooleanExpression, Singleton, IcebergRootModel[bool]):
     def __invert__(self) -> AlwaysTrue:
         """Transform the Expression into its negated version."""
         return AlwaysTrue()
+
+    def __bool__(self) -> bool:
+        """Return False, the constant value of this expression."""
+        return False
 
     def __str__(self) -> str:
         """Return the string representation of the AlwaysFalse class."""
