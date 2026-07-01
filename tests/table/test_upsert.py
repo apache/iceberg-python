@@ -323,8 +323,27 @@ def test_key_cols_misaligned(catalog: Catalog) -> None:
 
     df_src = ctx.sql("select 1 as item_id, date '2021-05-01' as order_date, 'B' as order_type").to_arrow_table()
 
-    with pytest.raises(Exception, match=r"""Field ".*" does not exist in schema"""):
+    with pytest.raises(ValueError, match="PyArrow table contains more columns: item_id"):
         table.upsert(df=df_src, join_cols=["order_id"])
+
+
+def test_key_cols_source_only_join_col(catalog: Catalog) -> None:
+    """
+    tests join column present in the source dataframe but missing from the table
+    """
+
+    identifier = "default.test_key_cols_source_only_join_col"
+    _drop_table(catalog, identifier)
+
+    ctx = SessionContext()
+
+    df = ctx.sql("select 1 as order_id, date '2021-01-01' as order_date, 'A' as order_type").to_arrow_table()
+    table = catalog.create_table(identifier, df.schema)
+
+    df_src = ctx.sql("select 1 as order_id, 10 as item_id, date '2021-05-01' as order_date, 'B' as order_type").to_arrow_table()
+
+    with pytest.raises(ValueError, match="Join column 'item_id' does not exist in the table schema"):
+        table.upsert(df=df_src, join_cols=["item_id"])
 
 
 def test_upsert_with_identifier_fields(catalog: Catalog) -> None:
@@ -666,7 +685,11 @@ def test_upsert_with_struct_field_as_join_key(catalog: Catalog) -> None:
     )
 
     with pytest.raises(
-        pa.lib.ArrowNotImplementedError, match="Keys of type struct<sub1: large_string not null, sub2: large_string not null>"
+        ValueError,
+        match=(
+            "Nested column 'nested_type' of type 'struct<sub1: large_string not null, sub2: large_string not null>' "
+            "cannot be used as a join key in upsert"
+        ),
     ):
         _ = tbl.upsert(update_data, join_cols=["nested_type"])
 
@@ -888,3 +911,58 @@ def test_upsert_snapshot_properties(catalog: Catalog) -> None:
     for snapshot in snapshots[initial_snapshot_count:]:
         assert snapshot.summary is not None
         assert snapshot.summary.additional_properties.get("test_prop") == "test_value"
+
+
+@pytest.mark.parametrize(
+    "arrow_type, expected_error, match",
+    [
+        (pa.float32(), ValueError, "Floating point column 'k' cannot be used as a join key in upsert"),
+        (pa.float64(), ValueError, "Floating point column 'k' cannot be used as a join key in upsert"),
+        (
+            pa.struct([("a", pa.int32())]),
+            ValueError,
+            "Nested column 'k' of type 'struct<a: int32>' cannot be used as a join key in upsert",
+        ),
+        (
+            pa.list_(pa.int32()),
+            ValueError,
+            "Nested column 'k' of type 'large_list<element: int32>' cannot be used as a join key in upsert",
+        ),
+        (
+            pa.dictionary(pa.int32(), pa.string()),
+            NotImplementedError,
+            "Dictionary-encoded column 'k' is not currently supported as a join key in upsert",
+        ),
+        (pa.null(), ValueError, "Null-type column 'k' cannot be used as a join key in upsert"),
+        (pa.uuid(), NotImplementedError, "is not currently supported as a join key in upsert"),
+    ],
+    ids=["float32", "float64", "struct", "list", "dictionary", "null", "uuid"],
+)
+def test_upsert_unsupported_join_column_types(
+    catalog: Catalog, arrow_type: pa.DataType, expected_error: type[Exception], match: str
+) -> None:
+    """Upsert must clearly reject types that are unreliable (floats) or unsupported (extensions/complex) as join keys."""
+    identifier = "default.test_upsert_unsupported_join_column_types"
+    try:
+        catalog.drop_table(identifier)
+    except NoSuchTableError:
+        pass
+
+    # Define the table schema to be compatible with the arrow_type but still trigger our check
+    if pa.types.is_dictionary(arrow_type):
+        table_type = pa.string()
+    elif pa.types.is_null(arrow_type):
+        table_type = pa.int32()
+    else:
+        table_type = arrow_type
+
+    table = catalog.create_table(identifier, pa.schema([("k", table_type), ("payload", pa.string())]))
+
+    # Source has the "bad" type
+    source = pa.Table.from_pylist(
+        [{"k": None, "payload": "val"}],
+        schema=pa.schema([("k", arrow_type), ("payload", pa.string())]),
+    )
+
+    with pytest.raises(expected_error, match=match):
+        table.upsert(source, join_cols=["k"])
