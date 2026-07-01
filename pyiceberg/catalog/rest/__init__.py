@@ -68,13 +68,18 @@ from pyiceberg.io import (
     FileIO,
     load_file_io,
 )
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec, assign_fresh_partition_spec_ids
+from pyiceberg.partitioning import (
+    UNPARTITIONED_PARTITION_SPEC,
+    PartitionSpec,
+    assign_fresh_partition_spec_ids,
+)
 from pyiceberg.schema import Schema, assign_fresh_schema_ids
 from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
     CreateTableTransaction,
     FileScanTask,
+    ReplaceTableTransaction,
     StagedTable,
     Table,
     TableIdentifier,
@@ -966,6 +971,19 @@ class RestCatalog(Catalog):
         )
         staged_table = self._response_to_staged_table(self.identifier_to_tuple(identifier), table_response)
         return CreateTableTransaction(staged_table)
+
+    @override
+    @retry(**_RETRY_ARGS)
+    def replace_table_transaction(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        location: str | None = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> ReplaceTableTransaction:
+        return super().replace_table_transaction(identifier, schema, location, partition_spec, sort_order, properties)
 
     @override
     @retry(**_RETRY_ARGS)

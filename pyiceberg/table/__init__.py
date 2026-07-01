@@ -65,10 +65,13 @@ from pyiceberg.table.update import (
     AddSchemaUpdate,
     AddSortOrderUpdate,
     AssertCreate,
+    AssertLastAssignedFieldId,
+    AssertLastAssignedPartitionId,
     AssertRefSnapshotId,
     AssertTableUUID,
     AssignUUIDUpdate,
     RemovePropertiesUpdate,
+    RemoveSnapshotRefUpdate,
     SetCurrentSchemaUpdate,
     SetDefaultSortOrderUpdate,
     SetDefaultSpecUpdate,
@@ -1105,6 +1108,150 @@ class CreateTableTransaction(Transaction):
             self._table._do_commit(  # pylint: disable=W0212
                 updates=self._updates,
                 requirements=(AssertCreate(),),
+            )
+
+        self._updates = ()
+        self._requirements = ()
+
+        return self._table
+
+
+class ReplaceTableTransaction(Transaction):
+    """A transaction that replaces an existing table's schema, spec, sort order, location, and properties.
+
+    The existing table UUID, snapshots, snapshot log, metadata log, and history are preserved.
+    The "main" branch ref is removed (current-snapshot-id set to -1), and new
+    schema/spec/sort-order/location/properties are applied.
+    """
+
+    def __init__(
+        self,
+        table: StagedTable,
+        new_schema: Schema,
+        new_spec: PartitionSpec,
+        new_sort_order: SortOrder,
+        new_location: str,
+        new_properties: Properties,
+    ) -> None:
+        super().__init__(table, autocommit=False)
+        self._initial_changes(table.metadata, new_schema, new_spec, new_sort_order, new_location, new_properties)
+
+    def _initial_changes(
+        self,
+        table_metadata: TableMetadata,
+        new_schema: Schema,
+        new_spec: PartitionSpec,
+        new_sort_order: SortOrder,
+        new_location: str,
+        new_properties: Properties,
+    ) -> None:
+        """Set the initial changes that transform the existing table into the replacement.
+
+        Always emits `SetCurrentSchema` / `SetDefaultPartitionSpec` / `SetDefaultSortOrder`
+        (even when the resulting id is reused) so the request body unambiguously signals a
+        replace. Bumps `format-version` when the new properties request it.
+        """
+        # Upgrade format-version if requested via properties.
+        requested_format_version_str = new_properties.get(TableProperties.FORMAT_VERSION)
+        if requested_format_version_str is not None:
+            requested_format_version = int(requested_format_version_str)
+            if requested_format_version > table_metadata.format_version:
+                self._updates += (UpgradeFormatVersionUpdate(format_version=requested_format_version),)
+
+        # Remove the main branch ref to clear the current snapshot.
+        self._updates += (RemoveSnapshotRefUpdate(ref_name=MAIN_BRANCH),)
+
+        # Schema: reuse an existing schema_id if structurally identical, else add a new one
+        # with a fresh schema_id (max + 1, matching UpdateSchema's convention).
+        existing_schema_id = self._find_matching_schema_id(table_metadata, new_schema)
+        if existing_schema_id is not None:
+            self._updates += (SetCurrentSchemaUpdate(schema_id=existing_schema_id),)
+        else:
+            next_schema_id = max((s.schema_id for s in table_metadata.schemas), default=-1) + 1
+            schema_with_fresh_id = new_schema.model_copy(update={"schema_id": next_schema_id})
+            self._updates += (
+                AddSchemaUpdate(schema_=schema_with_fresh_id),
+                SetCurrentSchemaUpdate(schema_id=-1),
+            )
+
+        # Partition spec: same reuse-or-add pattern. Assign a fresh spec_id on add to avoid
+        # collisions with existing specs (AddPartitionSpecUpdate refuses duplicate IDs).
+        effective_spec = UNPARTITIONED_PARTITION_SPEC if new_spec.is_unpartitioned() else new_spec
+        existing_spec_id = self._find_matching_spec_id(table_metadata, effective_spec)
+        if existing_spec_id is not None:
+            self._updates += (SetDefaultSpecUpdate(spec_id=existing_spec_id),)
+        else:
+            next_spec_id = max((s.spec_id for s in table_metadata.partition_specs), default=-1) + 1
+            spec_with_fresh_id = PartitionSpec(*effective_spec.fields, spec_id=next_spec_id)
+            self._updates += (
+                AddPartitionSpecUpdate(spec=spec_with_fresh_id),
+                SetDefaultSpecUpdate(spec_id=-1),
+            )
+
+        # Sort order: same reuse-or-add pattern with fresh order_id on add.
+        effective_sort_order = UNSORTED_SORT_ORDER if new_sort_order.is_unsorted else new_sort_order
+        existing_order_id = self._find_matching_sort_order_id(table_metadata, effective_sort_order)
+        if existing_order_id is not None:
+            self._updates += (SetDefaultSortOrderUpdate(sort_order_id=existing_order_id),)
+        else:
+            next_order_id = max((o.order_id for o in table_metadata.sort_orders), default=-1) + 1
+            sort_order_with_fresh_id = SortOrder(*effective_sort_order.fields, order_id=next_order_id)
+            self._updates += (
+                AddSortOrderUpdate(sort_order=sort_order_with_fresh_id),
+                SetDefaultSortOrderUpdate(sort_order_id=-1),
+            )
+
+        # Set location if changed.
+        if new_location != table_metadata.location:
+            self._updates += (SetLocationUpdate(location=new_location),)
+
+        # Merge properties (SetPropertiesUpdate merges onto existing properties).
+        # Strip `format-version` so it does not get persisted as a regular property.
+        persisted_properties = {k: v for k, v in new_properties.items() if k != TableProperties.FORMAT_VERSION}
+        if persisted_properties:
+            self._updates += (SetPropertiesUpdate(updates=persisted_properties),)
+
+    @staticmethod
+    def _find_matching_schema_id(table_metadata: TableMetadata, schema: Schema) -> int | None:
+        """Find an existing schema structurally equal to the given one, returning its schema_id or None."""
+        for existing in table_metadata.schemas:
+            if existing == schema:
+                return existing.schema_id
+        return None
+
+    @staticmethod
+    def _find_matching_spec_id(table_metadata: TableMetadata, spec: PartitionSpec) -> int | None:
+        """Find an existing partition spec with the same fields, returning its spec_id or None."""
+        for existing in table_metadata.partition_specs:
+            if existing.fields == spec.fields:
+                return existing.spec_id
+        return None
+
+    @staticmethod
+    def _find_matching_sort_order_id(table_metadata: TableMetadata, sort_order: SortOrder) -> int | None:
+        """Find an existing sort order with the same fields, returning its order_id or None."""
+        for existing in table_metadata.sort_orders:
+            if existing.fields == sort_order.fields:
+                return existing.order_id
+        return None
+
+    def commit_transaction(self) -> Table:
+        """Commit the changes to the catalog.
+
+        Returns:
+            The table with the updates applied.
+        """
+        if len(self._updates) > 0:
+            base = self._table.metadata
+            requirements: tuple[TableRequirement, ...] = (
+                AssertTableUUID(uuid=base.table_uuid),
+                AssertLastAssignedFieldId(last_assigned_field_id=base.last_column_id),
+            )
+            if base.last_partition_id is not None:
+                requirements += (AssertLastAssignedPartitionId(last_assigned_partition_id=base.last_partition_id),)
+            self._table._do_commit(  # pylint: disable=W0212
+                updates=self._updates,
+                requirements=requirements,
             )
 
         self._updates = ()

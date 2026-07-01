@@ -28,6 +28,7 @@ from pyiceberg.schema import Schema
 from pyiceberg.table import (
     CommitTableResponse,
     CreateTableTransaction,
+    ReplaceTableTransaction,
     Table,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
@@ -66,6 +67,18 @@ class NoopCatalog(Catalog):
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
     ) -> CreateTableTransaction:
+        raise NotImplementedError
+
+    @override
+    def replace_table_transaction(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        location: str | None = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> ReplaceTableTransaction:
         raise NotImplementedError
 
     @override

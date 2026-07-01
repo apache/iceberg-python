@@ -21,6 +21,7 @@ from collections.abc import Generator
 from pathlib import Path, PosixPath
 from typing import Any
 
+import pyarrow as pa
 import pytest
 from pytest_lazy_fixtures import lf
 
@@ -88,7 +89,15 @@ def sqlite_catalog_file(warehouse: Path) -> Generator[Catalog, None, None]:
 
 @pytest.fixture(scope="function")
 def rest_catalog() -> Generator[Catalog, None, None]:
-    test_catalog = RestCatalog("rest", uri="http://localhost:8181")
+    test_catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": "http://localhost:8181",
+            "s3.endpoint": "http://localhost:9000",
+            "s3.access-key-id": "admin",
+            "s3.secret-access-key": "password",
+        },
+    )
 
     yield test_catalog
 
@@ -917,3 +926,36 @@ def test_load_missing_table(test_catalog: Catalog, database_name: str, table_nam
 
     with pytest.raises(NoSuchTableError):
         test_catalog.load_table(identifier)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("test_catalog", CATALOGS)
+def test_replace_table_transaction(test_catalog: Catalog, database_name: str, table_name: str) -> None:
+    test_catalog.create_namespace(database_name)
+    identifier = (database_name, table_name)
+
+    old_data = pa.Table.from_pydict(
+        {"id": [1], "data": ["old"]},
+        schema=pa.schema([pa.field("id", pa.int64()), pa.field("data", pa.large_string())]),
+    )
+    original = test_catalog.create_table(identifier, schema=old_data.schema)
+    original.append(old_data)
+    old_snapshot_id = test_catalog.load_table(identifier).current_snapshot().snapshot_id  # type: ignore[union-attr]
+
+    new_data = pa.Table.from_pydict(
+        {"id": [10, 20], "name": ["alice", "bob"]},
+        schema=pa.schema([pa.field("id", pa.int64()), pa.field("name", pa.large_string())]),
+    )
+    with test_catalog.replace_table_transaction(identifier, schema=new_data.schema) as txn:
+        txn.append(new_data)
+
+    replaced = test_catalog.load_table(identifier)
+    assert replaced.metadata.table_uuid == original.metadata.table_uuid
+    assert replaced.current_snapshot() is not None
+    assert replaced.current_snapshot().snapshot_id != old_snapshot_id  # type: ignore[union-attr]
+    assert any(s.snapshot_id == old_snapshot_id for s in replaced.metadata.snapshots)
+    assert replaced.scan().to_arrow().num_rows == 2
+    # Time-travel back to the pre-replace snapshot returns the original row.
+    old_via_time_travel = replaced.scan(snapshot_id=old_snapshot_id).to_arrow()
+    assert old_via_time_travel.num_rows == 1
+    assert old_via_time_travel.column("id").to_pylist() == [1]
