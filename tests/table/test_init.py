@@ -33,7 +33,7 @@ from pyiceberg.expressions import (
     In,
 )
 from pyiceberg.expressions.visitors import bind
-from pyiceberg.io import PY_IO_IMPL, load_file_io
+from pyiceberg.io import PY_IO_IMPL, FileIO, load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
@@ -1989,3 +1989,24 @@ def test_build_large_partition_predicate(table_v2: Table) -> None:
         )
 
     bind(table_v2.metadata.schema(), expr, case_sensitive=True)
+
+
+def test_static_table_forwards_location_to_table_file_io(metadata_location: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    seen_locations: list[str | None] = []
+    real_load_file_io = load_file_io
+
+    def _spy(*args: Any, **kwargs: Any) -> FileIO:
+        if "location" in kwargs:
+            seen_locations.append(kwargs["location"])
+        elif len(args) >= 2:
+            seen_locations.append(args[1])
+        else:
+            seen_locations.append(None)
+        return real_load_file_io(*args, **kwargs)
+
+    monkeypatch.setattr("pyiceberg.table.load_file_io", _spy)
+
+    StaticTable.from_metadata(metadata_location)
+
+    assert seen_locations, "expected at least one load_file_io call"
+    assert all(loc is not None for loc in seen_locations), f"load_file_io called without a location: {seen_locations}"
