@@ -79,7 +79,7 @@ lives under `pyiceberg/`, organized by concern rather than by engine:
 - One concern per PR. Keep unrelated formatting/import churn out of feature PRs.
 - Keep the first version of a PR minimal; defer optimizations and edge cases to follow-ups.
 - Commit messages explain the *what* and *why*, not line-by-line implementation. Be as succinct as possible.
-- The Apache License header is required on every new source file (enforced by `./dev/check-license` and pre-commit).
+- The Apache License header is required on every new source file (enforced by `./dev/check-license`).
 - Run `make lint` and `make test` before pushing; CI runs both plus the lockfile check.
 
 ## Boundaries
