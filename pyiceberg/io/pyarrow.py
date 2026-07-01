@@ -2627,31 +2627,33 @@ class ParquetFormatWriter(FileFormatWriter):
 
     def write(self, table: pa.Table) -> None:
         if self._writer is None:
-            self._fos = self._output_file.create(overwrite=True)
-            self._writer = pq.ParquetWriter(
-                cast(IO[Any], self._fos),
-                schema=table.schema,
-                store_decimal_as_integer=True,
-                **self._parquet_writer_kwargs,
-            )
+            fos = self._output_file.create(overwrite=True)
+            try:
+                self._writer = pq.ParquetWriter(
+                    cast(IO[Any], fos),
+                    schema=table.schema,
+                    store_decimal_as_integer=True,
+                    **self._parquet_writer_kwargs,
+                )
+            except Exception:
+                fos.close()
+                raise
+            self._fos = fos
         self._writer.write(table, row_group_size=self._row_group_size)
 
     def close(self) -> DataFileStatistics:
         if self._result is not None:
             return self._result
-        try:
-            if self._writer is None:
-                raise ValueError("Cannot close a writer that was never written to")
+        if self._writer is None or self._fos is None:
+            raise ValueError("Cannot close a writer that was never written to")
+        with self._fos:
             self._writer.close()
             self._result = data_file_statistics_from_parquet_metadata(
                 parquet_metadata=self._writer.writer.metadata,
                 stats_columns=compute_statistics_plan(self._file_schema, self._properties),
                 parquet_column_mapping=parquet_path_to_id_mapping(self._file_schema),
             )
-            return self._result
-        finally:
-            if self._fos is not None:
-                self._fos.close()
+        return self._result
 
 
 class ParquetFormatModel(FileFormatModel):

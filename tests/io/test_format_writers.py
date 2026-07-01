@@ -104,6 +104,27 @@ def test_close_without_write_raises(format_model: FileFormatModel, table_schema_
         writer.close()
 
 
+def test_parquet_writer_closes_output_stream_on_construction_failure(
+    table_schema_simple: Schema,
+    arrow_table_simple: pa.Table,
+    tmp_path: Path,
+) -> None:
+    """ParquetWriter construction failure inside write() closes the opened output stream."""
+    from unittest.mock import patch
+
+    from pyiceberg.io.pyarrow import ParquetFormatModel
+
+    file_path = str(tmp_path / "test.parquet")
+    writer = ParquetFormatModel().create_writer(PyArrowFileIO().new_output(file_path), table_schema_simple, {})
+
+    with patch("pyiceberg.io.pyarrow.pq.ParquetWriter", side_effect=RuntimeError("simulated failure")):
+        with pytest.raises(RuntimeError, match="simulated failure"):
+            writer.write(arrow_table_simple)
+
+    assert writer._writer is None
+    assert writer._fos is None
+
+
 def test_parquet_format_model_adds_field_id_metadata() -> None:
     """ParquetFormatModel.add_field_metadata writes the Parquet field-id key when requested."""
     from pyiceberg.io.pyarrow import PYARROW_PARQUET_FIELD_ID_KEY, ParquetFormatModel
