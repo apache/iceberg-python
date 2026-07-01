@@ -67,7 +67,7 @@ TEST_PRIMITIVE_TYPES = [
     FloatType(),
     DoubleType(),
     DecimalType(10, 2),
-    DecimalType(100, 2),
+    DecimalType(38, 2),
     StringType(),
     DateType(),
     TimeType(),
