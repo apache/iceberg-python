@@ -509,7 +509,7 @@ class _ExpressionEvaluator(BoundBooleanExpressionVisitor[bool]):
 
     def visit_starts_with(self, term: BoundTerm, literal: LiteralValue) -> bool:
         eval_res = term.eval(self.struct)
-        return eval_res is not None and str(eval_res).startswith(str(literal.value))
+        return eval_res is not None and eval_res.startswith(literal.value)
 
     def visit_not_starts_with(self, term: BoundTerm, literal: LiteralValue) -> bool:
         return not self.visit_starts_with(term, literal)
@@ -712,7 +712,7 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
     def visit_starts_with(self, term: BoundTerm, literal: LiteralValue) -> bool:
         pos = term.ref().accessor.position
         field = self.partition_fields[pos]
-        prefix = str(literal.value)
+        prefix = literal.value
         len_prefix = len(prefix)
 
         if field.lower_bound is None:
@@ -736,7 +736,7 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
     def visit_not_starts_with(self, term: BoundTerm, literal: LiteralValue) -> bool:
         pos = term.ref().accessor.position
         field = self.partition_fields[pos]
-        prefix = str(literal.value)
+        prefix = literal.value
         len_prefix = len(prefix)
 
         if field.contains_null or field.lower_bound is None or field.upper_bound is None:
@@ -1241,7 +1241,8 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
         if not isinstance(field.field_type, PrimitiveType):
             raise ValueError(f"Expected PrimitiveType: {field.field_type}")
 
-        if lower_bound_bytes := self.lower_bounds.get(field_id):
+        lower_bound_bytes = self.lower_bounds.get(field_id)
+        if lower_bound_bytes is not None:
             lower_bound = from_bytes(field.field_type, lower_bound_bytes)
 
             if self._is_nan(lower_bound):
@@ -1263,7 +1264,8 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
         if not isinstance(field.field_type, PrimitiveType):
             raise ValueError(f"Expected PrimitiveType: {field.field_type}")
 
-        if lower_bound_bytes := self.lower_bounds.get(field_id):
+        lower_bound_bytes = self.lower_bounds.get(field_id)
+        if lower_bound_bytes is not None:
             lower_bound = from_bytes(field.field_type, lower_bound_bytes)
             if self._is_nan(lower_bound):
                 # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
@@ -1284,7 +1286,8 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
         if not isinstance(field.field_type, PrimitiveType):
             raise ValueError(f"Expected PrimitiveType: {field.field_type}")
 
-        if upper_bound_bytes := self.upper_bounds.get(field_id):
+        upper_bound_bytes = self.upper_bounds.get(field_id)
+        if upper_bound_bytes is not None:
             upper_bound = from_bytes(field.field_type, upper_bound_bytes)
             if upper_bound <= literal.value:
                 if self._is_nan(upper_bound):
@@ -1305,7 +1308,8 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
         if not isinstance(field.field_type, PrimitiveType):
             raise ValueError(f"Expected PrimitiveType: {field.field_type}")
 
-        if upper_bound_bytes := self.upper_bounds.get(field_id):
+        upper_bound_bytes = self.upper_bounds.get(field_id)
+        if upper_bound_bytes is not None:
             upper_bound = from_bytes(field.field_type, upper_bound_bytes)
             if upper_bound < literal.value:
                 if self._is_nan(upper_bound):
@@ -1326,7 +1330,8 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
         if not isinstance(field.field_type, PrimitiveType):
             raise ValueError(f"Expected PrimitiveType: {field.field_type}")
 
-        if lower_bound_bytes := self.lower_bounds.get(field_id):
+        lower_bound_bytes = self.lower_bounds.get(field_id)
+        if lower_bound_bytes is not None:
             lower_bound = from_bytes(field.field_type, lower_bound_bytes)
             if self._is_nan(lower_bound):
                 # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
@@ -1335,7 +1340,8 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
             if lower_bound > literal.value:
                 return ROWS_CANNOT_MATCH
 
-        if upper_bound_bytes := self.upper_bounds.get(field_id):
+        upper_bound_bytes = self.upper_bounds.get(field_id)
+        if upper_bound_bytes is not None:
             upper_bound = from_bytes(field.field_type, upper_bound_bytes)
             if self._is_nan(upper_bound):
                 # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
@@ -1363,7 +1369,8 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
         if not isinstance(field.field_type, PrimitiveType):
             raise ValueError(f"Expected PrimitiveType: {field.field_type}")
 
-        if lower_bound_bytes := self.lower_bounds.get(field_id):
+        lower_bound_bytes = self.lower_bounds.get(field_id)
+        if lower_bound_bytes is not None:
             lower_bound = from_bytes(field.field_type, lower_bound_bytes)
             if self._is_nan(lower_bound):
                 # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
@@ -1373,7 +1380,8 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
             if len(literals) == 0:
                 return ROWS_CANNOT_MATCH
 
-        if upper_bound_bytes := self.upper_bounds.get(field_id):
+        upper_bound_bytes = self.upper_bounds.get(field_id)
+        if upper_bound_bytes is not None:
             upper_bound = from_bytes(field.field_type, upper_bound_bytes)
             # this is different from Java, here NaN is always larger
             if self._is_nan(upper_bound):
@@ -1400,18 +1408,20 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
         if not isinstance(field.field_type, PrimitiveType):
             raise ValueError(f"Expected PrimitiveType: {field.field_type}")
 
-        prefix = str(literal.value)
+        prefix = literal.value
         len_prefix = len(prefix)
 
-        if lower_bound_bytes := self.lower_bounds.get(field_id):
-            lower_bound = str(from_bytes(field.field_type, lower_bound_bytes))
+        lower_bound_bytes = self.lower_bounds.get(field_id)
+        if lower_bound_bytes is not None:
+            lower_bound = from_bytes(field.field_type, lower_bound_bytes)
 
             # truncate lower bound so that its length is not greater than the length of prefix
             if lower_bound and lower_bound[:len_prefix] > prefix:
                 return ROWS_CANNOT_MATCH
 
-        if upper_bound_bytes := self.upper_bounds.get(field_id):
-            upper_bound = str(from_bytes(field.field_type, upper_bound_bytes))
+        upper_bound_bytes = self.upper_bounds.get(field_id)
+        if upper_bound_bytes is not None:
+            upper_bound = from_bytes(field.field_type, upper_bound_bytes)
 
             # truncate upper bound so that its length is not greater than the length of prefix
             if upper_bound is not None and upper_bound[:len_prefix] < prefix:
@@ -1429,14 +1439,16 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
         if not isinstance(field.field_type, PrimitiveType):
             raise ValueError(f"Expected PrimitiveType: {field.field_type}")
 
-        prefix = str(literal.value)
+        prefix = literal.value
         len_prefix = len(prefix)
 
         # not_starts_with will match unless all values must start with the prefix. This happens when
         # the lower and upper bounds both start with the prefix.
-        if (lower_bound_bytes := self.lower_bounds.get(field_id)) and (upper_bound_bytes := self.upper_bounds.get(field_id)):
-            lower_bound = str(from_bytes(field.field_type, lower_bound_bytes))
-            upper_bound = str(from_bytes(field.field_type, upper_bound_bytes))
+        lower_bound_bytes = self.lower_bounds.get(field_id)
+        upper_bound_bytes = self.upper_bounds.get(field_id)
+        if lower_bound_bytes is not None and upper_bound_bytes is not None:
+            lower_bound = from_bytes(field.field_type, lower_bound_bytes)
+            upper_bound = from_bytes(field.field_type, upper_bound_bytes)
 
             # if lower is shorter than the prefix then lower doesn't start with the prefix
             if len(lower_bound) < len_prefix:
@@ -1558,7 +1570,8 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
         if self._can_contain_nulls(field_id) or self._can_contain_nans(field_id):
             return ROWS_MIGHT_NOT_MATCH
 
-        if upper_bytes := self.upper_bounds.get(field_id):
+        upper_bytes = self.upper_bounds.get(field_id)
+        if upper_bytes is not None:
             field = self._get_field(field_id)
             upper = _from_byte_buffer(field.field_type, upper_bytes)
 
@@ -1575,7 +1588,8 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
         if self._can_contain_nulls(field_id) or self._can_contain_nans(field_id):
             return ROWS_MIGHT_NOT_MATCH
 
-        if upper_bytes := self.upper_bounds.get(field_id):
+        upper_bytes = self.upper_bounds.get(field_id)
+        if upper_bytes is not None:
             field = self._get_field(field_id)
             upper = _from_byte_buffer(field.field_type, upper_bytes)
 
@@ -1592,7 +1606,8 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
         if self._can_contain_nulls(field_id) or self._can_contain_nans(field_id):
             return ROWS_MIGHT_NOT_MATCH
 
-        if lower_bytes := self.lower_bounds.get(field_id):
+        lower_bytes = self.lower_bounds.get(field_id)
+        if lower_bytes is not None:
             field = self._get_field(field_id)
             lower = _from_byte_buffer(field.field_type, lower_bytes)
 
@@ -1613,7 +1628,8 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
         if self._can_contain_nulls(field_id) or self._can_contain_nans(field_id):
             return ROWS_MIGHT_NOT_MATCH
 
-        if lower_bytes := self.lower_bounds.get(field_id):
+        lower_bytes = self.lower_bounds.get(field_id)
+        if lower_bytes is not None:
             field = self._get_field(field_id)
             lower = _from_byte_buffer(field.field_type, lower_bytes)
 
@@ -1634,7 +1650,9 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
         if self._can_contain_nulls(field_id) or self._can_contain_nans(field_id):
             return ROWS_MIGHT_NOT_MATCH
 
-        if (lower_bytes := self.lower_bounds.get(field_id)) and (upper_bytes := self.upper_bounds.get(field_id)):
+        lower_bytes = self.lower_bounds.get(field_id)
+        upper_bytes = self.upper_bounds.get(field_id)
+        if lower_bytes is not None and upper_bytes is not None:
             field = self._get_field(field_id)
             lower = _from_byte_buffer(field.field_type, lower_bytes)
             upper = _from_byte_buffer(field.field_type, upper_bytes)
@@ -1650,12 +1668,17 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
         # Rows must match when X < Min or Max < X because it is not in the range
         field_id = term.ref().field.field_id
 
-        if self._can_contain_nulls(field_id) or self._can_contain_nans(field_id):
+        # If metrics prove the column contains only nulls or only NaNs, no row can have
+        # a value equal to the literal, so every row satisfies NotEqualTo. Partial
+        # null/NaN counts are not enough: a remaining non-null/non-NaN value may still
+        # equal the literal, so fall through to the bounds checks.
+        if self._contains_nulls_only(field_id) or self._contains_nans_only(field_id):
             return ROWS_MUST_MATCH
 
         field = self._get_field(field_id)
 
-        if lower_bytes := self.lower_bounds.get(field_id):
+        lower_bytes = self.lower_bounds.get(field_id)
+        if lower_bytes is not None:
             lower = _from_byte_buffer(field.field_type, lower_bytes)
 
             if self._is_nan(lower):
@@ -1666,7 +1689,8 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
             if lower > literal.value:
                 return ROWS_MUST_MATCH
 
-        if upper_bytes := self.upper_bounds.get(field_id):
+        upper_bytes = self.upper_bounds.get(field_id)
+        if upper_bytes is not None:
             upper = _from_byte_buffer(field.field_type, upper_bytes)
 
             if upper < literal.value:
@@ -1682,7 +1706,9 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
 
         field = self._get_field(field_id)
 
-        if (lower_bytes := self.lower_bounds.get(field_id)) and (upper_bytes := self.upper_bounds.get(field_id)):
+        lower_bytes = self.lower_bounds.get(field_id)
+        upper_bytes = self.upper_bounds.get(field_id)
+        if lower_bytes is not None and upper_bytes is not None:
             # similar to the implementation in eq, first check if the lower bound is in the set
             lower = _from_byte_buffer(field.field_type, lower_bytes)
             if lower not in literals:
@@ -1706,12 +1732,17 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
     def visit_not_in(self, term: BoundTerm, literals: set[L]) -> bool:
         field_id = term.ref().field.field_id
 
-        if self._can_contain_nulls(field_id) or self._can_contain_nans(field_id):
+        # If metrics prove the column contains only nulls or only NaNs, no row can have
+        # a value in the literal set, so every row satisfies NotIn. Partial null/NaN
+        # counts are not enough: a remaining non-null/non-NaN value may still be in the
+        # set, so fall through to the bounds checks.
+        if self._contains_nulls_only(field_id) or self._contains_nans_only(field_id):
             return ROWS_MUST_MATCH
 
         field = self._get_field(field_id)
 
-        if lower_bytes := self.lower_bounds.get(field_id):
+        lower_bytes = self.lower_bounds.get(field_id)
+        if lower_bytes is not None:
             lower = _from_byte_buffer(field.field_type, lower_bytes)
 
             if self._is_nan(lower):
@@ -1723,7 +1754,8 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
             if len(literals) == 0:
                 return ROWS_MUST_MATCH
 
-        if upper_bytes := self.upper_bounds.get(field_id):
+        upper_bytes = self.upper_bounds.get(field_id)
+        if upper_bytes is not None:
             upper = _from_byte_buffer(field.field_type, upper_bytes)
 
             literals = {val for val in literals if upper >= val}
@@ -1875,16 +1907,13 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
 
     def visit_starts_with(self, term: BoundTerm, literal: LiteralValue) -> BooleanExpression:
         eval_res = term.eval(self.struct)
-        if eval_res is not None and str(eval_res).startswith(str(literal.value)):
+        if eval_res is not None and eval_res.startswith(literal.value):
             return AlwaysTrue()
         else:
             return AlwaysFalse()
 
     def visit_not_starts_with(self, term: BoundTerm, literal: LiteralValue) -> BooleanExpression:
-        if not self.visit_starts_with(term, literal):
-            return AlwaysTrue()
-        else:
-            return AlwaysFalse()
+        return ~self.visit_starts_with(term, literal)
 
     def visit_bound_predicate(self, predicate: BoundPredicate) -> BooleanExpression:
         """

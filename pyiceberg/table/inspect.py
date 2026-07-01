@@ -38,6 +38,10 @@ if TYPE_CHECKING:
 ALWAYS_TRUE = AlwaysTrue()
 
 
+def _readable_bound(field_type: PrimitiveType, bound: bytes | None) -> Any | None:
+    return from_bytes(field_type, bound) if bound is not None else None
+
+
 class InspectTable:
     tbl: Table
 
@@ -180,12 +184,8 @@ class InspectTable:
                         "null_value_count": null_value_counts.get(field.field_id),
                         "nan_value_count": nan_value_counts.get(field.field_id),
                         # Makes them readable
-                        "lower_bound": from_bytes(field.field_type, lower_bound)
-                        if (lower_bound := lower_bounds.get(field.field_id))
-                        else None,
-                        "upper_bound": from_bytes(field.field_type, upper_bound)
-                        if (upper_bound := upper_bounds.get(field.field_id))
-                        else None,
+                        "lower_bound": _readable_bound(field.field_type, lower_bounds.get(field.field_id)),
+                        "upper_bound": _readable_bound(field.field_type, upper_bounds.get(field.field_id)),
                     }
                     for field in self.tbl.metadata.schema().fields
                 }
@@ -311,7 +311,7 @@ class InspectTable:
 
         partitions_map: dict[tuple[str, Any], Any] = {}
 
-        for entry in itertools.chain.from_iterable(scan.scan_plan_helper()):
+        for entry in itertools.chain.from_iterable(scan._plan_manifest_entries()):
             partition = entry.data_file.partition
             partition_record_dict = {
                 field.name: partition[pos] for pos, field in enumerate(self.tbl.metadata.specs()[entry.data_file.spec_id].fields)
@@ -404,6 +404,7 @@ class InspectTable:
 
         all_manifests_schema = self._get_manifests_schema()
         all_manifests_schema = all_manifests_schema.append(pa.field("reference_snapshot_id", pa.int64(), nullable=False))
+        all_manifests_schema = all_manifests_schema.append(pa.field("key_metadata", pa.binary(), nullable=True))
         return all_manifests_schema
 
     def _generate_manifests_table(self, snapshot: Snapshot | None, is_all_manifests_table: bool = False) -> pa.Table:
@@ -468,6 +469,7 @@ class InspectTable:
                 }
                 if is_all_manifests_table:
                     manifest_row["reference_snapshot_id"] = snapshot.snapshot_id
+                    manifest_row["key_metadata"] = manifest.key_metadata
                 manifests.append(manifest_row)
 
         return pa.Table.from_pylist(
@@ -570,12 +572,8 @@ class InspectTable:
                     "value_count": value_counts.get(field.field_id),
                     "null_value_count": null_value_counts.get(field.field_id),
                     "nan_value_count": nan_value_counts.get(field.field_id),
-                    "lower_bound": from_bytes(field.field_type, lower_bound)
-                    if (lower_bound := lower_bounds.get(field.field_id))
-                    else None,
-                    "upper_bound": from_bytes(field.field_type, upper_bound)
-                    if (upper_bound := upper_bounds.get(field.field_id))
-                    else None,
+                    "lower_bound": _readable_bound(field.field_type, lower_bounds.get(field.field_id)),
+                    "upper_bound": _readable_bound(field.field_type, upper_bounds.get(field.field_id)),
                 }
                 for field in self.tbl.metadata.schema().fields
             }

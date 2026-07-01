@@ -146,6 +146,7 @@ from pyiceberg.schema import (
     visit_with_partner,
 )
 from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties
+from pyiceberg.table.deletion_vector import deletion_vectors_from_puffin_file
 from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
@@ -1143,7 +1144,7 @@ def _read_deletes(io: FileIO, data_file: DataFile) -> dict[str, pa.ChunkedArray]
         with io.new_input(data_file.file_path).open() as fi:
             payload = fi.read()
 
-        return PuffinFile(payload).to_vector()
+        return {dv.referenced_data_file: dv.to_vector() for dv in deletion_vectors_from_puffin_file(PuffinFile(payload))}
     else:
         raise ValueError(f"Delete file format not supported: {data_file.file_format}")
 
@@ -1607,7 +1608,8 @@ def _get_column_projection_values(
     for field_id in project_schema_diff:
         for partition_field in partition_spec.fields_by_source_id(field_id):
             if isinstance(partition_field.transform, IdentityTransform):
-                if partition_value := accessors[partition_field.field_id].get(file.partition):
+                partition_value = accessors[partition_field.field_id].get(file.partition)
+                if partition_value is not None:
                     projected_missing_fields[field_id] = partition_value
 
     return projected_missing_fields
@@ -1626,8 +1628,12 @@ def _task_to_record_batches(
     partition_spec: PartitionSpec | None = None,
     format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
     downcast_ns_timestamp_to_us: bool | None = None,
+    dictionary_columns: tuple[str, ...] = (),
 ) -> Iterator[pa.RecordBatch]:
-    arrow_format = _get_file_format(task.file.file_format, pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
+    format_kwargs: dict[str, Any] = {"pre_buffer": True, "buffer_size": ONE_MEGABYTE * 8}
+    if dictionary_columns and task.file.file_format == FileFormat.PARQUET:
+        format_kwargs["dictionary_columns"] = dictionary_columns
+    arrow_format = _get_file_format(task.file.file_format, **format_kwargs)
     with io.new_input(task.file.file_path).open() as fin:
         fragment = arrow_format.make_fragment(fin)
         physical_schema = fragment.physical_schema
@@ -1677,21 +1683,20 @@ def _task_to_record_batches(
                 # Create the mask of indices that we're interested in
                 indices = _combine_positional_deletes(positional_deletes, current_index, current_index + len(batch))
                 current_batch = current_batch.take(indices)
+                if pyarrow_filter is not None:
+                    # Temporary fix until PyArrow 21 is the minimum supported version
+                    # (https://github.com/apache/arrow/pull/46057): RecordBatch.filter raises
+                    # IndexError on PyArrow <21 when the result is empty; Table.filter does not.
+                    table = pa.Table.from_batches([current_batch])
+                    table = table.filter(pyarrow_filter)
+                    if table.num_rows == 0:
+                        current_batch = current_batch.slice(0, 0)
+                    else:
+                        current_batch = table.combine_chunks().to_batches()[0]
 
             # skip empty batches
             if current_batch.num_rows == 0:
                 continue
-
-            # Apply the user filter
-            if pyarrow_filter is not None:
-                # Temporary fix until PyArrow 21 is released ( https://github.com/apache/arrow/pull/46057 )
-                table = pa.Table.from_batches([current_batch])
-                table = table.filter(pyarrow_filter)
-                # skip empty batches
-                if table.num_rows == 0:
-                    continue
-
-                current_batch = table.combine_chunks().to_batches()[0]
 
             yield _to_requested_schema(
                 projected_schema,
@@ -1730,6 +1735,7 @@ class ArrowScan:
     _case_sensitive: bool
     _limit: int | None
     _downcast_ns_timestamp_to_us: bool | None
+    _dictionary_columns: tuple[str, ...]
     """Scan the Iceberg Table and create an Arrow construct.
 
     Attributes:
@@ -1739,6 +1745,7 @@ class ArrowScan:
         _bound_row_filter: Schema bound row expression to filter the data with
         _case_sensitive: Case sensitivity when looking up column names
         _limit: Limit the number of records.
+        _dictionary_columns: Column names to read as dictionary-encoded arrays.
     """
 
     def __init__(
@@ -1749,6 +1756,8 @@ class ArrowScan:
         row_filter: BooleanExpression,
         case_sensitive: bool = True,
         limit: int | None = None,
+        *,
+        dictionary_columns: tuple[str, ...] = (),
     ) -> None:
         self._table_metadata = table_metadata
         self._io = io
@@ -1757,6 +1766,7 @@ class ArrowScan:
         self._case_sensitive = case_sensitive
         self._limit = limit
         self._downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE)
+        self._dictionary_columns = dictionary_columns
 
     @property
     def _projected_field_ids(self) -> set[int]:
@@ -1867,6 +1877,7 @@ class ArrowScan:
                 self._table_metadata.specs().get(task.file.spec_id),
                 self._table_metadata.format_version,
                 self._downcast_ns_timestamp_to_us,
+                self._dictionary_columns,
             )
             for batch in batches:
                 if self._limit is not None:
@@ -2017,7 +2028,8 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
             elif field.optional or field.initial_default is not None:
                 # When an optional field is added, or when a required field with a non-null initial default is added
                 arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)
-                if projected_value := self._projected_missing_fields.get(field.field_id):
+                projected_value = self._projected_missing_fields.get(field.field_id)
+                if projected_value is not None:
                     field_arrays.append(pa.repeat(pa.scalar(projected_value, type=arrow_type), len(struct_array)))
                 elif field.initial_default is None:
                     field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))

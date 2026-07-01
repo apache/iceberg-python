@@ -48,6 +48,29 @@ The environment variable picked up by Iceberg starts with `PYICEBERG_` and then 
 
 For example, `PYICEBERG_CATALOG__DEFAULT__S3__ACCESS_KEY_ID`, sets `s3.access-key-id` on the `default` catalog.
 
+## Manifest Caching
+
+PyIceberg caches `ManifestFile` objects locally and uses an LRU policy to bound the cache size. By default, up to `128`
+distinct manifest files are retained.
+
+You can tune the `manifest-cache-size` configuration in `.pyiceberg.yaml`:
+
+```yaml
+manifest-cache-size: 256
+```
+
+Permitted values: any non-negative integer. Set the value to `0` to disable manifest caching entirely.
+
+You can also set it with the `PYICEBERG_MANIFEST_CACHE_SIZE` environment variable:
+
+```sh
+export PYICEBERG_MANIFEST_CACHE_SIZE=256
+```
+
+The memory used by this cache depends on the size and number of distinct manifests your workload touches. Lower the value
+if you want a tighter memory bound, or call `clear_manifest_cache()` to proactively release cached manifest metadata in
+long-lived processes.
+
 ## Tables
 
 Iceberg tables support table properties to configure table behavior.
@@ -193,16 +216,31 @@ For the FileIO there are several configuration options available:
 
 PyIceberg uses [S3FileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.S3FileSystem.html) class to connect to OSS bucket as the service is [compatible with S3 SDK](https://www.alibabacloud.com/help/en/oss/developer-reference/use-amazon-s3-sdks-to-access-oss) as long as the endpoint is addressed with virtual hosted style.
 
-| Key                  | Example             | Description                                      |
-| -------------------- | ------------------- | ------------------------------------------------ |
-| s3.endpoint          | <https://s3.oss-your-bucket-region.aliyuncs.com/>      | Configure an endpoint of the OSS service for the FileIO to access. Be sure to use S3 compatible endpoint as given in the example. |
-| s3.access-key-id     | admin                      | Configure the static access key id used to access the FileIO.                                                                                                                                                                                             |
-| s3.secret-access-key | password                   | Configure the static secret access key used to access the FileIO.                                                                                                                                                                                         |
-| s3.session-token     | AQoDYXdzEJr...             | Configure the static session token used to access the FileIO.                                                                                                                                                                                             |
-| s3.force-virtual-addressing   | True                       | Whether to use virtual addressing of buckets. This is set to `True` by default as OSS can only be accessed with virtual hosted style address.                                                                                                                                                                                                        |
-| s3.anonymous                | True                       | Configure whether to use anonymous connection. If False (default), uses key/secret if configured or standard AWS configuration methods. |
+| Key                          | Example                                            | Description |
+| ---------------------------- | -------------------------------------------------- | ----------- |
+| s3.endpoint                  | <https://s3.oss-your-bucket-region.aliyuncs.com/>    | Configure an endpoint of the OSS service for the FileIO to access. Be sure to use S3 compatible endpoint as given in the example. |
+| s3.access-key-id             | admin                                              | Configure the static access key id used to access the FileIO. |
+| s3.secret-access-key         | password                                           | Configure the static secret access key used to access the FileIO. |
+| s3.session-token             | AQoDYXdzEJr...                                     | Configure the static session token used to access the FileIO. |
+| s3.force-virtual-addressing  | True                                               | Whether to use virtual addressing of buckets. This is set to `True` by default as OSS can only be accessed with virtual hosted style address. |
+| s3.anonymous                 | True                                               | Configure whether to use anonymous connection. If False (default), uses key/secret if configured or standard AWS configuration methods. |
 
 <!-- markdown-link-check-enable-->
+
+### Tencent Cloud Object Storage (COS)
+
+<!-- markdown-link-check-disable -->
+
+Tencent Cloud Object Storage (COS) is S3-compatible and can be used with PyIceberg using the existing S3FileIO / PyArrowFileIO implementation.
+
+| Key                  | Example                                  | Description |
+| -------------------- | ---------------------------------------- | ----------- |
+| s3.endpoint          | <https://cos.ap-guangzhou.myqcloud.com>    | Tencent COS S3-compatible endpoint |
+| s3.access-key-id     | admin                                    | Access key for COS |
+| s3.secret-access-key | password                                 | Secret key for COS |
+| s3.session-token     | AQoDYXdzEJr...                           | Optional session token |
+
+<!-- markdown-link-check-enable -->
 
 ### Hugging Face
 
@@ -347,6 +385,7 @@ catalog:
 | warehouse           | myWarehouse                      | Warehouse location or identifier to request from the catalog service. May be used to determine server-side overrides, such as the warehouse location. |
 | snapshot-loading-mode | refs                           | The snapshots to return in the body of the metadata. Setting the value to `all` would return the full set of snapshots currently valid for the table. Setting the value to `refs` would load all snapshots referenced by branches or tags. |
 | `header.X-Iceberg-Access-Delegation` | `vended-credentials` | Signal to the server that the client supports delegated access via a comma-separated list of access mechanisms. The server may choose to supply access via any or none of the requested mechanisms. When using `vended-credentials`, the server provides temporary credentials to the client. When using `remote-signing`, the server signs requests on behalf of the client. (default: `vended-credentials`) |
+| view-endpoints-supported | false                           | For backwards compatibility with older REST servers. Set to `true` if the server supports view endpoints but doesn't send the `endpoints` field in the ConfigResponse. |
 
 #### Headers in REST Catalog
 
@@ -632,7 +671,7 @@ In the case of SQLite:
 
 <!-- prettier-ignore-start -->
 
-!!! warning inline end "Development only"
+!!! warning "Development only"
     SQLite is not built for concurrency, you should use this catalog for exploratory or development purposes.
 
 <!-- prettier-ignore-end -->

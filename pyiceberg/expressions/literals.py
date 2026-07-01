@@ -68,6 +68,13 @@ from pyiceberg.utils.singleton import Singleton
 UUID_BYTES_LENGTH = 16
 
 
+def _parse_numeric_string(value: str) -> Decimal:
+    number = Decimal(value)
+    if not number.is_finite():
+        raise ValueError(f"Cannot convert non-finite numeric string: {value}")
+    return number
+
+
 class Literal(IcebergRootModel[L], Generic[L], ABC):  # type: ignore
     """Literal which has a value and can be converted between types."""
 
@@ -310,6 +317,10 @@ class LongLiteral(Literal[int]):
 
     @to.register(FloatType)
     def _(self, _: FloatType) -> Literal[float]:
+        if FloatType.max < self.value:
+            return FloatAboveMax()
+        elif self.value < FloatType.min:
+            return FloatBelowMin()
         return FloatLiteral(float(self.value))
 
     @to.register(DoubleType)
@@ -318,6 +329,10 @@ class LongLiteral(Literal[int]):
 
     @to.register(DateType)
     def _(self, _: DateType) -> Literal[int]:
+        if IntegerType.max < self.value:
+            return IntAboveMax()
+        elif IntegerType.min > self.value:
+            return IntBelowMin()
         return DateLiteral(self.value)
 
     @to.register(TimeType)
@@ -519,9 +534,9 @@ class DecimalLiteral(Literal[Decimal]):
     def _(self, _: LongType) -> Literal[int]:
         value_int = int(self.value.to_integral_value())
         if value_int > LongType.max:
-            return IntAboveMax()
+            return LongAboveMax()
         elif value_int < LongType.min:
-            return IntBelowMin()
+            return LongBelowMin()
         else:
             return LongLiteral(value_int)
 
@@ -555,27 +570,27 @@ class StringLiteral(Literal[str]):
     @to.register(IntegerType)
     def _(self, type_var: IntegerType) -> Literal[int]:
         try:
-            number = int(float(self.value))
+            number = _parse_numeric_string(self.value)
 
             if IntegerType.max < number:
                 return IntAboveMax()
             elif IntegerType.min > number:
                 return IntBelowMin()
-            return LongLiteral(number)
-        except ValueError as e:
+            return LongLiteral(int(number))
+        except (ArithmeticError, OverflowError, ValueError) as e:
             raise ValueError(f"Could not convert {self.value} into a {type_var}") from e
 
     @to.register(LongType)
     def _(self, type_var: LongType) -> Literal[int]:
         try:
-            long_value = int(float(self.value))
+            long_value = _parse_numeric_string(self.value)
             if LongType.max < long_value:
                 return LongAboveMax()
             elif LongType.min > long_value:
                 return LongBelowMin()
             else:
-                return LongLiteral(long_value)
-        except (TypeError, ValueError) as e:
+                return LongLiteral(int(long_value))
+        except (ArithmeticError, OverflowError, TypeError, ValueError) as e:
             raise ValueError(f"Could not convert {self.value} into a {type_var}") from e
 
     @to.register(DateType)
