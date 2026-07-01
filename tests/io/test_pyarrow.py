@@ -2435,6 +2435,17 @@ def test_bin_pack_arrow_table_target_size_smaller_than_row(arrow_table_with_null
     assert sum(batch.num_rows for bin_ in bin_packed for batch in bin_) == arrow_table_with_null.num_rows
 
 
+def test_bin_pack_arrow_table_with_string_view() -> None:
+    if not hasattr(pa, "string_view"):
+        pytest.skip("pyarrow does not support string_view")
+
+    table = pa.table({"region": pa.array(["ca", "mx"], type=pa.string_view())})
+
+    bins = list(bin_pack_arrow_table(table, target_file_size=1))
+
+    assert sum(batch.num_rows for bin_ in bins for batch in bin_) == table.num_rows
+
+
 def test_bin_pack_record_batches_single_bin(arrow_table_with_null: pa.Table) -> None:
     batches = arrow_table_with_null.to_batches()
     bins = list(bin_pack_record_batches(iter(batches), target_file_size=arrow_table_with_null.nbytes * 10))
