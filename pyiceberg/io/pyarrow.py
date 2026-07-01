@@ -150,7 +150,7 @@ from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
 from pyiceberg.table.puffin import PuffinFile
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
-from pyiceberg.typedef import EMPTY_DICT, Properties, Record, TableVersion
+from pyiceberg.typedef import EMPTY_DICT, ArrowStreamExportable, Properties, Record, TableVersion
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -2690,28 +2690,43 @@ def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[list[
     """Bin-pack ``tbl`` into groups of RecordBatches, each ~``target_file_size``.
 
     Note:
-        ``target_file_size`` is measured in **uncompressed in-memory** Arrow bytes
-        (``Table.nbytes`` / ``RecordBatch.nbytes``), not compressed on-disk Parquet
-        bytes. The resulting Parquet file after compression (zstd by default,
-        plus dictionary/RLE encoding) is typically 3-10× smaller than
-        ``target_file_size``. This is a coarse proxy for the spec-defined
+        ``target_file_size`` is measured in **uncompressed in-memory** Arrow
+        bytes, not compressed on-disk Parquet bytes. The size estimate uses
+        ``nbytes`` when available and falls back to referenced buffer size for
+        Arrow view types that do not support ``nbytes``. The resulting Parquet
+        file after compression (zstd by default, plus dictionary/RLE encoding)
+        is typically 3-10× smaller than ``target_file_size``. This is a coarse
+        proxy for the spec-defined
         ``write.target-file-size-bytes`` and will be tightened to true on-disk
         bytes once the writer is switched to a rolling-``ParquetWriter`` with
         ``OutputStream.tell()`` (#2998).
     """
     from pyiceberg.utils.bin_packing import PackingIterator
 
-    avg_row_size_bytes = tbl.nbytes / tbl.num_rows
+    avg_row_size_bytes = _arrow_data_size(tbl) / tbl.num_rows
     target_rows_per_file = max(1, int(target_file_size / avg_row_size_bytes))
     batches = tbl.to_batches(max_chunksize=target_rows_per_file)
     bin_packed_record_batches = PackingIterator(
         items=batches,
         target_weight=target_file_size,
         lookback=len(batches),  # ignore lookback
-        weight_func=lambda x: x.nbytes,
+        weight_func=_arrow_data_size,
         largest_bin_first=False,
     )
     return bin_packed_record_batches
+
+
+def _arrow_data_size(data: pa.Table | pa.RecordBatch) -> int:
+    """Estimate Arrow data size for writer bin-packing.
+
+    ``nbytes`` is the better logical-size estimate, but PyArrow can raise for
+    view types such as ``string_view`` exported by libraries like Polars. Fall
+    back to total referenced buffer size so those streams can still be written.
+    """
+    try:
+        return data.nbytes
+    except pyarrow.lib.ArrowTypeError:
+        return data.get_total_buffer_size()
 
 
 def bin_pack_record_batches(batches: Iterable[pa.RecordBatch], target_file_size: int) -> Iterator[list[pa.RecordBatch]]:
@@ -2729,9 +2744,11 @@ def bin_pack_record_batches(batches: Iterable[pa.RecordBatch], target_file_size:
 
     Note:
         ``target_file_size`` is measured in **uncompressed in-memory** Arrow
-        bytes (``RecordBatch.nbytes``), not compressed on-disk Parquet bytes.
-        The resulting Parquet file after compression is typically 3-10×
-        smaller than ``target_file_size``. Matches the existing
+        bytes, not compressed on-disk Parquet bytes. The size estimate uses
+        ``nbytes`` when available and falls back to referenced buffer size for
+        Arrow view types that do not support ``nbytes``. The resulting Parquet
+        file after compression is typically 3-10× smaller than
+        ``target_file_size``. Matches the existing
         :func:`bin_pack_arrow_table` semantics; both will be tightened to true
         on-disk bytes once the writer is switched to a rolling-
         ``ParquetWriter`` with ``OutputStream.tell()`` (#2998).
@@ -2740,7 +2757,7 @@ def bin_pack_record_batches(batches: Iterable[pa.RecordBatch], target_file_size:
     buffer_bytes = 0
     for batch in batches:
         buffer.append(batch)
-        buffer_bytes += batch.nbytes
+        buffer_bytes += _arrow_data_size(batch)
         if buffer_bytes >= target_file_size:
             yield buffer
             buffer = []
@@ -3043,3 +3060,23 @@ def _get_field_from_arrow_table(arrow_table: pa.Table, field_path: str) -> pa.Ar
     field_array = arrow_table[path_parts[0]]
     # Navigate into the struct using the remaining path parts
     return pc.struct_field(field_array, path_parts[1:])
+
+
+def _coerce_arrow_input(df: pa.Table | pa.RecordBatchReader | ArrowStreamExportable) -> pa.Table | pa.RecordBatchReader:
+    """Normalize Arrow write input to a pa.Table or pa.RecordBatchReader.
+
+    Native pyarrow inputs pass through unchanged; any object implementing the
+    Arrow PyCapsule stream interface (``__arrow_c_stream__``) is imported as a
+    streaming RecordBatchReader.
+    """
+    if isinstance(df, (pa.Table, pa.RecordBatchReader)):
+        return df
+
+    # Any object implementing the Arrow PyCapsule stream interface.
+    if hasattr(df, "__arrow_c_stream__"):
+        return pa.RecordBatchReader.from_stream(df)
+
+    raise ValueError(
+        f"Expected pa.Table, pa.RecordBatchReader, or an object implementing the "
+        f"Arrow PyCapsule interface (__arrow_c_stream__), got: {df!r}"
+    )
