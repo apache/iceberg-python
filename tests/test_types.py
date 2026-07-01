@@ -147,6 +147,15 @@ def test_decimal_type() -> None:
     assert type_var == pickle.loads(pickle.dumps(type_var))
 
 
+def test_decimal_type_rejects_precision_over_38() -> None:
+    # The Iceberg spec requires decimal precision to be 38 or less; the Java
+    # reference implementation raises for precision > 38. See issue #3583.
+    with pytest.raises(ValueError, match="precision larger than 38 are not supported: 39"):
+        DecimalType(39, 0)
+    # Boundary: precision exactly 38 is still valid.
+    assert DecimalType(38, 0).precision == 38
+
+
 def test_struct_type() -> None:
     type_var = StructType(
         NestedField(1, "optional_field", IntegerType(), required=True),
