@@ -521,6 +521,31 @@ def test_deserialization_decimal_failure() -> None:
     assert "Could not parse decimal(abc, def) into a DecimalType" in str(exc_info.value)
 
 
+def test_decimal_precision_above_38_raises() -> None:
+    """Precision > 38 must be rejected per the Iceberg spec (https://iceberg.apache.org/spec/#primitive-types)."""
+    with pytest.raises(ValidationError, match="Precision must be between 1 and 38"):
+        DecimalType(39, 0)
+
+
+def test_decimal_precision_zero_raises() -> None:
+    """Precision 0 is not valid; minimum precision is 1."""
+    with pytest.raises(ValidationError, match="Precision must be between 1 and 38"):
+        DecimalType(0, 0)
+
+
+def test_decimal_precision_boundary_38_accepted() -> None:
+    """Precision == 38 is the maximum allowed and must be accepted."""
+    d = DecimalType(38, 0)
+    assert d.precision == 38
+    assert d.scale == 0
+
+
+def test_decimal_deserialization_precision_above_38_raises() -> None:
+    """Deserialization of decimal(39, 0) must also raise a ValidationError."""
+    with pytest.raises(Exception, match="Precision must be between 1 and 38"):
+        DecimalType.model_validate_json('"decimal(39, 0)"')
+
+
 def test_str_decimal() -> None:
     assert str(DecimalType(19, 25)) == "decimal(19, 25)"
 
