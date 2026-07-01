@@ -19,7 +19,6 @@
 
 from __future__ import annotations
 
-import io
 import json
 import os
 from collections.abc import Callable
@@ -34,7 +33,7 @@ from typing import (
 from pyiceberg.avro.codecs import AVRO_CODEC_KEY, CODEC_MAPPING_ICEBERG_TO_AVRO, KNOWN_CODECS
 from pyiceberg.avro.codecs.codec import Codec
 from pyiceberg.avro.decoder import BinaryDecoder, new_decoder
-from pyiceberg.avro.encoder import BinaryEncoder
+from pyiceberg.avro.encoder import BinaryEncoder, new_memory_encoder
 from pyiceberg.avro.reader import Reader
 from pyiceberg.avro.resolver import construct_reader, construct_writer, resolve_reader, resolve_writer
 from pyiceberg.avro.writer import Writer
@@ -300,11 +299,10 @@ class AvroOutputFile(Generic[D]):
         return KNOWN_CODECS[codec_name]  # type: ignore
 
     def write_block(self, objects: list[D]) -> None:
-        in_memory = io.BytesIO()
-        block_content_encoder = BinaryEncoder(output_stream=in_memory)
+        block_content_encoder = new_memory_encoder()
         for obj in objects:
             self.writer.write(block_content_encoder, obj)
-        block_content = in_memory.getvalue()
+        block_content = block_content_encoder.getvalue()
 
         self.encoder.write_int(len(objects))
 

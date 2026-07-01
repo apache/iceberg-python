@@ -78,3 +78,29 @@ class BinaryEncoder:
 
     def write_unknown(self, _: Any) -> None:
         """Nulls are written as 0 bytes in avro, so we do nothing."""
+
+
+class MemoryBinaryEncoder(BinaryEncoder):
+    """BinaryEncoder that writes to an owned in-memory buffer."""
+
+    def __init__(self) -> None:
+        import io
+
+        self._buffer = io.BytesIO()
+        super().__init__(self._buffer)
+
+    def getvalue(self) -> bytes:
+        return self._buffer.getvalue()
+
+
+def new_memory_encoder() -> "CythonBinaryEncoder | MemoryBinaryEncoder":  # type: ignore[name-defined]  # noqa: F821
+    try:
+        from pyiceberg.avro.encoder_fast import CythonBinaryEncoder
+
+        return CythonBinaryEncoder()
+    except ModuleNotFoundError:
+        import warnings
+
+        warnings.warn("Falling back to pure Python Avro encoder, missing Cython implementation", stacklevel=2)
+
+        return MemoryBinaryEncoder()
