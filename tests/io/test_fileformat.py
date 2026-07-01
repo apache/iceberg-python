@@ -51,6 +51,9 @@ def test_duplicate_registration_raises() -> None:
         def create_writer(self, output_file: Any, file_schema: Any, properties: Any) -> Any:
             raise NotImplementedError
 
+        def add_field_metadata(self, field: Any, metadata: Any, include_field_ids: bool) -> None:
+            pass
+
     original = dict(FileFormatFactory._registry)
     try:
         model = _DummyModel()
