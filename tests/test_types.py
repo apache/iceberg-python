@@ -546,7 +546,6 @@ def test_decimal_deserialization_precision_above_38_raises() -> None:
         DecimalType.model_validate_json('"decimal(39, 0)"')
 
 
-
 def test_str_decimal() -> None:
     assert str(DecimalType(19, 25)) == "decimal(19, 25)"
 
