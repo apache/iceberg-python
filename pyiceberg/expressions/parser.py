@@ -16,6 +16,7 @@
 #  under the License.
 import re
 from decimal import Decimal
+from typing import Any
 
 from pyparsing import (
     CaselessKeyword,
@@ -58,6 +59,7 @@ from pyiceberg.expressions import (
     Or,
     Reference,
     StartsWith,
+    UnboundTerm,
 )
 from pyiceberg.expressions.literals import (
     BooleanLiteral,
@@ -65,6 +67,14 @@ from pyiceberg.expressions.literals import (
     Literal,
     LongLiteral,
     StringLiteral,
+)
+from pyiceberg.transforms import (
+    DayTransform,
+    HourTransform,
+    MonthTransform,
+    Transform,
+    UnboundTransform,
+    YearTransform,
 )
 from pyiceberg.typedef import L
 from pyiceberg.types import strtobool
@@ -80,6 +90,8 @@ NULL = CaselessKeyword("null")
 NAN = CaselessKeyword("nan")
 LIKE = CaselessKeyword("like")
 BETWEEN = CaselessKeyword("between")
+CAST = CaselessKeyword("cast")
+AS = CaselessKeyword("as")
 
 unquoted_identifier = Word(alphas + "_", alphanums + "_$")
 quoted_identifier = QuotedString('"', esc_quote="\\", unquote_results=True)
@@ -153,6 +165,22 @@ comparison = left_ref | right_ref
 between = column + BETWEEN + literal + AND + literal
 
 
+def _comparison_to_predicate(term: UnboundTerm, op: str, literal: Literal[Any]) -> BooleanExpression:
+    if op == "<":
+        return LessThan(term, literal)
+    elif op == "<=":
+        return LessThanOrEqual(term, literal)
+    elif op == ">":
+        return GreaterThan(term, literal)
+    elif op == ">=":
+        return GreaterThanOrEqual(term, literal)
+    elif op in ("=", "=="):
+        return EqualTo(term, literal)
+    elif op in ("!=", "<>"):
+        return NotEqualTo(term, literal)
+    raise ValueError(f"Unsupported operation type: {op}")
+
+
 @between.set_parse_action
 def _(result: ParseResults) -> BooleanExpression:
     return And(GreaterThanOrEqual(result.column, result[2]), LessThanOrEqual(result.column, result[4]))
@@ -160,19 +188,7 @@ def _(result: ParseResults) -> BooleanExpression:
 
 @left_ref.set_parse_action
 def _(result: ParseResults) -> BooleanExpression:
-    if result.op == "<":
-        return LessThan(result.column, result.literal)
-    elif result.op == "<=":
-        return LessThanOrEqual(result.column, result.literal)
-    elif result.op == ">":
-        return GreaterThan(result.column, result.literal)
-    elif result.op == ">=":
-        return GreaterThanOrEqual(result.column, result.literal)
-    if result.op in ("=", "=="):
-        return EqualTo(result.column, result.literal)
-    if result.op in ("!=", "<>"):
-        return NotEqualTo(result.column, result.literal)
-    raise ValueError(f"Unsupported operation type: {result.op}")
+    return _comparison_to_predicate(result.column, result.op, result.literal)
 
 
 @right_ref.set_parse_action
@@ -265,7 +281,38 @@ def _evaluate_like_statement(result: ParseResults) -> BooleanExpression:
         return EqualTo(result.column, StringLiteral(literal_like.value.replace("\\%", "%")))
 
 
-predicate = (between | comparison | in_check | null_check | nan_check | starts_check | boolean).set_results_name("predicate")
+# CAST expression support: CAST(column AS type) maps to Iceberg transforms
+_CAST_TYPE_TO_TRANSFORM: dict[str, Transform[Any, Any]] = {
+    "date": DayTransform(),
+    "year": YearTransform(),
+    "month": MonthTransform(),
+    "hour": HourTransform(),
+}
+
+cast_type = Word(alphas, alphanums + "_")
+cast_term = Suppress(CAST) + Suppress("(") + column + Suppress(AS) + cast_type + Suppress(")")
+
+
+@cast_term.set_parse_action
+def _(result: ParseResults) -> UnboundTransform:
+    ref = result[0]
+    target = str(result[1]).lower()
+    if target not in _CAST_TYPE_TO_TRANSFORM:
+        raise ValueError(f"Unsupported CAST target type: {target}")
+    return UnboundTransform(ref, _CAST_TYPE_TO_TRANSFORM[target])
+
+
+cast_left_ref = cast_term + comparison_op + literal
+
+
+@cast_left_ref.set_parse_action
+def _(result: ParseResults) -> BooleanExpression:
+    return _comparison_to_predicate(result[0], result.op, result.literal)
+
+
+predicate = (between | cast_left_ref | comparison | in_check | null_check | nan_check | starts_check | boolean).set_results_name(
+    "predicate"
+)
 
 
 def handle_not(result: ParseResults) -> Not:
