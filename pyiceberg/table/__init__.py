@@ -2196,6 +2196,20 @@ def _to_arrow_batch_reader_via_file_scan_tasks(
     from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
 
     target_schema = schema_to_pyarrow(projected_schema)
+    if dictionary_columns:
+        """schema_to_pyarrow returns plain types. ArrowScan yields
+           dictionary-encoded batches for the requested columns, so rebuild
+           target_schema with dictionary types for those fields. Without this,
+           .cast(target_schema) would silently convert dictionary arrays back
+           to their plain value type and erase the encoding."""
+        dict_col_set = set(dictionary_columns)
+        target_schema = pa.schema(
+            [
+                field.with_type(pa.dictionary(pa.int32(), field.type)) if field.name in dict_col_set else field
+                for field in target_schema
+            ],
+            metadata=target_schema.metadata,
+        )
     batches = ArrowScan(
         scan.table_metadata,
         scan.io,
