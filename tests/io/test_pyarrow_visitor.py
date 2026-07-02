@@ -191,11 +191,99 @@ def test_pyarrow_timestamp_invalid_units() -> None:
     with pytest.raises(
         TypeError,
         match=re.escape(
-            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' "
-            "configuration property to automatically downcast 'ns' to 'us' on write."
+            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us' "
+            "configuration property to automatically downcast 'ns' to 'us'."
         ),
     ):
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
+
+
+def test_downcast_ns_timestamp_legacy_env_var_is_backwards_compat() -> None:
+    """The deprecated PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE env var still activates downcasting."""
+    import os
+    import warnings
+
+    from pyiceberg.table import _get_downcast_ns_timestamp_to_us
+
+    env_key = "PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE"
+    old_value = os.environ.get(env_key)
+    try:
+        os.environ[env_key] = "True"
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = _get_downcast_ns_timestamp_to_us()
+        assert result is True, "Legacy env var should still activate downcasting"
+        deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+        assert len(deprecation_warnings) == 1
+        assert "downcast-ns-timestamp-to-us-on-write" in str(deprecation_warnings[0].message)
+        assert "downcast-ns-timestamp-to-us" in str(deprecation_warnings[0].message)
+    finally:
+        if old_value is None:
+            os.environ.pop(env_key, None)
+        else:
+            os.environ[env_key] = old_value
+
+
+def test_downcast_ns_timestamp_new_env_var_takes_precedence() -> None:
+    """The new PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US env var works and emits no deprecation warning."""
+    import os
+    import warnings
+
+    from pyiceberg.table import _get_downcast_ns_timestamp_to_us
+
+    new_key = "PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US"
+    old_key = "PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE"
+    old_new = os.environ.get(new_key)
+    old_legacy = os.environ.get(old_key)
+    try:
+        os.environ[new_key] = "True"
+        os.environ.pop(old_key, None)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = _get_downcast_ns_timestamp_to_us()
+        assert result is True
+        deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+        assert len(deprecation_warnings) == 0, "New key must not emit a deprecation warning"
+    finally:
+        if old_new is None:
+            os.environ.pop(new_key, None)
+        else:
+            os.environ[new_key] = old_new
+        if old_legacy is None:
+            os.environ.pop(old_key, None)
+        else:
+            os.environ[old_key] = old_legacy
+
+
+def test_downcast_ns_timestamp_new_key_overrides_legacy_key() -> None:
+    """When both keys are set, the new key wins and no deprecation warning is emitted."""
+    import os
+    import warnings
+
+    from pyiceberg.table import _get_downcast_ns_timestamp_to_us
+
+    new_key = "PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US"
+    old_key = "PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE"
+    old_new = os.environ.get(new_key)
+    old_legacy = os.environ.get(old_key)
+    try:
+        os.environ[new_key] = "False"
+        os.environ[old_key] = "True"  # legacy says True, but new key says False
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = _get_downcast_ns_timestamp_to_us()
+        assert result is False, "New key must win over legacy key"
+        deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+        assert len(deprecation_warnings) == 0, "New key present: no deprecation warning expected"
+    finally:
+        if old_new is None:
+            os.environ.pop(new_key, None)
+        else:
+            os.environ[new_key] = old_new
+        if old_legacy is None:
+            os.environ.pop(old_key, None)
+        else:
+            os.environ[old_key] = old_legacy
 
 
 def test_pyarrow_timestamp_tz_to_iceberg() -> None:
@@ -214,8 +302,8 @@ def test_pyarrow_timestamp_tz_invalid_units() -> None:
     with pytest.raises(
         TypeError,
         match=re.escape(
-            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' "
-            "configuration property to automatically downcast 'ns' to 'us' on write."
+            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us' "
+            "configuration property to automatically downcast 'ns' to 'us'."
         ),
     ):
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
