@@ -1743,6 +1743,7 @@ class ArrowScan:
         _bound_row_filter: Schema bound row expression to filter the data with
         _case_sensitive: Case sensitivity when looking up column names
         _limit: Limit the number of records.
+        _downcast_ns_timestamp_to_us: Whether to downcast nanosecond timestamps to microseconds on read.
         _dictionary_columns: Column names to read as dictionary-encoded arrays.
     """
 
