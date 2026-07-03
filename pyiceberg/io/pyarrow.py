@@ -2890,7 +2890,8 @@ def _get_parquet_writer_kwargs(
         ]
         if any(fnmatch.filter(table_properties, key_pattern) for key_pattern in bloom_filter_key_patterns):
             warnings.warn(
-                f"Parquet writer option(s) for bloom filters require pyarrow {MIN_PYARROW_VERSION_SUPPORTING_BLOOM_FILTER_WRITES} or higher",
+                f"Parquet writer option(s) for bloom filters require pyarrow {MIN_PYARROW_VERSION_SUPPORTING_BLOOM_FILTER_WRITES}"
+                " or higher",
                 stacklevel=2,
             )
 
