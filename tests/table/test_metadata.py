@@ -26,7 +26,7 @@ from uuid import UUID
 import pytest
 
 from pyiceberg.exceptions import ValidationError
-from pyiceberg.io.pyarrow import get_bloom_filter_options
+from pyiceberg.io.pyarrow import get_bloom_filter_options, parquet_path_to_id_mapping
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromByteStream
@@ -907,7 +907,8 @@ def test_get_bloom_filter_options() -> None:
         "write.parquet.bloom-filter-ndv.column.qux.quux": "3000",
     }
 
-    bloom_filter_options = get_bloom_filter_options(schema, table_properties)
+    id_to_parquet_path = {field_id: parquet_path for parquet_path, field_id in parquet_path_to_id_mapping(schema).items()}
+    bloom_filter_options = get_bloom_filter_options(schema, table_properties, id_to_parquet_path)
     assert bloom_filter_options == {
         "foo": {"fpp": 0.01, "ndv": 1000},
         "qux.quux": {"fpp": 0.03, "ndv": 3000},
