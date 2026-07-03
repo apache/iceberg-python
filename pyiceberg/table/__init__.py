@@ -473,8 +473,7 @@ class Transaction:
 
         Streaming writes are currently only supported on unpartitioned tables;
         passing a ``pa.RecordBatchReader`` for a partitioned table raises
-        ``NotImplementedError``. See
-        https://github.com/apache/iceberg-python/issues/2152.
+        ``NotImplementedError``.
 
         Note:
             When ``df`` is a ``pa.RecordBatchReader`` the reader is consumed
@@ -621,8 +620,7 @@ class Transaction:
 
         Streaming writes are currently only supported on unpartitioned tables;
         passing a ``pa.RecordBatchReader`` for a partitioned table raises
-        ``NotImplementedError``. See
-        https://github.com/apache/iceberg-python/issues/2152.
+        ``NotImplementedError``.
 
         Note:
             When ``df`` is a ``pa.RecordBatchReader`` the reader is consumed

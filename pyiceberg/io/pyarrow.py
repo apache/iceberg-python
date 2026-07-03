@@ -2881,8 +2881,7 @@ def _dataframe_to_data_files(
     For a ``pa.RecordBatchReader`` batches are streamed and microbatched into
     target-sized files using bounded memory (see :func:`bin_pack_record_batches`).
     Streaming writes are currently only supported on unpartitioned tables;
-    partitioned support is tracked in
-    https://github.com/apache/iceberg-python/issues/2152.
+    partitioned streaming support is not yet implemented.
 
     Returns:
         An iterable that supplies datafiles that represent the input data.
@@ -2909,8 +2908,7 @@ def _dataframe_to_data_files(
         if not table_metadata.spec().is_unpartitioned():
             raise NotImplementedError(
                 "Writing a pa.RecordBatchReader to a partitioned table is not yet supported. "
-                "Materialise the reader as a pa.Table first, or follow "
-                "https://github.com/apache/iceberg-python/issues/2152 for partitioned streaming support."
+                "Materialise the reader as a pa.Table first."
             )
         yield from write_file(
             io=io,

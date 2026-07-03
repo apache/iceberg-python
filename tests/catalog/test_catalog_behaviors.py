@@ -1216,7 +1216,7 @@ def test_drop_namespace_raises_error_when_namespace_not_empty(
 # RecordBatchReader streaming append/overwrite tests
 #
 # Streaming writes accept a pa.RecordBatchReader and microbatch it into target-sized
-# Parquet files instead of materialising the full Arrow Table in memory. Tracks
+# Parquet files instead of materialising the full Arrow Table in memory. Introduced in
 # https://github.com/apache/iceberg-python/issues/2152.
 
 
