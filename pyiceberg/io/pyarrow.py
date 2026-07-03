@@ -2878,12 +2878,21 @@ def _get_parquet_writer_kwargs(
     from packaging import version
 
     MIN_PYARROW_VERSION_SUPPORTING_BLOOM_FILTER_WRITES = "24.0.0"
-    if version.parse(pyarrow.__version__) < version.parse(MIN_PYARROW_VERSION_SUPPORTING_BLOOM_FILTER_WRITES):
-        unsupported_key_patterns += [
+    pyarrow_supports_bloom_filter_writes = version.parse(pyarrow.__version__) >= version.parse(
+        MIN_PYARROW_VERSION_SUPPORTING_BLOOM_FILTER_WRITES
+    )
+
+    if not pyarrow_supports_bloom_filter_writes:
+        bloom_filter_key_patterns = [
             f"{TableProperties.PARQUET_BLOOM_FILTER_COLUMN_ENABLED_PREFIX}.*",
             f"{TableProperties.PARQUET_BLOOM_FILTER_COLUMN_FPP_PREFIX}.*",
             f"{TableProperties.PARQUET_BLOOM_FILTER_COLUMN_NDV_PREFIX}.*",
         ]
+        if any(fnmatch.filter(table_properties, key_pattern) for key_pattern in bloom_filter_key_patterns):
+            warnings.warn(
+                f"Parquet writer option(s) for bloom filters require pyarrow {MIN_PYARROW_VERSION_SUPPORTING_BLOOM_FILTER_WRITES} or higher",
+                stacklevel=2,
+            )
 
     for key_pattern in unsupported_key_patterns:
         if unsupported_keys := fnmatch.filter(table_properties, key_pattern):
@@ -2898,8 +2907,10 @@ def _get_parquet_writer_kwargs(
     if compression_codec == ICEBERG_UNCOMPRESSED_CODEC:
         compression_codec = PYARROW_UNCOMPRESSED_CODEC
 
-    id_to_parquet_path = {field_id: parquet_path for parquet_path, field_id in parquet_column_mapping.items()}
-    bloom_filter_options = get_bloom_filter_options(file_schema, table_properties, id_to_parquet_path)
+    bloom_filter_options = {}
+    if pyarrow_supports_bloom_filter_writes:
+        id_to_parquet_path = {field_id: parquet_path for parquet_path, field_id in parquet_column_mapping.items()}
+        bloom_filter_options = get_bloom_filter_options(file_schema, table_properties, id_to_parquet_path)
 
     return {
         "compression": compression_codec,
