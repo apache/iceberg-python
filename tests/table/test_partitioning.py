@@ -22,7 +22,12 @@ from uuid import UUID
 import pytest
 
 from pyiceberg.exceptions import ValidationError
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
+from pyiceberg.partitioning import (
+    UNPARTITIONED_PARTITION_SPEC,
+    PartitionField,
+    PartitionSpec,
+    _to_partition_representation,
+)
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import (
     BucketTransform,
@@ -251,6 +256,13 @@ def test_transform_consistency_with_pyarrow_transform(source_type: PrimitiveType
     for t in all_transforms:
         if t.can_transform(source_type):
             assert t.transform(source_type)(value) == t.pyarrow_transform(source_type)(pa.array([value])).to_pylist()[0]
+
+
+def test_to_partition_representation_unsupported_type() -> None:
+    unsupported_type = StructType(NestedField(1, "x", StringType()))
+
+    with pytest.raises(TypeError, match="Unsupported partition field type: struct"):
+        _to_partition_representation(unsupported_type, "value")
 
 
 def test_deserialize_partition_field_v2() -> None:
