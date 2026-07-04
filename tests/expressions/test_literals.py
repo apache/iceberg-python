@@ -633,6 +633,20 @@ def test_below_min_int() -> None:
     assert b.to(IntegerType()) == IntBelowMin()
 
 
+def test_above_max_long() -> None:
+    a = LongAboveMax()
+    with pytest.raises(TypeError) as e:
+        a.to(IntegerType())
+    assert "Cannot change the type of LongAboveMax" in str(e.value)
+
+
+def test_below_min_long() -> None:
+    b = LongBelowMin()
+    with pytest.raises(TypeError) as e:
+        b.to(IntegerType())
+    assert "Cannot change the type of LongBelowMin" in str(e.value)
+
+
 def test_invalid_boolean_conversions() -> None:
     assert_invalid_conversions(
         literal(True),
