@@ -28,7 +28,7 @@ from google.cloud.exceptions import Conflict
 from google.oauth2 import service_account
 from typing_extensions import override
 
-from pyiceberg.catalog import WAREHOUSE_LOCATION, MetastoreCatalog, PropertiesUpdateSummary
+from pyiceberg.catalog import LOCATION, WAREHOUSE_LOCATION, MetastoreCatalog, PropertiesUpdateSummary
 from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchNamespaceError, NoSuchTableError, TableAlreadyExistsError
 from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
@@ -344,8 +344,11 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         try:
             dataset = self.client.get_dataset(DatasetReference(project=self.project_id, dataset_id=dataset_name))
 
-            if dataset and dataset.external_catalog_dataset_options:
-                return dataset.external_catalog_dataset_options.to_api_repr()
+            if dataset and (options := dataset.external_catalog_dataset_options):
+                properties = dict(options.parameters or {})
+                if location := options.default_storage_location_uri:
+                    properties[LOCATION] = location
+                return properties
         except NotFound as e:
             raise NoSuchNamespaceError(f"Namespace {namespace} not found") from e
         return {}
