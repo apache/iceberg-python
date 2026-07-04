@@ -39,7 +39,9 @@ from pyiceberg.utils.datetime import (
     to_human_month,
     to_human_time,
     to_human_timestamp,
+    to_human_timestamp_ns,
     to_human_timestamptz,
+    to_human_timestamptz_ns,
     to_human_year,
 )
 
@@ -290,3 +292,31 @@ def test_to_human_timestamptz() -> None:
         (1_740_342_104_375_612, "2025-02-23T20:21:44.375612+00:00"),
     ]:
         assert to_human_timestamptz(micros) == expected
+
+
+# Matches Java DateTimeUtil.nanosToIsoTimestamp / nanosToIsoTimestamptz, which use
+# ISO_LOCAL_DATE_TIME: trailing fraction zeros are trimmed and whole seconds have no fraction.
+NANOS_HUMAN_STRINGS = [
+    (0, "1970-01-01T00:00:00"),
+    (1, "1970-01-01T00:00:00.000000001"),
+    (999, "1970-01-01T00:00:00.000000999"),
+    (1_000, "1970-01-01T00:00:00.000001"),
+    (100_000_000, "1970-01-01T00:00:00.1"),
+    (1_000_000_000, "1970-01-01T00:00:01"),
+    (-1, "1969-12-31T23:59:59.999999999"),
+    (-1_000_000_000, "1969-12-31T23:59:59"),
+    (-1_500_000_000, "1969-12-31T23:59:58.5"),
+    (1_740_342_104_375_612_001, "2025-02-23T20:21:44.375612001"),
+    (1_740_342_104_375_612_000, "2025-02-23T20:21:44.375612"),
+    (1_740_342_104_000_000_001, "2025-02-23T20:21:44.000000001"),
+]
+
+
+def test_to_human_timestamp_ns() -> None:
+    for nanos, human_str in NANOS_HUMAN_STRINGS:
+        assert to_human_timestamp_ns(nanos) == human_str
+
+
+def test_to_human_timestamptz_ns() -> None:
+    for nanos, human_str in NANOS_HUMAN_STRINGS:
+        assert to_human_timestamptz_ns(nanos) == human_str + "+00:00"
