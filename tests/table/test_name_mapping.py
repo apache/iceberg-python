@@ -403,3 +403,22 @@ def test_mapping_using_by_visitor(table_schema_nested: Schema, table_name_mappin
         ),
     )
     assert apply_name_mapping(schema_without_ids, table_name_mapping_nested).fields == table_schema_nested.fields
+
+
+def test_mapping_preserves_field_defaults() -> None:
+    schema_without_ids = Schema(
+        NestedField(
+            field_id=0,
+            name="foo",
+            field_type=StringType(),
+            required=False,
+            initial_default="init",
+            write_default="write",
+        ),
+    )
+    name_mapping = NameMapping([MappedField(field_id=1, names=["foo"])])
+
+    mapped_field = apply_name_mapping(schema_without_ids, name_mapping).fields[0]
+
+    assert mapped_field.initial_default == "init"
+    assert mapped_field.write_default == "write"
