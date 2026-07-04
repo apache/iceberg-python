@@ -969,6 +969,16 @@ def _(_type: IcebergType, value: int) -> str:
     return datetime.to_human_timestamptz(value)
 
 
+@_int_to_human_string.register(TimestampNanoType)
+def _(_type: IcebergType, value: int) -> str:
+    return datetime.to_human_timestamp_ns(value)
+
+
+@_int_to_human_string.register(TimestamptzNanoType)
+def _(_type: IcebergType, value: int) -> str:
+    return datetime.to_human_timestamptz_ns(value)
+
+
 class UnknownTransform(Transform[S, T]):
     """A transform that represents when an unknown transform is provided.
 
