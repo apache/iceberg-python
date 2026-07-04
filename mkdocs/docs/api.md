@@ -1170,7 +1170,7 @@ You can also initiate a transaction if you want to make more changes than just e
 ```python
 with table.transaction() as transaction:
     with transaction.update_schema() as update_schema:
-        update.add_column("some_other_field", IntegerType(), "doc")
+        update_schema.add_column("some_other_field", IntegerType(), "doc")
     # ... Update properties etc
 ```
 
