@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 import itertools
-import os
 import uuid
 import warnings
 from abc import ABC, abstractmethod
@@ -1788,7 +1787,8 @@ class StaticTable(Table):
 
     @classmethod
     def _metadata_location_from_version_hint(cls, metadata_location: str, properties: Properties = EMPTY_DICT) -> str:
-        version_hint_location = os.path.join(metadata_location, "metadata", "version-hint.text")
+        metadata_dir = f"{metadata_location.rstrip('/')}/metadata"
+        version_hint_location = f"{metadata_dir}/version-hint.text"
         io = load_file_io(properties=properties, location=version_hint_location)
         file = io.new_input(version_hint_location)
 
@@ -1796,11 +1796,11 @@ class StaticTable(Table):
             content = stream.read().decode("utf-8")
 
         if content.endswith(".metadata.json"):
-            return os.path.join(metadata_location, "metadata", content)
+            return f"{metadata_dir}/{content}"
         elif content.isnumeric():
-            return os.path.join(metadata_location, "metadata", f"v{content}.metadata.json")
+            return f"{metadata_dir}/v{content}.metadata.json"
         else:
-            return os.path.join(metadata_location, "metadata", f"{content}.metadata.json")
+            return f"{metadata_dir}/{content}.metadata.json"
 
     @classmethod
     def from_metadata(cls, metadata_location: str, properties: Properties = EMPTY_DICT) -> StaticTable:
