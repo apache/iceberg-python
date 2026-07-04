@@ -68,6 +68,7 @@ TEST_PRIMITIVE_TYPES = [
     DoubleType(),
     DecimalType(10, 2),
     DecimalType(100, 2),
+    DecimalType(10, 4),
     StringType(),
     DateType(),
     TimeType(),
@@ -878,7 +879,7 @@ def should_promote(file_type: IcebergType, read_type: IcebergType) -> bool:
     if isinstance(file_type, BinaryType) and isinstance(read_type, StringType):
         return True
     if isinstance(file_type, DecimalType) and isinstance(read_type, DecimalType):
-        return file_type.precision <= read_type.precision and file_type.scale == file_type.scale
+        return file_type.precision <= read_type.precision and file_type.scale == read_type.scale
     if isinstance(file_type, FixedType) and isinstance(read_type, UUIDType) and len(file_type) == 16:
         return True
     return False
@@ -943,6 +944,19 @@ def test_promotion(file_type: IcebergType, read_type: IcebergType) -> None:
     else:
         with pytest.raises(ResolveError):
             promote(file_type, read_type)
+
+
+def test_decimal_promotion() -> None:
+    # Widening precision while keeping the scale fixed is allowed.
+    assert promote(DecimalType(9, 2), DecimalType(18, 2)) == DecimalType(18, 2)
+    # Equal precision and scale resolves to the read type.
+    assert promote(DecimalType(9, 2), DecimalType(9, 2)) == DecimalType(9, 2)
+    # Changing the scale is never allowed, even when the precision widens.
+    with pytest.raises(ResolveError):
+        promote(DecimalType(9, 2), DecimalType(18, 4))
+    # Reducing the precision is not allowed.
+    with pytest.raises(ResolveError):
+        promote(DecimalType(18, 2), DecimalType(9, 2))
 
 
 def test_unknown_type_promotion_to_primitive() -> None:
