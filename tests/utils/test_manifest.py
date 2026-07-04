@@ -938,6 +938,48 @@ def test_manifest_writer_tell(format_version: TableVersion) -> None:
             assert after_entry_bytes > initial_bytes, "Bytes should increase after adding entry"
 
 
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_write_manifest_min_sequence_number_zero(format_version: TableVersion) -> None:
+    # A data sequence number of 0 is a legitimate min for a live file (e.g. files from a
+    # v1 table or the initial commit of a v2 table). It must be preserved in the manifest,
+    # not collapsed to UNASSIGNED_SEQ (-1), which would let a merge/compaction silently
+    # raise the manifest's min data sequence number. This mirrors the Java reference, which
+    # only falls back to UNASSIGNED_SEQ when the min is unset (null).
+    io = load_file_io()
+    test_schema = Schema(NestedField(1, "foo", IntegerType(), False))
+
+    with TemporaryDirectory() as tmpdir:
+        output_file = io.new_output(f"{tmpdir}/test-manifest.avro")
+        with write_manifest(
+            format_version=format_version,
+            spec=UNPARTITIONED_PARTITION_SPEC,
+            schema=test_schema,
+            output_file=output_file,
+            snapshot_id=1,
+            avro_compression="null",
+        ) as writer:
+            data_file = DataFile.from_args(
+                content=DataFileContent.DATA,
+                file_path=f"{tmpdir}/data.parquet",
+                file_format=FileFormat.PARQUET,
+                partition=Record(),
+                record_count=100,
+                file_size_in_bytes=1000,
+            )
+            writer.existing(
+                ManifestEntry.from_args(
+                    status=ManifestEntryStatus.EXISTING,
+                    snapshot_id=1,
+                    sequence_number=0,
+                    file_sequence_number=0,
+                    data_file=data_file,
+                )
+            )
+            manifest_file = writer.to_manifest_file()
+
+    assert manifest_file.min_sequence_number == 0
+
+
 def test_inherit_from_manifest_snapshot_id() -> None:
     entry = ManifestEntry.from_args(
         status=ManifestEntryStatus.ADDED,

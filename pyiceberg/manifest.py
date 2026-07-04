@@ -1145,7 +1145,9 @@ class ManifestWriter(ABC):
         """Return the manifest file."""
         # once the manifest file is generated, no more entries can be added
         self.closed = True
-        min_sequence_number = self._min_sequence_number or UNASSIGNED_SEQ
+        # A min sequence number of 0 is legitimate (e.g. live files from a v1 table or the
+        # initial commit of a v2 table), so fall back to UNASSIGNED_SEQ only when it is unset.
+        min_sequence_number = self._min_sequence_number if self._min_sequence_number is not None else UNASSIGNED_SEQ
         return ManifestFile.from_args(
             manifest_path=self._output_file.location,
             manifest_length=len(self._writer.output_file),
