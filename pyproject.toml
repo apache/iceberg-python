@@ -55,19 +55,19 @@ pyiceberg = "pyiceberg.cli.console:run"
 
 [project.optional-dependencies]
 pyarrow = [
-    "pyarrow>=17.0.0",
+    "pyarrow>=18.0.0",
 ]
 pandas = [
     "pandas>=1.0.0",
-    "pyarrow>=17.0.0",
+    "pyarrow>=18.0.0",
 ]
 duckdb = [
     "duckdb>=0.5.0",
-    "pyarrow>=17.0.0",
+    "pyarrow>=18.0.0",
 ]
 ray = [
     "ray>=2.10.0",
-    "pyarrow>=17.0.0",
+    "pyarrow>=18.0.0",
     "pandas>=1.0.0",
 ]
 bodo = ["bodo>=2025.7.4"]
