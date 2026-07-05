@@ -1075,23 +1075,17 @@ class Transaction:
         """
         if len(self._updates) > 0:
             properties = self._table.metadata.properties
-            num_retries_val = property_as_int(
+            num_retries: int = property_as_int(  # type: ignore  # The default is set with non-None value.
                 properties, TableProperties.COMMIT_NUM_RETRIES, TableProperties.COMMIT_NUM_RETRIES_DEFAULT
             )
-            num_retries = num_retries_val if num_retries_val is not None else TableProperties.COMMIT_NUM_RETRIES_DEFAULT
-            min_wait_val = property_as_int(
+            min_wait_ms: int = property_as_int(  # type: ignore  # The default is set with non-None value.
                 properties, TableProperties.COMMIT_MIN_RETRY_WAIT_MS, TableProperties.COMMIT_MIN_RETRY_WAIT_MS_DEFAULT
             )
-            min_wait_ms = min_wait_val if min_wait_val is not None else TableProperties.COMMIT_MIN_RETRY_WAIT_MS_DEFAULT
-            max_wait_val = property_as_int(
+            max_wait_ms: int = property_as_int(  # type: ignore  # The default is set with non-None value.
                 properties, TableProperties.COMMIT_MAX_RETRY_WAIT_MS, TableProperties.COMMIT_MAX_RETRY_WAIT_MS_DEFAULT
             )
-            max_wait_ms = max_wait_val if max_wait_val is not None else TableProperties.COMMIT_MAX_RETRY_WAIT_MS_DEFAULT
-            total_timeout_val = property_as_int(
+            total_timeout_ms: int = property_as_int(  # type: ignore  # The default is set with non-None value.
                 properties, TableProperties.COMMIT_TOTAL_RETRY_TIME_MS, TableProperties.COMMIT_TOTAL_RETRY_TIME_MS_DEFAULT
-            )
-            total_timeout_ms = (
-                total_timeout_val if total_timeout_val is not None else TableProperties.COMMIT_TOTAL_RETRY_TIME_MS_DEFAULT
             )
             start_time = time.monotonic()
             self._requirements += (AssertTableUUID(uuid=self.table_metadata.table_uuid),)
@@ -1111,7 +1105,7 @@ class Transaction:
                             raise
 
                         wait = min(min_wait_ms * (2**attempt), max_wait_ms)
-                        jitter = random.uniform(0, 0.25 * wait)
+                        jitter = random.uniform(0, 0.1 * wait)
                         time.sleep((wait + jitter) / 1000.0)
 
                         self._table.refresh()
