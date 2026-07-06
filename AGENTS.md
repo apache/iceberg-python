@@ -49,7 +49,7 @@ lives under `pyiceberg/`, organized by concern rather than by engine:
 - Formatting and linting are enforced by `ruff` via `prek` (pre-commit): line length **130**, double-quoted strings, isort with `pyiceberg`/`tests` as first-party. Run `make lint` — ruff autofixes most issues.
 - Full type annotations are required (`mypy` runs in strict mode: `disallow_untyped_defs`, `no_implicit_optional`, `warn_unused_ignores`). Avoid Any types.
 - Docstrings follow the project's pydocstyle config; one-line summaries on public functions. No personal pronouns in comments.
--  Use domain-specific exceptions from pyiceberg/exceptions.py for Iceberg-specific error conditions. For invalid arguments/values, ValueError is acceptable. Don't raise bare Exception.
+- Use domain-specific exceptions from pyiceberg/exceptions.py for Iceberg-specific error conditions. For invalid arguments/values, ValueError is acceptable. Don't raise bare Exception.
 - Comments should be succinct and follow the same style of comments found in the rest of the codebase.
 
 ### Dependencies
