@@ -320,6 +320,7 @@ SCHEME_TO_FS: dict[str, Callable[..., AbstractFileSystem]] = {
 }
 
 _ADLS_SCHEMES = frozenset({"abfs", "abfss", "wasb", "wasbs"})
+_HF_SCHEMES = frozenset({"hf"})
 
 
 class FsspecInputFile(InputFile):
@@ -351,13 +352,11 @@ class FsspecInputFile(InputFile):
     def exists(self) -> bool:
         """Check whether the location exists."""
         if self._fs_kwargs:
-            # fsspec's AbstractFileSystem.lexists() doesn't forward **kwargs to exists()/info(),
-            # so honoring fs_kwargs (e.g. a pinned HuggingFace Hub revision) requires calling info() directly.
-            try:
-                self._fs.info(self.location, **self._fs_kwargs)
-                return True
-            except FileNotFoundError:
-                return False
+            # fsspec's AbstractFileSystem.lexists() doesn't forward **kwargs to exists()/info(), so
+            # honoring fs_kwargs (e.g. a pinned HuggingFace Hub revision) requires calling exists()
+            # directly -- it does forward kwargs to info(), with the same broad exception handling
+            # lexists() would otherwise provide.
+            return self._fs.exists(self.location, **self._fs_kwargs)
         return self._fs.lexists(self.location)
 
     @override
@@ -503,7 +502,7 @@ class FsspecFileIO(FileIO):
         commit, neither of which is a valid write target, so writes/deletes always target the
         repository's default (writable) branch.
         """
-        if scheme == "hf" and (revision := self.properties.get(HF_REVISION)):
+        if scheme in _HF_SCHEMES and (revision := self.properties.get(HF_REVISION)):
             return {"revision": revision}
         return {}
 
