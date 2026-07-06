@@ -1105,3 +1105,80 @@ def test_s3v4_rest_signer_uses_auth_manager(requests_mock: Mocker) -> None:
     assert requests_mock.last_request is not None
     assert requests_mock.last_request.headers["Authorization"] == "Bearer via-manager"
     assert request.url == new_uri
+
+
+def test_fsspec_hf_session_properties() -> None:
+    session_properties: Properties = {
+        "hf.endpoint": "https://huggingface.co",
+        "hf.token": "hf_xxx",
+    }
+
+    with mock.patch("huggingface_hub.HfFileSystem") as mock_hf_fs:
+        hf_fileio = FsspecFileIO(properties=session_properties)
+        filename = str(uuid.uuid4())
+
+        hf_fileio.new_input(location=f"hf://datasets/user/repo/{filename}")
+
+        mock_hf_fs.assert_called_with(
+            endpoint="https://huggingface.co",
+            token="hf_xxx",
+        )
+
+
+def test_fsspec_hf_revision_forwarded_to_reads() -> None:
+    session_properties: Properties = {
+        "hf.revision": "a-pinned-revision",
+    }
+    location = "hf://datasets/user/repo/file.parquet"
+
+    with mock.patch("huggingface_hub.HfFileSystem") as mock_hf_fs:
+        mock_fs = mock_hf_fs.return_value
+        mock_fs.info.return_value = {"size": 123}
+
+        hf_fileio = FsspecFileIO(properties=session_properties)
+        input_file = hf_fileio.new_input(location=location)
+
+        assert len(input_file) == 123
+        mock_fs.info.assert_called_with(location, revision="a-pinned-revision")
+
+        assert input_file.exists() is True
+        mock_fs.info.assert_called_with(location, revision="a-pinned-revision")
+
+        input_file.open()
+        mock_fs.open.assert_called_with(location, "rb", revision="a-pinned-revision")
+
+
+def test_fsspec_hf_revision_not_forwarded_to_writes() -> None:
+    session_properties: Properties = {
+        "hf.revision": "a-pinned-revision",
+    }
+    location = "hf://datasets/user/repo/file.parquet"
+
+    with mock.patch("huggingface_hub.HfFileSystem") as mock_hf_fs:
+        mock_fs = mock_hf_fs.return_value
+        mock_fs.lexists.return_value = False
+
+        hf_fileio = FsspecFileIO(properties=session_properties)
+        output_file = hf_fileio.new_output(location=location)
+
+        output_file.create()
+        mock_fs.open.assert_called_with(location, "wb")
+
+
+def test_fsspec_hf_no_revision_by_default() -> None:
+    with mock.patch("huggingface_hub.HfFileSystem"):
+        hf_fileio = FsspecFileIO(properties={})
+        input_file = hf_fileio.new_input(location="hf://datasets/user/repo/file.parquet")
+
+        assert input_file._fs_kwargs == {}
+
+
+def test_fsspec_non_hf_scheme_does_not_receive_revision_kwarg() -> None:
+    session_properties: Properties = {
+        "hf.revision": "a-pinned-revision",
+    }
+
+    fileio = FsspecFileIO(properties=session_properties)
+    input_file = fileio.new_input(location="file:///tmp/foo.parquet")
+
+    assert input_file._fs_kwargs == {}

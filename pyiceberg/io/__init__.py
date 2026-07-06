@@ -99,6 +99,7 @@ GCS_DEFAULT_LOCATION = "gcs.default-bucket-location"
 GCS_VERSION_AWARE = "gcs.version-aware"
 HF_ENDPOINT = "hf.endpoint"
 HF_TOKEN = "hf.token"
+HF_REVISION = "hf.revision"
 
 
 @runtime_checkable
