@@ -5334,36 +5334,19 @@ def test_get_parquet_writer_kwargs_cdc_enabled_unsupported_pyarrow_version(monke
         _get_parquet_writer_kwargs({TableProperties.PARQUET_CDC_ENABLED: "true"})
 
 
-@pytest.mark.parametrize(
-    "table_properties,match",
-    [
-        (
-            {
-                TableProperties.PARQUET_CDC_ENABLED: "true",
-                TableProperties.PARQUET_CDC_MIN_CHUNK_SIZE: "0",
-            },
-            "min-chunk-size must be greater than 0",
-        ),
-        (
-            {
-                TableProperties.PARQUET_CDC_ENABLED: "true",
-                TableProperties.PARQUET_CDC_MIN_CHUNK_SIZE: "8192",
-                TableProperties.PARQUET_CDC_MAX_CHUNK_SIZE: "4096",
-            },
-            "max-chunk-size .* must be greater than .*min-chunk-size",
-        ),
-        (
-            {
-                TableProperties.PARQUET_CDC_ENABLED: "true",
-                TableProperties.PARQUET_CDC_NORM_LEVEL: "-1",
-            },
-            "norm-level must be greater than or equal to 0",
-        ),
-    ],
-)
-def test_get_parquet_writer_kwargs_cdc_invalid_properties(table_properties: dict[str, str], match: str) -> None:
-    with pytest.raises(ValueError, match=match):
-        _get_parquet_writer_kwargs(table_properties)
+def test_get_parquet_writer_kwargs_cdc_invalid_chunk_sizes_raises_from_pyarrow() -> None:
+    """PyArrow validates min/max chunk sizes itself; pyiceberg doesn't duplicate that check."""
+    kwargs = _get_parquet_writer_kwargs(
+        {
+            TableProperties.PARQUET_CDC_ENABLED: "true",
+            TableProperties.PARQUET_CDC_MIN_CHUNK_SIZE: "8192",
+            TableProperties.PARQUET_CDC_MAX_CHUNK_SIZE: "4096",
+        }
+    )
+    table = pa.table({"id": pa.array([1, 2, 3], type=pa.int32())})
+    with pytest.raises(OSError, match="max_chunk_size must be greater than min_chunk_size"):
+        with pq.ParquetWriter(pa.BufferOutputStream(), table.schema, **kwargs) as writer:
+            writer.write_table(table)
 
 
 def test_write_file_with_content_defined_chunking_enabled(tmp_path: Path) -> None:

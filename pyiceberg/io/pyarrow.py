@@ -2874,35 +2874,24 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> dict[str, Any]:
         default=TableProperties.PARQUET_CDC_ENABLED_DEFAULT,
     ):
         _require_pyarrow_version("21.0.0", "Parquet content-defined chunking")
-        min_chunk_size = property_as_int(
-            properties=table_properties,
-            property_name=TableProperties.PARQUET_CDC_MIN_CHUNK_SIZE,
-            default=TableProperties.PARQUET_CDC_MIN_CHUNK_SIZE_DEFAULT,
-        )
-        max_chunk_size = property_as_int(
-            properties=table_properties,
-            property_name=TableProperties.PARQUET_CDC_MAX_CHUNK_SIZE,
-            default=TableProperties.PARQUET_CDC_MAX_CHUNK_SIZE_DEFAULT,
-        )
-        norm_level = property_as_int(
-            properties=table_properties,
-            property_name=TableProperties.PARQUET_CDC_NORM_LEVEL,
-            default=TableProperties.PARQUET_CDC_NORM_LEVEL_DEFAULT,
-        )
-        if min_chunk_size is not None and min_chunk_size <= 0:
-            raise ValueError(f"{TableProperties.PARQUET_CDC_MIN_CHUNK_SIZE} must be greater than 0, got {min_chunk_size}")
-        if max_chunk_size is not None and min_chunk_size is not None and max_chunk_size <= min_chunk_size:
-            raise ValueError(
-                f"{TableProperties.PARQUET_CDC_MAX_CHUNK_SIZE} ({max_chunk_size}) must be greater than "
-                f"{TableProperties.PARQUET_CDC_MIN_CHUNK_SIZE} ({min_chunk_size})"
-            )
-        if norm_level is not None and norm_level < 0:
-            raise ValueError(f"{TableProperties.PARQUET_CDC_NORM_LEVEL} must be greater than or equal to 0, got {norm_level}")
-
+        # PyArrow itself validates these values (e.g. max-chunk-size > min-chunk-size) and raises a
+        # clear OSError, so there's no need to duplicate that validation here.
         parquet_writer_kwargs["use_content_defined_chunking"] = {
-            "min_chunk_size": min_chunk_size,
-            "max_chunk_size": max_chunk_size,
-            "norm_level": norm_level,
+            "min_chunk_size": property_as_int(
+                properties=table_properties,
+                property_name=TableProperties.PARQUET_CDC_MIN_CHUNK_SIZE,
+                default=TableProperties.PARQUET_CDC_MIN_CHUNK_SIZE_DEFAULT,
+            ),
+            "max_chunk_size": property_as_int(
+                properties=table_properties,
+                property_name=TableProperties.PARQUET_CDC_MAX_CHUNK_SIZE,
+                default=TableProperties.PARQUET_CDC_MAX_CHUNK_SIZE_DEFAULT,
+            ),
+            "norm_level": property_as_int(
+                properties=table_properties,
+                property_name=TableProperties.PARQUET_CDC_NORM_LEVEL,
+                default=TableProperties.PARQUET_CDC_NORM_LEVEL_DEFAULT,
+            ),
         }
 
     return parquet_writer_kwargs
