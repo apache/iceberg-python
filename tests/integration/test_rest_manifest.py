@@ -28,17 +28,28 @@ from fastavro import reader
 from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.io.pyarrow import PyArrowFileIO
-from pyiceberg.manifest import DataFile, write_manifest
+from pyiceberg.manifest import MANIFEST_ENTRY_SCHEMAS, DataFile, write_manifest
 from pyiceberg.table import Table
 from pyiceberg.typedef import Record
+from pyiceberg.types import StructType
 from pyiceberg.utils.lazydict import LazyDict
 
 
 # helper function to serialize our objects to dicts to enable
 # direct comparison with the dicts returned by fastavro
-def todict(obj: Any, spec_keys: list[str]) -> Any:
+def todict(obj: Any, spec_keys: list[str], struct: StructType | None = None) -> Any:
     if type(obj) is Record:
         return {key: obj[pos] for key, pos in zip(spec_keys, range(len(obj)), strict=True)}
+    if struct is not None and isinstance(obj, Record):
+        return {
+            field.name: todict(
+                getattr(obj, field.name),
+                spec_keys,
+                field.field_type if isinstance(field.field_type, StructType) else None,
+            )
+            for field in struct.fields
+            if hasattr(obj, field.name)
+        }
     if isinstance(obj, dict) or isinstance(obj, LazyDict):
         data = []
         for k, v in obj.items():
@@ -111,7 +122,11 @@ def test_write_sample_manifest(table_test_all_types: Table, compression: AvroCom
     )
     wrapped_entry_v2 = copy(entry)
     wrapped_entry_v2.data_file = wrapped_data_file_v2_debug
-    wrapped_entry_v2_dict = todict(wrapped_entry_v2, [field.name for field in test_spec.fields])
+    wrapped_entry_v2_dict = todict(
+        wrapped_entry_v2,
+        [field.name for field in test_spec.fields],
+        MANIFEST_ENTRY_SCHEMAS[2].as_struct(),
+    )
 
     with TemporaryDirectory() as tmpdir:
         tmp_avro_file = tmpdir + "/test_write_manifest.avro"

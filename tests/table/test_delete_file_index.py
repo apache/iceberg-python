@@ -17,6 +17,7 @@
 import pytest
 
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat, ManifestEntry, ManifestEntryStatus
+from pyiceberg.table.delete_file import DeleteFileSet
 from pyiceberg.table.delete_file_index import PATH_FIELD_ID, DeleteFileIndex, PositionDeletes
 from pyiceberg.typedef import Record
 
@@ -65,17 +66,26 @@ def _create_partition_delete(sequence_number: int = 1, spec_id: int = 0, partiti
 
 
 def _create_deletion_vector(
-    sequence_number: int = 1, file_path: str = "s3://bucket/data.parquet", spec_id: int = 0
+    sequence_number: int = 1,
+    file_path: str = "s3://bucket/data.parquet",
+    spec_id: int = 0,
+    delete_file_path: str | None = None,
+    content_offset: int | None = None,
+    content_size_in_bytes: int | None = None,
 ) -> ManifestEntry:
     delete_file = DataFile.from_args(
+        _table_format_version=3,
         content=DataFileContent.POSITION_DELETES,
-        file_path=f"s3://bucket/deletion-vector-{sequence_number}.puffin",
+        file_path=delete_file_path or f"s3://bucket/deletion-vector-{sequence_number}.puffin",
         file_format=FileFormat.PUFFIN,
         partition=Record(),
         record_count=10,
         file_size_in_bytes=100,
         lower_bounds={PATH_FIELD_ID: file_path.encode()},
         upper_bounds={PATH_FIELD_ID: file_path.encode()},
+        referenced_data_file=file_path,
+        content_offset=content_offset,
+        content_size_in_bytes=content_size_in_bytes,
     )
     delete_file._spec_id = spec_id
     return ManifestEntry.from_args(status=ManifestEntryStatus.ADDED, sequence_number=sequence_number, data_file=delete_file)
@@ -159,6 +169,56 @@ def test_dvs_treated_as_position_deletes() -> None:
     result = index.for_data_file(1, data_file)
     assert len(result) == 2
     assert all(d.content == DataFileContent.POSITION_DELETES for d in result)
+
+
+def test_delete_file_set_uses_content_range_identity() -> None:
+    shared_file_path = "s3://bucket/deletion-vectors.bin"
+    first_dv = _create_deletion_vector(
+        sequence_number=2,
+        delete_file_path=shared_file_path,
+        content_offset=4,
+        content_size_in_bytes=10,
+    ).data_file
+    second_dv = _create_deletion_vector(
+        sequence_number=3,
+        delete_file_path=shared_file_path,
+        content_offset=40,
+        content_size_in_bytes=12,
+    ).data_file
+
+    assert first_dv == second_dv
+    assert len(DeleteFileSet([first_dv, second_dv])) == 2
+
+
+def test_dvs_with_same_file_path_and_different_content_ranges_are_not_deduped() -> None:
+    index = DeleteFileIndex()
+    shared_file_path = "s3://bucket/deletion-vectors.bin"
+
+    index.add_delete_file(
+        _create_deletion_vector(
+            sequence_number=2,
+            delete_file_path=shared_file_path,
+            content_offset=4,
+            content_size_in_bytes=10,
+        )
+    )
+    index.add_delete_file(
+        _create_deletion_vector(
+            sequence_number=3,
+            delete_file_path=shared_file_path,
+            content_offset=40,
+            content_size_in_bytes=12,
+        )
+    )
+
+    data_file = _create_data_file()
+    result = index.for_data_file(1, data_file)
+
+    assert len(result) == 2
+    assert {(dv.file_path, dv.content_offset, dv.content_size_in_bytes) for dv in result} == {
+        (shared_file_path, 4, 10),
+        (shared_file_path, 40, 12),
+    }
 
 
 def test_cannot_add_after_indexing() -> None:
