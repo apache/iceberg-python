@@ -2196,20 +2196,6 @@ def _to_arrow_batch_reader_via_file_scan_tasks(
     from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
 
     target_schema = schema_to_pyarrow(projected_schema)
-    if dictionary_columns:
-        """schema_to_pyarrow returns plain types. ArrowScan yields
-           dictionary-encoded batches for the requested columns, so rebuild
-           target_schema with dictionary types for those fields. Without this,
-           .cast(target_schema) would silently convert dictionary arrays back
-           to their plain value type and erase the encoding."""
-        dict_col_set = set(dictionary_columns)
-        target_schema = pa.schema(
-            [
-                field.with_type(pa.dictionary(pa.int32(), field.type)) if field.name in dict_col_set else field
-                for field in target_schema
-            ],
-            metadata=target_schema.metadata,
-        )
     batches = ArrowScan(
         scan.table_metadata,
         scan.io,
@@ -2219,6 +2205,21 @@ def _to_arrow_batch_reader_via_file_scan_tasks(
         scan.limit,
         dictionary_columns=dictionary_columns,
     ).to_record_batches(tasks)
+
+    if dictionary_columns:
+        # schema_to_pyarrow returns plain types, but ArrowScan yields dictionary-encoded
+        # batches for the requested columns. Peek at the first batch to pick up the actual
+        # dictionary field Arrow produced, rather than assuming an index type, and put the
+        # batch back on the stream. Without this, .cast(target_schema) would silently
+        # convert the dictionary arrays back to their plain value type and erase the encoding.
+        dict_col_set = set(dictionary_columns)
+        first_batch = next(batches, None)
+        if first_batch is not None:
+            batches = chain([first_batch], batches)
+            target_schema = pa.schema(
+                [first_batch.schema.field(field.name) if field.name in dict_col_set else field for field in target_schema],
+                metadata=target_schema.metadata,
+            )
 
     return pa.RecordBatchReader.from_batches(target_schema, batches).cast(target_schema)
 
