@@ -5300,34 +5300,32 @@ def test_dictionary_columns_produces_dict_encoded_output(tmpdir: str) -> None:
     assert result_plain.column("label").to_pylist() == result_dict.column("label").to_pylist()
 
 
-def test_get_parquet_writer_kwargs_cdc_disabled_by_default() -> None:
-    kwargs = _get_parquet_writer_kwargs({})
-    assert "use_content_defined_chunking" not in kwargs
-
-
-def test_get_parquet_writer_kwargs_cdc_enabled_with_defaults() -> None:
-    kwargs = _get_parquet_writer_kwargs({TableProperties.PARQUET_CDC_ENABLED: "true"})
-    assert kwargs["use_content_defined_chunking"] == {
-        "min_chunk_size": TableProperties.PARQUET_CDC_MIN_CHUNK_SIZE_DEFAULT,
-        "max_chunk_size": TableProperties.PARQUET_CDC_MAX_CHUNK_SIZE_DEFAULT,
-        "norm_level": TableProperties.PARQUET_CDC_NORM_LEVEL_DEFAULT,
-    }
-
-
-def test_get_parquet_writer_kwargs_cdc_enabled_with_custom_values() -> None:
-    kwargs = _get_parquet_writer_kwargs(
-        {
-            TableProperties.PARQUET_CDC_ENABLED: "true",
-            TableProperties.PARQUET_CDC_MIN_CHUNK_SIZE: "4096",
-            TableProperties.PARQUET_CDC_MAX_CHUNK_SIZE: "8192",
-            TableProperties.PARQUET_CDC_NORM_LEVEL: "2",
-        }
-    )
-    assert kwargs["use_content_defined_chunking"] == {
-        "min_chunk_size": 4096,
-        "max_chunk_size": 8192,
-        "norm_level": 2,
-    }
+@pytest.mark.parametrize(
+    "table_properties,expected",
+    [
+        ({}, None),
+        (
+            {TableProperties.PARQUET_CDC_ENABLED: "true"},
+            {
+                "min_chunk_size": TableProperties.PARQUET_CDC_MIN_CHUNK_SIZE_DEFAULT,
+                "max_chunk_size": TableProperties.PARQUET_CDC_MAX_CHUNK_SIZE_DEFAULT,
+                "norm_level": TableProperties.PARQUET_CDC_NORM_LEVEL_DEFAULT,
+            },
+        ),
+        (
+            {
+                TableProperties.PARQUET_CDC_ENABLED: "true",
+                TableProperties.PARQUET_CDC_MIN_CHUNK_SIZE: "4096",
+                TableProperties.PARQUET_CDC_MAX_CHUNK_SIZE: "8192",
+                TableProperties.PARQUET_CDC_NORM_LEVEL: "2",
+            },
+            {"min_chunk_size": 4096, "max_chunk_size": 8192, "norm_level": 2},
+        ),
+    ],
+)
+def test_get_parquet_writer_kwargs_cdc(table_properties: dict[str, str], expected: dict[str, int] | None) -> None:
+    kwargs = _get_parquet_writer_kwargs(table_properties)
+    assert kwargs.get("use_content_defined_chunking") == expected
 
 
 def test_get_parquet_writer_kwargs_cdc_enabled_unsupported_pyarrow_version(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -5336,8 +5334,40 @@ def test_get_parquet_writer_kwargs_cdc_enabled_unsupported_pyarrow_version(monke
         _get_parquet_writer_kwargs({TableProperties.PARQUET_CDC_ENABLED: "true"})
 
 
+@pytest.mark.parametrize(
+    "table_properties,match",
+    [
+        (
+            {
+                TableProperties.PARQUET_CDC_ENABLED: "true",
+                TableProperties.PARQUET_CDC_MIN_CHUNK_SIZE: "0",
+            },
+            "min-chunk-size must be greater than 0",
+        ),
+        (
+            {
+                TableProperties.PARQUET_CDC_ENABLED: "true",
+                TableProperties.PARQUET_CDC_MIN_CHUNK_SIZE: "8192",
+                TableProperties.PARQUET_CDC_MAX_CHUNK_SIZE: "4096",
+            },
+            "max-chunk-size .* must be greater than .*min-chunk-size",
+        ),
+        (
+            {
+                TableProperties.PARQUET_CDC_ENABLED: "true",
+                TableProperties.PARQUET_CDC_NORM_LEVEL: "-1",
+            },
+            "norm-level must be greater than or equal to 0",
+        ),
+    ],
+)
+def test_get_parquet_writer_kwargs_cdc_invalid_properties(table_properties: dict[str, str], match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        _get_parquet_writer_kwargs(table_properties)
+
+
 def test_write_file_with_content_defined_chunking_enabled(tmp_path: Path) -> None:
-    """Writing a table with CDC enabled should succeed and produce a readable Parquet file."""
+    """Writing a table with CDC enabled should forward use_content_defined_chunking to pq.ParquetWriter."""
     from pyiceberg.table import WriteTask
 
     table_schema = Schema(NestedField(1, "id", IntegerType(), required=False))
@@ -5359,8 +5389,15 @@ def test_write_file_with_content_defined_chunking_enabled(tmp_path: Path) -> Non
         schema=table_schema,
     )
 
-    data_files = list(write_file(io=PyArrowFileIO(), table_metadata=table_metadata, tasks=iter([task])))
-    assert len(data_files) == 1
+    with patch("pyiceberg.io.pyarrow.pq.ParquetWriter", wraps=pq.ParquetWriter) as mock_writer:
+        data_files = list(write_file(io=PyArrowFileIO(), table_metadata=table_metadata, tasks=iter([task])))
 
+    assert mock_writer.call_args.kwargs["use_content_defined_chunking"] == {
+        "min_chunk_size": TableProperties.PARQUET_CDC_MIN_CHUNK_SIZE_DEFAULT,
+        "max_chunk_size": TableProperties.PARQUET_CDC_MAX_CHUNK_SIZE_DEFAULT,
+        "norm_level": TableProperties.PARQUET_CDC_NORM_LEVEL_DEFAULT,
+    }
+
+    assert len(data_files) == 1
     written_table = pq.read_table(data_files[0].file_path.replace("file://", ""))
     assert written_table.column("id").to_pylist() == list(range(1000))
