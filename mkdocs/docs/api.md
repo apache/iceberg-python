@@ -578,6 +578,14 @@ assert upd.rows_inserted == 1
 
 PyIceberg will automatically detect which rows need to be updated, inserted or can simply be ignored.
 
+By default, all non-key columns are compared to detect whether a matched row has changed. When comparing all columns is expensive (for example wide tables, or complex types such as structs and lists), you can limit the comparison to a subset of columns with `difference_cols` — for example a single hash column that reflects any change to the row:
+
+```python
+upd = tbl.upsert(df, difference_cols=["row_hash"])
+```
+
+Note that `difference_cols` only limits change *detection*: when a matched row is detected as changed, all of its columns are written, not just the listed ones.
+
 ## Inspecting tables
 
 To explore the table metadata, tables can be inspected.
