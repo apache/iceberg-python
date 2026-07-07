@@ -72,9 +72,10 @@ class PuffinFile:
         raw = self._file_bytes[blob.offset : blob.offset + blob.length]
         if blob.compression_codec is None:
             return raw
-        if blob.compression_codec == "zstd":
+        elif blob.compression_codec == "zstd":
             return zstandard.ZstdDecompressor().decompress(raw)
-        raise ValueError(f"Unsupported compression codec: {blob.compression_codec!r}")
+        else:
+            raise ValueError(f"Unsupported puffin compression codec: {blob.compression_codec!r}")
 
     @deprecated(deprecated_in="0.12.0", removed_in="0.13.0", help_message="Use deletion_vectors_from_puffin_file(...) instead")
     def to_vector(self) -> dict[str, "pa.ChunkedArray"]:
