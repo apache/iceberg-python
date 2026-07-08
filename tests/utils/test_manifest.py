@@ -1203,6 +1203,11 @@ def test_write_manifest_v3(compression: AvroCompressionCodec) -> None:
         partition=Record(),
         record_count=100,
         file_size_in_bytes=1024,
+        column_sizes={1: 10},
+        value_counts={1: 100},
+        null_value_counts={1: 0},
+        split_offsets=[4],
+        sort_order_id=1,
         first_row_id=1000,
     )
     v2_data_file = DataFile.from_args(
@@ -1239,6 +1244,19 @@ def test_write_manifest_v3(compression: AvroCompressionCodec) -> None:
         for entry in entries:
             for v3_field in ("first_row_id", "referenced_data_file", "content_offset", "content_size_in_bytes"):
                 assert v3_field in entry["data_file"]
+        assert entries[0]["data_file"]["sort_order_id"] == 1
+        assert entries[0]["data_file"]["split_offsets"] == [4]
+
+        # the V3 manifest must remain readable by the current reader
+        read_entries = writer.to_manifest_file().fetch_manifest_entry(io, discard_deleted=False)
+        assert len(read_entries) == 2
+        assert read_entries[0].status == ManifestEntryStatus.ADDED
+        assert read_entries[0].data_file.file_path == "/data/file-v3.parquet"
+        assert read_entries[0].data_file.record_count == 100
+        assert read_entries[0].data_file.column_sizes == {1: 10}
+        assert read_entries[0].data_file.value_counts == {1: 100}
+        assert read_entries[0].data_file.sort_order_id == 1
+        assert read_entries[1].data_file.file_path == "/data/file-v2.parquet"
 
 
 @pytest.mark.parametrize("compression", ["null", "deflate"])
@@ -1303,6 +1321,13 @@ def test_write_manifest_list_v3_assigns_first_row_id(compression: AvroCompressio
 
         assert [r["first_row_id"] for r in records] == [1000, 77, None, 1125]
 
+        # the V3 manifest list must remain readable by the current reader
+        read_back = list(read_manifest_list(io.new_input(path)))
+        assert [m.manifest_path for m in read_back] == ["/m1.avro", "/m2.avro", "/m3.avro", "/m4.avro"]
+        assert read_back[0].added_rows_count == 100
+        assert read_back[0].existing_rows_count == 25
+        assert read_back[2].content == ManifestContent.DELETES
+
 
 def test_write_manifest_list_v3_requires_first_row_id() -> None:
     io = load_file_io()
@@ -1317,3 +1342,112 @@ def test_write_manifest_list_v3_requires_first_row_id() -> None:
                 avro_compression="null",
                 first_row_id=None,
             )
+
+
+@pytest.mark.parametrize("compression", ["null", "deflate"])
+def test_write_manifest_v3_carries_first_row_id(compression: AvroCompressionCodec) -> None:
+    io = load_file_io()
+    test_schema = Schema(NestedField(1, "foo", IntegerType(), False))
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path="/data/file.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=100,
+        file_size_in_bytes=1024,
+    )
+
+    with TemporaryDirectory() as tmp_dir:
+        with write_manifest(
+            format_version=3,
+            spec=UNPARTITIONED_PARTITION_SPEC,
+            schema=test_schema,
+            output_file=io.new_output(tmp_dir + "/manifest-rewrite.avro"),
+            snapshot_id=25,
+            avro_compression=compression,
+            first_row_id=100,
+        ) as writer:
+            writer.add(ManifestEntry.from_args(status=ManifestEntryStatus.ADDED, snapshot_id=25, data_file=data_file))
+
+        manifest_file = writer.to_manifest_file()
+        assert manifest_file.first_row_id == 100
+
+        # a manifest list writer must preserve the carried first_row_id and not advance next_row_id for it
+        path = tmp_dir + "/manifest-list.avro"
+        with write_manifest_list(
+            format_version=3,
+            output_file=io.new_output(path),
+            snapshot_id=25,
+            parent_snapshot_id=19,
+            sequence_number=2,
+            avro_compression=compression,
+            first_row_id=1000,
+        ) as list_writer:
+            list_writer.add_manifests([manifest_file])
+        assert list_writer.next_row_id == 1000  # type: ignore[attr-defined]
+
+        with open(path, "rb") as f:
+            records = list(fastavro.reader(f))
+        assert [r["first_row_id"] for r in records] == [100]
+
+
+def test_write_manifest_first_row_id_requires_v3() -> None:
+    io = load_file_io()
+    test_schema = Schema(NestedField(1, "foo", IntegerType(), False))
+    with TemporaryDirectory() as tmp_dir:
+        with pytest.raises(ValueError, match="First-row-id is only supported for V3 tables"):
+            write_manifest(
+                format_version=2,
+                spec=UNPARTITIONED_PARTITION_SPEC,
+                schema=test_schema,
+                output_file=io.new_output(tmp_dir + "/manifest.avro"),
+                snapshot_id=25,
+                avro_compression="null",
+                first_row_id=100,
+            )
+
+
+def test_read_v2_manifest_list_with_v3_layout() -> None:
+    from pyiceberg.avro.file import AvroFile
+    from pyiceberg.manifest import MANIFEST_LIST_FILE_SCHEMAS
+
+    io = load_file_io()
+    manifest = ManifestFile.from_args(
+        manifest_path="/m1.avro",
+        manifest_length=100,
+        partition_spec_id=0,
+        content=ManifestContent.DATA,
+        sequence_number=1,
+        min_sequence_number=1,
+        added_snapshot_id=25,
+        added_files_count=1,
+        existing_files_count=0,
+        deleted_files_count=0,
+        added_rows_count=100,
+        existing_rows_count=0,
+        deleted_rows_count=0,
+    )
+
+    with TemporaryDirectory() as tmp_dir:
+        path = tmp_dir + "/manifest-list-v2.avro"
+        with write_manifest_list(
+            format_version=2,
+            output_file=io.new_output(path),
+            snapshot_id=25,
+            parent_snapshot_id=19,
+            sequence_number=2,
+            avro_compression="null",
+        ) as writer:
+            writer.add_manifests([manifest])
+
+        # reading a V2 manifest list with the V3 layout yields a null first_row_id
+        with AvroFile[ManifestFile](
+            io.new_input(path),
+            MANIFEST_LIST_FILE_SCHEMAS[3],
+            read_types={-1: ManifestFile},
+            read_enums={517: ManifestContent},
+        ) as reader:
+            entries = list(reader)
+        assert len(entries) == 1
+        assert entries[0].first_row_id is None
+        assert entries[0].manifest_path == "/m1.avro"
