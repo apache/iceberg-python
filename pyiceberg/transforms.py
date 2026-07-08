@@ -31,7 +31,7 @@ from uuid import UUID
 import mmh3
 from pydantic import Field, PositiveInt, PrivateAttr
 
-from pyiceberg.exceptions import NotInstalledError
+from pyiceberg.exceptions import NotInstalledError, ValidationError
 from pyiceberg.expressions import (
     BoundEqualTo,
     BoundGreaterThan,
@@ -226,9 +226,15 @@ def parse_transform(v: Any) -> Transform[Any, Any]:
         elif v == VOID:
             return VoidTransform()
         elif v.startswith(BUCKET):
-            return BucketTransform(num_buckets=BUCKET_PARSER.match(v))
+            try:
+                return BucketTransform(num_buckets=BUCKET_PARSER.match(v))
+            except ValidationError:
+                return UnknownTransform(transform=v)
         elif v.startswith(TRUNCATE):
-            return TruncateTransform(width=TRUNCATE_PARSER.match(v))
+            try:
+                return TruncateTransform(width=TRUNCATE_PARSER.match(v))
+            except ValidationError:
+                return UnknownTransform(transform=v)
         elif v == YEAR:
             return YearTransform()
         elif v == MONTH:
@@ -1000,6 +1006,10 @@ class UnknownTransform(Transform[S, T]):
 
     def strict_project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         return None
+
+    def __str__(self) -> str:
+        """Return the original transform name so it round-trips through serialization."""
+        return self._transform
 
     def __repr__(self) -> str:
         """Return the string representation of the UnknownTransform class."""
