@@ -24,12 +24,13 @@ from pydantic import (
     Field,
     PlainSerializer,
     WithJsonSchema,
+    model_serializer,
     model_validator,
 )
 
 from pyiceberg.exceptions import ValidationError
 from pyiceberg.schema import Schema
-from pyiceberg.transforms import IdentityTransform, Transform, parse_transform
+from pyiceberg.transforms import IdentityTransform, Transform, UnknownTransform, parse_transform
 from pyiceberg.typedef import IcebergBaseModel
 from pyiceberg.types import IcebergType
 
@@ -107,11 +108,29 @@ class SortField(IcebergBaseModel):
                     if len(source_ids) == 0:
                         raise ValueError("Empty source-ids is not allowed")
                     if len(source_ids) > 1:
-                        raise ValueError("Multi argument transforms are not yet supported")
+                        # Multi-argument transforms cannot be evaluated; per the spec, v3 readers
+                        # must read tables with such transforms, ignoring them
+                        data["transform"] = UnknownTransform(transform=str(data.get("transform")))
+                    else:
+                        data.pop("source-ids", None)
                     data["source-id"] = source_ids[0]
         return data
 
+    @model_serializer(mode="wrap")
+    def _serialize_source_ids(self, handler: Any) -> Any:
+        serialized = handler(self)
+        # Per the spec, single-argument transforms write only source-id and
+        # multi-argument transforms write only source-ids
+        if self.source_ids is not None and len(self.source_ids) > 1:
+            serialized.pop("source-id", None)
+            serialized.pop("source_id", None)
+        else:
+            serialized.pop("source-ids", None)
+            serialized.pop("source_ids", None)
+        return serialized
+
     source_id: int = Field(alias="source-id")
+    source_ids: list[int] | None = Field(alias="source-ids", default=None, repr=False)
     transform: Annotated[  # type: ignore
         Transform,
         BeforeValidator(parse_transform),

@@ -175,3 +175,20 @@ def test_incompatible_transform_source_type() -> None:
         sort_order.check_compatible(schema)
 
     assert "Invalid source field foo with type int for transform: year" in str(exc.value)
+
+
+def test_deserialize_sort_field_multi_arg() -> None:
+    from pyiceberg.transforms import UnknownTransform
+
+    payload = '{"source-ids":[19,20],"transform":"bucket[4]","direction":"asc","null-order":"nulls-first"}'
+    field = SortField.model_validate_json(payload)
+
+    # v3 readers must read tables with multi-argument transforms, treating them as unknown
+    assert isinstance(field.transform, UnknownTransform)
+    assert field.source_id == 19
+    assert field.source_ids == [19, 20]
+
+    serialized = json.loads(field.model_dump_json())
+    assert serialized["source-ids"] == [19, 20]
+    assert "source-id" not in serialized
+    assert serialized["transform"] == "bucket[4]"
