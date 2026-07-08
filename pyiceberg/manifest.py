@@ -1301,11 +1301,39 @@ class ManifestWriterV3(ManifestWriterV2):
     The writer inherits the V2 sequence-number semantics; the V3 manifest entry
     schema additionally carries `first_row_id`, `referenced_data_file`,
     `content_offset` and `content_size_in_bytes` on the data file struct.
+
+    An optional `first_row_id` can be provided when rewriting a manifest whose
+    `first_row_id` is already known; it is carried into the produced manifest file
+    so the manifest list writer preserves it instead of assigning a new one. For
+    new manifests it is None and assigned when writing the manifest list.
     """
+
+    _first_row_id: int | None
+
+    def __init__(
+        self,
+        spec: PartitionSpec,
+        schema: Schema,
+        output_file: OutputFile,
+        snapshot_id: int,
+        avro_compression: AvroCompressionCodec,
+        first_row_id: int | None = None,
+    ):
+        super().__init__(spec, schema, output_file, snapshot_id, avro_compression)
+        self._first_row_id = first_row_id
 
     @property
     def version(self) -> TableVersion:
         return 3
+
+    def to_manifest_file(self) -> ManifestFile:
+        """Return the manifest file, bound to the V3 layout and carrying `first_row_id`."""
+        manifest_file = super().to_manifest_file()
+        args = {
+            field.name: value
+            for field, value in zip(MANIFEST_LIST_FILE_SCHEMAS[DEFAULT_READ_VERSION].fields, manifest_file._data, strict=True)
+        }
+        return ManifestFile.from_args(_table_format_version=3, first_row_id=self._first_row_id, **args)
 
     def new_writer(self) -> AvroOutputFile[ManifestEntry]:
         # Use the V3 record layout so the V3-only data file fields are written
@@ -1347,13 +1375,16 @@ def write_manifest(
     output_file: OutputFile,
     snapshot_id: int,
     avro_compression: AvroCompressionCodec,
+    first_row_id: int | None = None,
 ) -> ManifestWriter:
+    if first_row_id is not None and format_version < 3:
+        raise ValueError(f"First-row-id is only supported for V3 tables: {format_version}")
     if format_version == 1:
         return ManifestWriterV1(spec, schema, output_file, snapshot_id, avro_compression)
     elif format_version == 2:
         return ManifestWriterV2(spec, schema, output_file, snapshot_id, avro_compression)
     elif format_version == 3:
-        return ManifestWriterV3(spec, schema, output_file, snapshot_id, avro_compression)
+        return ManifestWriterV3(spec, schema, output_file, snapshot_id, avro_compression, first_row_id)
     else:
         raise ValueError(f"Cannot write manifest for table version: {format_version}")
 
