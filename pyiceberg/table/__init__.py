@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from functools import cached_property
 from itertools import chain
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from pydantic import Field
 
@@ -345,6 +345,9 @@ class Transaction:
 
         When a property is already set, it will be overwritten.
 
+        Setting the `format-version` property upgrades the table to that format
+        version instead of storing it as a property.
+
         Args:
             properties: The properties set on the table.
             kwargs: properties can also be pass as kwargs.
@@ -354,8 +357,12 @@ class Transaction:
         """
         if properties and kwargs:
             raise ValueError("Cannot pass both properties and kwargs")
-        updates = properties or kwargs
-        return self._apply((SetPropertiesUpdate(updates=updates),))
+        updates = dict(properties or kwargs)
+        if (new_format_version := updates.pop(TableProperties.FORMAT_VERSION, None)) is not None:
+            self.upgrade_table_version(format_version=cast(TableVersion, int(new_format_version)))
+        if updates:
+            return self._apply((SetPropertiesUpdate(updates=updates),))
+        return self
 
     def _set_ref_snapshot(
         self,
