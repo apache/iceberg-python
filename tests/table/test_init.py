@@ -84,6 +84,7 @@ from pyiceberg.table.update import (
     SetPropertiesUpdate,
     SetSnapshotRefUpdate,
     SetStatisticsUpdate,
+    UpgradeFormatVersionUpdate,
     _apply_table_update,
     _TableMetadataUpdateContext,
     update_table_metadata,
@@ -1239,6 +1240,20 @@ def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
 
     # Set/RemovePropertiesUpdate
     assert new_metadata.properties == {"owner": "test", "test_a": "test_a1"}
+
+
+def test_update_metadata_upgrade_to_v3(table_v2: Table) -> None:
+    from pyiceberg.table.metadata import TableMetadataV3
+
+    new_metadata = update_table_metadata(table_v2.metadata, (UpgradeFormatVersionUpdate(format_version=3),))
+    assert isinstance(new_metadata, TableMetadataV3)
+    assert new_metadata.format_version == 3
+    assert new_metadata.next_row_id == 0
+
+    # rebuild the metadata to trigger validation
+    validated = TableMetadataUtil.parse_obj(copy(new_metadata.model_dump()))
+    assert validated.format_version == 3
+    assert validated.next_row_id == 0
 
 
 def test_update_metadata_schema_immutability(

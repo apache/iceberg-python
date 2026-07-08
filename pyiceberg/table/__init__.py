@@ -52,7 +52,7 @@ from pyiceberg.table.delete_file_index import DeleteFileIndex
 from pyiceberg.table.inspect import InspectTable
 from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.table.maintenance import MaintenanceTable
-from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadata
+from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, SUPPORTED_TABLE_FORMAT_VERSION, TableMetadata
 from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
 from pyiceberg.table.snapshots import (
@@ -329,7 +329,7 @@ class Transaction:
         Returns:
             The alter table builder.
         """
-        if format_version not in {1, 2}:
+        if not 1 <= format_version <= SUPPORTED_TABLE_FORMAT_VERSION:
             raise ValueError(f"Unsupported table format version: {format_version}")
 
         if format_version < self.table_metadata.format_version:
