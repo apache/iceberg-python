@@ -1188,3 +1188,132 @@ def test_negative_manifest_cache_size_raises_value_error(monkeypatch: pytest.Mon
     finally:
         monkeypatch.delenv("PYICEBERG_MANIFEST_CACHE_SIZE", raising=False)
         importlib.reload(manifest_module)
+
+
+@pytest.mark.parametrize("compression", ["null", "deflate"])
+def test_write_manifest_v3(compression: AvroCompressionCodec) -> None:
+    io = load_file_io()
+    test_schema = Schema(NestedField(1, "foo", IntegerType(), False))
+
+    v3_data_file = DataFile.from_args(
+        _table_format_version=3,
+        content=DataFileContent.DATA,
+        file_path="/data/file-v3.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=100,
+        file_size_in_bytes=1024,
+        first_row_id=1000,
+    )
+    v2_data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path="/data/file-v2.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=50,
+        file_size_in_bytes=512,
+    )
+
+    with TemporaryDirectory() as tmp_dir:
+        path = tmp_dir + "/manifest-v3.avro"
+        with write_manifest(
+            format_version=3,
+            spec=UNPARTITIONED_PARTITION_SPEC,
+            schema=test_schema,
+            output_file=io.new_output(path),
+            snapshot_id=25,
+            avro_compression=compression,
+        ) as writer:
+            writer.add(ManifestEntry.from_args(status=ManifestEntryStatus.ADDED, snapshot_id=25, data_file=v3_data_file))
+            # a data file bound to the default (V2) layout is rebound to the V3 layout
+            writer.add(ManifestEntry.from_args(status=ManifestEntryStatus.ADDED, snapshot_id=25, data_file=v2_data_file))
+
+        _verify_metadata_with_fastavro(path, {"format-version": "3", "content": "data"})
+
+        with open(path, "rb") as f:
+            entries = list(fastavro.reader(f))
+
+        assert len(entries) == 2
+        assert entries[0]["data_file"]["first_row_id"] == 1000
+        assert entries[1]["data_file"]["first_row_id"] is None
+        for entry in entries:
+            for v3_field in ("first_row_id", "referenced_data_file", "content_offset", "content_size_in_bytes"):
+                assert v3_field in entry["data_file"]
+
+
+@pytest.mark.parametrize("compression", ["null", "deflate"])
+def test_write_manifest_list_v3_assigns_first_row_id(compression: AvroCompressionCodec) -> None:
+    io = load_file_io()
+
+    def manifest(path: str, content: ManifestContent, first_row_id: int | None = None, **counts: int) -> ManifestFile:
+        args: dict[str, Any] = {
+            "manifest_path": path,
+            "manifest_length": 100,
+            "partition_spec_id": 0,
+            "content": content,
+            "sequence_number": 1,
+            "min_sequence_number": 1,
+            "added_snapshot_id": 25,
+            "added_files_count": 1,
+            "existing_files_count": 1,
+            "deleted_files_count": 0,
+            "added_rows_count": counts.get("added", 0),
+            "existing_rows_count": counts.get("existing", 0),
+            "deleted_rows_count": 0,
+        }
+        if first_row_id is not None:
+            return ManifestFile.from_args(_table_format_version=3, first_row_id=first_row_id, **args)
+        # bound to the default (V2) layout to exercise rebinding in the writer
+        return ManifestFile.from_args(**args)
+
+    unassigned_data = manifest("/m1.avro", ManifestContent.DATA, added=100, existing=25)
+    preserved_data = manifest("/m2.avro", ManifestContent.DATA, first_row_id=77, added=10)
+    deletes = manifest("/m3.avro", ManifestContent.DELETES, added=10)
+    second_unassigned_data = manifest("/m4.avro", ManifestContent.DATA, added=5)
+
+    with TemporaryDirectory() as tmp_dir:
+        path = tmp_dir + "/manifest-list-v3.avro"
+        with write_manifest_list(
+            format_version=3,
+            output_file=io.new_output(path),
+            snapshot_id=25,
+            parent_snapshot_id=19,
+            sequence_number=2,
+            avro_compression=compression,
+            first_row_id=1000,
+        ) as writer:
+            writer.add_manifests([unassigned_data, preserved_data, deletes, second_unassigned_data])
+
+        # 1000 + (100 + 25) + (5): assigned manifests advance by added + existing rows
+        assert writer.next_row_id == 1130  # type: ignore[attr-defined]
+
+        _verify_metadata_with_fastavro(
+            path,
+            {
+                "snapshot-id": "25",
+                "parent-snapshot-id": "19",
+                "sequence-number": "2",
+                "first-row-id": "1000",
+                "format-version": "3",
+            },
+        )
+
+        with open(path, "rb") as f:
+            records = list(fastavro.reader(f))
+
+        assert [r["first_row_id"] for r in records] == [1000, 77, None, 1125]
+
+
+def test_write_manifest_list_v3_requires_first_row_id() -> None:
+    io = load_file_io()
+    with TemporaryDirectory() as tmp_dir:
+        with pytest.raises(ValueError, match="First-row-id is required for V3 tables"):
+            write_manifest_list(
+                format_version=3,
+                output_file=io.new_output(tmp_dir + "/manifest-list.avro"),
+                snapshot_id=25,
+                parent_snapshot_id=19,
+                sequence_number=2,
+                avro_compression="null",
+                first_row_id=None,
+            )
