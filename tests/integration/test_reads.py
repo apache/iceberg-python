@@ -21,7 +21,7 @@ import time
 import uuid
 from datetime import datetime, timedelta
 from pathlib import PosixPath
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 import pyarrow as pa
@@ -52,6 +52,7 @@ from pyiceberg.io.pyarrow import (
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.table.snapshots import Operation
+from pyiceberg.typedef import TableVersion
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -984,7 +985,7 @@ def test_upgrade_table_version(catalog: Catalog) -> None:
 
     with pytest.raises(ValueError) as e:
         with table_test_table_version.transaction() as transaction:
-            transaction.upgrade_table_version(format_version=4)  # type: ignore[arg-type]
+            transaction.upgrade_table_version(format_version=cast(TableVersion, 4))
     assert "Unsupported table format version: 4" in str(e.value)
 
 
