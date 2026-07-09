@@ -119,11 +119,11 @@ def test_rewrite_manifests_single_manifest_is_noop(catalog: Catalog) -> None:
 
 def test_rewrite_manifests_respects_target_size(catalog: Catalog) -> None:
     table = _create_table_with_appends(catalog, appends=4)
-    manifest_length = _data_manifests(table)[0].manifest_length
+    max_manifest_length = max(m.manifest_length for m in _data_manifests(table))
 
-    # allow roughly two source manifests per group
+    # allow two source manifests per group (2x fits, 3x exceeds), robust to small size variations
     with table.transaction() as tx:
-        tx.set_properties({"commit.manifest.target-size-bytes": str(manifest_length * 2)})
+        tx.set_properties({"commit.manifest.target-size-bytes": str(int(max_manifest_length * 2.5))})
 
     table = catalog.load_table("default.test_rewrite")
     table.maintenance.rewrite_manifests().commit()
