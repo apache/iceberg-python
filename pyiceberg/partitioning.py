@@ -117,9 +117,11 @@ class PartitionField(IcebergBaseModel):
                     if len(source_ids) == 0:
                         raise ValueError("Empty source-ids is not allowed")
                     if len(source_ids) > 1:
+                        if data.get("transform") is None:
+                            raise ValueError("Transform is required for a multi-argument field")
                         # Multi-argument transforms cannot be evaluated; per the spec, v3 readers
                         # must read tables with such transforms, ignoring them
-                        data["transform"] = UnknownTransform(transform=str(data.get("transform")))
+                        data["transform"] = UnknownTransform(transform=str(data["transform"]))
                     else:
                         data.pop("source-ids", None)
                     data["source-id"] = source_ids[0]
@@ -140,7 +142,10 @@ class PartitionField(IcebergBaseModel):
 
     def __str__(self) -> str:
         """Return the string representation of the PartitionField class."""
-        sources = ", ".join(str(s) for s in self.source_ids) if self.source_ids else self.source_id
+        if self.source_ids is not None and len(self.source_ids) > 1:
+            sources = ", ".join(str(s) for s in self.source_ids)
+        else:
+            sources = str(self.source_id)
         return f"{self.field_id}: {self.name}: {self.transform}({sources})"
 
 
