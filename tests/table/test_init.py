@@ -2714,3 +2714,10 @@ def test_table_to_polars_forwards_kwargs(table_v2: Table, monkeypatch: pytest.Mo
         table_v2,
         {"storage_options": storage_options, "snapshot_id": 12345, "reader_override": "native"},
     )
+
+
+def test_set_properties_invalid_format_version_rejected(table_v2: Table) -> None:
+    transaction = table_v2.transaction()
+    for invalid in ("3.0", "three", "-1"):
+        with pytest.raises(ValueError, match="Invalid format-version"):
+            transaction.set_properties({"format-version": invalid})
