@@ -102,8 +102,11 @@ class DeletionVector:
         with io.BytesIO() as out:
             out.write(len(non_empty).to_bytes(8, "little"))
             for key, bitmap in non_empty:
-                if key > MAX_JAVA_SIGNED:
-                    raise ValueError(f"Key {key} is too large, max {MAX_JAVA_SIGNED} to maintain compatibility with Java impl")
+                # Java's RoaringPositionBitmap.readKey rejects keys above Integer.MAX_VALUE - 1
+                if key > MAX_JAVA_SIGNED - 1:
+                    raise ValueError(
+                        f"Key {key} is too large, max {MAX_JAVA_SIGNED - 1} to maintain compatibility with Java impl"
+                    )
                 out.write(key.to_bytes(4, "little"))
                 # Run-length encode before serializing so run-heavy vectors (e.g. contiguous
                 # deletes) stay compact, matching Java's BitmapPositionDeleteIndex.
