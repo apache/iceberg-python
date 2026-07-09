@@ -1557,7 +1557,12 @@ class ManifestListWriterV3(ManifestListWriterV2):
         return self._next_row_id
 
     def _wrap(self, manifest_file: ManifestFile) -> ManifestFile:
-        """Rebind a manifest file to the V3 record layout."""
+        """Rebind a manifest file to the V3 record layout.
+
+        Records not created with an explicit layout are bound to
+        MANIFEST_LIST_FILE_SCHEMAS[DEFAULT_READ_VERSION] (the from_args default),
+        so that is the layout to zip the positional data against.
+        """
         if len(manifest_file._data) >= len(MANIFEST_LIST_FILE_SCHEMAS[3].fields):
             return copy(manifest_file)
         args = {
@@ -1570,8 +1575,13 @@ class ManifestListWriterV3(ManifestListWriterV2):
         wrapped_manifest_file = super().prepare_manifest(self._wrap(manifest_file))
 
         if wrapped_manifest_file.content == ManifestContent.DATA and wrapped_manifest_file.first_row_id is None:
+            if wrapped_manifest_file.existing_rows_count is None or wrapped_manifest_file.added_rows_count is None:
+                # assigning first-row-id with unknown row counts would overlap row ID ranges
+                raise ValueError(
+                    f"Cannot assign first-row-id to manifest with unknown row counts: {wrapped_manifest_file.manifest_path}"
+                )
             wrapped_manifest_file.first_row_id = self._next_row_id
-            self._next_row_id += (wrapped_manifest_file.existing_rows_count or 0) + (wrapped_manifest_file.added_rows_count or 0)
+            self._next_row_id += wrapped_manifest_file.existing_rows_count + wrapped_manifest_file.added_rows_count
         return wrapped_manifest_file
 
 
@@ -1594,7 +1604,7 @@ def write_manifest_list(
         if sequence_number is None:
             raise ValueError(f"Sequence-number is required for V3 tables: {sequence_number}")
         if first_row_id is None:
-            raise ValueError(f"First-row-id is required for V3 tables: {first_row_id}")
+            raise ValueError("First-row-id is required for V3 tables")
         return ManifestListWriterV3(output_file, snapshot_id, parent_snapshot_id, sequence_number, avro_compression, first_row_id)
     else:
         raise ValueError(f"Cannot write manifest list for table version: {format_version}")

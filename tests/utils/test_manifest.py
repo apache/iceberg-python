@@ -1451,3 +1451,31 @@ def test_read_v2_manifest_list_with_v3_layout() -> None:
         assert len(entries) == 1
         assert entries[0].first_row_id is None
         assert entries[0].manifest_path == "/m1.avro"
+
+
+def test_write_manifest_list_v3_rejects_unknown_row_counts() -> None:
+    io = load_file_io()
+    manifest = ManifestFile.from_args(
+        manifest_path="/m1.avro",
+        manifest_length=100,
+        partition_spec_id=0,
+        content=ManifestContent.DATA,
+        sequence_number=1,
+        min_sequence_number=1,
+        added_snapshot_id=25,
+        added_rows_count=None,
+        existing_rows_count=None,
+    )
+
+    with TemporaryDirectory() as tmp_dir:
+        with pytest.raises(ValueError, match="unknown row counts"):
+            with write_manifest_list(
+                format_version=3,
+                output_file=io.new_output(tmp_dir + "/manifest-list.avro"),
+                snapshot_id=25,
+                parent_snapshot_id=19,
+                sequence_number=2,
+                avro_compression="null",
+                first_row_id=1000,
+            ) as writer:
+                writer.add_manifests([manifest])
