@@ -79,26 +79,26 @@ def test_rewrite_manifests_merges_data_manifests(catalog: Catalog) -> None:
     assert snapshot.summary["total-records"] == "9"
 
 
+def _sequence_numbers_by_file(table: Table) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for manifest in _data_manifests(table):
+        for entry in manifest.fetch_manifest_entry(table.io, discard_deleted=True):
+            assert entry.sequence_number is not None
+            result[entry.data_file.file_path] = entry.sequence_number
+    return result
+
+
 def test_rewrite_manifests_preserves_sequence_numbers(catalog: Catalog) -> None:
     table = _create_table_with_appends(catalog, appends=3)
-    entries_before = {
-        entry.data_file.file_path: entry.sequence_number
-        for manifest in _data_manifests(table)
-        for entry in manifest.fetch_manifest_entry(table.io, discard_deleted=True)
-    }
+    entries_before = _sequence_numbers_by_file(table)
 
     table.maintenance.rewrite_manifests().commit()
 
     table = catalog.load_table("default.test_rewrite")
-    manifests = _data_manifests(table)
-    entries_after = {
-        entry.data_file.file_path: entry.sequence_number
-        for manifest in manifests
-        for entry in manifest.fetch_manifest_entry(table.io, discard_deleted=True)
-    }
+    entries_after = _sequence_numbers_by_file(table)
     assert entries_after == entries_before
     # the merged manifest keeps the min sequence number of its entries
-    assert manifests[0].min_sequence_number == min(entries_before.values())
+    assert _data_manifests(table)[0].min_sequence_number == min(entries_before.values())
 
 
 def test_rewrite_manifests_single_manifest_is_noop(catalog: Catalog) -> None:
