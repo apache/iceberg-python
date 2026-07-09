@@ -975,6 +975,11 @@ def test_upgrade_table_version(catalog: Catalog) -> None:
     assert table_test_table_version.format_version == 3
     assert table_test_table_version.metadata.next_row_id == 0
 
+    # the upgraded metadata must persist and reload from the catalog
+    reloaded = catalog.load_table("default.test_table_version")
+    assert reloaded.format_version == 3
+    assert reloaded.metadata.next_row_id == 0
+
     with pytest.raises(ValueError) as e:
         with table_test_table_version.transaction() as transaction:
             transaction.upgrade_table_version(format_version=4)  # type: ignore[arg-type]

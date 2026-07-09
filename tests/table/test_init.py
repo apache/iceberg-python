@@ -2044,3 +2044,10 @@ def test_build_large_partition_predicate(table_v2: Table) -> None:
         )
 
     bind(table_v2.metadata.schema(), expr, case_sensitive=True)
+
+
+def test_set_properties_invalid_format_version_rejected(table_v2: Table) -> None:
+    transaction = table_v2.transaction()
+    for invalid in ("3.0", "three", "-1"):
+        with pytest.raises(ValueError, match="Invalid format-version"):
+            transaction.set_properties({"format-version": invalid})
