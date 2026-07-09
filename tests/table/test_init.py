@@ -2091,3 +2091,10 @@ def test_static_table_forwards_location_to_table_file_io(metadata_location: str,
 
     assert seen_locations, "expected at least one load_file_io call"
     assert all(loc is not None for loc in seen_locations), f"load_file_io called without a location: {seen_locations}"
+
+
+def test_set_properties_invalid_format_version_rejected(table_v2: Table) -> None:
+    transaction = table_v2.transaction()
+    for invalid in ("3.0", "three", "-1"):
+        with pytest.raises(ValueError, match="Invalid format-version"):
+            transaction.set_properties({"format-version": invalid})

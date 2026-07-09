@@ -359,6 +359,8 @@ class Transaction:
             raise ValueError("Cannot pass both properties and kwargs")
         updates = dict(properties or kwargs)
         if (new_format_version := updates.pop(TableProperties.FORMAT_VERSION, None)) is not None:
+            if isinstance(new_format_version, bool) or not str(new_format_version).isdigit():
+                raise ValueError(f"Invalid format-version: {new_format_version}")
             self.upgrade_table_version(format_version=cast(TableVersion, int(new_format_version)))
         if updates:
             return self._apply((SetPropertiesUpdate(updates=updates),))
