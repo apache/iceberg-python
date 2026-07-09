@@ -1319,9 +1319,13 @@ class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
 
     Live entries from the rewritten data manifests are regrouped into new
     manifests sized by `commit.manifest.target-size-bytes`, written as EXISTING
-    entries that keep their sequence numbers. Delete manifests are kept as-is.
-    The result is committed as a `replace` snapshot.
+    entries that keep their sequence numbers. Entries with status DELETED are
+    dropped, matching the reference implementation, which rewrites live entries
+    only. Delete manifests are kept as-is. The result is committed as a
+    `replace` snapshot; if no manifests need merging, no snapshot is committed.
     """
+
+    _computed_manifests: list[ManifestFile] | None
 
     _rewritten_count: int
     _created_count: int
@@ -1347,6 +1351,7 @@ class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
         self._created_count = 0
         self._kept_count = 0
         self._entries_processed = 0
+        self._computed_manifests = None
 
     def _deleted_entries(self) -> list[ManifestEntry]:
         return []
@@ -1378,9 +1383,13 @@ class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
         return groups
 
     def _existing_manifests(self) -> list[ManifestFile]:
+        if self._computed_manifests is not None:
+            return self._computed_manifests
+
         snapshot = self._transaction.table_metadata.snapshot_by_name(self._target_branch or MAIN_BRANCH)
         if snapshot is None:
-            return []
+            self._computed_manifests = []
+            return self._computed_manifests
 
         data_manifests_by_spec: defaultdict[int, list[ManifestFile]] = defaultdict(list)
         kept_manifests: list[ManifestFile] = []
@@ -1414,7 +1423,15 @@ class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
             "manifests-replaced": str(self._rewritten_count),
             "entries-processed": str(self._entries_processed),
         }
-        return new_manifests + kept_manifests
+        self._computed_manifests = new_manifests + kept_manifests
+        return self._computed_manifests
+
+    def _commit(self) -> UpdatesAndRequirements:
+        self._existing_manifests()
+        if self._created_count == 0:
+            # nothing was merged; committing would only produce a pointless replace snapshot
+            return (), ()
+        return super()._commit()
 
     def rewrites_needed(self) -> bool:
         """Return whether the current snapshot has more than one data manifest to merge."""
