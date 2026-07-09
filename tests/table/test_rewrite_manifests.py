@@ -21,7 +21,7 @@ import pytest
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.memory import InMemoryCatalog
-from pyiceberg.manifest import ManifestContent
+from pyiceberg.manifest import ManifestContent, ManifestFile
 from pyiceberg.table import Table
 from pyiceberg.table.snapshots import Operation
 
@@ -44,7 +44,7 @@ def _create_table_with_appends(catalog: Catalog, appends: int = 3) -> Table:
     return table
 
 
-def _data_manifests(table: Table) -> list:
+def _data_manifests(table: Table) -> list[ManifestFile]:
     snapshot = table.current_snapshot()
     assert snapshot is not None
     return [m for m in snapshot.manifests(table.io) if m.content == ManifestContent.DATA]
@@ -101,23 +101,20 @@ def test_rewrite_manifests_preserves_sequence_numbers(catalog: Catalog) -> None:
     assert manifests[0].min_sequence_number == min(entries_before.values())
 
 
-def test_rewrite_manifests_single_manifest_is_noop_kept(catalog: Catalog) -> None:
+def test_rewrite_manifests_single_manifest_is_noop(catalog: Catalog) -> None:
     table = _create_table_with_appends(catalog, appends=1)
+    snapshot_before = table.current_snapshot()
+    assert snapshot_before is not None
     manifest_path_before = _data_manifests(table)[0].manifest_path
 
     table.maintenance.rewrite_manifests().commit()
 
     table = catalog.load_table("default.test_rewrite")
-    manifests = _data_manifests(table)
-    assert len(manifests) == 1
-    # a single manifest is kept as-is, not rewritten
-    assert manifests[0].manifest_path == manifest_path_before
-
+    # nothing to merge: no new snapshot is committed and the manifest is untouched
     snapshot = table.current_snapshot()
     assert snapshot is not None
-    assert snapshot.summary is not None
-    assert snapshot.summary["manifests-created"] == "0"
-    assert snapshot.summary["manifests-replaced"] == "0"
+    assert snapshot.snapshot_id == snapshot_before.snapshot_id
+    assert _data_manifests(table)[0].manifest_path == manifest_path_before
 
 
 def test_rewrite_manifests_respects_target_size(catalog: Catalog) -> None:
