@@ -53,22 +53,22 @@ def test_spark_reads_table_after_rewrite_manifests(session_catalog: Catalog, spa
     assert len([m for m in snapshot.manifests(table.io) if m.content == ManifestContent.DATA]) == 1
 
     # Spark must read the rewritten table with the same data
-    spark_rows = spark.table(f"integration.{identifier}").collect()
+    spark_rows = spark.table(f"{identifier}").collect()
     assert sorted(row.id for row in spark_rows) == list(range(1, 10))
 
     # Spark must see the replace snapshot and the preserved data files
-    snapshots = spark.sql(f"SELECT operation FROM integration.{identifier}.snapshots ORDER BY committed_at").collect()
+    snapshots = spark.sql(f"SELECT operation FROM {identifier}.snapshots ORDER BY committed_at").collect()
     assert [row.operation for row in snapshots] == ["append", "append", "append", "replace"]
 
-    files = spark.sql(f"SELECT file_path FROM integration.{identifier}.files").collect()
+    files = spark.sql(f"SELECT file_path FROM {identifier}.files").collect()
     assert len(files) == 3
 
     # Spark sees the same manifest consolidation
-    manifests = spark.sql(f"SELECT path FROM integration.{identifier}.manifests").collect()
+    manifests = spark.sql(f"SELECT path FROM {identifier}.manifests").collect()
     assert len(manifests) == 1
 
     # time travel to the pre-rewrite snapshot still works from Spark
     previous_snapshot_id = snapshot.parent_snapshot_id
     assert previous_snapshot_id is not None
-    previous_rows = spark.sql(f"SELECT id FROM integration.{identifier} VERSION AS OF {previous_snapshot_id}").collect()
+    previous_rows = spark.sql(f"SELECT id FROM {identifier} VERSION AS OF {previous_snapshot_id}").collect()
     assert sorted(row.id for row in previous_rows) == list(range(1, 10))
