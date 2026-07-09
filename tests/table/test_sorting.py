@@ -192,3 +192,9 @@ def test_deserialize_sort_field_multi_arg() -> None:
     assert serialized["source-ids"] == [19, 20]
     assert "source-id" not in serialized
     assert serialized["transform"] == "bucket[4]"
+
+
+def test_deserialize_sort_field_multi_arg_requires_transform() -> None:
+    payload = '{"source-ids":[19,20],"direction":"asc","null-order":"nulls-first"}'
+    with pytest.raises(Exception, match="Transform is required for a multi-argument field"):
+        SortField.model_validate_json(payload)

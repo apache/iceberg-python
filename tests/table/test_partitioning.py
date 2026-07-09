@@ -301,6 +301,8 @@ def test_serialize_partition_field_single_source_id_only() -> None:
     serialized = json_lib.loads(field.model_dump_json())
     assert serialized["source-id"] == 1
     assert "source-ids" not in serialized
+    # a single-element source-ids is normalized onto source-id
+    assert field.source_ids is None
 
 
 def test_partition_type_with_multi_arg_field() -> None:
@@ -346,3 +348,9 @@ def test_incompatible_transform_source_type() -> None:
         spec.check_compatible(schema)
 
     assert "Invalid source field foo with type int for transform: year" in str(exc.value)
+
+
+def test_deserialize_partition_field_multi_arg_requires_transform() -> None:
+    json_partition_spec = """{"source-ids": [1, 2], "field-id": 1000, "name": "m"}"""
+    with pytest.raises(Exception, match="Transform is required for a multi-argument field"):
+        PartitionField.model_validate_json(json_partition_spec)

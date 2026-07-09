@@ -108,9 +108,11 @@ class SortField(IcebergBaseModel):
                     if len(source_ids) == 0:
                         raise ValueError("Empty source-ids is not allowed")
                     if len(source_ids) > 1:
+                        if data.get("transform") is None:
+                            raise ValueError("Transform is required for a multi-argument field")
                         # Multi-argument transforms cannot be evaluated; per the spec, v3 readers
                         # must read tables with such transforms, ignoring them
-                        data["transform"] = UnknownTransform(transform=str(data.get("transform")))
+                        data["transform"] = UnknownTransform(transform=str(data["transform"]))
                     else:
                         data.pop("source-ids", None)
                     data["source-id"] = source_ids[0]
