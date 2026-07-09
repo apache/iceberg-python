@@ -59,6 +59,10 @@ if TYPE_CHECKING:
 
 U = TypeVar("U")
 
+# Tolerance for clock drift when validating that a new snapshot is not
+# recorded before the table's last update. Matches the Java and Rust implementations.
+ONE_MINUTE_MS = 60_000
+
 
 class UpdateTableMetadata(ABC, Generic[U]):
     _transaction: Transaction
@@ -443,6 +447,14 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
         raise ValueError(
             f"Cannot add snapshot with sequence number {update.snapshot.sequence_number} "
             f"older than last sequence number {base_metadata.last_sequence_number}"
+        )
+    elif (
+        base_metadata.last_updated_ms is not None
+        and update.snapshot.timestamp_ms - base_metadata.last_updated_ms < -ONE_MINUTE_MS
+    ):
+        raise ValueError(
+            f"Invalid snapshot timestamp {update.snapshot.timestamp_ms}: "
+            f"before last updated timestamp {base_metadata.last_updated_ms}"
         )
     elif base_metadata.format_version >= 3 and update.snapshot.first_row_id is None:
         raise ValueError("Cannot add snapshot without first row id")
