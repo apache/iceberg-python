@@ -1682,6 +1682,23 @@ def test_bucket_pyarrow_void_transform() -> None:
     assert output_arr == VoidTransform().pyarrow_transform(IntegerType())(input_arr)
 
 
+def test_bucket_pyarrow_transform_dictionary_encoded() -> None:
+    input_arr = pa.array(["foo", "bar", "foo"], type=pa.dictionary(pa.int32(), pa.utf8()))
+    assert BucketTransform(num_buckets=10).pyarrow_transform(StringType())(input_arr) == pa.array([6, 7, 6], type=pa.int32())
+
+
+def test_bucket_pyarrow_transform_dictionary_encoded_chunked() -> None:
+    input_chunked = pa.chunked_array(
+        [
+            pa.array(["foo", "bar"], type=pa.dictionary(pa.int32(), pa.utf8())),
+            pa.array(["baz"], type=pa.dictionary(pa.int32(), pa.utf8())),
+        ]
+    )
+    assert BucketTransform(num_buckets=10).pyarrow_transform(StringType())(input_chunked) == pa.chunked_array(
+        [pa.array([6, 7], type=pa.int32()), pa.array([4], type=pa.int32())]
+    )
+
+
 @pytest.mark.parametrize(
     "source_type, input_arr, expected, width",
     [
