@@ -125,10 +125,8 @@ class SortField(IcebergBaseModel):
         # multi-argument transforms write only source-ids
         if self.source_ids is not None and len(self.source_ids) > 1:
             serialized.pop("source-id", None)
-            serialized.pop("source_id", None)
         else:
             serialized.pop("source-ids", None)
-            serialized.pop("source_ids", None)
         return serialized
 
     source_id: int = Field(alias="source-id")
@@ -147,8 +145,11 @@ class SortField(IcebergBaseModel):
         if isinstance(self.transform, IdentityTransform):
             # In the case of an identity transform, we can omit the transform
             return f"{self.source_id} {self.direction} {self.null_order}"
+        if self.source_ids is not None and len(self.source_ids) > 1:
+            sources = ", ".join(str(s) for s in self.source_ids)
         else:
-            return f"{self.transform}({self.source_id}) {self.direction} {self.null_order}"
+            sources = str(self.source_id)
+        return f"{self.transform}({sources}) {self.direction} {self.null_order}"
 
 
 INITIAL_SORT_ORDER_ID = 1
